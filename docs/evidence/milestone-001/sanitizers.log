@@ -1,0 +1,2 @@
+PASS: physical-page ownership, invalid inputs, exhaustion, reuse, 10000 model steps
+PASS: smoke validators, 3 success cases and 17 failure regressions (no QEMU required)

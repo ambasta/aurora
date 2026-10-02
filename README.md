@@ -50,10 +50,10 @@ See [kernel setup and limits](kernel/README.md) for emulator details, and
 - Positive execution tests and negative compiler tests, plus distinct image and
   emulator acceptance gates.
 
-The earlier scalar integration booted in QEMU and returned 42. The latest class,
-reflection, exception, and page-arena additions are implemented but their final
-integration verification is pending; [verification](docs/verification.md) records
-the tested snapshot. Test counts alone are not a safety or OS-completeness claim.
+The expanded checkpoint passed a fresh build, 116 compiler tests, allocator
+sanitizer/model checks, and actual QEMU normal/divide-error/page-fault gates.
+[Verification](docs/verification.md) records the source hashes and test output.
+Test counts alone are not a safety or OS-completeness claim.
 
 The sample `examples/kernel.au` borrows and updates an owned integer, releases
 the borrow, moves ownership, and returns the value to the bootstrap kernel.

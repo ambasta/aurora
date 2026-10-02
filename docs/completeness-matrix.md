@@ -1,0 +1,32 @@
+# Completeness and acceptance matrix
+
+This is a requirements map, not a completion percentage. Snapshot: 2026-10-02. An earlier scalar integration passed a QEMU long-mode boot returning 42. Current code additionally implements local class values and class metadata, exception entry, E820 usable-memory validation, and a bounded page arena. Fresh integration, allocator sanitizer/model checks, and all three emulator gates passed; the [verification record](verification.md) identifies the tested snapshot, commands, and results. These are narrow bootstrap results, not proof of language soundness, a full OS, or physical AMD support.
+
+“C++-expressive” means comparable useful systems-programming capability under newly specified safety rules. It does **not** mean preserving arbitrary pointer manipulation, undefined behavior, C++ source compatibility, object layouts, or the C ABI. The target must specify safe replacements and any excluded features. Neither the current compiler nor this matrix proves that every useful C++ pattern already has an equivalent.
+
+| Area | Implemented baseline | Target and evidence gate |
+|---|---|---|
+| Compiler pipeline | C++23-hosted lexer/parser/checker; direct x86-64 assembly output | Precise semantics, typed intermediate representation, optimization validation, reproducible toolchain and diagnostics; differential/property/fuzz tests and independent review |
+| Scalars/control flow | Small i64/bool subset, local bindings, branches/functions; scalar arithmetic wraps | Complete specified numeric/control-flow model, checked range arithmetic, defined failure behavior; edge cases agree across interpreter/backends |
+| Classes/value abstraction | Partial: local scalar-field classes, named initialization, independent copies, field reads and mutable field writes; no methods, nested/resource fields, class parameters/results or borrowing | Fields, methods, initialization, deterministic destruction, interfaces and explicit ownership; test partial construction, moves, drops, dispatch and invalidation |
+| Generics/compile-time programming | Restricted builtin/class size, type-ID, field-count facts and static assertions; no generics or code generation | Constrained generics and typed reflection/code generation; generated code obeys ordinary visibility, lifetime and effect checks; reproducibility/resource-limit tests |
+| Memory safety | Scoped local owned integers and lexical borrow rejection examples | Heap/arena ownership, interprocedural lifetimes, aliasing/provenance and trusted intrinsic rules; formal core model, negative tests, adversarial safe clients and compiler validation |
+| Runtime reflection | Runtime size/field-count lookup for builtin/class IDs; no member traversal or invocation | Exported descriptors, checked invocation/mutation, ownership-preserving dynamic arguments, unload leases; stale/malformed metadata and privilege-bypass tests |
+| Concurrency/async | Not implemented | Defined atomics, data-race prevention, synchronization, cancellation and suspension lifetimes; model checking/stress/fault tests and soundness argument |
+| Libraries/tooling/self-hosting | Minimal compiler/build/test harness | Collections, text, I/O, packages, debugger/profiler and native compiler; build compiler/system with itself and compare multi-stage outputs |
+| Boot/CPU | Emulator-only BIOS loader, first 2 MiB identity map, serial result; new IDT breakpoint dispatch and fail-stop exception paths verified in QEMU | Native or UEFI boot contract; validated memory map, exception recovery, per-CPU state, feature detection, real-machine logs |
+| Memory/process isolation | Partial trusted C++ bootstrap: E820 usable-map validation and bounded 128-page arena, move-only generation/epoch tickets; no protected user tasks or address-space manager; hosted and QEMU tests passed | Physical/virtual allocation, user isolation, capabilities, revocation and resource accounting; cross-domain access/forgery tests fail safely |
+| Scheduler/SMP/IPC | Not implemented | Preemptive scheduling, multiprocessor synchronization, timers and bounded IPC; fairness, interrupt storms, starvation and restart tests |
+| Platform/power | No ACPI/PCIe/IOMMU driver stack | Discovery, DMA isolation, interrupt routing, suspend/resume, shutdown and thermal policy; malformed tables, stale DMA and transition-failure tests |
+| Storage/network/input | Not implemented | Real drivers and services, persistence/recovery, networking and input; corruption, unplug, exhaustion and restart tests on named devices |
+| AMD display | Not implemented; no framebuffer acceptance result | Boot framebuffer then native display separately; modesetting, hotplug and resume tested on named GPU/connector tuples |
+| AMD acceleration | Not implemented | GPU memory isolation, submissions, shaders, fences, preemption and recovery; correctness plus adversarial multi-client and reset tests |
+| Whole-system assurance | Proposal and bootstrap tests | Threat model, audited trusted base, scoped proofs, independent security review, update/recovery and operational tooling |
+| AMD coverage | QEMU configuration only; no physical qualification | All Zen CPU generations and Navi/RDNA onward GPUs, integrated/discrete where applicable; per-platform/device/firmware records, never extrapolate all devices from one success |
+| Native system ecosystem | Not implemented | Toolchain, source-package system, graphical desktop, terminal/shell, installer and system services authored in Aurora; acceptance inventory in [system-release.md](system-release.md) |
+
+## Required evidence discipline
+
+Run `make test` for compiler/image/validator checks and `make smoke` for the actual emulator boot; one does not substitute for the other. Preserve command, tool versions, source identity, output and pass/fail status. Mark a feature **implemented but unverified**, **partially implemented**, or **not implemented** whenever that is more accurate than “supported.” A proof must identify its modeled features and trusted assumptions; passing tests is not such a proof.
+
+The detailed language target is in [language.md](language.md); dependency milestones are in [roadmap.md](roadmap.md); hardware-specific requirements and primary references are in [amd-support.md](amd-support.md). A fully functional kernel needs the relevant platform, isolation, scheduling and device rows, while a usable general-purpose OS additionally needs services, libraries, applications and operations. Until those gates pass, the deliverable remains a compiler/kernel bootstrap.
