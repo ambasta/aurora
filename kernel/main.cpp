@@ -7,6 +7,8 @@
 #include "interrupts.hpp"
 #include "protection.hpp"
 #include "firmware-memory.hpp"
+#include "user-program.hpp"
+auto user_program(std::uint64_t entry) -> std::uint64_t asm("aurora_user_program");
 namespace aurora::hardware {
 using Byte = unsigned char;
 using Port = unsigned short;
@@ -51,6 +53,8 @@ constinit std::array<std::optional<aurora::memory::PageLease>, aurora::memory::P
 #ifdef AURORA_TEST_NX
 alignas(4096) constinit std::array<std::uint8_t, 4096> nx_probe{};
 #endif
+constinit aurora::user::ProgramRun program_run;
+constinit std::size_t program_index = 0;
 volatile bool user_expected = false;
 volatile unsigned user_returns = 0;
 volatile bool breakpoint_expected = false;
@@ -117,6 +121,42 @@ auto page_self_test() -> void {
     require(pages.used() == 0, "Page leak after self-test");
     aurora::hardware::Serial::text("AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free\r\n");
 }
+auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> void {
+    using aurora::user::UserPrograms;
+    using aurora::user::ProgramEvent;
+    using aurora::hardware::Serial;
+    const auto* contract = UserPrograms::contract(index);
+    require(contract != nullptr && !user_expected && !program_run.running(), "Invalid or nested user program run");
+    require(UserPrograms::scrub_stack(), "User stack reset failed");
+    require(program_run.begin(*contract), "Program contract rejected");
+    program_index = index;
+    Serial::text("AURORA_PROGRAM_ENTER: image="); Serial::number(index); Serial::text("\r\n");
+#ifdef AURORA_TEST_PROGRAM_KERNEL_TRAP
+    asm volatile("jmp *%0" : : "r"(contract->bounds_pc()) : "memory");
+    fail("Kernel UD2 unexpectedly returned");
+#endif
+    const auto resumed = user_program(contract->entry());
+    require(resumed == 1 && !program_run.running() && program_run.event() == expected,
+        "Program did not finish with the required typed outcome");
+    require(aurora::hardware::Protection::verify(), "Program altered protected mapping state");
+    if (expected == ProgramEvent::returned) {
+        require(program_run.value() == 42, "Compiled user program returned wrong result");
+        Serial::text("AURORA_PROGRAM_RETURN: image="); Serial::number(index);
+        Serial::text(" value="); Serial::number(program_run.value()); Serial::text("\r\n");
+    } else {
+        Serial::text("AURORA_PROGRAM_CONTAINED: image="); Serial::number(index);
+        Serial::text(expected == ProgramEvent::bounds ? " kind=bounds\r\n" : " kind=overflow\r\n");
+    }
+}
+auto compiled_program_self_test() -> void {
+    using aurora::user::ProgramEvent;
+    execute_program(0, ProgramEvent::returned);
+    execute_program(1, ProgramEvent::bounds);
+    execute_program(0, ProgramEvent::returned);
+    execute_program(2, ProgramEvent::overflow);
+    execute_program(0, ProgramEvent::returned);
+    aurora::hardware::Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, bounds, overflow, clean restart\r\n");
+}
 }
 auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t instruction,
     std::uint64_t code, std::uint64_t frame, std::uint64_t user_value) -> std::uint64_t asm("aurora_exception_dispatch");
@@ -135,6 +175,23 @@ auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t
         return 1; // Dedicated assembly continuation restores only the saved privileged stack.
     }
     using aurora::hardware::Serial;
+    if (program_run.running() && code == 0x1b && frame >= Protection::entry_stack_bottom
+        && frame <= Protection::entry_stack_top - 176 && frame % 8 == 0) {
+        const auto flags = physical_read(frame + 152, 8);
+        const auto stack = physical_read(frame + 160, 8);
+        const auto ss = physical_read(frame + 168, 8);
+        const auto context = aurora::user::ProgramContext{vector, error, instruction, code, ss, stack, flags, frame};
+        if (program_run.accept(context, user_value)) {
+            if (program_run.event() != aurora::user::ProgramEvent::returned) {
+                Serial::text("AURORA_PROGRAM_FAULT: image="); Serial::number(program_index);
+                Serial::text(program_run.event() == aurora::user::ProgramEvent::bounds ? " kind=bounds" : " kind=overflow");
+                Serial::text(" vector="); Serial::number(vector);
+                Serial::text(" rip="); Serial::number(instruction);
+                Serial::text(" cpl=3 frame="); Serial::number(frame); Serial::text("\r\n");
+            }
+            return 1;
+        }
+    }
     Serial::text("AURORA_EXCEPTION_FATAL: "); Serial::number(vector);
     Serial::text(" error="); Serial::number(error);
     Serial::text(" rip="); Serial::number(instruction); Serial::text("\r\n");
@@ -162,6 +219,7 @@ auto kernel_main() -> void {
     using aurora::hardware::Protection;
     require(arena_is_usable(0x10000, reinterpret_cast<std::uint64_t>(&protected_image_end))
         && arena_is_usable(Protection::emergency_stack_bottom, Protection::main_stack_top)
+        && arena_is_usable(aurora::user::UserPrograms::code_begin, aurora::user::UserPrograms::code_end)
         && arena_is_usable(Protection::user_code, Protection::user_code + 4096)
         && arena_is_usable(Protection::user_stack_bottom, Protection::user_stack_top), "Firmware does not grant protected image, stacks or controlled user pages");
     require(Protection::activate(), "Required NX capability or protected mapping validation failed");
@@ -200,6 +258,7 @@ auto kernel_main() -> void {
     user_expected = false;
     require(user_result == 1 && user_returns == 1 && Protection::verify(), "Controlled user boundary did not return intact");
     Serial::text("AURORA_USER_OK: ring3, own stack, TSS entry, controlled return\r\n");
+    compiled_program_self_test();
     const auto value = language_value();
     Serial::text("Aurora language result: ");
     Serial::number(static_cast<unsigned long long>(value));

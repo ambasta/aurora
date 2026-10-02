@@ -1,0 +1,290 @@
+./scripts/kernel-protection-smoke.sh
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 0
+AURORA_USER_OK: ring3, own stack, TSS entry, controlled return
+AURORA_PROGRAM_ENTER: image=0
+AURORA_PROGRAM_RETURN: image=0 value=42
+AURORA_PROGRAM_ENTER: image=1
+AURORA_PROGRAM_FAULT: image=1 kind=bounds vector=6 rip=1773909 cpl=3 frame=548688
+AURORA_PROGRAM_CONTAINED: image=1 kind=bounds
+AURORA_PROGRAM_ENTER: image=0
+AURORA_PROGRAM_RETURN: image=0 value=42
+AURORA_PROGRAM_ENTER: image=2
+AURORA_PROGRAM_FAULT: image=2 kind=overflow vector=6 rip=1777928 cpl=3 frame=548688
+AURORA_PROGRAM_CONTAINED: image=2 kind=overflow
+AURORA_PROGRAM_ENTER: image=0
+AURORA_PROGRAM_RETURN: image=0 value=42
+AURORA_COMPILED_USER_OK: arrays, loop, bounds, overflow, clean restart
+Aurora language result: 42
+AURORA_BOOT_OK
+PASS: kernel emulator verification (normal)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_EXCEPTION_FATAL: 0 error=0 rip=73901
+AURORA_EXCEPTION_CONTEXT: cpl=0 frame=589632 cr2=0
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--fault)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_EXCEPTION_FATAL: 14 error=0 rip=73902
+AURORA_EXCEPTION_CONTEXT: cpl=0 frame=589632 cr2=4194304
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--page-fault)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_EXCEPTION_FATAL: 14 error=3 rip=73902
+AURORA_EXCEPTION_CONTEXT: cpl=0 frame=589632 cr2=65536
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--wp)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_FAULT_TARGET: 118784
+AURORA_EXCEPTION_FATAL: 14 error=17 rip=118784
+AURORA_EXCEPTION_CONTEXT: cpl=0 frame=589584 cr2=118784
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--nx)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_EXCEPTION_FATAL: 8 error=0 rip=73899
+AURORA_EXCEPTION_CONTEXT: cpl=0 frame=524112 cr2=557048
+AURORA_IST_OK
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--stack)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+Required NX capability or protected mapping validation failed
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--no-nx)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 1
+AURORA_EXCEPTION_FATAL: 14 error=5 rip=1900607
+AURORA_EXCEPTION_CONTEXT: cpl=3 frame=548688 cr2=65536
+AURORA_TSS_ENTRY_OK
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--user-read)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 2
+AURORA_EXCEPTION_FATAL: 14 error=7 rip=1900616
+AURORA_EXCEPTION_CONTEXT: cpl=3 frame=548688 cr2=65536
+AURORA_TSS_ENTRY_OK
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--user-write)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 3
+AURORA_EXCEPTION_FATAL: 13 error=0 rip=1900626
+AURORA_EXCEPTION_CONTEXT: cpl=3 frame=548688 cr2=0
+AURORA_TSS_ENTRY_OK
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--user-cli)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 4
+AURORA_EXCEPTION_FATAL: 14 error=7 rip=1900629
+AURORA_EXCEPTION_CONTEXT: cpl=3 frame=548688 cr2=1900544
+AURORA_TSS_ENTRY_OK
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--user-code-write)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 5
+AURORA_EXCEPTION_FATAL: 14 error=21 rip=1966080
+AURORA_EXCEPTION_CONTEXT: cpl=3 frame=548688 cr2=1966080
+AURORA_TSS_ENTRY_OK
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--user-nx)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 6
+AURORA_EXCEPTION_FATAL: 13 error=0 rip=1900650
+AURORA_EXCEPTION_CONTEXT: cpl=3 frame=548688 cr2=0
+AURORA_TSS_ENTRY_OK
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--user-io)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 0
+AURORA_USER_OK: ring3, own stack, TSS entry, controlled return
+AURORA_PROGRAM_ENTER: image=0
+AURORA_EXCEPTION_FATAL: 129 error=0 rip=1769531
+AURORA_EXCEPTION_CONTEXT: cpl=3 frame=548688 cr2=0
+AURORA_TSS_ENTRY_OK
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--program-bad-return)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 0
+AURORA_USER_OK: ring3, own stack, TSS entry, controlled return
+AURORA_PROGRAM_ENTER: image=0
+AURORA_EXCEPTION_FATAL: 6 error=0 rip=1769524
+AURORA_EXCEPTION_CONTEXT: cpl=3 frame=548688 cr2=0
+AURORA_TSS_ENTRY_OK
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--program-unknown-trap)
+make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 27 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 16440-byte payload, 1 MiB image; 8 negative controls; separated RX/R/RW ELF segments
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 0
+AURORA_USER_OK: ring3, own stack, TSS entry, controlled return
+AURORA_PROGRAM_ENTER: image=0
+AURORA_EXCEPTION_FATAL: 6 error=0 rip=1769928
+AURORA_EXCEPTION_CONTEXT: cpl=0 frame=589632 cr2=0
+Exception halted safely
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--program-kernel-trap)
+PASS: all 16 actual CPU protection/exception/compiled-user gates

@@ -4,6 +4,7 @@
 #include <cstdint>
 
 extern const std::array<std::uint64_t, 32> vectors asm("aurora_exception_vectors");
+auto program_return() -> void asm("aurora_program_return");
 auto user_return() -> void asm("aurora_user_return");
 auto unexpected() -> void asm("aurora_unexpected_interrupt");
 
@@ -35,12 +36,13 @@ auto aurora::hardware::Interrupts::initialize() -> void {
     asm volatile("ltr %0" : : "r"(static_cast<std::uint16_t>(40)) : "memory");
     for (std::size_t vector = 0; vector < 256; ++vector) {
         const auto address = vector < 32 ? vectors[vector] : vector == 128
-            ? reinterpret_cast<std::uint64_t>(&user_return) : reinterpret_cast<std::uint64_t>(&unexpected);
+            ? reinterpret_cast<std::uint64_t>(&user_return) : vector == 129
+            ? reinterpret_cast<std::uint64_t>(&program_return) : reinterpret_cast<std::uint64_t>(&unexpected);
         const auto slot = vector * 16;
         idt[slot] = address; idt[slot + 1] = address >> 8;
         idt[slot + 2] = 8; idt[slot + 3] = 0;
         idt[slot + 4] = vector == 8 ? 1 : 0;
-        idt[slot + 5] = vector == 128 ? 0xee : 0x8e;
+        idt[slot + 5] = (vector == 128 || vector == 129) ? 0xee : 0x8e;
         idt[slot + 6] = address >> 16; idt[slot + 7] = address >> 24;
         for (auto byte = 0; byte < 4; ++byte) idt[slot + 8 + byte] = address >> (32 + byte * 8);
     }

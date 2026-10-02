@@ -17,6 +17,9 @@ case "$mode" in
   --user-code-write) build_environment+=(KERNEL_USER_PROBE_MODE=4) ;;
   --user-nx) build_environment+=(KERNEL_USER_PROBE_MODE=5) ;;
   --user-io) build_environment+=(KERNEL_USER_PROBE_MODE=6) ;;
+  --program-bad-return) build_environment+=(KERNEL_TEST_PROGRAM_BAD_RETURN=1) ;;
+  --program-unknown-trap) build_environment+=(KERNEL_TEST_PROGRAM_UNKNOWN_TRAP=1) ;;
+  --program-kernel-trap) build_environment+=(KERNEL_TEST_PROGRAM_KERNEL_TRAP=1) ;;
   --no-nx) cpu=qemu64,-nx ;;
   *) echo 'Unknown kernel smoke mode' >&2; exit 2 ;;
 esac
@@ -26,6 +29,8 @@ else
   trap './scripts/kernel-build.sh >/dev/null' EXIT
 fi
 env "${build_environment[@]}" ./scripts/kernel-build.sh
+metadata="${log%.log}.metadata.json"
+cp build/user-metadata.json "$metadata"
 qemu="${QEMU:-qemu-system-x86_64}"
 command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing; image is built but emulator boot is unverified.' >&2; exit 2; }
 args=()
@@ -38,5 +43,5 @@ timeout 15 "$qemu" "${args[@]}" -machine pc -accel tcg -cpu "$cpu" -m 32M \
 status=$?
 set -e
 cat "$log"
-python3 tests/kernel-smoke.py "$status" "$log" "$mode"
+python3 tests/kernel-smoke.py "$status" "$log" "$mode" "$metadata"
 echo "PASS: kernel emulator verification ($mode)"

@@ -1,0 +1,12 @@
+module user_clean;
+
+auto aurora_user_main() -> i64 {
+    const array<i64, 4> values = {10, 20, 5, 7};
+    i64 index = 0;
+    i64 sum = 0;
+    while (index < len(values)) {
+        sum = sum + values[index];
+        index = index + 1;
+    }
+    return sum;
+}

@@ -1,6 +1,6 @@
 # Bootstrap commands share the image/output directory; serialize their execution.
 .NOTPARALLEL:
-.PHONY: all compiler kernel test test-compiler test-image test-kernel smoke smoke-fault smoke-page-fault smoke-all
+.PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-all
 
 all: compiler kernel
 
@@ -19,7 +19,14 @@ test-image: kernel
 test-kernel:
 	./scripts/kernel-tests.sh
 
-test: test-compiler test-image test-kernel
+test-semantics: compiler
+	python3 tests/semantics/test_runner.py
+	python3 tests/semantics/run.py build/aurorac
+
+test-semantics-stress: compiler
+	python3 tests/semantics/run.py build/aurorac --seed 404 --cases 1024
+
+test: test-compiler test-image test-kernel test-semantics
 
 # QEMU is intentionally a separate acceptance gate, never silently skipped.
 smoke:

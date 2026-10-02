@@ -62,8 +62,8 @@ Missing QEMU means blocked verification, not a pass.
 - COM1 prints the compiled Aurora function's actual return value, 42.
 
 Image validation checks exact ELF fields, loader bounds and zero unresolved
-symbols, with eight malformed-image controls. Shared smoke validation has 13
-positive and 89 negative transcript regressions and stays active under Python -O.
+symbols, with eight malformed-image controls. Shared smoke validation has 16
+positive and 110 negative transcript regressions and stays active under Python -O.
 
 ## Deliberate limits
 
@@ -157,17 +157,18 @@ Individual new modes for kernel-smoke.sh:
 - --user-code-write: user executable page write denied, page fault error 7
 - --user-nx: user stack execution denied, page fault error 21
 
-The suite includes the earlier normal/divide/unmapped-page gates, 13 total. Fault
+The original protection suite included normal/divide/unmapped-page gates, 13 total.
+The compiled-program extension below adds three more adversarial modes. Fault
 validation checks exact vector/error bits, origin privilege, handler-stack range,
 and CR2 denied address where applicable. Expected failure is not enough without
 these checks. Fault builds restore the normal image. Hosted tests cover 511 page
 mappings, invalid/default-deny/W^X rules, malformed and conflicting firmware
-records; transcript checks include 13 positive and 89 negative cases.
+records; transcript checks are extended by the compiled-program milestone below.
 
 ### What this still does not establish
 
-This is a one-shot, integer-only privilege-boundary probe in trusted temporary
-C++/assembly. It is not yet an Aurora user program loader, process/task model,
+The assembly probe is an integer-only privilege-boundary check in trusted temporary
+C++/assembly. The compiled-image runner below extends it, but does not provide a general executable loader, process/task model,
 general syscall interface, scheduler, multi-address-space isolation or security
 proof. FPU/SIMD state, FS/GS/TLS lifecycle, preemption, SMP, speculative-execution
 mitigations, DMA isolation, teardown and resource accounting remain unimplemented.
@@ -175,3 +176,104 @@ Do not run arbitrary applications under this boundary. External IRQs remain
 masked. IST is assigned to double fault only; nested NMI/IST fault handling is
 not a general recovery mechanism. Other unexpected faults terminate the emulator
 test rather than restart a service. Physical AMD support is still unverified.
+
+## Compiled safe-C++ user images and contained language faults
+
+The kernel now runs three separately compiled and linked Aurora safe-C++ programs
+from tests/kernel-programs/. This extends the assembly protection probe; it does
+not replace the older adversarial tests.
+
+- clean.au initializes a fixed array, traverses it with a checked while loop,
+  and returns i64 value 42.
+- bounds.au reaches the compiler's bounds-check trap on an index equal to length.
+- overflow.au reaches the compiler's signed-arithmetic overflow trap.
+
+Each image combines compiler output with a narrow trusted no-argument launcher.
+It is linked independently at one of 0x1b0000, 0x1b1000, 0x1b2000. The build rejects
+writable global storage, unresolved symbols, non-RX load segments, wrong entries,
+and images larger than 4 KiB. The verifier checks extracted bytes against the ELF
+load segment. `as -L` and `ld --discard-none` retain the emitted bounds/overflow
+labels; verification requires both labels to point to distinct UD2 opcodes and
+the authorized return label to follow the exact INT 0x81 instruction.
+
+Before protection activation, the static installer checks every contract, copies
+all image bytes, zeros page padding and verifies the complete copy. Thereafter
+all three pages are user RX without a writable alias. E820 must grant the image
+regions. All fixtures share one user domain and can read/execute each other's
+immutable code. They do not have independent address spaces or process identities.
+
+### Scalar return authority
+
+INT 0x81 has exactly one meaning: finish the outstanding image and return one i64
+bit pattern in the temporary result register. It accepts no pointers, buffers,
+lengths, object handles or user-selected privileged continuations. The fixture
+entry signature is fixed by the trusted build (`auto aurora_user_main() -> i64`);
+this is not a public source-level foreign-call or C ABI facility.
+
+Before each entry, the kernel scrubs and reads back the entire guarded user stack.
+The assembly launcher zeros all 15 integer registers, uses fixed user selectors
+and IOPL=0/IF=0 flags, and stores its own privileged continuation. The user-side
+launcher checks zeroed registers and the top stack word before calling generated
+code with the compiler's required stack alignment.
+
+A single outstanding run owns an immutable value-copy of its verified contract.
+The gate requires the exact user CS/SS, an aligned in-range user stack, permitted
+flags, a complete aligned exception frame on TSS.RSP0's supervisor stack, and
+the precise linked return instruction address. The ordinary return requires the
+original user stack top. All i64 bit patterns are valid; the test separately
+checks the computed value is 42. Knowing the return instruction is not a secret
+capability or a proof of program correctness. Authority is only to finish the
+currently active run with a scalar result.
+
+Assembly resumes the kernel-owned saved stack and register continuation; it never
+uses a user pointer as a privileged return address. The accepted event consumes
+the outstanding authority. Host tests reject nested/replayed events, wrong image
+addresses, selectors, privilege, flags, stack/frame ranges and changed metadata.
+Contracts are copied, so caller lifetime or later edits cannot alter an active run.
+
+### Narrow containment, demonstrated continuation
+
+Only a user-origin #UD at the active image's exact verified bounds or overflow
+label is classified as that language fault. Error codes, selectors, flags and
+stack context are checked before accepting it. The observed fault PC is compared
+against linked metadata again in the emulator validator. This identifies a
+compiler trap site; it is not a generic illegal-instruction catcher or a formal
+proof of the whole compiler's semantics.
+
+The normal gate executes this order:
+
+1. Clean array/loop image returns 42
+2. Bounds image faults and returns a typed bounds outcome to the kernel
+3. Clean image returns 42 again after fresh stack/register setup
+4. Overflow image faults and returns a typed overflow outcome
+5. Clean image returns 42 again
+
+Three additional fail-closed emulator modes distinguish containment from unsafe
+recovery: --program-bad-return rejects INT 0x81 at an unauthorized return PC;
+--program-unknown-trap rejects an unrelated user UD2; --program-kernel-trap executes
+the exact known compiler trap at kernel privilege and verifies it remains fatal.
+These test-only assembly injections do not add unsafe syntax to Aurora.
+
+`./scripts/kernel-protection-smoke.sh` now runs 16 real emulator modes. A normal
+image is restored after fault variants. Each log has an adjacent .metadata.json
+receipt preserving that variant's linked trap addresses even after restoration.
+The user-image verifier includes 27 malformed-image/metadata controls. Shared
+transcript validation has 16 positive and 110 negative cases, including exact
+containment order and clean execution after both faults. Hosted policy tests can
+run under ASan/UBSan with `SANITIZE=1 ./scripts/kernel-tests.sh`.
+
+For isolated compiler-integration experiments, AURORAC can select an already-built
+compiler executable; ordinary builds still run `make -C compiler`. Record its
+hash and rerun against the final compiler before claiming a checkpoint verified.
+
+### Remaining assumptions
+
+This is a trusted build-time image installer and a sequential integer-only test
+runner. There is no arbitrary executable loader, timer/preemption, scheduler,
+per-process isolation, cross-domain copy service, heap lifecycle or general
+syscall API. A hung program cannot yet be interrupted by this runner. Unexpected
+faults, stack exhaustion and invalid returns still fail-stop; only the two known
+compiler traps are contained. FPU/SIMD and FS/GS/TLS lifecycle, asynchronous state,
+SMP, DMA isolation and speculative-execution mitigations remain outside this gate.
+The wrappers, kernel and toolchain are still trusted bootstrap machinery rather
+than a verified language-native OS. Physical AMD hardware remains unqualified.

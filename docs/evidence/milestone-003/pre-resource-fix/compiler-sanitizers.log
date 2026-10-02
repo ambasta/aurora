@@ -1,0 +1,209 @@
+PASS leading zero decimal
+PASS leading zero eight
+PASS leading zero reflection agreement
+PASS precedence
+PASS signed arithmetic
+PASS checked addition overflow
+PASS mutable scalar
+PASS scalar shadowing
+PASS branch then
+PASS branch else
+PASS bool comparison
+PASS nested functions
+PASS six argument ABI
+PASS forward call
+PASS bool function
+PASS owned initializer compact spacing
+PASS owned move
+PASS shared borrows
+PASS exclusive borrow
+PASS borrow release
+PASS branch borrow release
+PASS return path excludes move
+PASS return else excludes move
+PASS reflection constant
+PASS reflection dynamic
+PASS reflection bool
+PASS reflection unknown
+PASS reflection negative
+PASS use after move
+PASS double move
+PASS copy owner
+PASS implicit owned initialization
+PASS move shared borrowed
+PASS move mutably borrowed
+PASS shared then mutable
+PASS mutable then shared
+PASS two mutable borrows
+PASS owner read during exclusive borrow
+PASS write shared ref
+PASS borrow expired scope
+PASS moved on then path
+PASS moved on else path
+PASS nested branch move
+PASS immutable assignment
+PASS type mismatch
+PASS nonboolean condition
+PASS missing return
+PASS missing branch return
+PASS uninitialized local
+PASS out of scope
+PASS duplicate local
+PASS failed assertion
+PASS nonconstant assertion
+PASS overflow literal
+PASS unknown function
+PASS borrow scalar
+PASS reference escape
+PASS unsupported pointer
+PASS unsupported class methods
+PASS unreachable code
+PASS duplicate function
+PASS builtin collision
+PASS argument type
+PASS argument count
+PASS parenthesized class field
+PASS class construct and fields
+PASS class reordered fields
+PASS class independent copy
+PASS class mutable field
+PASS class shadow copy
+PASS class branch field update
+PASS class reflection static
+PASS class reflection runtime
+PASS class runtime dynamic id
+PASS class bool field
+PASS empty class
+PASS classes declared after function
+PASS class call fields
+PASS multiple class type IDs
+PASS missing class field
+PASS duplicate class initializer
+PASS unknown class initializer
+PASS class field type mismatch
+PASS class unknown field read
+PASS class immutable mutation
+PASS class mutation type mismatch
+PASS class local uninitialized read
+PASS class wrong constructor
+PASS class unknown type
+PASS class unavailable outside scope
+PASS class wrong scalar context
+PASS class borrow not yet supported
+PASS class unknown reflection
+PASS class duplicate declaration
+PASS class duplicate fields
+PASS class owned field rejected
+PASS class nested field rejected
+PASS class reserved name
+PASS class function name collision
+PASS class wrong copy type
+PASS class parameter deferred
+PASS class return deferred
+PASS scalar field count
+PASS unknown field count
+PASS obsolete fn declaration rejected
+PASS obsolete let declaration rejected
+PASS C function declaration rejected
+PASS C int type rejected
+PASS raw pointer rejected
+PASS unsafe block rejected
+PASS private class construction rejected
+PASS explicit private class construction rejected
+PASS private metadata hides field count
+PASS const owner shared read
+PASS const owner mutable borrow rejected
+PASS const owner move preserved
+PASS const owner move cannot thaw
+PASS const mutable reference cannot write
+PASS owner never rebound
+PASS signed maximum boundary
+PASS signed minimum literal
+PASS signed minimum literal negation
+PASS signed minimum literal leading zeros
+PASS signed literal below minimum
+PASS signed minimum boundary
+PASS checked subtraction overflow
+PASS checked multiplication overflow
+PASS checked negation overflow
+PASS minimum times negative one
+PASS minimum times one
+PASS while sum
+PASS while zero iterations
+PASS nested while
+PASS while local ownership
+PASS while mutable borrowing
+PASS while existing borrow
+PASS while returning move
+PASS while branch returning move
+PASS while zero path retains owner
+PASS while backedge move rejected
+PASS while branch backedge move rejected
+PASS while condition type
+PASS while cannot escape borrow
+PASS while does not prove return
+PASS while local move use rejected
+PASS while break deferred
+PASS array load
+PASS array mutate
+PASS array copy independent
+PASS array shadow copy
+PASS array sum loop
+PASS array bool storage
+PASS array reflection
+PASS array reflection fields
+PASS array calls initialization
+PASS array index exactly once
+PASS array assignment index before rhs
+PASS array initializer written order
+PASS array parenthesized indexing
+PASS array negative index traps
+PASS array upper index traps
+PASS array maximum index traps
+PASS array minimum index traps
+PASS array negative store traps
+PASS array upper store traps
+PASS array bounds before RHS
+PASS array immutable assignment
+PASS array bool index rejected
+PASS array element type rejected
+PASS array store type rejected
+PASS array short initializer
+PASS array long initializer
+PASS array zero length rejected
+PASS array oversized rejected
+PASS array enormous length rejected
+PASS array nested element rejected
+PASS array owned element rejected
+PASS array wrong copy length
+PASS array wrong copy element
+PASS array borrowing rejected
+PASS array element borrowing rejected
+PASS array returned rejected
+PASS array parameter deferred
+PASS array lifetime ends
+PASS array initializer cannot see itself
+PASS scalar cannot index
+PASS scalar cannot len
+PASS class array field deferred
+PASS array reserved class name
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora/tests/compiler/run.py", line 274, in <module>
+    check("maximum supported array", "const array<i64, 4096> a = {" + large_init + "}; return a[4095] + 41;")
+  File "/workspace/scratch/48c5de6446f8/aurora/tests/compiler/run.py", line 31, in check
+    result = command([COMPILER, source, "-o", assembly], good=error is None)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/48c5de6446f8/aurora/tests/compiler/run.py", line 19, in command
+    result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=5, preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/subprocess.py", line 1209, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/subprocess.py", line 2116, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+  File "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/subprocess.py", line 1253, in _check_timeout
+    raise TimeoutExpired(
+subprocess.TimeoutExpired: Command '['/tmp/aurora-m003-compiler-sanitized', '/tmp/aurora-test-_686m62t/input.au', '-o', '/tmp/aurora-test-_686m62t/program.s']' timed out after 5 seconds

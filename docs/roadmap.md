@@ -40,11 +40,19 @@ Specify and implement safe key-set queries, mapped types and conditional types w
 
 ## 4 Isolated kernel services
 
-Trusted bootstrap code now includes breakpoint/exception entry, E820 usable-map validation, and a bounded page arena with generation/epoch tickets. These are partial prerequisites; they provide neither protected processes nor a general physical/virtual memory manager. The latest additions passed fresh hosted and emulator checks; see the verification record.
+Trusted bootstrap code now includes breakpoint/exception entry, E820 usable-map validation, and a bounded page arena with generation/epoch tickets. These are partial prerequisites, not general protected processes or a physical/virtual memory manager. Separately compiled user fixtures now run in one controlled user domain with a bounded scalar-return gate and validated compiler-fault containment; they do not gain mutual isolation, scheduling or a general syscall/runtime contract. The new compiler phase separation and user-fixture integration await the final exact-source aggregate; see the verification record for snapshot-specific outcomes.
 
 Replace the demo path with memory ownership, protected address spaces, traps, preemption, capability operations, bounded IPC, and service supervision. Introduce a minimal driver broker, then one emulator-backed device service. Design proof-friendly interfaces before adding broad subsystems.
 
 **Gate:** an untrusted service cannot access another service's memory or forge authority; revocation and restart are tested; resource exhaustion is contained; IRQ floods do not monopolize the system. Publish the trusted computing base and exact platform assumptions. Test security properties separately from throughput.
+
+## Native core and library dependency gates
+
+Develop two explicit Aurora-authored layers: a platform/runtime replacing libc responsibilities without its C API/ABI, and a safe C++-recognizable standard library for strings, containers, algorithms, ranges, ownership, concurrency and reflection. Neither host C++ libraries nor empty package scaffolding satisfy this requirement. See [library-stack.md](library-stack.md) for profile contracts and staged tests.
+
+First establish a genuinely freestanding core on specified value/lifetime semantics. Allocation follows checked ownership/destruction, layout arithmetic and region/quota capabilities. User startup and service wrappers require a native ABI/loader, protected task lifecycle and validated capability boundary; a controlled user-domain execution probe is not a complete runtime. Kernel facilities use their own nonblocking/IRQ-safe profile. Threading waits for both kernel scheduling and a language memory model. Text/numeric APIs require explicit Unicode, rounding/error and resource-limit contracts.
+
+**Gate:** real library operations are consumed by compiled Aurora programs and pass normal/failure/lifetime tests without target host-runtime dependencies. Collections prove safe invalidation behavior; system wrappers test cancellation, partial I/O and reclamation; native rebuilds demonstrate the declared package set. Ports need explicit backend/API adaptation or safe rewrites and license review before reuse, with no inferred C/binary/POSIX compatibility.
 
 ## 5 Aurora self-hosting
 

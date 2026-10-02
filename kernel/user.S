@@ -32,6 +32,39 @@ aurora_user_probe:
     xor %r14d, %r14d
     xor %r15d, %r15d
     iretq
+.global aurora_user_program
+aurora_user_program:
+    push %rbx
+    push %rbp
+    push %r12
+    push %r13
+    push %r14
+    push %r15
+    mov %rsp, aurora_saved_kernel_rsp(%rip)
+    pushq $0x23
+    pushq $0x1e4000
+    pushq $2
+    pushq $0x1b
+    push %rdi
+    mov $0x23, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    xor %eax, %eax
+    xor %ebx, %ebx
+    xor %ecx, %ecx
+    xor %edx, %edx
+    xor %ebp, %ebp
+    xor %esi, %esi
+    xor %edi, %edi
+    xor %r8d, %r8d
+    xor %r9d, %r9d
+    xor %r10d, %r10d
+    xor %r11d, %r11d
+    xor %r12d, %r12d
+    xor %r13d, %r13d
+    xor %r14d, %r14d
+    xor %r15d, %r15d
+    iretq
 .global aurora_leave_user
 aurora_leave_user:
     mov $0x10, %ax

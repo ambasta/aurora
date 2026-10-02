@@ -1,0 +1,6 @@
+module user_overflow;
+
+auto aurora_user_main() -> i64 {
+    i64 maximum = 9223372036854775807;
+    return maximum + 1;
+}
