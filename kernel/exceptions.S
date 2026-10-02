@@ -1,6 +1,7 @@
 .section .text
 .code64
 .extern aurora_exception_dispatch
+.extern aurora_leave_user
 .global aurora_exception_0
 aurora_exception_0:
     pushq $0
@@ -151,6 +152,11 @@ aurora_exception_31:
     pushq $0
     pushq $31
     jmp exception_common
+.global aurora_user_return
+aurora_user_return:
+    pushq $0
+    pushq $128
+    jmp exception_common
 .global aurora_unexpected_interrupt
 aurora_unexpected_interrupt:
     pushq $0
@@ -175,9 +181,14 @@ exception_common:
     mov 120(%rsp), %rdi
     mov 128(%rsp), %rsi
     mov 136(%rsp), %rdx
+    mov 144(%rsp), %rcx
+    mov %rsp, %r8
+    mov 112(%rsp), %r9
     mov %rsp, %rbx
     and $-16, %rsp
     call aurora_exception_dispatch
+    cmp $1, %rax
+    je aurora_leave_user
     mov %rbx, %rsp
     pop %r15
     pop %r14

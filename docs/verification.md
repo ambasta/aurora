@@ -1,5 +1,9 @@
 # Verification record
 
+Receipts are historical snapshots. A source manifest applies only to its own
+checkpoint, not a later tree with different code. Milestone001 belongs to commit
+`4ae3f1f475a3f61d8a1534a82ac5d7d532677c7e`.
+
 ## Bring-up checkpoint — 2026-10-02
 
 This checkpoint establishes only the small scalar compiler and emulator boot path.
@@ -65,3 +69,47 @@ Compiler: GNU C++ 14.2, C++23. Emulator: QEMU 10.0.13, software TCG, pc/qemu64,
 32 MiB memory, SeaBIOS. No physical Zen or Navi device was tested. This checkpoint
 still lacks interprocedural ownership, heap safety, general methods/generics,
 process isolation, scheduling, native toolchain self-hosting and device drivers.
+
+## Safe C++ and memory-protection checkpoint — 2026-10-02
+
+A fresh build in the original workspace passed all commands below. No saved
+Codex cloud environment was used for this checkpoint.
+
+```sh
+make test
+SANITIZE=1 ./scripts/kernel-tests.sh
+# With the same local QEMU environment described above:
+make smoke-all
+```
+
+- **203 compiler tests** passed after intentionally replacing fn/let syntax and
+  wrapping arithmetic. The current modern C++ surface, const/privacy semantics,
+  loops, fixed arrays and checked arithmetic are defined in compiler/README.md.
+- The source author additionally ran the compiler suite with UBSan and optimized
+  Python. Independent review added 34 adversarial programs and five exact
+  trap-address checks; see review.md for scope and revision distinctions.
+- Hosted kernel validation passed the 10,000-step allocator model, 511 page
+  mappings, hostile/overlapping firmware cases, and sanitizer runs. Leak detection
+  remains disabled under the tracing environment; no leak-sanitizer result claimed.
+- Eight malformed-image controls passed, including distinct RX/R/RW ELF segments.
+- Transcript validators accepted 13 positive cases and rejected 89 negative cases.
+- All **13 actual QEMU modes** passed: normal, divide error, page fault, supervisor
+  text write, data execution, guard-stack/double-fault IST, missing-NX rejection,
+  and ring-3 kernel read/write, privileged CLI, code write, stack execution and I/O.
+- Normal image restored afterward: 12,344-byte payload in the 1 MiB emulator disk.
+- The README example compiled and assembled independently. Source hashes matched.
+
+Receipts: [tests](evidence/milestone-002/test.log),
+[sanitizers](evidence/milestone-002/sanitizers.log),
+[all emulator modes](evidence/milestone-002/emulator.log),
+and [source manifest](evidence/milestone-002/source.sha256).
+
+```sh
+sha256sum -c docs/evidence/milestone-002/source.sha256
+```
+
+This establishes a controlled integer-only user-boundary experiment, not arbitrary
+process isolation, scheduling, SIMD context management, full language safety or
+physical AMD support. The old milestone001 results remain unchanged and cannot
+be used as evidence for this new syntax/semantics. C-level performance remains a
+benchmark target rather than a measured claim.

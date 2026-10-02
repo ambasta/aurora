@@ -59,7 +59,7 @@ std::vector<Token> lex(const std::string &s) {
             i += 2;
             continue;
         }
-        if (std::string("(){}:;,=+-*<>!.").find(c) != std::string::npos) {
+        if (std::string("(){}[]:;,=+-*<>!.").find(c) != std::string::npos) {
             out.emplace_back(std::string(1, c), line);
             ++i;
             continue;
@@ -69,17 +69,28 @@ std::vector<Token> lex(const std::string &s) {
     out.emplace_back("<eof>", line);
     return out;
 }
-enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class };
+enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array };
 class Type {
   public:
     TypeKind kind = TypeKind::I64;
     std::string className;
+    TypeKind elementKind = TypeKind::I64;
+    int length = 0;
     Type() = default;
     explicit Type(TypeKind value) : kind(value) {}
     explicit Type(std::string name) : kind(TypeKind::Class), className(std::move(name)) {}
     bool operator==(const Type &) const = default;
     bool isClass() const {
         return kind == TypeKind::Class;
+    }
+    bool isArray() const {
+        return kind == TypeKind::Array;
+    }
+    static Type array(TypeKind element, int count) {
+        Type type(TypeKind::Array);
+        type.elementKind = element;
+        type.length = count;
+        return type;
     }
     static const Type I64, Bool, Own, Ref, MutRef;
 };
@@ -102,6 +113,9 @@ std::string typeName(const Type &type) {
         return "mutref<i64>";
     case TypeKind::Class:
         return type.className;
+    case TypeKind::Array:
+        return "array<" + typeName(Type(type.elementKind)) + ", " + std::to_string(type.length) +
+               ">";
     }
     return "?";
 }
@@ -124,7 +138,7 @@ class Statement {
     Token token;
     Type type = Type::I64;
     bool mutableValue = false;
-    ExpressionPtr expr;
+    ExpressionPtr expr, target;
     std::vector<std::shared_ptr<Statement>> body, other;
     explicit Statement(Token t) : kind(t.text), token(std::move(t)) {}
 };
@@ -148,6 +162,7 @@ class Field {
     Token token;
     Type type;
     int offset = 0;
+    bool publicAccess = false;
     Field(Token name, Type value) : token(std::move(name)), type(std::move(value)) {}
 };
 class ClassDefinition {
@@ -186,11 +201,6 @@ class Parser {
         return false;
     }
     void need(const std::string &s) {
-        // A generic type terminator can directly precede its initializer: own<i64>=own(1).
-        if (s == ">" && peek().text == ">=") {
-            tokens[position].text = "=";
-            return;
-        }
         if (!eat(s))
             fail("expected '" + s + "'");
     }
@@ -199,19 +209,47 @@ class Parser {
         if (t.text.empty() ||
             !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
             fail("expected identifier");
-        static const std::set<std::string> reserved = {"fn",    "module",        "let",    "mut",
-                                                       "if",    "else",          "return", "true",
-                                                       "false", "static_assert", "class"};
+        static const std::set<std::string> reserved = {
+            "fn",        "module",   "let",    "mut",           "if",     "else",
+            "return",    "true",     "false",  "static_assert", "class",  "while",
+            "break",     "continue", "auto",   "const",         "public", "private",
+            "protected", "unsafe",   "extern", "struct"};
         if (reserved.count(t.text))
             fail("reserved identifier");
         return take();
     }
     Type type() {
+        static const std::set<std::string> forbidden = {
+            "fn",     "let", "mut",  "auto", "const", "class",  "unsafe", "struct",
+            "extern", "int", "void", "char", "float", "double", "new",    "delete"};
+        if (forbidden.contains(peek().text))
+            fail("unsupported or reserved type spelling");
         if (eat("i64"))
             return Type::I64;
         if (eat("bool"))
             return Type::Bool;
         auto t = take();
+        if (t.text == "array") {
+            need("<");
+            const auto element = type();
+            if (!scalar(element))
+                fail("array elements currently require i64 or bool");
+            need(",");
+            const auto count = take();
+            unsigned long long length = 0;
+            try {
+                std::size_t used = 0;
+                length = std::stoull(count.text, &used);
+                if (used != count.text.size())
+                    fail("array length requires a decimal integer literal");
+            } catch (const std::exception &) {
+                fail("array length requires a decimal integer literal");
+            }
+            if (length < 1 || length > 4096)
+                fail("array length must be between 1 and 4096");
+            need(">");
+            return Type::array(element.kind, static_cast<int>(length));
+        }
         Type v;
         if (t.text == "own")
             v = Type::Own;
@@ -233,16 +271,33 @@ class Parser {
         return v;
     }
     ExpressionPtr postfix(ExpressionPtr expression) {
-        while (eat(".")) {
-            auto member = std::make_shared<Expression>("member", ident());
-            member->args.push_back(expression);
-            expression = member;
+        while (true) {
+            if (eat(".")) {
+                auto member = std::make_shared<Expression>("member", ident());
+                member->args.push_back(expression);
+                expression = member;
+            } else if (eat("[")) {
+                auto index = std::make_shared<Expression>("index", expression->token);
+                index->args = {expression, expr()};
+                need("]");
+                expression = index;
+            } else
+                return expression;
         }
-        return expression;
     }
     ExpressionPtr primary() {
         auto t = take();
         auto e = std::make_shared<Expression>("name", t);
+        if (t.text == "{") {
+            e->op = "array_literal";
+            if (!eat("}")) {
+                do {
+                    e->args.push_back(expr());
+                } while (eat(","));
+                need("}");
+            }
+            return postfix(e);
+        }
         if (t.text == "(") {
             e = expr();
             need(")");
@@ -279,8 +334,9 @@ class Parser {
             e->op = "construct";
             if (!eat("}")) {
                 do {
+                    need(".");
                     e->fieldNames.push_back(ident().text);
-                    need(":");
+                    need("=");
                     e->args.push_back(expr());
                 } while (eat(","));
                 need("}");
@@ -319,6 +375,16 @@ class Parser {
         }
         return b;
     }
+    bool startsDeclaration() const {
+        const auto name = peek().text;
+        if (name == "const" || name == "i64" || name == "bool" || name == "own" || name == "ref" ||
+            name == "mutref" || name == "array")
+            return true;
+        const auto &next = tokens.at(std::min(position + 1, tokens.size() - 1)).text;
+        return !next.empty() &&
+               (std::isalpha(static_cast<unsigned char>(next[0])) || next[0] == '_') &&
+               name != "return" && name != "if" && name != "while";
+    }
     StatementPtr statement() {
         auto t = peek();
         auto s = std::make_shared<Statement>(t);
@@ -327,35 +393,41 @@ class Parser {
             s->body = block();
             return s;
         }
-        take();
-        if (t.text == "let") {
-            s->mutableValue = eat("mut");
-            s->name = ident().text;
-            need(":");
+        if (startsDeclaration()) {
+            s->kind = "let";
+            const bool immutable = eat("const");
             s->type = type();
+            s->name = ident().text;
+            s->mutableValue = !immutable;
             need("=");
             s->expr = expr();
             need(";");
-        } else if (t.text == "return" || t.text == "static_assert") {
+            return s;
+        }
+        take();
+        if (t.text == "return" || t.text == "static_assert") {
             if (t.text == "static_assert")
                 need("(");
             s->expr = expr();
             if (t.text == "static_assert")
                 need(")");
             need(";");
-        } else if (t.text == "if") {
+        } else if (t.text == "if" || t.text == "while") {
             need("(");
             s->expr = expr();
             need(")");
             s->body = block();
-            if (eat("else"))
+            if (t.text == "if" && eat("else"))
                 s->other = block();
         } else {
             --position;
             s->kind = "expression";
             s->expr = expr();
             if (eat("=")) {
-                if (s->expr->op == "member" && s->expr->args[0]->op == "name") {
+                if (s->expr->op == "index") {
+                    s->kind = "index_assign";
+                    s->target = s->expr;
+                } else if (s->expr->op == "member" && s->expr->args[0]->op == "name") {
                     s->kind = "field_assign";
                     s->fieldName = s->expr->token.text;
                     s->name = s->expr->args[0]->token.text;
@@ -381,27 +453,38 @@ class Parser {
             if (eat("class")) {
                 ClassDefinition definition(ident());
                 need("{");
+                bool publicAccess = false;
                 while (!eat("}")) {
-                    auto fieldName = ident();
-                    need(":");
+                    if (eat("public")) {
+                        need(":");
+                        publicAccess = true;
+                        continue;
+                    }
+                    if (eat("private")) {
+                        need(":");
+                        publicAccess = false;
+                        continue;
+                    }
                     auto fieldType = type();
+                    auto fieldName = ident();
                     if (!scalar(fieldType))
                         fail("class fields currently require i64 or bool");
                     need(";");
                     definition.fields.emplace_back(fieldName, fieldType);
+                    definition.fields.back().publicAccess = publicAccess;
                 }
+                need(";");
                 program.classes.push_back(std::move(definition));
                 continue;
             }
-            need("fn");
+            need("auto");
             Function f(ident());
             need("(");
             if (!eat(")")) {
                 do {
                     Param a;
-                    a.name = ident().text;
-                    need(":");
                     a.type = type();
+                    a.name = ident().text;
                     if (!scalar(a.type))
                         fail("only scalar function parameters are supported");
                     f.params.push_back(a);
@@ -431,6 +514,8 @@ class Compiler {
     std::vector<Function> fs;
     std::vector<ClassDefinition> classes;
     std::map<std::string, std::size_t> classNames;
+    std::map<int, Type> arrayTypes;
+    static constexpr int maxFrameSlots = 8192;
     std::map<std::string, std::size_t> functions;
     std::vector<Local> locals;
     std::vector<std::map<std::string, int>> scopes;
@@ -448,25 +533,40 @@ class Compiler {
         return classes[found->second];
     }
     std::int64_t typeId(const Type &type, const Token &token) {
+        if (type.isArray()) {
+            const int id = 1000000 + type.length * 2 + (type.elementKind == TypeKind::Bool ? 1 : 0);
+            arrayTypes[id] = type;
+            return id;
+        }
         if (type.isClass())
             return classDefinition(type, token).id;
         return static_cast<int>(type.kind) + 1;
     }
     std::int64_t typeSize(const Type &type, const Token &token) {
+        if (type.isArray()) {
+            typeId(type, token);
+            return type.length * 8;
+        }
         if (type.isClass())
             return std::max<std::int64_t>(8, classDefinition(type, token).fields.size() * 8);
         return type == Type::Bool ? 1 : 8;
     }
     std::int64_t fieldCount(const Type &type, const Token &token) {
-        if (type.isClass())
-            return classDefinition(type, token).fields.size();
+        if (type.isClass()) {
+            const auto &fields = classDefinition(type, token).fields;
+            return std::count_if(fields.begin(), fields.end(),
+                                 [](const Field &field) { return field.publicAccess; });
+        }
         return 0;
     }
     const Field &field(const Type &type, const Token &token) {
         const auto &definition = classDefinition(type, token);
         for (const auto &value : definition.fields)
-            if (value.token.text == token.text)
+            if (value.token.text == token.text) {
+                if (!value.publicAccess)
+                    fail(token, "private class field is inaccessible");
                 return value;
+            }
         fail(token, "unknown field '" + token.text + "' in " + typeName(type));
     }
     std::string fieldAddress(int local, const Field &value) {
@@ -534,12 +634,29 @@ class Compiler {
         l.name = n;
         l.type = t;
         l.mut = mut;
-        slot += t.isClass() ? static_cast<int>(typeSize(t, tok) / 8) : 1;
+        const auto needed = (t.isClass() || t.isArray()) ? typeSize(t, tok) / 8 : 1;
+        if (needed > maxFrameSlots || slot > maxFrameSlots - needed)
+            fail(tok, "function local stack frame exceeds 65536 bytes");
+        slot += static_cast<int>(needed);
         l.offset = 8 * slot;
         locals.push_back(l);
         int i = static_cast<int>(locals.size()) - 1;
         scopes.back()[n] = i;
         return i;
+    }
+    int checkedIndex(ExpressionPtr index) {
+        if (index->args[0]->op != "name")
+            fail(index->token, "indexing currently requires an array local");
+        const int local = source(index->args[0]);
+        const Type type = locals[local].type;
+        if (!type.isArray())
+            fail(index->token, "indexing requires an array local");
+        match(expression(index->args[1]), Type::I64, index->token);
+        // Unsigned comparison rejects negative i64 indices as well as upper-bound violations.
+        // No address computation or memory access occurs before the guard.
+        emit("cmpq $" + std::to_string(type.length) + ", %rax");
+        emit("jae .Laurora_bounds_trap");
+        return local;
     }
     Type expression(ExpressionPtr e) {
         const auto &n = e->token.text;
@@ -562,6 +679,14 @@ class Compiler {
             emit(std::string("movq $") + (n == "true" ? "1" : "0") + ", %rax");
             return Type::Bool;
         }
+        if (e->op == "index") {
+            const int local = checkedIndex(e);
+            emit("leaq " + addr(local) + ", %rcx");
+            emit("movq (%rcx,%rax,8), %rax");
+            return Type(locals[local].type.elementKind);
+        }
+        if (e->op == "array_literal")
+            fail(e->token, "array literals require a typed local initializer");
         if (e->op == "member") {
             if (e->args[0]->op != "name")
                 fail(e->token, "field access currently requires a class local");
@@ -574,6 +699,9 @@ class Compiler {
             fail(e->token, "class construction requires a typed local initializer");
         if (e->op == "name") {
             int i = source(e);
+            if (locals[i].type.isArray())
+                fail(e->token,
+                     "array values are only supported in local initializers and indexing");
             if (locals[i].type.isClass())
                 fail(e->token,
                      "class values are only supported in local initializers and field accesses");
@@ -584,9 +712,22 @@ class Compiler {
             return locals[i].type;
         }
         if (e->op == "unary") {
+            // Recognize the minimum signed literal before range-checking its positive magnitude.
+            if (n == "-" && e->args[0]->op == "number") {
+                try {
+                    if (std::stoull(e->args[0]->token.text) == (1ULL << 63)) {
+                        emit("movabsq $-9223372036854775808, %rax");
+                        return Type::I64;
+                    }
+                } catch (const std::exception &) {
+                    fail(e->token, "integer literal out of range");
+                }
+            }
             auto t = expression(e->args[0]);
             match(t, n == "!" ? Type::Bool : Type::I64, e->token);
             emit(n == "!" ? "xorq $1, %rax" : "negq %rax");
+            if (n == "-")
+                emit("jo .Laurora_overflow_trap");
             return t;
         }
         if (e->op == "binary") {
@@ -605,6 +746,7 @@ class Compiler {
                     emit("subq %rax, %rcx");
                     emit("movq %rcx, %rax");
                 }
+                emit("jo .Laurora_overflow_trap");
                 return Type::I64;
             }
             if (n != "==" && n != "!=")
@@ -620,6 +762,14 @@ class Compiler {
             fail(e->token, "invalid expression");
         if (n == "size_of" || n == "type_id" || n == "field_count") {
             emit("movq $" + std::to_string(reflectedValue(e)) + ", %rax");
+            return Type::I64;
+        }
+        if (n == "len") {
+            arity(e, 1);
+            const int local = source(e->args[0]);
+            if (!locals[local].type.isArray())
+                fail(e->token, "len requires an array local");
+            emit("movq $" + std::to_string(locals[local].type.length) + ", %rax");
             return Type::I64;
         }
         if (n == "read") {
@@ -639,6 +789,8 @@ class Compiler {
             arity(e, 2);
             int i = source(e->args[0]);
             match(locals[i].type, Type::MutRef, e->token);
+            if (!locals[i].mut)
+                fail(e->token, "write requires a non-const mutable reference binding");
             auto t = expression(e->args[1]);
             match(t, Type::I64, e->token);
             emit("movq %rax, " + addr(locals[i].owner));
@@ -718,6 +870,10 @@ class Compiler {
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);
         const auto expression = statement->expr;
+        if (std::any_of(definition.fields.begin(), definition.fields.end(),
+                        [](const Field &field) { return !field.publicAccess; }))
+            fail(statement->token, "class construction requires public fields; private "
+                                   "construction is not implemented");
         if (expression->op == "name") {
             const int original = source(expression);
             match(locals[original].type, statement->type, expression->token);
@@ -753,6 +909,39 @@ class Compiler {
             emit("movq %rax, " + fieldAddress(destination, member));
         }
     }
+    void initializeArray(StatementPtr statement) {
+        const auto expression = statement->expr;
+        const auto type = statement->type;
+        if (expression->op == "name") {
+            const int original = source(expression);
+            match(locals[original].type, type, expression->token);
+            const int destination =
+                add(statement->name, type, statement->mutableValue, statement->token);
+            for (int index = 0; index < type.length; ++index) {
+                emit("movq " + std::to_string(-locals[original].offset + index * 8) +
+                     "(%rbp), %rax");
+                emit("movq %rax, " + std::to_string(-locals[destination].offset + index * 8) +
+                     "(%rbp)");
+            }
+            return;
+        }
+        if (expression->op != "array_literal")
+            fail(expression->token,
+                 "array local requires an array literal or same-type array copy");
+        if (expression->args.size() != static_cast<std::size_t>(type.length))
+            fail(expression->token, "array initializer length does not match its declared type");
+        for (const auto &value : expression->args) {
+            match(this->expression(value), Type(type.elementKind), value->token);
+            push();
+        }
+        const int destination =
+            add(statement->name, type, statement->mutableValue, statement->token);
+        for (int index = type.length - 1; index >= 0; --index) {
+            pop("%rax");
+            emit("movq %rax, " + std::to_string(-locals[destination].offset + index * 8) +
+                 "(%rbp)");
+        }
+    }
     bool statement(StatementPtr s) {
         if (s->kind == "return") {
             match(expression(s->expr), result, s->token);
@@ -773,6 +962,10 @@ class Compiler {
             return false;
         }
         if (s->kind == "let") {
+            if (s->type.isArray()) {
+                initializeArray(s);
+                return false;
+            }
             if (s->type.isClass()) {
                 initializeClass(s);
                 return false;
@@ -782,8 +975,6 @@ class Compiler {
             if (scalar(s->type)) {
                 match(expression(e), s->type, s->token);
             } else {
-                if (s->mutableValue)
-                    fail(s->token, "ownership bindings cannot be mutable; use a mutable borrow");
                 if (e->op != "call")
                     fail(s->token, "ownership binding requires explicit constructor");
                 arity(e, 1);
@@ -793,6 +984,8 @@ class Compiler {
                 } else if (s->type == Type::Own && op == "move") {
                     int i = source(e->args[0]);
                     match(locals[i].type, Type::Own, s->token);
+                    if (!locals[i].mut && s->mutableValue)
+                        fail(s->token, "cannot move a const owner into a mutable binding");
                     if (locals[i].shared || locals[i].exclusive)
                         fail(s->token, "cannot move a borrowed owner");
                     locals[i].live = false;
@@ -801,6 +994,8 @@ class Compiler {
                            (s->type == Type::MutRef && op == "borrow_mut")) {
                     owner = source(e->args[0]);
                     match(locals[owner].type, Type::Own, s->token);
+                    if (s->type == Type::MutRef && !locals[owner].mut)
+                        fail(s->token, "cannot mutably borrow a const owner");
                     if (locals[owner].exclusive ||
                         (s->type == Type::MutRef && locals[owner].shared))
                         fail(s->token, "conflicting borrow");
@@ -815,6 +1010,42 @@ class Compiler {
             int i = add(s->name, s->type, s->mutableValue, s->token);
             locals[i].owner = owner;
             emit("movq %rax, " + addr(i));
+            return false;
+        }
+        if (s->kind == "index_assign") {
+            const int local = checkedIndex(s->target);
+            if (!locals[local].mut)
+                fail(s->token, "index assignment requires a mutable array local");
+            push();
+            match(expression(s->expr), Type(locals[local].type.elementKind), s->token);
+            pop("%rcx");
+            emit("leaq " + addr(local) + ", %rdx");
+            emit("movq %rax, (%rdx,%rcx,8)");
+            return false;
+        }
+        if (s->kind == "while") {
+            const auto start = fresh(), done = fresh();
+            const auto incoming = locals;
+            out << start << ":\n";
+            match(expression(s->expr), Type::Bool, s->token);
+            emit("testq %rax, %rax");
+            emit("jz " + done);
+            const bool alwaysReturns = block(s->body);
+            if (!alwaysReturns) {
+                for (std::size_t index = 0; index < incoming.size(); ++index) {
+                    if (incoming[index].live != locals[index].live)
+                        fail(s->token, "loop backedge cannot move an outer owner; moves require a "
+                                       "returning path");
+                    if (incoming[index].shared != locals[index].shared ||
+                        incoming[index].exclusive != locals[index].exclusive)
+                        fail(s->token, "loop backedge must preserve outer borrow state");
+                }
+                emit("jmp " + start);
+            }
+            // The loop may execute zero times. Body-only return paths cannot invalidate exit state.
+            for (std::size_t index = 0; index < incoming.size(); ++index)
+                locals[index] = incoming[index];
+            out << done << ":\n";
             return false;
         }
         if (s->kind == "field_assign") {
@@ -875,15 +1106,20 @@ class Compiler {
                                                        "size_of",
                                                        "type_id",
                                                        "field_count",
+                                                       "len",
                                                        "reflect_size",
                                                        "reflect_field_count",
                                                        "aurora_reflect_size",
                                                        "aurora_reflect_field_count"};
+        if (classes.size() > 999900)
+            throw Error("too many class types for bootstrap type IDs");
         for (std::size_t index = 0; index < classes.size(); ++index) {
             auto &definition = classes[index];
+            if (definition.fields.size() > maxFrameSlots)
+                fail(definition.token, "class layout exceeds 65536 bytes");
             const auto &name = definition.token.text;
             if (builtins.contains(name) || name == "i64" || name == "bool" || name == "ref" ||
-                name == "mutref" || classNames.contains(name))
+                name == "mutref" || name == "array" || classNames.contains(name))
                 fail(definition.token, "duplicate or reserved class name");
             classNames[name] = index;
             definition.id = 100 + static_cast<int>(index);
@@ -941,6 +1177,10 @@ class Compiler {
                 all << "    cmpq $" << definition.id << ", %rdi\n    je .L" << query
                     << definition.id << "\n";
             }
+            for (const auto &[id, type] : arrayTypes) {
+                (void)type;
+                all << "    cmpq $" << id << ", %rdi\n    je .L" << query << id << "\n";
+            }
             all << "    xorq %rax, %rax\n    ret\n";
             for (int id = 1; id <= 5; ++id) {
                 all << ".L" << query << id << ":\n    movq $"
@@ -949,12 +1189,20 @@ class Compiler {
             for (const auto &definition : classes) {
                 auto value = query == "size"
                                  ? std::max<std::size_t>(8, definition.fields.size() * 8)
-                                 : definition.fields.size();
+                                 : static_cast<std::size_t>(std::count_if(
+                                       definition.fields.begin(), definition.fields.end(),
+                                       [](const Field &field) { return field.publicAccess; }));
                 all << ".L" << query << definition.id << ":\n    movq $" << value
                     << ", %rax\n    ret\n";
             }
+            for (const auto &[id, type] : arrayTypes) {
+                const int value = query == "size" ? type.length * 8 : 0;
+                all << ".L" << query << id << ":\n    movq $" << value << ", %rax\n    ret\n";
+            }
             all << ".size " << symbol << ", .-" << symbol << "\n";
         }
+        all << ".Laurora_bounds_trap:\n    ud2\n";
+        all << ".Laurora_overflow_trap:\n    ud2\n";
         all << ".section .note.GNU-stack,\"\",@progbits\n";
         return all.str();
     }

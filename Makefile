@@ -1,6 +1,6 @@
 # Bootstrap commands share the image/output directory; serialize their execution.
 .NOTPARALLEL:
-.PHONY: all compiler kernel test test-compiler test-image test-kernel smoke smoke-fault smoke-page-fault
+.PHONY: all compiler kernel test test-compiler test-image test-kernel smoke smoke-fault smoke-page-fault smoke-all
 
 all: compiler kernel
 
@@ -30,3 +30,6 @@ smoke-fault:
 
 smoke-page-fault:
 	./scripts/kernel-smoke.sh --page-fault
+
+smoke-all:
+	./scripts/kernel-protection-smoke.sh

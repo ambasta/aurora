@@ -53,3 +53,39 @@ The allocator passed an independent host test under AddressSanitizer and Undefin
 - An independently reproduced allocator-instance bug allowed trusted C++ code to destroy an allocator while a lease survived, reconstruct an allocator at the same address, and match the old lease against a newly allocated frame. The implementation now embeds a monotonically unique allocator epoch in each lease and refuses initialization on epoch exhaustion. The original reproduction now rejects the stale lease and preserves the current allocation; the permanent suite includes a same-address reconstruction regression. This is a single-CPU identity mechanism, not a concurrency-safe or persistent-handle design. A lease's `valid()` method only describes whether it has been moved/released; authoritative ownership still requires the allocator's checked address/release operations.
 
 This milestone adds local class values, an IDT/exception bring-up path, firmware range checking, and a small single-CPU page allocator. It remains far short of a self-hosting operating-system stack. No physical AMD Zen CPU family or Navi-or-later GPU was tested; QEMU execution does not demonstrate support for any physical device family. There is still no user-mode isolation, general scheduling, production driver stack, GPU support, complete reflection, or established Rust-equivalent safety guarantee.
+
+## Milestone two: restricted C++ surface, checked execution, protected bootstrap
+
+This section describes the current reviewed revision. Earlier sections are historical evidence for earlier revisions: in particular, their `fn`/`let` grammar, wrapping arithmetic, and writable/executable bootstrap mapping no longer describe current source or post-activation behavior. The new surface deliberately breaks those earlier spellings; it is still a small restricted dialect, not complete ISO C++ or a self-hosting compiler.
+
+### Compiler verification
+
+The current repository suite passed **203 tests**, including with `PYTHONOPTIMIZE=1`. Thirty-four independent cases additionally exercised nested zero-iteration loops, rejecting a moved owner on a continuing nested backedge, mixed return/backedge ownership paths, lexical borrow/shadow cleanup, three independent array copies, single index evaluation, index preservation across a six-argument RHS call, signed bounds, arithmetic overflow before index address computation, arithmetic boundary values, const-array rejection, obsolete aggregate syntax rejection, and twenty loop/array differential programs.
+
+Five independent signal-handler probes checked that the actual SIGILL instruction address matched the intended generated bounds or overflow label and that its bytes encoded UD2. These covered a negative-index read, upper-bound store, addition overflow, minimum-integer negation, and overflow within an index expression. This strengthens the suite's signal/assembly checks; it is still targeted execution evidence rather than a proof over all generated programs.
+
+The current surface uses `auto name(type parameter) -> result`, typed initialized locals, `const`, class visibility, and designated named initialization. Obsolete `fn`/`let`, raw pointers, C-style declarations, and an `unsafe` block escape are rejected in the tested grammar. Private fields cannot currently be constructed through this limited aggregate API. Reflection filters field counts by public visibility. Supported signed arithmetic now traps on overflow rather than wrapping.
+
+Fixed scalar arrays copy their values, do not expose element references, and check unsigned index bounds before computing an address; this also rejects negative signed indices. Stores evaluate/check the index before evaluating the RHS. Array lengths are restricted to 1–4096 and local frame storage is capped at 65536 bytes. That frame cap is not a bound on total runtime stack use: temporary expression/initializer pushes and recursive calls also consume stack. Loops conservatively preserve outer ownership/borrow state at every continuing backedge, while allowing ownership-consuming paths that return. They may execute zero times; a loop alone does not establish a function's return completeness.
+
+### Kernel verification
+
+Independently ran **all thirteen protected-bootstrap QEMU modes**: normal operation; divide and unmapped-page faults; supervisor text-write and data-execute denials; kernel stack-guard exhaustion leading to double-fault IST; missing-NX rejection; and six ring-3 denial probes. The observed CPU fault results were:
+
+- Supervisor text write: page fault, error 3.
+- Supervisor data execution: page fault, error 17.
+- Stack guard: double fault, error 0, on the configured emergency IST stack.
+- User kernel read/write: page faults, errors 5 and 7.
+- User code write: page fault, error 7.
+- User stack execution: page fault, error 21.
+- User CLI and port I/O: general-protection fault, error 0.
+
+The validators also check expected origin privilege, denied address/CR2, fault instruction where relevant, TSS entry-stack range, and fail-stop exit. Normal operation verifies a controlled ring-3 payload using its own stack, followed by the narrow authorized return to the saved kernel continuation. NX-disabled emulation fails before reporting protected mapping activation. The transcript validator's **thirteen positive and eighty-nine negative controls** passed with Python optimization enabled.
+
+Code review checked the default-absent four-KiB identity map, RX text, R/NX constants, RW/NX data and stacks, leaf user-access restrictions, NXE and supervisor write protection, guarded main/entry/emergency/user stack ranges, TSS RSP0 and IST1 encoding, explicit I/O denial, saved general-register frame offsets, and protected saved-kernel-stack continuation. The old writable/executable bootstrap map exists transiently before protection activation and is not a production boot-security design.
+
+The permanent host protection test passed **511 mappings** with permission/domain/address/remap checks and firmware-handoff cases for truncated input, invalid counts, overflow, uncovered ranges, disabled entries, and reserved overlap both before and after a covering usable entry. The same pure firmware decoder is used by the kernel; this is stronger than the earlier inspection-only overlap check, but does not simulate malicious hardware/firmware execution. Final hardening also requires firmware coverage for the image and privileged stacks before activation and validates page-separated RX/R/RW ELF loads with eight malformed-image controls. These final additions were inspected after the independent thirteen-mode run; the kernel author reports a complete rerun on the frozen source, and the parent owns the final exact-source aggregate receipt.
+
+### Remaining boundaries
+
+The ring-3 exercise is a controlled integer-only bring-up probe. It is not arbitrary program loading, a process model, a scheduler, a syscall design, complete register/TLS/FPU context isolation, or a concurrency boundary. Page-table memory remains trusted kernel data. Compiler stack/resource exhaustion, general aggregate lifetimes, safe reflective invocation, and full-language verification remain open. No physical AMD Zen processor or Navi-or-later GPU has been tested or is claimed supported by these QEMU results. A self-hosting OS stack and the full requested safety/performance goals remain unfinished.

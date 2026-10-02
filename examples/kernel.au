@@ -1,12 +1,12 @@
 module kernel;
 
-fn aurora_kernel_value() -> i64 {
+auto aurora_kernel_value() -> i64 {
     static_assert(size_of(i64) == 8);
-    let seed: own<i64> = own(40);
+    own<i64> seed = own(40);
     {
-        let edit: mutref<i64> = borrow_mut(seed);
+        mutref<i64> edit = borrow_mut(seed);
         write(edit, read(edit) + 2);
     }
-    let answer: own<i64> = move(seed);
+    own<i64> answer = move(seed);
     return read(answer);
 }
