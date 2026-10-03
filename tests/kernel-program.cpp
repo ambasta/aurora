@@ -22,7 +22,16 @@ auto main() -> int {
     const auto legacy = ProgramContract{base, 128, ret, bounds, overflow};
     const auto division_only = ProgramContract{base, 128, ret, bounds, overflow, division};
     const auto shift_only = ProgramContract{base, 128, ret, bounds, overflow, 0, shift};
+    const auto explicit_bios = ProgramContract{ProgramLayout::bios(), base, 128, ret, bounds, overflow, division, shift};
     check(contract.valid(), "valid contract");
+    check(explicit_bios.valid() && explicit_bios.classify(context(ret)) == ProgramEvent::returned
+        && explicit_bios.classify(context(shift, 6)) == ProgramEvent::shift_count,
+        "explicit BIOS layout preserves legacy authority");
+    for (const auto entry : {base, base + 4096, base + 8192})
+        check(ProgramContract{entry, 4096, entry + 32, entry + 64, entry + 66}.valid(),
+            "all three BIOS code pages remain authorized");
+    check(!ProgramContract{base + 12288, 128, base + 12320, base + 12352, base + 12354}.valid(),
+        "BIOS metadata cannot authorize a fourth code page");
     check(contract.classify(context(ret)) == ProgramEvent::returned, "typed return");
     check(contract.classify(context(bounds, 6, 0, 0x1b, 0x23, Protection::user_stack_top - 32, 0x10002))
         == ProgramEvent::bounds, "bounds label with CPU resume flag");
@@ -82,6 +91,7 @@ auto main() -> int {
         ProgramContract{base + 1, 128, ret, bounds, overflow}, ProgramContract{UINT64_MAX, 128, ret, bounds, overflow},
         ProgramContract{base, 0, ret, bounds, overflow}, ProgramContract{base, 4097, ret, bounds, overflow},
         ProgramContract{base, 128, base + 1, bounds, overflow}, ProgramContract{base, 128, ret, ret, overflow},
+        ProgramContract{base, 128, ret, bounds, ret}, ProgramContract{base, 128, ret, bounds, bounds},
         ProgramContract{base, 128, ret, bounds, base + 128},
         ProgramContract{base, 128, ret, bounds, overflow, ret},
         ProgramContract{base, 128, ret, bounds, overflow, bounds},
@@ -91,6 +101,9 @@ auto main() -> int {
         ProgramContract{base, 128, ret, bounds, overflow, UINT64_MAX}}) check(!bad.valid(), "invalid metadata");
     for (const auto site : {ret, bounds, overflow, division, base - 1, base + 127, UINT64_MAX})
         check(!ProgramContract{base, 128, ret, bounds, overflow, division, site}.valid(), "invalid shift metadata");
+    for (const auto site : {ret, bounds, overflow})
+        check(!ProgramContract{base, 128, ret, bounds, overflow, 0, site}.valid(),
+            "shift-only metadata must remain distinct from every mandatory site");
     std::array<std::byte, 128> bytes{};
     bytes[30] = std::byte{0xcd}; bytes[31] = std::byte{0x81};
     for (const auto offset : {32, 64, 66, 68, 70}) { bytes[offset] = std::byte{0x0f}; bytes[offset + 1] = std::byte{0x0b}; }

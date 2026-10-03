@@ -1,5 +1,6 @@
 module user_clean;
 import std.numeric;
+import std.utility;
 
 auto aurora_user_main() -> i64 {
     const array<i64, 4> values = {10, 20, 5, 7};
@@ -10,5 +11,6 @@ auto aurora_user_main() -> i64 {
         index = index + 1;
     }
     const std::MinMax bounds = std::minmax(sum, 0);
-    return bounds.max();
+    const std::pair<i64, u64> result = std::pair<i64, u64>(bounds.max(), 0u64);
+    return result.first;
 }

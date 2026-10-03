@@ -570,3 +570,7 @@ CPL, active-domain/CR3, stack and saved-frame checks. Hosted native tests cover
 both negative and 64 shift counts. The scalar return transition is unchanged;
 no user pointer or generic hardware access facility was added. These are still
 bounded controlled programs, not a general process or syscall interface.
+
+The protected compiled-program contract also runs after the UEFI handoff:
+[sequential UEFI domains](uefi/runtime.md) use owned physical backing, distinct
+virtual layouts/roots, guarded privileged stacks and checked scalar returns.

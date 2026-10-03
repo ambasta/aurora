@@ -13,6 +13,7 @@ class Expression {
     Token token;
     std::vector<std::shared_ptr<Expression>> args;
     std::vector<std::string> fieldNames;
+    std::vector<TypeKind> templateArguments;
     Type reflectedType;
     Expression(std::string o, Token t) : op(std::move(o)), token(std::move(t)) {}
 };
@@ -62,6 +63,8 @@ class ClassDefinition {
     std::string scope;
     bool exported = false;
     Token token;
+    std::vector<std::string> templateParameters;
+    std::vector<TypeKind> templateArguments;
     std::vector<Field> fields;
     std::vector<Function> methods;
     int id = 0;
@@ -76,6 +79,7 @@ class Program {
     std::map<int, std::set<std::string>> reflectionAccess;
     std::vector<Function> functions;
     std::vector<ClassDefinition> classes;
+    std::vector<ClassDefinition> templates;
 };
 
 } // namespace aurora

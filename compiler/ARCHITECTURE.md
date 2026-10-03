@@ -88,3 +88,7 @@ CheckedDivide/CheckedRemainder retain zero and signed-overflow guards as part of
 ## Unsigned arithmetic boundary
 
 U64 is an exact scalar IR type. BinaryValue carries its operand type; shifts require u64 data and an i64 count. Convert accepts only checked cross-type i64/u64 conversions and clears bounds evidence. Unary complement is fixed to 64 bits. All array/class/value-call payload checks preserve the exact scalar type. Count validation and representability checks belong to the checked shift lowering operation, with distinct invalid-count and overflow UD2 sites. See [UNSIGNED.md](UNSIGNED.md); no scalar integer can become a receiver, record, result or borrow capability.
+
+## Bounded class-template expansion
+
+`templates.hpp` deep-copies and substitutes explicit scalar arguments into concrete class ASTs. Module resolution owns defining-module identity, visibility, deduplication and request caps. Unexpanded parameter and template-argument metadata are rejected at the concrete boundary; no generic operation enters native IR. Ordinary nominal class/receiver/value-call checks apply unchanged. See [TEMPLATES.md](TEMPLATES.md) for the precise restricted domain and remaining resource limits.

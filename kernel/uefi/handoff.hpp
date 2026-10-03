@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include "runtime-layout.hpp"
 namespace aurora::uefi {
 class Bytes final {
     std::span<const std::byte> bytes_;
@@ -67,7 +68,7 @@ public:
     [[nodiscard]] static auto valid(std::span<const std::byte> bytes,std::uint64_t actual) -> bool {
         if (bytes.size()!=header) return false;
         const Bytes h{bytes};
-        return h.get(0)==magic && (h.get(8,4)==1 || h.get(8,4)==2) && h.get(12,4)==header && h.get(16)==arena_bytes
+        return h.get(0)==magic && (h.get(8,4)==1 || h.get(8,4)==2 || h.get(8,4)==3) && h.get(12,4)==header && h.get(16)==arena_bytes
             && h.get(24)==actual && actual>=0x100000 && actual%4096==0 && actual<=0x100000000ULL-arena_bytes
             && h.get(32)>0 && h.get(32)<=MemoryMap::max_bytes && h.get(40)>=40 && h.get(40)<=256
             && h.get(48,4)==1 && h.get(52,4)>=1 && h.get(52,4)<=3
@@ -75,7 +76,8 @@ public:
             && h.get(64)>0 && h.get(64)%4096==0 && h.get(72)%4096==0 && h.get(80)%4096==0
             && h.get(64)<=h.get(72) && h.get(72)<=h.get(80) && h.get(80)<=payload_limit
             && h.get(88)==actual+tables_offset && h.get(96)>0 && h.get(96)<=table_pages
-            && h.get(104)==actual+payload_offset && h.get(120)==0
+            && h.get(104)==actual+payload_offset
+            && (h.get(8,4)==3 ? RuntimeLayout::valid(actual) && h.get(120)==actual+RuntimeLayout::metadata_offset : h.get(120)==0)
             && (h.get(8,4)==1 ? h.get(112)==0 : h.get(112)>0);
     }
 };

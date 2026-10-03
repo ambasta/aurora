@@ -121,7 +121,7 @@ These temporary register choices are implementation machinery, not a source-leve
 
 Tests execute assembled/linked machine code without libc, check compiler rejection diagnostics, and distinguish bounds/overflow SIGILL from crashes or timeouts. Tests are evidence for this constrained implementation, not a soundness proof or a claim of complete Rust-equivalent safety.
 
-Self-hosting, complete modern C++ expressiveness, constructor bodies, overloads, inheritance, destructors, nested values, general ownership, generics, heap storage, concurrency, typed compile-time generation, separate binary compilation and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
+Self-hosting, complete modern C++ expressiveness, constructor bodies, overloads, inheritance, destructors, nested values, general ownership, general generics, heap storage, concurrency, typed compile-time generation, separate binary compilation and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
 
 ## Native library and host I/O
 
@@ -136,3 +136,5 @@ The internal method ABI adds a non-source-visible receiver capability, with a pr
 The compiler implements ordinary class-value function boundaries and the real scalar-specialized std::minmax/MinMax/range_width API. [VALUE-CALLS.md](VALUE-CALLS.md) specifies argument snapshot timing, complete results, signature privacy, implementation limits and the private native call-record convention. No copy-elision or equivalent-C performance result is claimed.
 
 The current unsigned candidate adds the real scalar-specialized `std.bit` module, checked u64 arithmetic/conversions and explicit bit operations. [UNSIGNED.md](UNSIGNED.md) specifies failure sites, exact 64-bit behavior, type identity and limits. Ownership/reference types remain i64-only; this is not a raw-memory or general numeric-conversion API.
+
+The current class-template candidate adds one or two explicit builtin Scalar-constrained type parameters and the real `std.utility` module exporting `std::pair<T,U>`. Specializations are concrete nominal classes checked by the existing class/value-call pipeline. [TEMPLATES.md](TEMPLATES.md) defines visibility, substitution, identity, caps and deferred generic features. This does not add function templates, nested arguments, deduction or general concepts.

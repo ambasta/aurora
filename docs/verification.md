@@ -419,3 +419,59 @@ tracing. No unresolved reproduced defect remains in this reviewed scope. Full
 stdlib, generic templates, physical device drivers, IOMMU, multi-user/filesystem
 services and complete OS readiness remain unimplemented. Historical receipts
 are unchanged, and none of these tests constitutes a full safety proof.
+
+## Milestone 009: constrained templates and UEFI user domains (2026-10-03)
+
+Final aggregate and independent review passed on compiler SHA-256
+`351a46e42c1ad2e0b224d01a57f249039c37ffe44e051a5d67b420eae54c9174`.
+[Templates](../compiler/TEMPLATES.md) add explicit one/two-parameter Scalar-constrained
+class definitions and native std.utility/std::pair<T,U>. Nominal identity includes
+the defining module/template and ordered scalar type tuple. Privacy, complete
+initialization and independent class copies remain checked. Exact graph limits
+are 64 template definitions/256 specializations; these are not global stack/time
+bounds. Function templates, deduction, recursive/nested instantiation and general
+concepts are not implemented.
+
+[UEFI protected execution](../kernel/uefi/runtime.md) now runs two separately
+linked compiled user images backed only by the validated allocated arena. Explicit
+canonical user layouts, immutable layout authority, independent CR3 roots, private
+stacks and guarded RSP0/IST protect the boundary. A clean std::pair program returns
+42, an exact bounds trap is contained, clean execution resumes, retired stack
+frames are scrubbed/reused and a fresh execution returns 42. Inherited SYSCALL and
+SYSENTER paths are disabled and adversarially tested. Execution remains sequential
+and integer-only; UEFI timers, arbitrary processes, IPC and drivers remain absent.
+
+Final receipts:
+- [Aggregate](evidence/milestone-009/test.log): 117 template, 393 IR and ten
+  exhaustive-dispatch cases plus existing source/module/host-I/O and kernel suites.
+- Existing signed1,510/181 and unsigned4,219/501/67-rejection oracles remain in
+  aggregate and [compiler/IR sanitizer](evidence/milestone-009/compiler-sanitizers.log)
+  receipts. Independent template review adds seven scope/identity cases on release
+  and sanitizer; alternative suites overlap and are not additive coverage.
+- Scalar harness7/default630 and [stress1,526](evidence/milestone-009/semantics-stress.log).
+- [Host I/O sanitizers](evidence/milestone-009/host-io-sanitizers.log) and
+  [kernel policies/sanitizers](evidence/milestone-009/kernel-sanitizers.log).
+- [Actual emulator aggregate](evidence/milestone-009/emulator.log): all 80 distinct
+  modes, preserving 66 and adding fourteen UEFI runtime modes. Repeated normal
+  confirmations are not new modes. Normal artifacts are restored by wrappers.
+- [Image metadata](evidence/milestone-009/image-metadata/) and
+  [source identities](evidence/milestone-009/source.sha256).
+
+Runtime hosted checks include 1,274 layout/table/corruption/reuse cases, immutable
+layout authority tests, three positive/64 negative image controls and fourteen
+positive/716 negative transcript controls. Independent review reran all fourteen
+actual runtime modes after fixes. The SYSENTER negative uses an explicit Intel
+vendor QEMU fixture to exercise that instruction path; it is not Intel or AMD
+physical qualification. Normal AMD-emulated behavior remains separately tested.
+
+Sanitized compiler SHA `4f4766c0ee311fff00de84ebfe9aafa9ce301268bf7ef41d3196fca220da5a28`;
+IR binary SHA `06950dba4bc0ff466f7c53f7cb4de5659b12747e0bf6ea26c197c9d1be825ac3`.
+Address/undefined-behavior checks halt on error; LeakSanitizer is disabled under
+tracing. [Review](review.md) records the short-image subtraction fix, rejection
+of an unused absolute BIOS vector table from the PIC build, metadata PC-zero
+forgery rejection, and successful corrected reruns. Launch-time stack scrubbing
+also closes the stale return-word found during integration. Strict relocation
+validation was retained, not bypassed. No unresolved reproduced defect remains
+within scope. No full language-safety proof, full stdlib, filesystem/multi-user
+stack or physical Framework readiness is claimed. Historical receipts remain
+unchanged.

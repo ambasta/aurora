@@ -290,6 +290,7 @@ probe_done:
     pop %rbp
     pop %rbx
     ret
+.ifndef AURORA_RELATIVE_ONLY
 .section .rodata
 .global aurora_exception_vectors
 aurora_exception_vectors:
@@ -325,4 +326,5 @@ aurora_exception_vectors:
     .quad aurora_exception_29
     .quad aurora_exception_30
     .quad aurora_exception_31
+.endif
 .section .note.GNU-stack,"",@progbits

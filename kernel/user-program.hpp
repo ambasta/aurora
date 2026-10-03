@@ -1,5 +1,5 @@
 #pragma once
-#include "protection.hpp"
+#include "program-layout.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -15,24 +15,33 @@ public:
         std::uint64_t cs, std::uint64_t ss, std::uint64_t sp, std::uint64_t rflags, std::uint64_t frame)
         : vector(vector_value), error(error_value), instruction(pc), code(cs), stack_selector(ss),
           stack(sp), flags(rflags), kernel_frame(frame) {}
-    [[nodiscard]] auto origin_valid() const -> bool {
-        using hardware::Protection;
+    [[nodiscard]] constexpr auto origin_valid(const ProgramLayout& layout) const -> bool {
         constexpr auto forbidden = (3ULL << 12) | (1ULL << 14) | (1ULL << 17)
             | (1ULL << 9) | (1ULL << 8) | (1ULL << 10);
         return code == 0x1b && stack_selector == 0x23 && (flags & 2) != 0 && (flags & forbidden) == 0
-            && stack >= Protection::user_stack_bottom && stack <= Protection::user_stack_top && stack % 8 == 0
-            && kernel_frame >= Protection::entry_stack_bottom
-            && kernel_frame <= Protection::entry_stack_top - 176 && kernel_frame % 8 == 0;
+            && stack >= layout.user_stack_bottom() && stack <= layout.user_stack_top() && stack % 8 == 0
+            && kernel_frame >= layout.entry_stack_bottom()
+            && kernel_frame <= layout.entry_stack_top() - ProgramLayout::fault_frame_size && kernel_frame % 8 == 0;
+    }
+    [[nodiscard]] constexpr auto origin_valid() const -> bool {
+        return origin_valid(ProgramLayout::bios());
     }
 };
 class ProgramContract final {
+    const ProgramLayout layout_;
     std::uint64_t entry_, size_, return_, bounds_, overflow_, division_zero_, shift_count_;
 public:
+    constexpr ProgramContract(ProgramLayout layout, std::uint64_t entry, std::uint64_t size,
+        std::uint64_t return_pc, std::uint64_t bounds, std::uint64_t overflow,
+        std::uint64_t division_zero = 0, std::uint64_t shift_count = 0)
+        : layout_(layout), entry_(entry), size_(size), return_(return_pc), bounds_(bounds), overflow_(overflow),
+          division_zero_(division_zero), shift_count_(shift_count) {}
     constexpr ProgramContract(std::uint64_t entry, std::uint64_t size, std::uint64_t return_pc,
         std::uint64_t bounds, std::uint64_t overflow, std::uint64_t division_zero = 0,
         std::uint64_t shift_count = 0)
-        : entry_(entry), size_(size), return_(return_pc), bounds_(bounds), overflow_(overflow),
-          division_zero_(division_zero), shift_count_(shift_count) {}
+        : ProgramContract(ProgramLayout::bios(), entry, size, return_pc, bounds, overflow,
+            division_zero, shift_count) {}
+    [[nodiscard]] constexpr auto layout() const -> const ProgramLayout& { return layout_; }
     [[nodiscard]] constexpr auto entry() const -> std::uint64_t { return entry_; }
     [[nodiscard]] constexpr auto size() const -> std::uint64_t { return size_; }
     [[nodiscard]] constexpr auto return_pc() const -> std::uint64_t { return return_; }
@@ -42,8 +51,10 @@ public:
     [[nodiscard]] constexpr auto division_zero_pc() const -> std::uint64_t { return division_zero_; }
     // Zero grants no shift-count authority to images without retained metadata.
     [[nodiscard]] constexpr auto shift_count_pc() const -> std::uint64_t { return shift_count_; }
-    [[nodiscard]] auto valid() const -> bool {
-        if (entry_ < 0x1b0000 || entry_ >= 0x1b3000 || entry_ % 4096 != 0 || size_ < 4 || size_ > 4096) return false;
+    [[nodiscard]] constexpr auto valid() const -> bool {
+        if (entry_ < layout_.code_begin() || entry_ >= layout_.code_end()
+            || entry_ % ProgramLayout::page_size != 0 || size_ < 4
+            || size_ > layout_.max_image_size() || size_ > layout_.code_end() - entry_) return false;
         const auto inside = [&](std::uint64_t pc) { return pc >= entry_ && pc - entry_ <= size_ - 2; };
         return inside(return_) && return_ >= entry_ + 2 && inside(bounds_) && inside(overflow_)
             && return_ != bounds_ && return_ != overflow_ && bounds_ != overflow_
@@ -53,9 +64,9 @@ public:
                 && shift_count_ != bounds_ && shift_count_ != overflow_ && shift_count_ != division_zero_));
     }
     [[nodiscard]] auto classify(const ProgramContext& context) const -> ProgramEvent {
-        if (!valid() || !context.origin_valid() || context.error != 0) return ProgramEvent::rejected;
+        if (!valid() || !context.origin_valid(layout_) || context.error != 0) return ProgramEvent::rejected;
         if (context.vector == 129 && context.instruction == return_
-            && context.stack == hardware::Protection::user_stack_top) return ProgramEvent::returned;
+            && context.stack == layout_.user_stack_top()) return ProgramEvent::returned;
         if (context.vector != 6) return ProgramEvent::rejected;
         if (context.instruction == bounds_) return ProgramEvent::bounds;
         if (context.instruction == overflow_) return ProgramEvent::overflow;
