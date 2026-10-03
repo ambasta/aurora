@@ -60,6 +60,9 @@ auto timer_finish() -> void {
     Serial::text("AURORA_UEFI_TIMER_QUIET: epoch="); Serial::number(timer_owner_epoch); Serial::text(" ticks="); Serial::number(timer_ticks);
     Serial::text(" drains="); Serial::number(timer_drains); Serial::text(" compiled="); Serial::number(timer_compiled_hits); Serial::text(" context="); Serial::number(timer_context_hits); Serial::text(" root="); Serial::number(root()); Serial::text("\r\n");
     timer_armed=false; timer_owner.reset(); timer_owner_epoch=0;
+#ifdef AURORA_UEFI_USER_BUDGET
+    run_authority.reset();
+#endif
 }
 auto initialize_service_timer() -> void {
     require(root()==kernel_root && irq_off() && discovered_topology().has_value(),"timer discovery boundary");
@@ -104,11 +107,34 @@ auto initialize_service_timer() -> void {
     Serial::text(" root="); Serial::number(root()); Serial::text("\r\n");
 }
 auto timer_begin(unsigned index) -> void {
+#ifdef AURORA_UEFI_USER_BUDGET
+    require(index<L::domain_count && domains[index].handle && selected_client<2
+        && !timer_armed && timer_epoch!=UINT64_MAX,"user timer run boundary");
+    const auto budget=(launch[0]==5 || launch[0]==6 || launch[0]==7) ? 3U : 128U;
+    auto authorization=RunAuthority::authorize(registry,*domains[index].handle,selected_role,selected_phase,selected_client,transaction,
+        launch[0],arena,root(),*domains[index].contract,timer_epoch+1,budget);
+    require(authorization.has_value(),"user timer immutable authority"); run_authority.emplace(*authorization);
+    require(selected_role!=RunAuthority::Role::service || service_delivered(),"user service selection");
+#else
     require(index==1 && selected_phase==ipc::Phase::service && service_delivered()
         && registry.active(*domains[index].handle) && !timer_armed && timer_epoch!=UINT64_MAX,"timer run authority");
+#endif
     timer_owner=*domains[index].handle; timer_owner_epoch=++timer_epoch; timer_ticks=0; timer_resumes=0; timer_drains=0; timer_context_hits=0; timer_compiled_hits=0;
-    timer_exhausted=false; timer_remaining=launch[0]==5 ? 3 : 128; timer_armed=true;
+    timer_exhausted=false;
+#ifdef AURORA_UEFI_USER_BUDGET
+    timer_remaining=run_authority->budget();
+#else
+    timer_remaining=launch[0]==5 ? 3 : 128;
+#endif
+    timer_armed=true;
     require(timer_arm(),"timer arm");
+#ifdef AURORA_UEFI_USER_BUDGET
+    Serial::text("AURORA_UEFI_USER_RUN: epoch="); Serial::number(run_authority->epoch());
+    Serial::text(" role="); Serial::text(run_authority->role()==RunAuthority::Role::client ? "client" : "service");
+    Serial::text(" phase="); Serial::text(run_authority->phase()==ipc::Phase::request ? "request" : run_authority->phase()==ipc::Phase::service ? "service" : "completion");
+    Serial::text(" client="); Serial::number(run_authority->client()); Serial::text(" transaction="); Serial::number(run_authority->transaction());
+    Serial::text(" source="); Serial::number(run_authority->source_phase()); Serial::text(" root="); Serial::number(run_authority->root()); Serial::text("\r\n");
+#endif
     Serial::text("AURORA_UEFI_TIMER_ARM: epoch="); Serial::number(timer_owner_epoch); Serial::text(" budget="); Serial::number(timer_remaining);
     Serial::text(" root="); Serial::number(root()); Serial::text("\r\n");
 }
@@ -119,6 +145,9 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
             && timer_armed && timer_owner && timer_owner_epoch==timer_epoch && registry.ready(*timer_owner)
             && frame>=arena+Handoff::stack_bottom && frame<=arena+Handoff::stack_top-176 && frame%8==0
             && pc>=reinterpret_cast<U64>(&service_drain_begin) && pc<=reinterpret_cast<U64>(&service_drain_end),"timer drain interrupt authority");
+#ifdef AURORA_UEFI_USER_BUDGET
+        require(run_authority && run_authority->ready_owner(registry,*timer_owner,timer_owner_epoch),"user drain owner epoch");
+#endif
         const Bytes captured{view(frame,176)};
         const auto saved_flags=captured.get(152),saved_stack=captured.get(160);
         require(captured.get(168)==0x10 && saved_stack>=arena+Handoff::stack_bottom && saved_stack<=arena+Handoff::stack_top
@@ -129,16 +158,41 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
         Serial::text("AURORA_UEFI_TIMER_DRAIN: epoch="); Serial::number(timer_owner_epoch); Serial::text(" root="); Serial::number(root()); Serial::text(" ss="); Serial::number(captured.get(168)); Serial::text("\r\n");
         return 0;
     }
+#ifdef AURORA_UEFI_USER_BUDGET
+    require(active<L::domain_count && domains[active].handle && timer_owner && run_authority
+        && run_authority->matches_active(registry,*domains[active].handle,selected_role,selected_phase,selected_client,transaction,
+            launch[0],arena,root(),*domains[active].contract,timer_owner_epoch)
+        && registry.active(*timer_owner) && timer_armed && timer_owner_epoch==timer_epoch && timer_remaining!=0
+        && (selected_role!=RunAuthority::Role::service || service_delivered())
+        && saved_rsp%8==0 && saved_rsp>=arena+Handoff::stack_bottom && saved_rsp<=arena+Handoff::stack_top-56
+        && frame>=arena+L::rsp0_bottom && frame<=arena+L::rsp0_top-176 && frame%8==0,"user timer active authority");
+    const auto& interrupted_contract=run_authority->contract();
+#else
     require(active==1 && domains[1].handle && timer_owner && registry.active(*timer_owner)
         && registry.active(*domains[1].handle) && root()==domains[1].tables->root() && selected_phase==ipc::Phase::service
         && service_delivered() && timer_armed && timer_owner_epoch==timer_epoch && timer_owner_epoch!=0
         && timer_remaining!=0 && saved_rsp%8==0 && saved_rsp>=arena+Handoff::stack_bottom && saved_rsp<=arena+Handoff::stack_top-56
         && frame>=arena+L::rsp0_bottom && frame<=arena+L::rsp0_top-176 && frame%8==0,"timer active origin");
-    const auto context=ServiceContext::capture(std::span<const U64>{reinterpret_cast<const U64*>(frame),22},frame,*domains[1].contract);
-    require(context && context->timer_frame(*domains[1].contract) && error==0 && pc==context->words()[17]
+    const auto& interrupted_contract=*domains[1].contract;
+#endif
+    const auto context=ServiceContext::capture(std::span<const U64>{reinterpret_cast<const U64*>(frame),22},frame,interrupted_contract);
+    require(context && context->timer_frame(interrupted_contract) && error==0 && pc==context->words()[17]
         && cs==context->words()[18] && timer_acknowledge(),"timer frame/ISR authority");
     bool context_sample=false;
+#ifdef AURORA_UEFI_USER_BUDGET
+    const std::array<U64,3> compiled_begin{images::clean_compiled_begin,images::bounds_compiled_begin,images::peer_compiled_begin};
+    const std::array<U64,3> compiled_end{images::clean_compiled_end,images::bounds_compiled_end,images::peer_compiled_end};
+    if (pc>=compiled_begin[active] && pc<compiled_end[active]) ++timer_compiled_hits;
+#else
     if (pc>=images::bounds_compiled_begin && pc<images::bounds_compiled_end) ++timer_compiled_hits;
+#endif
+#ifdef AURORA_USER_CONTEXT
+    if (active==0 && images::clean_context_begin && pc>=images::clean_context_begin && pc<=images::clean_context_end) {
+        constexpr std::array<U64,15> sentinels{255,238,221,204,187,170,153,136,119,102,85,68,51,34,17};
+        for (unsigned index=0;index<15;++index) require(context->words()[index]==sentinels[index],"user timer GPR preservation");
+        require((context->words()[19]&0x400)!=0,"user timer DF preservation"); ++timer_context_hits; context_sample=true;
+    }
+#endif
 #ifdef AURORA_BUDGET_CONTEXT
     if (pc>=images::bounds_context_begin && pc<=images::bounds_context_end) {
         constexpr std::array<U64,15> sentinels{255,238,221,204,187,170,153,136,119,102,85,68,51,34,17};
@@ -158,8 +212,9 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
         ++timer_resumes; require(timer_arm(),"timer resume arm"); return 0;
     }
     require(program.cancel(),"timer run cancellation"); timer_exhausted=true;
+    const auto interrupted=active;
     asm volatile("mov %0,%%cr3"::"r"(kernel_root):"memory");
-    require(root()==kernel_root && registry.deactivate(*domains[1].handle),"timer kernel restoration");
+    require(root()==kernel_root && registry.deactivate(*domains[interrupted].handle),"timer kernel restoration");
     active=L::domain_count;
     return 1;
 }

@@ -461,6 +461,339 @@ void unsignedTests() {
         "u64 payload cannot mint borrow capability", array,
         [](Module &m) { m.functions[0].code[4] = BorrowHandle{8, Type::Ref}; }, "slot type/layout");
 }
+// Canonical numerical byte values remain wide in registers and pack into byte
+// storage. These fixtures are the compiler's source ABI, not a foreign ABI.
+Module byteBinary(Binary operation) {
+    auto module = baseline();
+    auto &function = module.functions[0];
+    function.result = Type::U8;
+    const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
+    function.code = {Constant{255, Type::U8}, Push{},
+                     Constant{shift ? 0 : 1, shift ? Type::I64 : Type::U8},
+                     BinaryValue{operation, Type::U8}, Return{}};
+    return module;
+}
+Module byteValueBaseline() {
+    auto module = valueBaseline();
+    module.classLayouts["Pair"][0] = Type::U8;
+    for (auto &function : module.functions) {
+        if (function.result == Type::I64)
+            function.result = Type::U8;
+        for (auto &type : function.parameters)
+            if (type == Type::I64)
+                type = Type::U8;
+        for (auto &[offset, type] : function.slots) {
+            (void)offset;
+            if (type == Type::I64)
+                type = Type::U8;
+        }
+        for (auto &instruction : function.code)
+            std::visit(
+                [](auto &operation) {
+                    using Op = std::decay_t<decltype(operation)>;
+                    if constexpr (std::is_same_v<Op, Constant> || std::is_same_v<Op, Load> ||
+                                  std::is_same_v<Op, Store> || std::is_same_v<Op, BindParameter>) {
+                        if (operation.type == Type::I64)
+                            operation.type = Type::U8;
+                    } else if constexpr (std::is_same_v<Op, BinaryValue>)
+                        operation.operandType = Type::U8;
+                },
+                instruction);
+    }
+    module.functions[0].name = "byte_aggregate";
+    return module;
+}
+Module byteReceiverBaseline() {
+    auto module = receiverBaseline();
+    module.classLayouts["Pair"][0] = Type::U8;
+    module.functions[0].name = "byte_receiver";
+    module.functions[0].result = Type::U8;
+    module.functions[0].slots[16] = Type::U8;
+    module.functions[0].code[1] = Constant{255, Type::U8};
+    module.functions[1].parameters[0] = Type::U8;
+    module.functions[1].slots[8] = Type::U8;
+    module.functions[1].code[0] = BindParameter{0, 8, Type::U8};
+    module.functions[1].code[2] = Load{8, Type::U8};
+    module.functions[1].code[3] = ReceiverStore{0, Type::U8};
+    module.functions[2].result = Type::U8;
+    module.functions[2].code[0] = ReceiverLoad{0, Type::U8};
+    module.functions[3].result = Type::U8;
+    return module;
+}
+Module byteOperations() {
+    Module module;
+    for (const auto operation :
+         {Binary::CheckedAdd, Binary::CheckedSubtract, Binary::CheckedMultiply,
+          Binary::CheckedDivide, Binary::CheckedRemainder, Binary::BitAnd, Binary::BitOr,
+          Binary::BitXor, Binary::ShiftLeft, Binary::ShiftRight}) {
+        const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
+        const auto right = shift ? Type::I64 : Type::U8;
+        auto function = byteBinary(operation).functions[0];
+        function.name = "byte_op" + std::to_string(static_cast<int>(operation));
+        function.parameters = {Type::U8, right};
+        function.slots = {{8, Type::U8}, {16, right}};
+        function.code = {BindParameter{0, 8, Type::U8},
+                         BindParameter{1, 16, right},
+                         Load{8, Type::U8},
+                         Push{},
+                         Load{16, right},
+                         BinaryValue{operation, Type::U8},
+                         Return{}};
+        module.functions.push_back(std::move(function));
+    }
+    for (const auto operation :
+         {Comparison::Equal, Comparison::NotEqual, Comparison::Less, Comparison::Greater,
+          Comparison::LessEqual, Comparison::GreaterEqual}) {
+        auto function = module.functions[0];
+        function.name = "byte_compare" + std::to_string(static_cast<int>(operation));
+        function.result = Type::Bool;
+        function.code[5] = Compare{operation, Type::U8};
+        module.functions.push_back(std::move(function));
+    }
+    auto function = module.functions[0];
+    function.name = "byte_not";
+    function.parameters = {Type::U8};
+    function.slots = {{8, Type::U8}};
+    function.code = {BindParameter{0, 8, Type::U8}, Load{8, Type::U8},
+                     UnaryValue{Unary::BitNot, Type::U8}, Return{}};
+    module.functions.push_back(function);
+    for (const auto &wide : {Type::I64, Type::U64})
+        for (bool narrow : {false, true}) {
+            const auto source = narrow ? wide : Type::U8;
+            const auto result = narrow ? Type::U8 : wide;
+            function.name = typeName(source) + "_to_" + typeName(result);
+            function.result = result;
+            function.parameters = {source};
+            function.slots = {{8, source}};
+            function.code = {BindParameter{0, 8, source}, Load{8, source}, Convert{source, result},
+                             Return{}};
+            module.functions.push_back(function);
+        }
+    function = baseline().functions[0];
+    function.name = "byte_local_array";
+    function.result = Type::U8;
+    function.slots = {{15, Type::U8}, {16, Type::U8}};
+    function.code = {Constant{0, Type::U8},
+                     Store{16, Type::U8},
+                     Constant{1, Type::U8},
+                     Store{15, Type::U8},
+                     Constant{1, Type::I64},
+                     BoundsGuard{16, 2, Type::U8},
+                     Push{},
+                     Constant{255, Type::U8},
+                     IndexStore{16, 2, Type::U8},
+                     Constant{1, Type::I64},
+                     BoundsGuard{16, 2, Type::U8},
+                     IndexLoad{16, 2, Type::U8},
+                     Return{}};
+    module.functions.push_back(function);
+    for (auto fixture : {byteValueBaseline(), byteReceiverBaseline()}) {
+        module.classLayouts.insert(fixture.classLayouts.begin(), fixture.classLayouts.end());
+        module.functions.insert(module.functions.end(), fixture.functions.begin(),
+                                fixture.functions.end());
+    }
+    return module;
+}
+void byteTests() {
+    accept("u8 callable operations and packed-storage fixture", byteOperations());
+    for (const auto value : {0, 1, 127, 128, 254, 255}) {
+        auto module = baseline();
+        module.functions[0].result = Type::U8;
+        module.functions[0].code = {Constant{value, Type::U8}, Return{}};
+        accept("canonical u8 constant " + std::to_string(value), module);
+    }
+    for (const auto value : {INT64_MIN, INT64_C(-1), INT64_C(256), INT64_C(65535), INT64_MAX})
+        reject(
+            "noncanonical u8 constant " + std::to_string(value),
+            [value](Module &module) {
+                module.functions[0].result = Type::U8;
+                module.functions[0].code = {Constant{value, Type::U8}, Return{}};
+            },
+            "noncanonical u8");
+    for (const auto operation :
+         {Binary::CheckedAdd, Binary::CheckedSubtract, Binary::CheckedMultiply,
+          Binary::CheckedDivide, Binary::CheckedRemainder, Binary::BitAnd, Binary::BitOr,
+          Binary::BitXor, Binary::ShiftLeft, Binary::ShiftRight}) {
+        const auto name = "u8 binary " + std::to_string(static_cast<int>(operation));
+        const auto module = byteBinary(operation);
+        accept(name, module);
+        for (const auto &type : {Type::I64, Type::U64, Type::Bool}) {
+            rejectModule(
+                name + " mixed left " + typeName(type), module,
+                [type](Module &m) { m.functions[0].code[0] = Constant{1, type}; }, "left operand");
+            const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
+            if (shift && type == Type::I64)
+                continue;
+            rejectModule(
+                name + " mixed right " + typeName(type), module,
+                [type](Module &m) { m.functions[0].code[2] = Constant{1, type}; },
+                "mistyped current");
+        }
+        rejectModule(
+            name + " missing left", module,
+            [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 1); },
+            "stack underflow");
+        rejectModule(
+            name + " bool operand type", module,
+            [](Module &m) {
+                std::get<BinaryValue>(m.functions[0].code[3]).operandType = Type::Bool;
+            },
+            "invalid binary operand type");
+        rejectModule(
+            name + " forged u8 type", module,
+            [](Module &m) {
+                std::get<BinaryValue>(m.functions[0].code[3]).operandType.className = "X";
+            },
+            "invalid binary operand type");
+        if (operation == Binary::ShiftLeft || operation == Binary::ShiftRight)
+            rejectModule(
+                name + " byte count", module,
+                [](Module &m) { m.functions[0].code[2] = Constant{1, Type::U8}; },
+                "mistyped current");
+    }
+    for (const auto operation : {Unary::CheckedNegate, Unary::LogicalNot}) {
+        reject(
+            "u8 rejects signed/bool unary operation",
+            [operation](Module &m) {
+                m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{operation, Type::U8},
+                                       Return{}};
+            },
+            "invalid unary operand type");
+        reject(
+            "u8 rejects legacy signed/bool unary operation",
+            [operation](Module &m) {
+                m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{operation}, Return{}};
+            },
+            "mistyped current");
+    }
+    for (const auto &type : {Type::I64, Type::Bool, Type::Ref, Type("Fake")})
+        reject(
+            "u8 not rejects operand type " + typeName(type),
+            [type](Module &m) {
+                m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{Unary::BitNot, type},
+                                       Return{}};
+            },
+            "invalid unary operand type");
+    reject(
+        "u8 not cannot use u64 width",
+        [](Module &m) {
+            m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{Unary::BitNot}, Return{}};
+        },
+        "mistyped current");
+    reject(
+        "u8 not rejects forged type",
+        [](Module &m) {
+            auto forged = Type::U8;
+            forged.templateArguments = {TypeKind::U8};
+            m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{Unary::BitNot, forged},
+                                   Return{}};
+        },
+        "invalid unary operand type");
+    for (const auto &wide : {Type::I64, Type::U64})
+        for (bool narrow : {false, true}) {
+            const auto source = narrow ? wide : Type::U8;
+            const auto result = narrow ? Type::U8 : wide;
+            auto module = baseline();
+            module.functions[0].result = result;
+            module.functions[0].code = {Constant{255, source}, Convert{source, result}, Return{}};
+            const auto name = typeName(source) + " checked conversion to " + typeName(result);
+            accept(name, module);
+            rejectModule(
+                name + " mistyped source", module,
+                [result](Module &m) { m.functions[0].code[0] = Constant{1, result}; },
+                "mistyped current");
+            for (const auto &invalid : {Type::Bool, Type::Ref, Type::Own, Type("Pair"),
+                                        Type::enumeration("E"), Type::array(TypeKind::U8, 1)}) {
+                rejectModule(
+                    name + " invalid source " + typeName(invalid), module,
+                    [invalid](Module &m) {
+                        std::get<Convert>(m.functions[0].code[1]).sourceType = invalid;
+                    },
+                    "invalid checked conversion types");
+                rejectModule(
+                    name + " invalid target " + typeName(invalid), module,
+                    [invalid](Module &m) {
+                        std::get<Convert>(m.functions[0].code[1]).resultType = invalid;
+                    },
+                    "invalid checked conversion types");
+            }
+        }
+    reject(
+        "u8 identity conversion rejected",
+        [](Module &m) {
+            m.functions[0].code = {Constant{1, Type::U8}, Convert{Type::U8, Type::U8}, Return{}};
+        },
+        "invalid checked conversion types");
+    reject(
+        "u8 conversion cannot preserve bounds token",
+        [](Module &m) {
+            m.functions[0].code = {Constant{42, Type::I64},      Store{8, Type::I64},
+                                   Constant{0, Type::I64},       BoundsGuard{8, 1, Type::I64},
+                                   Convert{Type::I64, Type::U8}, Convert{Type::U8, Type::I64},
+                                   IndexLoad{8, 1, Type::I64},   Return{}};
+        },
+        "bounds token");
+    for (const auto operation :
+         {Comparison::Equal, Comparison::NotEqual, Comparison::Less, Comparison::Greater,
+          Comparison::LessEqual, Comparison::GreaterEqual}) {
+        auto module = byteBinary(Binary::CheckedAdd);
+        module.functions[0].result = Type::Bool;
+        module.functions[0].code[3] = Compare{operation, Type::U8};
+        const auto name = "u8 comparison " + std::to_string(static_cast<int>(operation));
+        accept(name, module);
+        for (const auto &wide : {Type::I64, Type::U64}) {
+            rejectModule(
+                name + " mixed left " + typeName(wide), module,
+                [wide](Module &m) { m.functions[0].code[0] = Constant{255, wide}; },
+                "comparison type mismatch");
+            rejectModule(
+                name + " mixed right " + typeName(wide), module,
+                [wide](Module &m) { m.functions[0].code[2] = Constant{1, wide}; },
+                "mistyped current");
+        }
+    }
+    auto call = byteOperations();
+    auto entry = baseline().functions[0];
+    entry.result = Type::U8;
+    entry.code = {Constant{255, Type::U8}, Push{},  Constant{0, Type::U8}, Push{},
+                  Call{"byte_op0"},        Return{}};
+    call.functions.push_back(entry);
+    accept("u8 scalar call boundary", call);
+    rejectModule(
+        "u8 call rejects wide argument", call,
+        [](Module &m) { m.functions.back().code[0] = Constant{255, Type::U64}; },
+        "call argument type mismatch");
+    rejectModule(
+        "u8 return rejects wide payload", call,
+        [](Module &m) { m.functions.back().result = Type::U64; }, "mistyped current");
+    rejectModule(
+        "u8 parameter binding must match signature", call,
+        [](Module &m) { std::get<BindParameter>(m.functions[0].code[0]).type = Type::U64; },
+        "parameter type mismatch");
+    auto aggregate = byteValueBaseline();
+    accept("u8 aggregate argument and result mixed-width slots", aggregate);
+    rejectModule(
+        "u8 aggregate scalar argument rejects wide payload", aggregate,
+        [](Module &m) { m.functions[0].code[10] = Constant{10, Type::U64}; },
+        "aggregate scalar argument type mismatch");
+    rejectModule(
+        "u8 aggregate leaf cannot have wide slot", aggregate,
+        [](Module &m) { m.functions[0].slots[16] = Type::U64; },
+        "object field slot type/layout mismatch");
+    auto receiver = byteReceiverBaseline();
+    accept("u8 receiver construction and forwarding", receiver);
+    rejectModule(
+        "u8 receiver load rejects wide type", receiver,
+        [](Module &m) { m.functions[2].code[0] = ReceiverLoad{0, Type::U64}; },
+        "receiver field type/layout mismatch");
+    const auto assembly = X86Emitter{}.emit(validate(byteOperations()));
+    for (const auto &fragment : {"xorq $255, %rax", "cmpq $7, %rax", "cmpq $255, %rax",
+                                 "movb %dil, -8(%rbp)", "movzbq (%rcx,%rax,1), %rax"})
+        if (assembly.find(fragment) == std::string::npos)
+            throw Error(std::string("u8 width or packed storage emission mismatch: ") + fragment);
+    ++passed;
+    std::cout << "PASS IR u8 checked width and packed byte storage\n";
+}
 Module arrayReceiverBaseline() {
     Module module;
     module.classLayouts["ArrayBox"] = {Type::I64,  Type::I64,  Type::I64, Type::Bool,
@@ -1745,6 +2078,205 @@ Module methodResultNativeModule() {
     module.functions.push_back(entry);
     return module;
 }
+// Reuse the full M012 receiver/result stress shape with its two array leaves
+// packed as bytes. Logical fields, enum identity and empty descendants stay intact.
+Module packedMethodModule() {
+    auto module = methodResultBaseline();
+    const auto oldLayouts = module.classLayouts;
+    module.classLayouts["Leaf"][1] = Type::U8;
+    module.classLayouts["Leaf"][2] = Type::U8;
+    module.classLayouts["Outer"][2] = Type::U8;
+    module.classLayouts["Outer"][3] = Type::U8;
+    module.classFields["Leaf"][1].elementType = Type::U8;
+    module.classFields["Empty"] = {};
+    const auto physical = computeClassStorageLayouts(module.classLayouts, module.classFields);
+    for (auto &function : module.functions) {
+        std::map<int, std::pair<int, Type>> remap;
+        for (const auto &[base, object] : function.objectSlots) {
+            const auto &layout = module.classLayouts.at(object.className);
+            for (std::size_t leaf = 0; leaf < oldLayouts.at(object.className).size(); ++leaf) {
+                const int oldOffset = base - static_cast<int>(leaf * 8);
+                const int newOffset = base - physical.at(object.className).leafOffsets[leaf];
+                function.slots.erase(oldOffset);
+                remap[oldOffset] = {newOffset, layout[leaf]};
+            }
+        }
+        for (const auto &[unused, replacement] : remap) {
+            (void)unused;
+            function.slots[replacement.first] = replacement.second;
+        }
+        for (auto &instruction : function.code)
+            std::visit(
+                [&](auto &operation) {
+                    using Op = std::decay_t<decltype(operation)>;
+                    if constexpr (std::is_same_v<Op, Load> || std::is_same_v<Op, Store>)
+                        if (remap.contains(operation.offset)) {
+                            const auto replacement = remap.at(operation.offset);
+                            operation.offset = replacement.first;
+                            operation.type = replacement.second;
+                        }
+                },
+                instruction);
+        for (std::size_t index = 0; index < function.code.size(); ++index)
+            if (auto *call = std::get_if<MethodCall>(&function.code[index]);
+                call && call->callee == "set_leaf")
+                std::get<Constant>(function.code[index - 2]).type = Type::U8;
+        if (function.name == "set_leaf") {
+            function.parameters[1] = Type::U8;
+            function.slots[16] = Type::U8;
+            function.code[1] = BindParameter{1, 16, Type::U8};
+            function.code[5] = Load{16, Type::U8};
+        }
+    }
+    module.functions[0].name = "packed_result_array";
+    module.functions[0].result = Type::U8;
+    auto entry = module.functions[0];
+    for (const auto &[name, offset, type] : std::vector<std::tuple<std::string, int, Type>>{
+             {"packed_result_header", 152, Type::I64},
+             {"packed_result_first", 176, Type::U8},
+             {"packed_result_enum", 184, Type::enumeration("Mode")},
+             {"packed_result_bool", 168, Type::Bool},
+             {"packed_source_array", 31, Type::U8},
+             {"packed_source_header", 112, Type::I64}}) {
+        entry.name = name;
+        entry.result = type;
+        entry.code[entry.code.size() - 2] = Load{offset, type};
+        module.functions.push_back(entry);
+    }
+    entry = module.functions[0];
+    entry.name = "packed_result_independence";
+    entry.code.resize(entry.code.size() - 2);
+    entry.code.insert(entry.code.end(),
+                      {Constant{1, Type::I64}, Push{}, Constant{255, Type::U8}, Push{},
+                       MethodCall{"set_leaf", 184}, Load{135, Type::U8}, Return{}});
+    module.functions.push_back(entry);
+    entry = module.functions[0];
+    entry.name = "packed_forwarded_result";
+    entry.result = Type::I64;
+    namedMethodCall(entry, "snapshot_outer").callee = "relay_outer";
+    entry.code[entry.code.size() - 2] = Load{152, Type::I64};
+    module.functions.push_back(entry);
+    entry = module.functions[0];
+    entry.name = "packed_empty_result";
+    entry.result = Type::I64;
+    entry.code.resize(entry.code.size() - 2);
+    entry.code.insert(entry.code.end(),
+                      {BeginObject{192}, MethodCall{"snapshot_empty", 152, {}, 192},
+                       Constant{42, Type::I64}, Return{}});
+    module.functions.push_back(entry);
+    // A three-byte aggregate verifies that record slots use its reserved extent,
+    // and that copies preserve high-bit byte values in a compact leaf sequence.
+    module.classLayouts["Tiny"] = {Type::U8, Type::U8, Type::U8};
+    module.classFields["Tiny"] = {{Type::U8, 0, 3, true}};
+    aurora::ir::Function copy;
+    copy.name = "packed_copy_tiny";
+    copy.result = Type("Tiny");
+    copy.parameters = {Type("Tiny")};
+    copy.frameBytes = 16;
+    copy.objectSlots[8] = ObjectSlot{"Tiny", false};
+    copy.slots = {{8, Type::U8}, {7, Type::U8}, {6, Type::U8}};
+    copy.code = {BindObjectParameter{0, 8, "Tiny"}, ReturnObject{8}};
+    module.functions.push_back(copy);
+    aurora::ir::Function tiny;
+    tiny.name = "packed_tiny_roundtrip";
+    tiny.result = Type::U8;
+    tiny.frameBytes = 16;
+    tiny.objectSlots = {{8, ObjectSlot{"Tiny", false}}, {16, ObjectSlot{"Tiny", false}}};
+    tiny.slots = {{8, Type::U8},  {7, Type::U8},  {6, Type::U8},
+                  {16, Type::U8}, {15, Type::U8}, {14, Type::U8}};
+    tiny.code = {BeginObject{8},
+                 Constant{7, Type::U8},
+                 Store{8, Type::U8},
+                 Constant{128, Type::U8},
+                 Store{7, Type::U8},
+                 Constant{255, Type::U8},
+                 Store{6, Type::U8},
+                 BeginObject{16},
+                 AggregateCall{"packed_copy_tiny", {8}, 16},
+                 Load{15, Type::U8},
+                 Return{}};
+    module.functions.push_back(tiny);
+    return module;
+}
+void packedStorageTests() {
+    const auto module = packedMethodModule();
+    accept("packed bytes preserve composed receiver/results and tiny aggregate", module);
+    const auto checked = validate(module).get();
+    const std::map<std::string, ClassStorage> expected = {
+        {"Empty", {{}, {}, 8, 8, 8}},
+        {"Leaf", {{0, 8, 9, 16}, {0, 8, 16, 24}, 24, 8, 24}},
+        {"Outer", {{0, 8, 16, 17, 24}, {0, 8, 32}, 32, 8, 32}},
+        {"Tiny", {{0, 1, 2}, {0}, 3, 1, 8}}};
+    if (checked.classStorage != expected)
+        throw Error("packed class storage does not match explicit byte layout oracle");
+    ++passed;
+    std::cout << "PASS IR canonical mixed/nested/empty/tiny class byte layout\n";
+    accept("explicit canonical class storage metadata", checked);
+    for (const auto &name : {"Empty", "Leaf", "Outer", "Tiny"}) {
+        for (const auto member :
+             {&ClassStorage::sizeBytes, &ClassStorage::alignment, &ClassStorage::reservedBytes})
+            rejectModule(
+                std::string("forged class physical extent ") + name, checked,
+                [name, member](Module &m) { ++(m.classStorage[name].*member); },
+                "noncanonical class storage metadata");
+        rejectModule(
+            std::string("missing class physical metadata ") + name, checked,
+            [name](Module &m) { m.classStorage.erase(name); },
+            "noncanonical class storage metadata");
+    }
+    for (int offset : {-1, 0, 7, 16, 65536})
+        rejectModule(
+            "forged packed leaf offset " + std::to_string(offset), checked,
+            [offset](Module &m) { m.classStorage["Leaf"].leafOffsets[2] = offset; },
+            "noncanonical class storage metadata");
+    rejectModule(
+        "forged logical field physical offset", checked,
+        [](Module &m) { m.classStorage["Outer"].fieldOffsets[1] = 1; },
+        "noncanonical class storage metadata");
+    rejectModule(
+        "forged extra physical class", checked,
+        [](Module &m) { m.classStorage["Unknown"] = ClassStorage{{}, {}, 8, 8, 8}; },
+        "noncanonical class storage metadata");
+    rejectModule(
+        "packed byte overlaps wide slot", module,
+        [](Module &m) { m.functions[0].slots[167] = Type::U8; }, "overlapping scalar slot storage");
+    rejectModule(
+        "packed byte cannot occupy object padding", module,
+        [](Module &m) { m.functions[0].slots[174] = Type::U8; },
+        "scalar slot overlaps empty object or padding");
+    rejectModule(
+        "packed leaf must use canonical offset", module,
+        [](Module &m) {
+            m.functions[0].slots.erase(175);
+            m.functions[0].slots[174] = Type::U8;
+        },
+        "object field slot type/layout mismatch");
+    rejectModule(
+        "tiny rounded reservation padding cannot be a scalar", module,
+        [](Module &m) { namedFunction(m, "packed_tiny_roundtrip").slots[5] = Type::U8; },
+        "scalar slot overlaps empty object or padding");
+    rejectModule(
+        "packed object invalid minimum offset", module,
+        [](Module &m) { m.functions[0].objectSlots[INT32_MIN] = ObjectSlot{"Outer", false}; },
+        "invalid object layout offset");
+    rejectModule(
+        "u8 slot zero offset", module, [](Module &m) { m.functions[0].slots[0] = Type::U8; },
+        "invalid slot offset");
+    rejectModule(
+        "u8 slot exceeds frame", module, [](Module &m) { m.functions[0].slots[193] = Type::U8; },
+        "invalid slot offset");
+    auto emptyChild = module;
+    emptyChild.classLayouts["EmptyShell"] = {};
+    emptyChild.classFields["EmptyShell"] = {{Type("Empty"), 0, 0, false}};
+    emptyChild.classLayouts["ByteEmpty"] = {Type::U8, Type::U8};
+    emptyChild.classFields["ByteEmpty"] = {
+        {Type::U8, 0, 1, false}, {Type("EmptyShell"), 1, 0, false}, {Type::U8, 1, 1, false}};
+    const auto emptyChecked = validate(emptyChild).get();
+    if (emptyChecked.classStorage.at("ByteEmpty") != ClassStorage{{0, 1}, {0, 1, 1}, 2, 1, 8})
+        throw Error("empty descendant introduced physical payload or alignment");
+    ++passed;
+    std::cout << "PASS IR zero-leaf descendants retain logical shape without byte payload\n";
+}
 void enumAndMethodResultTests() {
     const auto mode = Type::enumeration("Mode");
     const auto other = Type::enumeration("OtherMode");
@@ -2021,6 +2553,14 @@ int main(int argc, char **argv) {
             std::cout << X86Emitter{}.emit(validate(valueBaseline()));
             return 0;
         }
+        if (argc == 2 && std::string(argv[1]) == "--emit-packed-methods") {
+            std::cout << X86Emitter{}.emit(validate(packedMethodModule()));
+            return 0;
+        }
+        if (argc == 2 && std::string(argv[1]) == "--emit-u8") {
+            std::cout << X86Emitter{}.emit(validate(byteOperations()));
+            return 0;
+        }
         if (argc == 2 && std::string(argv[1]) == "--emit-u64") {
             std::cout << X86Emitter{}.emit(validate(unsignedOperations()));
             return 0;
@@ -2041,6 +2581,8 @@ int main(int argc, char **argv) {
         composedTests();
         arrayReceiverTests();
         unsignedTests();
+        byteTests();
+        packedStorageTests();
         for (const auto operation : {Binary::CheckedDivide, Binary::CheckedRemainder}) {
             const auto name = operation == Binary::CheckedDivide ? "division" : "remainder";
             auto arithmetic = baseline();

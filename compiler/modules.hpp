@@ -172,6 +172,7 @@ class ModuleResolver {
     std::map<std::string, std::string> instanceDisplayNames;
     const std::set<std::string> builtins = {"i64",
                                             "u64",
+                                            "u8",
                                             "own",
                                             "move",
                                             "borrow",

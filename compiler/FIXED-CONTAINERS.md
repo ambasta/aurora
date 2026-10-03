@@ -1,7 +1,7 @@
 # Bounded fixed containers with private array storage
 
 The current candidate provides a real Aurora `std::array<T,N>` value container.
-Import `std.array` through an explicit module root. T is i64, u64 or bool; N is an
+Import `std.array` through an explicit module root. T is i64, u64, u8 or bool in the current development candidate; N is an
 explicit decimal capacity literal from 1 through 64. This is an initialized fixed
 container with copied element access, not a slice, reference-returning view,
 dynamic vector, byte/string API or general allocator.
@@ -137,3 +137,9 @@ No generic iterator, span/slice, reference return, nested aggregate, dynamic
 allocation, resizing, constructor body, text encoding or runtime service is added.
 Per-file/depth/template limits do not establish a global compiler work/memory bound;
 compact verifier facts and explicit global budgets remain future hardening.
+
+The milestone013 packed-byte candidate supersedes the earlier all-eight-byte
+layout described above only for new u8 storage: u8 elements have stride one,
+while all prior scalar/bool representations remain unchanged. Logical leaf caps
+remain independent of bytes. See BYTES.md for canonical offsets, padding,
+reserved extents and the separate pending representation acceptance gate.

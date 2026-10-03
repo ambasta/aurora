@@ -1,6 +1,6 @@
 # Explicit constrained class templates
 
-The Scalar contract below retains its original domain. Milestone011 added
+The original Scalar domain was i64/u64/bool; the milestone013 development candidate adds u8. Milestone011 added
 contextual `Value`; the milestone012 candidate extends it to closed enums alongside
 those scalars and directly visible named concrete classes, and migrates std::pair to Value. Named class arguments are resolved
 in the requesting module and retain defining-module nominal identity through
@@ -8,12 +8,13 @@ substitution. Nested template-id arguments remain rejected. Class substitutions
 must satisfy the complete construction, depth, leaf and copy rules in
 [COMPOSED-VALUES.md](COMPOSED-VALUES.md). Method parameters remain scalar/enum;
 complete copied class method results are specified in [ENUM-RESULTS.md](ENUM-RESULTS.md).
-Independent compiler review passed; final milestone012 integration is pending.
+Milestone012 independent review and final integration passed. The u8 extension
+is a separate milestone013 development candidate, pending its own acceptance.
 
 
 The original Scalar form defines reusable classes with one or two explicit
 type parameters, each constrained by the builtin `Scalar` domain.
-Scalar means exactly i64, u64 or bool. It is not a user-defined concept, wildcard,
+Scalar currently means exactly i64, u64, u8 or bool. It is not a user-defined concept, wildcard,
 unchecked top type or permission to treat a scalar as a capability.
 
 ```text
@@ -62,7 +63,7 @@ semantic/lifetime checking. Operators are checked for the resulting scalar type;
 for example, a dependent addition method may instantiate for i64/u64 and fail for
 bool. There is no implicit conversion to make an invalid specialization work.
 
-Arguments are explicit `i64`, `u64` or `bool` spellings. Missing/wrong-arity
+Scalar arguments are explicit `i64`, `u64`, `u8` or `bool` spellings. Missing/wrong-arity
 arguments, class/array/owner/reference arguments, partial/explicit specialization,
 function templates and deduction are rejected. A template definition cannot name
 an explicit user-template specialization, including itself; recursive/nested instantiation and

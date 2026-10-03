@@ -16,7 +16,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPILER = shlex.split(os.environ.get("CXX", "g++"))
-HEADERS = ("types.hpp", "ir.hpp", "ir_verify.hpp", "x86.hpp")
+HEADERS = ("types.hpp", "ir.hpp", "ir_layout.hpp", "ir_verify.hpp", "x86.hpp")
 CONSUMERS = (("ir_verify.hpp", "unhandled typed IR verifier operation"),
              ("x86.hpp", "unhandled typed IR backend operation"))
 
@@ -135,3 +135,110 @@ if len(sys.argv) > 1:
         print(f"{len(names)} native enum/composed-method-result IR checks passed "
               "(two-element arrays, enum and empty descendants, constructor snapshots, "
               "independent projection, forwarded receivers and nested hidden-register clobbers)")
+
+    class ByteTrap(Enum):
+        ZERO = ".Laurora_division_zero_trap"
+        OVERFLOW = ".Laurora_overflow_trap"
+        COUNT = ".Laurora_shift_count_trap"
+
+    # Direct IR width tests use Python's unbounded integers, including checks of
+    # the full returned 64-bit word. Test input parameters obey the closed source
+    # ABI's canonical-u8 contract; wide-to-byte conversions accept wide inputs.
+    with tempfile.TemporaryDirectory(prefix="aurora-ir-u8-native-") as temporary:
+        directory = Path(temporary)
+        assembly = command([Path(sys.argv[1]).resolve(), "--emit-u8"]).stdout.decode()
+        runner = NativeRunner(directory, None, 5)
+        cases = [("byte_aggregate", (), 42), ("byte_receiver", (), 255),
+                 ("byte_local_array", (), 255)]
+        edges = (0, 1, 2, 15, 16, 127, 128, 254, 255)
+        for a in edges:
+            for b in edges:
+                results = [a + b, a - b, a * b,
+                           a // b if b else ByteTrap.ZERO,
+                           a % b if b else ByteTrap.ZERO, a & b, a | b, a ^ b]
+                for operation, value in enumerate(results):
+                    if isinstance(value, int) and not 0 <= value <= 255:
+                        value = ByteTrap.OVERFLOW
+                    cases.append((f"byte_op{operation}", (a, b), value))
+                for operation, value in enumerate((a == b, a != b, a < b, a > b,
+                                                    a <= b, a >= b)):
+                    cases.append((f"byte_compare{operation}", (a, b), int(value)))
+            for count in (-(1 << 63), -1, 0, 1, 2, 6, 7, 8, 63, 64, (1 << 63) - 1):
+                for left in (True, False):
+                    if count < 0 or count > 7:
+                        value = ByteTrap.COUNT
+                    else:
+                        value = a << count if left else a >> count
+                        if value > 255:
+                            value = ByteTrap.OVERFLOW
+                    cases.append((f"byte_op{8 if left else 9}", (a, count), value))
+        for value in range(256):
+            cases.append(("byte_not", (value,), value ^ 255))
+            for target in ("u8_to_i64", "u8_to_u64", "i64_to_u8", "u64_to_u8"):
+                cases.append((target, (value,), value))
+        for target in ("i64_to_u8", "u64_to_u8"):
+            for value in (256, 257, 65535, (1 << 63) - 1):
+                cases.append((target, (value,), ByteTrap.OVERFLOW))
+        for value in (-(1 << 63), -1):
+            cases.append(("i64_to_u8", (value,), ByteTrap.OVERFLOW))
+        for value in (1 << 63, (1 << 64) - 1):
+            cases.append(("u64_to_u8", (value,), ByteTrap.OVERFLOW))
+
+        def byte_wrapper(name, target, arguments):
+            registers = ("%rdi", "%rsi")
+            lines = ["\n.text", f".globl {name}", f"{name}:"]
+            lines += [f"    movabsq ${value}, {registers[index]}"
+                      for index, value in enumerate(arguments)]
+            lines += [f"    jmp {target}", ""]
+            return "\n".join(lines)
+
+        positives = [(target, args, value) for target, args, value in cases
+                     if not isinstance(value, ByteTrap)]
+        traps = [(target, args, value) for target, args, value in cases
+                 if isinstance(value, ByteTrap)]
+        for offset in range(0, len(positives), 200):
+            batch = positives[offset:offset + 200]
+            names = [f"byte_probe_{index}" for index in range(len(batch))]
+            wrappers = "".join(byte_wrapper(name, target, args)
+                               for name, (target, args, _) in zip(names, batch))
+            observed, _ = runner.assemble(assembly + wrappers, names)
+            validate_values(observed, [value for _, _, value in batch],
+                            [f"{target}{args}" for target, args, _ in batch])
+        for target, args, trap in traps:
+            wrapper = byte_wrapper("byte_trap_probe", target, args)
+            observed, symbols = runner.assemble(assembly + wrapper, ["byte_trap_probe"])
+            validate_trap(observed, trap, symbols, f"{target}{args}")
+        print(f"{len(cases)} native u8 numerical IR checks passed "
+              f"({len(traps)} exact-site traps; every complement/conversion byte, "
+              "boundary arithmetic and shifts, canonical results, packed-storage calls/copies)")
+
+    with tempfile.TemporaryDirectory(prefix="aurora-ir-packed-method-native-") as temporary:
+        directory = Path(temporary)
+        assembly = command([Path(sys.argv[1]).resolve(), "--emit-packed-methods"]).stdout.decode()
+        runner = NativeRunner(directory, None, 5)
+        names = ["packed_result_array", "packed_result_header", "packed_result_first",
+                 "packed_result_enum", "packed_result_bool", "packed_source_array",
+                 "packed_source_header", "packed_result_independence", "packed_forwarded_result",
+                 "packed_empty_result", "packed_tiny_roundtrip"]
+        expected = [42, 29, 11, 1, 1, 99, 12, 42, 29, 42, 128]
+        # The private ABI bridge supplies canonical leaves and a pristine result.
+        # Nonzero input padding must not be copied as data or clobber its neighbor.
+        source_word = 0x7EADBEEF00FF8007
+        neighbor = 0x1122334455667788
+        for index, (offset, value) in enumerate(((8, 0xFF8007), (16, neighbor), (0, source_word))):
+            name = f"packed_record_probe{index}"
+            names.append(name)
+            expected.append(value)
+            assembly += (f"\n.text\n.globl {name}\n{name}:\n"
+                         "    subq $40, %rsp\n"
+                         f"    movabsq ${source_word}, %rax\n    movq %rax, (%rsp)\n"
+                         "    movq $0, 8(%rsp)\n"
+                         f"    movabsq ${neighbor}, %rax\n    movq %rax, 16(%rsp)\n"
+                         "    leaq (%rsp), %r11\n    leaq 8(%rsp), %r10\n"
+                         "    call packed_copy_tiny\n"
+                         f"    movq {offset}(%rsp), %rax\n    addq $40, %rsp\n    ret\n")
+        observed, _ = runner.assemble(assembly, names)
+        validate_values(observed, expected, names)
+        print(f"{len(names)} native packed-byte IR checks passed "
+              "(mixed alignment, enum and empty descendants, receiver/result hidden registers, "
+              "constructor snapshots, nested copies, compact aggregate records and padding isolation)")

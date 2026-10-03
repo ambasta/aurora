@@ -38,7 +38,10 @@ auto aurora_user_main() -> i64 {
     const std::Accumulator original = nested.second;
     if (original.value() != 0) { return 0; }
     const std::pair<i64, u64> result = std::pair<i64, u64>(changed, 0u64);
-    std::array<i64, 2> output = std::array<i64, 2>();
-    output.set(0, result.first);
-    return output.at(0);
+    static_assert(size_of(std::array<u8, 2>) == 2);
+    std::array<u8, 2> output = std::array<u8, 2>();
+    output.set(1, 255u8);
+    output.set(0, u8(result.first));
+    if (output.at(1) != 255u8) { return 0; }
+    return i64(output.at(0));
 }

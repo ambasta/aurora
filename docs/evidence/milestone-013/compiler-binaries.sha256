@@ -1,0 +1,5 @@
+02771e0d94ad9fe9821041ee10081d31a4f4114dde81b7d476e16cba8d5c75d2  build/aurorac
+cbe0d747958892457131bb1175c61a3d8debf86c60d1decee55ce7429d118782  /tmp/aurora-m013-sanitizer/aurorac
+3bcfda07961b5df01686284bab2ee77549568f7fe3d2065e3526df0bd5779b14  /tmp/aurora-m013-sanitizer/ir-tests
+b48cad187d9575001a800086e20f366cd8309d31f8099ce61ae35aa97ab0c203  /tmp/aurora-m013-sanitizer/host-source-tests
+27f2895e30a9738816216b41aed037c9a3b58bad27fe330ae272e450573630ee  /tmp/aurora-m013-sanitizer/host-output-tests

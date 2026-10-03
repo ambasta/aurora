@@ -1,0 +1,31 @@
+INFO u8 numeric compiler=/tmp/aurora-m013-compiler-candidate sha256=02771e0d94ad9fe9821041ee10081d31a4f4114dde81b7d476e16cba8d5c75d2
+PASS u8 harness: full-width outputs, row ordering, malformed observations, three exact UD2 sites, hardware divide and timeout rejection
+PASS u8 sweep add: 65536 inputs, 32896 evaluated numeric results
+PASS u8 sweep subtract: 65536 inputs, 32896 evaluated numeric results
+PASS u8 sweep multiply: 65536 inputs, 1968 evaluated numeric results
+PASS u8 sweep divide: 65536 inputs, 65280 evaluated numeric results
+PASS u8 sweep remainder: 65536 inputs, 65280 evaluated numeric results
+PASS u8 sweep and: 65536 inputs, 65536 evaluated numeric results
+PASS u8 sweep or: 65536 inputs, 65536 evaluated numeric results
+PASS u8 sweep xor: 65536 inputs, 65536 evaluated numeric results
+PASS u8 sweep less: 65536 inputs, 65536 evaluated numeric results
+PASS u8 sweep less_equal: 65536 inputs, 65536 evaluated numeric results
+PASS u8 sweep greater: 65536 inputs, 65536 evaluated numeric results
+PASS u8 sweep greater_equal: 65536 inputs, 65536 evaluated numeric results
+PASS u8 sweep equal: 65536 inputs, 65536 evaluated numeric results
+PASS u8 sweep not_equal: 65536 inputs, 65536 evaluated numeric results
+PASS u8 sweep from_signed: 256 inputs, 256 evaluated numeric results
+PASS u8 sweep from_unsigned: 256 inputs, 256 evaluated numeric results
+PASS u8 sweep to_signed: 256 inputs, 256 evaluated numeric results
+PASS u8 sweep complement: 256 inputs, 256 evaluated numeric results
+PASS u8 sweep double_complement: 256 inputs, 256 evaluated numeric results
+PASS u8 sweep literals_0: 64 inputs, 64 evaluated numeric results
+PASS u8 sweep literals_1: 64 inputs, 64 evaluated numeric results
+PASS u8 sweep literals_2: 64 inputs, 64 evaluated numeric results
+PASS u8 sweep literals_3: 64 inputs, 64 evaluated numeric results
+PASS u8 sweep left_shift: 2048 inputs, 510 evaluated numeric results
+PASS u8 sweep right_shift: 2048 inputs, 2048 evaluated numeric results
+PASS u8 source: 37 positive cases
+PASS u8 faults: 117 exact named UD2 cases
+PASS u8 rejection: 138 cases, each with absent and existing output
+PASS u8 numeric: 923136 exhaustive observations, 37 source cases, 117 exact trap checks, 138 rejections; 4.21s

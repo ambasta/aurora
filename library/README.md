@@ -94,3 +94,16 @@ classes and enum-constrained Value arguments in std::pair. The
 [combined example](examples/enum_composition.au) returns 42 while preserving a
 report across reset. See [the exact contract](../compiler/ENUM-RESULTS.md). Compact
 text storage and general expected/optional remain deferred.
+
+## Checked byte codec candidate
+
+`import std.bytes;` supplies `std::Bytes4`, `std::ByteCodecStatus`,
+`std::Encode32Result`, `std::encode_le32`, `std::encode_be32`,
+`std::decode_le32` and `std::decode_be32`. Encoding checks the u64 input against
+2^32-1 and returns a recoverable status; bytes_or_zero returns an independent
+zero-filled value on failure, even for a publicly constructed nonzero error report.
+Decoding accepts every four-byte pattern. Bytes4 owns a checked private four-byte
+array; its representation gate is distinct from the numeric/API gate. See
+[the contract](../compiler/BYTES.md) and [example](examples/byte_codec.au).
+The milestone013 candidate is under validation; it is not a text encoding or
+general runtime API, and no equivalent-C performance claim is made.

@@ -27,14 +27,16 @@ timeout 30 "$qemu" "${args[@]}" -machine q35 -accel tcg -cpu "$cpu" -smp "$cpus"
 status=$?
 set -e
 cat "$log"
-if [[ "$mode" == budget* || "$mode" == dispatch* ]]; then
+if [[ "$mode" == budget* || "$mode" == dispatch* || "$mode" == user-* ]]; then
     python3 - "$mode" <<'PYMETA'
 from pathlib import Path
 import json,sys
 root=Path('build/uefi')
 (root/(sys.argv[1]+'.metadata.json')).write_text(json.dumps(dict(images=json.loads((root/'user-images.json').read_text()),kernel=json.loads((root/'service-timer-metadata.json').read_text())),indent=2)+'\n')
 PYMETA
-    if [[ "$mode" == dispatch* ]]; then
+    if [[ "$mode" == user-* ]]; then
+        python3 tests/kernel-uefi-user-phases-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
+    elif [[ "$mode" == dispatch* ]]; then
         python3 tests/kernel-uefi-dispatch-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
     else
         python3 tests/kernel-uefi-budget-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"

@@ -1,0 +1,55 @@
+{
+  "images": {
+    "clean": {
+      "entry": 1099511627776,
+      "size": 1372,
+      "return_pc": 1099511628132,
+      "bounds_pc": 1099511629140,
+      "overflow_pc": 1099511629142,
+      "division_zero_pc": 1099511629144,
+      "shift_count_pc": 1099511629146,
+      "probe_offset": 0,
+      "probe_pc": 0,
+      "compiled_begin": 1099511628136,
+      "compiled_end": 1099511628902,
+      "context_begin": 1099511627956,
+      "context_end": 1099511627962
+    },
+    "bounds": {
+      "entry": 1099511631872,
+      "size": 652,
+      "return_pc": 1099511631943,
+      "bounds_pc": 1099511632516,
+      "overflow_pc": 1099511632518,
+      "division_zero_pc": 1099511632520,
+      "shift_count_pc": 1099511632522,
+      "probe_offset": 0,
+      "probe_pc": 0,
+      "compiled_begin": 1099511631947,
+      "compiled_end": 1099511632278,
+      "context_begin": 0,
+      "context_end": 0
+    },
+    "peer": {
+      "entry": 1099511635968,
+      "size": 1087,
+      "return_pc": 1099511636039,
+      "bounds_pc": 1099511637047,
+      "overflow_pc": 1099511637049,
+      "division_zero_pc": 1099511637051,
+      "shift_count_pc": 1099511637053,
+      "probe_offset": 0,
+      "probe_pc": 0,
+      "compiled_begin": 1099511636043,
+      "compiled_end": 1099511636809,
+      "context_begin": 0,
+      "context_end": 0
+    }
+  },
+  "kernel": {
+    "drain_begin": 28312,
+    "drain_end": 28316,
+    "text_end": 77824,
+    "forged_pc": 0
+  }
+}

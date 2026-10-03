@@ -36,7 +36,7 @@ auto answer(i64 input) -> i64 {
 - Each file declares `module name;` or an importable `export module name;`. Named imports, export visibility and namespace blocks now work with explicit `--module-root` directories; see MODULES.md. Separate binary compilation/linking remains deferred.
 - Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar or bounded inline class parameters, forward calls and ordinary-function recursion work. Class values use a separate checked native value-call convention; see VALUE-CALLS.md. Parameters are immutable in this bootstrap subset; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
 - Local declarations are `const Type name = initializer;` or `Type name = initializer;`. Initialization is mandatory. Const scalar/aggregate locals cannot be assigned; unqualified scalar locals and scalar fields/elements of unqualified aggregates can be assigned. Ownership binding rules are stricter below.
-- Scalar types are `i64`, `u64` and `bool`. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
+- Scalar types are `i64`, `u64`, `u8` and `bool` in the milestone013 development candidate. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
 - Blocks, `if (bool) { ... } else { ... }`, `while (bool) { ... }`, `return`, and `static_assert` are supported. `break`, `continue`, and `for` are deferred.
 - Functions must return on every statically continuing path. A while-loop is conservatively allowed to run zero times even for literal `true`, so it does not by itself prove a function returns. Unreachable statements following an unconditional return are rejected.
 - Decimal integers (u64 literals use the exact `u64` suffix), booleans, parentheses, signed unary `-`, bool `!`, arithmetic and comparisons are supported. U64 adds exact 64-bit `~ & | ^`, checked `<<` and logical `>>` with i64 counts, plus explicit checked integer conversions. There are no implicit scalar conversions, pointer arithmetic, increment operators, or short-circuit boolean operators. See [the exact unsigned contract](UNSIGNED.md).
@@ -79,11 +79,11 @@ Body-local owners may be created, moved and dropped on each iteration. Body-loca
 
 Classes are private by default and end with `;`. `public:` and `private:` control fields, constructors and methods. Classes can now declare a single complete initializer-list constructor and scalar methods with readonly `const` or mutable receivers. See [the exact constructor, method and scoped receiver contract](CLASSES.md). Classes without constructors retain public-field designated construction; constructor-bearing classes reject that shortcut.
 
-Scalar fields use `i64`, `u64` or `bool` and have unique names. Private fixed scalar-array fields now have the complete-construction and checked-access contract in [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md). Named construction uses `Point{.x = 20, .y = 22}`. Each field must be initialized exactly once; named fields may appear in any order and evaluate in written order. Unknown fields, missing fields and type mismatches are rejected.
+Numeric/bool fields use `i64`, `u64`, `u8` or `bool` and have unique names. Private fixed scalar-array fields now have the complete-construction and checked-access contract in [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md). Named construction uses `Point{.x = 20, .y = 22}`. Each field must be initialized exactly once; named fields may appear in any order and evaluate in written order. Unknown fields, missing fields and type mismatches are rejected.
 
 `const Point snapshot = current;` copies every scalar leaf into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Ordinary functions now accept and return bounded inline class values as independent copies. The developing composition subset adds exact-type class fields and readonly class constructor parameters, plus projection into fresh locals; see [COMPOSED-VALUES.md](COMPOSED-VALUES.md). Ordinary methods retain scalar signatures. Resource fields and class borrow targets remain unsupported. `own<Point>` is rejected.
 
-Each scalar leaf occupies eight bytes, including bool, in declaration order. A private array field contributes its element count in leaves. Complete size is eight times total leaf count, minimum eight bytes for an empty class. This is an internal padded layout, not a C or C++ ABI promise. Private fields participate in size but are excluded from field-count reflection and cannot be read by external member syntax. Methods of the declaring class can access private fields.
+U8 leaves occupy one byte; all earlier scalar storage, including bool and enums, remains eight bytes. Canonical class layouts record natural field alignment, explicit byte offsets and tail padding separately from logical leaf counts. Empty standalone classes retain eight bytes; nested empty children preserve their zero-payload logical completion rule. All layouts without u8 retain their earlier representation. This is an internal layout, not a C or C++ ABI promise. The current development contract and pending acceptance are in [BYTES.md](BYTES.md). Private fields participate in size but are excluded from field-count reflection and cannot be read by external member syntax. Methods of the declaring class can access private fields.
 
 ## Fixed-size arrays
 
@@ -93,11 +93,11 @@ const array<i64, 4> snapshot = values;
 values[0] = 11;
 ```
 
-`array<ScalarType, N>` permits i64/u64/bool elements and a decimal literal length from 1 through 4096. All elements must be initialized exactly once by an exact-length braced list, or by copying a same-type array. Copies have independent storage. No partial/uninitialized arrays or default fills are implied.
+`array<ScalarType, N>` permits i64/u64/u8/bool elements and a decimal literal length from 1 through 4096. All elements must be initialized exactly once by an exact-length braced list, or by copying a same-type array. Copies have independent storage. No partial/uninitialized arrays or default fills are implied.
 
 `len(array_local)` returns its fixed length as i64. Indexes must be i64. Every load/store checks the index using an unsigned comparison against length, which rejects negative signed indexes as well as indexes at/above the upper bound. The compiler computes the element address only after the guard. Stores require a non-const array local.
 
-Elements occupy eight bytes each, including bool, matching actual generated loads/stores and reflected array size. Array length is statically capped to prevent layout overflow; combined local storage in a function is capped at 65536 bytes, including class/scalar/array slots. This limit is a compiler resource bound, not a promise that every target stack has that much space: expression temporaries and call depth need additional stack, and stack exhaustion remains possible.
+U8 elements occupy one byte each; all earlier element types, including bool, occupy eight. Typed loads/stores, checked strides and reflected array sizes use that exact representation. Array length is statically capped to prevent layout overflow; combined local storage in a function is capped at 65536 bytes, including class/scalar/array slots. This limit is a compiler resource bound, not a promise that every target stack has that much space: expression temporaries and call depth need additional stack, and stack exhaustion remains possible.
 
 Builtin arrays cannot currently be borrowed, returned, passed directly to functions or nested. Private class array storage is supported through the fixed-container contract; class snapshots/results copy its leaves. Arrays of class/owned/reference values are rejected. No raw pointer, slice, unchecked indexing, cast or `any` escape hatch is provided.
 
@@ -105,7 +105,7 @@ Builtin arrays cannot currently be borrowed, returned, passed directly to functi
 
 `size_of(Type)`, `type_id(Type)` and `field_count(Type)` are compile-time queries. `static_assert(bool_expression)` accepts literals, these queries, comparisons and logical negation; general arithmetic constant evaluation and code generation remain deferred.
 
-Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. U64 has ID8 and size8; existing builtin sizes are 8,1,8,8,8. Scalar bool's logical size is one byte, but its current stack slot is eight bytes. Class IDs begin at 100 in deterministic graph declaration order and are compilation-graph-local; defining-module/native names determine source type identity. Mentioned array types have IDs `1000000 + 2*N + B`, where B is one for bool and zero for i64. U64 array IDs use `2000000 + N`. Class IDs cannot collide with either array range.
+Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. U64 has ID8 and size8; U8 has ID11 and size1; existing builtin sizes are 8,1,8,8,8. Scalar bool's logical size is one byte, but its current stack slot is eight bytes. Class IDs begin at 100 in deterministic graph declaration order and are compilation-graph-local; defining-module/native names determine source type identity. Mentioned array types have IDs `1000000 + 2*N + B`, where B is one for bool and zero for i64. U64 array IDs use `2000000 + N`; U8 arrays use `3000000 + N`. Class IDs cannot collide with either array range.
 
 `reflect_size(id)` and `reflect_field_count(id)` execute runtime lookups. Unknown IDs return zero. Descriptor entries are emitted for builtins, declared classes and array types used in storage/size/type-ID queries. Array size is `8*N`; arrays and builtins have zero named fields. Class field counts include public fields only, and class size includes all fields. Reflection cannot expose private values or bypass lifetime checks. Runtime queries use the defining module's visible descriptor view; unavailable/private IDs return zero, and reflection cannot implicitly import a type. Member traversal, invocation, mapped/conditional types and `keyof`-style type algebra remain design goals.
 
@@ -148,3 +148,8 @@ under Value (Scalar unchanged), copied composed method results and the real
 std.decimal recoverable numeric API. It preserves the complete nested-value and
 constructor-snapshot contracts. Independent compiler review passed; final parent/kernel verification remains
 pending; this is not a new kernel or physical-hardware qualification.
+
+The milestone013 development candidate adds checked bytes and real recoverable
+`std.bytes` endian codecs. See [BYTES.md](BYTES.md) for the separate numeric and
+packed-layout gates, explicit representation/ABI rules and pending independent
+review. A successful numeric-only gate does not establish compact storage.

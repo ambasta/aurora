@@ -171,7 +171,7 @@ class ClassTemplateExpansion {
             const auto &argument = arguments[index];
             if (parameter.kind == TemplateParameterKind::Scalar) {
                 if (argument.kind != TemplateArgumentKind::Type || !scalar(Type(argument.type)))
-                    throw Error("class template Scalar argument requires i64, u64 or bool");
+                    throw Error("class template Scalar argument requires i64, u64, u8 or bool");
                 expansion.substitutions.emplace(parameter.name, argumentType(argument));
             } else if (parameter.kind == TemplateParameterKind::Value) {
                 if (argument.kind != TemplateArgumentKind::Type ||

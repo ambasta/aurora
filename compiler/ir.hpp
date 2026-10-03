@@ -26,6 +26,7 @@ enum class Query { Size, PublicFieldCount };
 class Constant {
   public:
     // U64 payloads preserve all 64 bits via std::bit_cast<std::int64_t>.
+    // U8 payloads are canonical integers in 0..255, including in 64-bit value registers.
     std::int64_t value;
     Type type;
 };
@@ -50,6 +51,13 @@ class Pop {};
 class UnaryValue {
   public:
     Unary operation;
+    Type operandType;
+    UnaryValue(Unary value, Type type) : operation(value), operandType(std::move(type)) {}
+    // Keep the pre-u8 IR spelling while making operand width explicit for consumers.
+    explicit UnaryValue(Unary value)
+        : UnaryValue(value, value == Unary::LogicalNot ? Type::Bool
+                            : value == Unary::BitNot   ? Type::U64
+                                                       : Type::I64) {}
 };
 class BinaryValue {
   public:
@@ -59,7 +67,8 @@ class BinaryValue {
 };
 class Convert {
   public:
-    // Checked i64 <-> u64 value conversion; never a capability or bit reinterpretation.
+    // Checked conversion between distinct i64, u64 and u8 values; never a
+    // capability or bit reinterpretation. Widening a canonical u8 cannot fail.
     Type sourceType;
     Type resultType;
 };
@@ -196,6 +205,12 @@ class BindObjectParameter {
     int offset;
     std::string className;
 };
+// Scalar source-call registers use canonical 64-bit values; u8 storage is one
+// byte and typed loads zero-extend it. Aggregate records use canonical byte layout.
+// Incoming u8 values and u8 object leaves must be canonical 0..255, just as bool
+// and enum arguments must already be canonical. All verified Aurora callers
+// establish this contract; these entry points are not a foreign-language ABI.
+// Verified returns preserve canonicality without truncating or reinterpreting it.
 class BindParameter {
   public:
     int index;
@@ -227,8 +242,8 @@ class Function {
     Type result;
     std::vector<Type> parameters;
     std::map<int, Type> slots;
-    // Scalar leaf i lives at base - i*8 and has a matching scalar slot. Empty classes
-    // reserve one word but expose no scalar payload.
+    // Scalar leaves live at base minus their canonical byte offset and have
+    // matching typed slots. Empty classes reserve a word but expose no payload.
     std::map<int, ObjectSlot> objectSlots;
     std::optional<Receiver> receiver;
     int frameBytes = 0;
@@ -250,12 +265,24 @@ class ClassField {
     int length;
     bool array;
 };
+class ClassStorage {
+  public:
+    std::vector<int> leafOffsets;
+    std::vector<int> fieldOffsets;
+    int sizeBytes = 0;
+    int alignment = 1;
+    int reservedBytes = 0;
+    bool operator==(const ClassStorage &) const = default;
+};
 class Module {
   public:
     std::vector<Function> functions;
     std::map<std::string, std::vector<Type>> classLayouts;
     // Missing entries are normalized to legacy one-leaf scalar fields.
     std::map<std::string, std::vector<ClassField>> classFields;
+    // Optional input metadata is checked against logical shape. Validation always
+    // publishes the complete canonical layout for backend consumption.
+    std::map<std::string, ClassStorage> classStorage;
     std::map<int, Descriptor> descriptors;
     std::map<int, std::set<int>> descriptorViews{{0, {}}};
     std::map<std::string, int> enumCases;

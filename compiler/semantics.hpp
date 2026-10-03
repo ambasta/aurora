@@ -1,4 +1,5 @@
 #pragma once
+#include "ir_layout.hpp"
 #include "ir_verify.hpp"
 #include "syntax.hpp"
 #include <algorithm>
@@ -23,6 +24,8 @@ class SemanticAnalyzer {
     std::map<std::string, std::size_t> classNames;
     std::map<int, Type> arrayTypes;
     std::map<std::string, std::vector<Type>> classLeaves;
+    std::map<std::string, std::vector<ir::ClassField>> classShapes;
+    std::map<std::string, ir::ClassStorage> classStorage;
     std::map<std::string, int> layoutStates;
     std::map<std::string, int> classDepths;
     static constexpr int maxFrameSlots = 8192;
@@ -46,7 +49,8 @@ class SemanticAnalyzer {
     std::int64_t typeId(const Type &type, const Token &token) {
         if (type.isArray()) {
             const int id =
-                type.elementKind == TypeKind::U64
+                type.elementKind == TypeKind::U8 ? 3000000 + type.length
+                : type.elementKind == TypeKind::U64
                     ? 2000000 + type.length
                     : 1000000 + type.length * 2 + (type.elementKind == TypeKind::Bool ? 1 : 0);
             arrayTypes[id] = type;
@@ -78,6 +82,7 @@ class SemanticAnalyzer {
             return;
         layoutStates[name] = 1;
         auto &leaves = classLeaves[name];
+        classShapes.try_emplace(name);
         std::set<std::string> names;
         bool needsConstructor = false, composed = false;
         int depth = 1, logicalIndex = 0;
@@ -85,7 +90,7 @@ class SemanticAnalyzer {
             if (!names.insert(member.token.text).second)
                 fail(member.token, "duplicate class field");
             member.index = logicalIndex++;
-            member.offset = static_cast<int>(leaves.size()) * 8;
+            const int firstLeaf = static_cast<int>(leaves.size());
             if (member.type.isClass()) {
                 composed = needsConstructor = true;
                 buildClassLayout(member.type.className, nesting + 1);
@@ -107,6 +112,9 @@ class SemanticAnalyzer {
                          "class field must be concrete scalar, enum, class or private array");
                 leaves.push_back(member.type);
             }
+            classShapes[name].push_back(ir::ClassField{
+                member.type.isArray() ? Type(member.type.elementKind) : member.type, firstLeaf,
+                static_cast<int>(leaves.size()) - firstLeaf, member.type.isArray()});
             if (leaves.size() > maxFrameSlots)
                 fail(definition.token, "class layout exceeds 65536 bytes");
             if (composed && leaves.size() > 64)
@@ -124,11 +132,11 @@ class SemanticAnalyzer {
     std::int64_t typeSize(const Type &type, const Token &token) {
         if (type.isArray()) {
             typeId(type, token);
-            return type.length * 8;
+            return type.length * ir::storageWidth(Type(type.elementKind));
         }
         if (type.isClass())
-            return std::max<std::int64_t>(8, classWords(classDefinition(type, token)) * 8);
-        return type == Type::Bool ? 1 : 8;
+            return classStorage.at(classDefinition(type, token).name).sizeBytes;
+        return type == Type::Bool || type == Type::U8 ? 1 : 8;
     }
     std::int64_t fieldCount(const Type &type, const Token &token) {
         if (type.isClass()) {
@@ -221,7 +229,9 @@ class SemanticAnalyzer {
         l.name = n;
         l.type = t;
         l.mut = mut;
-        const auto needed = (t.isClass() || t.isArray()) ? typeSize(t, tok) / 8 : 1;
+        const auto needed = (t.isClass() || t.isArray())
+                                ? ir::roundedStorage(static_cast<int>(typeSize(t, tok))) / 8
+                                : 1;
         if (needed > maxFrameSlots || slot > maxFrameSlots - needed)
             fail(tok, "function local stack frame exceeds 65536 bytes");
         slot += static_cast<int>(needed);
@@ -232,10 +242,12 @@ class SemanticAnalyzer {
                 emit(ir::BeginObject{l.offset});
             const auto &leaves = classLeaves.at(t.className);
             for (std::size_t index = 0; index < leaves.size(); ++index)
-                lowered.slots[l.offset - static_cast<int>(index) * 8] = leaves[index];
+                lowered.slots[l.offset - classStorage.at(t.className).leafOffsets[index]] =
+                    leaves[index];
         } else if (t.isArray()) {
             for (int index = 0; index < t.length; ++index)
-                lowered.slots[l.offset - index * 8] = Type(t.elementKind);
+                lowered.slots[l.offset - index * ir::storageWidth(Type(t.elementKind))] =
+                    Type(t.elementKind);
         } else
             lowered.slots[l.offset] = payloadType(t);
         locals.push_back(l);
@@ -388,9 +400,10 @@ class SemanticAnalyzer {
         return callee.result;
     }
     ir::Constant literal(const Token &token) {
-        const bool unsignedValue = token.text.ends_with("u64");
-        const auto digits =
-            unsignedValue ? token.text.substr(0, token.text.size() - 3) : token.text;
+        const bool byteValue = token.text.ends_with("u8");
+        const bool unsignedValue = byteValue || token.text.ends_with("u64");
+        const auto suffixLength = byteValue ? 2 : unsignedValue ? 3 : 0;
+        const auto digits = token.text.substr(0, token.text.size() - suffixLength);
         try {
             if (digits.empty() || !std::all_of(digits.begin(), digits.end(), [](unsigned char c) {
                     return c >= '0' && c <= '9';
@@ -398,12 +411,14 @@ class SemanticAnalyzer {
                 fail(token, "integer literal out of range or invalid suffix");
             std::size_t used = 0;
             const auto value = std::stoull(digits, &used);
-            if (used != digits.size() ||
+            if (used != digits.size() || (byteValue && value > 255) ||
                 (!unsignedValue &&
                  value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
                 fail(token, "integer literal out of range");
             return {std::bit_cast<std::int64_t>(static_cast<std::uint64_t>(value)),
-                    unsignedValue ? Type::U64 : Type::I64};
+                    byteValue       ? Type::U8
+                    : unsignedValue ? Type::U64
+                                    : Type::I64};
         } catch (const std::exception &) {
             fail(token, "integer literal out of range or invalid suffix");
         }
@@ -479,7 +494,8 @@ class SemanticAnalyzer {
             // Recognize the minimum signed literal before range-checking its positive
             // magnitude.
             if (n == "-" && e->args[0]->op == "number" &&
-                !e->args[0]->token.text.ends_with("u64")) {
+                !e->args[0]->token.text.ends_with("u64") &&
+                !e->args[0]->token.text.ends_with("u8")) {
                 try {
                     std::size_t used = 0;
                     if (std::stoull(e->args[0]->token.text, &used) == (1ULL << 63) &&
@@ -492,10 +508,15 @@ class SemanticAnalyzer {
                 }
             }
             auto t = expression(e->args[0]);
-            match(t, n == "!" ? Type::Bool : n == "~" ? Type::U64 : Type::I64, e->token);
+            if (n == "~") {
+                if (t != Type::U64 && t != Type::U8)
+                    fail(e->token, "expected u64 or u8 bitwise operand");
+            } else
+                match(t, n == "!" ? Type::Bool : Type::I64, e->token);
             emit(ir::UnaryValue{n == "!"   ? ir::Unary::LogicalNot
                                 : n == "~" ? ir::Unary::BitNot
-                                           : ir::Unary::CheckedNegate});
+                                           : ir::Unary::CheckedNegate,
+                                t});
             return t;
         }
         if (e->op == "binary") {
@@ -503,11 +524,12 @@ class SemanticAnalyzer {
             push();
             const auto right = expression(e->args[1]);
             if (n == "<<" || n == ">>") {
-                match(left, Type::U64, e->token);
+                if (left != Type::U64 && left != Type::U8)
+                    fail(e->token, "expected u64 or u8 shift operand");
                 match(right, Type::I64, e->token);
                 emit(ir::BinaryValue{n == "<<" ? ir::Binary::ShiftLeft : ir::Binary::ShiftRight,
                                      left});
-                return Type::U64;
+                return left;
             }
             match(right, left, e->token);
             static const std::map<std::string, ir::Binary> operations = {
@@ -520,15 +542,17 @@ class SemanticAnalyzer {
                 {"|", ir::Binary::BitOr},
                 {"^", ir::Binary::BitXor}};
             if (operations.contains(n)) {
-                if (n == "&" || n == "|" || n == "^")
-                    match(left, Type::U64, e->token);
-                else if (left != Type::I64 && left != Type::U64)
-                    fail(e->token, "expected i64 or u64 arithmetic operands");
+                if (n == "&" || n == "|" || n == "^") {
+                    if (left != Type::U64 && left != Type::U8)
+                        fail(e->token, "expected u64 or u8 bitwise operands");
+                } else if (left != Type::I64 && left != Type::U64 && left != Type::U8)
+                    fail(e->token, "expected i64, u64 or u8 arithmetic operands");
                 emit(ir::BinaryValue{operations.at(n), left});
                 return left;
             }
-            if (n != "==" && n != "!=" && left != Type::I64 && left != Type::U64)
-                fail(e->token, "expected i64 or u64 ordered comparison operands");
+            if (n != "==" && n != "!=" && left != Type::I64 && left != Type::U64 &&
+                left != Type::U8)
+                fail(e->token, "expected i64, u64 or u8 ordered comparison operands");
             static const std::map<std::string, ir::Comparison> comparisons = {
                 {"==", ir::Comparison::Equal},     {"!=", ir::Comparison::NotEqual},
                 {"<", ir::Comparison::Less},       {">", ir::Comparison::Greater},
@@ -542,11 +566,13 @@ class SemanticAnalyzer {
             emit(ir::Constant{reflectedValue(e), Type::I64});
             return Type::I64;
         }
-        if (n == "u64" || n == "i64") {
+        if (n == "u64" || n == "i64" || n == "u8") {
             arity(e, 1);
             const auto sourceType = expression(e->args[0]);
-            const auto resultType = n == "u64" ? Type::U64 : Type::I64;
-            match(sourceType, n == "u64" ? Type::I64 : Type::U64, e->token);
+            const auto resultType = n == "u64" ? Type::U64 : n == "u8" ? Type::U8 : Type::I64;
+            if ((sourceType != Type::I64 && sourceType != Type::U64 && sourceType != Type::U8) ||
+                sourceType == resultType)
+                fail(e->token, "expected distinct i64, u64 or u8 conversion types");
             emit(ir::Convert{sourceType, resultType});
             return resultType;
         }
@@ -779,8 +805,11 @@ class SemanticAnalyzer {
             const int destination =
                 add(statement->name, type, statement->mutableValue, statement->token);
             for (int index = 0; index < type.length; ++index) {
-                emit(ir::Load{offset(original) - index * 8, Type(type.elementKind)});
-                emit(ir::Store{offset(destination) - index * 8, Type(type.elementKind)});
+                emit(ir::Load{offset(original) - index * ir::storageWidth(Type(type.elementKind)),
+                              Type(type.elementKind)});
+                emit(ir::Store{offset(destination) -
+                                   index * ir::storageWidth(Type(type.elementKind)),
+                               Type(type.elementKind)});
             }
             return;
         }
@@ -797,7 +826,8 @@ class SemanticAnalyzer {
             add(statement->name, type, statement->mutableValue, statement->token);
         for (int index = type.length - 1; index >= 0; --index) {
             pop();
-            emit(ir::Store{offset(destination) - index * 8, Type(type.elementKind)});
+            emit(ir::Store{offset(destination) - index * ir::storageWidth(Type(type.elementKind)),
+                           Type(type.elementKind)});
         }
     }
     bool statement(StatementPtr s) {
@@ -988,6 +1018,7 @@ class SemanticAnalyzer {
     ir::ValidatedModule analyze() {
         static const std::set<std::string> builtins = {"i64",
                                                        "u64",
+                                                       "u8",
                                                        "own",
                                                        "move",
                                                        "borrow",
@@ -1029,6 +1060,10 @@ class SemanticAnalyzer {
         }
         for (const auto &definition : classes)
             buildClassLayout(definition.name);
+        classStorage = ir::computeClassStorageLayouts(classLeaves, classShapes);
+        for (auto &definition : classes)
+            for (auto &member : definition.fields)
+                member.offset = classStorage.at(definition.name).fieldOffsets.at(member.index);
         for (std::size_t i = 0; i < sourceFunctions.size(); ++i) {
             if (builtins.count(sourceFunctions[i].name) ||
                 functions.count(sourceFunctions[i].name) ||
@@ -1059,21 +1094,9 @@ class SemanticAnalyzer {
         ir::Module module;
         for (const auto &definition : enums)
             module.enumCases[definition.name] = static_cast<int>(definition.cases.size());
-        for (const auto &definition : classes) {
-            module.classLayouts[definition.name] = classLeaves.at(definition.name);
-            auto &shape = module.classFields[definition.name];
-            for (const auto &member : definition.fields) {
-                const int length =
-                    member.type.isArray() ? member.type.length
-                    : member.type.isClass()
-                        ? static_cast<int>(classWords(classDefinition(member.type, member.token)))
-                        : 1;
-                const Type payload =
-                    member.type.isArray() ? Type(member.type.elementKind) : member.type;
-                shape.push_back(
-                    ir::ClassField{payload, member.offset / 8, length, member.type.isArray()});
-            }
-        }
+        module.classLayouts = classLeaves;
+        module.classFields = classShapes;
+        module.classStorage = classStorage;
         for (auto &function : sourceFunctions) {
             currentFunction = &function;
             locals.clear();
@@ -1147,6 +1170,7 @@ class SemanticAnalyzer {
         for (int id = 1; id <= 5; ++id)
             module.descriptors[id] = ir::Descriptor{id == 2 ? 1 : 8, 0};
         module.descriptors[8] = ir::Descriptor{8, 0};
+        module.descriptors[static_cast<int>(TypeKind::U8) + 1] = ir::Descriptor{1, 0};
         for (const auto &definition : classes) {
             const Type type(definition.name);
             module.descriptors[definition.id] = ir::Descriptor{typeSize(type, definition.token),
@@ -1155,7 +1179,8 @@ class SemanticAnalyzer {
         for (const auto &definition : enums)
             module.descriptors[definition.id] = ir::Descriptor{8, 0};
         for (const auto &[id, type] : arrayTypes)
-            module.descriptors[id] = ir::Descriptor{type.length * 8, 0};
+            module.descriptors[id] =
+                ir::Descriptor{type.length * ir::storageWidth(Type(type.elementKind)), 0};
         if (reflectionAccess.empty()) {
             auto &own = reflectionAccess[0];
             for (const auto &definition : classes)
@@ -1168,7 +1193,7 @@ class SemanticAnalyzer {
             auto &view = module.descriptorViews[scope];
             for (const auto &[id, descriptor] : module.descriptors) {
                 (void)descriptor;
-                if (id <= 5 || id == 8 || id >= 1000000)
+                if (id <= 5 || id == 8 || id == static_cast<int>(TypeKind::U8) + 1 || id >= 1000000)
                     view.insert(id);
             }
             for (const auto &name : visible) {

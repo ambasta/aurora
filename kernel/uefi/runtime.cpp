@@ -10,6 +10,9 @@
 #include "../ipc-policy.hpp"
 #ifdef AURORA_UEFI_DISPATCH
 #include "../dispatch-policy.hpp"
+#ifdef AURORA_UEFI_USER_BUDGET
+#include "user-run-policy.hpp"
+#endif
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #include "acpi.hpp"
@@ -47,6 +50,10 @@ constinit user::ProgramRun program;
 #ifdef AURORA_UEFI_DISPATCH
 constinit std::optional<ipc::Dispatcher> dispatcher;
 unsigned selected_client=2;
+#ifdef AURORA_UEFI_USER_BUDGET
+std::optional<RunAuthority> run_authority;
+RunAuthority::Role selected_role=RunAuthority::Role::client;
+#endif
 #else
 constinit std::optional<ipc::Mailbox> mailbox;
 #endif
@@ -238,6 +245,9 @@ auto execute(unsigned index,ProgramEvent wanted) -> void {
 #ifdef AURORA_UEFI_IPC
 #ifdef AURORA_UEFI_DISPATCH
 #include "dispatch-runtime.inc"
+#ifdef AURORA_UEFI_USER_BUDGET
+#include "user-lifecycle.inc"
+#endif
 #else
 #include "ipc-runtime.inc"
 #endif
@@ -250,8 +260,12 @@ auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
     Serial::text(" pc="); Serial::number(pc); Serial::text(" cpl="); Serial::number(cs&3); Serial::text(" root="); Serial::number(root());
     Serial::text(" frame="); Serial::number(frame); Serial::text(" cr2="); Serial::number(cr2); Serial::text("\r\n");
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-#if defined(AURORA_BUDGET_ROOT) || defined(AURORA_DISPATCH_ROOT)
-    if (vector==64 && !timer_draining) {
+#if defined(AURORA_BUDGET_ROOT) || defined(AURORA_DISPATCH_ROOT) || defined(AURORA_USER_ROOT)
+    if (vector==64 && !timer_draining
+#ifdef AURORA_USER_ROOT
+        && active==0
+#endif
+    ) {
         asm volatile("mov %0,%%cr3"::"r"(kernel_root):"memory");
         Serial::text("AURORA_UEFI_RUNTIME_ROOT_PROBE: root="); Serial::number(root()); Serial::text("\r\n");
     }
@@ -273,11 +287,22 @@ auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
     const Bytes captured{view(frame,176)};
     auto saved_flags=captured.get(152);
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-    if (selected_phase==ipc::Phase::service) {
+    if (selected_phase==ipc::Phase::service
+#ifdef AURORA_UEFI_USER_BUDGET
+        || selected_phase==ipc::Phase::request || selected_phase==ipc::Phase::completion
+#endif
+    ) {
+#ifdef AURORA_UEFI_USER_BUDGET
+        require(active<L::domain_count && run_authority && run_authority->matches_active(registry,*domains[active].handle,selected_role,selected_phase,
+            selected_client,transaction,launch[0],arena,root(),*domains[active].contract,timer_owner_epoch),"user terminal run authority");
+#endif
         const auto integer=ServiceContext::capture(std::span<const U64>{reinterpret_cast<const U64*>(frame),22},frame,*domains[active].contract);
         require(timer_armed && integer && integer->terminal_context(*domains[active].contract) && timer_stop(),"timer terminal context");
-#if defined(AURORA_BUDGET_PENDING) || defined(AURORA_DISPATCH_PENDING)
+#if defined(AURORA_BUDGET_PENDING) || defined(AURORA_DISPATCH_PENDING) || defined(AURORA_USER_PENDING)
         force_timer_pending();
+#endif
+#ifdef AURORA_USER_RETIRE_PENDING
+        if (active==0 && selected_phase==ipc::Phase::completion && vector==6) force_timer_pending();
 #endif
         saved_flags&=~0x200ULL;
     }
@@ -331,7 +356,11 @@ auto run_protected(U64 owned_arena,const Bytes& h) -> bool {
 #endif
 #ifdef AURORA_UEFI_IPC
 #ifdef AURORA_UEFI_DISPATCH
+#ifdef AURORA_UEFI_USER_BUDGET
+    run_user_lifecycle();
+#else
     run_dispatcher();
+#endif
 #else
     run_ipc();
 #endif

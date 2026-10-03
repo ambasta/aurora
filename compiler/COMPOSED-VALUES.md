@@ -6,8 +6,8 @@ not a proof of whole-language safety.
 
 ## Value types and construction
 
-`Value` is a template constraint accepting i64, u64, bool, a closed nominal enum,
-or a named concrete class. `Scalar` keeps its original meaning. `Value` is contextual in a template
+`Value` is a template constraint accepting i64, u64, u8, bool, a closed nominal enum,
+or a named concrete class. `Scalar` includes numeric/bool types, including the milestone013 u8 addition, and excludes enums. `Value` is contextual in a template
 constraint position, so existing classes named Value remain valid. A class argument has its defining
 module's nominal identity; equal layouts do not make different classes
 interchangeable. Arguments must be visible through the requesting module's own
@@ -55,8 +55,10 @@ complete copied class into a fresh typed local under the enum/result contract.
 
 Reflection retains logical public field counts, including a class field as one
 field even when it contains many leaves or none. Sizes include flattened payload
-with the existing minimum size for an empty class; bool payload leaves remain
-eight-byte slots. Nominal IDs remain graph-local and visibility-scoped.
+with the existing minimum size for an empty class. U8 payload leaves use one
+byte; earlier scalar types, including bool, retain eight-byte storage. Canonical
+byte offsets and padding are separate from leaf counts; see BYTES.md. Nominal IDs
+remain graph-local and visibility-scoped.
 
 ## Reusable library deliverable
 

@@ -44,7 +44,11 @@ aurora_probe_pc:
     fnop
 .endif
 .ifdef IPC_CONTEXT
+.ifdef IPC_CLIENT_CONTEXT
+    cmp $0,%rdi
+.else
     cmp $1,%rdi
+.endif
     jne skip_context_probe
     push %rdi
     push %rsi

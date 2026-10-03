@@ -1,0 +1,2 @@
+compiler_sha256=02771e0d94ad9fe9821041ee10081d31a4f4114dde81b7d476e16cba8d5c75d2 seed=39037
+PASS byte codec: 928 native cases, 7 rejections; packed_layout=included

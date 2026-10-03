@@ -99,6 +99,8 @@ class Parser {
                 arguments.push_back(TypeKind::I64);
             else if (eat("u64"))
                 arguments.push_back(TypeKind::U64);
+            else if (eat("u8"))
+                arguments.push_back(TypeKind::U8);
             else if (eat("bool"))
                 arguments.push_back(TypeKind::Bool);
             else if (!peek().text.empty() &&
@@ -155,6 +157,8 @@ class Parser {
             return Type::I64;
         if (eat("u64"))
             return Type::U64;
+        if (eat("u8"))
+            return Type::U8;
         if (eat("bool"))
             return Type::Bool;
         auto t = take();
@@ -172,7 +176,7 @@ class Parser {
             need("<");
             const auto element = type();
             if (!scalarOrParameter(element))
-                fail("array elements currently require i64, u64 or bool");
+                fail("array elements currently require i64, u64, u8 or bool");
             need(",");
             const auto count = take();
             Type result = Type::array(element.kind, 0);
@@ -352,8 +356,8 @@ class Parser {
     }
     bool startsDeclaration() const {
         const auto name = peek().text;
-        if (name == "const" || name == "i64" || name == "u64" || name == "bool" || name == "own" ||
-            name == "ref" || name == "mutref" || name == "array")
+        if (name == "const" || name == "i64" || name == "u64" || name == "u8" || name == "bool" ||
+            name == "own" || name == "ref" || name == "mutref" || name == "array")
             return true;
         std::size_t look = position + 1;
         while (look + 1 < tokens.size() && tokens[look].text == "::")
@@ -519,7 +523,8 @@ class Parser {
                     else
                         fail("template parameters require Scalar, Value or bounded i64 capacity");
                     const auto parameter = ident().text;
-                    if (parameter == "i64" || parameter == "u64" || parameter == "bool" ||
+                    if (parameter == "i64" || parameter == "u64" || parameter == "u8" ||
+                        parameter == "bool" ||
                         parameter == "own" || parameter == "ref" || parameter == "mutref" ||
                         parameter == "array" || templateParameters.contains(parameter) ||
                         capacityParameters.contains(parameter))

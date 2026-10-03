@@ -666,3 +666,78 @@ No unresolved reproduced defect remains in this reviewed bounded slice. Clients
 remain cooperative; this is not a general scheduler or a wall-clock guarantee.
 No physical Framework/device/DMA, filesystem, multi-user desktop, complete stdlib,
 Rust-equivalent safety proof or equivalent-C performance qualification follows.
+
+
+## Milestone013: checked compact bytes and controlled client recovery
+
+Verified 2026-10-03. Final release compiler SHA256:
+`02771e0d94ad9fe9821041ee10081d31a4f4114dde81b7d476e16cba8d5c75d2`.
+The clean native protected fixture asserts two-byte std::array<u8,2> storage,
+preserves a neighboring 255 byte while storing 42, and widens the result to i64.
+Its 3,658-byte image fits the unchanged 4,096-byte RX bound while preserving prior
+enum, copied method result and composition behavior.
+
+Evidence and provenance:
+
+- [Fresh parent make test](evidence/milestone-013/parent-make-test.log) passed the
+  full aggregate including newly wired user-phase hosted/image/transcript tests.
+- [Compiler author and independent evidence](evidence/milestone-013/compiler-review/README.md)
+  retains full release/ASan/UBSan aggregates, exact binary/source hashes, mathematical
+  oracles, alternate seeds, additional constructor ABI checks and failed/interim
+  development attempts. Parent validated all 38 indexed receipt hashes.
+- [Fresh parent sanitized tools](evidence/milestone-013/parent-sanitized-tools.log)
+  passed the u8 numeric sweep, byte codec, packed-value suite, direct IR 846 and
+  host source/output adapters 13/22. Fatal sanitizer settings and hashes are recorded.
+- Existing scalar regression passed [nine self-tests](evidence/milestone-013/parent-oracle-selftests.log),
+  [630 default](evidence/milestone-013/parent-oracle-default.log) and
+  [1,526 stress](evidence/milestone-013/parent-oracle-stress.log) cases on the exact pin.
+- [Complete retained actual kernel run](evidence/milestone-013/kernel-gates/README.txt)
+  passed 139 distinct modes:37 BIOS+102 UEFI,09:53:41–10:07:46 UTC. All 122 previous
+  modes and 17 new controlled-user-phase modes passed on the final M013 compiler.
+  The 202 executable/test/build inputs were captured before the first build and
+  matched afterward. Commands, per-mode serial logs, available metadata, tools,
+  pre/post manifests and distinct results are retained.
+- [Parent receipt validation](evidence/milestone-013/receipt-validation.log) checked
+  all 396 kernel receipt hashes,202 live inputs,139 unique successful mode records
+  and the exact compiler hash, then rechecked inputs after fresh parent tests.
+- [Fresh parent emulator spots](evidence/milestone-013/parent-spot-checks.log)
+  repeated normal BIOS, request and completion non-yielding client budgets, and
+  pending interrupt drain at retirement. Normal UEFI image restored afterward.
+  These selected reruns are not represented as a second complete 139-mode execution.
+- [Final source manifest](evidence/milestone-013/source.sha256) and
+  [binary identity](evidence/milestone-013/compiler-binaries.sha256).
+
+Independent kernel review repeated all 17 new modes on the preceding immutable
+M012 compiler pin. The separate final 139 run establishes their integration with
+M013. New hosted checks include 20,611 authority cases,65,536 exhaustive disposal
+sequences and 4,096 longer independent model traces under fatal ASan/UBSan, plus
+image 12 positive/127 negative and transcript 34 positive/25,222 negative controls.
+The committed replied 42 disposition survived client retirement; peer 73 and a
+fresh client 42 completed after old-root invalidation, table clearing, frame scrub,
+old-epoch timer draining and grant rebinding. Unknown fault origins remain fatal.
+
+The u8 oracle reports 923,136 observations,37 source fixtures,117 exact named-site
+traps and 138 ordinary rejections. It exhausts successful arithmetic domains and
+reports excluded overflow/zero-divisor inputs; failure edges are sampled separately,
+not claimed as an exhaustive crash sweep. Default codec 352+7 rejections and packed
+suite 75+19 rejections pass. Independent alternate codec 928 cases and constructor
+ABI 64 cases overlap base semantics and are not disjoint total coverage. Native IR
+adds 2,627 u8 checks/260 exact traps and 14 packed ABI/padding cases alongside 18+8+13
+prior groups and ten exhaustive-dispatch controls.
+
+Sanitizer compiler SHA256:
+`cbe0d747958892457131bb1175c61a3d8debf86c60d1decee55ce7429d118782`;
+IR SHA256 `3bcfda07961b5df01686284bab2ee77549568f7fe3d2065e3526df0bd5779b14`.
+Host tools are instrumented, emitted native programs are not. Leak detection remains
+disabled for the documented executor limitation; regular-file limits do not bound
+captured pipes. Padded numeric-only gate A and an earlier empty-class map integration
+failure remain explicitly separate development evidence, not compact-layout passes.
+The initial kernel heterogeneous-auto/unused-function build failure is retained;
+all final gates followed its correction. No final test failure is hidden or waived.
+
+Original kernel receipt archive SHA256:
+`c5683b8bf390b20a353f7888c53fd648951c613efd792cc74a6cbc736401b59f`.
+No unresolved reproduced defect remains in this reviewed bounded checkpoint.
+It does not establish arbitrary process recovery, global resource/stack bounds,
+SMP, calibrated deadlines, DMA or physical Framework support, complete language or
+stdlib safety, arbitrary binary serialization or equivalent-C throughput.

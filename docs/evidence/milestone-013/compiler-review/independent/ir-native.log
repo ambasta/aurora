@@ -1,0 +1,16 @@
+PASS IR exhaustive unchanged ir_verify.hpp control
+PASS IR exhaustive unchanged x86.hpp control
+PASS IR exhaustive unknown variant rejected by ir_verify.hpp
+PASS IR exhaustive unknown variant rejected by x86.hpp
+PASS IR exhaustive unknown Unary enum rejected by ir_verify.hpp
+PASS IR exhaustive unknown Unary enum rejected by x86.hpp
+PASS IR exhaustive unknown Binary enum rejected by ir_verify.hpp
+PASS IR exhaustive unknown Binary enum rejected by x86.hpp
+PASS IR exhaustive unknown Comparison enum rejected by ir_verify.hpp
+PASS IR exhaustive unknown Comparison enum rejected by x86.hpp
+10 exhaustive IR dispatch checks passed
+18 native receiver-array IR checks passed (10 exact-site traps; scalar mapping, bool stride, zero init, copy ABI and bounds-before-RHS)
+8 native composed-value IR checks passed (nominal projection, independent snapshots/copies, bool stride, empty values and distinct receiver/argument records)
+13 native enum/composed-method-result IR checks passed (two-element arrays, enum and empty descendants, constructor snapshots, independent projection, forwarded receivers and nested hidden-register clobbers)
+2627 native u8 numerical IR checks passed (260 exact-site traps; every complement/conversion byte, boundary arithmetic and shifts, canonical results, packed-storage calls/copies)
+14 native packed-byte IR checks passed (mixed alignment, enum and empty descendants, receiver/result hidden registers, constructor snapshots, nested copies, compact aggregate records and padding isolation)
