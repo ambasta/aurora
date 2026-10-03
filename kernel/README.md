@@ -497,3 +497,14 @@ wall-clock time, arbitrary executables, dynamic thread creation, per-task kernel
 stacks, a general process lifecycle, SMP, IPC, persistent storage or device
 drivers. The trusted bootstrap remains C++23 and assembly; the computational
 workloads are actual Aurora safe-C++ compiler output.
+
+## Separate UEFI firmware handoff
+
+The independent [UEFI consumer](uefi/README.md) now has its own PE32+ loader,
+validated bounded firmware map, ExitBootServices retry, dynamically allocated
+below4GiB arena, private stack/page tables and compiled-language payload. Run
+`scripts/kernel-uefi-all.sh` for its OVMF gates and
+`SANITIZE=1 scripts/kernel-uefi-tests.sh` for hosted policy checks. It does not yet
+run the BIOS path's domain/scheduler self-tests through UEFI; those remain the
+28 separate BIOS gates. No Framework hardware or peripheral support follows from
+this emulator-only firmware milestone.

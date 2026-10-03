@@ -167,7 +167,7 @@ check("callee cannot reflect caller private type", "module app; import secret; c
 check("private type through transitive reflection unavailable", app("return reflect_size(100);", "import wrapper;"), {"secret": secret, "wrapper": "export module wrapper; import secret; export auto value()->i64{return api::reveal_size();}"}, expected=0)
 check("class-only exported module", app("const shapes::Point p=shapes::Point{.x=20,.y=22}; return p.x+p.y;", "import shapes;"), {"shapes": "export module shapes; export namespace shapes { class Point {public:i64 x;i64 y;}; }"})
 check("qualified private fields still private", app("const api::PrivateFields p=api::PrivateFields{.value=42}; return 0;", "import fields;"), {"fields": "export module fields; export namespace api {class PrivateFields {i64 value;};}"}, error="requires public fields")
-check("aggregate parameter deferred", app("return 42;", "import aggregate;"), {"aggregate": "export module aggregate; export class Value {public:i64 x;}; export auto consume(Value value)->i64{return value.x;}"}, error="aggregate cross-module ABI")
+check("aggregate parameter by value", app("Value value=Value{.x=42};return consume(value);", "import aggregate;"), {"aggregate": "export module aggregate; export class Value {public:i64 x;}; export auto consume(Value value)->i64{return value.x;}"})
 
 check("no ambient module search", app("return 42;", "import std.core;"), library=True, roots=False, error="explicit --module-root")
 check("missing module", app("return 42;", "import missing;"), error="module not found")

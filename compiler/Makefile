@@ -9,8 +9,10 @@ $(OUT): main.cpp $(wildcard *.hpp)
 test: $(OUT)
 	python3 ../tests/compiler/run.py $(abspath $(OUT))
 	python3 ../tests/compiler/classes.py $(abspath $(OUT))
+	python3 ../tests/compiler/value_calls.py $(abspath $(OUT))
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/ir_tests.cpp -o $(dir $(OUT))ir-tests
 	$(dir $(OUT))ir-tests
+	CXX="$(CXX)" python3 ../tests/compiler/ir_exhaustive.py
 	python3 ../tests/modules/run.py $(abspath $(OUT))
 	python3 ../tests/modules/robustness.py $(abspath $(OUT))
 	$(CXX) $(CXXFLAGS) -pthread -I. ../tests/modules/host_sources_tests.cpp -o $(dir $(OUT))host-source-tests

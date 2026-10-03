@@ -1,0 +1,7 @@
+COMMAND: python3 tests/semantics/test_runner.py
+f16fffe8a976b71c82bbebf90e32150142aad044649b2f02dd585c8933719a71  /tmp/aurora-m006-oracle-aurorac
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.007s
+
+OK

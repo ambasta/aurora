@@ -42,3 +42,11 @@ The long-term goal remains a native runtime responsible for the useful roles cur
 standard C++ defines `std::Accumulator` or that generic numeric algorithms are
 complete. It keeps the checked signed total private, uses no allocation, and
 traps on overflow before updating the total. Copies have independent totals.
+
+The next candidate extends `std.numeric` with scalar-specialized
+`std::minmax(i64, i64) -> std::MinMax` and `std::range_width(std::MinMax) -> i64`.
+MinMax keeps ordered endpoints private and exposes readonly min()/max() methods.
+The returned value and consumed argument are independent copies. Width traps on
+signed overflow, including the full minimum-to-maximum i64 range. This is an
+Aurora value API, not standard C++ pair/reference ABI compatibility or a generic
+container implementation. See compiler/VALUE-CALLS.md for its current restrictions.

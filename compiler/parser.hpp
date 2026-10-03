@@ -323,16 +323,17 @@ class Parser {
         }
         return s;
     }
-    void parameters(Function &function) {
+    void parameters(Function &function, bool allowClass = false) {
         need("(");
         if (!eat(")")) {
             do {
                 Param parameter;
                 parameter.type = type();
                 parameter.name = ident().text;
-                if (!scalar(parameter.type))
-                    fail("only scalar function parameters are supported; aggregate "
-                         "cross-module ABI is not implemented");
+                if (!scalar(parameter.type) && !(allowClass && parameter.type.isClass()))
+                    fail(allowClass
+                             ? "only scalar function parameters or scalar-field class values are supported"
+                             : "only scalar method and constructor parameters are supported");
                 function.params.push_back(parameter);
             } while (eat(","));
             need(")");
@@ -433,13 +434,11 @@ class Parser {
             Function function(ident());
             function.scope = scope;
             function.exported = exported;
-            parameters(function);
+            parameters(function, true);
             need("->");
             function.result = type();
-            if (!scalar(function.result))
-                fail("only scalar function results are supported; aggregate "
-                     "cross-module ABI is "
-                     "not implemented");
+            if (!scalar(function.result) && !function.result.isClass())
+                fail("only scalar function results or scalar-field class values are supported");
             function.body = block();
             program.functions.push_back(std::move(function));
         }

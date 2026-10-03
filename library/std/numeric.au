@@ -1,4 +1,5 @@
 export module std.numeric;
+import std.core;
 
 // Scalar-only, checked accumulation. No allocation or platform runtime is required.
 export namespace std {
@@ -17,4 +18,25 @@ export namespace std {
             return total;
         }
     };
+}
+
+// MinMax is an inline value specialized for checked i64 algorithms.
+export namespace std {
+    class MinMax {
+        i64 lower;
+        i64 upper;
+    public:
+        MinMax(i64 a, i64 b) : lower(std::min(a, b)), upper(std::max(a, b)) {}
+        auto min() const -> i64 { return lower; }
+        auto max() const -> i64 { return upper; }
+    };
+
+    auto minmax(i64 a, i64 b) -> MinMax {
+        const MinMax result = MinMax(a, b);
+        return result;
+    }
+
+    auto range_width(MinMax bounds) -> i64 {
+        return bounds.max() - bounds.min();
+    }
 }

@@ -76,3 +76,7 @@ Parser-produced trees have bounded recursive depth: expression parsing128, block
 ## Encapsulated receiver boundary
 
 See [CLASSES.md](CLASSES.md) for the source and IR contract. Nominal class layouts, lexical object lifetimes, constructor completion and readonly/exclusive receiver permissions are explicit in IR. Methods use a separate capability-bearing call instruction; receiver addresses cannot enter the scalar operand stack or be stored in source-visible slots. Constructor/method entrypoints retain their defining-module reflection scope. The semantic frontend remains trusted for lexical privacy and name resolution.
+
+## Ordinary class-value calls
+
+[VALUE-CALLS.md](VALUE-CALLS.md) specifies immutable independent parameter copies and complete nominal class returns. AggregateCall, BindObjectParameter and ReturnObject preserve value boundaries explicitly; hidden record/result capabilities never enter scalar operands. The verifier rejects incomplete, mutable or aliasing snapshots/results and mismatched nominal layouts. Exported signature type privacy and direct-import availability are resolved by the frontend. Backend and verifier dispatch are compile-time exhaustive so an added instruction variant cannot silently produce partial successful output.
