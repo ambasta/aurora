@@ -227,7 +227,7 @@ class Parser {
             return 2;
         if (s == "+" || s == "-")
             return 3;
-        if (s == "*")
+        if (s == "*" || s == "/" || s == "%")
             return 4;
         return 0;
     }
@@ -332,7 +332,8 @@ class Parser {
                 parameter.name = ident().text;
                 if (!scalar(parameter.type) && !(allowClass && parameter.type.isClass()))
                     fail(allowClass
-                             ? "only scalar function parameters or scalar-field class values are supported"
+                             ? "only scalar function parameters or scalar-field class values are "
+                               "supported"
                              : "only scalar method and constructor parameters are supported");
                 function.params.push_back(parameter);
             } while (eat(","));

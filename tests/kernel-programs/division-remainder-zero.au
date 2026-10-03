@@ -1,0 +1,6 @@
+module user_division_remainder_zero;
+
+auto aurora_user_main() -> i64 {
+    i64 divisor = 0;
+    return 42 % divisor;
+}

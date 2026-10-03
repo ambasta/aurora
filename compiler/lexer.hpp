@@ -40,7 +40,7 @@ inline std::vector<Token> lex(const std::string &s) {
             i += 2;
             continue;
         }
-        if (std::string("(){}[]:;,=+-*<>!.").find(c) != std::string::npos) {
+        if (std::string("(){}[]:;,=+-*/%<>!.").find(c) != std::string::npos) {
             out.emplace_back(std::string(1, c), line);
             ++i;
             continue;

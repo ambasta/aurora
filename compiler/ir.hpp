@@ -9,7 +9,7 @@
 namespace aurora::ir {
 // Operations describe language semantics, never target-register names or assembly text.
 enum class Unary { CheckedNegate, LogicalNot };
-enum class Binary { CheckedAdd, CheckedSubtract, CheckedMultiply };
+enum class Binary { CheckedAdd, CheckedSubtract, CheckedMultiply, CheckedDivide, CheckedRemainder };
 enum class Comparison { Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual };
 enum class Query { Size, PublicFieldCount };
 class Constant {
@@ -136,10 +136,11 @@ class BindParameter {
     int offset;
     Type type;
 };
-using Instruction = std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Compare,
-                                 BoundsGuard, IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall,
-                                 BeginObject, EndObject, ReceiverLoad, ReceiverStore, MethodCall, MetadataQuery, Label, Jump,
-                                 BranchFalse, Return, ReturnObject, BindParameter, BindObjectParameter>;
+using Instruction =
+    std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Compare, BoundsGuard,
+                 IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall, BeginObject, EndObject,
+                 ReceiverLoad, ReceiverStore, MethodCall, MetadataQuery, Label, Jump, BranchFalse,
+                 Return, ReturnObject, BindParameter, BindObjectParameter>;
 class ObjectSlot {
   public:
     std::string className;
@@ -185,8 +186,6 @@ class ValidatedModule {
     friend ValidatedModule validate(Module module);
 
   public:
-    const Module &get() const {
-        return module;
-    }
+    const Module &get() const { return module; }
 };
 } // namespace aurora::ir

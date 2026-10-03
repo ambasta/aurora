@@ -10,6 +10,7 @@ class X86Emitter {
     std::ostringstream output;
     int stackDepth = 0;
     int functionIndex = 0;
+    int divisionIndex = 0;
     int receiverSaveOffset = 0;
     int callRecordSaveOffset = 0;
     int resultSaveOffset = 0;
@@ -19,18 +20,12 @@ class X86Emitter {
     std::map<std::string, std::size_t> argumentCounts;
     const std::vector<std::string> argumentRegisters = {"%rdi", "%rsi", "%rdx",
                                                         "%rcx", "%r8",  "%r9"};
-    void line(const std::string &text) {
-        output << "    " << text << '\n';
-    }
-    std::string address(int offset) {
-        return "-" + std::to_string(offset) + "(%rbp)";
-    }
+    void line(const std::string &text) { output << "    " << text << '\n'; }
+    std::string address(int offset) { return "-" + std::to_string(offset) + "(%rbp)"; }
     std::string label(int id) {
         return ".Lau" + std::to_string(functionIndex) + "_" + std::to_string(id);
     }
-    std::string returnLabel() {
-        return ".Lreturn" + std::to_string(functionIndex);
-    }
+    std::string returnLabel() { return ".Lreturn" + std::to_string(functionIndex); }
     void push() {
         line("pushq %rax");
         ++stackDepth;
@@ -60,7 +55,8 @@ class X86Emitter {
         return false;
     }
     int argumentWords(const Type &type) const {
-        return type.isClass() ? static_cast<int>(std::max<std::size_t>(1, classLayouts->at(type.className).size()))
+        return type.isClass() ? static_cast<int>(std::max<std::size_t>(
+                                    1, classLayouts->at(type.className).size()))
                               : 1;
     }
     int recordOffset(const ir::Function &function, std::size_t parameter) const {
@@ -68,6 +64,35 @@ class X86Emitter {
         for (std::size_t index = 0; index < parameter; ++index)
             offset += argumentWords(function.parameters[index]) * 8;
         return offset;
+    }
+    void checkedDivision(bool remainder) {
+        const auto suffix = std::to_string(functionIndex) + "_" + std::to_string(divisionIndex++);
+        const auto ready = ".Ldivision_ready_" + suffix;
+        const auto done = ".Ldivision_done_" + suffix;
+        // Left operand is RCX, right operand RAX. Reject every IDIV fault
+        // before issuing it; receiver/value-call capabilities are saved privately.
+        line("movq %rax, %r11");
+        line("testq %r11, %r11");
+        line("jz .Laurora_division_zero_trap");
+        line("movq %rcx, %rax");
+        line("cmpq $-1, %r11");
+        line("jne " + ready);
+        line("movabsq $-9223372036854775808, %rdx");
+        line("cmpq %rdx, %rax");
+        line("jne " + ready);
+        if (remainder) {
+            // The mathematical remainder is representable even when the quotient is not.
+            line("xorq %rax, %rax");
+            line("jmp " + done);
+        } else {
+            line("jmp .Laurora_overflow_trap");
+        }
+        output << ready << ":\n";
+        line("cqto");
+        line("idivq %r11");
+        if (remainder)
+            line("movq %rdx, %rax");
+        output << done << ":\n";
     }
     void instruction(const ir::Instruction &instruction) {
         std::visit(
@@ -92,15 +117,27 @@ class X86Emitter {
                     }
                 } else if constexpr (std::is_same_v<Op, ir::BinaryValue>) {
                     pop("%rcx");
-                    if (operation.operation == ir::Binary::CheckedAdd)
+                    switch (operation.operation) {
+                    case ir::Binary::CheckedAdd:
                         line("addq %rcx, %rax");
-                    else if (operation.operation == ir::Binary::CheckedMultiply)
-                        line("imulq %rcx, %rax");
-                    else {
+                        line("jo .Laurora_overflow_trap");
+                        break;
+                    case ir::Binary::CheckedSubtract:
                         line("subq %rax, %rcx");
                         line("movq %rcx, %rax");
+                        line("jo .Laurora_overflow_trap");
+                        break;
+                    case ir::Binary::CheckedMultiply:
+                        line("imulq %rcx, %rax");
+                        line("jo .Laurora_overflow_trap");
+                        break;
+                    case ir::Binary::CheckedDivide:
+                        checkedDivision(false);
+                        break;
+                    case ir::Binary::CheckedRemainder:
+                        checkedDivision(true);
+                        break;
                     }
-                    line("jo .Laurora_overflow_trap");
                 } else if constexpr (std::is_same_v<Op, ir::Compare>) {
                     pop("%rcx");
                     line("cmpq %rax, %rcx");
@@ -134,18 +171,23 @@ class X86Emitter {
                     for (std::size_t index = target.parameters.size(); index > 0; --index)
                         if (scalar(target.parameters[index - 1]))
                             pop(argumentRegisters[index - 1]);
-                    const int recordBytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
+                    const int recordBytes =
+                        (recordOffset(target, target.parameters.size()) + 15) & ~15;
                     if (recordBytes)
                         line("subq $" + std::to_string(recordBytes) + ", %rsp");
                     for (std::size_t index = 0; index < target.parameters.size(); ++index) {
                         const auto &type = target.parameters[index];
                         const int offset = recordOffset(target, index);
                         if (scalar(type)) {
-                            line("movq " + argumentRegisters[index] + ", " + std::to_string(offset) + "(%rsp)");
+                            line("movq " + argumentRegisters[index] + ", " +
+                                 std::to_string(offset) + "(%rsp)");
                         } else {
                             const auto &layout = classLayouts->at(type.className);
                             for (std::size_t field = 0; field < layout.size(); ++field) {
-                                line("movq " + address(operation.objectArguments[index] - static_cast<int>(field * 8)) + ", %rax");
+                                line("movq " +
+                                     address(operation.objectArguments[index] -
+                                             static_cast<int>(field * 8)) +
+                                     ", %rax");
                                 line("movq %rax, " + std::to_string(offset + field * 8) + "(%rsp)");
                             }
                         }
@@ -191,7 +233,8 @@ class X86Emitter {
                     line("movq " + address(resultSaveOffset) + ", %r10");
                     const auto &layout = classLayouts->at(currentFunction->result.className);
                     for (std::size_t field = 0; field < layout.size(); ++field) {
-                        line("movq " + address(operation.offset - static_cast<int>(field * 8)) + ", %rax");
+                        line("movq " + address(operation.offset - static_cast<int>(field * 8)) +
+                             ", %rax");
                         line("movq %rax, " + std::to_string(field * 8) + "(%r10)");
                     }
                     line("xorq %rax, %rax");
@@ -199,17 +242,21 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::BindParameter>) {
                     if (callRecordSaveOffset) {
                         line("movq " + address(callRecordSaveOffset) + ", %r11");
-                        line("movq " + std::to_string(recordOffset(*currentFunction, operation.index)) + "(%r11), %rax");
+                        line("movq " +
+                             std::to_string(recordOffset(*currentFunction, operation.index)) +
+                             "(%r11), %rax");
                         line("movq %rax, " + address(operation.offset));
                     } else
-                        line("movq " + argumentRegisters[operation.index] + ", " + address(operation.offset));
+                        line("movq " + argumentRegisters[operation.index] + ", " +
+                             address(operation.offset));
                 } else if constexpr (std::is_same_v<Op, ir::BindObjectParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     const auto &layout = classLayouts->at(operation.className);
                     const int offset = recordOffset(*currentFunction, operation.index);
                     for (std::size_t field = 0; field < layout.size(); ++field) {
                         line("movq " + std::to_string(offset + field * 8) + "(%r11), %rax");
-                        line("movq %rax, " + address(operation.offset - static_cast<int>(field * 8)));
+                        line("movq %rax, " +
+                             address(operation.offset - static_cast<int>(field * 8)));
                     }
                 } else {
                     static_assert(!std::is_same_v<Op, Op>, "unhandled typed IR backend operation");
@@ -234,12 +281,14 @@ class X86Emitter {
         output << "# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n";
         for (const auto &function : module.functions) {
             stackDepth = 0;
+            divisionIndex = 0;
             currentFunction = &function;
             const bool aggregate = aggregateSignature(function);
             // Receiver and aggregate entry points use a private compiler ABI and cannot be
             // exposed as ordinary scalar-callable external symbols.
             output << (function.receiver || aggregate ? ".local " : ".globl ") << function.name
-                   << "\n.type " << function.name << ", @function\n" << function.name << ":\n";
+                   << "\n.type " << function.name << ", @function\n"
+                   << function.name << ":\n";
             line("pushq %rbp");
             line("movq %rsp, %rbp");
             receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
@@ -287,7 +336,8 @@ class X86Emitter {
                 output << ".size " << symbol << ", .-" << symbol << "\n";
             }
         }
-        output << ".Laurora_bounds_trap:\n    ud2\n.Laurora_overflow_trap:\n    ud2\n.section "
+        output << ".Laurora_bounds_trap:\n    ud2\n.Laurora_overflow_trap:\n    "
+                  "ud2\n.Laurora_division_zero_trap:\n    ud2\n.section "
                   ".note.GNU-stack,\"\",@progbits\n";
         return output.str();
     }

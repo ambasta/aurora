@@ -7,6 +7,11 @@ cpu=qemu64
 cpus=1
 case "$mode" in
   normal) ;;
+  --division-zero) build_environment+=(KERNEL_TEST_DIVISION=zero) ;;
+  --division-remainder-zero) build_environment+=(KERNEL_TEST_DIVISION=remainder-zero) ;;
+  --division-overflow) build_environment+=(KERNEL_TEST_DIVISION=overflow) ;;
+  --division-remainder-min) build_environment+=(KERNEL_TEST_DIVISION=remainder-min) ;;
+  --division-kernel-trap) build_environment+=(KERNEL_TEST_DIVISION=kernel-trap) ;;
   --schedule) build_environment+=(KERNEL_TEST_SCHEDULE=1) ;;
   --schedule-smp) build_environment+=(KERNEL_TEST_SCHEDULE=1); cpus=2 ;;
   --schedule-mmio) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_PROGRAM_APIC_READ=1) ;;
@@ -56,7 +61,9 @@ timeout 15 "$qemu" "${args[@]}" -machine pc -accel tcg -cpu "$cpu" -smp "$cpus" 
 status=$?
 set -e
 cat "$log"
-if [[ "$mode" == --schedule* ]]; then
+if [[ "$mode" == --division-* ]]; then
+    python3 tests/kernel-division-smoke.py "$status" "$log" "$mode" "$metadata"
+elif [[ "$mode" == --schedule* ]]; then
     python3 tests/kernel-schedule-smoke.py "$status" "$log" "$mode" "$metadata"
 else
     python3 tests/kernel-smoke.py "$status" "$log" "$mode" "$metadata"

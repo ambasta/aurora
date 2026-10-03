@@ -114,7 +114,7 @@ header and complete-tree cases; image validation has14 negative PE/payload cases
 transcript validation has8 positive and148 negative cases under Python -O.
 
 Firmware is part of the trusted computing base. This is not a cryptographic
-attestation, arbitrary image loader, Secure Boot implementation, ACPI/MADT parser,
+attestation, arbitrary image loader, Secure Boot implementation, general ACPI/AML implementation,
 UEFI runtime-services mapping, DMA/device-quiescence protocol or IOMMU boundary.
 NMI/SMI behavior during the brief descriptor/root transition and physical-device
 interrupt/DMA behavior are not qualified by this OVMF gate. The payload does not
@@ -127,3 +127,12 @@ Primary sources:
 [UEFI system table](https://uefi.org/specs/UEFI/2.11/04_EFI_System_Table.html),
 [TianoCore OVMF](https://www.tianocore.org/tianocore-wiki.github.io/platforms-packages/platform-ports/ovmf.html),
 and [Intel SDM Volume3A](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf).
+
+## Optional ACPI discovery profile
+
+The [ACPI read-window gate](acpi.md) extends this handoff with a version2 RSDP
+reference and bounded source-copy buffers. It discovers real OVMF processor/APIC
+metadata after ExitBootServices, with read-only/NX mapping revocation and hostile
+input/hardware-fault gates. The default version1 consumer remains available.
+Run `scripts/kernel-acpi-all.sh`; this does not enable AML, interrupt routing or
+a physical device driver.

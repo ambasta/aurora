@@ -36,6 +36,17 @@ volatile unsigned breakpoint_count = 0;
 auto require(bool condition, std::string_view message) -> void {
     if (!condition) fail(message);
 }
+auto program_fault_kind(aurora::user::ProgramEvent event) -> std::string_view {
+    using aurora::user::ProgramEvent;
+    switch (event) {
+    case ProgramEvent::bounds: return "bounds";
+    case ProgramEvent::overflow: return "overflow";
+    case ProgramEvent::division_zero: return "division_zero";
+    case ProgramEvent::rejected:
+    case ProgramEvent::returned: fail("Non-fault event has no fault kind");
+    }
+    fail("Invalid fault event");
+}
 // Trusted physical-memory transport: E820 bytes and page mappings only.
 auto physical_read(std::uint64_t address, unsigned bytes) -> std::uint64_t {
     auto result = std::uint64_t{0};
@@ -107,6 +118,11 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     asm volatile("jmp *%0" : : "r"(contract->bounds_pc()) : "memory");
     fail("Kernel UD2 unexpectedly returned");
 #endif
+#ifdef AURORA_TEST_DIVISION_KERNEL_TRAP
+    require(contract->division_zero_pc() != 0, "Missing division trap authority");
+    asm volatile("jmp *%0" : : "r"(contract->division_zero_pc()) : "memory");
+    fail("Kernel division UD2 unexpectedly returned");
+#endif
     const auto resumed = user_program(contract->entry());
     require(aurora::user::AddressSpaces::deactivate(domains[index]), "Kernel root restoration failed");
     Serial::text("AURORA_DOMAIN_RESTORED: root="); Serial::number(aurora::hardware::Protection::current_root()); Serial::text("\r\n");
@@ -119,7 +135,7 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
         Serial::text(" value="); Serial::number(program_run.value()); Serial::text("\r\n");
     } else {
         Serial::text("AURORA_PROGRAM_CONTAINED: image="); Serial::number(index);
-        Serial::text(expected == ProgramEvent::bounds ? " kind=bounds\r\n" : " kind=overflow\r\n");
+        Serial::text(" kind="); Serial::text(program_fault_kind(expected)); Serial::text("\r\n");
     }
 }
 [[maybe_unused]] auto compiled_program_self_test() -> void {
@@ -127,6 +143,9 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     using aurora::user::AddressSpaces;
     using aurora::hardware::Protection;
     using aurora::hardware::Serial;
+#ifdef AURORA_DIVISION_FIXTURE
+    Serial::text("AURORA_DIVISION_FIXTURE: "); Serial::text(AURORA_DIVISION_FIXTURE); Serial::text("\r\n");
+#endif
     require(!AddressSpaces::initialize(foreign_pages), "Out-of-arena allocator accepted by domain manager");
     require(AddressSpaces::initialize(pages), "Domain manager initialization failed");
     std::array<std::uint64_t, 3> roots{};
@@ -149,7 +168,11 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     Serial::text("\r\n");
     require(AddressSpaces::stack_frame(domains[1], 0) == 0x104000, "Cross-domain test address does not name second owner's frame");
     execute_program(0, ProgramEvent::returned);
+#ifdef AURORA_TEST_DIVISION_ZERO
+    execute_program(1, ProgramEvent::division_zero);
+#else
     execute_program(1, ProgramEvent::bounds);
+#endif
     execute_program(0, ProgramEvent::returned);
     execute_program(2, ProgramEvent::overflow);
     execute_program(0, ProgramEvent::returned);
@@ -183,7 +206,14 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     for (const auto domain : domains) require(AddressSpaces::destroy(domain), "Final domain teardown failed");
     require(pages.used() == 0 && Protection::verify(), "Domain teardown leaked memory or active root");
     Serial::text("AURORA_DOMAINS_OK: private CR3, private stacks, zero reuse, clean teardown\r\n");
+#ifdef AURORA_TEST_DIVISION_ZERO
+    Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, division_zero, overflow, clean restart\r\n");
+#else
     Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, bounds, overflow, clean restart\r\n");
+#endif
+#ifdef AURORA_DIVISION_FIXTURE
+    Serial::text("AURORA_DIVISION_OK: exact typed trap, clean restart, private teardown\r\n");
+#endif
 }
 }
 auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t instruction,
@@ -224,8 +254,11 @@ auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t
             Serial::text(" root="); Serial::number(Protection::current_root()); Serial::text("\r\n");
             if (program_run.event() != aurora::user::ProgramEvent::returned) {
                 Serial::text("AURORA_PROGRAM_FAULT: image="); Serial::number(program_index);
-                Serial::text(program_run.event() == aurora::user::ProgramEvent::bounds ? " kind=bounds" : " kind=overflow");
+                Serial::text(" kind="); Serial::text(program_fault_kind(program_run.event()));
                 Serial::text(" vector="); Serial::number(vector);
+                if (program_run.event() == aurora::user::ProgramEvent::division_zero) {
+                    Serial::text(" error="); Serial::number(error);
+                }
                 Serial::text(" rip="); Serial::number(instruction);
                 Serial::text(" cpl=3 frame="); Serial::number(frame); Serial::text("\r\n");
             }

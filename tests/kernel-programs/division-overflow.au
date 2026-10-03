@@ -1,0 +1,7 @@
+module user_division_overflow;
+
+auto aurora_user_main() -> i64 {
+    i64 minimum = -9223372036854775807 - 1;
+    i64 divisor = -1;
+    return minimum / divisor;
+}

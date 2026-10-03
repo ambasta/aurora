@@ -6,6 +6,14 @@ for tool in g++ make as ld objcopy nm python3; do command -v "$tool" >/dev/null 
 compiler="${AURORAC:-build/aurorac}"
 if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi
 command -v "$compiler" >/dev/null || { echo "Missing compiler: $compiler" >&2; exit 2; }
+division_fixture="${KERNEL_TEST_DIVISION:-none}"
+case "$division_fixture" in
+    none|zero|remainder-zero|overflow|remainder-min|kernel-trap) ;;
+    *) echo 'Invalid division fixture' >&2; exit 2 ;;
+esac
+if [[ "$division_fixture" != none && "${KERNEL_TEST_SCHEDULE:-0}" == 1 ]]; then
+    echo 'Division fixtures require the sequential user-program gate' >&2; exit 2
+fi
 "$compiler" examples/kernel.au -o build/kernel-language.s
 as --64 build/kernel-language.s -o build/kernel-language.o
 as --32 kernel/boot.S -o build/boot.o
@@ -23,6 +31,12 @@ program_index=0
 for program in clean bounds overflow; do
     base=$((0x1b0000 + program_index * 4096))
     input="tests/kernel-programs/$program.au"
+    case "$division_fixture:$program" in
+        zero:bounds) input=tests/kernel-programs/division-zero.au ;;
+        remainder-zero:bounds) input=tests/kernel-programs/division-remainder-zero.au ;;
+        overflow:overflow) input=tests/kernel-programs/division-overflow.au ;;
+        remainder-min:clean) input=tests/kernel-programs/division-remainder-min.au ;;
+    esac
     if [[ "${KERNEL_TEST_SCHEDULE:-0}" == 1 ]]; then
         case "$program" in
             clean) input=tests/kernel-programs/scheduled-clean.au ;;
@@ -40,9 +54,14 @@ for program in clean bounds overflow; do
     objcopy -O binary "build/user-$program.elf" "build/user-$program.bin"
     program_index=$((program_index + 1))
 done
-python3 tests/kernel-user-image.py
+python3 tests/kernel-user-image.py --division-fixture "$division_fixture"
 as --64 build/kernel-user-images.S -o build/kernel-user-images.o
 extra=()
+if [[ "$division_fixture" != none ]]; then extra+=("-DAURORA_DIVISION_FIXTURE=\"$division_fixture\""); fi
+case "$division_fixture" in
+    zero|remainder-zero) extra+=(-DAURORA_TEST_DIVISION_ZERO) ;;
+    kernel-trap) extra+=(-DAURORA_TEST_DIVISION_KERNEL_TRAP) ;;
+esac
 if [[ "${KERNEL_TEST_DIVIDE_ERROR:-0}" == 1 ]]; then extra+=(-DAURORA_TEST_DIVIDE_ERROR); fi
 if [[ "${KERNEL_TEST_PAGE_FAULT:-0}" == 1 ]]; then extra+=(-DAURORA_TEST_PAGE_FAULT); fi
 for flag in WP NX STACK PROGRAM_KERNEL_TRAP DOMAIN_ROOT_MISMATCH SCHEDULE SCHEDULE_FORGED SCHEDULE_CONTEXT SCHEDULE_ROOT; do

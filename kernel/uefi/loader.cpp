@@ -1,5 +1,6 @@
 #include "handoff.hpp"
 #include "tables.hpp"
+#include "acpi-policy.hpp"
 #include "../console.hpp"
 #include "uefi-payload.hpp"
 #include <span>
@@ -72,6 +73,9 @@ auto __attribute__((ms_abi)) entry(void* image,void* system) -> U64 {
     auto handoff=span(arena,Handoff::header);
     using aurora::uefi::put;
     put(handoff,0,Handoff::magic); put(handoff,8,1,4); put(handoff,12,Handoff::header,4);
+#ifdef AURORA_UEFI_ACPI
+    put(handoff,8,2,4);
+#endif
     put(handoff,16,Handoff::arena_bytes); put(handoff,24,arena);
     put(handoff,56,payload_size); put(handoff,64,aurora::uefi::payload_text_end);
     put(handoff,72,aurora::uefi::payload_read_end); put(handoff,80,aurora::uefi::payload_memory_end);
@@ -84,10 +88,19 @@ auto __attribute__((ms_abi)) entry(void* image,void* system) -> U64 {
 #ifdef AURORA_UEFI_BAD_TABLE
     if (!tables.map(0x10000,3|aurora::uefi::PageTables::nx)) fail("bad-table injection");
 #endif
+#ifdef AURORA_UEFI_ACPI
+    if (!tables.prepare_window()) fail("firmware window tables");
+#endif
     put(handoff,96,tables.used());
     std::uint32_t a,b,c,d;
     asm volatile("cpuid" : "=a"(a),"=b"(b),"=c"(c),"=d"(d) : "a"(0x80000000U),"c"(0));
     if (a<0x80000001U) fail("NX unavailable");
+#ifdef AURORA_UEFI_ACPI
+    if (a<0x80000008U) fail("physical address width unavailable");
+    asm volatile("cpuid" : "=a"(a),"=b"(b),"=c"(c),"=d"(d) : "a"(0x80000008U),"c"(0));
+    const auto firmware_physical_bits=a&255;
+    if (firmware_physical_bits<32 || firmware_physical_bits>52) fail("physical address width unsupported");
+#endif
     asm volatile("cpuid" : "=a"(a),"=b"(b),"=c"(c),"=d"(d) : "a"(0x80000001U),"c"(0));
     if (!(d&(1U<<20))) fail("NX unavailable");
     U64 cr4; asm volatile("mov %%cr4, %0" : "=r"(cr4));
@@ -99,6 +112,25 @@ auto __attribute__((ms_abi)) entry(void* image,void* system) -> U64 {
         if (size==0 || size>aurora::uefi::MemoryMap::max_bytes) fail("returned map length");
         const aurora::uefi::MemoryMap map{span(arena+Handoff::map_offset,size),stride,version};
         if (!map.owns(arena,Handoff::arena_bytes)) fail("final map ownership");
+#ifdef AURORA_UEFI_ACPI
+        const auto count=table.get(104),configuration=table.get(112);
+        const aurora::uefi::FirmwareRanges readable{span(arena+Handoff::map_offset,size),stride,arena,firmware_physical_bits};
+        if (count==0 || count>128 || !readable.readable(configuration,count*24)) fail("configuration table range");
+        aurora::uefi::AcpiRoots roots;
+        for (U64 i=0;i<count;++i) {
+            const auto candidate=span(configuration+i*24,24);
+            const auto before=roots.root();
+            if (!roots.accept(candidate)) fail("duplicate or invalid ACPI roots");
+#ifdef AURORA_ACPI_DUPLICATE_ROOT
+            if (before==0 && roots.root()!=0 && !roots.accept(candidate)) fail("duplicate or invalid ACPI roots");
+#else
+            static_cast<void>(before);
+#endif
+        }
+        const auto rsdp=roots.root();
+        if (!rsdp || !readable.readable(rsdp,36)) fail("RSDP source range");
+        put(handoff,112,rsdp);
+#endif
         put(handoff,32,size); put(handoff,40,stride); put(handoff,48,version,4); put(handoff,52,attempt,4);
 #ifdef AURORA_UEFI_STALE
         if (attempt==1) key^=1;

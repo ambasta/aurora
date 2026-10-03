@@ -29,6 +29,30 @@ public:
         if (leaf!=0) return false;
         leaf=page|flags; return true;
     }
+    static constexpr std::uint64_t window_address=0xffff800000000000ULL;
+    [[nodiscard]] auto prepare_window() -> bool {
+        auto current=base_;
+        for (const auto shift : {39U,30U,21U}) {
+            auto& entry=table(current)[(window_address>>shift)&511];
+            if (entry==0) {
+                if (used_==Handoff::table_pages) return false;
+                entry=(base_+used_++*4096)|3;
+            }
+            current=entry&0x000ffffffffff000ULL;
+            if (current<base_ || current>=base_+used_*4096) return false;
+        }
+        return table(current)[0]==0;
+    }
+    [[nodiscard]] auto window_slot() const -> volatile std::uint64_t* {
+        auto current=base_;
+        for (const auto shift : {39U,30U,21U}) {
+            const auto link=table(current)[(window_address>>shift)&511];
+            if ((link&~0x000ffffffffff060ULL)!=3) return nullptr;
+            current=link&0x000ffffffffff000ULL;
+            if (current<base_ || current>=base_+used_*4096) return nullptr;
+        }
+        return table(current);
+    }
     [[nodiscard]] auto verify(std::uint64_t arena,const Bytes& h) const -> bool {
         if (used_==0 || used_>Handoff::table_pages || base_!=arena+Handoff::tables_offset) return false;
         std::array<bool,Handoff::table_pages> visited{};
@@ -73,6 +97,7 @@ public:
     }
 };
 inline auto expected_flags(std::uint64_t offset,const Bytes& h) -> std::uint64_t {
+    if (h.get(8,4)==2 && offset>=0x60000 && offset<0x81000) return 3|PageTables::nx;
     if (offset==0 || (offset>=Handoff::map_offset && offset<Handoff::tables_offset)) return 1|PageTables::nx;
     if ((offset>=Handoff::tables_offset && offset<Handoff::tables_offset+Handoff::table_pages*4096)
         || offset==Handoff::idt_offset || (offset>=Handoff::stack_bottom && offset<Handoff::stack_top)
