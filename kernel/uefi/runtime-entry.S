@@ -14,7 +14,11 @@ uefi_runtime_enter:
     mov %rsp, uefi_runtime_saved_rsp(%rip)
     pushq $0x23
     push %rsi
+.ifdef AURORA_SERVICE_BUDGET
+    pushq 48(%r11)
+.else
     pushq $2
+.endif
     pushq $0x1b
     push %rdi
     mov $0x23, %ax
@@ -52,6 +56,9 @@ aurora_leave_user:
     mov $0x10, %ax
     mov %ax, %ds
     mov %ax, %es
+    # Interrupt privilege entry cleared SS; restore the kernel selector before
+    # resuming the saved kernel stack. IF remains clear throughout this path.
+    mov %ax, %ss
     mov uefi_runtime_saved_rsp(%rip), %rsp
     movq $0, uefi_runtime_saved_rsp(%rip)
     pop %r15
@@ -64,6 +71,13 @@ aurora_leave_user:
     ret
 .global uefi_runtime_handler
 uefi_runtime_handler:
+.ifdef AURORA_SERVICE_BUDGET
+    cmp $64,%edi
+    jne not_timer
+    lea aurora_timer_interrupt(%rip),%rax
+    ret
+not_timer:
+.endif
     cmp $129,%edi
     je return_handler
     cmp $31,%edi

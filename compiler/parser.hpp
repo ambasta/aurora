@@ -91,8 +91,9 @@ class Parser {
         std::vector<TemplateArgument> arguments;
         do {
             if (arguments.size() >= 2)
-                fail("template arguments are limited to one or two Scalar types");
-            // No recursive type parse here: the accepted domain is exactly three types.
+                fail("template arguments are limited to one or two types or capacity literals");
+            // Named classes are resolved in the requesting module; arguments never
+            // recursively parse a template-id, resource, reference or array type.
             if (eat("i64"))
                 arguments.push_back(TypeKind::I64);
             else if (eat("u64"))
@@ -112,8 +113,16 @@ class Parser {
                 } catch (const std::exception &) {
                     fail("capacity template arguments must be decimal literals from 1 to 64");
                 }
+            } else if (peek().text != "own" && peek().text != "ref" && peek().text != "mutref" &&
+                       peek().text != "array" && peek().text != "builtin" &&
+                       peek().text != "true" && peek().text != "false") {
+                const auto argument = qualifiedIdent();
+                if (peek().text == "<")
+                    fail("nested template arguments are not supported");
+                arguments.emplace_back(argument.text);
             } else
-                fail("template arguments require Scalar types or capacity literals from 1 to 64");
+                fail("template arguments require scalar or named class types, or capacities from 1 "
+                     "to 64");
         } while (eat(","));
         need(">");
         return arguments;
@@ -123,7 +132,7 @@ class Parser {
             return false;
         // Expression positions only parse an explicit template-id when followed by
         // construction syntax. Comparisons retain their usual parser path.
-        for (std::size_t index = position + 1; index < tokens.size() && index < position + 16;
+        for (std::size_t index = position + 1; index < tokens.size() && index < position + 136;
              ++index) {
             const auto &token = tokens[index].text;
             if (token == ">")
@@ -468,32 +477,36 @@ class Parser {
                 need("<");
                 do {
                     if (declaredParameters.size() >= 2)
-                        fail("templates require one or two Scalar parameters");
+                        fail("templates require one or two Scalar or Value parameters");
                     TemplateParameterKind kind;
                     if (eat("Scalar"))
                         kind = TemplateParameterKind::Scalar;
+                    else if (eat("Value"))
+                        kind = TemplateParameterKind::Value;
                     else if (eat("i64"))
                         kind = TemplateParameterKind::Capacity;
                     else
-                        fail("template parameters require Scalar or bounded i64 capacity");
+                        fail("template parameters require Scalar, Value or bounded i64 capacity");
                     const auto parameter = ident().text;
                     if (parameter == "i64" || parameter == "u64" || parameter == "bool" ||
                         parameter == "own" || parameter == "ref" || parameter == "mutref" ||
                         parameter == "array" || templateParameters.contains(parameter) ||
                         capacityParameters.contains(parameter))
                         fail("duplicate or reserved template parameter");
-                    if (kind == TemplateParameterKind::Scalar)
+                    if (kind != TemplateParameterKind::Capacity)
                         templateParameters.insert(parameter);
                     else
                         capacityParameters.insert(parameter);
                     declaredParameters.emplace_back(kind, parameter);
                 } while (eat(","));
                 need(">");
-                if (declaredParameters.front().kind != TemplateParameterKind::Scalar ||
-                    (declaredParameters.size() == 1 && !capacityParameters.empty()))
+                if (!capacityParameters.empty() &&
+                    (declaredParameters.size() != 2 ||
+                     declaredParameters.front().kind != TemplateParameterKind::Scalar ||
+                     declaredParameters.back().kind != TemplateParameterKind::Capacity))
                     fail("template capacity requires a preceding Scalar parameter");
                 if (peek().text != "class")
-                    fail("only Scalar-constrained class templates are supported");
+                    fail("only Scalar- or Value-constrained class templates are supported");
             }
             if (eat("class")) {
                 ClassDefinition definition(ident(scope == "std"));
@@ -528,7 +541,7 @@ class Parser {
                         method.scope = scope;
                         method.publicAccess = publicAccess;
                         method.constructor = constructor;
-                        parameters(method);
+                        parameters(method, constructor);
                         if (constructor) {
                             if (eat(":")) {
                                 do {
@@ -567,9 +580,8 @@ class Parser {
                         if (fieldType.lengthParameter.empty() &&
                             (fieldType.length < 1 || fieldType.length > 64))
                             fail("class array field capacity must be between 1 and 64");
-                    } else if (!scalarOrParameter(fieldType))
-                        fail(
-                            "class fields currently require scalar or private fixed-array storage");
+                    } else if (!scalarOrParameter(fieldType) && !fieldType.isClass())
+                        fail("class fields require scalar, class or private fixed-array storage");
                     need(";");
                     definition.fields.emplace_back(fieldName, fieldType);
                     definition.fields.back().publicAccess = publicAccess;

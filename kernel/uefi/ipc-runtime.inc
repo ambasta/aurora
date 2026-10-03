@@ -11,6 +11,9 @@ auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 
     require(endpoint.has_value(),"IPC launch grant");
     launch={source_phase,first,endpoint->slot(),endpoint->generation(),phase==ipc::Phase::request ? 0 : transaction,second};
     selected_phase=phase;
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    launch[6]=phase==ipc::Phase::service ? 0x202 : 2;
+#endif
     for (const auto& lease:domain.stacks) { const auto address=frames.address(*lease); require(address.has_value(),"IPC stack lease"); fill(*address,0); }
     require(program.begin(*domain.contract) && registry.activate(*domain.handle),"IPC launch state");
     active=index;
@@ -21,13 +24,28 @@ auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 
 #ifdef AURORA_IPC_KERNEL_TRAP
     asm volatile("jmp *%0"::"r"(domain.contract->bounds_pc()):"memory");
 #endif
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    if (phase==ipc::Phase::service) {
+        timer_begin(index);
+#ifdef AURORA_BUDGET_EPOCH
+        --timer_owner_epoch;
+#endif
+#ifdef AURORA_BUDGET_FORGED
+        require(timer_stop() && timer_quiet(0x100,false),"forged probe quiet");
+        asm volatile("int $64\n.global uefi_service_forged_pc\nuefi_service_forged_pc:":::"memory");
+#endif
+    }
+#endif
     require(enter(domain.contract->entry(),domain.contract->layout().user_stack_top(),launch.data())==1,"IPC continuation");
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    if (phase==ipc::Phase::service) timer_finish();
+#endif
     const auto current_stack=stack();
     require(root()==kernel_root && active==2 && saved_rsp==0 && !program.running()
         && current_stack>=arena+Handoff::stack_bottom && current_stack<arena+Handoff::stack_top,"IPC restored authority");
     require(program.event()==expected_event && (expected_event!=ProgramEvent::returned || program.value()==expected_value),"IPC compiled result");
     Serial::text("AURORA_UEFI_IPC_RESTORE: slot="); Serial::number(index); Serial::text(" root="); Serial::number(root());
-    Serial::text(" stack="); Serial::number(current_stack); Serial::text(" event="); Serial::text(expected_event==ProgramEvent::returned ? "returned" : "bounds");
+    Serial::text(" stack="); Serial::number(current_stack); Serial::text(" event="); Serial::text(expected_event==ProgramEvent::returned ? "returned" : expected_event==ProgramEvent::bounds ? "bounds" : "budget");
     Serial::text(" value="); Serial::number(program.value()); Serial::text("\r\n");
     launch={}; selected_phase=ipc::Phase::inactive;
 }
@@ -44,7 +62,27 @@ auto ipc_deliver(bool fault) -> void {
     const auto request=mailbox->receive(*domains[1].handle,ipc::Phase::service,*endpoint,transaction);
     require(request && request->first()==40 && request->second()==2 && mailbox->scrubbed(),"IPC request copy");
     ipc_record("DELIVER",request->first(),request->second());
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    const bool exhaust=fault;
+#ifdef AURORA_BUDGET_FAULT
+    const auto source_phase=exhaust ? 4 : 1;
+    const auto wanted=exhaust ? ProgramEvent::bounds : ProgramEvent::returned;
+#else
+    const auto source_phase=exhaust ? 5 : 1;
+    const auto wanted=exhaust ? ProgramEvent::rejected : ProgramEvent::returned;
+#endif
+    ipc_execute(1,ipc::Phase::service,source_phase,request->first(),request->second(),wanted,exhaust ? 0 : 42);
+#ifdef AURORA_BUDGET_FAULT
+    require(!timer_exhausted && (exhaust || timer_compiled_hits>0),"service fault outcome");
+#else
+    require(timer_exhausted==exhaust && timer_compiled_hits>0 && (!exhaust || (timer_ticks==3 && timer_resumes==2)),"service budget outcome");
+#endif
+#ifdef AURORA_BUDGET_CONTEXT
+    if (!exhaust) require(timer_context_hits>0,"timer register probe delivery");
+#endif
+#else
     ipc_execute(1,ipc::Phase::service,fault ? 4 : 1,request->first(),request->second(),fault ? ProgramEvent::bounds : ProgramEvent::returned,fault ? 0 : 42);
+#endif
 }
 [[maybe_unused]] auto ipc_cancel() -> void {
     require(root()==kernel_root && active==2 && mailbox->cancel(ipc::Phase::inactive) && mailbox->scrubbed(),"IPC cancel boundary");
@@ -69,7 +107,7 @@ auto run_ipc() -> void {
 #else
     ipc_execute(0,ipc::Phase::request,0,0,2,ProgramEvent::returned,40);
 #endif
-#ifdef AURORA_IPC_FAULT
+#if defined(AURORA_IPC_FAULT) || defined(AURORA_UEFI_SERVICE_BUDGET)
     ipc_deliver(true); ipc_cancel();
     const auto frame=*frames.address(*domains[1].stacks[0]);
     require(mailbox->revoke(ipc::Phase::inactive) && retire(1) && !registry.index(first_service),"IPC service retirement");
@@ -100,4 +138,8 @@ auto run_ipc() -> void {
         && root()==kernel_root && active==2,"IPC final cleanup");
     transaction=0; launch={}; mailbox.reset();
     Serial::text("AURORA_UEFI_IPC_CLEANUP_OK: used=0 records=0\r\nAURORA_UEFI_IPC_OK\r\n");
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    require(timer_stop() && timer_drain() && !timer_armed,"timer final quiescence");
+    Serial::text("AURORA_UEFI_SERVICE_BUDGET_OK\r\n");
+#endif
 }

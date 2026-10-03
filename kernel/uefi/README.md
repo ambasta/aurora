@@ -146,3 +146,7 @@ handoff profile, backed entirely by the owned arena and tested under real OVMF.
 
 The next staged request/reply IPC profile is documented in [ipc.md](ipc.md).
 Its acceptance status is recorded separately from the verified runtime checkpoint.
+
+The opt-in [UEFI service-budget profile](service-budget.md) adds verified local-timer
+preemption and recovery of a non-yielding staged service. See its dedicated
+acceptance gates and emulator-only boundaries.

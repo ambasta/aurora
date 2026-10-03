@@ -22,8 +22,11 @@ class TemplateArgument {
     TemplateArgumentKind kind = TemplateArgumentKind::Type;
     TypeKind type = TypeKind::I64;
     std::int64_t value = 0;
+    std::string className, displayName;
     TemplateArgument() = default;
     TemplateArgument(TypeKind value) : type(value) {}
+    explicit TemplateArgument(std::string name)
+        : type(TypeKind::Class), className(std::move(name)) {}
     static TemplateArgument capacity(std::int64_t value) {
         TemplateArgument argument;
         argument.kind = TemplateArgumentKind::Value;
@@ -32,7 +35,7 @@ class TemplateArgument {
     }
     bool operator==(const TemplateArgument &) const = default;
 };
-enum class TemplateParameterKind { Scalar, Capacity };
+enum class TemplateParameterKind { Scalar, Value, Capacity };
 class TemplateParameter {
   public:
     TemplateParameterKind kind = TemplateParameterKind::Scalar;
@@ -46,6 +49,8 @@ class Type {
     TypeKind kind = TypeKind::I64;
     std::string className;
     std::string displayName;
+    // Resolved types substituted into another module retain their nominal identity.
+    bool resolvedClass = false;
     std::vector<TemplateArgument> templateArguments;
     TypeKind elementKind = TypeKind::I64;
     int length = 0;
@@ -101,7 +106,10 @@ inline std::string typeName(const Type &type) {
                     name += ", ";
                 const auto &argument = type.templateArguments[index];
                 name += argument.kind == TemplateArgumentKind::Type
-                            ? typeName(Type(argument.type))
+                            ? (argument.type == TypeKind::Class
+                                   ? (argument.displayName.empty() ? argument.className
+                                                                   : argument.displayName)
+                                   : typeName(Type(argument.type)))
                             : std::to_string(argument.value);
             }
             name += ">";

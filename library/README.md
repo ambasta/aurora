@@ -31,7 +31,7 @@ The implementations are intentionally simple and currently retain ordinary funct
 
 ## Deliberately absent
 
-There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, heap ownership and interprocedural borrowing remain deferred; ordinary scalar-field class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.
+There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, heap ownership and interprocedural borrowing remain deferred; ordinary inline class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.
 
 The long-term goal remains a native runtime responsible for the useful roles currently served by libc, and a broad safe C++ standard-library ecosystem without C source/ABI compatibility. This module establishes actual imports, private implementation helpers, typed calls and executable scalar contracts toward that goal.
 
@@ -66,10 +66,22 @@ standard-library compatibility. See compiler/INTEGERS.md for edge cases and boun
 
 `import std.bit;` adds `std::popcount(u64) -> i64`, `std::bit_width(u64) -> i64` and `std::has_single_bit(u64) -> bool`. Zero has count/width zero and is not a single bit; maximum u64 has count/width 64. The real Aurora implementations require no allocation or target host runtime. Their loops are bounded by 64 iterations, while ordinary call overhead remains. These are scalar-specialized APIs, with checked arithmetic and exact 64-bit operations defined in compiler/UNSIGNED.md; no unsigned wrapping, generic implementation or performance claim is implied.
 
-## Reusable scalar pairs
+## Reusable value pairs
 
-The current template candidate supplies `import std.utility;` and `std::pair<T,U>` for explicit i64/u64/bool type arguments. A complete constructor initializes public first/second fields; exact-type mutation and independent ordinary-function value copies use the existing safe class semantics. All nine scalar tuples compile from one actual Aurora template definition. No deduction, nested/reference pairs, operator overloads or foreign pair ABI is provided. See compiler/TEMPLATES.md for nominal identity, module privacy and bounded instantiation.
+The current template candidate supplies `import std.utility;` and `std::pair<T,U>` for explicit i64/u64/bool type arguments; the milestone011 development
+extension also accepts named concrete class arguments under the Value constraint. A complete constructor initializes public first/second fields; exact-type scalar-field mutation and independent ordinary-function value copies use the existing safe class semantics. All nine scalar tuples compile from one actual Aurora template definition. No deduction, nested template-id arguments, reference pairs, operator overloads or foreign pair ABI is provided. See compiler/TEMPLATES.md for nominal identity, module privacy and bounded instantiation.
 
 ## Fixed initialized containers
 
 The current fixed-container candidate supplies `import std.array;` and `std::array<T,N>` for scalar T and explicit capacity1..64. Construction zero-initializes all elements; size() returns the capacity, at() returns a checked copy, and mutable set() checks/stores/returns an exact-type value. Class copies and function boundaries copy all leaves independently. The implementation is real Aurora source over private builtin::array storage, without heap or foreign calls. This is not a reference-returning span, dynamic vector or text/runtime package; see compiler/FIXED-CONTAINERS.md.
+
+## Composed inline library values in development
+
+`examples/composed_values.au` demonstrates a real
+`std::pair<std::MinMax,std::Accumulator>`: independent constructor snapshots, an
+ordinary by-value function boundary, projection into fresh locals, and mutation
+of an extracted copy while the original remains unchanged. Compile it with
+`build/aurorac --module-root library library/examples/composed_values.au -o build/composed-values.s`.
+Its test function returns 42. The implementation and new adversarial tests are
+still awaiting final review and integration. See compiler/COMPOSED-VALUES.md for
+the four-level/64-leaf bounds and excluded resource/borrow operations.

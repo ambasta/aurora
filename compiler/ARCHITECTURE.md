@@ -96,3 +96,14 @@ U64 is an exact scalar IR type. BinaryValue carries its operand type; shifts req
 ## Private fixed-array fields
 
 ClassFields logical shapes partition the flat classLayouts leaves exactly. Constructor-only zero initialization accounts for every array leaf. Receiver-array guard evidence identifies nominal receiver, logical field, element type and range; indexed operations require it independently of local-array tokens. Whole-class value copies and ABI staging use the flattened leaf layout, with a64-leaf class boundary cap. Scalar receiver instructions cannot reinterpret array fields. Capacity parameters disappear during typed substitution; no source integer becomes an address. See [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md).
+
+## Composed-value boundary in development
+
+Logical fields may name a concrete nominal child class with an exact flattened
+leaf range. A bounded acyclic containment walk checks depth and layout; empty
+children retain logical completion facts. CopyObject, ObjectFieldCopy and
+InitializeObjectField are the only operations that establish nested value
+completion. Scalar stores cannot forge it. Constructor class arguments use
+readonly independent records, with a separately saved receiver capability.
+[COMPOSED-VALUES.md](COMPOSED-VALUES.md) states the source and verification contract;
+final validation is pending.

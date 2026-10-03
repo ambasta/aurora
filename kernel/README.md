@@ -578,3 +578,7 @@ virtual layouts/roots, guarded privileged stacks and checked scalar returns.
 The UEFI [staged request/reply IPC foundation](uefi/ipc.md) adds bounded copied
 scalar messages and revocable endpoint authority between controlled domains.
 See its dedicated gates and limitations; it is not a general scheduler or service stack.
+
+The opt-in [UEFI service-budget profile](uefi/service-budget.md) adds verified local-timer
+preemption and recovery of a non-yielding staged service. See its dedicated
+acceptance gates and emulator-only boundaries.

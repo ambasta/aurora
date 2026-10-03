@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 95 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` runs all 110 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -257,3 +257,15 @@ The [staged IPC profile](kernel/uefi/ipc.md) now links separately compiled clien
 and service domains through bounded copied requests/replies, incarnation-bound
 endpoint rights and fault cancellation/restart. It has no arbitrary suspended
 call, shared pointer, timeout or preemption guarantee.
+
+## Composed values and service recovery
+
+The [Value-constrained composition subset](compiler/COMPOSED-VALUES.md) supports
+bounded nested class fields, constructor snapshots and independent projections,
+including std::pair<std::MinMax,std::Accumulator>. Scalar keeps its original
+meaning; containment is acyclic and bounded to four class levels/64 leaves.
+
+The [UEFI service budget](kernel/uefi/service-budget.md) can interrupt/resume a
+non-yielding service, cancel its request at a verified interrupt-count budget,
+drain pending interrupts, scrub/recreate it and complete a fresh request. This
+is neither calibrated wall-clock timing nor a general scheduler.

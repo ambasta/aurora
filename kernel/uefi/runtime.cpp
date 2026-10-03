@@ -8,6 +8,10 @@
 #include "../console.hpp"
 #ifdef AURORA_UEFI_IPC
 #include "../ipc-policy.hpp"
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+#include "acpi.hpp"
+#include "uefi-user-images.hpp"
+#endif
 #endif
 #include <array>
 #include <optional>
@@ -38,7 +42,12 @@ constinit user::DomainRegistry registry;
 constinit user::ProgramRun program;
 #ifdef AURORA_UEFI_IPC
 constinit std::optional<ipc::Mailbox> mailbox;
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+std::array<U64,7> launch{};
+std::optional<LocalApicAdmission> interrupt_admission;
+#else
 std::array<U64,6> launch{};
+#endif
 U64 transaction{};
 ipc::Phase selected_phase=ipc::Phase::inactive;
 #endif
@@ -56,6 +65,9 @@ auto require(bool okay,std::string_view reason) -> void { if (!okay) stop(reason
 auto fill(U64 physical,std::uint8_t value) -> void { for (auto& byte:view(physical,4096)) byte=std::byte{value}; }
 [[nodiscard]] auto zero(U64 physical) -> bool { for (const auto byte:view(physical,4096)) if (byte!=std::byte{0}) return false; return true; }
 [[nodiscard]] auto expected(const Domain& domain,U64 address) -> U64 {
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    if (interrupt_admission && address==LocalApicAdmission::virtual_address) return LocalApicAdmission::physical_address|LocalApicAdmission::leaf_flags;
+#endif
     if (address>=arena && address<arena+L::arena_bytes) {
         const auto flags=expected_flags(address-arena,*handoff);
         return flags ? address|flags : 0;
@@ -80,6 +92,9 @@ auto fill(U64 physical,std::uint8_t value) -> void { for (auto& byte:view(physic
         const auto va=domain.contract->layout().user_stack_bottom()+offset;
         if ((domain.tables->entry(va)&~0x60ULL)!=expected(domain,va)) return false;
     }
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    if (!interrupt_admission || (domain.tables->entry(LocalApicAdmission::virtual_address)&~0x60ULL)!=expected(domain,LocalApicAdmission::virtual_address)) return false;
+#endif
     return domain.tables->entry(PageTables::window_address)==0;
 }
 [[nodiscard]] auto retire(unsigned index) -> bool {
@@ -129,6 +144,9 @@ auto fill(U64 physical,std::uint8_t value) -> void { for (auto& byte:view(physic
     good=good && domain.tables->map(domain.contract->entry(),arena+L::image_offset+image*4096,5);
     for (unsigned page=0;page<4 && good;++page)
         good=domain.tables->map(layout->user_stack_bottom()+page*4096,*frames.address(*domain.stacks[page]),7|RuntimeTables::nx);
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    good=good && interrupt_admission && domain.tables->map(LocalApicAdmission::virtual_address,LocalApicAdmission::physical_address,LocalApicAdmission::leaf_flags);
+#endif
     if (!good || !verify(domain)) { static_cast<void>(retire(*index)); return std::nullopt; }
     return static_cast<unsigned>(*index);
 }
@@ -197,6 +215,9 @@ auto execute(unsigned index,ProgramEvent wanted) -> void {
     Serial::text(" value="); Serial::number(program.value()); Serial::text("\r\n");
 }
 #endif
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+#include "service-timer.inc"
+#endif
 #ifdef AURORA_UEFI_IPC
 #include "ipc-runtime.inc"
 #endif
@@ -207,6 +228,15 @@ auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
     Serial::text("AURORA_UEFI_DOMAIN_EVENT: vector="); Serial::number(vector); Serial::text(" error="); Serial::number(error);
     Serial::text(" pc="); Serial::number(pc); Serial::text(" cpl="); Serial::number(cs&3); Serial::text(" root="); Serial::number(root());
     Serial::text(" frame="); Serial::number(frame); Serial::text(" cr2="); Serial::number(cr2); Serial::text("\r\n");
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+#ifdef AURORA_BUDGET_ROOT
+    if (vector==64 && !timer_draining) {
+        asm volatile("mov %0,%%cr3"::"r"(kernel_root):"memory");
+        Serial::text("AURORA_UEFI_RUNTIME_ROOT_PROBE: root="); Serial::number(root()); Serial::text("\r\n");
+    }
+#endif
+    if (const auto interrupt=service_timer_interrupt(vector,error,pc,cs,frame)) return *interrupt;
+#endif
     if (vector==8) {
         require(frame>=arena+L::ist_bottom && frame<=arena+L::ist_top-176,"double fault IST authority");
         Serial::text("AURORA_UEFI_RUNTIME_IST_OK\r\n"); stop("double fault");
@@ -220,7 +250,18 @@ auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
     require((cs&3)==3 && frame>=arena+L::rsp0_bottom && frame<=arena+L::rsp0_top-176
         && frame%8==0 && saved_rsp>=arena+Handoff::stack_bottom && saved_rsp<=arena+Handoff::stack_top-56 && saved_rsp%8==0,"exception origin/stack");
     const Bytes captured{view(frame,176)};
-    const user::ProgramContext context{vector,error,pc,cs,captured.get(168),captured.get(160),captured.get(152),frame};
+    auto saved_flags=captured.get(152);
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    if (selected_phase==ipc::Phase::service) {
+        const auto integer=ServiceContext::capture(std::span<const U64>{reinterpret_cast<const U64*>(frame),22},frame,*domains[active].contract);
+        require(timer_armed && integer && integer->terminal_context(*domains[active].contract) && timer_stop(),"timer terminal context");
+#ifdef AURORA_BUDGET_PENDING
+        force_timer_pending();
+#endif
+        saved_flags&=~0x200ULL;
+    }
+#endif
+    const user::ProgramContext context{vector,error,pc,cs,captured.get(168),captured.get(160),saved_flags,frame};
     require(program.accept(context,result),"exception site authority");
 #ifdef AURORA_UEFI_IPC
     if (program.event()==ProgramEvent::returned) {
@@ -260,6 +301,9 @@ auto run_protected(U64 owned_arena,const Bytes& h) -> bool {
     if (!PageTables{kernel_root,static_cast<std::size_t>(h.get(96))}.verify(arena,h)) return false;
     if (!frames.initialize(arena+L::stack_frames_offset,16)) return false;
     install_architecture();
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    initialize_service_timer();
+#endif
 #ifdef AURORA_UEFI_IPC
     run_ipc();
     return true;

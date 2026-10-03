@@ -120,6 +120,11 @@ public:
         active_.reset();
         return true;
     }
+    // Trusted runner abort only; it grants no compiler-fault classification.
+    [[nodiscard]] auto cancel() -> bool {
+        if (!active_) return false;
+        active_.reset(); event_=ProgramEvent::rejected; value_=0; return true;
+    }
     [[nodiscard]] auto event() const -> ProgramEvent { return event_; }
     [[nodiscard]] auto value() const -> std::uint64_t { return value_; }
 };

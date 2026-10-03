@@ -536,3 +536,68 @@ tracing. The separately preserved original kernel receipt archive hash is
 Historical receipts are unchanged. This remains bounded bootstrap functionality,
 not a full safety proof, physical Framework qualification, driver activation,
 filesystem/multi-user OS or complete standard library.
+
+## Milestone 011: composed values and UEFI service budgets (2026-10-03)
+
+Verified compiler SHA-256:
+`84e14fc5e81ac6b18abb974d5d3a5c84d68e5ba99323bd04f686ac69ba443808`.
+[Composition](../compiler/COMPOSED-VALUES.md) adds Value constraints, complete
+nested class initialization, readonly left-to-right constructor snapshots and
+independent public-field projections. Acyclic containment is bounded to four
+class levels and 64 scalar leaves; empty fields still require logical completion.
+Scalar remains unchanged. No nested mutation, resource/reference fields, general
+template deduction or recursive instantiation is introduced.
+
+[Service budgets](../kernel/uefi/service-budget.md) reconcile copied MADT evidence,
+BSP/MSR/APIC identity and an explicit q35 aperture, then use supervisor UC mappings
+and one-shot timer interrupts to resume or cancel one running service. Cancellation
+restores the kernel root and drains pending delivery before revocation/scrub/reuse.
+Replies retain first-terminal-wins semantics. Budget units are verified interrupts,
+not time. General scheduling, SMP and arbitrary non-yielding clients remain absent.
+
+Final evidence:
+- [Fresh parent aggregate](evidence/milestone-011/test.log): 161 composition cases
+  (16 exact-site traps/78 rejections), 529 IR, ten exhaustive-dispatch controls,
+  18 previous native IR checks plus eight composition-native cases, and all prior
+  source/library/module/I/O suites. Independent review also ran a 64-case
+  constructor ABI matrix on release and sanitizer candidates.
+- [Compiler/IR sanitizers](evidence/milestone-011/compiler-sanitizers.log),
+  [host I/O sanitizers](evidence/milestone-011/host-io-sanitizers.log),
+  scalar harness7/default630 and [stress1,526](evidence/milestone-011/semantics-stress.log).
+  Signed and unsigned numeric oracles remain separate overlapping coverage.
+- [Complete final kernel run](evidence/milestone-011/kernel-gates/results.json):
+  all 110 distinct modes (37 BIOS + 73 UEFI), preserving 95 and adding fifteen
+  service-budget modes. Source inputs were hashed before the first build and
+  rechecked after the last gate; all 170 matched. Per-mode command/serial logs,
+  available metadata, tools and pre/post manifests are retained in that directory.
+- [Parent hash/source validation](evidence/milestone-011/receipt-validation.log)
+  checked every retained receipt and the 170 live inputs before parent reruns.
+  [Fresh parent spots](evidence/milestone-011/parent-spot-checks.log) repeated normal
+  BIOS, budget recovery and the corrected pending-interrupt drain. This does not
+  relabel the full retained run as a duplicate parent invocation.
+- [Final source manifest](evidence/milestone-011/source.sha256).
+
+Hosted service-budget checks include 6,726 admission/context/table cases, image
+controls four positive/38 negative and final transcript controls fifteen positive/
+2,543 negative. The independent reviewer repeated all fifteen corrected actual
+modes. The originally failing strict drain check was diagnosed with saved/live
+kernel SS=0. Trusted user return now restores SS=0x10 with DS/ES while IF is clear;
+the original strict predicate remains. Corrected receipts require SS=16. Original
+failures and the selector trace are retained under kernel-gates/prior-development-failures.
+The earlier unverified archive is historical and not an accepted milestone.
+
+Independent review was initially interrupted by an unidentified tool restriction.
+At the user's explicit request it resumed once through the same reviewer and
+normal local workflow, without changing safeguards or environments, and completed.
+No acceptance was inferred from the failed turn; only subsequent completed evidence
+is counted. [review.md](review.md) records scope and results.
+
+Sanitized compiler SHA `09ae587a55fd7bc91134a7010d2500017bd52d9827f884fd877204d63efb0000`;
+IR SHA `dfacecd5a4f47894e2bb84428db15ab614b16e2f0096cd9c63d29736fd1dc55f`.
+Address/undefined-behavior checks halt on error; LeakSanitizer is disabled under
+tracing. Original full kernel receipt archive SHA:
+`74692077e6e4f30620fde44b26a4eaeae09b25304d4c67b6dbe7cadf6572f790`.
+No unresolved reproduced issue remains within the reviewed slice. Historical
+receipts are unchanged. Physical Framework support, driver activation, persistent
+filesystems, multi-user services and complete language/stdlib safety remain goals,
+not results of this checkpoint. The separate decimal/enums branch is not included.

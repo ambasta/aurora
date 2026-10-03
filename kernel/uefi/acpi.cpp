@@ -6,6 +6,10 @@
 #endif
 #include "../console.hpp"
 namespace aurora::uefi {
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+namespace { constinit std::optional<Topology> copied_topology; }
+auto discovered_topology() -> const std::optional<Topology>& { return copied_topology; }
+#endif
 namespace {
 using hardware::Serial;
 using U64=std::uint64_t;
@@ -81,6 +85,9 @@ public:
 }
 }
 auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    copied_topology.reset();
+#endif
     std::uint32_t a,b,c,d;
     asm volatile("cpuid" : "=a"(a),"=b"(b),"=c"(c),"=d"(d) : "a"(1),"c"(0));
     if (!(d&(1U<<16))) return false;
@@ -191,7 +198,11 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
 #endif
     Serial::text("AURORA_ACPI_WINDOW_CLOSED: copies="); Serial::number(window.copies()); Serial::text("\r\n");
 #ifdef AURORA_UEFI_PCI
-    return discover_pci(arena,handoff,*mcfg,physical_bits);
+    if (!discover_pci(arena,handoff,*mcfg,physical_bits)) return false;
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    copied_topology.emplace(*topology);
+#endif
+    return true;
 #else
     return true;
 #endif
