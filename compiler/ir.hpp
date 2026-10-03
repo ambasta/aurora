@@ -10,8 +10,16 @@ namespace aurora::ir {
 // Operations describe language semantics, never target-register names or assembly text.
 enum class Unary { CheckedNegate, LogicalNot, BitNot };
 enum class Binary {
-    CheckedAdd, CheckedSubtract, CheckedMultiply, CheckedDivide, CheckedRemainder,
-    BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight
+    CheckedAdd,
+    CheckedSubtract,
+    CheckedMultiply,
+    CheckedDivide,
+    CheckedRemainder,
+    BitAnd,
+    BitOr,
+    BitXor,
+    ShiftLeft,
+    ShiftRight
 };
 enum class Comparison { Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual };
 enum class Query { Size, PublicFieldCount };
@@ -109,6 +117,25 @@ class ReceiverStore {
     int fieldIndex;
     Type type;
 };
+// These operations refer only to the bound receiver and logical field metadata.
+// A bounds guard leaves the signed index in the value register with verifier-only
+// nominal field evidence; indexed stores consume its saved stack value.
+class ReceiverArrayZero {
+  public:
+    int fieldIndex;
+};
+class ReceiverBoundsGuard {
+  public:
+    int fieldIndex;
+};
+class ReceiverIndexLoad {
+  public:
+    int fieldIndex;
+};
+class ReceiverIndexStore {
+  public:
+    int fieldIndex;
+};
 class MethodCall {
   public:
     std::string callee;
@@ -149,10 +176,11 @@ class BindParameter {
     Type type;
 };
 using Instruction =
-    std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Convert, Compare, BoundsGuard,
-                 IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall, BeginObject, EndObject,
-                 ReceiverLoad, ReceiverStore, MethodCall, MetadataQuery, Label, Jump, BranchFalse,
-                 Return, ReturnObject, BindParameter, BindObjectParameter>;
+    std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Convert, Compare,
+                 BoundsGuard, IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall, BeginObject,
+                 EndObject, ReceiverLoad, ReceiverStore, ReceiverArrayZero, ReceiverBoundsGuard,
+                 ReceiverIndexLoad, ReceiverIndexStore, MethodCall, MetadataQuery, Label, Jump,
+                 BranchFalse, Return, ReturnObject, BindParameter, BindObjectParameter>;
 class ObjectSlot {
   public:
     std::string className;
@@ -171,7 +199,7 @@ class Function {
     Type result;
     std::vector<Type> parameters;
     std::map<int, Type> slots;
-    // Field i lives at base - i*8 and has a matching scalar slot. Empty classes
+    // Scalar leaf i lives at base - i*8 and has a matching scalar slot. Empty classes
     // reserve one word but expose no scalar payload.
     std::map<int, ObjectSlot> objectSlots;
     std::optional<Receiver> receiver;
@@ -183,10 +211,21 @@ class Descriptor {
     std::int64_t size;
     std::int64_t publicFields;
 };
+// Logical source fields are distinct from the scalar leaves used for inline
+// storage and value-call copies. Arrays expose one field and a contiguous range.
+class ClassField {
+  public:
+    Type elementType;
+    int firstLeaf;
+    int length;
+    bool array;
+};
 class Module {
   public:
     std::vector<Function> functions;
     std::map<std::string, std::vector<Type>> classLayouts;
+    // Missing entries are normalized to legacy one-leaf scalar fields.
+    std::map<std::string, std::vector<ClassField>> classFields;
     std::map<int, Descriptor> descriptors;
     std::map<int, std::set<int>> descriptorViews{{0, {}}};
 };

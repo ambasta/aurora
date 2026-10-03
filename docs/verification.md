@@ -475,3 +475,64 @@ validation was retained, not bypassed. No unresolved reproduced defect remains
 within scope. No full language-safety proof, full stdlib, filesystem/multi-user
 stack or physical Framework readiness is claimed. Historical receipts remain
 unchanged.
+
+## Milestone 010: fixed containers and staged IPC (2026-10-03)
+
+Verified snapshot compiler SHA-256:
+`d91e06fad144a89c1c836e16db20ef48b8a644bf4c23b22a1517e08f25e1d82c`.
+[Fixed containers](../compiler/FIXED-CONTAINERS.md) provide std::array<T,N> with
+scalar T, explicit literal N in 1..64, private complete zero initialization,
+copied checked access, mutable set and independent value copies. Canonical
+builtin::array and fixed unqualified array storage names are distinct from the
+qualified library wrapper. Logical named fields and flattened leaf layout are
+separate; ordinary class-value boundaries remain bounded to 64 leaves. General
+nested values, heap allocation, slices and dynamic collections remain absent.
+
+[Staged IPC](../kernel/uefi/ipc.md) connects separately compiled UEFI client and
+service images through fixed copied scalar messages. Kernel-selected phases and
+live domain identity bind generation/rights claims. Reply/cancel is first-terminal-
+wins; exact service faults cancel, revoke and retire service authority before
+scrub/reuse/restart. Pending cancellation, stale grants, forged identities,
+versions/transactions/sites, duplicate and late replies are tested. This does
+not suspend an arbitrary instruction/stack or provide non-yielding-service timeouts.
+
+Evidence and execution provenance:
+- [Fresh parent aggregate](evidence/milestone-010/test.log): 216 container cases
+  (55 exact bounds/order sites, 96 rejections), 463 IR, ten exhaustive-dispatch
+  checks and 18 native receiver-array IR probes/ten exact sites, plus all prior
+  source/template/module/I/O suites and current hosted kernel checks.
+- [Compiler/IR sanitizers](evidence/milestone-010/compiler-sanitizers.log),
+  [host I/O sanitizers](evidence/milestone-010/host-io-sanitizers.log), and preserved
+  [kernel sanitizer records](evidence/milestone-010/kernel-gates/).
+- Existing signed1,510/181, unsigned4,219/501/67-rejection and scalar7/630 checks
+  remain separate. [Scalar stress](evidence/milestone-010/semantics-stress.log)
+  has 1,526 cases. Alternative seeds overlap and must not be summed.
+- [Complete final kernel run](evidence/milestone-010/kernel-gates/results.json):
+  all 95 distinct modes (80 preserved + fifteen IPC), with per-mode logs/metadata,
+  commands, tools and source-input identities in the same directory. The run
+  used the exact frozen compiler. Independent review repeated all fifteen new
+  IPC modes. This retained run is not relabeled as a new parent invocation.
+- [Parent receipt validation](evidence/milestone-010/receipt-validation.log)
+  checked all retained file hashes and 139 captured source/build inputs before
+  adding Makefile test/smoke IPC wiring. The source manifest was captured during
+  the run, not asserted to be a pre-run snapshot; unchanged executable/test code
+  was verified at completion and again at handover.
+- [Fresh parent BIOS/IPC spot checks](evidence/milestone-010/parent-spot-checks.log)
+  repeated normal BIOS, IPC success and actual service fault/restart after the
+  full run; no executable/test source changed. Normal artifacts are restored.
+- [Final source manifest](evidence/milestone-010/source.sha256).
+
+IPC policy covers 26,120 rejected envelopes and 262,144 six-operation sequences
+against an independent state model. Image controls retain runtime3/64 plus
+IPC4/26; IPC transcript controls are fifteen positive/1,732 negative. No defect
+was reproduced by independent M010 review within its stated scope. Review and
+limitations are recorded in [review.md](review.md).
+
+Sanitized compiler SHA `cb7778a8078878a9fc1d25e9059cc9de07928a9ad9f9fae984ce4fb365391943`;
+IR binary SHA `c987707b2ec21f046ea790fac5b5f783977b58a9e40dab925b05712e8a534369`.
+Address/undefined-behavior checks halt on error; LeakSanitizer is disabled under
+tracing. The separately preserved original kernel receipt archive hash is
+`b75190e86d152ed9176a3b3d672beb9d93aeedaff6303c0631bec2e1ebc5ed03`.
+Historical receipts are unchanged. This remains bounded bootstrap functionality,
+not a full safety proof, physical Framework qualification, driver activation,
+filesystem/multi-user OS or complete standard library.

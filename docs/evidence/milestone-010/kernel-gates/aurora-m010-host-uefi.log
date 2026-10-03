@@ -1,0 +1,10 @@
+PASS: 124 UEFI descriptor, ownership, bounded handoff and complete table-tree checks
+PASS: UEFI transcripts 8 positive and 148 negative cases
+PASS: 16475 ACPI root/checksum/topology/range/window-authority cases
+PASS: ACPI transcripts 11 positive and 217 negative cases
+PASS: 71054 PCI MCFG/aperture/snapshot/topology/boundary cases
+PASS: PCI transcripts 10 positive and 289 negative cases
+PASS: immutable validated BIOS/UEFI program layout, interval and canonical checks, exact code/stack/frame authority
+PASS: 1274 UEFI runtime layout, owned table, permission, isolation, corruption and reuse checks
+PASS: UEFI user image metadata 3 positive and 64 negative cases
+PASS: UEFI runtime transcripts 14 positive and 716 negative cases

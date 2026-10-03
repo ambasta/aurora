@@ -16,20 +16,48 @@ class Token {
     Token(std::string t, int l) : text(std::move(t)), line(l) {}
 };
 enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter };
+enum class TemplateArgumentKind { Type, Value };
+class TemplateArgument {
+  public:
+    TemplateArgumentKind kind = TemplateArgumentKind::Type;
+    TypeKind type = TypeKind::I64;
+    std::int64_t value = 0;
+    TemplateArgument() = default;
+    TemplateArgument(TypeKind value) : type(value) {}
+    static TemplateArgument capacity(std::int64_t value) {
+        TemplateArgument argument;
+        argument.kind = TemplateArgumentKind::Value;
+        argument.value = value;
+        return argument;
+    }
+    bool operator==(const TemplateArgument &) const = default;
+};
+enum class TemplateParameterKind { Scalar, Capacity };
+class TemplateParameter {
+  public:
+    TemplateParameterKind kind = TemplateParameterKind::Scalar;
+    std::string name;
+    TemplateParameter(std::string value) : name(std::move(value)) {}
+    TemplateParameter(TemplateParameterKind kind, std::string value)
+        : kind(kind), name(std::move(value)) {}
+};
 class Type {
   public:
     TypeKind kind = TypeKind::I64;
     std::string className;
     std::string displayName;
-    std::vector<TypeKind> templateArguments;
+    std::vector<TemplateArgument> templateArguments;
     TypeKind elementKind = TypeKind::I64;
     int length = 0;
+    std::string elementParameter, lengthParameter;
     Type() = default;
     explicit Type(TypeKind value) : kind(value) {}
     explicit Type(std::string name) : kind(TypeKind::Class), className(std::move(name)) {}
     bool operator==(const Type &other) const {
         return kind == other.kind && className == other.className &&
                elementKind == other.elementKind && length == other.length &&
+               elementParameter == other.elementParameter &&
+               lengthParameter == other.lengthParameter &&
                templateArguments == other.templateArguments;
     }
     bool isClass() const { return kind == TypeKind::Class; }
@@ -71,14 +99,21 @@ inline std::string typeName(const Type &type) {
             for (std::size_t index = 0; index < type.templateArguments.size(); ++index) {
                 if (index)
                     name += ", ";
-                name += typeName(Type(type.templateArguments[index]));
+                const auto &argument = type.templateArguments[index];
+                name += argument.kind == TemplateArgumentKind::Type
+                            ? typeName(Type(argument.type))
+                            : std::to_string(argument.value);
             }
             name += ">";
         }
         return name;
     }
     case TypeKind::Array:
-        return "array<" + typeName(Type(type.elementKind)) + ", " + std::to_string(type.length) +
+        return "array<" +
+               (type.elementParameter.empty() ? typeName(Type(type.elementKind))
+                                              : type.elementParameter) +
+               ", " +
+               (type.lengthParameter.empty() ? std::to_string(type.length) : type.lengthParameter) +
                ">";
     }
     return "?";

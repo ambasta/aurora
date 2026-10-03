@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 80 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` runs all 95 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -90,7 +90,8 @@ The library contains initial scalar-specialized modules, not a complete runtime 
 The compiler also supports `import std.numeric;` and an inline
 `std::Accumulator(initial)` with checked `.add(amount)` and readonly `.value()`.
 This Aurora-specific scalar API exercises private state and constructors; it is
-not a claim that standard C++ has this class or that generic containers are ready.
+not a claim that standard C++ has this class. The bounded array subset described
+below is the current reusable container implementation.
 The milestone006 compiler adds `std::minmax(i64, i64)` returning
 an inline `std::MinMax`, with readonly `.min()`/`.max()` and checked
 `std::range_width(MinMax)`. Class arguments are immutable snapshots taken
@@ -140,6 +141,25 @@ existing suites, ten exhaustive-dispatch checks and sanitizer gates. Independent
 compiler review passed; final milestone009 integration verification passed.
 See [the template contract](compiler/TEMPLATES.md).
 
+
+The independently reviewed milestone010 compiler adds `import std.array;` and
+`std::array<T,N>` for scalar T and explicit decimal capacity N from 1 through 64.
+Its private inline storage is completely zero-initialized; `.size()` reports the
+capacity, `.at(index)` returns a checked scalar copy, and mutable `.set(index,value)`
+stores and returns the value. Ordinary class copies and function boundaries copy
+all elements independently. No heap, slices or escaping element references are added.
+Canonical `builtin::array<T,N>` names the storage type; bare `array<T,N>` remains
+its fixed alias in every scope. The `builtin` namespace is reserved, and the
+wrapper is always spelled `std::array<T,N>` at use sites.
+
+The checkpoint passes 216 fixed-container cases, including 55 exact trap-site checks
+and 96 rejection fixtures, 463 direct IR cases, ten exhaustive-dispatch controls
+and 18 native receiver-array IR checks with ten exact trap-site checks. Existing
+suites and address/undefined-behavior sanitizer gates pass; alternate-seed runs
+overlap this coverage. Independent compiler review passed; final milestone010
+integration verification passed. See [the fixed-container contract](compiler/FIXED-CONTAINERS.md)
+for literal-capacity templates, logical-field versus flat-storage metadata, the
+64-leaf class-value boundary and argument evaluation order.
 
 The previous `fn`/`let` prototype syntax is intentionally removed. The current
 surface, evaluation order and unsupported features are specified in
@@ -232,3 +252,8 @@ user programs in distinct owned roots after firmware discovery, contains exact
 language faults, and restores kernel authority before retirement and reuse.
 Fourteen runtime modes verify this bounded sequential path. It does not yet
 provide UEFI preemption, IPC, arbitrary processes or device activation.
+
+The [staged IPC profile](kernel/uefi/ipc.md) now links separately compiled client
+and service domains through bounded copied requests/replies, incarnation-bound
+endpoint rights and fault cancellation/restart. It has no arbitrary suspended
+call, shared pointer, timeout or preemption guarantee.

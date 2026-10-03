@@ -3,13 +3,15 @@
 
 Only temporary header copies are modified. Positive controls first compile the
 unchanged headers, then an injected variant must trigger the specific exhaustive
-visitor assertion, rather than an unrelated C++ error.
+visitor assertion, rather than an unrelated C++ error. An optional direct-IR
+executable also enables separate native receiver-array ABI and exact-trap checks.
 """
 from pathlib import Path
 import os
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,3 +63,47 @@ with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
                 raise AssertionError(f"{header}: missing {enumeration}-enum exhaustive rejection:\n{result.stderr}")
             print(f"PASS IR exhaustive unknown {enumeration} enum rejected by {header}")
 print("10 exhaustive IR dispatch checks passed")
+
+# When the direct-IR executable is supplied, exercise the same validated module
+# as actual native code. Keep this receipt separate from compile-time exhaustiveness.
+if len(sys.argv) > 1:
+    from enum import Enum
+    from integer_oracle import NativeRunner, command, validate_trap, validate_values
+
+    if len(sys.argv) != 2:
+        raise AssertionError("usage: ir_exhaustive.py [path-to-ir-tests]")
+
+    class ArrayTrap(Enum):
+        BOUNDS = ".Laurora_bounds_trap"
+        RHS_ZERO = ".Laurora_division_zero_trap"
+
+    with tempfile.TemporaryDirectory(prefix="aurora-ir-array-native-") as temporary:
+        directory = Path(temporary)
+        assembly = command([Path(sys.argv[1]).resolve(), "--emit-array-fields"]).stdout.decode()
+        runner = NativeRunner(directory, None, 5)
+        names = ["test", "array_scalar_mapping", "array_bool_mapping",
+                 "array_bool_zero", "array_bool_store", "array_copy"]
+        observed, _ = runner.assemble(assembly, names)
+        validate_values(observed, [42, 7, 1, 0, 1, 42], names)
+        native_count = len(names)
+        trap_count = 0
+        for target in ("array_dynamic", "array_store_dynamic"):
+            for index in (0, 1, -1, 2, -(1 << 63), (1 << 63) - 1):
+                name = f"{target}({index})"
+                wrapper = ("\n.text\n.globl ir_array_probe\nir_array_probe:\n"
+                           f"    movabsq ${index}, %rdi\n    jmp {target}\n")
+                observed, symbols = runner.assemble(assembly + wrapper, ["ir_array_probe"])
+                if index not in (0, 1):
+                    validate_trap(observed, ArrayTrap.BOUNDS, symbols, name)
+                    trap_count += 1
+                elif target == "array_store_dynamic":
+                    # A valid index reaches the deliberately trapping RHS; an
+                    # invalid one above must stop at the bounds site first.
+                    validate_trap(observed, ArrayTrap.RHS_ZERO, symbols, name)
+                    trap_count += 1
+                else:
+                    validate_values(observed, [0], [name])
+                native_count += 1
+        print(f"{native_count} native receiver-array IR checks passed "
+              f"({trap_count} exact-site traps; scalar mapping, bool stride, zero init, "
+              "copy ABI and bounds-before-RHS)")

@@ -16,10 +16,23 @@ class Guard {
     Type elementType;
     bool operator==(const Guard &) const = default;
 };
+// Only the implicit receiver can mint this evidence. Its identity and lifetime
+// are fixed for the whole invocation; calls may mutate contents but cannot alter
+// its nominal shape or end that lifetime. Local-array evidence is a distinct kind.
+class ReceiverGuard {
+  public:
+    std::string className;
+    int fieldIndex;
+    int firstLeaf;
+    int length;
+    Type elementType;
+    bool operator==(const ReceiverGuard &) const = default;
+};
+using BoundsEvidence = std::variant<Guard, ReceiverGuard>;
 class Value {
   public:
     Type type;
-    std::optional<Guard> guard;
+    std::optional<BoundsEvidence> guard;
     bool operator==(const Value &) const = default;
 };
 class State {
@@ -49,7 +62,8 @@ class Metrics {
 inline void verifyFunction(Function &function,
                            const std::map<std::string, const Function *> &functions,
                            Metrics *metrics = nullptr, const std::set<int> &availableScopes = {0},
-                           const std::map<std::string, std::vector<Type>> &classLayouts = {}) {
+                           const std::map<std::string, std::vector<Type>> &classLayouts = {},
+                           const std::map<std::string, std::vector<ClassField>> &classFields = {}) {
     require(availableScopes.contains(function.moduleScope), "unknown function module scope");
     auto boundaryType = [&](const Type &type) {
         if (scalar(type))
@@ -74,10 +88,20 @@ inline void verifyFunction(Function &function,
                 "invalid slot payload type");
     }
     const std::vector<Type> *receiverLayout = nullptr;
+    const std::vector<ClassField> *receiverFields = nullptr;
+    std::vector<ClassField> legacyReceiverFields;
     if (function.receiver) {
         const auto &receiver = *function.receiver;
         require(classLayouts.contains(receiver.className), "unknown receiver class");
         receiverLayout = &classLayouts.at(receiver.className);
+        if (classFields.contains(receiver.className))
+            receiverFields = &classFields.at(receiver.className);
+        else {
+            for (std::size_t leaf = 0; leaf < receiverLayout->size(); ++leaf)
+                legacyReceiverFields.push_back(
+                    ClassField{(*receiverLayout)[leaf], static_cast<int>(leaf), 1, false});
+            receiverFields = &legacyReceiverFields;
+        }
         require(!receiver.constructor || (receiver.mutableValue && function.result == Type::I64),
                 "invalid constructor receiver signature");
     }
@@ -262,12 +286,40 @@ inline void verifyFunction(Function &function,
                 state.initialized.insert(offset);
                 state.maybeInitialized.insert(offset);
             };
-            auto receiverField = [&](int fieldIndex, const Type &type) {
-                require(receiverLayout != nullptr, "receiver access without bound receiver");
+            auto receiverShape = [&](int fieldIndex) -> const ClassField & {
+                require(receiverFields != nullptr, "receiver access without bound receiver");
                 require(fieldIndex >= 0 &&
-                            static_cast<std::size_t>(fieldIndex) < receiverLayout->size() &&
-                            (*receiverLayout)[fieldIndex] == type,
+                            static_cast<std::size_t>(fieldIndex) < receiverFields->size(),
                         "receiver field type/layout mismatch");
+                return (*receiverFields)[fieldIndex];
+            };
+            auto receiverField = [&](int fieldIndex, const Type &type) -> const ClassField & {
+                const auto &field = receiverShape(fieldIndex);
+                require(!field.array && field.elementType == type,
+                        "receiver field type/layout mismatch");
+                return field;
+            };
+            auto receiverArray = [&](int fieldIndex, bool initialized) -> const ClassField & {
+                const auto &field = receiverShape(fieldIndex);
+                require(field.array, "receiver array operation requires array field");
+                if (initialized) {
+                    require(!function.receiver->constructor,
+                            "constructor cannot access receiver array during initialization");
+                    for (int element = 0; element < field.length; ++element)
+                        require(state.receiverInitialized.contains(field.firstLeaf + element),
+                                "receiver array element not initialized");
+                }
+                return field;
+            };
+            auto receiverEvidence = [&](int fieldIndex, const ClassField &field) {
+                return ReceiverGuard{function.receiver->className, fieldIndex, field.firstLeaf,
+                                     field.length, field.elementType};
+            };
+            auto receiverGuard = [&](const Value &value, int fieldIndex, const ClassField &field) {
+                require(value.type == Type::I64 &&
+                            value.guard ==
+                                std::optional<BoundsEvidence>(receiverEvidence(fieldIndex, field)),
+                        "receiver index access lacks matching dominating bounds token");
             };
             auto array = [&](int offset, int length, const Type &type) {
                 require(scalar(type) && length >= 1 && length <= 4096, "invalid array shape");
@@ -281,8 +333,8 @@ inline void verifyFunction(Function &function,
                 }
             };
             auto guard = [&](const Value &value, int offset, int length, const Type &type) {
-                require(value.type == Type::I64 &&
-                            value.guard == std::optional<Guard>(Guard{offset, length, type}),
+                require(value.type == Type::I64 && value.guard == std::optional<BoundsEvidence>(
+                                                                      Guard{offset, length, type}),
                         "index access lacks matching dominating bounds token");
             };
             std::visit(
@@ -533,21 +585,46 @@ inline void verifyFunction(Function &function,
                         }
                         state.maybeConstructedObjects.erase(operation.offset);
                     } else if constexpr (std::is_same_v<Op, ReceiverLoad>) {
-                        receiverField(operation.fieldIndex, operation.type);
+                        const auto &field = receiverField(operation.fieldIndex, operation.type);
                         require(!function.receiver->constructor,
                                 "constructor cannot read receiver during initialization");
-                        require(state.receiverInitialized.contains(operation.fieldIndex),
+                        require(state.receiverInitialized.contains(field.firstLeaf),
                                 "receiver field not initialized");
                         state.current = Value{operation.type, {}};
                     } else if constexpr (std::is_same_v<Op, ReceiverStore>) {
-                        receiverField(operation.fieldIndex, operation.type);
+                        const auto &field = receiverField(operation.fieldIndex, operation.type);
                         current(operation.type);
                         require(function.receiver->mutableValue, "write through const receiver");
                         if (function.receiver->constructor)
-                            require(!state.receiverMaybeInitialized.contains(operation.fieldIndex),
+                            require(!state.receiverMaybeInitialized.contains(field.firstLeaf),
                                     "constructor field initialized more than once");
-                        state.receiverInitialized.insert(operation.fieldIndex);
-                        state.receiverMaybeInitialized.insert(operation.fieldIndex);
+                        state.receiverInitialized.insert(field.firstLeaf);
+                        state.receiverMaybeInitialized.insert(field.firstLeaf);
+                    } else if constexpr (std::is_same_v<Op, ReceiverArrayZero>) {
+                        const auto &field = receiverArray(operation.fieldIndex, false);
+                        require(function.receiver->constructor && function.receiver->mutableValue,
+                                "receiver array zero requires constructor receiver");
+                        for (int element = 0; element < field.length; ++element) {
+                            const int leaf = field.firstLeaf + element;
+                            require(!state.receiverMaybeInitialized.contains(leaf),
+                                    "constructor array initialized more than once");
+                            state.receiverInitialized.insert(leaf);
+                            state.receiverMaybeInitialized.insert(leaf);
+                        }
+                    } else if constexpr (std::is_same_v<Op, ReceiverBoundsGuard>) {
+                        const auto &field = receiverArray(operation.fieldIndex, true);
+                        current(Type::I64);
+                        state.current =
+                            Value{Type::I64, receiverEvidence(operation.fieldIndex, field)};
+                    } else if constexpr (std::is_same_v<Op, ReceiverIndexLoad>) {
+                        const auto &field = receiverArray(operation.fieldIndex, true);
+                        receiverGuard(current(Type::I64), operation.fieldIndex, field);
+                        state.current = Value{field.elementType, {}};
+                    } else if constexpr (std::is_same_v<Op, ReceiverIndexStore>) {
+                        const auto &field = receiverArray(operation.fieldIndex, true);
+                        require(function.receiver->mutableValue, "write through const receiver");
+                        current(field.elementType);
+                        receiverGuard(pop(), operation.fieldIndex, field);
                     } else if constexpr (std::is_same_v<Op, MethodCall>) {
                         require(functions.contains(operation.callee), "unknown method call target");
                         const auto &target = *functions.at(operation.callee);
@@ -747,8 +824,37 @@ inline ValidatedModule validate(Module module) {
         for (const auto &field : layout)
             verification::require(scalar(field), "non-scalar class layout field");
     }
+    for (const auto &[name, fields] : module.classFields) {
+        verification::require(module.classLayouts.contains(name),
+                              "logical fields reference unknown class layout");
+        const auto &layout = module.classLayouts.at(name);
+        std::size_t nextLeaf = 0;
+        for (const auto &field : fields) {
+            verification::require(scalar(field.elementType) && field.firstLeaf >= 0 &&
+                                      static_cast<std::size_t>(field.firstLeaf) == nextLeaf &&
+                                      field.length >= 1 && field.length <= (field.array ? 64 : 1),
+                                  "invalid logical class field shape");
+            verification::require(nextLeaf + static_cast<std::size_t>(field.length) <=
+                                      layout.size(),
+                                  "logical class field range exceeds layout");
+            for (int element = 0; element < field.length; ++element)
+                verification::require(layout[nextLeaf + element] == field.elementType,
+                                      "logical class field leaf type mismatch");
+            nextLeaf += static_cast<std::size_t>(field.length);
+        }
+        verification::require(nextLeaf == layout.size(),
+                              "logical class fields do not cover complete layout");
+    }
+    for (const auto &[name, layout] : module.classLayouts) {
+        if (module.classFields.contains(name))
+            continue;
+        auto &fields = module.classFields[name];
+        for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
+            fields.push_back(ClassField{layout[leaf], static_cast<int>(leaf), 1, false});
+    }
     for (auto &function : module.functions)
-        verification::verifyFunction(function, functions, nullptr, scopes, module.classLayouts);
+        verification::verifyFunction(function, functions, nullptr, scopes, module.classLayouts,
+                                     module.classFields);
     // Analyze the full call graph so scalar helpers cannot hide receiver
     // recursion. Iterative Kosaraju traversal is O(functions + calls) and does
     // not consume host call-stack depth on an adversarial source-sized graph.

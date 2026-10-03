@@ -143,3 +143,6 @@ controller identities, not device activation or physical Framework support.
 
 [Sequential protected user domains](runtime.md) now have a separate version-3
 handoff profile, backed entirely by the owned arena and tested under real OVMF.
+
+The next staged request/reply IPC profile is documented in [ipc.md](ipc.md).
+Its acceptance status is recorded separately from the verified runtime checkpoint.

@@ -2,6 +2,9 @@
 .code64
 .global uefi_runtime_enter
 uefi_runtime_enter:
+.ifdef AURORA_IPC
+    mov %rdx,%r11
+.endif
     push %rbx
     push %rbp
     push %r12
@@ -27,11 +30,22 @@ uefi_runtime_enter:
     xor %r8d, %r8d
     xor %r9d, %r9d
     xor %r10d, %r10d
+ .ifndef AURORA_IPC
     xor %r11d, %r11d
+ .endif
     xor %r12d, %r12d
     xor %r13d, %r13d
     xor %r14d, %r14d
     xor %r15d, %r15d
+.ifdef AURORA_IPC
+    mov 0(%r11),%rdi
+    mov 8(%r11),%rsi
+    mov 16(%r11),%rdx
+    mov 24(%r11),%rcx
+    mov 32(%r11),%r8
+    mov 40(%r11),%r9
+    xor %r11d,%r11d
+.endif
     iretq
 .global aurora_leave_user
 aurora_leave_user:

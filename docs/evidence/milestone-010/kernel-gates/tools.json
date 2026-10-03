@@ -1,0 +1,14 @@
+{
+  "versions": {
+    "g++": "g++ (Debian 14.2.0-19) 14.2.0",
+    "as": "GNU assembler (GNU Binutils for Debian) 2.44",
+    "ld": "GNU ld (GNU Binutils for Debian) 2.44",
+    "python": "Python 3.12.14",
+    "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)"
+  },
+  "sha256": {
+    "/tmp/aurora-m010-compiler-frozen": "d91e06fad144a89c1c836e16db20ef48b8a644bf4c23b22a1517e08f25e1d82c",
+    "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64": "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067",
+    "/tmp/aurora-ovmf/root/usr/share/ovmf/OVMF.fd": "14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db"
+  }
+}

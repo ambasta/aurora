@@ -9,6 +9,12 @@ namespace aurora {
 // a deep copy: substituting one specialization cannot mutate another one.
 class ClassTemplateExpansion {
     std::map<std::string, TypeKind> substitutions;
+    std::map<std::string, std::int64_t> capacities;
+
+    void cannotShadowCapacity(const std::string &name) const {
+        if (capacities.contains(name))
+            throw Error("declaration cannot shadow capacity parameter: " + name);
+    }
 
     Type type(Type value) const {
         if (!value.templateArguments.empty())
@@ -19,6 +25,26 @@ class ClassTemplateExpansion {
                 throw Error("unknown class template parameter: " + value.className);
             return Type(found->second);
         }
+        if (value.isArray()) {
+            if (!value.elementParameter.empty()) {
+                const auto found = substitutions.find(value.elementParameter);
+                if (found == substitutions.end())
+                    throw Error("unknown scalar array element parameter: " +
+                                value.elementParameter);
+                value.elementKind = found->second;
+                value.elementParameter.clear();
+            }
+            if (!value.lengthParameter.empty()) {
+                const auto found = capacities.find(value.lengthParameter);
+                if (found == capacities.end())
+                    throw Error("unknown array capacity parameter: " + value.lengthParameter);
+                value.length = static_cast<int>(found->second);
+                value.lengthParameter.clear();
+            }
+            if (!scalar(Type(value.elementKind)) || value.length < 1 || value.length > 4096)
+                throw Error("invalid scalar array type after template substitution");
+        } else if (!value.elementParameter.empty() || !value.lengthParameter.empty())
+            throw Error("dependent array metadata requires an array type");
         return value;
     }
     ExpressionPtr expression(const ExpressionPtr &value) const {
@@ -28,7 +54,19 @@ class ClassTemplateExpansion {
             throw Error("class template bodies cannot name template specializations");
         if (value->op == "call" && substitutions.contains(value->token.text))
             throw Error("dependent scalar conversions are not supported: " + value->token.text);
+        if (value->op == "call" && capacities.contains(value->token.text))
+            throw Error("capacity parameter is not callable: " + value->token.text);
+        if (value->op == "call" && value->token.text == "move")
+            for (const auto &argument : value->args)
+                if (argument->op == "name" && capacities.contains(argument->token.text))
+                    throw Error("cannot move a capacity parameter: " + argument->token.text);
         auto result = std::make_shared<Expression>(*value);
+        if (value->op == "name")
+            if (const auto found = capacities.find(value->token.text); found != capacities.end()) {
+                result->op = "number";
+                result->token.text = std::to_string(found->second);
+                result->resolvedName.clear();
+            }
         result->reflectedType = type(value->reflectedType);
         result->args.clear();
         for (const auto &argument : value->args)
@@ -36,6 +74,10 @@ class ClassTemplateExpansion {
         return result;
     }
     StatementPtr statement(const StatementPtr &value) const {
+        if (value->kind == "let")
+            cannotShadowCapacity(value->name);
+        if (value->kind == "assign" && capacities.contains(value->name))
+            throw Error("cannot assign to a capacity parameter: " + value->name);
         auto result = std::make_shared<Statement>(*value);
         result->type = type(value->type);
         result->expr = expression(value->expr);
@@ -50,55 +92,86 @@ class ClassTemplateExpansion {
     }
 
   public:
-    static std::string argumentSuffix(const std::vector<TypeKind> &arguments) {
+    static std::string argumentSuffix(const std::vector<TemplateArgument> &arguments) {
         std::string result = "<";
         for (std::size_t index = 0; index < arguments.size(); ++index) {
             if (index)
                 result += ",";
-            result += typeName(Type(arguments[index]));
+            const auto &argument = arguments[index];
+            result += argument.kind == TemplateArgumentKind::Type ? typeName(Type(argument.type))
+                                                                  : std::to_string(argument.value);
         }
         return result + ">";
     }
-    static std::string nativeSuffix(const std::vector<TypeKind> &arguments) {
+    static std::string nativeSuffix(const std::vector<TemplateArgument> &arguments) {
         std::string result = "_t" + std::to_string(arguments.size());
-        for (const auto argument : arguments) {
-            if (!scalar(Type(argument)))
-                throw Error("class template arguments require i64, u64 or bool");
-            result += "_" + typeName(Type(argument));
+        for (const auto &argument : arguments) {
+            if (argument.kind == TemplateArgumentKind::Type) {
+                if (!scalar(Type(argument.type)))
+                    throw Error("class template type arguments require i64, u64 or bool");
+                result += "_" + typeName(Type(argument.type));
+            } else {
+                if (argument.value < 1 || argument.value > 64)
+                    throw Error("class template capacity must be between 1 and 64");
+                result += "_v" + std::to_string(argument.value);
+            }
         }
         return result;
     }
     static void validate(const ClassDefinition &definition) {
         if (definition.templateParameters.empty() || definition.templateParameters.size() > 2)
-            throw Error("class templates require one or two Scalar parameters");
+            throw Error("class templates require one or two Scalar parameters, or Scalar and i64");
         std::set<std::string> parameters;
-        for (const auto &parameter : definition.templateParameters)
-            if (!parameters.insert(parameter).second)
-                throw Error("duplicate class template parameter: " + parameter);
+        std::vector<TemplateArgument> arguments;
+        for (std::size_t index = 0; index < definition.templateParameters.size(); ++index) {
+            const auto &parameter = definition.templateParameters[index];
+            if (!parameters.insert(parameter.name).second)
+                throw Error("duplicate class template parameter: " + parameter.name);
+            if (parameter.kind == TemplateParameterKind::Capacity) {
+                if (index != 1 ||
+                    definition.templateParameters[0].kind != TemplateParameterKind::Scalar)
+                    throw Error("capacity templates require Scalar followed by i64");
+                arguments.push_back(TemplateArgument::capacity(1));
+            } else
+                arguments.push_back(TypeKind::I64);
+        }
         // Checking a disposable scalar copy catches malformed dependent type
         // references even when the source template is never instantiated.
-        std::vector<TypeKind> arguments(definition.templateParameters.size(), TypeKind::I64);
         (void)instantiate(definition, arguments);
     }
     static ClassDefinition instantiate(const ClassDefinition &definition,
-                                       const std::vector<TypeKind> &arguments) {
+                                       const std::vector<TemplateArgument> &arguments) {
         if (arguments.size() != definition.templateParameters.size())
             throw Error("wrong number of class template arguments for " + definition.token.text);
         ClassTemplateExpansion expansion;
         for (std::size_t index = 0; index < arguments.size(); ++index) {
-            if (!scalar(Type(arguments[index])))
-                throw Error("class template arguments require i64, u64 or bool");
-            expansion.substitutions.emplace(definition.templateParameters[index], arguments[index]);
+            const auto &parameter = definition.templateParameters[index];
+            const auto &argument = arguments[index];
+            if (parameter.kind == TemplateParameterKind::Scalar) {
+                if (argument.kind != TemplateArgumentKind::Type || !scalar(Type(argument.type)))
+                    throw Error("class template Scalar argument requires i64, u64 or bool");
+                expansion.substitutions.emplace(parameter.name, argument.type);
+            } else {
+                if (argument.kind != TemplateArgumentKind::Value || argument.value < 1 ||
+                    argument.value > 64)
+                    throw Error("class template capacity requires an i64 value between 1 and 64");
+                expansion.capacities.emplace(parameter.name, argument.value);
+            }
         }
         ClassDefinition result = definition;
         result.templateParameters.clear();
         result.templateArguments = arguments;
-        for (auto &field : result.fields)
+        for (auto &field : result.fields) {
+            expansion.cannotShadowCapacity(field.token.text);
             field.type = expansion.type(field.type);
+        }
         for (auto &method : result.methods) {
+            expansion.cannotShadowCapacity(method.token.text);
             method.result = expansion.type(method.result);
-            for (auto &parameter : method.params)
+            for (auto &parameter : method.params) {
+                expansion.cannotShadowCapacity(parameter.name);
                 parameter.type = expansion.type(parameter.type);
+            }
             for (auto &[field, initializer] : method.initializers) {
                 (void)field;
                 initializer = expansion.expression(initializer);

@@ -54,17 +54,19 @@ bool. There is no implicit conversion to make an invalid specialization work.
 Arguments are explicit `i64`, `u64` or `bool` spellings. Missing/wrong-arity
 arguments, class/array/owner/reference arguments, partial/explicit specialization,
 function templates and deduction are rejected. A template definition cannot name
-an explicit template-id, including itself; recursive/nested instantiation and
+an explicit user-template specialization, including itself; recursive/nested instantiation and
 nested template arguments are not available. Plain injected self-class names
 inside an instantiated class refer to that same concrete class under ordinary
 class rules. This does not authorize a constructor/method call cycle.
 
 Dependent scalar conversion syntax such as `T(value)` is not supported.
-Type parameters cannot be embedded in array/ownership/reference type constructors;
-those require the previously supported concrete element spellings. General
-concepts, constraints, variadic templates, default type arguments, compile-time
+Type parameters may now appear in builtin array storage under the separate
+[fixed-container contract](FIXED-CONTAINERS.md); ownership/reference constructors
+still require their supported concrete i64 spelling. General
+concepts, constraints, variadic templates, default type arguments, general compile-time
 values and template-driven code generation remain deferred. The parser accepts
-only `template <Scalar T>` or the corresponding two-parameter form.
+`template <Scalar T>`, the corresponding two-Scalar form, or the explicitly bounded
+`template <Scalar T, i64 N>` capacity form specified in FIXED-CONTAINERS.md.
 
 Syntactic and expansion-shape restrictions are checked when a definition loads.
 Body name binding and type-dependent semantics are checked for each requested
@@ -119,7 +121,7 @@ and same-layout cross-specialization argument, result and receiver forgery.
 
 Each graph permits at most 64 class template declarations and 256 distinct
 requested specializations. Repeated identical requests do not consume additional
-specializations. Existing source-byte/depth/frame limits, 64-field value-boundary
+specializations. Existing source-byte/depth/frame limits, 64-scalar-leaf value-boundary
 and six-parameter limits still apply. These bounds prevent recursive expansion
 and unbounded specialization counts within this subset; they are not a global
 compiler memory/work or target-stack guarantee. Compact verifier facts and

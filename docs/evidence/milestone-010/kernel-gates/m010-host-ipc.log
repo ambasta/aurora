@@ -1,0 +1,4 @@
+PASS: IPC 26120 rejected envelopes, 262144 six-operation transition sequences, copy/scrub, rights, stale/foreign/rebirth, terminal races, generation limits and overflow boundaries
+PASS: UEFI user image metadata 3 positive and 64 negative cases
+PASS: IPC image authority 4 positive and 26 negative cases
+PASS: IPC transcripts 15 positive and 1732 negative cases

@@ -92,3 +92,7 @@ U64 is an exact scalar IR type. BinaryValue carries its operand type; shifts req
 ## Bounded class-template expansion
 
 `templates.hpp` deep-copies and substitutes explicit scalar arguments into concrete class ASTs. Module resolution owns defining-module identity, visibility, deduplication and request caps. Unexpanded parameter and template-argument metadata are rejected at the concrete boundary; no generic operation enters native IR. Ordinary nominal class/receiver/value-call checks apply unchanged. See [TEMPLATES.md](TEMPLATES.md) for the precise restricted domain and remaining resource limits.
+
+## Private fixed-array fields
+
+ClassFields logical shapes partition the flat classLayouts leaves exactly. Constructor-only zero initialization accounts for every array leaf. Receiver-array guard evidence identifies nominal receiver, logical field, element type and range; indexed operations require it independently of local-array tokens. Whole-class value copies and ABI staging use the flattened leaf layout, with a64-leaf class boundary cap. Scalar receiver instructions cannot reinterpret array fields. Capacity parameters disappear during typed substitution; no source integer becomes an address. See [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md).
