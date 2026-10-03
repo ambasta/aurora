@@ -7,6 +7,30 @@ namespace aurora {
 class Parser {
     std::vector<Token> tokens;
     std::size_t position = 0;
+    int expressionNesting = 0, blockNesting = 0, typeNesting = 0;
+    class Nesting {
+        int &depth;
+
+      public:
+        Nesting(int &value, int limit, int line, const std::string &kind) : depth(value) {
+            if (depth >= limit)
+                throw Error("line " + std::to_string(line) + ": " + kind + " nesting exceeds " +
+                            std::to_string(limit));
+            ++depth;
+        }
+        Nesting(const Nesting &) = delete;
+        Nesting &operator=(const Nesting &) = delete;
+        ~Nesting() {
+            --depth;
+        }
+    };
+    void attach(const ExpressionPtr &parent, const ExpressionPtr &child) {
+        // Check before attaching: error cleanup must never own an over-deep tree.
+        if (child->depth >= 128)
+            fail("expression AST depth exceeds 128");
+        parent->depth = std::max(parent->depth, child->depth + 1);
+        parent->args.push_back(child);
+    }
 
   public:
     explicit Parser(std::vector<Token> t) : tokens(std::move(t)) {}
@@ -37,15 +61,30 @@ class Parser {
             !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
             fail("expected identifier");
         static const std::set<std::string> reserved = {
-            "fn",        "module",   "let",    "mut",           "if",     "else",
-            "return",    "true",     "false",  "static_assert", "class",  "while",
-            "break",     "continue", "auto",   "const",         "public", "private",
-            "protected", "unsafe",   "extern", "struct"};
+            "fn",     "module", "let",           "mut",      "if",        "else",   "return",
+            "true",   "false",  "static_assert", "class",    "while",     "break",  "continue",
+            "auto",   "const",  "public",        "private",  "protected", "unsafe", "extern",
+            "struct", "export", "import",        "namespace"};
+        if (t.text.starts_with("__au_"))
+            fail("reserved compiler identifier prefix: __au_");
         if (reserved.count(t.text))
             fail("reserved identifier");
         return take();
     }
+    Token qualifiedIdent() {
+        auto token = ident();
+        while (eat("::"))
+            token.text += "::" + ident().text;
+        return token;
+    }
+    Token moduleIdent() {
+        auto token = ident();
+        while (eat("."))
+            token.text += "." + ident().text;
+        return token;
+    }
     Type type() {
+        Nesting nesting(typeNesting, 64, peek().line, "type");
         static const std::set<std::string> forbidden = {
             "fn",     "let", "mut",  "auto", "const", "class",  "unsafe", "struct",
             "extern", "int", "void", "char", "float", "double", "new",    "delete"};
@@ -88,6 +127,8 @@ class Parser {
             if (t.text.empty() ||
                 !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
                 fail("expected type name");
+            while (eat("::"))
+                t.text += "::" + ident().text;
             if (peek().text == "<")
                 fail("unsupported type " + t.text);
             return Type(t.text);
@@ -101,11 +142,12 @@ class Parser {
         while (true) {
             if (eat(".")) {
                 auto member = std::make_shared<Expression>("member", ident());
-                member->args.push_back(expression);
+                attach(member, expression);
                 expression = member;
             } else if (eat("[")) {
                 auto index = std::make_shared<Expression>("index", expression->token);
-                index->args = {expression, expr()};
+                attach(index, expression);
+                attach(index, expr());
                 need("]");
                 expression = index;
             } else
@@ -113,13 +155,14 @@ class Parser {
         }
     }
     ExpressionPtr primary() {
+        Nesting nesting(expressionNesting, 128, peek().line, "expression parser");
         auto t = take();
         auto e = std::make_shared<Expression>("name", t);
         if (t.text == "{") {
             e->op = "array_literal";
             if (!eat("}")) {
                 do {
-                    e->args.push_back(expr());
+                    attach(e, expr());
                 } while (eat(","));
                 need("}");
             }
@@ -132,7 +175,7 @@ class Parser {
         }
         if (t.text == "-" || t.text == "!") {
             e->op = "unary";
-            e->args.push_back(primary());
+            attach(e, primary());
             return e;
         }
         if (std::isdigit(static_cast<unsigned char>(t.text[0]))) {
@@ -145,6 +188,9 @@ class Parser {
         }
         if (!(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
             fail("expected expression");
+        while (eat("::"))
+            t.text += "::" + ident().text;
+        e->token.text = t.text;
         if (eat("(")) {
             e->op = "call";
             if (t.text == "size_of" || t.text == "type_id" || t.text == "field_count") {
@@ -152,7 +198,7 @@ class Parser {
                 need(")");
             } else if (!eat(")")) {
                 do {
-                    e->args.push_back(expr());
+                    attach(e, expr());
                 } while (eat(","));
                 need(")");
             }
@@ -164,7 +210,7 @@ class Parser {
                     need(".");
                     e->fieldNames.push_back(ident().text);
                     need("=");
-                    e->args.push_back(expr());
+                    attach(e, expr());
                 } while (eat(","));
                 need("}");
             }
@@ -187,12 +233,14 @@ class Parser {
         while (precedence(peek().text) >= min) {
             auto t = take();
             auto x = std::make_shared<Expression>("binary", t);
-            x->args = {e, expr(precedence(t.text) + 1)};
+            attach(x, e);
+            attach(x, expr(precedence(t.text) + 1));
             e = x;
         }
         return e;
     }
     std::vector<StatementPtr> block() {
+        Nesting nesting(blockNesting, 128, peek().line, "block");
         need("{");
         std::vector<StatementPtr> b;
         while (!eat("}")) {
@@ -207,7 +255,10 @@ class Parser {
         if (name == "const" || name == "i64" || name == "bool" || name == "own" || name == "ref" ||
             name == "mutref" || name == "array")
             return true;
-        const auto &next = tokens.at(std::min(position + 1, tokens.size() - 1)).text;
+        std::size_t look = position + 1;
+        while (look + 1 < tokens.size() && tokens[look].text == "::")
+            look += 2;
+        const auto &next = tokens.at(std::min(look, tokens.size() - 1)).text;
         return !next.empty() &&
                (std::isalpha(static_cast<unsigned char>(next[0])) || next[0] == '_') &&
                name != "return" && name != "if" && name != "while";
@@ -269,16 +320,38 @@ class Parser {
         }
         return s;
     }
-    Program parse() {
-        need("module");
-        ident();
-        while (eat("."))
-            ident();
-        need(";");
-        Program program;
-        while (peek().text != "<eof>") {
+    void declarations(Program &program, const std::string &scope, bool exportScope, bool nested) {
+        if (std::count(scope.begin(), scope.end(), ':') > 62)
+            fail("namespace nesting exceeds 32 components");
+        while (peek().text != "<eof>" && (!nested || peek().text != "}")) {
+            const bool explicitlyExported = eat("export");
+            if (explicitlyExported && !program.interfaceUnit)
+                fail("export declarations require an export module interface");
+            const bool exported = explicitlyExported || exportScope;
+            if (peek().text == "import")
+                fail(explicitlyExported ? "module reexports are not supported"
+                                        : "imports must precede declarations");
+            if (eat("namespace")) {
+                const auto name = qualifiedIdent().text;
+                const auto fullScope = scope.empty() ? name : scope + "::" + name;
+                std::size_t end = 0;
+                while (true) {
+                    end = fullScope.find("::", end);
+                    program.namespaces.insert(end == std::string::npos ? fullScope
+                                                                       : fullScope.substr(0, end));
+                    if (end == std::string::npos)
+                        break;
+                    end += 2;
+                }
+                need("{");
+                declarations(program, fullScope, exported, true);
+                need("}");
+                continue;
+            }
             if (eat("class")) {
                 ClassDefinition definition(ident());
+                definition.scope = scope;
+                definition.exported = exported;
                 need("{");
                 bool publicAccess = false;
                 while (!eat("}")) {
@@ -305,30 +378,47 @@ class Parser {
                 continue;
             }
             need("auto");
-            Function f(ident());
+            Function function(ident());
+            function.scope = scope;
+            function.exported = exported;
             need("(");
             if (!eat(")")) {
                 do {
-                    Param a;
-                    a.type = type();
-                    a.name = ident().text;
-                    if (!scalar(a.type))
-                        fail("only scalar function parameters are supported");
-                    f.params.push_back(a);
+                    Param parameter;
+                    parameter.type = type();
+                    parameter.name = ident().text;
+                    if (!scalar(parameter.type))
+                        fail("only scalar function parameters are supported; aggregate "
+                             "cross-module ABI is not implemented");
+                    function.params.push_back(parameter);
                 } while (eat(","));
                 need(")");
             }
             need("->");
-            f.result = type();
-            if (!scalar(f.result))
-                fail("only scalar function results are supported");
-            f.body = block();
-            program.functions.push_back(std::move(f));
+            function.result = type();
+            if (!scalar(function.result))
+                fail("only scalar function results are supported; aggregate cross-module ABI is "
+                     "not implemented");
+            function.body = block();
+            program.functions.push_back(std::move(function));
         }
-        if (program.functions.empty())
+    }
+    Program parse() {
+        Program program;
+        program.interfaceUnit = eat("export");
+        need("module");
+        program.moduleName = moduleIdent().text;
+        if (program.moduleName.size() > 4096)
+            fail("module name exceeds 4096 bytes");
+        need(";");
+        while (eat("import")) {
+            program.imports.push_back(moduleIdent());
+            need(";");
+        }
+        declarations(program, "", false, false);
+        if (program.functions.empty() && program.imports.empty() && !program.interfaceUnit)
             fail("module must contain a function");
         return program;
     }
 };
-
 } // namespace aurora

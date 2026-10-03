@@ -39,6 +39,11 @@ class X86Emitter {
         if (stackDepth % 2)
             line("addq $8, %rsp");
     }
+    std::string querySymbol(ir::Query query, int scope) {
+        const std::string name = query == ir::Query::Size ? "size" : "field_count";
+        return scope == 0 ? "aurora_reflect_" + name
+                          : "__au_reflect_s" + std::to_string(scope) + "_" + name;
+    }
     void instruction(const ir::Instruction &instruction) {
         std::visit(
             [&](const auto &operation) {
@@ -99,8 +104,7 @@ class X86Emitter {
                     call(operation.callee);
                 } else if constexpr (std::is_same_v<Op, ir::MetadataQuery>) {
                     line("movq %rax, %rdi");
-                    call(operation.query == ir::Query::Size ? "aurora_reflect_size"
-                                                            : "aurora_reflect_field_count");
+                    call(querySymbol(operation.query, operation.moduleScope));
                 } else if constexpr (std::is_same_v<Op, ir::Label>) {
                     output << label(operation.id) << ":\n";
                 } else if constexpr (std::is_same_v<Op, ir::Jump>) {
@@ -143,27 +147,30 @@ class X86Emitter {
             output << ".size " << function.name << ", .-" << function.name << "\n";
             ++functionIndex;
         }
-        for (const auto query : {ir::Query::Size, ir::Query::PublicFieldCount}) {
-            const std::string name = query == ir::Query::Size ? "size" : "field_count";
-            const auto symbol = "aurora_reflect_" + name;
-            output << ".globl " << symbol << "\n.type " << symbol << ", @function\n"
-                   << symbol << ":\n";
-            for (const auto &[id, descriptor] : module.descriptors) {
-                (void)descriptor;
-                line("cmpq $" + std::to_string(id) + ", %rdi");
-                line("je .L" + name + std::to_string(id));
-            }
-            line("xorq %rax, %rax");
-            line("ret");
-            for (const auto &[id, descriptor] : module.descriptors) {
-                output << ".L" << name << id << ":\n";
-                line("movq $" +
-                     std::to_string(query == ir::Query::Size ? descriptor.size
-                                                             : descriptor.publicFields) +
-                     ", %rax");
+        for (const auto &[scope, view] : module.descriptorViews) {
+            for (const auto query : {ir::Query::Size, ir::Query::PublicFieldCount}) {
+                const std::string name = query == ir::Query::Size ? "size" : "field_count";
+                const auto symbol = querySymbol(query, scope);
+                const std::string labelPrefix = ".Lscope" + std::to_string(scope) + "_" + name;
+                output << ".globl " << symbol << "\n.type " << symbol << ", @function\n"
+                       << symbol << ":\n";
+                for (int id : view) {
+                    line("cmpq $" + std::to_string(id) + ", %rdi");
+                    line("je " + labelPrefix + std::to_string(id));
+                }
+                line("xorq %rax, %rax");
                 line("ret");
+                for (int id : view) {
+                    const auto &descriptor = module.descriptors.at(id);
+                    output << labelPrefix << id << ":\n";
+                    line("movq $" +
+                         std::to_string(query == ir::Query::Size ? descriptor.size
+                                                                 : descriptor.publicFields) +
+                         ", %rax");
+                    line("ret");
+                }
+                output << ".size " << symbol << ", .-" << symbol << "\n";
             }
-            output << ".size " << symbol << ", .-" << symbol << "\n";
         }
         output << ".Laurora_bounds_trap:\n    ud2\n.Laurora_overflow_trap:\n    ud2\n.section "
                   ".note.GNU-stack,\"\",@progbits\n";

@@ -19,12 +19,16 @@ class Type {
   public:
     TypeKind kind = TypeKind::I64;
     std::string className;
+    std::string displayName;
     TypeKind elementKind = TypeKind::I64;
     int length = 0;
     Type() = default;
     explicit Type(TypeKind value) : kind(value) {}
     explicit Type(std::string name) : kind(TypeKind::Class), className(std::move(name)) {}
-    bool operator==(const Type &) const = default;
+    bool operator==(const Type &other) const {
+        return kind == other.kind && className == other.className &&
+               elementKind == other.elementKind && length == other.length;
+    }
     bool isClass() const {
         return kind == TypeKind::Class;
     }
@@ -57,7 +61,7 @@ inline std::string typeName(const Type &type) {
     case TypeKind::MutRef:
         return "mutref<i64>";
     case TypeKind::Class:
-        return type.className;
+        return type.displayName.empty() ? type.className : type.displayName;
     case TypeKind::Array:
         return "array<" + typeName(Type(type.elementKind)) + ", " + std::to_string(type.length) +
                ">";

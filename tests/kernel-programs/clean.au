@@ -1,4 +1,5 @@
 module user_clean;
+import std.core;
 
 auto aurora_user_main() -> i64 {
     const array<i64, 4> values = {10, 20, 5, 7};
@@ -8,5 +9,5 @@ auto aurora_user_main() -> i64 {
         sum = sum + values[index];
         index = index + 1;
     }
-    return sum;
+    return std::max(sum, 0);
 }

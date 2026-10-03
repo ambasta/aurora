@@ -14,7 +14,7 @@ as --64 kernel/start.S -o build/start.o
 as --64 kernel/exceptions.S -o build/exceptions.o
 as --64 kernel/user.S -o build/user.o
 program_asm_flags=()
-for flag in BAD_RETURN UNKNOWN_TRAP; do
+for flag in BAD_RETURN UNKNOWN_TRAP FOREIGN_CODE FOREIGN_STACK; do
     variable="KERNEL_TEST_PROGRAM_${flag}"
     if [[ "${!variable:-0}" == 1 ]]; then program_asm_flags+=(--defsym "AURORA_PROGRAM_${flag}=1"); fi
 done
@@ -22,7 +22,7 @@ as --64 "${program_asm_flags[@]}" kernel/program-entry.S -o build/program-entry.
 program_index=0
 for program in clean bounds overflow; do
     base=$((0x1b0000 + program_index * 4096))
-    "$compiler" "tests/kernel-programs/$program.au" -o "build/user-$program.s"
+    "$compiler" "tests/kernel-programs/$program.au" -o "build/user-$program.s" --module-root library
     as --64 -L "build/user-$program.s" -o "build/user-$program.o"
     ld -nostdlib --discard-none -z max-page-size=0x1000 -T kernel/program.ld --defsym="USER_BASE=$base" \
         build/program-entry.o "build/user-$program.o" -o "build/user-$program.elf"
@@ -34,7 +34,7 @@ as --64 build/kernel-user-images.S -o build/kernel-user-images.o
 extra=()
 if [[ "${KERNEL_TEST_DIVIDE_ERROR:-0}" == 1 ]]; then extra+=(-DAURORA_TEST_DIVIDE_ERROR); fi
 if [[ "${KERNEL_TEST_PAGE_FAULT:-0}" == 1 ]]; then extra+=(-DAURORA_TEST_PAGE_FAULT); fi
-for flag in WP NX STACK PROGRAM_KERNEL_TRAP; do
+for flag in WP NX STACK PROGRAM_KERNEL_TRAP DOMAIN_ROOT_MISMATCH; do
     variable="KERNEL_TEST_${flag}"
     if [[ "${!variable:-0}" == 1 ]]; then extra+=("-DAURORA_TEST_${flag}"); fi
 done
@@ -42,13 +42,13 @@ case "${KERNEL_USER_PROBE_MODE:-0}" in
     [0-6]) extra+=("-DAURORA_USER_PROBE_MODE=${KERNEL_USER_PROBE_MODE:-0}");;
     *) echo 'Invalid controlled user probe mode' >&2; exit 2;;
 esac
-for source in main interrupts protection user-program; do
+for source in main interrupts protection user-program address-spaces; do
 g++ -std=c++23 -Wall -Wextra -Werror -O2 -ffreestanding -fno-exceptions -fno-rtti \
     -fno-stack-protector -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables \
     -Ibuild -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns "${extra[@]}" -c "kernel/$source.cpp" -o "build/kernel-$source.o"
 done
 ld -nostdlib -z max-page-size=0x1000 -T kernel/link.ld \
-    build/start.o build/exceptions.o build/user.o build/kernel-user-program.o build/kernel-user-images.o build/kernel-protection.o build/kernel-interrupts.o build/kernel-main.o build/kernel-language.o -o build/kernel.elf
+    build/start.o build/exceptions.o build/user.o build/kernel-user-program.o build/kernel-address-spaces.o build/kernel-user-images.o build/kernel-protection.o build/kernel-interrupts.o build/kernel-main.o build/kernel-language.o -o build/kernel.elf
 objcopy -O binary build/kernel.elf build/kernel.bin
 python3 tests/kernel-image.py
 printf 'Built build/aurora.img (raw emulator disk) and build/kernel.elf\n'

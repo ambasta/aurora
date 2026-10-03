@@ -10,3 +10,18 @@ test: $(OUT)
 	python3 ../tests/compiler/run.py $(abspath $(OUT))
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/ir_tests.cpp -o $(dir $(OUT))ir-tests
 	$(dir $(OUT))ir-tests
+	python3 ../tests/modules/run.py $(abspath $(OUT))
+	python3 ../tests/modules/robustness.py $(abspath $(OUT))
+	$(CXX) $(CXXFLAGS) -pthread -I. ../tests/modules/host_sources_tests.cpp -o $(dir $(OUT))host-source-tests
+	python3 ../tests/modules/host_sources.py $(abspath $(dir $(OUT))host-source-tests)
+	$(CXX) $(CXXFLAGS) -I. ../tests/modules/host_output_tests.cpp -o $(dir $(OUT))host-output-tests
+	python3 ../tests/modules/host_sources.py $(abspath $(dir $(OUT))host-output-tests)
+
+.PHONY: test-modules
+test-modules: $(OUT)
+	python3 ../tests/modules/run.py $(abspath $(OUT))
+	python3 ../tests/modules/robustness.py $(abspath $(OUT))
+	$(CXX) $(CXXFLAGS) -pthread -I. ../tests/modules/host_sources_tests.cpp -o $(dir $(OUT))host-source-tests
+	python3 ../tests/modules/host_sources.py $(abspath $(dir $(OUT))host-source-tests)
+	$(CXX) $(CXXFLAGS) -I. ../tests/modules/host_output_tests.cpp -o $(dir $(OUT))host-output-tests
+	python3 ../tests/modules/host_sources.py $(abspath $(dir $(OUT))host-output-tests)

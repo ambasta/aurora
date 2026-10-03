@@ -26,13 +26,4 @@ auto UserPrograms::install() -> bool {
 auto UserPrograms::contract(std::size_t index) -> const ProgramContract* {
     return index < images.size() ? &images[index].contract() : nullptr;
 }
-auto UserPrograms::scrub_stack() -> bool {
-    using hardware::Protection;
-    if (!Protection::verify()) return false;
-    for (auto byte = Protection::user_stack_bottom; byte < Protection::user_stack_top; ++byte)
-        *reinterpret_cast<volatile std::uint8_t*>(byte) = 0;
-    for (auto byte = Protection::user_stack_bottom; byte < Protection::user_stack_top; ++byte)
-        if (*reinterpret_cast<volatile const std::uint8_t*>(byte) != 0) return false;
-    return true;
-}
 }

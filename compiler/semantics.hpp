@@ -16,6 +16,7 @@ class Local {
 class SemanticAnalyzer {
     std::vector<Function> sourceFunctions;
     std::vector<ClassDefinition> classes;
+    std::map<int, std::set<std::string>> reflectionAccess;
     std::map<std::string, std::size_t> classNames;
     std::map<int, Type> arrayTypes;
     static constexpr int maxFrameSlots = 8192;
@@ -163,7 +164,7 @@ class SemanticAnalyzer {
         return local;
     }
     Type expression(ExpressionPtr e) {
-        const auto &n = e->token.text;
+        const auto &n = e->resolvedName.empty() ? e->token.text : e->resolvedName;
         if (e->op == "number") {
             unsigned long long value = 0;
             try {
@@ -295,7 +296,8 @@ class SemanticAnalyzer {
             arity(e, 1);
             match(expression(e->args[0]), Type::I64, e->token);
             emit(ir::MetadataQuery{n == "reflect_size" ? ir::Query::Size
-                                                       : ir::Query::PublicFieldCount});
+                                                       : ir::Query::PublicFieldCount,
+                                   lowered.moduleScope});
             return Type::I64;
         }
         if (n == "own" || n == "move" || n == "borrow" || n == "borrow_mut")
@@ -380,7 +382,9 @@ class SemanticAnalyzer {
         if (expression->op != "construct")
             fail(expression->token,
                  "class local requires named-field construction or same-type class copy");
-        match(Type(expression->token.text), statement->type, expression->token);
+        match(expression->reflectedType.isClass() ? expression->reflectedType
+                                                  : Type(expression->token.text),
+              statement->type, expression->token);
         std::set<std::string> initialized;
         for (std::size_t index = 0; index < expression->args.size(); ++index) {
             const Token token(expression->fieldNames[index], expression->token.line);
@@ -581,7 +585,8 @@ class SemanticAnalyzer {
 
   public:
     explicit SemanticAnalyzer(Program program)
-        : sourceFunctions(std::move(program.functions)), classes(std::move(program.classes)) {}
+        : sourceFunctions(std::move(program.functions)), classes(std::move(program.classes)),
+          reflectionAccess(std::move(program.reflectionAccess)) {}
     ir::ValidatedModule analyze() {
         static const std::set<std::string> builtins = {"own",
                                                        "move",
@@ -603,7 +608,7 @@ class SemanticAnalyzer {
             auto &definition = classes[index];
             if (definition.fields.size() > maxFrameSlots)
                 fail(definition.token, "class layout exceeds 65536 bytes");
-            const auto &name = definition.token.text;
+            const auto &name = definition.name;
             if (builtins.contains(name) || name == "i64" || name == "bool" || name == "ref" ||
                 name == "mutref" || name == "array" || classNames.contains(name))
                 fail(definition.token, "duplicate or reserved class name");
@@ -635,6 +640,7 @@ class SemanticAnalyzer {
             slot = 0;
             lowered = ir::Function{};
             lowered.name = function.name;
+            lowered.moduleScope = function.moduleScope;
             lowered.result = function.result;
             result = function.result;
             for (const auto &parameter : function.params)
@@ -652,12 +658,28 @@ class SemanticAnalyzer {
         for (int id = 1; id <= 5; ++id)
             module.descriptors[id] = ir::Descriptor{id == 2 ? 1 : 8, 0};
         for (const auto &definition : classes) {
-            const Type type(definition.token.text);
+            const Type type(definition.name);
             module.descriptors[definition.id] = ir::Descriptor{typeSize(type, definition.token),
                                                                fieldCount(type, definition.token)};
         }
         for (const auto &[id, type] : arrayTypes)
             module.descriptors[id] = ir::Descriptor{type.length * 8, 0};
+        if (reflectionAccess.empty()) {
+            auto &own = reflectionAccess[0];
+            for (const auto &definition : classes)
+                own.insert(definition.name);
+        }
+        module.descriptorViews.clear();
+        for (const auto &[scope, visible] : reflectionAccess) {
+            auto &view = module.descriptorViews[scope];
+            for (const auto &[id, descriptor] : module.descriptors) {
+                (void)descriptor;
+                if (id <= 5 || id >= 1000000)
+                    view.insert(id);
+            }
+            for (const auto &name : visible)
+                view.insert(classes.at(classNames.at(name)).id);
+        }
         return ir::validate(std::move(module));
     }
 };

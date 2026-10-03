@@ -8,6 +8,7 @@
 #include "protection.hpp"
 #include "firmware-memory.hpp"
 #include "user-program.hpp"
+#include "address-spaces.hpp"
 auto user_program(std::uint64_t entry) -> std::uint64_t asm("aurora_user_program");
 namespace aurora::hardware {
 using Byte = unsigned char;
@@ -55,6 +56,7 @@ alignas(4096) constinit std::array<std::uint8_t, 4096> nx_probe{};
 #endif
 constinit aurora::user::ProgramRun program_run;
 constinit std::size_t program_index = 0;
+constinit std::array<aurora::user::DomainHandle, 3> domains{};
 volatile bool user_expected = false;
 volatile unsigned user_returns = 0;
 volatile bool breakpoint_expected = false;
@@ -127,15 +129,21 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     using aurora::hardware::Serial;
     const auto* contract = UserPrograms::contract(index);
     require(contract != nullptr && !user_expected && !program_run.running(), "Invalid or nested user program run");
-    require(UserPrograms::scrub_stack(), "User stack reset failed");
+    require(aurora::user::AddressSpaces::scrub(domains[index]), "Private user stack reset failed");
     require(program_run.begin(*contract), "Program contract rejected");
     program_index = index;
+    require(aurora::user::AddressSpaces::activate(domains[index]), "Domain activation failed");
+    require(!aurora::user::AddressSpaces::destroy(domains[index]), "Active domain teardown accepted");
+    Serial::text("AURORA_DOMAIN_ENTER: image="); Serial::number(index);
+    Serial::text(" root="); Serial::number(aurora::hardware::Protection::current_root()); Serial::text("\r\n");
     Serial::text("AURORA_PROGRAM_ENTER: image="); Serial::number(index); Serial::text("\r\n");
 #ifdef AURORA_TEST_PROGRAM_KERNEL_TRAP
     asm volatile("jmp *%0" : : "r"(contract->bounds_pc()) : "memory");
     fail("Kernel UD2 unexpectedly returned");
 #endif
     const auto resumed = user_program(contract->entry());
+    require(aurora::user::AddressSpaces::deactivate(domains[index]), "Kernel root restoration failed");
+    Serial::text("AURORA_DOMAIN_RESTORED: root="); Serial::number(aurora::hardware::Protection::current_root()); Serial::text("\r\n");
     require(resumed == 1 && !program_run.running() && program_run.event() == expected,
         "Program did not finish with the required typed outcome");
     require(aurora::hardware::Protection::verify(), "Program altered protected mapping state");
@@ -150,12 +158,66 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
 }
 auto compiled_program_self_test() -> void {
     using aurora::user::ProgramEvent;
+    using aurora::user::AddressSpaces;
+    using aurora::hardware::Protection;
+    using aurora::hardware::Serial;
+    require(!AddressSpaces::initialize(foreign_pages), "Out-of-arena allocator accepted by domain manager");
+    require(AddressSpaces::initialize(pages), "Domain manager initialization failed");
+    std::array<std::uint64_t, 3> roots{};
+    for (std::size_t index = 0; index < domains.size(); ++index) {
+        auto domain = AddressSpaces::create(index);
+        require(domain.has_value(), "Domain creation failed");
+        domains[index] = *domain;
+        roots[index] = *AddressSpaces::root(*domain);
+        require(AddressSpaces::stack_zero(*domain), "New private stack not zero");
+        for (std::size_t prior = 0; prior < index; ++prior)
+            require(roots[index] != roots[prior], "Domains share a page-table root");
+    }
+    require(pages.used() == 12 && !AddressSpaces::create(0), "Domain ownership/resource bound failed");
+    require(!AddressSpaces::activate(aurora::user::DomainHandle{}), "Invalid domain handle accepted");
+    Serial::text("AURORA_DOMAINS_READY: kernel="); Serial::number(Protection::kernel_root());
+    for (std::size_t index = 0; index < domains.size(); ++index) {
+        Serial::text(" root"); Serial::number(index); Serial::text("="); Serial::number(roots[index]);
+        Serial::text(" frame"); Serial::number(index); Serial::text("="); Serial::number(*AddressSpaces::stack_frame(domains[index], 0));
+    }
+    Serial::text("\r\n");
+    require(AddressSpaces::stack_frame(domains[1], 0) == 0x104000, "Cross-domain test address does not name second owner's frame");
     execute_program(0, ProgramEvent::returned);
     execute_program(1, ProgramEvent::bounds);
     execute_program(0, ProgramEvent::returned);
     execute_program(2, ProgramEvent::overflow);
     execute_program(0, ProgramEvent::returned);
-    aurora::hardware::Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, bounds, overflow, clean restart\r\n");
+    for (const auto domain : domains)
+        require(!AddressSpaces::stack_zero(domain), "Compiled program did not use its own leased stack memory");
+    const auto stale = domains[0];
+    std::array<std::uint64_t, 4> released_frames{};
+    for (std::size_t page = 0; page < 4; ++page) released_frames[page] = *AddressSpaces::stack_frame(stale, page);
+    require(AddressSpaces::destroy(stale) && pages.used() == 8, "Inactive domain teardown failed");
+    for (const auto frame : released_frames)
+        for (std::uint64_t byte = 0; byte < 4096; byte += 8)
+            require(physical_read(frame + byte, 8) == 0, "Released frame still contains user bytes");
+    require(!AddressSpaces::activate(stale) && !AddressSpaces::destroy(stale) && !AddressSpaces::scrub(stale), "Destroyed domain authority retained");
+    // Leave only two free frames: creation must roll back a partial four-frame stack.
+    for (std::size_t index = 0; index < 118; ++index) {
+        auto page = pages.acquire(); require(page.has_value(), "Rollback test setup failed");
+        leases[index].emplace(std::move(*page));
+    }
+    require(physical_read(0x17e000, 1) == 126 && physical_read(0x17f000, 1) == 127, "Rollback fixture lost recognizable prior bytes");
+    require(pages.used() == 126 && !AddressSpaces::create(0) && pages.used() == 126, "Partial domain creation leaked frames");
+    for (std::uint64_t address = 0x17e000; address < 0x180000; address += 8)
+        require(physical_read(address, 8) == 0, "Rollback released unsanitized frame bytes");
+    for (std::size_t index = 0; index < 118; ++index) require(pages.release(*leases[index]), "Rollback test cleanup failed");
+    auto replacement = AddressSpaces::create(0);
+    require(replacement.has_value(), "Domain slot reuse failed");
+    domains[0] = *replacement;
+    require(AddressSpaces::stack_frame(domains[0], 0) == released_frames[0] && AddressSpaces::stack_zero(domains[0]), "Physical frame reuse was not sanitized");
+    require(!AddressSpaces::activate(stale) && !AddressSpaces::destroy(stale), "Stale handle resurrected after slot reuse");
+    Serial::text("AURORA_DOMAIN_REUSE_OK: stale denied, released bytes zero, partial rollback, same frames\r\n");
+    execute_program(0, ProgramEvent::returned);
+    for (const auto domain : domains) require(AddressSpaces::destroy(domain), "Final domain teardown failed");
+    require(pages.used() == 0 && Protection::verify(), "Domain teardown leaked memory or active root");
+    Serial::text("AURORA_DOMAINS_OK: private CR3, private stacks, zero reuse, clean teardown\r\n");
+    Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, bounds, overflow, clean restart\r\n");
 }
 }
 auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t instruction,
@@ -175,13 +237,23 @@ auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t
         return 1; // Dedicated assembly continuation restores only the saved privileged stack.
     }
     using aurora::hardware::Serial;
-    if (program_run.running() && code == 0x1b && frame >= Protection::entry_stack_bottom
+#ifdef AURORA_TEST_DOMAIN_ROOT_MISMATCH
+    if (program_run.running() && code == 0x1b) {
+        const auto root = Protection::kernel_root();
+        asm volatile("mov %0, %%cr3" : : "r"(root) : "memory");
+        Serial::text("AURORA_DOMAIN_ROOT_MISMATCH_INJECTED\r\n");
+    }
+#endif
+    if (program_run.running() && program_index < domains.size()
+        && aurora::user::AddressSpaces::active(domains[program_index]) && code == 0x1b && frame >= Protection::entry_stack_bottom
         && frame <= Protection::entry_stack_top - 176 && frame % 8 == 0) {
         const auto flags = physical_read(frame + 152, 8);
         const auto stack = physical_read(frame + 160, 8);
         const auto ss = physical_read(frame + 168, 8);
         const auto context = aurora::user::ProgramContext{vector, error, instruction, code, ss, stack, flags, frame};
         if (program_run.accept(context, user_value)) {
+            Serial::text("AURORA_DOMAIN_EVENT: image="); Serial::number(program_index);
+            Serial::text(" root="); Serial::number(Protection::current_root()); Serial::text("\r\n");
             if (program_run.event() != aurora::user::ProgramEvent::returned) {
                 Serial::text("AURORA_PROGRAM_FAULT: image="); Serial::number(program_index);
                 Serial::text(program_run.event() == aurora::user::ProgramEvent::bounds ? " kind=bounds" : " kind=overflow");
@@ -191,6 +263,9 @@ auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t
             }
             return 1;
         }
+    }
+    if (program_run.running()) {
+        Serial::text("AURORA_DOMAIN_FAULT_ROOT: root="); Serial::number(Protection::current_root()); Serial::text("\r\n");
     }
     Serial::text("AURORA_EXCEPTION_FATAL: "); Serial::number(vector);
     Serial::text(" error="); Serial::number(error);

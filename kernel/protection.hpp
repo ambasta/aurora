@@ -13,6 +13,9 @@ public:
     static constexpr std::uint64_t user_stack_bottom = 0x1e0000;
     static constexpr std::uint64_t user_stack_top = 0x1e4000;
     [[nodiscard]] static auto activate() -> bool;
+    [[nodiscard]] static auto kernel_root() -> std::uint64_t;
+    [[nodiscard]] static auto current_root() -> std::uint64_t;
+    [[nodiscard]] static auto kernel_entry(std::uint64_t address) -> std::uint64_t;
     [[nodiscard]] static auto verify() -> bool;
 };
 }

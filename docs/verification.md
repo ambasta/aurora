@@ -169,3 +169,51 @@ remain trusted. No soundness proof, full runtime/stdlib, self-hosting or physica
 AMD support is claimed. Earlier candidate hashes and preliminary results in
 review/oracle notes are historical and are superseded by these corrected-source
 aggregate receipts.
+
+## Modules, core library and private domains — 2026-10-03
+
+Final release compiler SHA-256:
+`04b7cc71bd2ef8721f99f8c6ec6ef2cdf850358d1b55a5fea2d660073c8bae03`.
+A fresh original-workspace build passed:
+
+- 207 source tests, 51 typed-IR tests, 72 module/library tests, 11 bounded-depth
+  rejection tests, 13 source-reader tests and 22 atomic-artifact-writer tests.
+- The seven independent-oracle harness checks, 630-case default run and 1,526-case
+  stress run. The fixed corpus overlaps between oracle runs.
+- Address/undefined-behavior sanitizer checks for compiler source/modules/depth,
+  typed IR, reader/writer adapters and hosted kernel policies. LeakSanitizer alone
+  remains disabled under tracing. No test timeout or host stack limit was increased.
+- All 19 actual QEMU modes, including three distinct CR3 roots, imported std.core
+  execution, foreign-code/data denial and hardware-root mismatch rejection.
+- 14 kernel-image/EDD and 27 user-image negative controls; 19 valid and 134 invalid
+  transcript controls; allocator, mapping, return-policy and domain lifecycle checks.
+- The documented examples/core_math.au compiled and executed to the expected 42.
+
+Review found and verified fixes for defining-module lookup hijacking, two atomic
+writer state/collision defects, and host stack crashes on deeply nested source.
+The loader now uses bounded descriptor-relative Linux reads. Output publication
+uses a pinned parent and fail-latched atomic writer. Parser/constructed-AST depth
+limits reject the reproductions with ordinary diagnostics while preserving input
+bytes and leaving no output artifact. These are scoped defenses, not a general
+compiler resource guarantee or atomic whole-repository snapshot.
+
+Normal kernel payload is 32,880 bytes. The disposable BIOS loader now reads 96
+sectors, and binary packet/image checks verify alignment and the 64 KiB transfer
+window. The normal image was restored after fault injection. User domains remain
+bounded and sequential, without preemption, SMP or a general process API.
+
+Receipts:
+- [Aggregate](evidence/milestone-004/test.log)
+- [Oracle stress](evidence/milestone-004/semantics-stress.log)
+- [Compiler sanitizer](evidence/milestone-004/compiler-sanitizers.log)
+- [IR sanitizer](evidence/milestone-004/ir-sanitizers.log)
+- [Host I/O sanitizers](evidence/milestone-004/host-io-sanitizers.log)
+- [Hosted kernel sanitizers](evidence/milestone-004/kernel-sanitizers.log)
+- [All CPU gates](evidence/milestone-004/emulator.log)
+- [Core example](evidence/milestone-004/core-example.log)
+- [Linked-image metadata](evidence/milestone-004/image-metadata/)
+- [Implementation hashes](evidence/milestone-004/source.sha256)
+
+This is the first small freestanding core module, not libc/stdlib completeness.
+No full language-safety proof, production process model, self-hosting or physical
+Zen/Navi support is claimed. Prior receipts remain historical and unchanged.

@@ -28,6 +28,9 @@ FAULTS = {
     "--program-bad-return": (129, 0, 3, None, None),
     "--program-unknown-trap": (6, 0, 3, None, None),
     "--program-kernel-trap": (6, 0, 0, None, None),
+    "--domain-code": (14, 20, 3, 0x1B1000, None),
+    "--domain-stack": (14, 5, 3, 0x104000, None),
+    "--domain-root-mismatch": (129, 0, 3, None, None),
 }
 
 def require(condition: bool, message: str) -> None:
@@ -47,6 +50,7 @@ def program_flow(bounds: int, overflow: int) -> str:
             "AURORA_PROGRAM_ENTER: image=2\n"
             f"AURORA_PROGRAM_FAULT: image=2 kind=overflow vector=6 rip={overflow} cpl=3 frame=548688\n"
             "AURORA_PROGRAM_CONTAINED: image=2 kind=overflow\n"
+            "AURORA_PROGRAM_ENTER: image=0\nAURORA_PROGRAM_RETURN: image=0 value=42\n"
             "AURORA_PROGRAM_ENTER: image=0\nAURORA_PROGRAM_RETURN: image=0 value=42\n" + COMPILED_OK + "\n")
 
 
@@ -68,6 +72,46 @@ def validate_program_sequence(transcript: str, metadata: dict | None) -> None:
     require(normalize(actual) == normalize(expected), "Program outcomes/restarts missing or out of order")
 
 
+DOMAIN_REUSE = "AURORA_DOMAIN_REUSE_OK: stale denied, released bytes zero, partial rollback, same frames"
+DOMAIN_OK = "AURORA_DOMAINS_OK: private CR3, private stacks, zero reuse, clean teardown"
+
+def domain_fixture() -> str:
+    return "AURORA_DOMAINS_READY: kernel=196608 root0=65536 frame0=1048576 root1=86016 frame1=1064960 root2=106496 frame2=1081344\n"
+
+def domain_flow() -> str:
+    roots = (65536, 86016, 106496)
+    result = domain_fixture()
+    for run, image in enumerate((0, 1, 0, 2, 0, 0)):
+        if run == 5: result += DOMAIN_REUSE + "\n"
+        result += f"AURORA_DOMAIN_ENTER: image={image} root={roots[image]}\n"
+        result += f"AURORA_DOMAIN_EVENT: image={image} root={roots[image]}\n"
+        result += "AURORA_DOMAIN_RESTORED: root=196608\n"
+    return result + DOMAIN_OK + "\n"
+
+def validate_domains(transcript: str, mode: str) -> None:
+    ready = re.findall(r"^AURORA_DOMAINS_READY: kernel=([0-9]+) root0=([0-9]+) frame0=([0-9]+) root1=([0-9]+) frame1=([0-9]+) root2=([0-9]+) frame2=([0-9]+)\r?$", transcript, re.MULTILINE)
+    require(len(ready) == 1, "Missing domain ownership setup")
+    values = list(map(int, ready[0]))
+    kernel = values[0]; roots = values[1::2]; frames = values[2::2]
+    require(len(set([kernel] + roots)) == 4 and all(0x10000 <= root < 0x70000 and root % 4096 == 0 for root in [kernel] + roots), "CR3 roots are not distinct/aligned/bounded")
+    require(all(0x100000 <= frame <= 0x180000 - 16384 and frame % 4096 == 0 for frame in frames), "Private stacks outside leased pool")
+    require(all(abs(a - b) >= 16384 for index, a in enumerate(frames) for b in frames[index + 1:]), "Private stack leases overlap")
+    actual = [line for line in transcript.splitlines() if line.startswith(("AURORA_DOMAIN_", "AURORA_DOMAINS_"))]
+    expected = [next(line for line in transcript.splitlines() if line.startswith("AURORA_DOMAINS_READY:"))]
+    if mode == "normal":
+        for run, image in enumerate((0, 1, 0, 2, 0, 0)):
+            if run == 5: expected.append(DOMAIN_REUSE)
+            expected += [f"AURORA_DOMAIN_ENTER: image={image} root={roots[image]}",
+                         f"AURORA_DOMAIN_EVENT: image={image} root={roots[image]}",
+                         f"AURORA_DOMAIN_RESTORED: root={kernel}"]
+        expected.append(DOMAIN_OK)
+    else:
+        expected.append(f"AURORA_DOMAIN_ENTER: image=0 root={roots[0]}")
+        if mode == "--domain-root-mismatch": expected.append("AURORA_DOMAIN_ROOT_MISMATCH_INJECTED")
+        observed = kernel if mode == "--domain-root-mismatch" else roots[0]
+        expected.append(f"AURORA_DOMAIN_FAULT_ROOT: root={observed}")
+    require(actual == expected, "Domain CR3 event/restore/teardown authority mismatch")
+
 def validate(status: int, transcript: str, metadata: dict | None = None) -> None:
     lines = transcript.splitlines()
     require(status == 33, f"QEMU exit status {status}, expected 33")
@@ -76,6 +120,7 @@ def validate(status: int, transcript: str, metadata: dict | None = None) -> None
     require("AURORA_BOOT_FAIL" not in transcript and "AURORA_EXCEPTION_FATAL" not in transcript,
             "Normal run emitted failure")
     validate_program_sequence(transcript, metadata)
+    validate_domains(transcript, "normal")
 
 
 def validate_mode(status: int, transcript: str, mode: str, metadata: dict | None = None) -> None:
@@ -85,7 +130,7 @@ def validate_mode(status: int, transcript: str, mode: str, metadata: dict | None
     lines = transcript.splitlines()
     require(status == 35, f"Fault QEMU exit status {status}, expected 35")
     require(lines.count("AURORA_BOOT_FAIL") == 1 and "AURORA_BOOT_OK" not in transcript, "Fault did not fail-stop")
-    program_mode = mode.startswith("--program-")
+    program_mode = mode.startswith(("--program-", "--domain-"))
     if program_mode:
         require(lines.count(USER_OK) == 1 and "AURORA_PROGRAM_ENTER: image=0" in lines, "Missing program entry")
         require("AURORA_PROGRAM_RETURN" not in transcript and "AURORA_PROGRAM_CONTAINED" not in transcript
@@ -114,20 +159,24 @@ def validate_mode(status: int, transcript: str, mode: str, metadata: dict | None
     elif cpl == 3:
         require(0x82000 <= frame < 0x86000 and "AURORA_TSS_ENTRY_OK" in lines, "User exception did not use RSP0")
         if program_mode:
-            require(0x1B0000 <= rip < 0x1B1000, "Program fault did not originate in active image")
+            if mode == "--domain-code": require(rip == 0x1B1000, "Foreign-code fault did not reject fetch")
+            else: require(0x1B0000 <= rip < 0x1B1000, "Program fault did not originate in active image")
         else:
             require(f"AURORA_USER_ENTER: {user_mode}" in lines, "Wrong controlled user probe")
         if mode != "--user-nx" and not program_mode:
             require(0x1D0000 <= rip < 0x1D1000, "Fault did not originate in user code")
     else:
         require(0x88000 <= frame < 0x90000, "Kernel exception used unexpected stack")
+    if program_mode: validate_domains(transcript, mode)
     if program_mode and metadata is not None:
         image = metadata["0"]
         if mode == "--program-kernel-trap":
             require(rip == image["bounds"], "Kernel-origin fault is not the exact known compiler trap")
         elif mode == "--program-unknown-trap":
             require(rip not in (image["bounds"], image["overflow"], image["return"]), "Unknown trap was actually authorized")
-        else:
+        elif mode == "--domain-root-mismatch":
+            require(rip == image["return"], "CR3 mismatch must reject an otherwise authorized return PC")
+        elif mode == "--program-bad-return":
             require(rip != image["return"], "Bad return matched authorized continuation")
     if isinstance(denied, int):
         require(cr2 == denied, "Page fault denied the wrong address")
@@ -145,7 +194,7 @@ def validate_fault(status: int, transcript: str, vector: int = 0) -> None:
 def self_test() -> None:
     foundation = "\n".join(FOUNDATIONS) + "\n"
     good = foundation + USER_OK + "\nAURORA_USER_ENTER: 0\nAurora language result: 42\nAURORA_BOOT_OK\n"
-    good += program_flow(0x1B1040, 0x1B2042)
+    good += program_flow(0x1B1040, 0x1B2042) + domain_flow()
     validate(33, good)
     rejected = 0
     def must_reject(status: int, text: str, mode: str) -> None:
@@ -167,9 +216,12 @@ def self_test() -> None:
         cr2 = denied if isinstance(denied, int) else 0x87FF8 if denied == "guard" else 0x20000 if denied == "target" else 0
         rip = cr2 if mode in ("--nx", "--user-nx") else 0x1D0200 if cpl == 3 else 0x10500
         text = foundation
-        if mode.startswith("--program-"):
+        if mode.startswith(("--program-", "--domain-")):
             text += USER_OK + "\nAURORA_PROGRAM_ENTER: image=0\n"
-            rip = 0x1B0040
+            rip = 0x1B1000 if mode == "--domain-code" else 0x1B0040
+            text += domain_fixture() + "AURORA_DOMAIN_ENTER: image=0 root=65536\n"
+            if mode == "--domain-root-mismatch": text += "AURORA_DOMAIN_ROOT_MISMATCH_INJECTED\n"
+            text += "AURORA_DOMAIN_FAULT_ROOT: root=" + ("196608" if mode == "--domain-root-mismatch" else "65536") + "\n"
             if cpl == 3: text += "AURORA_TSS_ENTRY_OK\n"
         if user_mode is not None: text += f"AURORA_USER_ENTER: {user_mode}\nAURORA_TSS_ENTRY_OK\n"
         if mode == "--stack": text += "AURORA_IST_OK\n"
@@ -198,7 +250,11 @@ def self_test() -> None:
         rejected += 1
     else:
         raise RuntimeError("Wrong linked UD2 address accepted")
-    print(f"PASS: smoke validators, 16 success cases and {rejected} failure regressions (no QEMU required)")
+    must_reject(33, good.replace("root1=86016", "root1=65536"), "normal")
+    must_reject(33, good.replace("frame1=1064960", "frame1=1048576"), "normal")
+    must_reject(33, good.replace("AURORA_DOMAIN_RESTORED: root=196608", "AURORA_DOMAIN_RESTORED: root=65536", 1), "normal")
+    must_reject(33, good.replace(DOMAIN_REUSE, "missing reuse"), "normal")
+    print(f"PASS: smoke validators, 19 success cases and {rejected} failure regressions (no QEMU required)")
 
 
 if __name__ == "__main__":

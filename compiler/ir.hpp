@@ -72,6 +72,7 @@ class Call {
 class MetadataQuery {
   public:
     Query query;
+    int moduleScope = 0;
 };
 class Label {
   public:
@@ -98,6 +99,7 @@ using Instruction = std::variant<Constant, Load, Store, Push, Pop, UnaryValue, B
 class Function {
   public:
     std::string name;
+    int moduleScope = 0;
     Type result;
     std::vector<Type> parameters;
     std::map<int, Type> slots;
@@ -113,6 +115,7 @@ class Module {
   public:
     std::vector<Function> functions;
     std::map<int, Descriptor> descriptors;
+    std::map<int, std::set<int>> descriptorViews{{0, {}}};
 };
 class ValidatedModule;
 ValidatedModule validate(Module module);

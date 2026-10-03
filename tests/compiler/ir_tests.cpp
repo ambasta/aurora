@@ -348,6 +348,26 @@ int main() {
         std::cout << "PASS IR bounded maximum initializer: snapshots=" << metrics.snapshots
                   << ", peak operand depth=" << metrics.peakOperandDepth
                   << ", retained facts=" << metrics.peakRetainedValueFacts << '\n';
+        reject(
+            "query cannot change module view",
+            [](Module &m) {
+                m.descriptorViews[1] = {};
+                m.functions[0].code.insert(m.functions[0].code.end() - 1,
+                                           MetadataQuery{Query::Size, 1});
+            },
+            "changes defining-module scope");
+        reject(
+            "unknown function module view", [](Module &m) { m.functions[0].moduleScope = 1; },
+            "unknown function module scope");
+        reject(
+            "view cannot name missing descriptor",
+            [](Module &m) { m.descriptorViews[0].insert(999); }, "missing descriptor");
+        reject(
+            "module view scope cap", [](Module &m) { m.descriptorViews[64] = {}; },
+            "invalid reflection scope");
+        reject(
+            "scoped helper name reserved",
+            [](Module &m) { m.functions[0].name = "__au_reflect_s1_size"; }, "function symbol");
         auto guarded = baseline();
         guarded.functions[0].code.insert(guarded.functions[0].code.end() - 1,
                                          {Constant{0, Type::I64}, BoundsGuard{8, 1, Type::I64},

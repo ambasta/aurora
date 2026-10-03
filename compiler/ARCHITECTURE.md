@@ -1,16 +1,17 @@
 # Frontend, typed IR and native backend boundary
 
-This milestone changes implementation architecture without intentionally changing the accepted language, diagnostics, machine-level behavior or compiler CLI. `aurorac INPUT.au -o OUTPUT.s` remains the interface. This is not an optimizer, a new ownership language, or a proof of compiler soundness.
+The typed-IR milestone established behavior-preserving compiler phase boundaries. The subsequent native-module stage adds explicit-root imports, namespaces, scoped reflection and hardened host I/O, while preserving existing scalar/ownership behavior. `aurorac INPUT.au -o OUTPUT.s` remains valid; imports additionally require `--module-root DIR`. This is not an optimizer, a new general ownership language, or a proof of compiler soundness.
 
 ## Pipeline and ownership of checks
 
-1. `types.hpp` defines source types and common tokens/errors.
-2. `lexer.hpp` turns bytes into tokens; `syntax.hpp` defines the untyped source AST; `parser.hpp` accepts the restricted safe C++ grammar.
-3. `semantics.hpp` performs source-level name resolution, scalar/aggregate type checking, initialization rules, const/private access checking, ownership moves, lexical borrow checks and conservative branch/loop joins. It emits typed instructions, not assembly strings.
-4. `ir.hpp` defines a target-independent accumulator/value-stack instruction model. Its operations include checked integer arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations.
-5. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
-6. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here.
-7. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
+1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs and resolves names/exports in defining-module contexts; MODULES.md specifies that boundary.
+2. `types.hpp` defines source types and common tokens/errors.
+3. `lexer.hpp` turns bytes into tokens; `syntax.hpp` defines the untyped source AST; `parser.hpp` accepts the restricted safe C++ grammar.
+4. `semantics.hpp` performs source-level name resolution, scalar/aggregate type checking, initialization rules, const/private access checking, ownership moves, lexical borrow checks and conservative branch/loop joins. It emits typed instructions, not assembly strings.
+5. `ir.hpp` defines a target-independent accumulator/value-stack instruction model. Its operations include checked integer arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations.
+6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
+7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here.
+8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
 The implementation uses internal header units and one translation unit so existing bootstrap commands that compile `main.cpp` continue to work. These are actual phase boundaries rather than separately named files wrapping the old assembly-text emitter. This packaging is not a stable external compiler-library API.
 
@@ -22,7 +23,7 @@ Locals/fields/elements have assigned eight-byte frame slots. The IR records slot
 
 `CheckedAdd`, `CheckedSubtract`, `CheckedMultiply` and `CheckedNegate` retain their fail-stop overflow requirement through lowering. Comparison and logical-not operations are distinct. The backend always emits the appropriate overflow branch for checked arithmetic. There is no unguarded arithmetic operation in this IR for source numeric expressions.
 
-Call instructions identify validated local functions. Signature lookup establishes argument/result types, and typed value-stack entries carry arguments. Metadata queries are a closed enum, not arbitrary external symbol calls. Reflection descriptor contents are produced by source semantic analysis; the verifier checks descriptor shape, not a second derivation of class reflection metadata.
+Call instructions identify validated local functions. Signature lookup establishes argument/result types, and typed value-stack entries carry arguments. Metadata queries are a closed enum with a fixed defining-module scope, not arbitrary external symbol calls. The verifier requires a query to use its containing function's module view and checks that descriptor views reference known descriptors. The resolver remains trusted for import/export visibility and immutable defining-module assignment; this is not an independent re-proof of source authority. Reflection descriptor contents are produced by source semantic analysis; the verifier checks descriptor shape, not a second derivation of class reflection metadata.
 
 ## Bounds tokens and dominance
 
@@ -67,3 +68,7 @@ Historical verification manifests are preserved. A previous executable used for 
 ## Remaining resource scaling
 
 Basic-block snapshots remove the quadratic retained history of straight-line aggregate initialization. This does not make the whole verifier globally linear or resource bounded: initialized-slot sets are still copied at block entries, with retained memory proportional to block count times live slot facts. Branch-dense inputs can therefore use substantially more memory than equally large straight-line inputs. Compact fact sets and explicit compiler-wide resource budgets remain future hardening. The current regression targets the specific reproduced failure; it is not a general denial-of-service proof.
+
+## Source-depth implementation limits
+
+Parser-produced trees have bounded recursive depth: expression parsing128, block nesting128, type parsing64 and namespace components32. Constructed expression ASTs independently cap depth at128, including left-associative chains and postfix member/index chains that have shallow parser recursion. Child attachment checks precede retention of an over-deep tree, so normal rejection cannot leave an unbounded destructor chain. These caps address reproduced small-file stack overflows, not arbitrary internally forged ASTs or a general compiler-wide memory/work bound. Deep rejection tests disable core dumps and require normal exit1, no output and unchanged inputs.

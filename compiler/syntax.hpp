@@ -1,11 +1,15 @@
 #pragma once
 #include "types.hpp"
+#include <map>
 #include <memory>
+#include <set>
 #include <vector>
 namespace aurora {
 class Expression {
   public:
     std::string op;
+    std::string resolvedName;
+    int depth = 1;
     Token token;
     std::vector<std::shared_ptr<Expression>> args;
     std::vector<std::string> fieldNames;
@@ -32,6 +36,9 @@ class Param {
 class Function {
   public:
     std::string name;
+    std::string scope;
+    bool exported = false;
+    int moduleScope = 0;
     Token token;
     Type result;
     std::vector<Param> params;
@@ -48,13 +55,21 @@ class Field {
 };
 class ClassDefinition {
   public:
+    std::string name;
+    std::string scope;
+    bool exported = false;
     Token token;
     std::vector<Field> fields;
     int id = 0;
-    explicit ClassDefinition(Token name) : token(std::move(name)) {}
+    explicit ClassDefinition(Token token) : name(token.text), token(std::move(token)) {}
 };
 class Program {
   public:
+    std::string moduleName;
+    bool interfaceUnit = false;
+    std::vector<Token> imports;
+    std::set<std::string> namespaces;
+    std::map<int, std::set<std::string>> reflectionAccess;
     std::vector<Function> functions;
     std::vector<ClassDefinition> classes;
 };

@@ -32,7 +32,7 @@ Missing QEMU means blocked verification, not a pass.
 
 ## Implemented and exercised
 
-- A 512-byte BIOS sector loads 64 sectors to physical 0x10000.
+- A 512-byte BIOS sector loads 96 sectors to physical 0x10000.
 - BIOS E820 discovery passes up to 32 entries in a bounded buffer. Bad signatures,
   short entries, and capacity overflow invalidate the map. EBX zero or BIOS CF
   ends enumeration; an empty map fails the kernel's arena verification.
@@ -62,8 +62,8 @@ Missing QEMU means blocked verification, not a pass.
 - COM1 prints the compiled Aurora function's actual return value, 42.
 
 Image validation checks exact ELF fields, loader bounds and zero unresolved
-symbols, with eight malformed-image controls. Shared smoke validation has 16
-positive and 110 negative transcript regressions and stays active under Python -O.
+symbols, with 14 malformed-image/BIOS-packet controls. Shared smoke validation has 19
+positive and 134 negative transcript regressions and stays active under Python -O.
 
 ## Deliberate limits
 
@@ -184,7 +184,7 @@ from tests/kernel-programs/. This extends the assembly protection probe; it does
 not replace the older adversarial tests.
 
 - clean.au initializes a fixed array, traverses it with a checked while loop,
-  and returns i64 value 42.
+  calls imported std.core/std::max, and returns i64 value 42.
 - bounds.au reaches the compiler's bounds-check trap on an index equal to length.
 - overflow.au reaches the compiler's signed-arithmetic overflow trap.
 
@@ -198,9 +198,9 @@ the authorized return label to follow the exact INT 0x81 instruction.
 
 Before protection activation, the static installer checks every contract, copies
 all image bytes, zeros page padding and verifies the complete copy. Thereafter
-all three pages are user RX without a writable alias. E820 must grant the image
-regions. All fixtures share one user domain and can read/execute each other's
-immutable code. They do not have independent address spaces or process identities.
+the immutable images have no writable alias. E820 must grant their backing regions.
+The first compiled-image checkpoint shared one user domain; the separate-domain
+extension below now maps only each active owner's image and private stack.
 
 ### Scalar return authority
 
@@ -247,6 +247,7 @@ The normal gate executes this order:
 3. Clean image returns 42 again after fresh stack/register setup
 4. Overflow image faults and returns a typed overflow outcome
 5. Clean image returns 42 again
+6. The clean domain is torn down and recreated with scrubbed reused frames; its new handle runs the clean image again
 
 Three additional fail-closed emulator modes distinguish containment from unsafe
 recovery: --program-bad-return rejects INT 0x81 at an unauthorized return PC;
@@ -254,11 +255,11 @@ recovery: --program-bad-return rejects INT 0x81 at an unauthorized return PC;
 the exact known compiler trap at kernel privilege and verifies it remains fatal.
 These test-only assembly injections do not add unsafe syntax to Aurora.
 
-`./scripts/kernel-protection-smoke.sh` now runs 16 real emulator modes. A normal
+`./scripts/kernel-protection-smoke.sh` now runs 19 real emulator modes. A normal
 image is restored after fault variants. Each log has an adjacent .metadata.json
 receipt preserving that variant's linked trap addresses even after restoration.
 The user-image verifier includes 27 malformed-image/metadata controls. Shared
-transcript validation has 16 positive and 110 negative cases, including exact
+transcript validation has 19 positive and 134 negative cases, including exact
 containment order and clean execution after both faults. Hosted policy tests can
 run under ASan/UBSan with `SANITIZE=1 ./scripts/kernel-tests.sh`.
 
@@ -270,10 +271,123 @@ hash and rerun against the final compiler before claiming a checkpoint verified.
 
 This is a trusted build-time image installer and a sequential integer-only test
 runner. There is no arbitrary executable loader, timer/preemption, scheduler,
-per-process isolation, cross-domain copy service, heap lifecycle or general
+a complete process model, cross-domain copy service, heap lifecycle or general
 syscall API. A hung program cannot yet be interrupted by this runner. Unexpected
 faults, stack exhaustion and invalid returns still fail-stop; only the two known
 compiler traps are contained. FPU/SIMD and FS/GS/TLS lifecycle, asynchronous state,
 SMP, DMA isolation and speculative-execution mitigations remain outside this gate.
 The wrappers, kernel and toolchain are still trusted bootstrap machinery rather
 than a verified language-native OS. Physical AMD hardware remains unqualified.
+
+## Sequential private address spaces
+
+Three bounded domain slots now own distinct CR3 roots and separate leased stack
+frames. Each run still executes one controlled build-time fixture synchronously.
+This is a hardware address-space foundation, not a preemptive scheduler or a
+complete process lifecycle.
+
+### Resource and mapping contract
+
+Each slot owns four static, supervisor-only page-table pages (PML4, PDPT, PD and
+4 KiB leaf table). These table pages are never returned to the general frame pool.
+Each live domain also holds four move-only physical-page leases for its 16 KiB
+user stack. At most three domains and twelve stack frames are live. Each image
+has one live owner; its immutable code backing is pinned, not allocator-recycled.
+
+The manager accepts only the initialized, empty 128-frame arena at
+[0x100000,0x180000), already checked against E820. Frame addresses are checked
+again before raw memory access. The allocator object must live for the whole
+kernel session; main supplies its static kernel allocator. There is no public
+user API for injecting an allocator, constructing a root or selecting a CR3.
+
+A private root contains exactly:
+
+- The common supervisor kernel text, constants, data, privileged stacks, E820
+  handoff and non-executable supervisor frame-pool view, with unchanged permissions
+- Its own linked image page as user RX
+- The guarded user-stack virtual range [0x1e0000,0x1e4000), mapped to that owner's
+  four leased physical frames as user RW/NX
+
+The old assembly-probe user mappings are omitted. Other compiled image pages are
+absent. There is no shared user-executable trampoline page: every image contains
+its own narrow launcher. The kernel root's read-only views of pinned image backing
+are explicitly user-resource views and are not copied into other private roots.
+Kernel handler/return code is common supervisor RX, never user accessible.
+
+The kernel can inspect private stack frames through supervisor RW/NX direct
+mappings, but user code cannot. Mapping policy rejects a writable/executable
+physical alias in either insertion order, including supervisor writable aliases
+to user executable code. Private code has no writable alias in any root.
+
+### Active-root and teardown authority
+
+Before activation, the root is checked against the entire expected leaf policy,
+including identical common kernel mappings, exact owner stack frames, no extra
+user mappings and no global leaves. CR4.PCIDE must be clear. Every CR3 switch
+flushes this CPU's nonglobal translations; no PCID reuse is attempted. The root
+read back from hardware must equal the selected owner root.
+
+Return/fault acceptance requires both the existing exact scalar/trap contract and
+the active handle's actual hardware CR3. The kernel restores its own root before
+reporting an ordinary result or contained bounds/overflow outcome. The saved
+privileged continuation and TSS entry-stack contract remain unchanged.
+
+Opaque handles use monotonically unique stamps. A destroyed/reused slot or even
+a same-address reconstructed registry cannot resurrect an old handle. Stamp
+exhaustion fails closed. Active-root creation, scrubbing and teardown are rejected.
+Teardown requires the inactive ready state and the verified kernel root, scrubs
+and reads back every stack byte, clears the old tables, revokes the handle, then
+releases leases. Failed partial allocation similarly scrubs acquired frames before
+releasing them; unverifiable state is retained rather than silently reused.
+
+This reasoning is deliberately single-CPU with interrupts masked. It is not an
+SMP TLB-shootdown protocol or asynchronous revocation mechanism.
+
+### Executed acceptance gates
+
+The normal boot records distinct physical roots and disjoint leased stacks,
+runs all three compiler-generated programs under their own CR3, and checks each
+program actually wrote its own physical stack. Every accepted return and language
+fault records the matching active root followed by kernel-root restoration.
+
+After the clean domain has run, the gate destroys it, reads the released frames
+to confirm zeroing, rejects its stale handle, then exhausts the pool until only
+two frames remain. A four-frame creation must roll back without leaking either
+frame; recognizable old bytes in both rollback frames must be zero afterward.
+Recreation reuses the earlier physical frames with a new handle, rejects the old
+handle again, and executes the clean program successfully. Final teardown returns
+the allocator to zero live leases and leaves the kernel root active.
+
+Three new actual-CPU denial modes extend the earlier sixteen gates:
+
+- --domain-code: executing another domain's image faults with user instruction-fetch
+  page-fault error 20 at the foreign image address
+- --domain-stack: reading another owner's physical stack via the supervisor direct
+  mapping faults with page-fault error 5 at the verified foreign frame
+- --domain-root-mismatch: a test-only kernel injection changes CR3 before an
+  otherwise valid user return; the gate rejects it rather than accepting stale
+  domain authority
+
+These are trusted adversarial test shims, not unsafe language features. The clean
+fixture now imports std.core and executes std::max inside its private RX image;
+all fixtures still use the source language's ordinary checked operations.
+
+Run all nineteen modes with ./scripts/kernel-protection-smoke.sh. Hosted domain
+policy and alias tests are included in ./scripts/kernel-tests.sh and its sanitizer
+mode. Emulator transcript checks require exact CR3 transitions, nonoverlapping
+stack ownership, both code/data denials, reuse evidence and final teardown.
+
+The enlarged bootstrap remains bounded: its EDD packet reads 96 sectors (48 KiB)
+from LBA 1 to physical 0x10000, within one 64 KiB transfer window. Image validation
+checks the actual assembler-located packet's alignment, count, destination and window plus
+malformed-packet controls. No host disk or bootloader is modified.
+
+### Still outside the claim
+
+Roots and code slots are static; stacks are explicitly leased and reclaimed.
+There is no arbitrary image loading, pageable VM, user heap, threads, scheduler,
+permissions service, signal delivery, shared-memory service, SMP, DMA isolation,
+FPU/TLS lifecycle or speculative-execution assurance. Only the specified compiler
+traps are contained. Other faults remain fail-stop. This checkpoint demonstrates
+bounded sequential hardware domains on QEMU, not complete process isolation or
+qualification of physical Zen/RDNA hardware.

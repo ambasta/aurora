@@ -1,35 +1,45 @@
-#include "lexer.hpp"
-#include "parser.hpp"
+#include "modules.hpp"
 #include "semantics.hpp"
 #include "x86.hpp"
 #include <fstream>
 #include <iostream>
-#include <sstream>
 
 int main(int argc, char **argv) {
     try {
-        if (argc != 4 || std::string(argv[2]) != "-o") {
-            std::cerr << "usage: aurorac INPUT.au -o OUTPUT.s\n";
+        std::filesystem::path inputPath, outputPath;
+        std::vector<std::filesystem::path> roots;
+        for (int index = 1; index < argc; ++index) {
+            const std::string option = argv[index];
+            if (option == "--module-root") {
+                if (++index >= argc)
+                    throw aurora::Error("--module-root requires a directory");
+                roots.emplace_back(argv[index]);
+            } else if (option == "-o") {
+                if (++index >= argc || !outputPath.empty())
+                    throw aurora::Error("exactly one -o OUTPUT.s is required");
+                outputPath = argv[index];
+            } else if (option.starts_with("-") || !inputPath.empty())
+                throw aurora::Error("unknown or duplicate command-line argument: " + option);
+            else
+                inputPath = option;
+        }
+        if (inputPath.empty() || outputPath.empty()) {
+            std::cerr << "usage: aurorac [--module-root DIR] INPUT.au -o OUTPUT.s\n";
             return 2;
         }
-        std::ifstream in(argv[1]);
-        if (!in)
-            throw aurora::Error("cannot open input");
-        std::ostringstream source;
-        source << in.rdbuf();
-        aurora::Parser parser(aurora::lex(source.str()));
-        aurora::SemanticAnalyzer analyzer(parser.parse());
+        aurora::ModuleLoader loader(roots);
+        auto graph = loader.load(inputPath);
+        auto sourceIdentities = graph.sourceIdentities;
+        aurora::ModuleResolver resolver(std::move(graph));
+        aurora::SemanticAnalyzer analyzer(resolver.resolve());
         auto checked = analyzer.analyze();
         auto result = aurora::X86Emitter{}.emit(checked);
-        std::ofstream out(argv[3]);
-        if (!out)
-            throw aurora::Error("cannot open output");
-        out << result;
-        if (!out)
-            throw aurora::Error("cannot write output");
+        aurora::host::ArtifactWriter output(outputPath, std::move(sourceIdentities));
+        output.write(result);
+        output.commit();
         return 0;
-    } catch (const std::exception &e) {
-        std::cerr << "aurorac: " << e.what() << '\n';
+    } catch (const std::exception &error) {
+        std::cerr << "aurorac: " << error.what() << '\n';
         return 1;
     }
 }

@@ -19,11 +19,14 @@ auto main() -> int {
     PhysicalPages pool;
     PhysicalPages foreign;
     check(!pool.acquire(), "uninitialized acquisition");
+    check(!pool.arena_matches(0, 0), "uninitialized arena metadata");
     check(!pool.initialize(1, 1), "alignment");
     check(!pool.initialize(0x100000, 0), "zero count");
     check(!pool.initialize(0x100000, 129), "capacity");
     check(!pool.initialize(UINT64_MAX - 4095, 1), "address overflow");
     check(pool.initialize(0x100000, 128), "initialization");
+    check(pool.arena_matches(0x100000, 128) && !pool.arena_matches(0x200000, 128)
+        && !pool.arena_matches(0x100000, 127), "arena identity restriction");
     check(!pool.initialize(0x200000, 1), "reinitialization");
     check(foreign.initialize(0x200000, 1), "foreign initialization");
     std::array<std::optional<PageLease>, 128> leases;

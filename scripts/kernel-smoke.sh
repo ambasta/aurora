@@ -20,6 +20,9 @@ case "$mode" in
   --program-bad-return) build_environment+=(KERNEL_TEST_PROGRAM_BAD_RETURN=1) ;;
   --program-unknown-trap) build_environment+=(KERNEL_TEST_PROGRAM_UNKNOWN_TRAP=1) ;;
   --program-kernel-trap) build_environment+=(KERNEL_TEST_PROGRAM_KERNEL_TRAP=1) ;;
+  --domain-code) build_environment+=(KERNEL_TEST_PROGRAM_FOREIGN_CODE=1) ;;
+  --domain-stack) build_environment+=(KERNEL_TEST_PROGRAM_FOREIGN_STACK=1) ;;
+  --domain-root-mismatch) build_environment+=(KERNEL_TEST_DOMAIN_ROOT_MISMATCH=1) ;;
   --no-nx) cpu=qemu64,-nx ;;
   *) echo 'Unknown kernel smoke mode' >&2; exit 2 ;;
 esac
