@@ -1,0 +1,7 @@
+module user_bounds;
+
+auto aurora_user_main() -> i64 {
+    const array<i64, 3> values = {10, 20, 12};
+    i64 index = len(values);
+    return values[index];
+}

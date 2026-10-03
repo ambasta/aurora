@@ -113,3 +113,59 @@ process isolation, scheduling, SIMD context management, full language safety or
 physical AMD support. The old milestone001 results remain unchanged and cannot
 be used as evidence for this new syntax/semantics. C-level performance remains a
 benchmark target rather than a measured claim.
+
+## Typed IR, runtime containment and resource correction — 2026-10-02
+
+The final corrected release compiler has SHA-256
+`753845632fa5361f7262266c5b74b75927393403cf86c1d84a3ba34bc86ebf53`.
+A fresh build in the original workspace passed:
+
+- `make test`: 203 source tests, 46 direct typed-IR tests, hosted kernel/image
+  checks, seven oracle-harness checks and 630 bounded semantic-oracle cases.
+- `make test-semantics-stress`: 1,526 cases at seed 404 with 1,024 generated cases.
+  Its fixed/model corpus overlaps the default run; counts are not additive
+  independent coverage.
+- 64 previous-compiler/candidate behavior comparisons. The prior compiler is a
+  local baseline artifact; it is not a new runtime dependency.
+- AddressSanitizer and UndefinedBehaviorSanitizer on all 203 compiler source
+  tests and 46 IR tests, preserving the source harness's five-second timeout.
+- Sanitized hosted allocator/mapping/program-authority tests; 10,000 allocator
+  model steps, 511 mappings/firmware cases, eight kernel-image and 27 user-image
+  negative controls, 16 accepted and 110 rejected transcript cases.
+- All 16 actual QEMU modes through `make smoke-all`, including separately
+  compiled safe-C++ programs, exact user bounds/overflow trap containment followed
+  by clean runs, and rejection of invalid return PCs, unknown traps and kernel
+  origin traps. Normal image restored afterward; payload 16,440 bytes.
+
+The first extra compiler sanitizer run hit the five-second timeout on a
+4,096-element initializer. Investigation found real quadratic state retention
+in the IR verifier. No sanitizer violation was observed in that failing run;
+it was a timeout. The failed and preliminary receipts remain in
+[pre-resource-fix](evidence/milestone-003/pre-resource-fix/).
+
+Retaining snapshots at basic-block entries corrected that straight-line case.
+Matched release measurements fell from roughly 4.3 GiB peak RSS to 10.5 MiB.
+Matched sanitizer measurements fell from 6,054,528 KiB / 14.6024 seconds to
+46,448 KiB / 0.0809 seconds for the documented input.
+See [resource note](../compiler/RESOURCE-NOTE.md) and [independent review](review.md).
+These measurements are environment-specific. Join-state storage can still grow
+with blocks times live slot facts; no global resource bound is claimed.
+LeakSanitizer alone remains disabled under the tracing environment.
+
+Final receipts:
+- [Source, IR, kernel and default oracle](evidence/milestone-003/test.log)
+- [Stress oracle](evidence/milestone-003/semantics-stress.log)
+- [Baseline comparisons](evidence/milestone-003/equivalence.log)
+- [Compiler sanitizers](evidence/milestone-003/compiler-sanitizers.log)
+- [IR sanitizers](evidence/milestone-003/ir-sanitizers.log)
+- [Hosted kernel sanitizers](evidence/milestone-003/kernel-sanitizers.log)
+- [All actual CPU gates](evidence/milestone-003/emulator.log)
+- [Linked image/trap metadata](evidence/milestone-003/image-metadata/)
+- [Final implementation hashes](evidence/milestone-003/source.sha256)
+
+This remains one controlled user domain, not general process isolation or
+preemption. Source ownership/const/privacy analysis and bootstrap hardware code
+remain trusted. No soundness proof, full runtime/stdlib, self-hosting or physical
+AMD support is claimed. Earlier candidate hashes and preliminary results in
+review/oracle notes are historical and are superseded by these corrected-source
+aggregate receipts.

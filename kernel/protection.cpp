@@ -1,5 +1,6 @@
 #include "protection.hpp"
 #include "mapping.hpp"
+#include "user-program.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -39,6 +40,7 @@ auto Protection::activate() -> bool {
     if (a < 0x80000001U) return false;
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x80000001U), "c"(0));
     if ((d & (1U << 20)) == 0) return false;
+    if (!aurora::user::UserPrograms::install()) return false;
     const auto payload_begin = address(user_payload_begin);
     const auto payload_size = address(user_payload_end) - payload_begin;
     if (payload_size == 0 || payload_size > 4096) return false;
@@ -56,6 +58,7 @@ auto Protection::activate() -> bool {
         || !map_range(entry_stack_bottom, entry_stack_top, PageAccess::read_write)
         || !map_range(emergency_stack_bottom, emergency_stack_top, PageAccess::read_write)
         || !map_range(0x100000, 0x180000, PageAccess::read_write)
+        || !map_range(aurora::user::UserPrograms::code_begin, aurora::user::UserPrograms::code_end, PageAccess::read_execute, PageDomain::user)
         || !map_range(user_code, user_code + 4096, PageAccess::read_execute, PageDomain::user)
         || !map_range(user_stack_bottom, user_stack_top, PageAccess::read_write, PageDomain::user)) return false;
     pml4[0] = reinterpret_cast<std::uint64_t>(pdpt.data()) | 7;
@@ -79,7 +82,8 @@ auto Protection::verify() -> bool {
         const auto entry = leaves.entry(page);
         if (entry == 0) continue;
         if ((entry & 2) != 0 && (entry >> 63) == 0) return false;
-        if ((entry & 4) != 0 && page != user_code && !(page >= user_stack_bottom && page < user_stack_top)) return false;
+        if ((entry & 4) != 0 && page != user_code && !(page >= aurora::user::UserPrograms::code_begin && page < aurora::user::UserPrograms::code_end)
+            && !(page >= user_stack_bottom && page < user_stack_top)) return false;
     }
     return leaves.entry(0) == 0 && leaves.entry(main_stack_bottom - 4096) == 0
         && leaves.entry(entry_stack_bottom - 4096) == 0 && leaves.entry(emergency_stack_bottom - 4096) == 0

@@ -89,3 +89,71 @@ The permanent host protection test passed **511 mappings** with permission/domai
 ### Remaining boundaries
 
 The ring-3 exercise is a controlled integer-only bring-up probe. It is not arbitrary program loading, a process model, a scheduler, a syscall design, complete register/TLS/FPU context isolation, or a concurrency boundary. Page-table memory remains trusted kernel data. Compiler stack/resource exhaustion, general aggregate lifetimes, safe reflective invocation, and full-language verification remain open. No physical AMD Zen processor or Navi-or-later GPU has been tested or is claimed supported by these QEMU results. A self-hosting OS stack and the full requested safety/performance goals remain unfinished.
+
+## Milestone three: typed IR boundary and compiled user programs
+
+This review covers the phase split and controlled user-program execution added after milestone two. Earlier acceptance records are preserved; this section does not replace their historical counts or claim a complete safe language/OS.
+
+### Compiler boundary and reproduced findings
+
+The frontend now produces typed IR after source name/type/const/visibility/lifetime analysis. The backend accepts a validated-module wrapper, has no AST or ownership checker, and emits only from a closed instruction set. Checked arithmetic and array bounds guards are explicit operations. The verifier checks CFG targets, slot layout and initialization, scalar types, canonical Boolean constants, balanced temporary stacks, call signatures, and matching checked-index tokens.
+
+Independent malformed-IR review found four accepted cases in the first candidate:
+
+1. A function symbol containing a newline/assembler directive passed validation and flowed into textual assembly emission.
+2. An unreachable invalid parameter-binding instruction was not checked even though the emitter would visit it.
+3. An unreachable push changed the emitter's linear stack-depth accounting, causing an incorrectly adjusted call stack on the actual reachable path.
+4. Parameter binding after a metadata call copied a clobbered argument register. A generated executable was observed returning 42 from a Boolean function called with canonical Boolean 1.
+
+These were internal-IR boundary defects, not demonstrations that the source checker emitted such modules. The corrected verifier restricts symbol grammar/helper names, requires parameter bindings in the exact entry prefix, rejects unreachable semantic operations, and removes only unreachable structural label/jump artifacts. All four original reproductions now reject. The permanent direct suite passed **42 IR tests**, including the regressions and guard/layout/type/initialization/control-flow failures.
+
+Bounds protection attaches to the actual abstract current/stack value rather than merely to an array shape. Four additional focused checks passed: loading an index from an ordinary slot loses the token; arithmetic loses the token; replacing a saved stack index with an unchecked value rejects; a saved checked index survives an unrelated slot overwrite and a metadata call on the RHS. This matches the backend's actual register/stack behavior. A frame store that leaves the current register unchanged need not invalidate its token; an ordinary reload cannot recreate one.
+
+The frozen candidate also independently passed **203 source tests** with Python optimization, the **34 additional source cases** from the previous review, and **five exact trap-address probes**. The latter compare SIGILL's actual instruction address to the emitted bounds/overflow label and verify UD2 bytes. The separate semantic-oracle/equivalence workstream supplies broader behavioral-comparison receipts; those are distinct from these targeted review results.
+
+The source semantic/lifetime analyzer remains trusted for ownership, const, privacy, scope, and aggregate rules. The IR verifier does not independently reconstruct those source policies from scalar slots. The x86 emitter and host C++ implementation remain trusted. This is a meaningful internal validation boundary, not a proof of Rust-equivalent soundness or arbitrary optimizer correctness.
+
+### Compiled user-program contract
+
+Three programs are separately compiled and linked at fixed one-page addresses. Build validation checks RX-only linked bytes, entry/return symbols, and exact compiler bounds/overflow UD2 labels before generating read-only kernel metadata. Installed pages have no writable identity alias after protection activation. They share a single user domain; this is explicitly not inter-process isolation.
+
+Each launch clears integer registers and scrubs/verifies the user stack. The trusted user entry checks initial integer state, calls the compiled function, and uses a narrow scalar-return gate. Kernel acceptance requires the active contract, exact linked return PC or known compiler trap PC, the expected vector/error, user CS/SS, permitted saved flags, user stack bounds/alignment, and a TSS entry-stack frame. Return additionally requires the top-of-stack restored by the trusted entry sequence. The continuation comes from a protected kernel-owned saved stack, never a user-supplied continuation address.
+
+Review identified a metadata lifetime/mutation footgun in the first `ProgramRun` API, which retained a pointer to the caller's contract. It now snapshots the contract by value and is noncopyable. An independent check begins a run, changes the caller's original return-PC contract, and confirms the changed authorization is rejected. The permanent host policy suite passed snapshot lifetime, replay, nested run, full scalar-bit-pattern result, exact trap/opcode, flags/stack/origin, stale-result reset, and clean-run-after-fault checks.
+
+### Executed kernel evidence
+
+Against pinned compiler SHA-256 `765ed87efa9c28909217f0ab01bacc97ef2fbdea6fd76547db778726b18a8918`, independently ran normal boot and the three new hostile modes:
+
+- Normal sequence: clean compiled array/loop program returns 42; known bounds UD2 is contained; clean program returns 42 again; known overflow UD2 is contained; clean program returns 42 again; the kernel reaches normal boot success.
+- A user return through vector 129 at the wrong linked PC fails closed.
+- A user UD2 not named by the active compiler-trap metadata fails closed.
+- Execution of the exact known compiler bounds-UD2 address at CPL0 remains fatal, rather than being mistaken for a contained user-language failure.
+
+The actual normal contained traps were vector 6 at CPL3 with TSS entry frames; the kernel-origin test was vector 6 at CPL0 on the privileged stack. Per-mode metadata files retain the exact linked trap/return sites for variant builds. The current transcript suite independently passed **16 positive and 110 negative controls** under Python optimization. The kernel author separately reports all 16 QEMU gates on the pinned candidate, including the previous 13 protection modes; the parent owns the final aggregate receipt.
+
+Only recognized bounds/overflow failures from these validated user contracts are contained. Unknown user traps remain fail-stop. There is no arbitrary binary loader, process scheduler, complete FPU/TLS context boundary, concurrent execution, general syscall surface, self-hosting compiler, production driver stack, or demonstrated physical AMD CPU/GPU support. No unresolved reproduced defect remained in this reviewed scope at freeze.
+
+### Milestone-three acceptance reopened: verifier resource regression
+
+An extra parent sanitizer gate exposed a real resource defect after the preliminary review freeze: the supported 4096-element initializer exceeded the unchanged five-second test deadline under instrumentation. Parent/author measurement of the initial verifier recorded roughly 4.3 GiB release peak RSS and 5.8 GiB instrumented peak RSS. The cause was retaining a deep operand-stack and initialized-slot snapshot at every IR instruction. The failed gate was preserved; its timeout was not increased or reclassified as a pass.
+
+The verifier now snapshots abstract states only at basic-block entries and walks each straight-line block using one mutable state. Separate reachability tracking preserves rejection of unreachable semantic instructions and normalization of only dead structural jumps/labels. Entry-prefix, symbol, target, frame, bounds-token, type and initialization checks remain in force. Code inspection covered leader discovery, conditional fallthrough, loop reprocessing, shrinking initialization/guard state at late joins, and final reachability normalization.
+
+The corrected direct suite passed **46 IR tests**. New cases cover loop guard loss, a late predecessor removing initialization, identical guarded values joining successfully, and the maximum initializer's retained-state metrics. The latter records one entry snapshot, operand depth 4096, and zero retained entry value/initialization facts for its straight-line block. Four independent token-provenance checks and all four original malformed-IR reproductions were rerun successfully.
+
+Independent release measurements for a 4096-element initialized array followed by bounded branch-dense suffixes were:
+
+- Zero branches: 0.011 seconds, 10,768 KiB peak RSS.
+- 64 if/else branches: 0.087 seconds, 48,512 KiB peak RSS.
+- 128 if/else branches: 0.153 seconds, 85,988 KiB peak RSS.
+
+Using the matching-flags ASan+UBSan binary with SHA-256 `f336d8269b9f4de441e3b39a163b6d4e1721ea8b2792a0ae0e1902bc1330bd91`, independent results were:
+
+- Zero branches: 0.096 seconds, 46,448 KiB peak RSS.
+- 64 branches: 0.680 seconds, 217,956 KiB peak RSS.
+- 128 branches: 1.163 seconds, 385,648 KiB peak RSS.
+
+Each resource probe retained a five-second deadline and exited successfully. The full **203 source-test suite** also passed with that instrumented binary, Python optimization enabled, and ASan/UBSan configured to halt on error. Leak detection alone remained disabled because the execution environment's tracing restriction prevents LeakSanitizer operation; no LeakSanitizer pass is claimed.
+
+These are measurements in this environment, not portable performance guarantees. The straight-line quadratic-retention bug is corrected, but retained join states still scale with basic-block entries times live slot facts. No global compilation memory/time bound or general linear-complexity claim follows. Large branch-dense/untrusted inputs require additional resource budgeting or more compact state representation before production claims. The corrected compiler supersedes the earlier pinned executable for final milestone-three acceptance; all aggregate/oracle/kernel receipts must be rerun on the corrected source rather than reusing the preliminary freeze results.

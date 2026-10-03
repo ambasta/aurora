@@ -1,0 +1,47 @@
+PASS IR typed load/store
+PASS IR empty module
+PASS IR symbol injection
+PASS IR reserved symbol
+PASS IR duplicate function
+PASS IR bad frame
+PASS IR oversized frame
+PASS IR bad slot
+PASS IR slot past frame
+PASS IR noncanonical bool
+PASS IR load uninitialized
+PASS IR load wrong type
+PASS IR store wrong type
+PASS IR stack underflow
+PASS IR push undefined
+PASS IR unbalanced return
+PASS IR wrong return
+PASS IR fallthrough
+PASS IR unknown jump
+PASS IR duplicate label
+PASS IR unreachable operation
+PASS IR unreachable bad parameter
+PASS IR jump over stack effect
+PASS IR missing parameter prefix
+PASS IR parameter rebound after call
+PASS IR unknown call
+PASS IR bad unary enum
+PASS IR bad binary enum
+PASS IR bad query enum
+PASS IR bad descriptor
+PASS IR borrow uninitialized payload
+PASS IR unchecked index
+PASS IR guard invalidated by value change
+PASS IR guard wrong length
+PASS IR guard wrong base
+PASS IR guard bypass through branch
+PASS IR partial array initialization
+PASS IR array layout underflow
+PASS IR store without checked index
+PASS IR initialization missing branch
+PASS IR loop backedge loses current guard
+PASS IR late predecessor removes initialization
+PASS IR identical guards join safely
+PASS IR bounded maximum initializer: snapshots=1, peak operand depth=4096, retained facts=0
+PASS IR saved guard survives RHS query
+PASS IR unreachable structural cleanup
+46 typed IR tests passed

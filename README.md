@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs the normal boot and twelve adversarial CPU/memory probes.
+`make smoke-all` runs the normal boot and adversarial CPU/memory/program probes.
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
 Do not write it to a physical disk or replace a host bootloader.
@@ -54,7 +54,9 @@ auto answer() -> i64 {
 }
 ```
 
-- A C++23-hosted lexer/parser/checker and direct x86-64 assembly emitter. Aurora
+- A C++23-hosted frontend, trusted semantic/lifetime analyzer, typed IR verifier
+  and separate x86-64 backend. Checked arithmetic and bounds evidence remain
+  explicit through lowering. Aurora
   source is not transpiled into C. The host assembler/linker are still bootstrap
   dependencies; native replacements and self-hosting are future milestones.
 - Typed functions, initialized locals, branches and conservative while-loop checks.
@@ -81,13 +83,19 @@ A controlled integer-only ring-3 probe exercises its own user stack and an entry
 gate. Adversarial probes test denied kernel accesses, code writes, data execution,
 privileged instructions, I/O and damaged-stack exception handling. This is a
 limited boundary test, **not a complete process isolation or scheduling system**.
-The kernel does not yet run general user applications.
+Separately compiled Aurora fixtures now execute in user RX pages through a
+scalar-only return contract. Recognized user bounds/overflow traps are contained,
+then a clean fixture runs again. Unexpected returns/traps fail closed, and kernel
+faults remain fatal. These fixtures share one bounded user domain; this is not
+a general application loader, scheduler or per-process address-space system.
 
 ## Whole-system destination
 
 The eventual distribution is native to Aurora: compiler/binutils equivalents,
 runtime/libraries, Portage-like source package management, services, storage,
-networking, security, installer and applications. Desktop targets include a
+networking, security, installer and applications. A native platform/runtime layer
+will replace libc responsibilities without its C API/ABI, alongside a safe C++
+standard library. See [library stack](docs/library-stack.md). Desktop targets include a
 Sway-like tiling environment, Foot-like terminal and Wayland-like display protocol.
 Later language/library/FOSS ports will require native backends, API adaptation or
 safe rewrites; compatibility is not implied by those comparisons.
