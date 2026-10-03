@@ -1,0 +1,10 @@
+Sat Oct  3 01:48:53 UTC 2026
+PASS: physical-page ownership, invalid inputs, exhaustion, reuse, 10000 model steps
+PASS: 511 identity mappings, W^X/domain/default-deny policy, malformed/overlapping firmware grants
+PASS: scalar return authority, exact trap metadata, origin/stack/flags rejection, replay/lifetime/reset policy
+PASS: domain ownership, active/foreign/stale/rebirth rejection, bounded slots, nonidentity W^X aliases
+PASS: integer context, privileged flags, snapshot reset, exact trap/return and bounded slices
+PASS: smoke validators, 19 success cases and 134 failure regressions (no QEMU required)
+PASS: scheduler transcript 9 positives and 185 negative authority regressions
+PASS: 124 UEFI descriptor, ownership, bounded handoff and complete table-tree checks
+PASS: UEFI transcripts 8 positive and 148 negative cases

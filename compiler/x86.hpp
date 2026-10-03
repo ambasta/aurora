@@ -1,5 +1,6 @@
 #pragma once
 #include "ir.hpp"
+#include <algorithm>
 #include <sstream>
 #include <type_traits>
 
@@ -10,6 +11,11 @@ class X86Emitter {
     int stackDepth = 0;
     int functionIndex = 0;
     int receiverSaveOffset = 0;
+    int callRecordSaveOffset = 0;
+    int resultSaveOffset = 0;
+    const ir::Function *currentFunction = nullptr;
+    const std::map<std::string, std::vector<Type>> *classLayouts = nullptr;
+    std::map<std::string, const ir::Function *> functions;
     std::map<std::string, std::size_t> argumentCounts;
     const std::vector<std::string> argumentRegisters = {"%rdi", "%rsi", "%rdx",
                                                         "%rcx", "%r8",  "%r9"};
@@ -44,6 +50,24 @@ class X86Emitter {
         const std::string name = query == ir::Query::Size ? "size" : "field_count";
         return scope == 0 ? "aurora_reflect_" + name
                           : "__au_reflect_s" + std::to_string(scope) + "_" + name;
+    }
+    bool aggregateSignature(const ir::Function &function) const {
+        if (function.result.isClass())
+            return true;
+        for (const auto &type : function.parameters)
+            if (type.isClass())
+                return true;
+        return false;
+    }
+    int argumentWords(const Type &type) const {
+        return type.isClass() ? static_cast<int>(std::max<std::size_t>(1, classLayouts->at(type.className).size()))
+                              : 1;
+    }
+    int recordOffset(const ir::Function &function, std::size_t parameter) const {
+        int offset = 0;
+        for (std::size_t index = 0; index < parameter; ++index)
+            offset += argumentWords(function.parameters[index]) * 8;
+        return offset;
     }
     void instruction(const ir::Instruction &instruction) {
         std::visit(
@@ -103,6 +127,35 @@ class X86Emitter {
                          --index)
                         pop(argumentRegisters[index - 1]);
                     call(operation.callee);
+                } else if constexpr (std::is_same_v<Op, ir::AggregateCall>) {
+                    const auto &target = *functions.at(operation.callee);
+                    // Scalar operands retain source evaluation order on the value
+                    // stack. Extract them before allocating the separate call record.
+                    for (std::size_t index = target.parameters.size(); index > 0; --index)
+                        if (scalar(target.parameters[index - 1]))
+                            pop(argumentRegisters[index - 1]);
+                    const int recordBytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
+                    if (recordBytes)
+                        line("subq $" + std::to_string(recordBytes) + ", %rsp");
+                    for (std::size_t index = 0; index < target.parameters.size(); ++index) {
+                        const auto &type = target.parameters[index];
+                        const int offset = recordOffset(target, index);
+                        if (scalar(type)) {
+                            line("movq " + argumentRegisters[index] + ", " + std::to_string(offset) + "(%rsp)");
+                        } else {
+                            const auto &layout = classLayouts->at(type.className);
+                            for (std::size_t field = 0; field < layout.size(); ++field) {
+                                line("movq " + address(operation.objectArguments[index] - static_cast<int>(field * 8)) + ", %rax");
+                                line("movq %rax, " + std::to_string(offset + field * 8) + "(%rsp)");
+                            }
+                        }
+                    }
+                    line("movq %rsp, %r11");
+                    if (target.result.isClass())
+                        line("leaq " + address(operation.resultOffset) + ", %r10");
+                    call(operation.callee);
+                    if (recordBytes)
+                        line("addq $" + std::to_string(recordBytes) + ", %rsp");
                 } else if constexpr (std::is_same_v<Op, ir::BeginObject> ||
                                      std::is_same_v<Op, ir::EndObject>) {
                     // Scalar-only class lifetimes need no runtime action. The
@@ -134,9 +187,32 @@ class X86Emitter {
                     line("jz " + label(operation.target));
                 } else if constexpr (std::is_same_v<Op, ir::Return>) {
                     line("jmp " + returnLabel());
+                } else if constexpr (std::is_same_v<Op, ir::ReturnObject>) {
+                    line("movq " + address(resultSaveOffset) + ", %r10");
+                    const auto &layout = classLayouts->at(currentFunction->result.className);
+                    for (std::size_t field = 0; field < layout.size(); ++field) {
+                        line("movq " + address(operation.offset - static_cast<int>(field * 8)) + ", %rax");
+                        line("movq %rax, " + std::to_string(field * 8) + "(%r10)");
+                    }
+                    line("xorq %rax, %rax");
+                    line("jmp " + returnLabel());
                 } else if constexpr (std::is_same_v<Op, ir::BindParameter>) {
-                    line("movq " + argumentRegisters[operation.index] + ", " +
-                         address(operation.offset));
+                    if (callRecordSaveOffset) {
+                        line("movq " + address(callRecordSaveOffset) + ", %r11");
+                        line("movq " + std::to_string(recordOffset(*currentFunction, operation.index)) + "(%r11), %rax");
+                        line("movq %rax, " + address(operation.offset));
+                    } else
+                        line("movq " + argumentRegisters[operation.index] + ", " + address(operation.offset));
+                } else if constexpr (std::is_same_v<Op, ir::BindObjectParameter>) {
+                    line("movq " + address(callRecordSaveOffset) + ", %r11");
+                    const auto &layout = classLayouts->at(operation.className);
+                    const int offset = recordOffset(*currentFunction, operation.index);
+                    for (std::size_t field = 0; field < layout.size(); ++field) {
+                        line("movq " + std::to_string(offset + field * 8) + "(%r11), %rax");
+                        line("movq %rax, " + address(operation.offset - static_cast<int>(field * 8)));
+                    }
+                } else {
+                    static_assert(!std::is_same_v<Op, Op>, "unhandled typed IR backend operation");
                 }
             },
             instruction);
@@ -148,23 +224,36 @@ class X86Emitter {
         output.str("");
         output.clear();
         argumentCounts.clear();
+        functions.clear();
+        classLayouts = &module.classLayouts;
         functionIndex = 0;
-        for (const auto &function : module.functions)
+        for (const auto &function : module.functions) {
             argumentCounts[function.name] = function.parameters.size();
+            functions[function.name] = &function;
+        }
         output << "# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n";
         for (const auto &function : module.functions) {
             stackDepth = 0;
-            // Receiver entry points use a private compiler ABI and cannot be
+            currentFunction = &function;
+            const bool aggregate = aggregateSignature(function);
+            // Receiver and aggregate entry points use a private compiler ABI and cannot be
             // exposed as ordinary scalar-callable external symbols.
-            output << (function.receiver ? ".local " : ".globl ") << function.name
+            output << (function.receiver || aggregate ? ".local " : ".globl ") << function.name
                    << "\n.type " << function.name << ", @function\n" << function.name << ":\n";
             line("pushq %rbp");
             line("movq %rsp, %rbp");
             receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
-            const int frameBytes = function.frameBytes + (function.receiver ? 16 : 0);
+            callRecordSaveOffset = aggregate ? function.frameBytes + 8 : 0;
+            resultSaveOffset = aggregate ? function.frameBytes + 16 : 0;
+            const int frameBytes = function.frameBytes + (function.receiver || aggregate ? 16 : 0);
             line("subq $" + std::to_string(frameBytes) + ", %rsp");
             if (function.receiver)
                 line("movq %r10, " + address(receiverSaveOffset));
+            if (aggregate) {
+                line("movq %r11, " + address(callRecordSaveOffset));
+                if (function.result.isClass())
+                    line("movq %r10, " + address(resultSaveOffset));
+            }
             for (const auto &operation : function.code)
                 instruction(operation);
             output << returnLabel() << ":\n";

@@ -2,7 +2,8 @@
 
 This extension adds constructors and statically dispatched methods to Aurora's
 safe C++ subset. It does not add inheritance, virtual dispatch, overloads,
-generics, destructors, object/reference parameters or object results. Classes
+generics, destructors, object/reference parameters or object results on methods.
+Ordinary functions separately support bounded by-value classes under [VALUE-CALLS.md](VALUE-CALLS.md). Classes
 remain inline values with scalar `i64`/`bool` fields and independent copies.
 
 ```cpp

@@ -160,6 +160,7 @@ class ModuleResolver {
     };
     ModuleLoader::Graph graph;
     std::map<std::string, std::map<std::string, Declaration>> declarations;
+    std::map<std::string, std::vector<Type>> signatures;
     const std::set<std::string> builtins = {"own",
                                             "move",
                                             "borrow",
@@ -214,7 +215,7 @@ class ModuleResolver {
             auto &unit = *graph.units.at(name);
             auto &table = declarations[name];
             auto add = [&](Kind kind, const std::string &scope, const std::string &leaf,
-                           bool exported) -> std::string {
+                           bool exported, bool valueBoundary = false) -> std::string {
                 sourceName(scope);
                 sourceName(leaf);
                 const auto qualified = qualify(scope, leaf);
@@ -226,9 +227,10 @@ class ModuleResolver {
                     throw Error(kind == Kind::Class ? "duplicate or reserved class name"
                                                     : "duplicate or reserved function name");
                 const auto native =
-                    kind == Kind::Function && unit.root && scope.empty()
+                    kind == Kind::Function && unit.root && scope.empty() && !valueBoundary
                         ? leaf
-                        : mangle(kind == Kind::Function ? 'f' : 'c', name, scope, leaf);
+                        : mangle(kind == Kind::Function ? (valueBoundary ? 'v' : 'f') : 'c', name,
+                                 scope, leaf);
                 if (!table.emplace(qualified, Declaration{kind, qualified, native, exported})
                          .second)
                     throw Error(std::string(kind == Kind::Class
@@ -255,9 +257,14 @@ class ModuleResolver {
                     method.moduleScope = unit.scope;
                 }
             }
-            for (auto &function : unit.program.functions)
-                function.name =
-                    add(Kind::Function, function.scope, function.token.text, function.exported);
+            for (auto &function : unit.program.functions) {
+                const bool valueBoundary =
+                    function.result.isClass() ||
+                    std::any_of(function.params.begin(), function.params.end(),
+                                [](const Param &parameter) { return parameter.type.isClass(); });
+                function.name = add(Kind::Function, function.scope, function.token.text,
+                                    function.exported, valueBoundary);
+            }
         }
     }
     std::vector<const Declaration *> visible(const ModuleLoader::Unit &unit,
@@ -314,6 +321,59 @@ class ModuleResolver {
             type.displayName = declaration->qualified;
         }
     }
+    const Declaration *classDeclaration(const Type &type) const {
+        for (const auto &[module, table] : declarations) {
+            (void)module;
+            for (const auto &[name, declaration] : table) {
+                (void)name;
+                if (declaration.kind == Kind::Class && declaration.native == type.className)
+                    return &declaration;
+            }
+        }
+        return nullptr;
+    }
+    bool typeVisible(const Type &type, const ModuleLoader::Unit &unit) const {
+        if (!type.isClass())
+            return true;
+        const auto contains = [&](const std::string &module, bool imported) {
+            for (const auto &[name, declaration] : declarations.at(module)) {
+                (void)name;
+                if (declaration.kind == Kind::Class && declaration.native == type.className &&
+                    (!imported || declaration.exported))
+                    return true;
+            }
+            return false;
+        };
+        if (contains(unit.program.moduleName, false))
+            return true;
+        for (const auto &import : unit.program.imports)
+            if (contains(import.text, true))
+                return true;
+        return false;
+    }
+    void resolveSignatures() {
+        for (const auto &name : graph.order) {
+            auto &unit = *graph.units.at(name);
+            for (auto &function : unit.program.functions) {
+                auto resolve = [&](Type &type) {
+                    resolveType(type, unit, function.scope);
+                    if (type.isClass()) {
+                        const auto *declaration = classDeclaration(type);
+                        if (!declaration)
+                            throw Error("unknown class type in function signature: " +
+                                        typeName(type));
+                        if (function.exported && !declaration->exported)
+                            throw Error("exported function signature exposes private type: " +
+                                        typeName(type));
+                    }
+                    signatures[function.name].push_back(type);
+                };
+                resolve(function.result);
+                for (auto &parameter : function.params)
+                    resolve(parameter.type);
+            }
+        }
+    }
     void expression(const ExpressionPtr &value, const ModuleLoader::Unit &unit,
                     const std::string &scope) {
         if (!value)
@@ -349,6 +409,13 @@ class ModuleResolver {
                                 ": unknown function '" + value->token.text +
                                 "' in defining module " + unit.program.moduleName);
                 value->resolvedName = declaration->native;
+                if (declaration->kind == Kind::Function) {
+                    for (const auto &type : signatures.at(declaration->native))
+                        if (!typeVisible(type, unit))
+                            throw Error(
+                                "function signature type requires a direct visible import: " +
+                                typeName(type));
+                }
                 if (declaration->kind == Kind::Class) {
                     value->op = "constructor_call";
                     value->reflectedType = Type(declaration->native);
@@ -380,6 +447,7 @@ class ModuleResolver {
     explicit ModuleResolver(ModuleLoader::Graph value) : graph(std::move(value)) {}
     Program resolve() {
         registerDeclarations();
+        resolveSignatures();
         Program result;
         result.moduleName = graph.root;
         for (const auto &name : graph.order) {

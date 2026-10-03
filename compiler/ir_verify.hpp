@@ -51,10 +51,19 @@ inline void verifyFunction(Function &function,
                            Metrics *metrics = nullptr, const std::set<int> &availableScopes = {0},
                            const std::map<std::string, std::vector<Type>> &classLayouts = {}) {
     require(availableScopes.contains(function.moduleScope), "unknown function module scope");
-    require(scalar(function.result), "non-scalar function result");
+    auto boundaryType = [&](const Type &type) {
+        if (scalar(type))
+            return;
+        require(!function.receiver, "receiver signatures must remain scalar");
+        require(type.isClass() && type == Type(type.className), "invalid value boundary type");
+        require(classLayouts.contains(type.className), "unknown value boundary class");
+        require(classLayouts.at(type.className).size() <= 64,
+                "value boundary class exceeds 64 scalar fields");
+    };
+    boundaryType(function.result);
     require(function.parameters.size() <= 6, "too many parameters");
     for (const auto &type : function.parameters)
-        require(scalar(type), "non-scalar parameter");
+        boundaryType(type);
     require(function.frameBytes >= 0 && function.frameBytes <= 65536 &&
                 function.frameBytes % 16 == 0,
             "invalid frame size");
@@ -98,13 +107,26 @@ inline void verifyFunction(Function &function,
         }
     }
     require(!function.code.empty(), "empty function body");
+    std::set<int> scalarParameterSlots;
+    std::set<int> objectParameterSlots;
     for (std::size_t index = 0; index < function.code.size(); ++index) {
         const auto *binding = std::get_if<BindParameter>(&function.code[index]);
-        if (index < function.parameters.size())
-            require(binding && binding->index == static_cast<int>(index),
-                    "parameter bindings must form the entry prefix");
-        else
-            require(!binding, "parameter binding outside entry prefix");
+        const auto *objectBinding = std::get_if<BindObjectParameter>(&function.code[index]);
+        if (index < function.parameters.size()) {
+            const auto &type = function.parameters[index];
+            if (type.isClass()) {
+                require(objectBinding && objectBinding->index == static_cast<int>(index),
+                        "object parameter bindings must form the entry prefix");
+                require(objectParameterSlots.insert(objectBinding->offset).second,
+                        "object parameter bindings overlap");
+            } else {
+                require(binding && binding->index == static_cast<int>(index),
+                        "parameter bindings must form the entry prefix");
+                require(scalarParameterSlots.insert(binding->offset).second,
+                        "scalar parameter bindings overlap");
+            }
+        } else
+            require(!binding && !objectBinding, "parameter binding outside entry prefix");
     }
     std::map<int, std::size_t> labels;
     for (std::size_t index = 0; index < function.code.size(); ++index) {
@@ -229,6 +251,9 @@ inline void verifyFunction(Function &function,
             auto store = [&](int offset, const Type &type) {
                 slot(offset, type);
                 activeObjectField(offset);
+                require(!scalarParameterSlots.contains(offset) ||
+                            !state.maybeInitialized.contains(offset),
+                        "write to immutable scalar parameter");
                 const auto object = objectFields.find(offset);
                 require(object == objectFields.end() || object->second->mutableValue ||
                             !state.maybeInitialized.contains(offset),
@@ -327,10 +352,14 @@ inline void verifyFunction(Function &function,
                         array(operation.offset, operation.length, operation.elementType);
                         current(operation.elementType);
                         guard(pop(), operation.offset, operation.length, operation.elementType);
-                        for (int element = 0; element < operation.length; ++element)
-                            require(!objectFields.contains(operation.offset - element * 8) ||
-                                        objectFields.at(operation.offset - element * 8)->mutableValue,
+                        for (int element = 0; element < operation.length; ++element) {
+                            const int offset = operation.offset - element * 8;
+                            require(!scalarParameterSlots.contains(offset),
+                                    "indexed write to immutable scalar parameter");
+                            require(!objectFields.contains(offset) ||
+                                        objectFields.at(offset)->mutableValue,
                                     "indexed write to const object field");
+                        }
                     } else if constexpr (std::is_same_v<Op, BorrowHandle>) {
                         slot(operation.ownerOffset, Type::I64);
                         require(!objectFields.contains(operation.ownerOffset),
@@ -345,15 +374,88 @@ inline void verifyFunction(Function &function,
                         require(functions.contains(operation.callee), "unknown call target");
                         const auto &target = *functions.at(operation.callee);
                         require(!target.receiver, "plain call cannot target receiver function");
+                        require(scalar(target.result) &&
+                                    std::all_of(target.parameters.begin(), target.parameters.end(),
+                                                [](const Type &type) { return scalar(type); }),
+                                "plain call cannot target aggregate signature");
                         for (auto argument = target.parameters.rbegin();
                              argument != target.parameters.rend(); ++argument)
                             require(pop().type == *argument, "call argument type mismatch");
                         state.current = Value{target.result, {}};
+                    } else if constexpr (std::is_same_v<Op, AggregateCall>) {
+                        require(functions.contains(operation.callee), "unknown aggregate call target");
+                        const auto &target = *functions.at(operation.callee);
+                        require(!target.receiver, "aggregate call cannot target receiver function");
+                        require(target.result.isClass() ||
+                                    std::any_of(target.parameters.begin(), target.parameters.end(),
+                                                [](const Type &type) { return type.isClass(); }),
+                                "aggregate call requires aggregate signature");
+                        require(operation.objectArguments.size() == target.parameters.size(),
+                                "aggregate call argument vector size mismatch");
+                        std::set<int> argumentStorage;
+                        for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
+                            const auto &type = target.parameters[arg - 1];
+                            const int base = operation.objectArguments[arg - 1];
+                            if (scalar(type)) {
+                                require(base == 0, "scalar argument cannot name object storage");
+                                require(pop().type == type, "aggregate scalar argument type mismatch");
+                                continue;
+                            }
+                            require(type.isClass() && classLayouts.contains(type.className),
+                                    "invalid aggregate parameter type");
+                            require(function.objectSlots.contains(base),
+                                    "aggregate argument requires exact object slot");
+                            require(argumentStorage.insert(base).second,
+                                    "aggregate argument snapshots must be distinct");
+                            const auto &object = function.objectSlots.at(base);
+                            require(object.className == type.className,
+                                    "aggregate argument nominal class mismatch");
+                            require(!object.mutableValue,
+                                    "aggregate argument snapshot must be readonly");
+                            require(state.activeObjects.contains(base),
+                                    "aggregate argument outside active object lifetime");
+                            const auto &layout = classLayouts.at(type.className);
+                            for (std::size_t field = 0; field < layout.size(); ++field)
+                                require(state.initialized.contains(base - static_cast<int>(field * 8)),
+                                        "aggregate argument object not fully initialized");
+                        }
+                        if (target.result.isClass()) {
+                            const int base = operation.resultOffset;
+                            require(function.objectSlots.contains(base),
+                                    "aggregate result requires exact object slot");
+                            require(!argumentStorage.contains(base),
+                                    "aggregate result aliases argument snapshot");
+                            const auto &object = function.objectSlots.at(base);
+                            require(object.className == target.result.className,
+                                    "aggregate result nominal class mismatch");
+                            require(state.activeObjects.contains(base),
+                                    "aggregate result outside active object lifetime");
+                            require(!state.maybeConstructedObjects.contains(base),
+                                    "aggregate result object already initialized");
+                            const auto &layout = classLayouts.at(object.className);
+                            for (std::size_t field = 0; field < layout.size(); ++field)
+                                require(!state.maybeInitialized.contains(base - static_cast<int>(field * 8)),
+                                        "aggregate result requires uninitialized object");
+                            state.maybeConstructedObjects.insert(base);
+                            for (std::size_t field = 0; field < layout.size(); ++field) {
+                                const int offset = base - static_cast<int>(field * 8);
+                                state.initialized.insert(offset);
+                                state.maybeInitialized.insert(offset);
+                            }
+                            state.current.reset();
+                        } else {
+                            require(scalar(target.result), "invalid aggregate result type");
+                            require(operation.resultOffset == 0,
+                                    "scalar result cannot name object storage");
+                            state.current = Value{target.result, {}};
+                        }
                     } else if constexpr (std::is_same_v<Op, BeginObject> ||
                                          std::is_same_v<Op, EndObject>) {
                         require(function.objectSlots.contains(operation.offset),
                                 "lifetime operation requires exact object slot");
                         if constexpr (std::is_same_v<Op, BeginObject>) {
+                            require(!objectParameterSlots.contains(operation.offset),
+                                    "object parameter lifetime cannot restart");
                             require(!state.activeObjects.contains(operation.offset),
                                     "object lifetime already active");
                             state.activeObjects.insert(operation.offset);
@@ -390,6 +492,10 @@ inline void verifyFunction(Function &function,
                         require(functions.contains(operation.callee), "unknown method call target");
                         const auto &target = *functions.at(operation.callee);
                         require(target.receiver.has_value(), "method call requires receiver target");
+                        require(scalar(target.result) &&
+                                    std::all_of(target.parameters.begin(), target.parameters.end(),
+                                                [](const Type &type) { return scalar(type); }),
+                                "receiver signatures must remain scalar");
                         const auto &receiver = *target.receiver;
                         require(operation.receiverOffset >= 0, "invalid method receiver offset");
                         if (operation.receiverOffset == 0) {
@@ -454,12 +560,47 @@ inline void verifyFunction(Function &function,
                         require(state.stack.empty(), "temporary values cross a branch");
                         enqueue(labels.at(operation.target), state);
                     } else if constexpr (std::is_same_v<Op, Return>) {
+                        require(scalar(function.result), "scalar return cannot return class value");
                         current(function.result);
                         require(state.stack.empty(), "unbalanced stack at return");
                         if (function.receiver && function.receiver->constructor)
                             require(state.receiverInitialized.size() == receiverLayout->size(),
                                     "constructor returns before all fields initialized");
                         fallsThrough = false;
+                    } else if constexpr (std::is_same_v<Op, ReturnObject>) {
+                        require(function.result.isClass(), "object return requires class result");
+                        require(function.objectSlots.contains(operation.offset),
+                                "object return requires exact object slot");
+                        const auto &object = function.objectSlots.at(operation.offset);
+                        require(object.className == function.result.className,
+                                "object return nominal class mismatch");
+                        require(state.activeObjects.contains(operation.offset),
+                                "object return outside active lifetime");
+                        const auto &layout = classLayouts.at(object.className);
+                        for (std::size_t field = 0; field < layout.size(); ++field)
+                            require(state.initialized.contains(operation.offset - static_cast<int>(field * 8)),
+                                    "returned object not fully initialized");
+                        require(state.stack.empty(), "unbalanced stack at object return");
+                        fallsThrough = false;
+                    } else if constexpr (std::is_same_v<Op, BindObjectParameter>) {
+                        require(operation.index >= 0 && static_cast<std::size_t>(operation.index) <
+                                                            function.parameters.size(),
+                                "invalid object parameter index");
+                        require(function.parameters[operation.index] == Type(operation.className),
+                                "object parameter type mismatch");
+                        require(function.objectSlots.contains(operation.offset),
+                                "object parameter requires exact object slot");
+                        const auto &object = function.objectSlots.at(operation.offset);
+                        require(object.className == operation.className,
+                                "object parameter nominal class mismatch");
+                        require(!object.mutableValue, "object parameter must be readonly");
+                        require(!state.activeObjects.contains(operation.offset),
+                                "object parameter lifetime already active");
+                        state.activeObjects.insert(operation.offset);
+                        state.maybeConstructedObjects.insert(operation.offset);
+                        const auto &layout = classLayouts.at(object.className);
+                        for (std::size_t field = 0; field < layout.size(); ++field)
+                            store(operation.offset - static_cast<int>(field * 8), layout[field]);
                     } else if constexpr (std::is_same_v<Op, BindParameter>) {
                         require(operation.index >= 0 && static_cast<std::size_t>(operation.index) <
                                                             function.parameters.size(),
@@ -469,6 +610,8 @@ inline void verifyFunction(Function &function,
                         require(!objectFields.contains(operation.offset),
                                 "parameter cannot bind object field storage");
                         store(operation.offset, operation.type);
+                    } else {
+                        static_assert(!std::is_same_v<Op, Op>, "unhandled typed IR verifier operation");
                     }
                 },
                 function.code[index]);
@@ -553,6 +696,8 @@ inline ValidatedModule validate(Module module) {
             if (const auto *call = std::get_if<Call>(&instruction))
                 target = &call->callee;
             if (const auto *call = std::get_if<MethodCall>(&instruction))
+                target = &call->callee;
+            if (const auto *call = std::get_if<AggregateCall>(&instruction))
                 target = &call->callee;
             if (target) {
                 const auto next = functionIndices.at(*target);

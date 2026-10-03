@@ -34,7 +34,7 @@ auto answer(i64 input) -> i64 {
 ```
 
 - Each file declares `module name;` or an importable `export module name;`. Named imports, export visibility and namespace blocks now work with explicit `--module-root` directories; see MODULES.md. Separate binary compilation/linking remains deferred.
-- Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar parameters, forward calls and recursion work. Parameters are immutable in this bootstrap subset; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
+- Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar or bounded scalar-field class parameters, forward calls and ordinary-function recursion work. Class values use a separate checked native value-call convention; see VALUE-CALLS.md. Parameters are immutable in this bootstrap subset; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
 - Local declarations are `const Type name = initializer;` or `Type name = initializer;`. Initialization is mandatory. Const scalar/aggregate locals cannot be assigned; unqualified scalar locals and scalar fields/elements of unqualified aggregates can be assigned. Ownership binding rules are stricter below.
 - Scalar types are `i64` and `bool`. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
 - Blocks, `if (bool) { ... } else { ... }`, `while (bool) { ... }`, `return`, and `static_assert` are supported. `break`, `continue`, and `for` are deferred.
@@ -81,7 +81,7 @@ Classes are private by default and end with `;`. `public:` and `private:` contro
 
 Fields must be `i64` or `bool` and have unique names. Named construction uses `Point{.x = 20, .y = 22}`. Each field must be initialized exactly once; named fields may appear in any order and evaluate in written order. Unknown fields, missing fields and type mismatches are rejected.
 
-`const Point snapshot = current;` copies all scalar fields into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Class values cannot yet be function arguments/results, nested fields, ownership fields, or borrow targets. `own<Point>` is rejected.
+`const Point snapshot = current;` copies all scalar fields into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Ordinary functions now accept and return bounded scalar-field class values as independent copies. Method and constructor signatures remain scalar-only. Nested/resource fields and class borrow targets remain unsupported. `own<Point>` is rejected.
 
 Each field occupies eight bytes, including bool, in declaration order. Complete size is eight times total field count, minimum eight bytes for an empty class. This is an internal padded layout, not a C or C++ ABI promise. Private fields participate in size but are excluded from field-count reflection and cannot be read by external member syntax. Methods of the declaring class can access private fields.
 
@@ -113,7 +113,7 @@ Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. Builtin 
 
 The bootstrap assembly boundary currently passes six scalar arguments in RDI, RSI, RDX, RCX, R8, R9 and returns RAX. It preserves RBP, does not touch RBX/R12–R15, and aligns RSP to sixteen bytes immediately before calls. No red zone, libc, heap allocation, SIMD or runtime library is generated. External assembly callers must provide canonical zero/one bools and correct stack alignment.
 
-These temporary register choices are implementation machinery, not a source-level C ABI or binary interoperability promise. Only unqualified root functions retain unmangled names for the temporary bootstrap assembly bridge. Imported/namespaced functions use length-prefixed Aurora-native symbols. The compiler emits a complete import graph with per-defining-module reflection helpers; separately linking overlapping compiled graphs is not supported yet. A versioned Aurora-native ABI remains to be designed.
+These temporary register choices are implementation machinery, not a source-level C ABI or binary interoperability promise. Only scalar-signature unqualified root functions retain unmangled names for the temporary bootstrap assembly bridge. Imported/namespaced functions use length-prefixed Aurora-native symbols. The compiler emits a complete import graph with per-defining-module reflection helpers; separately linking overlapping compiled graphs is not supported yet. A versioned Aurora-native ABI remains to be designed.
 
 `examples/kernel.au` performs a mutable borrow, releases it, moves ownership and returns 42. `examples/class_values.au` demonstrates class copies/visibility/reflection. `examples/loops_arrays.au` demonstrates checked traversal and independent arrays.
 
@@ -132,3 +132,5 @@ Source reads use pinned Linux directory/file descriptors and openat2 beneath-roo
 Source implementation limits include128 nested parser expressions/blocks,64 type parses,32 namespace components and128 constructed expression-tree levels. Deep source is rejected normally before retaining an unsafe recursive tree; these are separate from file-byte limits and do not constitute global compiler resource bounds.
 
 The internal method ABI adds a non-source-visible receiver capability, with a private saved frame slot. It is validated separately from scalar operands; no source pointer or foreign-call API is introduced. `library/std/numeric.au` exercises private state through checked `std::Accumulator` methods.
+
+The unpublished next candidate adds ordinary class-value function boundaries and the real scalar-specialized std::minmax/MinMax/range_width API. [VALUE-CALLS.md](VALUE-CALLS.md) specifies argument snapshot timing, complete results, signature privacy, implementation limits and the private native call-record convention. No copy-elision or equivalent-C performance result is claimed.

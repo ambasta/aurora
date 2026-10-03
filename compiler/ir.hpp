@@ -65,6 +65,14 @@ class BorrowHandle {
     int ownerOffset;
     Type referenceType;
 };
+// Value-call storage is explicit and cannot inhabit the scalar value stack.
+// Scalar positions use zero; class positions name independent readonly snapshots.
+class AggregateCall {
+  public:
+    std::string callee;
+    std::vector<int> objectArguments;
+    int resultOffset; // zero for scalar results, exact pristine object base otherwise
+};
 class Call {
   public:
     std::string callee;
@@ -112,6 +120,16 @@ class BranchFalse {
     int target;
 };
 class Return {};
+class ReturnObject {
+  public:
+    int offset;
+};
+class BindObjectParameter {
+  public:
+    int index;
+    int offset;
+    std::string className;
+};
 class BindParameter {
   public:
     int index;
@@ -119,9 +137,9 @@ class BindParameter {
     Type type;
 };
 using Instruction = std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Compare,
-                                 BoundsGuard, IndexLoad, IndexStore, BorrowHandle, Call,
+                                 BoundsGuard, IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall,
                                  BeginObject, EndObject, ReceiverLoad, ReceiverStore, MethodCall, MetadataQuery, Label, Jump,
-                                 BranchFalse, Return, BindParameter>;
+                                 BranchFalse, Return, ReturnObject, BindParameter, BindObjectParameter>;
 class ObjectSlot {
   public:
     std::string className;

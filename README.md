@@ -22,8 +22,8 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 28 normal/adversarial CPU, memory, program and
-preemption gates. `make smoke-scheduling` runs the nine scheduling gates alone.
+`make smoke-all` runs all 36 normal/adversarial BIOS and UEFI gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
 Do not write it to a physical disk or replace a host bootloader.
@@ -64,8 +64,10 @@ auto answer() -> i64 {
 - Checked signed arithmetic and bounds-checked fixed-size scalar arrays.
 - Local class values, designated field initialization, independent copies and
   access-checked fields. The compiler also supports complete scalar
-  constructors, private methods and const-correct receiver calls; see
-  [the precise class subset](compiler/CLASSES.md).
+  constructors, private methods and const-correct receiver calls. Ordinary
+  functions also accept and return bounded scalar-field values as independent
+  copies; see [class behavior](compiler/CLASSES.md) and
+  [value-call semantics](compiler/VALUE-CALLS.md).
 - Scoped ownership/borrowing of owned integers and explicit moves. This is not
   a general heap/lifetime implementation or a proof of Rust-equivalent safety.
 - Basic compile-time type queries and runtime metadata queries. Full type-level
@@ -88,8 +90,17 @@ The compiler also supports `import std.numeric;` and an inline
 `std::Accumulator(initial)` with checked `.add(amount)` and readonly `.value()`.
 This Aurora-specific scalar API exercises private state and constructors; it is
 not a claim that standard C++ has this class or that generic containers are ready.
-Milestone005 passes 74 class execution/rejection checks and 132 direct IR
-checks alongside the existing suites; see the exact verification receipts.
+The milestone006 compiler adds `std::minmax(i64, i64)` returning
+an inline `std::MinMax`, with readonly `.min()`/`.max()` and checked
+`std::range_width(MinMax)`. Class arguments are immutable snapshots taken
+left-to-right; results are complete independent values. Private signatures and
+caller type visibility are checked across imports.
+
+This checkpoint passes 59 new value-call cases, 206 direct IR cases and four
+exhaustive-dispatch compile checks, alongside the existing source, module,
+constructor/method, scalar-oracle and sanitizer suites. Independent compiler review
+passed. Final integration verification passed;
+historical milestone005 receipts remain unchanged.
 
 
 The previous `fn`/`let` prototype syntax is intentionally removed. The current
@@ -159,3 +170,12 @@ firmware contract or stable native ABI. Authored C++ uses classes, not structs.
 - `kernel/`, `scripts/`, `tests/`: trusted bootstrap and executable validation
 - `docs/`: requirements, design, independent review and historical evidence
 - `AGENTS.md`: development and verification contract
+
+## UEFI firmware handoff
+
+A separate relocatable EFI loader and protected payload now pass eight OVMF
+gates, including stale map-key retries, malformed handoffs and hardware WP/NX
+faults. The payload uses its own memory ownership, page tables and guarded stack
+after ExitBootServices and executes generated Aurora code. This does not yet
+port the BIOS scheduler to UEFI or support a physical Framework. See the
+[UEFI contract](kernel/uefi/README.md).

@@ -135,8 +135,9 @@ class SemanticAnalyzer {
     }
     void push() { emit(ir::Push{}); }
     void pop() { emit(ir::Pop{}); }
-    int add(const std::string &n, Type t, bool mut, const Token &tok) {
-        if (scopes.back().count(n))
+    int add(const std::string &n, Type t, bool mut, const Token &tok, bool bind = true,
+            bool begin = true) {
+        if (bind && scopes.back().count(n))
             fail(tok, "duplicate local '" + n + "'");
         Local l;
         l.name = n;
@@ -149,7 +150,8 @@ class SemanticAnalyzer {
         l.offset = 8 * slot;
         if (t.isClass()) {
             lowered.objectSlots[l.offset] = ir::ObjectSlot{t.className, mut};
-            emit(ir::BeginObject{l.offset});
+            if (begin)
+                emit(ir::BeginObject{l.offset});
             for (const auto &member : classDefinition(t, tok).fields)
                 lowered.slots[l.offset - member.offset] = member.type;
         } else if (t.isArray()) {
@@ -159,7 +161,8 @@ class SemanticAnalyzer {
             lowered.slots[l.offset] = payloadType(t);
         locals.push_back(l);
         int i = static_cast<int>(locals.size()) - 1;
-        scopes.back()[n] = i;
+        if (bind)
+            scopes.back()[n] = i;
         return i;
     }
     int checkedIndex(ExpressionPtr index) {
@@ -215,6 +218,49 @@ class SemanticAnalyzer {
             push();
         }
         emit(ir::MethodCall{callee.name, implicit ? 0 : offset(receiver)});
+        return callee.result;
+    }
+    Type callFunction(ExpressionPtr expression, const Function &callee,
+                      const StatementPtr &resultBinding = nullptr) {
+        if (callee.result.isClass() && !resultBinding)
+            fail(expression->token, "class-returning call requires a typed local initializer");
+        if (resultBinding)
+            match(callee.result, resultBinding->type, expression->token);
+        arity(expression, callee.params.size());
+        std::vector<int> arguments(callee.params.size(), 0);
+        std::vector<int> snapshots;
+        bool aggregate = callee.result.isClass();
+        for (std::size_t index = 0; index < callee.params.size(); ++index) {
+            const auto &type = callee.params[index].type;
+            const auto &argument = expression->args[index];
+            if (type.isClass()) {
+                aggregate = true;
+                if (argument->op != "name")
+                    fail(argument->token, "class argument requires a complete local name");
+                const int original = source(argument);
+                match(locals[original].type, type, argument->token);
+                const int snapshot = add("", type, false, argument->token, false);
+                for (const auto &member : classDefinition(type, argument->token).fields) {
+                    emit(ir::Load{fieldOffset(original, member), member.type});
+                    emit(ir::Store{fieldOffset(snapshot, member), member.type});
+                }
+                arguments[index] = offset(snapshot);
+                snapshots.push_back(offset(snapshot));
+            } else {
+                match(this->expression(argument), type, argument->token);
+                push();
+            }
+        }
+        int destination = 0;
+        if (resultBinding)
+            destination = offset(add(resultBinding->name, resultBinding->type,
+                                     resultBinding->mutableValue, resultBinding->token));
+        if (aggregate)
+            emit(ir::AggregateCall{callee.name, arguments, destination});
+        else
+            emit(ir::Call{callee.name});
+        for (int snapshot : snapshots)
+            emit(ir::EndObject{snapshot});
         return callee.result;
     }
     Type expression(ExpressionPtr e) {
@@ -368,14 +414,7 @@ class SemanticAnalyzer {
         auto f = functions.find(n);
         if (f == functions.end())
             fail(e->token, "unknown function '" + n + "'");
-        auto &callee = sourceFunctions[f->second];
-        arity(e, callee.params.size());
-        for (std::size_t i = 0; i < e->args.size(); ++i) {
-            match(expression(e->args[i]), callee.params[i].type, e->token);
-            push();
-        }
-        emit(ir::Call{n});
-        return callee.result;
+        return callFunction(e, sourceFunctions[f->second]);
     }
     std::int64_t constant(ExpressionPtr e) {
         auto n = e->token.text;
@@ -438,6 +477,13 @@ class SemanticAnalyzer {
                 emit(ir::Load{fieldOffset(original, member), member.type});
                 emit(ir::Store{fieldOffset(destination, member), member.type});
             }
+            return;
+        }
+        if (expression->op == "call") {
+            const auto found = functions.find(expression->resolvedName);
+            if (found == functions.end())
+                fail(expression->token, "class initializer requires a class-returning function");
+            callFunction(expression, sourceFunctions[found->second], statement);
             return;
         }
         if (expression->op == "constructor_call") {
@@ -519,8 +565,16 @@ class SemanticAnalyzer {
     }
     bool statement(StatementPtr s) {
         if (s->kind == "return") {
-            match(expression(s->expr), result, s->token);
-            emit(ir::Return{});
+            if (result.isClass()) {
+                if (s->expr->op != "name")
+                    fail(s->token, "class return requires a complete local name");
+                const int local = source(s->expr);
+                match(locals[local].type, result, s->token);
+                emit(ir::ReturnObject{offset(local)});
+            } else {
+                match(expression(s->expr), result, s->token);
+                emit(ir::Return{});
+            }
             return true;
         }
         if (s->kind == "block")
@@ -727,6 +781,15 @@ class SemanticAnalyzer {
                 fail(sourceFunctions[i].token, "duplicate or reserved function name");
             if (sourceFunctions[i].params.size() > 6)
                 fail(sourceFunctions[i].token, "at most six parameters supported");
+            auto checkBoundaryType = [&](const Type &type) {
+                if (type.isClass() &&
+                    classDefinition(type, sourceFunctions[i].token).fields.size() > 64)
+                    fail(sourceFunctions[i].token,
+                         "function-boundary classes are limited to 64 scalar fields");
+            };
+            checkBoundaryType(sourceFunctions[i].result);
+            for (const auto &parameter : sourceFunctions[i].params)
+                checkBoundaryType(parameter.type);
             functions[sourceFunctions[i].name] = i;
         }
         ir::Module module;
@@ -753,8 +816,13 @@ class SemanticAnalyzer {
                 lowered.parameters.push_back(parameter.type);
             for (std::size_t index = 0; index < function.params.size(); ++index) {
                 const auto &parameter = function.params[index];
-                const int local = add(parameter.name, parameter.type, false, function.token);
-                emit(ir::BindParameter{static_cast<int>(index), offset(local), parameter.type});
+                const int local = add(parameter.name, parameter.type, false, function.token, true,
+                                      !parameter.type.isClass());
+                if (parameter.type.isClass())
+                    emit(ir::BindObjectParameter{static_cast<int>(index), offset(local),
+                                                 parameter.type.className});
+                else
+                    emit(ir::BindParameter{static_cast<int>(index), offset(local), parameter.type});
             }
             if (function.constructor) {
                 const auto &definition =

@@ -172,8 +172,8 @@ check("class nested field rejected", 'module test; class A { public: Point x; };
 check("class reserved name", 'module test; class i64 { public:}; auto test() -> i64 { return 0; }', error="duplicate or reserved class")
 check("class function name collision", 'module test; class A { public:}; auto A() -> i64 { return 0; }', error="duplicate or reserved function")
 check("class wrong copy type", 'module test; class A { public: i64 x; }; class B { public: i64 x; }; auto test() -> i64 { const A a = A { .x = 1 }; const B b = a; return 0; }', error="expected B")
-check("class parameter deferred", 'module test; class A { public:}; auto test(A a) -> i64 { return 0; }', error="only scalar function parameters")
-check("class return deferred", 'module test; class A { public:}; auto test() -> A { return A {}; }', error="only scalar function results")
+check("class parameter value copy", 'module test; class A { public:i64 value;}; auto get(A a)->i64{return a.value;} auto test()->i64{A a=A{.value=42};return get(a);}')
+check("class return requires named local", 'module test; class A { public:}; auto test() -> A { return A {}; }', error="complete local name")
 check("scalar field count", "return reflect_field_count(type_id(i64));", 0)
 check("unknown field count", "return reflect_field_count(77);", 0)
 

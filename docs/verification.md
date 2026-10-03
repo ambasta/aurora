@@ -262,3 +262,58 @@ The independent [review](review.md) records a typed-constructor syntax defect an
 an overly permissive per-slice transcript check, their fixes and regressions.
 Earlier evidence directories are preserved unchanged. All results are bounded
 bootstrap evidence, not a full-language safety proof or production OS release.
+
+## Milestone 006: value calls and UEFI handoff (2026-10-03)
+
+Final aggregate and independent review passed on release compiler SHA-256
+`f16fffe8a976b71c82bbebf90e32150142aad044649b2f02dd585c8933719a71`.
+Ordinary functions now accept immutable scalar-field class copies and return
+complete independent class values. Left-to-right snapshot semantics, nominal
+private ABI capabilities, complete initialization and direct-import signature
+visibility are checked. [VALUE-CALLS.md](../compiler/VALUE-CALLS.md) specifies the
+64-field/six-argument boundary and excluded features. Native `std::minmax`,
+`std::MinMax` and `std::range_width` exercise the feature; a protected ring3
+fixture now uses the class-result library path.
+
+The separate [UEFI loader and payload](../kernel/uefi/README.md) pass OVMF boot,
+stale map-key retry/exhaustion, malformed handoff/map/table rejection and actual
+WP/NX faults. Own CR3, guarded stack, complete mapping validation and a bounded
+owned-page exercise precede Aurora execution after ExitBootServices. BIOS
+scheduler functionality is not yet ported to this consumer. It does not perform
+ACPI discovery, physical Framework boot, device enumeration or general allocation
+from all firmware memory. Firmware assumptions and resource limits are explicit.
+
+Final receipts:
+- [make test](evidence/milestone-006/test.log): 207 original source, 74 methods,
+  59 value-call, 206 IR and four exhaustive-dispatch compile checks; 72 module,
+  11 depth, 13 reader and 22 writer cases; kernel policies; 124 UEFI policies;
+  UEFI transcript eight positive/148 negative controls; seven oracle self-tests
+  and 630 default cases.
+- [Independent stress oracle](evidence/milestone-006/semantics-stress.log): 1,526
+  scalar cases with seed404. Default/stress fixed cases overlap.
+- [Compiler/IR sanitizers](evidence/milestone-006/compiler-sanitizers.log),
+  [host I/O sanitizers](evidence/milestone-006/host-io-sanitizers.log), and
+  [BIOS/UEFI policy sanitizers](evidence/milestone-006/kernel-sanitizers.log).
+- [make smoke-all](evidence/milestone-006/emulator.log): all 36 actual emulator
+  gates, comprising 28 preserved BIOS gates and eight OVMF gates. PE/PIC image
+  validation includes 14 malformed-image controls.
+- [Restored normal BIOS/UEFI boots](evidence/milestone-006/normal-restored.log),
+  [image metadata](evidence/milestone-006/image-metadata/) and
+  [source hashes](evidence/milestone-006/source.sha256).
+
+The sanitized compiler hash is
+`ab8ad95501780fdc268d0e1511b323cfeb9f0d9884814ab245a1803c8c77f63b`;
+the sanitized IR test hash is
+`5c8e6abb1e2f783605de5d3b02c62ddf0118ec53ee13695121a2b21f967eca94`.
+Address/undefined-behavior checks use halt-on-error; LeakSanitizer is disabled
+under tracing. An initial parent command named a nonexistent value-test script;
+it was corrected to value_calls.py and the entire compiler sanitizer command
+was rerun successfully. The successful receipt is the evidence cited above.
+
+Review recorded incomplete opcode emission during integration (now rejected by
+exhaustive dispatch), an RX GDT accessed-bit write fault, PIC linker relaxation,
+inherited translation concerns and insufficient failure-log ordering checks.
+Fixes and independent evidence are in [review.md](review.md). No unresolved
+reproduced defect remains within the reviewed slice; this is not a full-language
+proof, complete runtime/stdlib, multi-user filesystem system or hardware release.
+Historical milestone receipts are unchanged.

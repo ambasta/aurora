@@ -26,7 +26,9 @@ Specify evaluation order, integer overflow, division, conversions, initializatio
 
 A partial implementation exists: private-by-default local scalar-field classes, designated initialization, independent value copies and access-checked field reads/mutation. Local fixed scalar arrays are also present. Milestone005 adds one complete initializer-list constructor per class, private scalar methods, const-correct hidden receivers and synchronous checked reborrows, with explicit lexical object lifetime IR. It passes 74 new source class cases and 132 direct IR checks alongside baseline/oracle/sanitizer gates; independent review and final aggregate verification passed. The real `std.numeric` accumulator module exercises this encapsulation. See [the narrow contract](../compiler/CLASSES.md).
 
-General constructor bodies, overloads, inheritance/interfaces, nested/resource fields, heap storage, source-visible aggregate borrowing and class arguments/results remain deferred. Constructor/method call cycles are conservatively rejected; ordinary scalar recursion still permits stack exhaustion. This partial stage does not waive the scalar semantic evidence gate or satisfy the general lifetime gate below.
+The milestone006 compiler adds immutable by-value class parameters and complete independent results for ordinary functions, with explicit nominal call-record/result-capability IR. Its real `std::minmax`/`std::MinMax` and `std::range_width` APIs demonstrate factory and consumer boundaries. The checkpoint passes 59 new value-call cases, 206 direct IR tests and four exhaustive-dispatch compiler checks, plus baseline/oracle/sanitizer gates; independent compiler review passed. Final integrated verification passed. [VALUE-CALLS.md](../compiler/VALUE-CALLS.md) specifies left-to-right snapshots, signature visibility, 64-field/6-argument limits and the temporary private ABI.
+
+General constructor bodies, overloads, inheritance/interfaces, nested/resource fields, heap storage, source-visible aggregate borrowing and class parameters/results on methods or constructors remain deferred. Constructor/method call cycles are conservatively rejected; ordinary scalar recursion still permits stack exhaustion. This partial stage does not waive the scalar semantic evidence gate or satisfy the general lifetime gate below.
 
 Implement inline value classes, Java-inspired encapsulation/interfaces, explicit reference ownership and dispatch, fields, construction, deterministic destruction, borrowing across function calls, and constrained generics. Do not make interfaces or identity force heap allocation, garbage collection, or boxing. Define lifetimes, aliasing, pointer provenance, synchronization, and trusted intrinsics in a formal core calculus before claiming soundness. Classify which language features the model actually covers.
 
@@ -63,6 +65,11 @@ Port compiler components and selected kernel services incrementally. Keep the bo
 **Gate:** the compiler compiles itself, builds the system, and passes differential and regression tests against the prior toolchain. Perform multi-stage reproducibility checks and analyze mismatches. Self-hosting proves ecosystem usefulness, not safety or freedom from compiler backdoors.
 
 ## 6 Hardware contracts and profiles
+
+Milestone006 adds a separate validated UEFI handoff consumer with eight OVMF
+gates, own post-firmware stack/mappings and compiled Aurora execution. It is
+not a physical-platform qualification or a UEFI port of the BIOS scheduler.
+See the [handoff contract](../kernel/uefi/README.md).
 
 The first complete-machine target is [Framework Laptop 13 / Ryzen 7 7840U](framework-13-7840u.md), including the mainboard and all installed device classes, multi-user services and persistent filesystems. This is a qualification target, not current hardware support.
 
