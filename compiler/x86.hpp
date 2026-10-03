@@ -71,7 +71,7 @@ class X86Emitter {
     }
     int packArguments(const ir::Function &target, const std::vector<int> &objects) {
         for (std::size_t index = target.parameters.size(); index > 0; --index)
-            if (scalar(target.parameters[index - 1]))
+            if (!target.parameters[index - 1].isClass())
                 pop(argumentRegisters[index - 1]);
         const int recordBytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
         if (recordBytes)
@@ -79,7 +79,7 @@ class X86Emitter {
         for (std::size_t index = 0; index < target.parameters.size(); ++index) {
             const auto &type = target.parameters[index];
             const int offset = recordOffset(target, index);
-            if (scalar(type))
+            if (!type.isClass())
                 line("movq " + argumentRegisters[index] + ", " + std::to_string(offset) + "(%rsp)");
             else {
                 const auto &layout = classLayouts->at(type.className);
@@ -153,6 +153,8 @@ class X86Emitter {
                 using Op = std::decay_t<decltype(operation)>;
                 if constexpr (std::is_same_v<Op, ir::Constant>) {
                     line("movabsq $" + std::to_string(operation.value) + ", %rax");
+                } else if constexpr (std::is_same_v<Op, ir::EnumConstant>) {
+                    line("movq $" + std::to_string(operation.caseIndex) + ", %rax");
                 } else if constexpr (std::is_same_v<Op, ir::Load>) {
                     line("movq " + address(operation.offset) + ", %rax");
                 } else if constexpr (std::is_same_v<Op, ir::Store>) {
@@ -345,7 +347,8 @@ class X86Emitter {
                     line("movq %rax, " + std::to_string(field.firstLeaf * 8) + "(%r10,%rcx,8)");
                 } else if constexpr (std::is_same_v<Op, ir::MethodCall>) {
                     const auto &target = *functions.at(operation.callee);
-                    const bool aggregate = aggregateSignature(target);
+                    const bool aggregate =
+                        target.receiver->constructor && aggregateSignature(target);
                     const int recordBytes =
                         aggregate ? packArguments(target, operation.objectArguments) : 0;
                     if (!aggregate)
@@ -356,6 +359,8 @@ class X86Emitter {
                         line("movq " + address(receiverSaveOffset) + ", %r10");
                     else
                         line("leaq " + address(operation.receiverOffset) + ", %r10");
+                    if (target.result.isClass())
+                        line("leaq " + address(operation.resultOffset) + ", %r11");
                     call(operation.callee);
                     if (recordBytes)
                         line("addq $" + std::to_string(recordBytes) + ", %rsp");
@@ -435,18 +440,20 @@ class X86Emitter {
             line("pushq %rbp");
             line("movq %rsp, %rbp");
             receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
+            const bool packedArguments =
+                aggregate && (!function.receiver || function.receiver->constructor);
             callRecordSaveOffset =
-                aggregate ? function.frameBytes + (function.receiver ? 16 : 8) : 0;
-            resultSaveOffset = aggregate ? function.frameBytes + 16 : 0;
+                packedArguments ? function.frameBytes + (function.receiver ? 16 : 8) : 0;
+            resultSaveOffset = function.result.isClass() ? function.frameBytes + 16 : 0;
             const int frameBytes = function.frameBytes + (function.receiver || aggregate ? 16 : 0);
             line("subq $" + std::to_string(frameBytes) + ", %rsp");
             if (function.receiver)
                 line("movq %r10, " + address(receiverSaveOffset));
-            if (aggregate) {
+            if (packedArguments)
                 line("movq %r11, " + address(callRecordSaveOffset));
-                if (function.result.isClass())
-                    line("movq %r10, " + address(resultSaveOffset));
-            }
+            if (function.result.isClass())
+                line(std::string("movq ") + (function.receiver ? "%r11" : "%r10") + ", " +
+                     address(resultSaveOffset));
             for (const auto &operation : function.code)
                 instruction(operation);
             output << returnLabel() << ":\n";

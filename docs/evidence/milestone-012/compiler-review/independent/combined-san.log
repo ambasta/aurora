@@ -1,0 +1,113 @@
+PASS enum composition harness: exact 64-bit native values and rejected invalid observations
+INFO enum composition compiler=/tmp/aurora-m012-compiler-sanitized sha256=3c5272f7e8a32fdbd9561de88f6a7cede2fcd34d3cab7218f8e504faa07551b1
+INFO enum composition utility.au sha256=824a07976cbd14aebd4d513415afd89e8a294cf2681cb07966d5f4f11dbe616c
+INFO enum composition decimal.au sha256=d584466845aed22a4b5b8f0d9c85bfa0ff2492e4f6270285de56927c2615df24
+PASS enum composition Value enum pair Status Status
+PASS enum composition Value enum pair Status Other
+PASS enum composition Value enum pair Other Status
+PASS enum composition Value enum pair Other Other
+PASS enum composition Value mixed enum i64 enum_first=True
+PASS enum composition Value mixed enum i64 enum_first=False
+PASS enum composition Value mixed enum u64 enum_first=True
+PASS enum composition Value mixed enum u64 enum_first=False
+PASS enum composition Value mixed enum bool enum_first=True
+PASS enum composition Value mixed enum bool enum_first=False
+PASS enum composition Value enum class pair enum_first=True
+PASS enum composition Value enum class pair enum_first=False
+PASS enum composition enum specialization identity includes ordered nominal arguments
+PASS enum composition Value substituted enum method and class constructor
+PASS enum composition Value substituted class result copies complete named local
+PASS enum composition enum side effect separates class constructor snapshots
+PASS enum composition later class result call cannot overwrite enum constructor snapshot
+PASS enum composition readonly constructor parameter permits copied class result
+PASS enum composition nested enum class result snapshot
+PASS enum composition nested enum class result forwarded
+PASS enum composition mutable result independent of later receiver and result mutation
+PASS enum composition nested result survives receiver and method stack lifetimes
+PASS enum composition class-result hidden receiver survives nested and ordinary result calls
+PASS enum composition class-result hidden destination survives two nested receivers
+PASS enum composition six explicit method arguments plus receiver and result preserve order
+PASS enum composition method result can return complete branch copies
+PASS enum composition zero-leaf nested method result preserves logical completion
+PASS enum composition four-level 64-leaf enum array empty result make
+PASS enum composition four-level 64-leaf enum array empty result forwarded
+PASS enum composition enum leaves count toward composed 64-leaf limit
+PASS enum composition empty descendant counts toward composed four-level limit
+PASS enum composition named wrapper around std array is a Value argument and method result
+PASS enum composition independent enum/class snapshot model seed=39031 steps=64
+PASS enum composition imported Value template forwards caller-private nominal enum
+PASS enum composition imported Value template forwards caller-private nominal class
+PASS enum composition imported enum class template and result use exact direct identities
+PASS enum composition class result requires direct visible import states
+PASS enum composition class result requires direct visible import leaves
+PASS enum composition class result requires direct visible import std.utility
+PASS enum composition export visibility rejects hidden enum Value result
+PASS enum composition export visibility rejects hidden enum Value parameter
+PASS enum composition export visibility rejects hidden enum public field
+PASS enum composition export visibility rejects hidden enum public constructor
+PASS enum composition export visibility rejects hidden class result public method
+PASS enum composition export visibility rejects hidden enum result public method
+PASS enum composition private enum representation remains encapsulated
+PASS enum composition same spelling private enum specializations keep defining module identity
+PASS enum composition same layout imported enums yield distinct pair identities
+PASS enum composition same layout imported enum pair copy rejects nominal substitution
+PASS enum composition std.decimal named result enum composition empty
+PASS enum composition std.decimal named result enum composition zero
+PASS enum composition std.decimal named result enum composition success
+PASS enum composition std.decimal named result enum composition maximum
+PASS enum composition std.decimal named result enum composition invalid
+PASS enum composition std.decimal named result enum composition overflow
+PASS enum composition std.decimal two different result snapshots share no state
+PASS enum composition wrong enum pair constructor
+PASS enum composition wrong enum pair field assignment
+PASS enum composition wrong enum extracted pair field
+PASS enum composition integer extracted pair field
+PASS enum composition enum field used as condition
+PASS enum composition enum field numeric conversion
+PASS enum composition enum field unsigned conversion
+PASS enum composition nested enum field wrong equality
+PASS enum composition enum pair copied into different enum specialization
+PASS enum composition enum pair copied into reordered specialization
+PASS enum composition nested field whole assignment
+PASS enum composition nested field method result chaining
+PASS enum composition enum builtin array
+PASS enum composition enum std array
+PASS enum composition nested template id Value argument
+PASS enum composition composed enum arithmetic rejected +
+PASS enum composition composed enum arithmetic rejected -
+PASS enum composition composed enum arithmetic rejected *
+PASS enum composition composed enum arithmetic rejected /
+PASS enum composition composed enum arithmetic rejected %
+PASS enum composition composed enum arithmetic rejected &
+PASS enum composition composed enum arithmetic rejected |
+PASS enum composition composed enum arithmetic rejected ^
+PASS enum composition composed enum arithmetic rejected <<
+PASS enum composition composed enum arithmetic rejected >>
+PASS enum composition composed enum ordering rejected <
+PASS enum composition composed enum ordering rejected <=
+PASS enum composition composed enum ordering rejected >
+PASS enum composition composed enum ordering rejected >=
+PASS enum composition Scalar rejects nominal enum
+PASS enum composition Scalar rejects named concrete class
+PASS enum composition mixed constraints preserve Scalar exclusion Scalar T,Value U
+PASS enum composition mixed constraints preserve Scalar exclusion Value T,Scalar U
+PASS enum composition class result cannot initialize scalar
+PASS enum composition class result requires exact nominal destination
+PASS enum composition class result cannot be discarded
+PASS enum composition class result requires fresh local
+PASS enum composition class result cannot be temporary argument
+PASS enum composition class result cannot be directly returned
+PASS enum composition mutable result method rejects const receiver
+PASS enum composition const result field cannot mutate
+PASS enum composition wrong enum method argument
+PASS enum composition class method parameter remains rejected
+PASS enum composition nested class method parameter remains rejected
+PASS enum composition direct class construction return remains rejected
+PASS enum composition wrong nominal class return remains rejected
+PASS enum composition wrong nominal enum return remains rejected
+PASS enum composition Value substitution does not authorize class method parameter
+PASS enum composition Value enum substitution does not authorize builtin enum arrays
+PASS enum composition decimal enum cannot satisfy Scalar constraint
+PASS enum composition decimal result private enum field remains private after composition
+INFO enum composition: 107 passed, 44 native executions, 63 ordinary rejections (126 artifact checks), 64 snapshot model steps, 0 failures; seed=39031; elapsed=3.62s
+PASS enum composition complete

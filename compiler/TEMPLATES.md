@@ -1,13 +1,14 @@
 # Explicit constrained class templates
 
-The Scalar contract below retains its original domain. Milestone011 development
-adds contextual `Value`, accepting those scalars or a directly visible named
-concrete class, and migrates std::pair to Value. Named class arguments are resolved
+The Scalar contract below retains its original domain. Milestone011 added
+contextual `Value`; the milestone012 candidate extends it to closed enums alongside
+those scalars and directly visible named concrete classes, and migrates std::pair to Value. Named class arguments are resolved
 in the requesting module and retain defining-module nominal identity through
 substitution. Nested template-id arguments remain rejected. Class substitutions
 must satisfy the complete construction, depth, leaf and copy rules in
-[COMPOSED-VALUES.md](COMPOSED-VALUES.md); ordinary method signatures still require
-scalars. This development status is not a final verification receipt.
+[COMPOSED-VALUES.md](COMPOSED-VALUES.md). Method parameters remain scalar/enum;
+complete copied class method results are specified in [ENUM-RESULTS.md](ENUM-RESULTS.md).
+Independent compiler review passed; final milestone012 integration is pending.
 
 
 The original Scalar form defines reusable classes with one or two explicit

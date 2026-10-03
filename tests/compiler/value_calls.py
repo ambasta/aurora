@@ -155,8 +155,8 @@ for name, body, helpers, error in [
 
 check("nominal class parameter mismatch", program("Other c=Other{.value=42};return get(c);", "auto get(Counter c)->i64{return c.get();}", COUNTER+"class Other{public:i64 value;};"), error="expected Counter")
 check("nominal class return mismatch", program("Counter c=make();return c.get();", "auto make()->Counter{Other c=Other{.value=42};return c;}", COUNTER+"class Other{public:i64 value;};"), error="expected Counter")
-check("method class parameter still denied", program("return 42;", definition=COUNTER.replace("i64 n)->i64", "Counter n)->i64")), error="only scalar method")
-check("method class result still denied", program("return 42;", definition=COUNTER.replace("get() const -> i64", "get() const -> Counter")), error="only scalar method")
+check("method class parameter still denied", program("return 42;", definition=COUNTER.replace("i64 n)->i64", "Counter n)->i64")), error="only scalar or enum method")
+check("class method result cannot return scalar field", program("return 42;", definition=COUNTER.replace("get() const -> i64", "get() const -> Counter")), error="unknown local")
 
 LIB = "export module counters;export "+COUNTER+"export auto make(i64 n)->Counter{Counter c=Counter(n);return c;}export auto consume(Counter c)->i64{return c.get();}"
 check("cross-module factory consumer", app("Counter c=make(42);return consume(c);", "import counters;"), {"counters":LIB})

@@ -3,6 +3,20 @@ import std.numeric;
 import std.utility;
 import std.array;
 
+enum class CleanStatus { ready };
+class CleanResult {
+private:
+    CleanStatus state;
+    i64 amount;
+public:
+    CleanResult(i64 number) : state(CleanStatus::ready), amount(number) {}
+    auto status() const -> CleanStatus { return state; }
+    auto snapshot() const -> std::MinMax {
+        const std::MinMax value = std::minmax(amount, 0);
+        return value;
+    }
+};
+
 auto aurora_user_main() -> i64 {
     const array<i64, 4> values = {10, 20, 5, 7};
     i64 index = 0;
@@ -11,7 +25,9 @@ auto aurora_user_main() -> i64 {
         sum = sum + values[index];
         index = index + 1;
     }
-    const std::MinMax bounds = std::minmax(sum, 0);
+    const CleanResult source = CleanResult(sum);
+    if (source.status() != CleanStatus::ready) { return 0; }
+    const std::MinMax bounds = source.snapshot();
     const std::Accumulator initial = std::Accumulator(0);
     const std::pair<std::MinMax, std::Accumulator> nested =
         std::pair<std::MinMax, std::Accumulator>(bounds, initial);

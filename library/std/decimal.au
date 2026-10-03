@@ -1,0 +1,77 @@
+export module std.decimal;
+
+export namespace std {
+    enum class DecimalStatus {
+        success,
+        empty,
+        invalid_digit,
+        out_of_range
+    };
+
+    class DecimalResult {
+        DecimalStatus outcome;
+        u64 value;
+        i64 offset;
+    public:
+        DecimalResult(DecimalStatus status, u64 number, i64 position)
+            : outcome(status), value(number), offset(position) {}
+
+        auto status() const -> DecimalStatus { return outcome; }
+        auto position() const -> i64 { return offset; }
+        auto value_or(u64 fallback) const -> u64 {
+            if (outcome == DecimalStatus::success) {
+                return value;
+            }
+            return fallback;
+        }
+    };
+
+    class DecimalAccumulator {
+        DecimalStatus outcome;
+        u64 value;
+        i64 digits;
+    public:
+        DecimalAccumulator()
+            : outcome(DecimalStatus::empty), value(0u64), digits(0) {}
+
+        auto push_digit(u64 digit) -> DecimalStatus {
+            if (outcome != DecimalStatus::empty) {
+                if (outcome != DecimalStatus::success) {
+                    return outcome;
+                }
+            }
+            if (digit > 9u64) {
+                outcome = DecimalStatus::invalid_digit;
+                return outcome;
+            }
+            if (digits == 9223372036854775807) {
+                outcome = DecimalStatus::out_of_range;
+                return outcome;
+            }
+            if (value > (18446744073709551615u64 - digit) / 10u64) {
+                outcome = DecimalStatus::out_of_range;
+                return outcome;
+            }
+            value = value * 10u64 + digit;
+            digits = digits + 1;
+            outcome = DecimalStatus::success;
+            return outcome;
+        }
+
+        auto reset() -> DecimalStatus {
+            outcome = DecimalStatus::empty;
+            value = 0u64;
+            digits = 0;
+            return outcome;
+        }
+
+        auto finish() const -> DecimalResult {
+            u64 number = 0u64;
+            if (outcome == DecimalStatus::success) {
+                number = value;
+            }
+            const DecimalResult result = DecimalResult(outcome, number, digits);
+            return result;
+        }
+    };
+}

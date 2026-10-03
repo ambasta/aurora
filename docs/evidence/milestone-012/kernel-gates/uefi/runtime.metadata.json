@@ -1,0 +1,24 @@
+{
+  "clean": {
+    "entry": 1099511627776,
+    "size": 3379,
+    "return_pc": 1099511627835,
+    "bounds_pc": 1099511631147,
+    "overflow_pc": 1099511631149,
+    "division_zero_pc": 1099511631151,
+    "shift_count_pc": 1099511631153,
+    "probe_offset": 0,
+    "probe_pc": 0
+  },
+  "bounds": {
+    "entry": 1099511631872,
+    "size": 377,
+    "return_pc": 1099511631931,
+    "bounds_pc": 1099511632241,
+    "overflow_pc": 1099511632243,
+    "division_zero_pc": 1099511632245,
+    "shift_count_pc": 1099511632247,
+    "probe_offset": 0,
+    "probe_pc": 0
+  }
+}

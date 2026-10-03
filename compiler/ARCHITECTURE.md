@@ -107,3 +107,14 @@ completion. Scalar stores cannot forge it. Constructor class arguments use
 readonly independent records, with a separately saved receiver capability.
 [COMPOSED-VALUES.md](COMPOSED-VALUES.md) states the source and verification contract;
 final validation is pending.
+
+## Closed enums and composed method results
+
+The milestone012 candidate adds declared enum types and EnumConstant, with exact
+case/type checks through value slots, fields and calls. Arithmetic and array
+elements keep their original numeric domains. MethodCall retains constructor
+objectArguments and appends resultOffset, selecting separate saved receiver and
+record/result slots. Recursive ClassField metadata and logical object completion
+remain the basis of copies and returns. The fixed-instance nominal arguments
+available to a generated template body do not widen runtime descriptor views.
+See [ENUM-RESULTS.md](ENUM-RESULTS.md); compiler review passed and final integration is pending.

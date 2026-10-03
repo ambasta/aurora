@@ -1,0 +1,17 @@
+module dispatch_service;
+auto aurora_user_main(i64 phase, i64 value, i64 second) -> i64 {
+    if (phase == 4) {
+        const array<i64, 2> values = {20, 22};
+        return values[value];
+    }
+    i64 total = value;
+    if (phase == 5) {
+        while (true) { total = 42 - total; }
+    }
+    i64 steps = 0;
+    while (steps < 1000000) {
+        total = 42 - total;
+        steps = steps + 1;
+    }
+    return total + second;
+}

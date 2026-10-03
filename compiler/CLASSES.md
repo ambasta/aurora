@@ -109,3 +109,8 @@ are acyclic, at most four class levels and 64 scalar leaves. Public class fields
 locals. Class-field reassignment and chained mutation remain rejected. Empty
 nested fields require logical initialization even without payload leaves. Ordinary
 methods retain scalar signatures. This extension is awaiting final validation.
+
+Milestone012's [enum/result candidate](ENUM-RESULTS.md) admits closed enum leaves
+and copied class-valued method results, including the composed descendants above.
+Class method arguments remain unsupported; complete constructor class snapshots
+are preserved.

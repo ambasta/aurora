@@ -93,11 +93,11 @@ The subset includes `i64`/`u64`/`bool`, local bindings, expressions, branches, `
 
 Scoped `own<i64>`, `ref<i64>`, and `mutref<i64>` demonstrate moves and shared/exclusive borrowing of local owned integers only. Ownership bindings are non-rebindable. A const owner cannot be mutably borrowed or moved into a mutable owner; a const mutable-reference binding cannot write. These checks cannot establish heap or cross-function borrow safety. The kernel sample exercises local ownership operations and returns 42.
 
-Local class values have independent stack storage, same-type value copies and access-checked field reads/writes. Fields are private by default. Since milestone005, a class can declare one constructor with a complete initializer list and empty body, plus scalar methods using `auto get() const -> i64` or mutable `auto add(i64 amount) -> i64`. Constructor arguments evaluate left-to-right; field initializers then run in declaration order without receiver access. Declaring a constructor disables designated construction, so private state cannot be manufactured through aggregate syntax. Classes without constructors retain the earlier public-field designated initialization rules. Fields are limited to `i64`, `u64` and `bool`. Nested/resource fields, class parameters/results on methods and constructors, and source-visible class references remain unsupported. Ordinary functions support the bounded value-only contract below. Padded eight-byte field slots are internal bootstrap layout, not a C-compatible promise.
+Local class values have independent stack storage, same-type value copies and access-checked field reads/writes. Fields are private by default. Since milestone005, a class can declare one constructor with a complete initializer list and empty body, plus scalar methods using `auto get() const -> i64` or mutable `auto add(i64 amount) -> i64`. Constructor arguments evaluate left-to-right; field initializers then run in declaration order without receiver access. Declaring a constructor disables designated construction, so private state cannot be manufactured through aggregate syntax. Classes without constructors retain the earlier public-field designated initialization rules. That historical checkpoint limited fields to numeric scalars. The current composition subset also admits bounded class fields, private scalar-array fields and, in the reviewed milestone012 candidate, closed enums. Constructor class parameters and copied class-valued method results now have explicit contracts below; class-valued method parameters, resource fields and source-visible class references remain unsupported. Ordinary functions support the bounded value-only contract below. Padded eight-byte field slots are internal bootstrap layout, not a C-compatible promise.
 
 Method receivers are local class values or implicit sibling-call reborrows. All scalar argument evaluation finishes before acquiring the call-duration receiver capability; `counter.add(counter.get())` is therefore defined. Const receivers allow readonly methods only. No source `this` pointer, receiver conversion, escaping borrow or arbitrary offset is available. Private members bind in the declaring class/module. Typed IR checks nominal layouts, lexical object lifetimes, full initialization and readonly/exclusive receiver permission. Every call-graph cycle containing a constructor or method is conservatively rejected, including scalar-helper intermediaries; ordinary scalar recursion still works and no whole-program termination/stack bound is claimed. See [the exact class contract](../compiler/CLASSES.md).
 
-The verified milestone006 compiler adds by-value class parameters and results on ordinary functions. Parameters are immutable independent copies. Class arguments must be complete local names and are snapshotted at their position in left-to-right argument evaluation; a later mutation cannot alter an earlier argument. Class-returning calls initialize typed locals, and a class return names a complete local or parameter. Each boundary class is limited to 64 scalar fields and a function still accepts at most six total parameters. This does not bound whole-program stack use. No ownership/reference transport, caller alias, or class result on a method is introduced.
+The verified milestone006 compiler adds by-value class parameters and results on ordinary functions. Parameters are immutable independent copies. Class arguments must be complete local names and are snapshotted at their position in left-to-right argument evaluation; a later mutation cannot alter an earlier argument. Class-returning calls initialize typed locals, and a class return names a complete local or parameter. Each boundary class is limited to 64 scalar fields and a function still accepts at most six total parameters. This does not bound whole-program stack use. That historical stage introduced no ownership/reference transport or caller alias; milestone012 extends copied results to methods as described below.
 
 Exported function signatures cannot expose private nominal types. Every caller must directly see all class types in the signature, so a factory import does not implicitly reexport its dependencies' types. The private native call-record/result-storage convention is distinct from the scalar bootstrap seam: explicit IR verifies nominal layouts, immutable argument snapshots, complete returns, active lifetimes and disjoint storage. Hidden addresses never become scalar IR values or source references. See [the exact value-call contract](../compiler/VALUE-CALLS.md).
 
@@ -115,13 +115,13 @@ The reviewed milestone009 compiler implements explicit Scalar-constrained class 
 
 The independently reviewed milestone010 compiler adds `template <Scalar T, i64 N>` class definitions with an explicit decimal literal capacity from 1 through 64. N substitutes as a readonly i64 value and cannot be shadowed or assigned. Arithmetic capacity expressions, defaults, deduction and recursive instantiation remain unsupported. Numeric spelling is normalized, so capacities such as 03 and 3 identify the same specialization. Existing one/two-Scalar templates and the graph limits of 64 definitions and 256 specializations remain.
 
-`import std.array;` supplies `std::array<T,N>` with private `builtin::array<T,N>` storage. Its empty constructor body and explicit `elements{}` initializer zero every element. `.size()` returns N, readonly `.at(index)` returns a scalar copy, and mutable `.set(index,value)` stores and returns that value. T is i64, u64 or bool; all storage and class copies are independent inline values. Array fields must be private, scalar-element, length 1..64 and explicitly zero-initialized by a complete constructor. There is no whole-array field expression, public array field, nested class field, element reference, slice or heap allocation.
+`import std.array;` supplies `std::array<T,N>` with private `builtin::array<T,N>` storage. Its empty constructor body and explicit `elements{}` initializer zero every element. `.size()` returns N, readonly `.at(index)` returns a scalar copy, and mutable `.set(index,value)` stores and returns that value. T is i64, u64 or bool; all storage and class copies are independent inline values. Array fields must be private, scalar-element, length 1..64 and explicitly zero-initialized by a complete constructor. There is no whole-array field expression, public array field, class-valued array element, element reference, slice or heap allocation.
 
 `builtin::array` is the canonical storage identity. The unqualified `array` alias always denotes that same storage, including inside the std namespace and the std::array template body; it never falls back to the current class. The builtin namespace is reserved. The wrapper is explicitly named `std::array<T,N>` at use sites; the constructor declaration name `array()` occupies a separate grammar position. Other class templates retain their existing injected self name. Shadowing cannot change the storage alias.
 
 Receiver-array reads and stores validate negative and upper-bound indices before address calculation. Internal `elements[index] = rhs()` validates the index before evaluating rhs. Ordinary `a.set(index, rhs())` evaluates all arguments before entering the method and its guard. Receiver provenance, logical field identity, element type, initialized leaf range and const/exclusive access remain explicit in verified IR. Reflection counts public logical fields, while size and copies include every eight-byte scalar leaf, including padded bool elements. Ordinary class-value function boundaries are limited to 64 flat leaves per class, not 64 logical fields; local frame and graph limits do not establish a global stack or compiler resource bound.
 
-The candidate passes 216 container cases (55 exact trap-site checks and 96 rejection fixtures), 463 direct IR cases, ten exhaustive-dispatch controls and 18 native receiver-array IR checks with ten exact-site traps, alongside existing suites and sanitizers. Alternate seeds overlap this coverage. Independent compiler review passed; final milestone010 integration verification is pending. See [FIXED-CONTAINERS.md](../compiler/FIXED-CONTAINERS.md).
+The candidate passes 216 container cases (55 exact trap-site checks and 96 rejection fixtures), 463 direct IR cases, ten exhaustive-dispatch controls and 18 native receiver-array IR checks with ten exact-site traps, alongside existing suites and sanitizers. Alternate seeds overlap this coverage. Independent compiler review passed; final milestone010 integration verification passed. See [FIXED-CONTAINERS.md](../compiler/FIXED-CONTAINERS.md).
 
 Local fixed arrays use forms such as `const array<i64, 4> values = {10, 20, 5, 7};`. Elements are scalar, storage copies by value, `len(values)` reports length, and indexing is checked for reads and stores. Current limits are 1–4096 elements, eight-byte element slots including bool, and a 65536-byte frame cap. Arrays are not general generics, heap collections or interprocedural aggregate borrowing. Deep recursion can still exhaust the stack; a frame cap alone cannot prevent it.
 
@@ -129,4 +129,46 @@ Local fixed arrays use forms such as `const array<i64, 4> values = {10, 20, 5, 7
 
 The syntax, arrays, loop and checked-arithmetic expansion is implemented; independent review and fresh aggregate integration verification passed for this checkpoint. See the [compiler reference](../compiler/README.md) for exact grammar and the [verification record](verification.md) for tested snapshots. Historical results do not establish the new semantics.
 
-General constructor bodies, method overloads, inheritance, nested/general classes, heap ownership, destructor insertion, general generics, the safe type algebra, interprocedural lifetime checking, concurrency soundness, runtime reflective invocation, effect checking and a verified optimizer remain future work. Metadata lookup is not full runtime reflection. Rejection tests and fail-stop checks are not a proof of Rust-like safety.
+General constructor bodies, method overloads, inheritance, unrestricted recursive/resource classes, heap ownership, destructor insertion, general generics, the safe type algebra, interprocedural lifetime checking, concurrency soundness, runtime reflective invocation, effect checking and a verified optimizer remain future work. Metadata lookup is not full runtime reflection. Rejection tests and fail-stop checks are not a proof of Rust-like safety.
+
+## Current reviewed enum/result integration
+
+Milestone011 implements acyclic inline class-field composition, bounded to four
+class levels and 64 flattened leaves. `template <Value T, Value U>` accepts named
+concrete class types as well as numeric/bool values; milestone012 adds closed
+nominal enum arguments. Scalar remains exactly i64/u64/bool. Complete constructor
+copies and public-field projections preserve independent storage, including empty
+children whose logical initialization is required despite having no scalar payload.
+No nested template-id argument, chained mutation or resource/reference field is
+introduced. See [COMPOSED-VALUES.md](../compiler/COMPOSED-VALUES.md).
+
+`enum class Status { ready, failed };` declares a closed nominal type;
+`Status::ready` has that exact type. Equality, inequality, initialized fields/locals
+and scalar-position parameters/results preserve nominal identity. Numeric/bool
+conversions, ordering, arithmetic, explicit ordinals and unspecified defaults are
+rejected. Limits are 64 enum declarations and 1..256 unique cases per declaration.
+Enum size is eight bytes and public field count is zero; IDs remain graph-local.
+Builtin arrays and std::array still reject enum elements. Exported signatures and
+template arguments retain direct visibility checks and module-scoped reflection.
+
+Methods can return complete named class locals into fresh explicitly typed caller
+locals. Results may contain bounded nested class, array, enum and empty descendants.
+A const receiver may yield a copy that its caller binds mutably. Constructor
+argument snapshots, receiver storage and method result storage remain disjoint;
+class-valued method arguments remain unsupported. Returning a method call or
+receiver field directly still requires an intermediate named local.
+
+`import std.decimal;` supplies `std::DecimalAccumulator`, `std::DecimalResult` and
+`std::DecimalStatus`. `push_digit(u64)` accepts digits 0..9, checks value/count
+representability before updating, and records sticky invalid_digit/out_of_range
+status on failure. `reset()` restores empty state; readonly `finish()` copies a
+report with `status()`, accepted-digit `position()` and eager `value_or(u64)`.
+An empty accumulator reports empty. Error reports use zero numeric storage; the
+public report constructor is not a parsing certificate. There is no character
+encoding, text storage, general expected type or heap dependency.
+
+The current candidate passes 107 combined cases, 196 decimal cases, 592 direct IR
+cases, existing regressions and sanitizer gates; independent compiler review
+passed. Final milestone012 kernel/parent integration is pending. Counts from
+alternate seeds overlap and are not additive. The exact restrictions and evidence
+are in [ENUM-RESULTS.md](../compiler/ENUM-RESULTS.md).

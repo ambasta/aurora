@@ -601,3 +601,68 @@ No unresolved reproduced issue remains within the reviewed slice. Historical
 receipts are unchanged. Physical Framework support, driver activation, persistent
 filesystems, multi-user services and complete language/stdlib safety remain goals,
 not results of this checkpoint. The separate decimal/enums branch is not included.
+
+
+## Milestone012: enums, copied reports and bounded three-domain dispatch
+
+Verified 2026-10-03. Release compiler SHA256:
+`a6de1e89e307b076672a1e2ee8a5e848625ac92e386622c1fa5fe7c6ab675026`.
+The clean UEFI fixture exercises an enum and independent class-valued method
+result alongside prior Value/container behavior: 3,379 bytes within the unchanged
+4,096-byte RX cap. This is native execution, not an unexecuted API sketch.
+
+Evidence and provenance:
+
+- [Fresh parent make test](evidence/milestone-012/parent-make-test.log): all aggregate
+  compiler, image, hosted kernel, metadata, transcript and scalar harness gates.
+- [Compiler author and independent evidence index](evidence/milestone-012/compiler-review/README.md):
+  full release/sanitizer regression runs, independent alternate-seed and ABI tests,
+  exact artifacts, earlier unsuccessful attempts and instrumentation limits.
+- Fresh parent sanitized [decimal196](evidence/milestone-012/parent-sanitized-decimal_values.log),
+  [combined107](evidence/milestone-012/parent-sanitized-enum_composition.log),
+  [composition161](evidence/milestone-012/parent-sanitized-composed_values.log), and
+  [IR592 and host I/O13/22](evidence/milestone-012/parent-ir-io-sanitized.log) pass.
+- Independent scalar harness logs retain [nine self-tests](evidence/milestone-012/parent-oracle-selftests.log),
+  [630 default](evidence/milestone-012/parent-oracle-default.log) and
+  [1,526 stress](evidence/milestone-012/parent-oracle-stress.log) cases. These cover
+  existing scalar semantics; alternate seeds and reruns are not disjoint totals.
+- [Complete retained kernel run](evidence/milestone-012/kernel-gates/README.txt):
+  all 122 distinct modes, 37 BIOS + 85 UEFI, from 08:56:24 through 09:07:52 UTC.
+  All 110 historical modes and twelve new dispatcher modes passed. Commands,
+  serial logs, available metadata, tools and pre/post input hashes are retained.
+- [Parent receipt validation](evidence/milestone-012/receipt-validation.log) checked
+  344 receipt hashes and all 186 live executable/build/test inputs against both
+  pre-run and post-run captures, plus the exact release compiler hash.
+- [Fresh parent emulator spots](evidence/milestone-012/parent-spot-checks.log): normal
+  BIOS, normal dispatcher, service-budget recovery and pending-interrupt drain.
+  Normal UEFI image restored afterward. This is not a second complete 122-mode run.
+- [Final source identity](evidence/milestone-012/source.sha256) and
+  [compiler binaries](evidence/milestone-012/compiler-binaries.sha256).
+
+Independent review repeated all twelve new actual dispatcher modes. Hosted checks
+include 6,039 layout cases, 9,540 rejected envelopes, 248,832 exhaustive five-step
+sequences and 4,096 independent 128-operation traces. Image controls are three
+positive/72 negative, transcript controls twelve positive/5,988 negative. Distinct
+client results42/73 and selection0→1→0 were observed. Fault/budget recovery cancels
+only affected nonterminal transactions, preserves committed replies, drains the
+old timer epoch before reuse and requires fresh service grants.
+
+The final sanitizer compiler hash is
+`3c5272f7e8a32fdbd9561de88f6a7cede2fcd34d3cab7218f8e504faa07551b1`;
+IR hash `1f8acd34a5a11340490ce174fff8b179b67477b77564ad943823aac3ef0b7064`.
+Sanitizers instrument host tools, not emitted native programs. Leak detection is
+disabled under the documented tracing limitation. The sanitizer harness drops
+only compiler address-space limiting for shadow memory; native limits remain.
+RLIMIT_FSIZE limits regular files, not captured-pipe memory; pipes remain unbounded.
+A redundant O1/g compiler build was killed for an unverified reason; the final
+unchanged-flags aggregate succeeded. Earlier attempt receipts remain separate.
+The temporary development zero-interrupt loop failure raw log was overwritten by
+its development rerun; only its observation is retained. No archived raw failure
+receipt is claimed. See kernel-gates/development-notes.txt.
+
+Original full kernel receipt archive SHA256:
+`c197799ba8c044f0d9449bb1859275eb7acec3217111627d619236f9db8f925e`.
+No unresolved reproduced defect remains in this reviewed bounded slice. Clients
+remain cooperative; this is not a general scheduler or a wall-clock guarantee.
+No physical Framework/device/DMA, filesystem, multi-user desktop, complete stdlib,
+Rust-equivalent safety proof or equivalent-C performance qualification follows.

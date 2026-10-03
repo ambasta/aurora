@@ -59,6 +59,10 @@ inline void require(bool condition, const std::string &message) {
     if (!condition)
         fail(message);
 }
+inline bool scalarValueType(const Type &type, const std::map<std::string, int> &enumCases) {
+    return scalar(type) || (type.isEnum() && type == Type::enumeration(type.className) &&
+                            enumCases.contains(type.className));
+}
 class Metrics {
   public:
     std::size_t snapshots = 0;
@@ -69,12 +73,14 @@ inline void verifyFunction(Function &function,
                            const std::map<std::string, const Function *> &functions,
                            Metrics *metrics = nullptr, const std::set<int> &availableScopes = {0},
                            const std::map<std::string, std::vector<Type>> &classLayouts = {},
-                           const std::map<std::string, std::vector<ClassField>> &classFields = {}) {
+                           const std::map<std::string, std::vector<ClassField>> &classFields = {},
+                           const std::map<std::string, int> &enumCases = {}) {
     require(availableScopes.contains(function.moduleScope), "unknown function module scope");
     auto boundaryType = [&](const Type &type, bool parameter) {
-        if (scalar(type))
+        if (scalarValueType(type, enumCases))
             return;
-        require(!function.receiver || (parameter && function.receiver->constructor),
+        require(!function.receiver ||
+                    (parameter ? function.receiver->constructor : !function.receiver->constructor),
                 "receiver signatures must remain scalar");
         require(type.isClass() && type == Type(type.className), "invalid value boundary type");
         require(classLayouts.contains(type.className), "unknown value boundary class");
@@ -91,7 +97,7 @@ inline void verifyFunction(Function &function,
     for (const auto &[offset, type] : function.slots) {
         require(offset > 0 && offset <= function.frameBytes && offset % 8 == 0,
                 "invalid slot offset");
-        require(scalar(type) || type == Type::Ref || type == Type::MutRef,
+        require(scalarValueType(type, enumCases) || type == Type::Ref || type == Type::MutRef,
                 "invalid slot payload type");
     }
     const std::vector<Type> *receiverLayout = nullptr;
@@ -323,7 +329,8 @@ inline void verifyFunction(Function &function,
             };
             auto receiverField = [&](int fieldIndex, const Type &type) -> const ClassField & {
                 const auto &field = receiverShape(fieldIndex);
-                require(!field.array && scalar(field.elementType) && field.elementType == type,
+                require(!field.array && scalarValueType(field.elementType, enumCases) &&
+                            field.elementType == type,
                         "receiver field type/layout mismatch");
                 return field;
             };
@@ -421,6 +428,14 @@ inline void verifyFunction(Function &function,
                                     operation.value == 1,
                                 "noncanonical bool");
                         state.current = Value{operation.type, {}};
+                    } else if constexpr (std::is_same_v<Op, EnumConstant>) {
+                        require(operation.type.isEnum() &&
+                                    scalarValueType(operation.type, enumCases),
+                                "invalid enum constant type");
+                        require(operation.caseIndex >= 0 &&
+                                    operation.caseIndex < enumCases.at(operation.type.className),
+                                "enum constant is not a declared case");
+                        state.current = Value{operation.type, {}};
                     } else if constexpr (std::is_same_v<Op, Load>) {
                         slot(operation.offset, operation.type);
                         activeObjectField(operation.offset);
@@ -513,11 +528,12 @@ inline void verifyFunction(Function &function,
                             break;
                         }
                         require(valid, "invalid comparison");
-                        require(scalar(operation.operandType), "non-scalar comparison");
+                        require(scalarValueType(operation.operandType, enumCases),
+                                "non-scalar comparison");
                         if (ordered)
                             require(operation.operandType == Type::I64 ||
                                         operation.operandType == Type::U64,
-                                    "ordered bool comparison");
+                                    "ordered bool comparison or enum comparison");
                         current(operation.operandType);
                         require(pop().type == operation.operandType, "comparison type mismatch");
                         state.current = Value{Type::Bool, {}};
@@ -559,9 +575,11 @@ inline void verifyFunction(Function &function,
                         require(functions.contains(operation.callee), "unknown call target");
                         const auto &target = *functions.at(operation.callee);
                         require(!target.receiver, "plain call cannot target receiver function");
-                        require(scalar(target.result) &&
+                        require(scalarValueType(target.result, enumCases) &&
                                     std::all_of(target.parameters.begin(), target.parameters.end(),
-                                                [](const Type &type) { return scalar(type); }),
+                                                [&](const Type &type) {
+                                                    return scalarValueType(type, enumCases);
+                                                }),
                                 "plain call cannot target aggregate signature");
                         for (auto argument = target.parameters.rbegin();
                              argument != target.parameters.rend(); ++argument)
@@ -582,7 +600,7 @@ inline void verifyFunction(Function &function,
                         for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
                             const auto &type = target.parameters[arg - 1];
                             const int base = operation.objectArguments[arg - 1];
-                            if (scalar(type)) {
+                            if (scalarValueType(type, enumCases)) {
                                 require(base == 0, "scalar argument cannot name object storage");
                                 require(pop().type == type,
                                         "aggregate scalar argument type mismatch");
@@ -629,7 +647,8 @@ inline void verifyFunction(Function &function,
                             markObject(base);
                             state.current.reset();
                         } else {
-                            require(scalar(target.result), "invalid aggregate result type");
+                            require(scalarValueType(target.result, enumCases),
+                                    "invalid aggregate result type");
                             require(operation.resultOffset == 0,
                                     "scalar result cannot name object storage");
                             state.current = Value{target.result, {}};
@@ -763,10 +782,11 @@ inline void verifyFunction(Function &function,
                         const auto &target = *functions.at(operation.callee);
                         require(target.receiver.has_value(),
                                 "method call requires receiver target");
-                        require(scalar(target.result) &&
+                        require((scalarValueType(target.result, enumCases) ||
+                                 (!target.receiver->constructor && target.result.isClass())) &&
                                     std::all_of(target.parameters.begin(), target.parameters.end(),
                                                 [&](const Type &type) {
-                                                    return scalar(type) ||
+                                                    return scalarValueType(type, enumCases) ||
                                                            (target.receiver->constructor &&
                                                             type.isClass());
                                                 }),
@@ -782,7 +802,7 @@ inline void verifyFunction(Function &function,
                         std::set<int> argumentStorage;
                         for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
                             const auto &type = target.parameters[arg - 1];
-                            if (scalar(type)) {
+                            if (scalarValueType(type, enumCases)) {
                                 require(!aggregate || operation.objectArguments[arg - 1] == 0,
                                         "scalar constructor argument cannot name object storage");
                                 require(pop().type == type, "method argument type mismatch");
@@ -838,7 +858,31 @@ inline void verifyFunction(Function &function,
                                 logicalComplete(operation.receiverOffset);
                             }
                         }
-                        state.current = Value{target.result, {}};
+                        if (target.result.isClass()) {
+                            const int base = operation.resultOffset;
+                            require(base != operation.receiverOffset,
+                                    "method result aliases receiver");
+                            require(function.objectSlots.contains(base),
+                                    "method result requires exact object slot");
+                            const auto &object = function.objectSlots.at(base);
+                            require(object.className == target.result.className,
+                                    "method result nominal class mismatch");
+                            require(state.activeObjects.contains(base),
+                                    "method result outside active object lifetime");
+                            require(!state.maybeConstructedObjects.contains(base),
+                                    "method result object already initialized");
+                            const auto &layout = classLayouts.at(object.className);
+                            for (std::size_t field = 0; field < layout.size(); ++field)
+                                require(!state.maybeInitialized.contains(
+                                            base - static_cast<int>(field * 8)),
+                                        "method result requires uninitialized object");
+                            markObject(base);
+                            state.current.reset();
+                        } else {
+                            require(operation.resultOffset == 0,
+                                    "scalar method result cannot name object storage");
+                            state.current = Value{target.result, {}};
+                        }
                     } else if constexpr (std::is_same_v<Op, MetadataQuery>) {
                         require(operation.query == Query::Size ||
                                     operation.query == Query::PublicFieldCount,
@@ -858,7 +902,8 @@ inline void verifyFunction(Function &function,
                         require(state.stack.empty(), "temporary values cross a branch");
                         enqueue(labels.at(operation.target), state);
                     } else if constexpr (std::is_same_v<Op, Return>) {
-                        require(scalar(function.result), "scalar return cannot return class value");
+                        require(scalarValueType(function.result, enumCases),
+                                "scalar return cannot return class value");
                         current(function.result);
                         require(state.stack.empty(), "unbalanced stack at return");
                         if (function.receiver && function.receiver->constructor) {
@@ -979,11 +1024,19 @@ inline ValidatedModule validate(Module module) {
             verification::require(module.descriptors.contains(id),
                                   "reflection view references missing descriptor");
     }
+    verification::require(module.enumCases.size() <= 64, "too many enum declarations");
+    for (const auto &[name, cases] : module.enumCases) {
+        verification::require(!name.empty() && name.size() <= 4096 && cases >= 1 && cases <= 256,
+                              "invalid nominal enum declaration");
+        verification::require(!module.classLayouts.contains(name),
+                              "class and enum nominal names overlap");
+    }
     for (const auto &[name, layout] : module.classLayouts) {
         verification::require(!name.empty() && name.size() <= 4096 && layout.size() <= 8192,
                               "invalid nominal class layout");
         for (const auto &field : layout)
-            verification::require(scalar(field), "non-scalar class layout field");
+            verification::require(verification::scalarValueType(field, module.enumCases),
+                                  "non-scalar class layout field");
     }
     for (const auto &[name, fields] : module.classFields)
         verification::require(module.classLayouts.contains(name),
@@ -1021,9 +1074,12 @@ inline ValidatedModule validate(Module module) {
                     verification::require(layout[nextLeaf + leaf] == childLayout[leaf],
                                           "nested class field leaf type mismatch");
             } else {
-                verification::require(scalar(field.elementType) && field.length >= 1 &&
-                                          field.length <= (field.array ? 64 : 1),
-                                      "invalid logical class field shape");
+                verification::require(
+                    (field.array
+                         ? scalar(field.elementType)
+                         : verification::scalarValueType(field.elementType, module.enumCases)) &&
+                        field.length >= 1 && field.length <= (field.array ? 64 : 1),
+                    "invalid logical class field shape");
                 verification::require(nextLeaf + static_cast<std::size_t>(field.length) <=
                                           layout.size(),
                                       "logical class field range exceeds layout");
@@ -1063,7 +1119,7 @@ inline ValidatedModule validate(Module module) {
         depth(name, 1);
     for (auto &function : module.functions)
         verification::verifyFunction(function, functions, nullptr, scopes, module.classLayouts,
-                                     module.classFields);
+                                     module.classFields, module.enumCases);
     // Analyze the full call graph so scalar helpers cannot hide receiver
     // recursion. Iterative Kosaraju traversal is O(functions + calls) and does
     // not consume host call-stack depth on an adversarial source-sized graph.

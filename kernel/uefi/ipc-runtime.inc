@@ -5,7 +5,7 @@ auto ipc_record(std::string_view operation,U64 first,U64 second) -> void {
 }
 auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 second,ProgramEvent expected_event,U64 expected_value,
                  std::optional<ipc::Endpoint> override_endpoint=std::nullopt) -> void {
-    require(index<2 && root()==kernel_root && active==2,"IPC launch boundary");
+    require(index<2 && root()==kernel_root && active==L::domain_count,"IPC launch boundary");
     auto& domain=domains[index]; require(domain.handle && verify(domain),"IPC launch domain");
     const auto endpoint=override_endpoint ? override_endpoint : mailbox->endpoint(*domain.handle);
     require(endpoint.has_value(),"IPC launch grant");
@@ -41,7 +41,7 @@ auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 
     if (phase==ipc::Phase::service) timer_finish();
 #endif
     const auto current_stack=stack();
-    require(root()==kernel_root && active==2 && saved_rsp==0 && !program.running()
+    require(root()==kernel_root && active==L::domain_count && saved_rsp==0 && !program.running()
         && current_stack>=arena+Handoff::stack_bottom && current_stack<arena+Handoff::stack_top,"IPC restored authority");
     require(program.event()==expected_event && (expected_event!=ProgramEvent::returned || program.value()==expected_value),"IPC compiled result");
     Serial::text("AURORA_UEFI_IPC_RESTORE: slot="); Serial::number(index); Serial::text(" root="); Serial::number(root());
@@ -85,7 +85,7 @@ auto ipc_deliver(bool fault) -> void {
 #endif
 }
 [[maybe_unused]] auto ipc_cancel() -> void {
-    require(root()==kernel_root && active==2 && mailbox->cancel(ipc::Phase::inactive) && mailbox->scrubbed(),"IPC cancel boundary");
+    require(root()==kernel_root && active==L::domain_count && mailbox->cancel(ipc::Phase::inactive) && mailbox->scrubbed(),"IPC cancel boundary");
     const auto endpoint=mailbox->endpoint(*domains[1].handle); require(endpoint.has_value(),"IPC cancelled grant");
     require(!mailbox->reply(*domains[1].handle,ipc::Phase::service,*endpoint,transaction,99)
         && !mailbox->cancel(ipc::Phase::inactive),"IPC late reply/cancel");
@@ -135,7 +135,7 @@ auto run_ipc() -> void {
     require(mailbox->recycle(ipc::Phase::inactive) && mailbox->scrubbed(),"IPC record recycle");
     ipc_record("RECYCLE",0,0);
     require(mailbox->revoke(ipc::Phase::inactive) && retire(0) && retire(1) && frames.used()==0
-        && root()==kernel_root && active==2,"IPC final cleanup");
+        && root()==kernel_root && active==L::domain_count,"IPC final cleanup");
     transaction=0; launch={}; mailbox.reset();
     Serial::text("AURORA_UEFI_IPC_CLEANUP_OK: used=0 records=0\r\nAURORA_UEFI_IPC_OK\r\n");
 #ifdef AURORA_UEFI_SERVICE_BUDGET

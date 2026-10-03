@@ -17,6 +17,8 @@ class Local {
 class SemanticAnalyzer {
     std::vector<Function> sourceFunctions;
     std::vector<ClassDefinition> classes;
+    std::vector<EnumDefinition> enums;
+    std::map<std::string, std::size_t> enumNames;
     std::map<int, std::set<std::string>> reflectionAccess;
     std::map<std::string, std::size_t> classNames;
     std::map<int, Type> arrayTypes;
@@ -49,6 +51,12 @@ class SemanticAnalyzer {
                     : 1000000 + type.length * 2 + (type.elementKind == TypeKind::Bool ? 1 : 0);
             arrayTypes[id] = type;
             return id;
+        }
+        if (type.isEnum()) {
+            const auto found = enumNames.find(type.className);
+            if (found == enumNames.end())
+                fail(token, "unknown enum type '" + typeName(type) + "'");
+            return enums[found->second].id;
         }
         if (type.isClass())
             return classDefinition(type, token).id;
@@ -94,9 +102,9 @@ class SemanticAnalyzer {
                 typeId(member.type, member.token);
                 leaves.insert(leaves.end(), member.type.length, Type(member.type.elementKind));
             } else {
-                if (!scalar(member.type))
+                if (!scalarValue(member.type))
                     fail(member.token,
-                         "class field must be concrete scalar, class or private array");
+                         "class field must be concrete scalar, enum, class or private array");
                 leaves.push_back(member.type);
             }
             if (leaves.size() > maxFrameSlots)
@@ -137,6 +145,7 @@ class SemanticAnalyzer {
                 if (!value.publicAccess &&
                     (!currentFunction || currentFunction->receiverClass != type.className))
                     fail(token, "private class field is inaccessible");
+                requireVisibleType(value.type, token);
                 return value;
             }
         fail(token, "unknown field '" + token.text + "' in " + typeName(type));
@@ -278,7 +287,28 @@ class SemanticAnalyzer {
             }
         fail(token, constructor ? "class has no declared constructor" : "unknown class method");
     }
-    Type callMethod(ExpressionPtr value) {
+    void requireVisibleType(const Type &type, const Token &token) {
+        if ((!type.isClass() && !type.isEnum()) || reflectionAccess.empty())
+            return;
+        if (!currentFunction->receiverClass.empty()) {
+            const auto &definition = classDefinition(Type(currentFunction->receiverClass), token);
+            // A generated body retains only its fixed instance and exact nominal
+            // arguments, not arbitrary names from the instantiating module.
+            if (!definition.templateArguments.empty()) {
+                if (type.isClass() && type.className == definition.name)
+                    return;
+                for (const auto &argument : definition.templateArguments)
+                    if (argument.kind == TemplateArgumentKind::Type &&
+                        (argument.type == TypeKind::Class || argument.type == TypeKind::Enum) &&
+                        argument.type == type.kind && argument.className == type.className)
+                        return;
+            }
+        }
+        const auto found = reflectionAccess.find(currentFunction->moduleScope);
+        if (found == reflectionAccess.end() || !found->second.contains(type.className))
+            fail(token, "method signature type requires a direct visible import");
+    }
+    Type callMethod(ExpressionPtr value, const StatementPtr &resultBinding = nullptr) {
         const bool implicit = value->op == "implicit_method_call";
         if (implicit && lookupLocal(value->token) >= 0)
             fail(value->token, "local binding shadows method and is not callable");
@@ -290,6 +320,13 @@ class SemanticAnalyzer {
         }
         const auto type = implicit ? Type(currentFunction->receiverClass) : locals[receiver].type;
         const auto &callee = method(type, value->token);
+        requireVisibleType(callee.result, value->token);
+        for (const auto &parameter : callee.params)
+            requireVisibleType(parameter.type, value->token);
+        if (callee.result.isClass() && !resultBinding)
+            fail(value->token, "class-returning method requires a typed local initializer");
+        if (resultBinding)
+            match(callee.result, resultBinding->type, value->token);
         const bool mutableReceiver =
             implicit ? !currentFunction->receiverConst : locals[receiver].mut;
         if (!callee.receiverConst && !mutableReceiver)
@@ -303,7 +340,11 @@ class SemanticAnalyzer {
             match(expression(value->args[index + first]), callee.params[index].type, value->token);
             push();
         }
-        emit(ir::MethodCall{callee.name, implicit ? 0 : offset(receiver)});
+        int destination = 0;
+        if (resultBinding)
+            destination = offset(add(resultBinding->name, resultBinding->type,
+                                     resultBinding->mutableValue, resultBinding->token));
+        emit(ir::MethodCall{callee.name, implicit ? 0 : offset(receiver), {}, destination});
         return callee.result;
     }
     Type callFunction(ExpressionPtr expression, const Function &callee,
@@ -369,6 +410,14 @@ class SemanticAnalyzer {
     }
     Type expression(ExpressionPtr e) {
         const auto &n = e->resolvedName.empty() ? e->token.text : e->resolvedName;
+        if (e->op == "enum_case") {
+            const auto found = enumNames.find(e->reflectedType.className);
+            if (!e->reflectedType.isEnum() || found == enumNames.end() || e->enumOrdinal < 0 ||
+                static_cast<std::size_t>(e->enumOrdinal) >= enums[found->second].cases.size())
+                fail(e->token, "unknown enum case");
+            emit(ir::EnumConstant{e->reflectedType, e->enumOrdinal});
+            return e->reflectedType;
+        }
         if (e->op == "number") {
             const auto value = literal(e->token);
             emit(ir::Constant{value.value, value.type});
@@ -420,7 +469,7 @@ class SemanticAnalyzer {
             if (locals[i].type.isClass())
                 fail(e->token, "class values are only supported in local initializers "
                                "and field accesses");
-            if (!scalar(locals[i].type))
+            if (!scalarValue(locals[i].type))
                 fail(e->token, "owned values cannot be implicitly copied; use move, "
                                "read, or borrow");
             emit(ir::Load{offset(i), payloadType(locals[i].type)});
@@ -557,6 +606,8 @@ class SemanticAnalyzer {
         const auto &name = e->token.text;
         if (e->op == "bool")
             return {name == "true", Type::Bool};
+        if (e->op == "enum_case")
+            return {e->enumOrdinal, e->reflectedType};
         if (e->op == "number")
             return literal(e->token);
         if (e->op == "call" && (name == "size_of" || name == "type_id" || name == "field_count"))
@@ -616,6 +667,10 @@ class SemanticAnalyzer {
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);
         const auto expression = statement->expr;
+        if (expression->op == "method_call" || expression->op == "implicit_method_call") {
+            callMethod(expression, statement);
+            return;
+        }
         if (expression->op == "member" ||
             (expression->op == "name" && lookupLocal(expression->token) < 0)) {
             int original = 0;
@@ -783,7 +838,7 @@ class SemanticAnalyzer {
             }
             auto e = s->expr;
             int owner = -1;
-            if (scalar(s->type)) {
+            if (scalarValue(s->type)) {
                 match(expression(e), s->type, s->token);
             } else {
                 if (e->op != "call")
@@ -888,7 +943,7 @@ class SemanticAnalyzer {
                     return false;
                 }
             int i = find(Token(s->name, s->token.line));
-            if (!locals[i].mut || !scalar(locals[i].type))
+            if (!locals[i].mut || !scalarValue(locals[i].type))
                 fail(s->token, "assignment requires a mutable scalar local");
             match(expression(s->expr), locals[i].type, s->token);
             emit(ir::Store{offset(i), payloadType(locals[i].type)});
@@ -925,7 +980,7 @@ class SemanticAnalyzer {
   public:
     explicit SemanticAnalyzer(Program program)
         : sourceFunctions(std::move(program.functions)), classes(std::move(program.classes)),
-          reflectionAccess(std::move(program.reflectionAccess)) {
+          enums(std::move(program.enums)), reflectionAccess(std::move(program.reflectionAccess)) {
         for (const auto &definition : classes)
             for (const auto &method : definition.methods)
                 sourceFunctions.push_back(method);
@@ -947,8 +1002,22 @@ class SemanticAnalyzer {
                                                        "reflect_field_count",
                                                        "aurora_reflect_size",
                                                        "aurora_reflect_field_count"};
-        if (classes.size() > 999900)
+        if (classes.size() + enums.size() > 999900)
             throw Error("too many class types for bootstrap type IDs");
+        if (enums.size() > 64)
+            throw Error("module graph exceeds 64 enum declarations");
+        for (std::size_t index = 0; index < enums.size(); ++index) {
+            auto &definition = enums[index];
+            if (enumNames.contains(definition.name) || definition.cases.empty() ||
+                definition.cases.size() > 256)
+                fail(definition.token, "enum requires a unique name and 1 to 256 cases");
+            std::set<std::string> caseNames;
+            for (const auto &name : definition.cases)
+                if (!caseNames.insert(name.text).second)
+                    fail(name, "duplicate enum case");
+            definition.id = 100 + static_cast<int>(classes.size() + index);
+            enumNames[definition.name] = index;
+        }
         for (std::size_t index = 0; index < classes.size(); ++index) {
             auto &definition = classes[index];
             const auto &name = definition.name;
@@ -968,12 +1037,13 @@ class SemanticAnalyzer {
             if (sourceFunctions[i].params.size() > 6)
                 fail(sourceFunctions[i].token, "at most six parameters supported");
             if (!sourceFunctions[i].receiverClass.empty()) {
-                if (!scalar(sourceFunctions[i].result))
-                    fail(sourceFunctions[i].token, "methods require scalar results");
+                if (!scalarValue(sourceFunctions[i].result) && !sourceFunctions[i].result.isClass())
+                    fail(sourceFunctions[i].token, "methods require scalar, enum or class results");
                 if (!sourceFunctions[i].constructor)
                     for (const auto &parameter : sourceFunctions[i].params)
-                        if (!scalar(parameter.type))
-                            fail(sourceFunctions[i].token, "methods require scalar parameters");
+                        if (!scalarValue(parameter.type))
+                            fail(sourceFunctions[i].token,
+                                 "methods require scalar or enum parameters");
             }
             auto checkBoundaryType = [&](const Type &type) {
                 if (type.isClass() &&
@@ -987,6 +1057,8 @@ class SemanticAnalyzer {
             functions[sourceFunctions[i].name] = i;
         }
         ir::Module module;
+        for (const auto &definition : enums)
+            module.enumCases[definition.name] = static_cast<int>(definition.cases.size());
         for (const auto &definition : classes) {
             module.classLayouts[definition.name] = classLeaves.at(definition.name);
             auto &shape = module.classFields[definition.name];
@@ -1080,11 +1152,15 @@ class SemanticAnalyzer {
             module.descriptors[definition.id] = ir::Descriptor{typeSize(type, definition.token),
                                                                fieldCount(type, definition.token)};
         }
+        for (const auto &definition : enums)
+            module.descriptors[definition.id] = ir::Descriptor{8, 0};
         for (const auto &[id, type] : arrayTypes)
             module.descriptors[id] = ir::Descriptor{type.length * 8, 0};
         if (reflectionAccess.empty()) {
             auto &own = reflectionAccess[0];
             for (const auto &definition : classes)
+                own.insert(definition.name);
+            for (const auto &definition : enums)
                 own.insert(definition.name);
         }
         module.descriptorViews.clear();
@@ -1095,8 +1171,14 @@ class SemanticAnalyzer {
                 if (id <= 5 || id == 8 || id >= 1000000)
                     view.insert(id);
             }
-            for (const auto &name : visible)
-                view.insert(classes.at(classNames.at(name)).id);
+            for (const auto &name : visible) {
+                if (classNames.contains(name))
+                    view.insert(classes.at(classNames.at(name)).id);
+                else if (enumNames.contains(name))
+                    view.insert(enums.at(enumNames.at(name)).id);
+                else
+                    throw Error("unknown nominal type in reflection view");
+            }
         }
         return ir::validate(std::move(module));
     }

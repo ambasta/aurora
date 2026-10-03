@@ -165,7 +165,7 @@ for name, definition, error in [
     ("duplicate methods rejected", COUNTER.replace("auto doubled()", "auto get()"), "duplicate"),
     ("method field collision", COUNTER.replace("auto get()", "auto value()"), "duplicate"),
     ("method ownership parameter rejected", COUNTER.replace("i64 amount", "ref<i64> amount"), "only scalar"),
-    ("method aggregate result rejected", COUNTER.replace("auto get() const -> i64", "auto get() const -> Counter"), "only scalar method"),
+    ("method aggregate result requires typed initializer", COUNTER.replace("auto get() const -> i64", "auto get() const -> Counter"), "class-returning method requires a typed local initializer"),
     ("method direct recursion rejected", COUNTER.replace("return get() + get();", "return doubled();"), "cycle"),
     ("method mutual recursion rejected", COUNTER.replace("return value; }\n    auto add", "return doubled(); }\n    auto add"), "cycle"),
 ]:

@@ -21,6 +21,12 @@ aurora_program_entry:
     push %r9
     sub $8,%rsp
     mov %r9,%rdx
+.ifdef IPC_PEER_CODE
+    movabs $0x10000000000,%r10
+.global aurora_probe_pc
+aurora_probe_pc:
+    mov (%r10),%rax
+.endif
 .ifdef IPC_MMIO
     movabs $0xffff900000000000,%rax
 .global aurora_probe_pc

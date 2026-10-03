@@ -576,7 +576,6 @@ def rejection_cases(suite):
         ("class field no complete constructor", "class Bad{public:Leaf item;};"),
         ("mutable constructor class parameter", "class Bad{i64 value;Leaf item;public:Bad(Leaf source):value(source.add(1)),item(source){} };"),
         ("method class parameter remains unsupported", "class Bad{public:Bad(){}auto take(Leaf input)->i64{return 42;}};"),
-        ("method class result remains unsupported", "class Bad{public:Bad(){}auto get()->Leaf{Leaf value=Leaf(42);return value;}};"),
         ("direct inline self cycle", "class Bad{Bad item;public:Bad(Bad source):item(source){} };"),
         ("indirect inline cycle", "class Bad{Other item;public:Bad(Other source):item(source){} };class Other{Bad item;public:Other(Bad source):item(source){} };"),
         ("owning field remains unsupported", "class Bad{own<i64> item;public:Bad():item(42){} };"),
@@ -584,6 +583,9 @@ def rejection_cases(suite):
     ):
         suite.check(name, program("return 42;", LEAF + definition,
                                 "auto make()->Leaf{Leaf source=Leaf(42);return source;}"), error=True)
+    suite.check("method class result copies into typed local", program(
+        "Factory factory=Factory();Leaf result=factory.get();return result.get();", LEAF +
+        "class Factory{public:Factory(){}auto get()->Leaf{Leaf value=Leaf(42);return value;}};"))
     for argument in ("own<i64>", "ref<i64>", "array<i64,2>", "builtin::array<i64,2>",
                      "Pair<i64,i64>", "std::array<i64,2>", "Unknown", "42", ""):
         suite.check("unsupported Value argument " + repr(argument), program(
@@ -597,7 +599,7 @@ def rejection_cases(suite):
     suite.check("Scalar constraint still rejects concrete classes", program(
         "Leaf source=Leaf(42);Only<Leaf> value=Only<Leaf>(source);return 42;", LEAF +
         "template<Scalar T>class Only{T item;public:Only(T source):item(source){} };"), error=True)
-    suite.check("Value substitution cannot authorize class-valued method result", program(
+    suite.check("Value class method return requires a complete named local copy", program(
         "Leaf source=Leaf(42);Only<Leaf> value=Only<Leaf>(source);return 42;", LEAF +
         "template<Value T>class Only{T item;public:Only(T source):item(source){}auto get()const->T{return item;}};"), error=True)
     suite.check("Value substitution cannot authorize builtin arrays of classes", program(

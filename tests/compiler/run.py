@@ -168,7 +168,7 @@ class_check("class unknown reflection", "return size_of(Missing);", error="unkno
 check("class duplicate declaration", 'module test; class A { public:}; class A { public:}; auto test() -> i64 { return 0; }', error="duplicate or reserved class")
 check("class duplicate fields", 'module test; class A { public: i64 x; bool x; }; auto test() -> i64 { return 0; }', error="duplicate class field")
 check("class owned field rejected", 'module test; class A { public: own<i64> x; }; auto test() -> i64 { return 0; }', error="class fields require")
-check("class unknown nested field rejected", 'module test; class A { public: Point x; }; auto test() -> i64 { return 0; }', error="unknown class type")
+check("class unknown nested field rejected", 'module test; class A { public: Point x; }; auto test() -> i64 { return 0; }', error="unknown nominal type")
 check("class reserved name", 'module test; class i64 { public:}; auto test() -> i64 { return 0; }', error="duplicate or reserved class")
 check("class function name collision", 'module test; class A { public:}; auto A() -> i64 { return 0; }', error="duplicate or reserved function")
 check("class wrong copy type", 'module test; class A { public: i64 x; }; class B { public: i64 x; }; auto test() -> i64 { const A a = A { .x = 1 }; const B b = a; return 0; }', error="expected B")

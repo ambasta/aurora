@@ -582,3 +582,11 @@ See its dedicated gates and limitations; it is not a general scheduler or servic
 The opt-in [UEFI service-budget profile](uefi/service-budget.md) adds verified local-timer
 preemption and recovery of a non-yielding staged service. See its dedicated
 acceptance gates and emulator-only boundaries.
+
+The [three-domain staged dispatcher](uefi/dispatcher.md) has passed all 12 new actual
+OVMF modes independently and in the full 122-mode exact-source run (37 BIOS and
+85 UEFI modes). The earlier 110 gates remain passing. Hosted policy/layout tests
+also passed fatal ASan/UBSan. Fresh parent aggregate, sanitizer and selected
+BIOS/dispatcher/recovery/drain checks passed. See the milestone012 verification
+record for exact provenance. These tests do not establish physical hardware
+support or a general scheduler.
