@@ -80,6 +80,9 @@ public:
         lease.owner_ = nullptr;
         return true;
     }
+    [[nodiscard]] auto arena_matches(std::uint64_t base, std::size_t count) const -> bool {
+        return count_ != 0 && base_ == base && count_ == count;
+    }
     [[nodiscard]] auto used() const -> std::size_t { return used_; }
 };
 }

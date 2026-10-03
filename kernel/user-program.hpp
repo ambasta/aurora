@@ -104,6 +104,5 @@ public:
     static constexpr std::uint64_t code_end = 0x1b3000;
     [[nodiscard]] static auto install() -> bool;
     [[nodiscard]] static auto contract(std::size_t index) -> const ProgramContract*;
-    [[nodiscard]] static auto scrub_stack() -> bool;
 };
 }

@@ -58,7 +58,7 @@ auto Protection::activate() -> bool {
         || !map_range(entry_stack_bottom, entry_stack_top, PageAccess::read_write)
         || !map_range(emergency_stack_bottom, emergency_stack_top, PageAccess::read_write)
         || !map_range(0x100000, 0x180000, PageAccess::read_write)
-        || !map_range(aurora::user::UserPrograms::code_begin, aurora::user::UserPrograms::code_end, PageAccess::read_execute, PageDomain::user)
+        || !map_range(aurora::user::UserPrograms::code_begin, aurora::user::UserPrograms::code_end, PageAccess::read_only, PageDomain::kernel)
         || !map_range(user_code, user_code + 4096, PageAccess::read_execute, PageDomain::user)
         || !map_range(user_stack_bottom, user_stack_top, PageAccess::read_write, PageDomain::user)) return false;
     pml4[0] = reinterpret_cast<std::uint64_t>(pdpt.data()) | 7;
@@ -74,9 +74,9 @@ auto Protection::activate() -> bool {
     return verify();
 }
 auto Protection::verify() -> bool {
-    std::uint64_t cr0, cr3;
-    asm volatile("mov %%cr0, %0; mov %%cr3, %1" : "=r"(cr0), "=r"(cr3));
-    if ((cr0 & (std::uint64_t{1} << 16)) == 0 || (efer() & (std::uint64_t{1} << 11)) == 0
+    std::uint64_t cr0, cr3, cr4;
+    asm volatile("mov %%cr0, %0; mov %%cr3, %1; mov %%cr4, %2" : "=r"(cr0), "=r"(cr3), "=r"(cr4));
+    if ((cr4 & (std::uint64_t{1} << 17)) != 0 || (cr0 & (std::uint64_t{1} << 16)) == 0 || (efer() & (std::uint64_t{1} << 11)) == 0
         || cr3 != reinterpret_cast<std::uint64_t>(pml4.data())) return false;
     for (auto page = std::uint64_t{0}; page < 0x200000; page += 4096) {
         const auto entry = leaves.entry(page);
@@ -89,3 +89,11 @@ auto Protection::verify() -> bool {
         && leaves.entry(entry_stack_bottom - 4096) == 0 && leaves.entry(emergency_stack_bottom - 4096) == 0
         && leaves.entry(user_stack_bottom - 4096) == 0;
 }
+
+auto Protection::kernel_root() -> std::uint64_t { return reinterpret_cast<std::uint64_t>(pml4.data()); }
+auto Protection::current_root() -> std::uint64_t {
+    std::uint64_t root;
+    asm volatile("mov %%cr3, %0" : "=r"(root));
+    return root;
+}
+auto Protection::kernel_entry(std::uint64_t virtual_address) -> std::uint64_t { return leaves.entry(virtual_address); }

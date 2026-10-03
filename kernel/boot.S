@@ -87,9 +87,10 @@ gdt:
 gdt_pointer:
     .word 23
     .long gdt
+.balign 4
 packet:
     .byte 16, 0
-    .word 64
+    .word 96
     .word 0, 0x1000
     .quad 1
 drive: .byte 0

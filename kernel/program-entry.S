@@ -30,6 +30,13 @@ aurora_program_entry:
 .ifdef AURORA_PROGRAM_UNKNOWN_TRAP
     ud2
 .endif
+.ifdef AURORA_PROGRAM_FOREIGN_CODE
+    mov $0x1b1000, %rax
+    call *%rax
+.endif
+.ifdef AURORA_PROGRAM_FOREIGN_STACK
+    mov 0x104000, %al
+.endif
     call aurora_user_main
     int $0x81
 aurora_program_return_pc:

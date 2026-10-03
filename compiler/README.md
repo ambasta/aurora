@@ -1,6 +1,6 @@
 # Aurora safe C++ dialect bootstrap
 
-Aurora is a deliberately incompatible, safe-by-default C++ dialect under development. This is a small executable subset, not a complete C++ implementation or a production safety guarantee. The C++23 bootstrap compiler has its own lexer, AST, type/lifetime checks and x86-64 assembly emitter. It does not translate Aurora into C. Host standard-library headers are temporary implementation machinery; the language has no C header, macro, raw-pointer, unsafe-block or foreign-C-ABI feature.
+Aurora is a deliberately incompatible, safe-by-default C++ dialect under development. This is a small executable subset, not a complete C++ implementation or a production safety guarantee. The C++23 bootstrap compiler has its own lexer, AST, type/lifetime checks and x86-64 assembly emitter. It does not translate Aurora into C. Host standard-library headers and the isolated Linux descriptor-I/O adapter are temporary implementation machinery; the language has no C header, macro, raw-pointer, unsafe-block or foreign-C-ABI feature.
 
 ```sh
 make -C compiler
@@ -33,7 +33,7 @@ auto answer(i64 input) -> i64 {
 }
 ```
 
-- One mandatory `module name;` declaration per file. Imports/separate compilation are not implemented.
+- Each file declares `module name;` or an importable `export module name;`. Named imports, export visibility and namespace blocks now work with explicit `--module-root` directories; see MODULES.md. Separate binary compilation/linking remains deferred.
 - Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar parameters, forward calls and recursion work. Parameters are immutable in this bootstrap subset; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
 - Local declarations are `const Type name = initializer;` or `Type name = initializer;`. Initialization is mandatory. Const scalar/aggregate locals cannot be assigned; unqualified scalar locals and scalar fields/elements of unqualified aggregates can be assigned. Ownership binding rules are stricter below.
 - Scalar types are `i64` and `bool`. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
@@ -105,15 +105,15 @@ Arrays cannot currently be borrowed, returned, passed to functions, nested, or p
 
 `size_of(Type)`, `type_id(Type)` and `field_count(Type)` are compile-time queries. `static_assert(bool_expression)` accepts literals, these queries, comparisons and logical negation; general arithmetic constant evaluation and code generation remain deferred.
 
-Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. Builtin sizes are 8,1,8,8,8. Scalar bool's logical size is one byte, but its current stack slot is eight bytes. Class IDs begin at 100 in declaration order and are module-local. Mentioned array types have IDs `1000000 + 2*N + B`, where B is one for bool and zero for i64. Class IDs cannot collide with the array range.
+Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. Builtin sizes are 8,1,8,8,8. Scalar bool's logical size is one byte, but its current stack slot is eight bytes. Class IDs begin at 100 in deterministic graph declaration order and are compilation-graph-local; defining-module/native names determine source type identity. Mentioned array types have IDs `1000000 + 2*N + B`, where B is one for bool and zero for i64. Class IDs cannot collide with the array range.
 
-`reflect_size(id)` and `reflect_field_count(id)` execute runtime lookups. Unknown IDs return zero. Descriptor entries are emitted for builtins, declared classes and array types used in storage/size/type-ID queries. Array size is `8*N`; arrays and builtins have zero named fields. Class field counts include public fields only, and class size includes all fields. Reflection cannot expose private values or bypass lifetime checks. Member traversal, invocation, mapped/conditional types and `keyof`-style type algebra remain design goals.
+`reflect_size(id)` and `reflect_field_count(id)` execute runtime lookups. Unknown IDs return zero. Descriptor entries are emitted for builtins, declared classes and array types used in storage/size/type-ID queries. Array size is `8*N`; arrays and builtins have zero named fields. Class field counts include public fields only, and class size includes all fields. Reflection cannot expose private values or bypass lifetime checks. Runtime queries use the defining module's visible descriptor view; unavailable/private IDs return zero, and reflection cannot implicitly import a type. Member traversal, invocation, mapped/conditional types and `keyof`-style type algebra remain design goals.
 
 ## Temporary machine integration
 
 The bootstrap assembly boundary currently passes six scalar arguments in RDI, RSI, RDX, RCX, R8, R9 and returns RAX. It preserves RBP, does not touch RBX/R12–R15, and aligns RSP to sixteen bytes immediately before calls. No red zone, libc, heap allocation, SIMD or runtime library is generated. External assembly callers must provide canonical zero/one bools and correct stack alignment.
 
-These temporary register choices are implementation machinery, not a source-level C ABI or binary interoperability promise. Function symbols are presently unmangled for the bootstrap assembly bridge. Reflection helper symbols are emitted per module, so separately linking multiple compiled modules is not supported yet. A versioned Aurora-native ABI remains to be designed.
+These temporary register choices are implementation machinery, not a source-level C ABI or binary interoperability promise. Only unqualified root functions retain unmangled names for the temporary bootstrap assembly bridge. Imported/namespaced functions use length-prefixed Aurora-native symbols. The compiler emits a complete import graph with per-defining-module reflection helpers; separately linking overlapping compiled graphs is not supported yet. A versioned Aurora-native ABI remains to be designed.
 
 `examples/kernel.au` performs a mutable borrow, releases it, moves ownership and returns 42. `examples/class_values.au` demonstrates class copies/visibility/reflection. `examples/loops_arrays.au` demonstrates checked traversal and independent arrays.
 
@@ -121,4 +121,12 @@ These temporary register choices are implementation machinery, not a source-leve
 
 Tests execute assembled/linked machine code without libc, check compiler rejection diagnostics, and distinguish bounds/overflow SIGILL from crashes or timeouts. Tests are evidence for this constrained implementation, not a soundness proof or a claim of complete Rust-equivalent safety.
 
-Self-hosting, complete modern C++ expressiveness, methods, constructors/destructors, nested values, general ownership, generics, heap storage, concurrency, typed compile-time generation, imports and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
+Self-hosting, complete modern C++ expressiveness, methods, constructors/destructors, nested values, general ownership, generics, heap storage, concurrency, typed compile-time generation, separate binary compilation and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
+
+## Native library and host I/O
+
+The real `library/std/core.au` module exports scalar `std::min`, `std::max` and checked `std::abs`. It is a small compiled library seed, not a complete libc/libc++ replacement. See library/README.md and compiler/MODULES.md for contracts, visibility, module-root budgets and native identity.
+
+Source reads use pinned Linux directory/file descriptors and openat2 beneath-root/no-symlink policies, failing closed if unsupported. Outputs use exclusive temporaries and atomic replacement, with root/import-source inode-alias protection and one-shot failed transactions. There is no atomic file/repository snapshot or crash-durability claim. Native I/O fault tests require an unprivileged Linux user.
+
+Source implementation limits include128 nested parser expressions/blocks,64 type parses,32 namespace components and128 constructed expression-tree levels. Deep source is rejected normally before retaining an unsafe recursive tree; these are separate from file-byte limits and do not constitute global compiler resource bounds.

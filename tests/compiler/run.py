@@ -274,6 +274,12 @@ large_init = ",".join("1" for _ in range(4096))
 check("maximum supported array", "const array<i64, 4096> a = {" + large_init + "}; return a[4095] + 41;")
 check("stack layout cap", "const array<i64, 4096> a = {" + large_init + "}; const array<i64, 4096> b = a; const i64 c = 0; return c;", error="stack frame exceeds 65536")
 
+# Accepted boundary cases accompany separate adversarial depth-rejection fixtures.
+check("deep bounded parentheses", "return " + "(" * 100 + "42" + ")" * 100 + ";")
+check("deep bounded blocks", "{" * 100 + "return 42;" + "}" * 100)
+check("bounded skew expression", "return 42" + "+0" * 100 + ";")
+check("mixed bounded block and expression depths", "{" * 100 + "return " + "(" * 100 + "42" + ")" * 100 + ";" + "}" * 100)
+
 random.seed(42)
 for i in range(12):
     a,b,c,d = (random.randrange(-1000, 1000) for _ in range(4))

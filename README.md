@@ -68,6 +68,19 @@ auto answer() -> i64 {
 - Basic compile-time type queries and runtime metadata queries. Full type-level
   transformations, reflective invocation, methods and generics are not implemented.
 
+A first freestanding Aurora module now provides scalar `std::min`, `std::max`
+and checked `std::abs` through genuine imports and namespaces:
+
+```sh
+build/aurorac --module-root library examples/core_math.au -o build/core_math.s
+```
+
+Imports use explicit roots, bounded graph loading, exports and defining-module
+name resolution. Runtime type queries use defining-module visibility views.
+This is whole-graph compilation, not a separately compiled stable binary ABI.
+See [modules and host I/O](compiler/MODULES.md) and [core library](library/README.md).
+The library is an initial scalar module, not a complete runtime or standard library.
+
 The previous `fn`/`let` prototype syntax is intentionally removed. The current
 surface, evaluation order and unsupported features are specified in
 [compiler/README.md](compiler/README.md). Examples live in `examples/`.
@@ -86,8 +99,10 @@ limited boundary test, **not a complete process isolation or scheduling system**
 Separately compiled Aurora fixtures now execute in user RX pages through a
 scalar-only return contract. Recognized user bounds/overflow traps are contained,
 then a clean fixture runs again. Unexpected returns/traps fail closed, and kernel
-faults remain fatal. These fixtures share one bounded user domain; this is not
-a general application loader, scheduler or per-process address-space system.
+faults remain fatal. The latest controlled execution uses three separately owned CR3 domains and
+leased stacks, with foreign-code/data denial, root restoration, stale-handle
+checks and scrubbed reuse. It remains sequential, bounded fixture execution;
+there is no general application loader, scheduler, SMP or process lifecycle.
 
 ## Whole-system destination
 
@@ -113,18 +128,23 @@ and [roadmap](docs/roadmap.md).
 
 There is no production safety proof, optimizing compiler, general heap ownership,
 interprocedural borrowing, methods/generics, concurrency model, scheduler, SMP,
-full virtual-memory manager, driver stack, desktop, native package system or
+full virtual-memory manager, general runtime/standard library, driver stack,
+desktop, native package system or
 self-hosting compiler yet. C-level performance has not been established by an
 end-to-end benchmark suite. Safety checks may be eliminated only when justified.
 
 The bootstrap C++ toolchain still uses standard-library headers and conventional
-host entry points. Architecture-specific C++/assembly is trusted. The BIOS loader
+host entry points, plus a narrow Linux descriptor-relative source/output adapter.
+That adapter protects source roots and atomically publishes output under its
+documented assumptions; it does not provide a whole-repository snapshot.
+Architecture-specific C++/assembly is trusted. The BIOS loader
 is disposable bring-up machinery. None is the proposed final language API,
 firmware contract or stable native ABI. Authored C++ uses classes, not structs.
 
 ## Repository map
 
 - `compiler/`, `examples/`: compiler implementation and compilable programs
+- `library/`: initial native freestanding core module
 - `kernel/`, `scripts/`, `tests/`: trusted bootstrap and executable validation
 - `docs/`: requirements, design, independent review and historical evidence
 - `AGENTS.md`: development and verification contract

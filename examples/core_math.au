@@ -1,0 +1,6 @@
+module core_demo;
+import std.core;
+
+auto core_answer() -> i64 {
+    return std::max(std::abs(-42), 20);
+}

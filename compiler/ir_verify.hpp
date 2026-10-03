@@ -41,7 +41,8 @@ class Metrics {
 };
 inline void verifyFunction(Function &function,
                            const std::map<std::string, const Function *> &functions,
-                           Metrics *metrics = nullptr) {
+                           Metrics *metrics = nullptr, const std::set<int> &availableScopes = {0}) {
+    require(availableScopes.contains(function.moduleScope), "unknown function module scope");
     require(scalar(function.result), "non-scalar function result");
     require(function.parameters.size() <= 6, "too many parameters");
     for (const auto &type : function.parameters)
@@ -253,6 +254,8 @@ inline void verifyFunction(Function &function,
                         require(operation.query == Query::Size ||
                                     operation.query == Query::PublicFieldCount,
                                 "unknown metadata query");
+                        require(operation.moduleScope == function.moduleScope,
+                                "metadata query changes defining-module scope");
                         current(Type::I64);
                         state.current = Value{Type::I64, {}};
                     } else if constexpr (std::is_same_v<Op, Label>) {
@@ -321,7 +324,8 @@ inline ValidatedModule validate(Module module) {
     for (const auto &function : module.functions) {
         verification::require(verification::symbol(function.name) &&
                                   function.name != "aurora_reflect_size" &&
-                                  function.name != "aurora_reflect_field_count",
+                                  function.name != "aurora_reflect_field_count" &&
+                                  !function.name.starts_with("__au_reflect_"),
                               "invalid or reserved function symbol");
         verification::require(functions.emplace(function.name, &function).second,
                               "duplicate function");
@@ -329,8 +333,17 @@ inline ValidatedModule validate(Module module) {
     for (const auto &[id, descriptor] : module.descriptors)
         verification::require(id > 0 && descriptor.size >= 0 && descriptor.publicFields >= 0,
                               "invalid metadata descriptor");
+    std::set<int> scopes;
+    verification::require(module.descriptorViews.contains(0), "missing root reflection scope");
+    for (const auto &[scope, view] : module.descriptorViews) {
+        verification::require(scope >= 0 && scope < 64, "invalid reflection scope");
+        scopes.insert(scope);
+        for (int id : view)
+            verification::require(module.descriptors.contains(id),
+                                  "reflection view references missing descriptor");
+    }
     for (auto &function : module.functions)
-        verification::verifyFunction(function, functions);
+        verification::verifyFunction(function, functions, nullptr, scopes);
     return ValidatedModule(std::move(module));
 }
 } // namespace aurora::ir

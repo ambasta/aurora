@@ -9,7 +9,7 @@ Aurora requires two native layers, eventually authored in Aurora:
 
 “libc++-like” describes the second layer's role and API inspiration. It does not name the platform/runtime layer or mean adopting an existing implementation unchanged. Neither layer offers C source/API/ABI compatibility, POSIX compatibility or unchecked operations for compatibility's sake. Safety can require a different signature or an explicit failure result even where the operation feels familiar to a C++ programmer.
 
-These are requirements, not implemented library packages. The C++ host compiler's standard library and trusted kernel bootstrap helpers remain construction dependencies. Typed IR and controlled execution of compiled code in a user domain are prerequisites, not a native runtime, general process service or standard-library implementation. Exact current verification belongs to [verification.md](verification.md); no empty module tree or placeholder API counts as delivery.
+Most of these remain requirements. A first real freestanding `std.core` module now implements scalar `std::min`, `std::max` and checked `std::abs` in Aurora; it is exercised through imports and protected user images. See [core library](../library/README.md). It is not a general runtime or standard-library package set. The C++ host compiler's standard library and trusted kernel bootstrap helpers remain construction dependencies. Typed IR and controlled execution of compiled code in a user domain are prerequisites, not a native runtime, general process service or standard-library implementation. Exact current verification belongs to [verification.md](verification.md); no empty module tree or placeholder API counts as delivery.
 
 ## Three execution profiles
 

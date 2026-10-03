@@ -1,0 +1,5 @@
+PASS: physical-page ownership, invalid inputs, exhaustion, reuse, 10000 model steps
+PASS: 511 identity mappings, W^X/domain/default-deny policy, malformed/overlapping firmware grants
+PASS: scalar return authority, exact trap metadata, origin/stack/flags rejection, replay/lifetime/reset policy
+PASS: domain ownership, active/foreign/stale/rebirth rejection, bounded slots, nonidentity W^X aliases
+PASS: smoke validators, 19 success cases and 134 failure regressions (no QEMU required)
