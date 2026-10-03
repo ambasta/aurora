@@ -8,12 +8,16 @@
 
 namespace aurora::ir {
 // Operations describe language semantics, never target-register names or assembly text.
-enum class Unary { CheckedNegate, LogicalNot };
-enum class Binary { CheckedAdd, CheckedSubtract, CheckedMultiply, CheckedDivide, CheckedRemainder };
+enum class Unary { CheckedNegate, LogicalNot, BitNot };
+enum class Binary {
+    CheckedAdd, CheckedSubtract, CheckedMultiply, CheckedDivide, CheckedRemainder,
+    BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight
+};
 enum class Comparison { Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual };
 enum class Query { Size, PublicFieldCount };
 class Constant {
   public:
+    // U64 payloads preserve all 64 bits via std::bit_cast<std::int64_t>.
     std::int64_t value;
     Type type;
 };
@@ -36,6 +40,14 @@ class UnaryValue {
 class BinaryValue {
   public:
     Binary operation;
+    // Both operands and result share this type except shifts, whose count is i64.
+    Type operandType = Type::I64;
+};
+class Convert {
+  public:
+    // Checked i64 <-> u64 value conversion; never a capability or bit reinterpretation.
+    Type sourceType;
+    Type resultType;
 };
 class Compare {
   public:
@@ -137,7 +149,7 @@ class BindParameter {
     Type type;
 };
 using Instruction =
-    std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Compare, BoundsGuard,
+    std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Convert, Compare, BoundsGuard,
                  IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall, BeginObject, EndObject,
                  ReceiverLoad, ReceiverStore, MethodCall, MetadataQuery, Label, Jump, BranchFalse,
                  Return, ReturnObject, BindParameter, BindObjectParameter>;

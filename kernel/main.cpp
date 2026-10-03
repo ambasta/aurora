@@ -42,6 +42,7 @@ auto program_fault_kind(aurora::user::ProgramEvent event) -> std::string_view {
     case ProgramEvent::bounds: return "bounds";
     case ProgramEvent::overflow: return "overflow";
     case ProgramEvent::division_zero: return "division_zero";
+    case ProgramEvent::shift_count: return "shift_count";
     case ProgramEvent::rejected:
     case ProgramEvent::returned: fail("Non-fault event has no fault kind");
     }
@@ -123,6 +124,11 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     asm volatile("jmp *%0" : : "r"(contract->division_zero_pc()) : "memory");
     fail("Kernel division UD2 unexpectedly returned");
 #endif
+#ifdef AURORA_TEST_UNSIGNED_KERNEL_TRAP
+    require(contract->shift_count_pc() != 0, "Missing shift-count trap authority");
+    asm volatile("jmp *%0" : : "r"(contract->shift_count_pc()) : "memory");
+    fail("Kernel shift-count UD2 unexpectedly returned");
+#endif
     const auto resumed = user_program(contract->entry());
     require(aurora::user::AddressSpaces::deactivate(domains[index]), "Kernel root restoration failed");
     Serial::text("AURORA_DOMAIN_RESTORED: root="); Serial::number(aurora::hardware::Protection::current_root()); Serial::text("\r\n");
@@ -145,6 +151,9 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     using aurora::hardware::Serial;
 #ifdef AURORA_DIVISION_FIXTURE
     Serial::text("AURORA_DIVISION_FIXTURE: "); Serial::text(AURORA_DIVISION_FIXTURE); Serial::text("\r\n");
+#endif
+#ifdef AURORA_UNSIGNED_FIXTURE
+    Serial::text("AURORA_UNSIGNED_FIXTURE: "); Serial::text(AURORA_UNSIGNED_FIXTURE); Serial::text("\r\n");
 #endif
     require(!AddressSpaces::initialize(foreign_pages), "Out-of-arena allocator accepted by domain manager");
     require(AddressSpaces::initialize(pages), "Domain manager initialization failed");
@@ -170,6 +179,8 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     execute_program(0, ProgramEvent::returned);
 #ifdef AURORA_TEST_DIVISION_ZERO
     execute_program(1, ProgramEvent::division_zero);
+#elif defined(AURORA_TEST_UNSIGNED_SHIFT_COUNT)
+    execute_program(1, ProgramEvent::shift_count);
 #else
     execute_program(1, ProgramEvent::bounds);
 #endif
@@ -208,11 +219,16 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     Serial::text("AURORA_DOMAINS_OK: private CR3, private stacks, zero reuse, clean teardown\r\n");
 #ifdef AURORA_TEST_DIVISION_ZERO
     Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, division_zero, overflow, clean restart\r\n");
+#elif defined(AURORA_TEST_UNSIGNED_SHIFT_COUNT)
+    Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, shift_count, overflow, clean restart\r\n");
 #else
     Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, bounds, overflow, clean restart\r\n");
 #endif
 #ifdef AURORA_DIVISION_FIXTURE
     Serial::text("AURORA_DIVISION_OK: exact typed trap, clean restart, private teardown\r\n");
+#endif
+#ifdef AURORA_UNSIGNED_FIXTURE
+    Serial::text("AURORA_UNSIGNED_OK: full-width values, exact typed trap, clean restart, private teardown\r\n");
 #endif
 }
 }
@@ -256,7 +272,8 @@ auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t
                 Serial::text("AURORA_PROGRAM_FAULT: image="); Serial::number(program_index);
                 Serial::text(" kind="); Serial::text(program_fault_kind(program_run.event()));
                 Serial::text(" vector="); Serial::number(vector);
-                if (program_run.event() == aurora::user::ProgramEvent::division_zero) {
+                if (program_run.event() == aurora::user::ProgramEvent::division_zero
+                    || program_run.event() == aurora::user::ProgramEvent::shift_count) {
                     Serial::text(" error="); Serial::number(error);
                 }
                 Serial::text(" rip="); Serial::number(instruction);

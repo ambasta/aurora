@@ -541,3 +541,32 @@ teardown checks. The wrapper finishes with an ordinary normal boot.
 transcript checks. These fixtures exercise the controlled sequential user runner;
 they do not add an unsafe operation, a raw syscall or general arithmetic-fault
 recovery for arbitrary executables.
+
+The UEFI consumer also has an [MCFG/PCI ECAM inventory gate](uefi/pci.md).
+It discovers configured emulated controllers through a read-only UC window;
+resource reconciliation, DMA isolation and drivers remain subsequent work.
+
+### Unsigned compiled-program boundary
+
+`scripts/kernel-unsigned-tests.sh` validates the optional exact
+`.Laurora_shift_count_trap` metadata, context policy, native fixture execution
+and transcript evidence. `SANITIZE=1` enables hosted ASan/UBSan.
+`scripts/kernel-unsigned-smoke.sh` runs four additional controlled BIOS modes
+and restores a normal image:
+
+- `--unsigned-valid`: MAX-u64 values, logical shifts, bit operations, unsigned
+  comparisons/division/remainder, checked conversions and an unsigned-array
+  loop return 42 from protected user mode.
+- `--unsigned-shift-count`: a negative shift count reaches the exact emitted
+  shift-count UD2, is contained, and a subsequent clean program returns 42.
+- `--unsigned-conversion-overflow`: MAX-u64 to i64 reaches the existing exact
+  overflow UD2, is contained, and clean execution follows.
+- `--unsigned-kernel-trap`: the exact shift-count UD2 reached at CPL0 remains
+  fatal; a matching address alone never authorizes user fault containment.
+
+A zero optional shift site grants no authority. A nonzero site must lie inside
+the image, differ from every return/trap site, contain UD2, and pass the existing
+CPL, active-domain/CR3, stack and saved-frame checks. Hosted native tests cover
+both negative and 64 shift counts. The scalar return transition is unchanged;
+no user pointer or generic hardware access facility was added. These are still
+bounded controlled programs, not a general process or syscall interface.

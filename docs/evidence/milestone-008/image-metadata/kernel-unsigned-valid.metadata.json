@@ -1,0 +1,37 @@
+{
+  "division_fixture": "none",
+  "unsigned_fixture": "valid",
+  "0": {
+    "base": 1769472,
+    "size": 1251,
+    "return": 1769531,
+    "bounds": 1770715,
+    "overflow": 1770717,
+    "division_zero": 1770719,
+    "shift_count": 1770721,
+    "probe_begin": 0,
+    "probe_end": 0
+  },
+  "1": {
+    "base": 1773568,
+    "size": 377,
+    "return": 1773627,
+    "bounds": 1773937,
+    "overflow": 1773939,
+    "division_zero": 1773941,
+    "shift_count": 1773943,
+    "probe_begin": 0,
+    "probe_end": 0
+  },
+  "2": {
+    "base": 1777664,
+    "size": 298,
+    "return": 1777723,
+    "bounds": 1777954,
+    "overflow": 1777956,
+    "division_zero": 1777958,
+    "shift_count": 1777960,
+    "probe_begin": 0,
+    "probe_end": 0
+  }
+}

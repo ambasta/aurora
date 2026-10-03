@@ -1,0 +1,40 @@
++ g++ -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -pthread -Icompiler tests/modules/host_sources_tests.cpp -o /tmp/aurora-m008-reader-sanitized
++ python3 tests/modules/host_sources.py /tmp/aurora-m008-reader-sanitized
+PASS source adapter exact bounded read
+PASS source adapter read byte cap
+PASS source adapter excessive read request
+PASS source adapter relative parent escape
+PASS source adapter absolute escape
+PASS source adapter directory not a source file
+PASS source adapter contained symlink
+PASS source adapter external symlink
+PASS source adapter explicit root source symlink
+PASS source adapter missing module
+PASS source adapter pinned root survives replacement
+PASS source adapter new symlink root rejected
+PASS source adapter replacement race: safe=595, denied=205
++ g++ -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -Icompiler tests/modules/host_output_tests.cpp -o /tmp/aurora-m008-writer-sanitized
++ python3 tests/modules/host_sources.py /tmp/aurora-m008-writer-sanitized
+PASS artifact adapter destination cannot be its own temporary
+PASS artifact adapter atomic complete replacement
+PASS artifact adapter root source alias
+PASS artifact adapter hardlink source alias
+PASS artifact adapter symlink output policy
+PASS artifact adapter nonregular output policy
+PASS artifact adapter filename leaf required
+PASS artifact adapter abandoned write preserves old output
+PASS artifact adapter changed temporary rejected
+PASS artifact adapter cleanup preserves unrelated replacement entry
+PASS artifact adapter destination hardlink swap
+PASS artifact adapter destination symlink swap
+PASS artifact adapter pinned output parent survives replacement
+PASS artifact adapter write once
+PASS artifact adapter misused writer cannot commit
+PASS artifact adapter commit requires complete write
+PASS artifact adapter out-of-order commit poisons writer
+PASS artifact adapter empty artifact replacement
+PASS artifact adapter artifact byte budget
+PASS artifact adapter partial OS write failure preserves output
+PASS artifact adapter failed writer rejects empty retry and commit
+PASS artifact adapter OS rename failure preserves output
+22 artifact adapter tests passed

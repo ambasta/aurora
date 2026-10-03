@@ -65,7 +65,7 @@ class X86Emitter {
             offset += argumentWords(function.parameters[index]) * 8;
         return offset;
     }
-    void checkedDivision(bool remainder) {
+    void checkedDivision(bool remainder, bool unsignedValue) {
         const auto suffix = std::to_string(functionIndex) + "_" + std::to_string(divisionIndex++);
         const auto ready = ".Ldivision_ready_" + suffix;
         const auto done = ".Ldivision_done_" + suffix;
@@ -75,6 +75,13 @@ class X86Emitter {
         line("testq %r11, %r11");
         line("jz .Laurora_division_zero_trap");
         line("movq %rcx, %rax");
+        if (unsignedValue) {
+            line("xorq %rdx, %rdx");
+            line("divq %r11");
+            if (remainder)
+                line("movq %rdx, %rax");
+            return;
+        }
         line("cmpq $-1, %r11");
         line("jne " + ready);
         line("movabsq $-9223372036854775808, %rdx");
@@ -94,6 +101,24 @@ class X86Emitter {
             line("movq %rdx, %rax");
         output << done << ":\n";
     }
+    void checkedShift(bool left) {
+        // Unsigned comparison rejects negative i64 counts too, before x86 can mask them.
+        line("cmpq $63, %rax");
+        line("ja .Laurora_shift_count_trap");
+        line("movq %rcx, %rdx");
+        line("movq %rax, %rcx");
+        line("movq %rdx, %rax");
+        if (left) {
+            line("shlq %cl, %rax");
+            // Shifting back detects every lost high bit, including counts > 1,
+            // for which the processor's overflow flag has no defined meaning.
+            line("movq %rax, %r11");
+            line("shrq %cl, %r11");
+            line("cmpq %rdx, %r11");
+            line("jne .Laurora_overflow_trap");
+        } else
+            line("shrq %cl, %rax");
+    }
     void instruction(const ir::Instruction &instruction) {
         std::visit(
             [&](const auto &operation) {
@@ -109,43 +134,92 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::Pop>) {
                     pop("%rax");
                 } else if constexpr (std::is_same_v<Op, ir::UnaryValue>) {
-                    if (operation.operation == ir::Unary::LogicalNot)
+                    switch (operation.operation) {
+                    case ir::Unary::LogicalNot:
                         line("xorq $1, %rax");
-                    else {
+                        break;
+                    case ir::Unary::CheckedNegate:
                         line("negq %rax");
                         line("jo .Laurora_overflow_trap");
+                        break;
+                    case ir::Unary::BitNot:
+                        line("notq %rax");
+                        break;
                     }
                 } else if constexpr (std::is_same_v<Op, ir::BinaryValue>) {
                     pop("%rcx");
+                    const bool unsignedValue = operation.operandType == Type::U64;
+                    const std::string overflowJump = unsignedValue ? "jc" : "jo";
                     switch (operation.operation) {
                     case ir::Binary::CheckedAdd:
                         line("addq %rcx, %rax");
-                        line("jo .Laurora_overflow_trap");
+                        line(overflowJump + " .Laurora_overflow_trap");
                         break;
                     case ir::Binary::CheckedSubtract:
                         line("subq %rax, %rcx");
                         line("movq %rcx, %rax");
-                        line("jo .Laurora_overflow_trap");
+                        line(overflowJump + " .Laurora_overflow_trap");
                         break;
                     case ir::Binary::CheckedMultiply:
-                        line("imulq %rcx, %rax");
-                        line("jo .Laurora_overflow_trap");
+                        if (unsignedValue)
+                            line("mulq %rcx");
+                        else
+                            line("imulq %rcx, %rax");
+                        line(overflowJump + " .Laurora_overflow_trap");
                         break;
                     case ir::Binary::CheckedDivide:
-                        checkedDivision(false);
+                        checkedDivision(false, unsignedValue);
                         break;
                     case ir::Binary::CheckedRemainder:
-                        checkedDivision(true);
+                        checkedDivision(true, unsignedValue);
+                        break;
+                    case ir::Binary::BitAnd:
+                        line("andq %rcx, %rax");
+                        break;
+                    case ir::Binary::BitOr:
+                        line("orq %rcx, %rax");
+                        break;
+                    case ir::Binary::BitXor:
+                        line("xorq %rcx, %rax");
+                        break;
+                    case ir::Binary::ShiftLeft:
+                        checkedShift(true);
+                        break;
+                    case ir::Binary::ShiftRight:
+                        checkedShift(false);
                         break;
                     }
+                } else if constexpr (std::is_same_v<Op, ir::Convert>) {
+                    // Both directions have the same representable intersection,
+                    // 0..INT64_MAX, but retain distinct types through verification.
+                    line("testq %rax, %rax");
+                    line("js .Laurora_overflow_trap");
                 } else if constexpr (std::is_same_v<Op, ir::Compare>) {
                     pop("%rcx");
                     line("cmpq %rax, %rcx");
-                    const std::map<ir::Comparison, std::string> conditions = {
-                        {ir::Comparison::Equal, "e"},      {ir::Comparison::NotEqual, "ne"},
-                        {ir::Comparison::Less, "l"},       {ir::Comparison::Greater, "g"},
-                        {ir::Comparison::LessEqual, "le"}, {ir::Comparison::GreaterEqual, "ge"}};
-                    line("set" + conditions.at(operation.operation) + " %al");
+                    const bool unsignedValue = operation.operandType == Type::U64;
+                    std::string condition;
+                    switch (operation.operation) {
+                    case ir::Comparison::Equal:
+                        condition = "e";
+                        break;
+                    case ir::Comparison::NotEqual:
+                        condition = "ne";
+                        break;
+                    case ir::Comparison::Less:
+                        condition = unsignedValue ? "b" : "l";
+                        break;
+                    case ir::Comparison::Greater:
+                        condition = unsignedValue ? "a" : "g";
+                        break;
+                    case ir::Comparison::LessEqual:
+                        condition = unsignedValue ? "be" : "le";
+                        break;
+                    case ir::Comparison::GreaterEqual:
+                        condition = unsignedValue ? "ae" : "ge";
+                        break;
+                    }
+                    line("set" + condition + " %al");
                     line("movzbq %al, %rax");
                 } else if constexpr (std::is_same_v<Op, ir::BoundsGuard>) {
                     line("cmpq $" + std::to_string(operation.length) + ", %rax");
@@ -337,7 +411,8 @@ class X86Emitter {
             }
         }
         output << ".Laurora_bounds_trap:\n    ud2\n.Laurora_overflow_trap:\n    "
-                  "ud2\n.Laurora_division_zero_trap:\n    ud2\n.section "
+                  "ud2\n.Laurora_division_zero_trap:\n    ud2\n.Laurora_shift_count_trap:\n    "
+                  "ud2\n.section "
                   ".note.GNU-stack,\"\",@progbits\n";
         return output.str();
     }

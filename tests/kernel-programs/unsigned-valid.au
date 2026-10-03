@@ -1,0 +1,24 @@
+module user_unsigned_valid;
+
+auto aurora_user_main() -> i64 {
+    const u64 maximum = 18446744073709551615u64;
+    const u64 high = 1u64 << 63;
+    if (high != 9223372036854775808u64) { return 0; }
+    if (high <= 9223372036854775807u64) { return 0; }
+    if ((maximum >> 63) != 1u64) { return 0; }
+    if ((maximum >> 0) != maximum) { return 0; }
+    if ((~0u64) != maximum) { return 0; }
+    if ((maximum ^ high) != 9223372036854775807u64) { return 0; }
+    if ((maximum / 3u64) != 6148914691236517205u64) { return 0; }
+    if ((maximum % 3u64) != 0u64) { return 0; }
+    if (i64(maximum >> 1) != 9223372036854775807) { return 0; }
+    if (u64(9223372036854775807) != (maximum >> 1)) { return 0; }
+    const array<u64, 3> values = {20u64, 21u64, 1u64};
+    u64 total = 0u64;
+    i64 index = 0;
+    while (index < len(values)) {
+        total = total + values[index];
+        index = index + 1;
+    }
+    return i64(total);
+}

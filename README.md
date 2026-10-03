@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 52 unique normal/adversarial BIOS, UEFI, ACPI and division gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` runs all 66 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -108,8 +108,22 @@ minimum i64 divided by -1 traps for overflow, and minimum i64 remainder -1 is ze
 See [integer semantics](compiler/INTEGERS.md). The compiler passes 84 new
 integer cases, 216 direct IR cases, six exhaustive-dispatch checks and an independent
 1,510-case integer oracle with 181 exact trap-site checks, including sanitizer
-runs. Independent compiler review passed; final milestone007 integration verification
-is pending. This does not establish a complete numeric library or a performance claim.
+runs. Independent compiler review and final milestone007 integration verification
+passed. This does not establish a complete numeric library or a performance claim.
+
+
+The reviewed milestone008 compiler adds distinct `u64` values, explicit checked
+`u64(i64)`/`i64(u64)` conversions, exact 64-bit bitwise operations and checked
+shifts. Unsigned unary minus and implicit type mixing are rejected. Invalid
+shift counts trap separately from left-shift result overflow. `import std.bit;`
+provides real Aurora implementations of `std::popcount`, `std::bit_width` and
+`std::has_single_bit`. See [the unsigned contract](compiler/UNSIGNED.md).
+The checkpoint passes 95 unsigned source cases, 385 direct IR cases and ten
+exhaustive-dispatch checks. Its default independent oracle passes 4,219 native
+cases with 501 exact trap-site checks and 67 rejection fixtures; alternate-seed
+runs cover overlapping cases, not additional disjoint coverage. Existing suites
+and address/undefined-behavior sanitizer gates pass. Independent compiler review
+passed; final milestone008 integration verification passed.
 
 
 The previous `fn`/`let` prototype syntax is intentionally removed. The current
@@ -175,7 +189,7 @@ firmware contract or stable native ABI. Authored C++ uses classes, not structs.
 ## Repository map
 
 - `compiler/`, `examples/`: compiler implementation and compilable programs
-- `library/`: initial native freestanding scalar core/numeric/integer modules
+- `library/`: initial native freestanding scalar core/numeric/integer/bit modules
 - `kernel/`, `scripts/`, `tests/`: trusted bootstrap and executable validation
 - `docs/`: requirements, design, independent review and historical evidence
 - `AGENTS.md`: development and verification contract
@@ -193,3 +207,7 @@ The optional [ACPI discovery profile](kernel/uefi/acpi.md) now validates firmwar
 CPU/APIC topology through a bounded read-only mapping window. Eleven OVMF gates
 cover discovery, malformed inputs, read-only enforcement and revocation. It does
 not yet configure interrupts, start secondary CPUs or activate device drivers.
+
+The [read-only PCI profile](kernel/uefi/pci.md) discovers emulated NVMe, USB and
+network controller identities, including a downstream bridge. Its explicit q35
+resource contract grants no BAR, DMA or driver-activation authority.

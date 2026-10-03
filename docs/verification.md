@@ -370,3 +370,52 @@ NV-tagged firmware source pages and two over-permissive transcript checks.
 Original counterexamples now reject. No unresolved reproduced defect remains in
 this reviewed slice. Previous receipts are unchanged; no full safety proof,
 complete numeric library, physical hardware or complete OS claim is made.
+
+## Milestone 008: unsigned core and read-only PCI inventory (2026-10-03)
+
+Final aggregate and independent review passed on compiler SHA-256
+`11ad14a187f0cd69539626dbafaff2f6340762ff1dd0430059ec192332c9f99b`.
+[Unsigned semantics](../compiler/UNSIGNED.md) define distinct u64 values, checked
+integer conversions/arithmetic, exact 64-bit bitwise operations and checked shifts.
+No implicit signed mixing or pointer conversion is added. The native std.bit
+module supplies scalar popcount, bit_width and has_single_bit. Protected BIOS
+fixtures exercise full-width values, invalid shift counts and conversion faults.
+
+[PCI inventory](../kernel/uefi/pci.md) uses validated MCFG snapshots and a separate
+revocable supervisor read-only UC window under an explicit q35/OVMF aperture
+contract. Default, added-controller and downstream-bridge fixtures discover
+5/8/7 functions respectively. Device identity is not a DMA/resource capability;
+no BAR sizing, bus-master enable, device commands or host hardware changes occur.
+MCFG alone is not generic resource reservation or Framework qualification.
+
+Final receipts:
+- [make test](evidence/milestone-008/test.log): existing 207 source/74 methods/
+  59 value/84 signed cases; 95 unsigned, 385 IR and ten exhaustive-dispatch checks;
+  72 modules/11 depth/13 reader/22 writer cases plus all hosted kernel policies.
+- Unsigned default oracle: 4,219 cases, 501 exact trap sites and 67 rejection
+  fixtures, included in aggregate and sanitizer receipts. [Stress](evidence/milestone-008/unsigned-stress.log)
+  covers 8,959 cases/1,044 traps; independent reviewer seed covers 6,665/766 on
+  release and sanitized compiler. These overlap; counts are not additive.
+- Signed oracle remains 1,510/181; scalar harness seven tests/default630 and
+  [stress1,526](evidence/milestone-008/semantics-stress.log) remain separate.
+- [Compiler/IR sanitizers](evidence/milestone-008/compiler-sanitizers.log),
+  [host I/O sanitizers](evidence/milestone-008/host-io-sanitizers.log), and
+  [kernel sanitizers](evidence/milestone-008/kernel-sanitizers.log).
+- [Emulator aggregate](evidence/milestone-008/emulator.log): all 66 distinct modes,
+  preserving 52 and adding ten PCI plus four protected unsigned modes. Repeated
+  normal confirmations are not additional distinct modes. Wrappers restore
+  normal BIOS and UEFI artifacts.
+- [Image metadata](evidence/milestone-008/image-metadata/) and
+  [source manifest](evidence/milestone-008/source.sha256).
+
+PCI hosted policy has 71,054 checks; transcript controls are ten positive/289
+negative. Unsigned image controls are nine/34, transcript four/197, plus four
+exact source fixtures. A PCI transcript-order false positive was fixed and
+retested; [review.md](review.md) retains independent evidence and limits.
+Sanitized compiler SHA `98ab2ea7c51c3d4bc43f00b396c64f12747c1f10b4fbd610a8aa38af50ff3f46`;
+sanitized IR binary SHA `06e01199939b356048680448197806ff9ea43caf16460ec86a7dd523a197e38d`.
+Address/undefined-behavior checks halt on errors; LeakSanitizer is disabled under
+tracing. No unresolved reproduced defect remains in this reviewed scope. Full
+stdlib, generic templates, physical device drivers, IOMMU, multi-user/filesystem
+services and complete OS readiness remain unimplemented. Historical receipts
+are unchanged, and none of these tests constitutes a full safety proof.

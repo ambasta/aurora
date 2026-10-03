@@ -161,7 +161,9 @@ class ModuleResolver {
     ModuleLoader::Graph graph;
     std::map<std::string, std::map<std::string, Declaration>> declarations;
     std::map<std::string, std::vector<Type>> signatures;
-    const std::set<std::string> builtins = {"own",
+    const std::set<std::string> builtins = {"i64",
+                                            "u64",
+                                            "own",
                                             "move",
                                             "borrow",
                                             "borrow_mut",

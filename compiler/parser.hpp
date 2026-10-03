@@ -86,6 +86,8 @@ class Parser {
             fail("unsupported or reserved type spelling");
         if (eat("i64"))
             return Type::I64;
+        if (eat("u64"))
+            return Type::U64;
         if (eat("bool"))
             return Type::Bool;
         auto t = take();
@@ -93,7 +95,7 @@ class Parser {
             need("<");
             const auto element = type();
             if (!scalar(element))
-                fail("array elements currently require i64 or bool");
+                fail("array elements currently require i64, u64 or bool");
             need(",");
             const auto count = take();
             unsigned long long length = 0;
@@ -176,7 +178,7 @@ class Parser {
             need(")");
             return postfix(e);
         }
-        if (t.text == "-" || t.text == "!") {
+        if (t.text == "-" || t.text == "!" || t.text == "~") {
             e->op = "unary";
             attach(e, primary());
             return e;
@@ -221,14 +223,22 @@ class Parser {
         return postfix(e);
     }
     int precedence(const std::string &s) {
-        if (s == "==" || s == "!=")
+        if (s == "|")
             return 1;
-        if (s == "<" || s == ">" || s == "<=" || s == ">=")
+        if (s == "^")
             return 2;
-        if (s == "+" || s == "-")
+        if (s == "&")
             return 3;
-        if (s == "*" || s == "/" || s == "%")
+        if (s == "==" || s == "!=")
             return 4;
+        if (s == "<" || s == ">" || s == "<=" || s == ">=")
+            return 5;
+        if (s == "<<" || s == ">>")
+            return 6;
+        if (s == "+" || s == "-")
+            return 7;
+        if (s == "*" || s == "/" || s == "%")
+            return 8;
         return 0;
     }
     ExpressionPtr expr(int min = 1) {
@@ -255,8 +265,8 @@ class Parser {
     }
     bool startsDeclaration() const {
         const auto name = peek().text;
-        if (name == "const" || name == "i64" || name == "bool" || name == "own" || name == "ref" ||
-            name == "mutref" || name == "array")
+        if (name == "const" || name == "i64" || name == "u64" || name == "bool" || name == "own" ||
+            name == "ref" || name == "mutref" || name == "array")
             return true;
         std::size_t look = position + 1;
         while (look + 1 < tokens.size() && tokens[look].text == "::")
@@ -422,7 +432,7 @@ class Parser {
                     auto fieldType = type();
                     auto fieldName = ident();
                     if (!scalar(fieldType))
-                        fail("class fields currently require i64 or bool");
+                        fail("class fields currently require i64, u64 or bool");
                     need(";");
                     definition.fields.emplace_back(fieldName, fieldType);
                     definition.fields.back().publicAccess = publicAccess;

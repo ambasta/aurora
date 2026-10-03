@@ -312,15 +312,25 @@ inline void verifyFunction(Function &function,
                     } else if constexpr (std::is_same_v<Op, Pop>) {
                         state.current = pop();
                     } else if constexpr (std::is_same_v<Op, UnaryValue>) {
-                        require(operation.operation == Unary::CheckedNegate ||
-                                    operation.operation == Unary::LogicalNot,
-                                "invalid unary operation");
-                        const auto type =
-                            operation.operation == Unary::LogicalNot ? Type::Bool : Type::I64;
-                        current(type);
-                        state.current = Value{type, {}};
+                        std::optional<Type> type;
+                        switch (operation.operation) {
+                        case Unary::CheckedNegate:
+                            type = Type::I64;
+                            break;
+                        case Unary::LogicalNot:
+                            type = Type::Bool;
+                            break;
+                        case Unary::BitNot:
+                            type = Type::U64;
+                            break;
+                        }
+                        require(type.has_value(), "invalid unary operation");
+                        current(*type);
+                        state.current = Value{*type, {}};
                     } else if constexpr (std::is_same_v<Op, BinaryValue>) {
                         bool valid = false;
+                        bool unsignedOnly = false;
+                        bool shift = false;
                         switch (operation.operation) {
                         case Binary::CheckedAdd:
                         case Binary::CheckedSubtract:
@@ -329,20 +339,58 @@ inline void verifyFunction(Function &function,
                         case Binary::CheckedRemainder:
                             valid = true;
                             break;
+                        case Binary::BitAnd:
+                        case Binary::BitOr:
+                        case Binary::BitXor:
+                            valid = true;
+                            unsignedOnly = true;
+                            break;
+                        case Binary::ShiftLeft:
+                        case Binary::ShiftRight:
+                            valid = true;
+                            unsignedOnly = true;
+                            shift = true;
+                            break;
                         }
                         require(valid, "invalid binary operation");
-                        current(Type::I64);
-                        require(pop().type == Type::I64, "noninteger left operand");
-                        state.current = Value{Type::I64, {}};
+                        require(operation.operandType == Type::U64 ||
+                                    (!unsignedOnly && operation.operandType == Type::I64),
+                                "invalid binary operand type");
+                        current(shift ? Type::I64 : operation.operandType);
+                        require(pop().type == operation.operandType,
+                                "noninteger left operand or binary type mismatch");
+                        state.current = Value{operation.operandType, {}};
+                    } else if constexpr (std::is_same_v<Op, Convert>) {
+                        require((operation.sourceType == Type::I64 &&
+                                 operation.resultType == Type::U64) ||
+                                    (operation.sourceType == Type::U64 &&
+                                     operation.resultType == Type::I64),
+                                "invalid checked conversion types");
+                        current(operation.sourceType);
+                        // A value conversion never preserves an index's bounds evidence.
+                        state.current = Value{operation.resultType, {}};
                     } else if constexpr (std::is_same_v<Op, Compare>) {
-                        const auto ordinal = static_cast<int>(operation.operation);
-                        require(ordinal >= 0 &&
-                                    ordinal <= static_cast<int>(Comparison::GreaterEqual),
-                                "invalid comparison");
+                        bool valid = false;
+                        bool ordered = false;
+                        switch (operation.operation) {
+                        case Comparison::Equal:
+                        case Comparison::NotEqual:
+                            valid = true;
+                            break;
+                        case Comparison::Less:
+                        case Comparison::Greater:
+                        case Comparison::LessEqual:
+                        case Comparison::GreaterEqual:
+                            valid = true;
+                            ordered = true;
+                            break;
+                        }
+                        require(valid, "invalid comparison");
                         require(scalar(operation.operandType), "non-scalar comparison");
-                        if (operation.operation != Comparison::Equal &&
-                            operation.operation != Comparison::NotEqual)
-                            require(operation.operandType == Type::I64, "ordered bool comparison");
+                        if (ordered)
+                            require(operation.operandType == Type::I64 ||
+                                        operation.operandType == Type::U64,
+                                    "ordered bool comparison");
                         current(operation.operandType);
                         require(pop().type == operation.operandType, "comparison type mismatch");
                         state.current = Value{Type::Bool, {}};

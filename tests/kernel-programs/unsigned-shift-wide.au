@@ -1,0 +1,7 @@
+module user_unsigned_shift_wide;
+
+auto aurora_user_main() -> i64 {
+    u64 value = 0u64;
+    i64 count = 64;
+    return i64(value >> count);
+}

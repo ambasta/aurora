@@ -6,7 +6,7 @@
 #include <optional>
 
 namespace aurora::user {
-enum class ProgramEvent { rejected, returned, bounds, overflow, division_zero };
+enum class ProgramEvent { rejected, returned, bounds, overflow, division_zero, shift_count };
 class ProgramContext final {
     friend class ProgramContract;
     std::uint64_t vector, error, instruction, code, stack_selector, stack, flags, kernel_frame;
@@ -26,12 +26,13 @@ public:
     }
 };
 class ProgramContract final {
-    std::uint64_t entry_, size_, return_, bounds_, overflow_, division_zero_;
+    std::uint64_t entry_, size_, return_, bounds_, overflow_, division_zero_, shift_count_;
 public:
     constexpr ProgramContract(std::uint64_t entry, std::uint64_t size, std::uint64_t return_pc,
-        std::uint64_t bounds, std::uint64_t overflow, std::uint64_t division_zero = 0)
+        std::uint64_t bounds, std::uint64_t overflow, std::uint64_t division_zero = 0,
+        std::uint64_t shift_count = 0)
         : entry_(entry), size_(size), return_(return_pc), bounds_(bounds), overflow_(overflow),
-          division_zero_(division_zero) {}
+          division_zero_(division_zero), shift_count_(shift_count) {}
     [[nodiscard]] constexpr auto entry() const -> std::uint64_t { return entry_; }
     [[nodiscard]] constexpr auto size() const -> std::uint64_t { return size_; }
     [[nodiscard]] constexpr auto return_pc() const -> std::uint64_t { return return_; }
@@ -39,13 +40,17 @@ public:
     [[nodiscard]] constexpr auto overflow_pc() const -> std::uint64_t { return overflow_; }
     // Zero grants no division-fault authority to older compiler images.
     [[nodiscard]] constexpr auto division_zero_pc() const -> std::uint64_t { return division_zero_; }
+    // Zero grants no shift-count authority to images without retained metadata.
+    [[nodiscard]] constexpr auto shift_count_pc() const -> std::uint64_t { return shift_count_; }
     [[nodiscard]] auto valid() const -> bool {
         if (entry_ < 0x1b0000 || entry_ >= 0x1b3000 || entry_ % 4096 != 0 || size_ < 4 || size_ > 4096) return false;
         const auto inside = [&](std::uint64_t pc) { return pc >= entry_ && pc - entry_ <= size_ - 2; };
         return inside(return_) && return_ >= entry_ + 2 && inside(bounds_) && inside(overflow_)
             && return_ != bounds_ && return_ != overflow_ && bounds_ != overflow_
             && (division_zero_ == 0 || (inside(division_zero_) && division_zero_ != return_
-                && division_zero_ != bounds_ && division_zero_ != overflow_));
+                && division_zero_ != bounds_ && division_zero_ != overflow_))
+            && (shift_count_ == 0 || (inside(shift_count_) && shift_count_ != return_
+                && shift_count_ != bounds_ && shift_count_ != overflow_ && shift_count_ != division_zero_));
     }
     [[nodiscard]] auto classify(const ProgramContext& context) const -> ProgramEvent {
         if (!valid() || !context.origin_valid() || context.error != 0) return ProgramEvent::rejected;
@@ -55,6 +60,7 @@ public:
         if (context.instruction == bounds_) return ProgramEvent::bounds;
         if (context.instruction == overflow_) return ProgramEvent::overflow;
         if (division_zero_ != 0 && context.instruction == division_zero_) return ProgramEvent::division_zero;
+        if (shift_count_ != 0 && context.instruction == shift_count_) return ProgramEvent::shift_count;
         return ProgramEvent::rejected;
     }
 };
@@ -75,6 +81,7 @@ public:
         const auto ret = contract_.return_pc() - contract_.entry();
         return ud2(contract_.return_pc()) && ud2(contract_.bounds_pc()) && ud2(contract_.overflow_pc())
             && (contract_.division_zero_pc() == 0 || ud2(contract_.division_zero_pc()))
+            && (contract_.shift_count_pc() == 0 || ud2(contract_.shift_count_pc()))
             && bytes_[ret - 2] == std::byte{0xcd} && bytes_[ret - 1] == std::byte{0x81};
     }
 };

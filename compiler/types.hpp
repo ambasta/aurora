@@ -14,7 +14,7 @@ class Token {
     int line;
     Token(std::string t, int l) : text(std::move(t)), line(l) {}
 };
-enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array };
+enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64 };
 class Type {
   public:
     TypeKind kind = TypeKind::I64;
@@ -29,21 +29,18 @@ class Type {
         return kind == other.kind && className == other.className &&
                elementKind == other.elementKind && length == other.length;
     }
-    bool isClass() const {
-        return kind == TypeKind::Class;
-    }
-    bool isArray() const {
-        return kind == TypeKind::Array;
-    }
+    bool isClass() const { return kind == TypeKind::Class; }
+    bool isArray() const { return kind == TypeKind::Array; }
     static Type array(TypeKind element, int count) {
         Type type(TypeKind::Array);
         type.elementKind = element;
         type.length = count;
         return type;
     }
-    static const Type I64, Bool, Own, Ref, MutRef;
+    static const Type I64, U64, Bool, Own, Ref, MutRef;
 };
 inline const Type Type::I64{TypeKind::I64};
+inline const Type Type::U64{TypeKind::U64};
 inline const Type Type::Bool{TypeKind::Bool};
 inline const Type Type::Own{TypeKind::Own};
 inline const Type Type::Ref{TypeKind::Ref};
@@ -52,6 +49,8 @@ inline std::string typeName(const Type &type) {
     switch (type.kind) {
     case TypeKind::I64:
         return "i64";
+    case TypeKind::U64:
+        return "u64";
     case TypeKind::Bool:
         return "bool";
     case TypeKind::Own:
@@ -68,8 +67,6 @@ inline std::string typeName(const Type &type) {
     }
     return "?";
 }
-inline bool scalar(Type t) {
-    return t == Type::I64 || t == Type::Bool;
-}
+inline bool scalar(Type t) { return t == Type::I64 || t == Type::U64 || t == Type::Bool; }
 
 } // namespace aurora
