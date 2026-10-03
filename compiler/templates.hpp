@@ -8,7 +8,7 @@ namespace aurora {
 // Source templates never enter semantic analysis or IR. Each concrete class is
 // a deep copy: substituting one specialization cannot mutate another one.
 class ClassTemplateExpansion {
-    std::map<std::string, TypeKind> substitutions;
+    std::map<std::string, Type> substitutions;
     std::map<std::string, std::int64_t> capacities;
 
     void cannotShadowCapacity(const std::string &name) const {
@@ -23,7 +23,7 @@ class ClassTemplateExpansion {
             const auto found = substitutions.find(value.className);
             if (found == substitutions.end())
                 throw Error("unknown class template parameter: " + value.className);
-            return Type(found->second);
+            return found->second;
         }
         if (value.isArray()) {
             if (!value.elementParameter.empty()) {
@@ -31,7 +31,7 @@ class ClassTemplateExpansion {
                 if (found == substitutions.end())
                     throw Error("unknown scalar array element parameter: " +
                                 value.elementParameter);
-                value.elementKind = found->second;
+                value.elementKind = found->second.kind;
                 value.elementParameter.clear();
             }
             if (!value.lengthParameter.empty()) {
@@ -92,14 +92,29 @@ class ClassTemplateExpansion {
     }
 
   public:
-    static std::string argumentSuffix(const std::vector<TemplateArgument> &arguments) {
+    static Type argumentType(const TemplateArgument &argument) {
+        Type result(argument.type);
+        if (argument.type == TypeKind::Class) {
+            result.className = argument.className;
+            result.displayName = argument.displayName;
+            result.resolvedClass = true;
+        }
+        return result;
+    }
+    static std::string argumentSuffix(const std::vector<TemplateArgument> &arguments,
+                                      bool display = false) {
         std::string result = "<";
         for (std::size_t index = 0; index < arguments.size(); ++index) {
             if (index)
                 result += ",";
             const auto &argument = arguments[index];
-            result += argument.kind == TemplateArgumentKind::Type ? typeName(Type(argument.type))
-                                                                  : std::to_string(argument.value);
+            if (argument.kind == TemplateArgumentKind::Value)
+                result += std::to_string(argument.value);
+            else if (argument.type == TypeKind::Class)
+                result += display && !argument.displayName.empty() ? argument.displayName
+                                                                   : argument.className;
+            else
+                result += typeName(Type(argument.type));
         }
         return result + ">";
     }
@@ -107,9 +122,13 @@ class ClassTemplateExpansion {
         std::string result = "_t" + std::to_string(arguments.size());
         for (const auto &argument : arguments) {
             if (argument.kind == TemplateArgumentKind::Type) {
-                if (!scalar(Type(argument.type)))
-                    throw Error("class template type arguments require i64, u64 or bool");
-                result += "_" + typeName(Type(argument.type));
+                if (argument.type == TypeKind::Class && !argument.className.empty())
+                    result += "_c" + std::to_string(argument.className.size()) + argument.className;
+                else if (scalar(Type(argument.type)))
+                    result += "_" + typeName(Type(argument.type));
+                else
+                    throw Error(
+                        "class template type arguments require scalar or named class values");
             } else {
                 if (argument.value < 1 || argument.value > 64)
                     throw Error("class template capacity must be between 1 and 64");
@@ -120,7 +139,8 @@ class ClassTemplateExpansion {
     }
     static void validate(const ClassDefinition &definition) {
         if (definition.templateParameters.empty() || definition.templateParameters.size() > 2)
-            throw Error("class templates require one or two Scalar parameters, or Scalar and i64");
+            throw Error(
+                "class templates require one or two Scalar or Value parameters, or Scalar and i64");
         std::set<std::string> parameters;
         std::vector<TemplateArgument> arguments;
         for (std::size_t index = 0; index < definition.templateParameters.size(); ++index) {
@@ -150,7 +170,14 @@ class ClassTemplateExpansion {
             if (parameter.kind == TemplateParameterKind::Scalar) {
                 if (argument.kind != TemplateArgumentKind::Type || !scalar(Type(argument.type)))
                     throw Error("class template Scalar argument requires i64, u64 or bool");
-                expansion.substitutions.emplace(parameter.name, argument.type);
+                expansion.substitutions.emplace(parameter.name, argumentType(argument));
+            } else if (parameter.kind == TemplateParameterKind::Value) {
+                if (argument.kind != TemplateArgumentKind::Type ||
+                    (!scalar(Type(argument.type)) &&
+                     (argument.type != TypeKind::Class || argument.className.empty())))
+                    throw Error(
+                        "class template Value argument requires scalar or named class values");
+                expansion.substitutions.emplace(parameter.name, argumentType(argument));
             } else {
                 if (argument.kind != TemplateArgumentKind::Value || argument.value < 1 ||
                     argument.value > 64)

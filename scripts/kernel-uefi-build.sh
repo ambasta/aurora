@@ -8,6 +8,9 @@ flags=(-std=c++23 -O2 -Wall -Wextra -Werror -ffreestanding -fno-exceptions -fno-
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ budget|budget-fault|budget-noapic|budget-smp|budget-discovery|budget-cache|budget-alias|budget-pending|budget-forged|budget-root|budget-mmio|budget-softint|budget-fpu|budget-context|budget-epoch)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET)
+   if [[ "$UEFI_MODE" != budget ]]; then flag="${UEFI_MODE#budget-}"; flag="${flag//-/_}"; extra+=("-DAURORA_BUDGET_${flag^^}"); fi ;;
  ipc|ipc-fault|ipc-cancel|ipc-owner|ipc-stale|ipc-version|ipc-phase|ipc-transaction|ipc-site|ipc-unknown|ipc-root|ipc-kernel-trap|ipc-duplicate|ipc-late|ipc-exhausted)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC)
    if [[ "$UEFI_MODE" != ipc ]]; then flag="${UEFI_MODE#ipc-}"; flag="${flag//-/_}"; extra+=("-DAURORA_IPC_${flag^^}"); fi ;;
@@ -30,10 +33,15 @@ case "${UEFI_MODE:-normal}" in
  *) echo 'Unknown UEFI build mode' >&2; exit 2 ;;
 esac
 runtime_objects=()
-if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* ]]; then
+if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* ]]; then
  mode="${UEFI_MODE#runtime-}"
  case "$mode" in code|stack|kernel|window|write|nx|return|unknown|syscall|sysenter) ;; *) mode=normal ;; esac
- if [[ "$UEFI_MODE" == ipc* ]]; then
+ if [[ "$UEFI_MODE" == budget* ]]; then
+   mode="${UEFI_MODE#budget-}"
+   case "$mode" in mmio|softint|fpu|context) ;; *) mode=normal ;; esac
+   python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode" --service-budget
+   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+ elif [[ "$UEFI_MODE" == ipc* ]]; then
    mode="${UEFI_MODE#ipc-}"
    case "$mode" in owner|version|phase|transaction|site|unknown) ;; *) mode=normal ;; esac
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode"
@@ -51,12 +59,12 @@ as --64 kernel/uefi/payload-entry.S -o build/uefi/payload-entry.o
 g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/payload.cpp -o build/uefi/payload.o
 g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/acpi.cpp -o build/uefi/acpi.o
 g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/pci.cpp -o build/uefi/pci.o
-g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/runtime.cpp -o build/uefi/runtime.o
+g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -Ibuild/uefi -c kernel/uefi/runtime.cpp -o build/uefi/runtime.o
 ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 build/uefi/payload-entry.o build/uefi/payload.o build/uefi/acpi.o build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" build/uefi/language.o -o build/uefi/payload.elf
 objcopy -O binary build/uefi/payload.elf build/uefi/payload.bin
 python3 - <<'PY'
 from pathlib import Path
-import subprocess
+import subprocess,json
 symbols={}
 for line in subprocess.check_output(['nm','-a','build/uefi/payload.elf'],text=True).splitlines():
  words=line.split()
@@ -65,6 +73,12 @@ if symbols['uefi_payload_entry']!=0: raise SystemExit('Entry must start payload'
 if subprocess.check_output(['nm','-u','build/uefi/payload.elf'],text=True).strip(): raise SystemExit('Unresolved payload reference')
 p=Path('build/uefi/payload.bin')
 Path('build/uefi/uefi-payload.hpp').write_text('namespace aurora::uefi {\n'+f'inline constexpr unsigned long long payload_size={p.stat().st_size};\n'+''.join(f'inline constexpr unsigned long long {name}={symbols["__"+name]};\n' for name in ['payload_text_end','payload_read_end','payload_memory_end'])+'}\n')
+if 'uefi_service_drain_begin' in symbols:
+ drain_begin=symbols['uefi_service_drain_begin'];drain_end=symbols['uefi_service_drain_end']
+ if not 0<=drain_begin<drain_end<symbols['__payload_text_end'] or p.read_bytes()[drain_begin:drain_end]!=bytes.fromhex('fb9090fa'):raise SystemExit('Invalid exact drain interval')
+ forged=symbols.get('uefi_service_forged_pc',0)
+ if forged and (not 2<=forged<symbols['__payload_text_end'] or p.read_bytes()[forged-2:forged]!=bytes.fromhex('cd40')):raise SystemExit('Invalid forged interrupt probe')
+ Path('build/uefi/service-timer-metadata.json').write_text(json.dumps(dict(drain_begin=drain_begin,drain_end=drain_end,text_end=symbols['__payload_text_end'],forged_pc=symbols.get('uefi_service_forged_pc',0))))
 Path('build/uefi/embed.S').write_text('.section .rodata.payload,"a"\n.global uefi_embedded_payload\nuefi_embedded_payload:\n.incbin "build/uefi/payload.bin"\n.global uefi_embedded_payload_end\nuefi_embedded_payload_end:\n.section .note.GNU-stack,"",@progbits\n')
 PY
 as --64 build/uefi/embed.S -o build/uefi/embed.o

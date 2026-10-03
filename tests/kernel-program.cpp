@@ -144,5 +144,9 @@ auto main() -> int {
         && run.event() == ProgramEvent::shift_count && run.value() == 0, "typed shift cleared scalar result");
     check(!run.accept(context(shift, 6), 99), "replayed shift fault");
     check(run.begin(contract) && run.accept(context(ret), 42) && run.value() == 42, "clean run after shift fault");
+    check(!run.cancel() && run.event()==ProgramEvent::returned && run.value()==42,"terminal result cannot be cancelled");
+    check(run.begin(contract) && run.cancel() && !run.running() && run.event()==ProgramEvent::rejected && run.value()==0,"trusted abort clears active authority without inventing a fault");
+    check(!run.cancel() && !run.accept(context(ret),42) && !run.accept(context(bounds,6),0),"aborted run cannot resume through stale events");
+    check(run.begin(contract) && run.accept(context(ret),42) && run.value()==42,"fresh authority after trusted abort");
     std::cout << "PASS: scalar return authority, bounds/overflow/division/shift metadata, origin/stack/flags rejection, replay/lifetime/reset policy\n";
 }

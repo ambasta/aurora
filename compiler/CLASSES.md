@@ -99,3 +99,13 @@ The verifier checks layout, lifetime, initialization, receiver type/permissions,
 call shape and constructor completion. Lexical private visibility and source name
 resolution remain responsibilities of the trusted semantic frontend. Passing
 these tests is not a proof of general Rust-like lifetimes or full language safety.
+
+## Bounded composed values in development
+
+[COMPOSED-VALUES.md](COMPOSED-VALUES.md) extends complete constructors with readonly
+by-value class parameters and exact nominal class-field copies. Composed classes
+are acyclic, at most four class levels and 64 scalar leaves. Public class fields
+(and private fields inside their declaring class) project into fresh independent
+locals. Class-field reassignment and chained mutation remain rejected. Empty
+nested fields require logical initialization even without payload leaves. Ordinary
+methods retain scalar signatures. This extension is awaiting final validation.

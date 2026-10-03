@@ -21,6 +21,92 @@ aurora_program_entry:
     push %r9
     sub $8,%rsp
     mov %r9,%rdx
+.ifdef IPC_MMIO
+    movabs $0xffff900000000000,%rax
+.global aurora_probe_pc
+aurora_probe_pc:
+    mov (%rax),%eax
+.endif
+.ifdef IPC_SOFTINT
+.global aurora_probe_pc
+aurora_probe_pc:
+    int $64
+.endif
+.ifdef IPC_FPU
+.global aurora_probe_pc
+aurora_probe_pc:
+    fnop
+.endif
+.ifdef IPC_CONTEXT
+    cmp $1,%rdi
+    jne skip_context_probe
+    push %rdi
+    push %rsi
+    push %rdx
+    pushq $500000
+    mov $17, %rax
+    mov $34, %rbx
+    mov $51, %rcx
+    mov $68, %rdx
+    mov $85, %rbp
+    mov $102, %rsi
+    mov $119, %rdi
+    mov $136, %r8
+    mov $153, %r9
+    mov $170, %r10
+    mov $187, %r11
+    mov $204, %r12
+    mov $221, %r13
+    mov $238, %r14
+    mov $255, %r15
+    std
+.global aurora_budget_context_begin
+aurora_budget_context_begin:
+    decq (%rsp)
+    jnz aurora_budget_context_begin
+.global aurora_budget_context_end
+aurora_budget_context_end:
+    cmp $17, %rax
+    jne bad_entry
+    cmp $34, %rbx
+    jne bad_entry
+    cmp $51, %rcx
+    jne bad_entry
+    cmp $68, %rdx
+    jne bad_entry
+    cmp $85, %rbp
+    jne bad_entry
+    cmp $102, %rsi
+    jne bad_entry
+    cmp $119, %rdi
+    jne bad_entry
+    cmp $136, %r8
+    jne bad_entry
+    cmp $153, %r9
+    jne bad_entry
+    cmp $170, %r10
+    jne bad_entry
+    cmp $187, %r11
+    jne bad_entry
+    cmp $204, %r12
+    jne bad_entry
+    cmp $221, %r13
+    jne bad_entry
+    cmp $238, %r14
+    jne bad_entry
+    cmp $255, %r15
+    jne bad_entry
+    pushfq
+    pop %rax
+    test $0x400, %eax
+    jz bad_entry
+    cld
+    add $8, %rsp
+    pop %rdx
+    pop %rsi
+    pop %rdi
+skip_context_probe:
+.endif
     call aurora_user_main
     add $8,%rsp
     pop %r9

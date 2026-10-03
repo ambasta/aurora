@@ -11,7 +11,7 @@ if [[ "$mode" != normal ]]; then trap './scripts/kernel-uefi-build.sh >/dev/null
 cpus=1
 cpu=qemu64
 if [[ "$mode" == runtime-sysenter ]]; then cpu=qemu64,vendor=GenuineIntel,+sep; fi
-if [[ "$mode" == acpi-two ]]; then cpus=2; fi
+if [[ "$mode" == acpi-two || "$mode" == budget-smp ]]; then cpus=2; fi
 args=()
 if [[ -n "${QEMU_DATA:-}" ]]; then args+=(-L "$QEMU_DATA"); fi
 case "$mode" in
@@ -27,7 +27,15 @@ timeout 30 "$qemu" "${args[@]}" -machine q35 -accel tcg -cpu "$cpu" -smp "$cpus"
 status=$?
 set -e
 cat "$log"
-if [[ "$mode" == ipc* ]]; then
+if [[ "$mode" == budget* ]]; then
+    python3 - "$mode" <<'PYMETA'
+from pathlib import Path
+import json,sys
+root=Path('build/uefi')
+(root/(sys.argv[1]+'.metadata.json')).write_text(json.dumps(dict(images=json.loads((root/'user-images.json').read_text()),kernel=json.loads((root/'service-timer-metadata.json').read_text())),indent=2)+'\n')
+PYMETA
+    python3 tests/kernel-uefi-budget-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
+elif [[ "$mode" == ipc* ]]; then
     cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
     python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
 elif [[ "$mode" == runtime* ]]; then

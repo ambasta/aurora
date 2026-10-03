@@ -1,7 +1,17 @@
-# Explicit scalar-constrained class templates
+# Explicit constrained class templates
 
-The current candidate adds reusable class-value definitions with one or two
-explicit type parameters, each constrained by the builtin `Scalar` domain.
+The Scalar contract below retains its original domain. Milestone011 development
+adds contextual `Value`, accepting those scalars or a directly visible named
+concrete class, and migrates std::pair to Value. Named class arguments are resolved
+in the requesting module and retain defining-module nominal identity through
+substitution. Nested template-id arguments remain rejected. Class substitutions
+must satisfy the complete construction, depth, leaf and copy rules in
+[COMPOSED-VALUES.md](COMPOSED-VALUES.md); ordinary method signatures still require
+scalars. This development status is not a final verification receipt.
+
+
+The original Scalar form defines reusable classes with one or two explicit
+type parameters, each constrained by the builtin `Scalar` domain.
 Scalar means exactly i64, u64 or bool. It is not a user-defined concept, wildcard,
 unchecked top type or permission to treat a scalar as a capability.
 
@@ -130,11 +140,15 @@ compiler-wide resource budgets remain separate hardening work.
 ## Library usefulness and evidence limits
 
 `std::pair<T,U>` provides initialized public `first`/`second` values through its
-complete constructor. Const pairs are immutable; mutable pairs permit field writes
-of the exact field type. Copies and ordinary function arguments/results are
+complete constructor. Const pairs are immutable; mutable pairs permit scalar field writes
+of the exact field type. Class-valued fields require fresh-local projection and
+cannot be reassigned in this subset. Copies and ordinary function arguments/results are
 independent values. All nine scalar combinations are meaningful concrete APIs.
 There is no comparison overload, deduction guide, make_pair helper, tuple protocol,
-reference pair, nested pair or general standard-library compatibility claim.
+reference pair, nested template-id argument or general standard-library compatibility claim.
+The developing Value form permits named concrete class fields, copied through
+complete construction and fresh-local projection. Whole class-field reassignment
+is rejected even when the containing pair is mutable.
 
 Acceptance requires native execution across scalar tuples and ordinary class
 boundaries, wrong-type/privacy/initialization rejection, defining-module helper

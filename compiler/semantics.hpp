@@ -20,6 +20,9 @@ class SemanticAnalyzer {
     std::map<int, std::set<std::string>> reflectionAccess;
     std::map<std::string, std::size_t> classNames;
     std::map<int, Type> arrayTypes;
+    std::map<std::string, std::vector<Type>> classLeaves;
+    std::map<std::string, int> layoutStates;
+    std::map<std::string, int> classDepths;
     static constexpr int maxFrameSlots = 8192;
     std::map<std::string, std::size_t> functions;
     std::vector<Local> locals;
@@ -52,10 +55,63 @@ class SemanticAnalyzer {
         return static_cast<int>(type.kind) + 1;
     }
     std::int64_t classWords(const ClassDefinition &definition) const {
-        std::int64_t words = 0;
-        for (const auto &member : definition.fields)
-            words += member.type.isArray() ? member.type.length : 1;
-        return words;
+        return static_cast<std::int64_t>(classLeaves.at(definition.name).size());
+    }
+    void buildClassLayout(const std::string &name, int nesting = 1) {
+        const auto found = classNames.find(name);
+        if (found == classNames.end())
+            throw Error("unknown nested class type '" + name + "'");
+        auto &definition = classes[found->second];
+        if (layoutStates[name] == 1)
+            fail(definition.token, "recursive class containment is unsupported");
+        if (nesting > 4)
+            fail(definition.token, "class containment depth exceeds four");
+        if (layoutStates[name] == 2)
+            return;
+        layoutStates[name] = 1;
+        auto &leaves = classLeaves[name];
+        std::set<std::string> names;
+        bool needsConstructor = false, composed = false;
+        int depth = 1, logicalIndex = 0;
+        for (auto &member : definition.fields) {
+            if (!names.insert(member.token.text).second)
+                fail(member.token, "duplicate class field");
+            member.index = logicalIndex++;
+            member.offset = static_cast<int>(leaves.size()) * 8;
+            if (member.type.isClass()) {
+                composed = needsConstructor = true;
+                buildClassLayout(member.type.className, nesting + 1);
+                const auto &child = classLeaves.at(member.type.className);
+                leaves.insert(leaves.end(), child.begin(), child.end());
+                depth = std::max(depth, 1 + classDepths.at(member.type.className));
+            } else if (member.type.isArray()) {
+                needsConstructor = true;
+                if (member.publicAccess || member.type.length < 1 || member.type.length > 64 ||
+                    !scalar(Type(member.type.elementKind)) ||
+                    !member.type.elementParameter.empty() || !member.type.lengthParameter.empty())
+                    fail(member.token, "class array fields require private concrete scalar "
+                                       "storage of length 1 to 64");
+                typeId(member.type, member.token);
+                leaves.insert(leaves.end(), member.type.length, Type(member.type.elementKind));
+            } else {
+                if (!scalar(member.type))
+                    fail(member.token,
+                         "class field must be concrete scalar, class or private array");
+                leaves.push_back(member.type);
+            }
+            if (leaves.size() > maxFrameSlots)
+                fail(definition.token, "class layout exceeds 65536 bytes");
+            if (composed && leaves.size() > 64)
+                fail(definition.token, "composed classes are limited to 64 scalar leaves");
+        }
+        if (composed && (depth > 4 || leaves.size() > 64))
+            fail(definition.token, "composed class exceeds depth four or 64 scalar leaves");
+        if (needsConstructor &&
+            std::none_of(definition.methods.begin(), definition.methods.end(),
+                         [](const Function &method) { return method.constructor; }))
+            fail(definition.token, "array or class fields require a declared complete constructor");
+        classDepths[name] = depth;
+        layoutStates[name] = 2;
     }
     std::int64_t typeSize(const Type &type, const Token &token) {
         if (type.isArray()) {
@@ -88,16 +144,8 @@ class SemanticAnalyzer {
     int fieldOffset(int local, const Field &value) {
         return locals.at(local).offset - value.offset;
     }
-    void copyClass(int original, int destination, const ClassDefinition &definition) {
-        for (const auto &member : definition.fields) {
-            const int length = member.type.isArray() ? member.type.length : 1;
-            const Type payload =
-                member.type.isArray() ? Type(member.type.elementKind) : member.type;
-            for (int index = 0; index < length; ++index) {
-                emit(ir::Load{fieldOffset(original, member) - index * 8, payload});
-                emit(ir::Store{fieldOffset(destination, member) - index * 8, payload});
-            }
-        }
+    void copyClass(int original, int destination, const ClassDefinition &) {
+        emit(ir::CopyObject{offset(original), offset(destination)});
     }
     Type payloadType(const Type &type) { return type == Type::Own ? Type::I64 : type; }
     std::int64_t reflectedValue(ExpressionPtr expression) {
@@ -173,13 +221,9 @@ class SemanticAnalyzer {
             lowered.objectSlots[l.offset] = ir::ObjectSlot{t.className, mut};
             if (begin)
                 emit(ir::BeginObject{l.offset});
-            for (const auto &member : classDefinition(t, tok).fields) {
-                const int length = member.type.isArray() ? member.type.length : 1;
-                const Type payload =
-                    member.type.isArray() ? Type(member.type.elementKind) : member.type;
-                for (int index = 0; index < length; ++index)
-                    lowered.slots[l.offset - member.offset - index * 8] = payload;
-            }
+            const auto &leaves = classLeaves.at(t.className);
+            for (std::size_t index = 0; index < leaves.size(); ++index)
+                lowered.slots[l.offset - static_cast<int>(index) * 8] = leaves[index];
         } else if (t.isArray()) {
             for (int index = 0; index < t.length; ++index)
                 lowered.slots[l.offset - index * 8] = Type(t.elementKind);
@@ -350,8 +394,9 @@ class SemanticAnalyzer {
                 fail(e->token, "field access currently requires a class local");
             int local = source(e->args[0]);
             const auto &member = field(locals[local].type, e->token);
-            if (member.type.isArray())
-                fail(e->token, "array fields cannot escape as values");
+            if (member.type.isArray() || member.type.isClass())
+                fail(e->token,
+                     "aggregate fields require a fresh typed class projection or checked indexing");
             emit(ir::Load{fieldOffset(local, member), member.type});
             return member.type;
         }
@@ -362,8 +407,9 @@ class SemanticAnalyzer {
         if (e->op == "name") {
             if (lookupLocal(e->token) < 0)
                 if (const auto *member = receiverField(e->token)) {
-                    if (member->type.isArray())
-                        fail(e->token, "array fields require checked indexing or len");
+                    if (member->type.isArray() || member->type.isClass())
+                        fail(e->token, "aggregate fields require a fresh typed class projection or "
+                                       "checked indexing");
                     emit(ir::ReceiverLoad{member->index, member->type});
                     return member->type;
                 }
@@ -570,6 +616,27 @@ class SemanticAnalyzer {
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);
         const auto expression = statement->expr;
+        if (expression->op == "member" ||
+            (expression->op == "name" && lookupLocal(expression->token) < 0)) {
+            int original = 0;
+            const Field *member = nullptr;
+            if (expression->op == "member") {
+                if (expression->args[0]->op != "name")
+                    fail(expression->token, "class projection requires a named local receiver");
+                const int local = source(expression->args[0]);
+                original = offset(local);
+                member = &field(locals[local].type, expression->token);
+            } else {
+                member = receiverField(expression->token);
+                if (!member)
+                    fail(expression->token, "class projection requires a class field");
+            }
+            match(member->type, statement->type, expression->token);
+            const int destination =
+                add(statement->name, statement->type, statement->mutableValue, statement->token);
+            emit(ir::ObjectFieldCopy{original, member->index, offset(destination)});
+            return;
+        }
         if (expression->op == "name") {
             const int original = source(expression);
             match(locals[original].type, statement->type, expression->token);
@@ -589,14 +656,30 @@ class SemanticAnalyzer {
             match(expression->reflectedType, statement->type, expression->token);
             const auto &constructor = method(statement->type, expression->token, true);
             arity(expression, constructor.params.size());
+            std::vector<int> arguments(constructor.params.size(), 0), snapshots;
+            bool aggregate = false;
             for (std::size_t index = 0; index < constructor.params.size(); ++index) {
-                match(this->expression(expression->args[index]), constructor.params[index].type,
-                      expression->token);
-                push();
+                const auto &type = constructor.params[index].type;
+                const auto &argument = expression->args[index];
+                if (type.isClass()) {
+                    aggregate = true;
+                    const int original = source(argument);
+                    match(locals[original].type, type, argument->token);
+                    const int snapshot = add("", type, false, argument->token, false);
+                    copyClass(original, snapshot, classDefinition(type, argument->token));
+                    arguments[index] = offset(snapshot);
+                    snapshots.push_back(offset(snapshot));
+                } else {
+                    match(this->expression(argument), type, expression->token);
+                    push();
+                }
             }
             const int destination =
                 add(statement->name, statement->type, statement->mutableValue, statement->token);
-            emit(ir::MethodCall{constructor.name, offset(destination)});
+            emit(ir::MethodCall{constructor.name, offset(destination),
+                                aggregate ? arguments : std::vector<int>{}});
+            for (const int snapshot : snapshots)
+                emit(ir::EndObject{snapshot});
             return;
         }
         if (std::any_of(definition.methods.begin(), definition.methods.end(),
@@ -786,8 +869,8 @@ class SemanticAnalyzer {
             if (!locals[local].mut)
                 fail(s->token, "field assignment requires a mutable class local");
             const auto &member = field(locals[local].type, Token(s->fieldName, s->token.line));
-            if (member.type.isArray())
-                fail(s->token, "whole array field assignment is unsupported");
+            if (member.type.isArray() || member.type.isClass())
+                fail(s->token, "whole aggregate field assignment is unsupported");
             match(expression(s->expr), member.type, s->token);
             emit(ir::Store{fieldOffset(local, member), member.type});
             return false;
@@ -798,8 +881,8 @@ class SemanticAnalyzer {
                 if (const auto *member = receiverField(target)) {
                     if (currentFunction->receiverConst)
                         fail(target, "const method cannot write receiver fields");
-                    if (member->type.isArray())
-                        fail(target, "whole array field assignment is unsupported");
+                    if (member->type.isArray() || member->type.isClass())
+                        fail(target, "whole aggregate field assignment is unsupported");
                     match(expression(s->expr), member->type, target);
                     emit(ir::ReceiverStore{member->index, member->type});
                     return false;
@@ -868,42 +951,15 @@ class SemanticAnalyzer {
             throw Error("too many class types for bootstrap type IDs");
         for (std::size_t index = 0; index < classes.size(); ++index) {
             auto &definition = classes[index];
-            if (classWords(definition) > maxFrameSlots)
-                fail(definition.token, "class layout exceeds 65536 bytes");
             const auto &name = definition.name;
             if (builtins.contains(name) || name == "i64" || name == "u64" || name == "bool" ||
                 name == "ref" || name == "mutref" || name == "array" || classNames.contains(name))
                 fail(definition.token, "duplicate or reserved class name");
             classNames[name] = index;
             definition.id = 100 + static_cast<int>(index);
-            std::set<std::string> fields;
-            int offset = 0, logicalIndex = 0;
-            bool hasArray = false;
-            for (auto &member : definition.fields) {
-                if (!fields.insert(member.token.text).second)
-                    fail(member.token, "duplicate class field");
-                member.offset = offset;
-                member.index = logicalIndex++;
-                if (member.type.isArray()) {
-                    hasArray = true;
-                    if (member.publicAccess || member.type.length < 1 || member.type.length > 64 ||
-                        !scalar(Type(member.type.elementKind)) ||
-                        !member.type.elementParameter.empty() ||
-                        !member.type.lengthParameter.empty())
-                        fail(member.token, "class array fields require private concrete scalar "
-                                           "storage of length 1 to 64");
-                    typeId(member.type, member.token);
-                    offset += member.type.length * 8;
-                } else {
-                    if (!scalar(member.type))
-                        fail(member.token, "class field must be concrete scalar or private array");
-                    offset += 8;
-                }
-            }
-            if (hasArray && std::none_of(definition.methods.begin(), definition.methods.end(),
-                                         [](const Function &method) { return method.constructor; }))
-                fail(definition.token, "array fields require a declared complete constructor");
         }
+        for (const auto &definition : classes)
+            buildClassLayout(definition.name);
         for (std::size_t i = 0; i < sourceFunctions.size(); ++i) {
             if (builtins.count(sourceFunctions[i].name) ||
                 functions.count(sourceFunctions[i].name) ||
@@ -911,6 +967,14 @@ class SemanticAnalyzer {
                 fail(sourceFunctions[i].token, "duplicate or reserved function name");
             if (sourceFunctions[i].params.size() > 6)
                 fail(sourceFunctions[i].token, "at most six parameters supported");
+            if (!sourceFunctions[i].receiverClass.empty()) {
+                if (!scalar(sourceFunctions[i].result))
+                    fail(sourceFunctions[i].token, "methods require scalar results");
+                if (!sourceFunctions[i].constructor)
+                    for (const auto &parameter : sourceFunctions[i].params)
+                        if (!scalar(parameter.type))
+                            fail(sourceFunctions[i].token, "methods require scalar parameters");
+            }
             auto checkBoundaryType = [&](const Type &type) {
                 if (type.isClass() &&
                     classWords(classDefinition(type, sourceFunctions[i].token)) > 64)
@@ -924,16 +988,18 @@ class SemanticAnalyzer {
         }
         ir::Module module;
         for (const auto &definition : classes) {
-            auto &layout = module.classLayouts[definition.name];
+            module.classLayouts[definition.name] = classLeaves.at(definition.name);
             auto &shape = module.classFields[definition.name];
             for (const auto &member : definition.fields) {
-                const int length = member.type.isArray() ? member.type.length : 1;
+                const int length =
+                    member.type.isArray() ? member.type.length
+                    : member.type.isClass()
+                        ? static_cast<int>(classWords(classDefinition(member.type, member.token)))
+                        : 1;
                 const Type payload =
                     member.type.isArray() ? Type(member.type.elementKind) : member.type;
-                shape.push_back(ir::ClassField{payload, static_cast<int>(layout.size()), length,
-                                               member.type.isArray()});
-                for (int index = 0; index < length; ++index)
-                    layout.push_back(payload);
+                shape.push_back(
+                    ir::ClassField{payload, member.offset / 8, length, member.type.isArray()});
             }
         }
         for (auto &function : sourceFunctions) {
@@ -979,7 +1045,14 @@ class SemanticAnalyzer {
                     fail(function.token, "constructor must initialize every field exactly once");
                 for (const auto &member : definition.fields) {
                     const auto &initializer = initializers.at(member.token.text);
-                    if (member.type.isArray()) {
+                    if (member.type.isClass()) {
+                        if (initializer->op != "name")
+                            fail(initializer->token,
+                                 "class field initializer requires a complete named class value");
+                        const int original = source(initializer);
+                        match(locals[original].type, member.type, initializer->token);
+                        emit(ir::InitializeObjectField{0, member.index, offset(original)});
+                    } else if (member.type.isArray()) {
                         if (initializer->op != "array_zero")
                             fail(member.token,
                                  "array fields require explicit empty-brace zero initialization");

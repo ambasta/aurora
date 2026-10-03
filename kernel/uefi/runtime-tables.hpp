@@ -26,7 +26,8 @@ private:
         return (address&~address_mask)==0;
     }
     [[nodiscard]] static constexpr auto leaf_flags(std::uint64_t flags) -> bool {
-        return (flags&present)!=0 && (flags&~(present|writable|user|nx))==0;
+        return ((flags&present)!=0 && (flags&~(present|writable|user|nx))==0)
+            || flags==(present|writable|nx|0x18); // Explicit supervisor UC MMIO; adapter supplies authority.
     }
     [[nodiscard]] auto table_index(std::uint64_t physical,std::size_t& index) const -> bool {
         if (!physical_page(physical) || physical<base_) return false;

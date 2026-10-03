@@ -1,7 +1,7 @@
 export module std.utility;
 
 export namespace std {
-    template <Scalar T, Scalar U>
+    template <Value T, Value U>
     class pair {
     public:
         T first;

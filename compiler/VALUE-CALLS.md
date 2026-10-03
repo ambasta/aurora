@@ -1,9 +1,12 @@
-# Scalar-field values across function boundaries
+# Inline values across function boundaries
 
 This candidate extends ordinary functions with by-value class parameters/results.
-It does not add aggregate references, ownership transfer, nested/resource fields,
-class parameters/results on methods or constructors, general templates, or a stable
-external ABI. The existing scalar entrypoint and method contracts remain unchanged.
+The original scalar-field boundary now also transports private scalar-array fields
+and bounded composed values, copying all leaves independently. The developing
+[composition contract](COMPOSED-VALUES.md) extends constructors with readonly class
+parameters and nominal nested-field initialization. Aggregate references, resource
+ownership transfer, class method signatures and a stable external ABI remain
+unsupported. The scalar entrypoint contract remains unchanged.
 
 ```cpp
 module example;

@@ -107,6 +107,25 @@ class EndObject {
   public:
     int offset;
 };
+// Whole values and logical class fields copy by nominal identity. Scalar leaf
+// stores cannot mint the evidence that an embedded class value is complete.
+class CopyObject {
+  public:
+    int sourceOffset;
+    int resultOffset;
+};
+class ObjectFieldCopy {
+  public:
+    int sourceOffset; // zero projects the bound, fully initialized receiver
+    int fieldIndex;
+    int resultOffset;
+};
+class InitializeObjectField {
+  public:
+    int objectOffset; // currently zero only: bound constructor receiver
+    int fieldIndex;
+    int sourceOffset;
+};
 class ReceiverLoad {
   public:
     int fieldIndex;
@@ -139,7 +158,8 @@ class ReceiverIndexStore {
 class MethodCall {
   public:
     std::string callee;
-    int receiverOffset; // zero forwards this; positive names an ObjectSlot base
+    int receiverOffset;                    // zero forwards this; positive names an ObjectSlot base
+    std::vector<int> objectArguments = {}; // constructor snapshots; scalar entries are zero
 };
 class MetadataQuery {
   public:
@@ -178,9 +198,10 @@ class BindParameter {
 using Instruction =
     std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Convert, Compare,
                  BoundsGuard, IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall, BeginObject,
-                 EndObject, ReceiverLoad, ReceiverStore, ReceiverArrayZero, ReceiverBoundsGuard,
-                 ReceiverIndexLoad, ReceiverIndexStore, MethodCall, MetadataQuery, Label, Jump,
-                 BranchFalse, Return, ReturnObject, BindParameter, BindObjectParameter>;
+                 EndObject, CopyObject, ObjectFieldCopy, InitializeObjectField, ReceiverLoad,
+                 ReceiverStore, ReceiverArrayZero, ReceiverBoundsGuard, ReceiverIndexLoad,
+                 ReceiverIndexStore, MethodCall, MetadataQuery, Label, Jump, BranchFalse, Return,
+                 ReturnObject, BindParameter, BindObjectParameter>;
 class ObjectSlot {
   public:
     std::string className;
@@ -213,6 +234,8 @@ class Descriptor {
 };
 // Logical source fields are distinct from the scalar leaves used for inline
 // storage and value-call copies. Arrays expose one field and a contiguous range.
+// A non-array class field names its nominal child in elementType and its complete
+// flattened scalar range in firstLeaf/length (including zero for empty children).
 class ClassField {
   public:
     Type elementType;

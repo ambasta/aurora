@@ -107,3 +107,16 @@ if len(sys.argv) > 1:
         print(f"{native_count} native receiver-array IR checks passed "
               f"({trap_count} exact-site traps; scalar mapping, bool stride, zero init, "
               "copy ABI and bounds-before-RHS)")
+
+    with tempfile.TemporaryDirectory(prefix="aurora-ir-composed-native-") as temporary:
+        directory = Path(temporary)
+        assembly = command([Path(sys.argv[1]).resolve(), "--emit-composed-fields"]).stdout.decode()
+        runner = NativeRunner(directory, None, 5)
+        names = ["test", "nested_receiver_projection", "nested_scalar_mapping",
+                 "nested_snapshot_independence", "nested_projection_independence",
+                 "nested_bool_mapping", "nested_distinct_receiver_record", "nested_empty_copy"]
+        observed, _ = runner.assemble(assembly, names)
+        validate_values(observed, [42, 42, 12, 9, 42, 1, 36, 42], names)
+        print(f"{len(names)} native composed-value IR checks passed "
+              "(nominal projection, independent snapshots/copies, bool stride, empty values "
+              "and distinct receiver/argument records)")

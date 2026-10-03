@@ -926,6 +926,505 @@ void arrayReceiverTests() {
     std::cout << "PASS IR receiver store guard precedes RHS and receiver reload follows call\n";
 }
 
+// Distinct logical fields retain nominal identity even when their leaf vectors
+// are equal. Empty embedded fields deliberately have no scalar storage.
+Module composedBaseline() {
+    Module module;
+    module.classLayouts = {{"Leaf", {Type::I64, Type::Bool}},
+                           {"Other", {Type::I64, Type::Bool}},
+                           {"Empty", {}},
+                           {"Outer", {Type::I64, Type::I64, Type::Bool}}};
+    module.classFields["Outer"] = {
+        {Type::I64, 0, 1, false}, {Type("Leaf"), 1, 2, false}, {Type("Empty"), 3, 0, false}};
+    aurora::ir::Function entry;
+    entry.name = "test";
+    entry.result = Type::I64;
+    entry.frameBytes = 160;
+    entry.objectSlots = {{16, {"Leaf", true}},    {32, {"Leaf", false}},  {56, {"Outer", false}},
+                         {72, {"Leaf", true}},    {96, {"Outer", false}}, {104, {"Empty", false}},
+                         {128, {"Outer", false}}, {152, {"Outer", false}}};
+    for (const auto &[base, object] : entry.objectSlots)
+        for (std::size_t leaf = 0; leaf < module.classLayouts.at(object.className).size(); ++leaf)
+            entry.slots[base - static_cast<int>(leaf * 8)] =
+                module.classLayouts.at(object.className)[leaf];
+    entry.code = {BeginObject{16},
+                  Constant{42, Type::I64},
+                  Store{16, Type::I64},
+                  Constant{1, Type::Bool},
+                  Store{8, Type::Bool},
+                  BeginObject{32},
+                  CopyObject{16, 32},
+                  Constant{9, Type::I64},
+                  Store{16, Type::I64},
+                  BeginObject{104},
+                  BeginObject{56},
+                  Constant{7, Type::I64},
+                  Push{},
+                  Constant{5, Type::I64},
+                  Push{},
+                  MethodCall{"construct_outer", 56, {0, 32, 104, 0}},
+                  BeginObject{96},
+                  CopyObject{56, 96},
+                  BeginObject{128},
+                  AggregateCall{"copy_outer", {96}, 128},
+                  BeginObject{72},
+                  ObjectFieldCopy{128, 1, 72},
+                  Load{72, Type::I64},
+                  Return{}};
+    aurora::ir::Function constructor;
+    constructor.name = "construct_outer";
+    constructor.result = Type::I64;
+    constructor.parameters = {Type::I64, Type("Leaf"), Type("Empty"), Type::I64};
+    constructor.frameBytes = 48;
+    constructor.slots = {{8, Type::I64}, {24, Type::I64}, {16, Type::Bool}, {40, Type::I64}};
+    constructor.objectSlots = {{24, {"Leaf", false}}, {32, {"Empty", false}}};
+    constructor.receiver = Receiver{"Outer", true, true};
+    constructor.code = {BindParameter{0, 8, Type::I64},
+                        BindObjectParameter{1, 24, "Leaf"},
+                        BindObjectParameter{2, 32, "Empty"},
+                        BindParameter{3, 40, Type::I64},
+                        Load{8, Type::I64},
+                        Push{},
+                        Load{40, Type::I64},
+                        BinaryValue{Binary::CheckedAdd},
+                        ReceiverStore{0, Type::I64},
+                        InitializeObjectField{0, 1, 24},
+                        InitializeObjectField{0, 2, 32},
+                        Constant{0, Type::I64},
+                        Return{}};
+    aurora::ir::Function copy;
+    copy.name = "copy_outer";
+    copy.result = Type("Outer");
+    copy.parameters = {Type("Outer")};
+    copy.frameBytes = 32;
+    copy.slots = {{24, Type::I64}, {16, Type::I64}, {8, Type::Bool}};
+    copy.objectSlots = {{24, {"Outer", false}}};
+    copy.code = {BindObjectParameter{0, 24, "Outer"}, ReturnObject{24}};
+    aurora::ir::Function getter;
+    getter.name = "get_outer";
+    getter.result = Type::I64;
+    getter.receiver = Receiver{"Outer", false, false};
+    getter.frameBytes = 16;
+    getter.slots = {{16, Type::I64}, {8, Type::Bool}};
+    getter.objectSlots = {{16, {"Leaf", true}}};
+    getter.code = {BeginObject{16}, ObjectFieldCopy{0, 1, 16}, Load{16, Type::I64}, Return{}};
+    module.functions = {entry, constructor, copy, getter};
+    return module;
+}
+MethodCall &composedCall(Module &module) {
+    return std::get<MethodCall>(module.functions[0].code[15]);
+}
+Module composedEmptyBaseline() {
+    Module module;
+    module.classLayouts = {{"Empty", {}}, {"OuterEmpty", {}}};
+    module.classFields["OuterEmpty"] = {{Type("Empty"), 0, 0, false}};
+    aurora::ir::Function entry;
+    entry.name = "test";
+    entry.result = Type::I64;
+    entry.frameBytes = 32;
+    entry.objectSlots = {{8, {"Empty", false}},
+                         {16, {"OuterEmpty", false}},
+                         {24, {"Empty", false}},
+                         {32, {"OuterEmpty", false}}};
+    entry.code = {BeginObject{8},
+                  BeginObject{16},
+                  MethodCall{"construct_empty_outer", 16, {8}},
+                  BeginObject{24},
+                  ObjectFieldCopy{16, 0, 24},
+                  BeginObject{32},
+                  CopyObject{16, 32},
+                  Constant{42, Type::I64},
+                  Return{}};
+    aurora::ir::Function constructor;
+    constructor.name = "construct_empty_outer";
+    constructor.result = Type::I64;
+    constructor.parameters = {Type("Empty")};
+    constructor.receiver = Receiver{"OuterEmpty", true, true};
+    constructor.frameBytes = 16;
+    constructor.objectSlots = {{8, {"Empty", false}}};
+    constructor.code = {BindObjectParameter{0, 8, "Empty"}, InitializeObjectField{0, 0, 8},
+                        Constant{0, Type::I64}, Return{}};
+    module.functions = {entry, constructor};
+    return module;
+}
+Module composedNativeModule() {
+    auto module = composedBaseline();
+    auto entry = module.functions[0];
+    entry.code.resize(16);
+    entry.code.insert(entry.code.end(), {MethodCall{"get_outer", 56}, Return{}});
+    entry.name = "nested_receiver_projection";
+    module.functions.push_back(entry);
+    entry.name = "nested_scalar_mapping";
+    entry.code[16] = Load{56, Type::I64};
+    module.functions.push_back(entry);
+    entry.name = "nested_snapshot_independence";
+    entry.code[16] = Load{16, Type::I64};
+    module.functions.push_back(entry);
+    entry = module.functions[0];
+    entry.name = "nested_projection_independence";
+    entry.code.resize(22);
+    entry.code.insert(entry.code.end(), {Constant{99, Type::I64}, Store{72, Type::I64},
+                                         MethodCall{"get_outer", 128}, Return{}});
+    module.functions.push_back(entry);
+    entry.name = "nested_bool_mapping";
+    entry.result = Type::Bool;
+    entry.code.resize(22);
+    entry.code.insert(entry.code.end(), {Load{64, Type::Bool}, Return{}});
+    module.functions.push_back(entry);
+    // A receiver-local constructor executes while another receiver is bound.
+    // Its record, local argument snapshots and both receivers remain disjoint.
+    auto relay = module.functions[3];
+    relay.name = "nested_receiver_constructor";
+    relay.frameBytes = 64;
+    relay.slots = {
+        {16, Type::I64}, {8, Type::Bool}, {48, Type::I64}, {40, Type::I64}, {32, Type::Bool}};
+    relay.objectSlots = {{16, {"Leaf", false}}, {24, {"Empty", false}}, {48, {"Outer", false}}};
+    relay.code = {BeginObject{16},
+                  ObjectFieldCopy{0, 1, 16},
+                  BeginObject{24},
+                  ObjectFieldCopy{0, 2, 24},
+                  BeginObject{48},
+                  Constant{11, Type::I64},
+                  Push{},
+                  Constant{13, Type::I64},
+                  Push{},
+                  MethodCall{"construct_outer", 48, {0, 16, 24, 0}},
+                  ReceiverLoad{0, Type::I64},
+                  Push{},
+                  Load{48, Type::I64},
+                  BinaryValue{Binary::CheckedAdd},
+                  Return{}};
+    module.functions.push_back(relay);
+    entry = module.functions[0];
+    entry.name = "nested_distinct_receiver_record";
+    entry.code.resize(16);
+    entry.code.insert(entry.code.end(), {MethodCall{"nested_receiver_constructor", 56}, Return{}});
+    module.functions.push_back(entry);
+    auto empty = composedEmptyBaseline();
+    for (const auto &[name, layout] : empty.classLayouts)
+        module.classLayouts[name] = layout;
+    for (const auto &[name, fields] : empty.classFields)
+        module.classFields[name] = fields;
+    empty.functions[0].name = "nested_empty_copy";
+    module.functions.insert(module.functions.end(), empty.functions.begin(), empty.functions.end());
+    return module;
+}
+void composedTests() {
+    accept("composed nominal copies and mixed constructor record", composedBaseline());
+    accept("composed empty class has logical initialization", composedEmptyBaseline());
+    accept("composed receiver and ordinary call native fixtures", composedNativeModule());
+    auto rejectComposed = [&](const std::string &name, const std::function<void(Module &)> &change,
+                              const std::string &expected) {
+        rejectModule(name, composedBaseline(), change, expected);
+    };
+    for (const int index : {-1, 3, 99})
+        rejectComposed(
+            "projection invalid logical index " + std::to_string(index),
+            [=](Module &m) {
+                std::get<ObjectFieldCopy>(m.functions[0].code[21]).fieldIndex = index;
+            },
+            "logical field index");
+    rejectComposed(
+        "projection scalar field rejected",
+        [](Module &m) { std::get<ObjectFieldCopy>(m.functions[0].code[21]).fieldIndex = 0; },
+        "projection requires class field");
+    rejectComposed(
+        "projection wrong nominal child",
+        [](Module &m) { m.functions[0].objectSlots[72].className = "Other"; },
+        "copy nominal class mismatch");
+    rejectComposed(
+        "whole copy equal-byte nominal forgery",
+        [](Module &m) { m.functions[0].objectSlots[32].className = "Other"; },
+        "copy nominal class mismatch");
+    rejectComposed(
+        "projection interior source",
+        [](Module &m) { std::get<ObjectFieldCopy>(m.functions[0].code[21]).sourceOffset = 120; },
+        "exact object slot");
+    rejectComposed(
+        "projection interior result",
+        [](Module &m) { std::get<ObjectFieldCopy>(m.functions[0].code[21]).resultOffset = 64; },
+        "exact object slot");
+    rejectComposed(
+        "projection aliases owner",
+        [](Module &m) { std::get<ObjectFieldCopy>(m.functions[0].code[21]).resultOffset = 128; },
+        "projection source aliases result");
+    rejectComposed(
+        "whole copy aliases source", [](Module &m) { m.functions[0].code[6] = CopyObject{16, 16}; },
+        "copy source aliases result");
+    rejectComposed(
+        "copy inactive source",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 6, EndObject{16});
+        },
+        "outside active lifetime");
+    rejectComposed(
+        "copy inactive result",
+        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 5); },
+        "outside active lifetime");
+    rejectComposed(
+        "copy partially initialized source",
+        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 4); },
+        "not fully initialized");
+    rejectComposed(
+        "copy partially initialized result",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 6,
+                                       {Constant{0, Type::I64}, Store{32, Type::I64}});
+        },
+        "pristine result");
+    rejectComposed(
+        "copy initialized result",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 7, CopyObject{16, 32});
+        },
+        "already initialized");
+    rejectComposed(
+        "copy stale current register rejected",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 7, Store{16, Type::Bool});
+        },
+        "missing or mistyped current value");
+    rejectComposed(
+        "nested direct scalar initialization rejected",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 15,
+                                       {Constant{3, Type::I64}, Store{48, Type::I64}});
+        },
+        "scalar store cannot write nested class field");
+    rejectComposed(
+        "nested direct scalar mutation rejected",
+        [](Module &m) {
+            m.functions[0].objectSlots[56].mutableValue = true;
+            m.functions[0].code.insert(m.functions[0].code.begin() + 16,
+                                       {Constant{3, Type::I64}, Store{48, Type::I64}});
+        },
+        "scalar store cannot write nested class field");
+    rejectComposed(
+        "nested direct indexed mutation rejected",
+        [](Module &m) {
+            m.functions[0].objectSlots[56].mutableValue = true;
+            m.functions[0].code.insert(m.functions[0].code.begin() + 16,
+                                       {Constant{0, Type::I64}, BoundsGuard{48, 1, Type::I64},
+                                        Push{}, Constant{3, Type::I64},
+                                        IndexStore{48, 1, Type::I64}});
+        },
+        "indexed store cannot write nested class field");
+    rejectComposed(
+        "class receiver scalar store forgery",
+        [](Module &m) { m.functions[1].code[9] = ReceiverStore{1, Type::I64}; },
+        "receiver field type/layout mismatch");
+    rejectComposed(
+        "constructor class field absent",
+        [](Module &m) { m.functions[1].code.erase(m.functions[1].code.begin() + 9); },
+        "returns before all fields initialized");
+    rejectComposed(
+        "constructor empty class field absent",
+        [](Module &m) { m.functions[1].code.erase(m.functions[1].code.begin() + 10); },
+        "returns before all class fields initialized");
+    for (const int field : {1, 2})
+        rejectComposed(
+            "constructor repeated logical field " + std::to_string(field),
+            [=](Module &m) {
+                m.functions[1].code.insert(m.functions[1].code.begin() + 11,
+                                           InitializeObjectField{0, field, field == 1 ? 24 : 32});
+            },
+            "class field initialized more than once");
+    rejectComposed(
+        "class initialization local receiver unsupported",
+        [](Module &m) {
+            std::get<InitializeObjectField>(m.functions[1].code[9]).objectOffset = 24;
+        },
+        "requires bound constructor receiver");
+    rejectComposed(
+        "class initialization scalar logical field rejected",
+        [](Module &m) { std::get<InitializeObjectField>(m.functions[1].code[9]).fieldIndex = 0; },
+        "requires class field");
+    rejectComposed(
+        "class initialization wrong nominal child",
+        [](Module &m) {
+            // Equal scalar bytes do not erase a different recursive logical shape.
+            m.classFields["Other"] = {{Type("Leaf"), 0, 2, false}};
+            m.classFields["Outer"][1].elementType = Type("Other");
+            m.functions[0].objectSlots[72].className = "Other";
+            m.functions[3].objectSlots[16].className = "Other";
+        },
+        "initializer nominal class mismatch");
+    rejectComposed(
+        "constructor receiver projection rejected",
+        [](Module &m) { m.functions[1].code[9] = ObjectFieldCopy{0, 1, 24}; },
+        "cannot project receiver");
+    rejectComposed(
+        "constructor argument missing vector",
+        [](Module &m) { composedCall(m).objectArguments.clear(); },
+        "argument vector size mismatch");
+    rejectComposed(
+        "constructor scalar argument object forgery",
+        [](Module &m) { composedCall(m).objectArguments[3] = 104; }, "scalar constructor argument");
+    rejectComposed(
+        "constructor argument mutable snapshot",
+        [](Module &m) { m.functions[0].objectSlots[32].mutableValue = true; },
+        "snapshot must be readonly");
+    rejectComposed(
+        "constructor argument aliases receiver",
+        [](Module &m) { composedCall(m).objectArguments[1] = 56; },
+        "receiver aliases argument snapshot");
+    rejectComposed(
+        "constructor argument reused snapshot",
+        [](Module &m) { composedCall(m).objectArguments[1] = 104; },
+        "argument snapshots must be distinct");
+    rejectComposed(
+        "constructor argument wrong nominal class",
+        [](Module &m) {
+            m.functions[0].objectSlots[104].className = "Other";
+            m.classLayouts["Other"].clear();
+        },
+        "argument nominal class mismatch");
+    rejectComposed(
+        "constructor argument incomplete snapshot",
+        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 6); },
+        "not fully initialized");
+    rejectComposed(
+        "constructor argument scalar operand missing",
+        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 14); },
+        "value stack underflow");
+    rejectComposed(
+        "constructor parameter mutable rejected",
+        [](Module &m) { m.functions[1].objectSlots[24].mutableValue = true; },
+        "object parameter must be readonly");
+    rejectComposed(
+        "ordinary method class parameter rejected",
+        [](Module &m) { m.functions[1].receiver->constructor = false; },
+        "receiver signatures must remain scalar");
+    rejectComposed(
+        "constructor class result rejected",
+        [](Module &m) { m.functions[1].result = Type("Outer"); },
+        "receiver signatures must remain scalar");
+    rejectComposed(
+        "nested metadata wrong flattened length",
+        [](Module &m) { m.classFields["Outer"][1].length = 1; },
+        "nested class field length mismatch");
+    rejectComposed(
+        "nested metadata wrong leaf type", [](Module &m) { m.classLayouts["Leaf"][0] = Type::U64; },
+        "nested class field leaf type mismatch");
+    rejectComposed(
+        "nested metadata missing class",
+        [](Module &m) { m.classFields["Outer"][1].elementType = Type("Missing"); },
+        "invalid nominal nested class field");
+    rejectComposed(
+        "nested metadata array class forbidden",
+        [](Module &m) { m.classFields["Outer"][1].array = true; },
+        "invalid nominal nested class field");
+    rejectComposed(
+        "nested metadata unresolved specialization",
+        [](Module &m) {
+            m.classFields["Outer"][1].elementType.templateArguments = {TypeKind::I64};
+        },
+        "invalid nominal nested class field");
+    rejectComposed(
+        "nested metadata overlap", [](Module &m) { m.classFields["Outer"][1].firstLeaf = 0; },
+        "invalid logical class field shape");
+    rejectComposed(
+        "nested metadata negative length", [](Module &m) { m.classFields["Outer"][2].length = -1; },
+        "nested class field length mismatch");
+    for (const Type &invalid : {Type::Ref, Type::MutRef, Type::Own})
+        rejectComposed(
+            "nested metadata nonvalue " + typeName(invalid),
+            [=](Module &m) { m.classFields["Outer"][1].elementType = invalid; },
+            "invalid logical class field shape");
+    rejectComposed(
+        "empty nested self cycle",
+        [](Module &m) { m.classFields["Empty"] = {{Type("Empty"), 0, 0, false}}; },
+        "cyclic nested class layout");
+    rejectComposed(
+        "empty nested indirect cycle",
+        [](Module &m) {
+            m.classLayouts["AnotherEmpty"] = {};
+            m.classFields["AnotherEmpty"] = {{Type("Empty"), 0, 0, false}};
+            m.classFields["Empty"] = {{Type("AnotherEmpty"), 0, 0, false}};
+        },
+        "cyclic nested class layout");
+    auto depth = baseline();
+    depth.classLayouts["D1"] = {Type::I64};
+    for (int count = 2; count <= 4; ++count) {
+        depth.classLayouts["D" + std::to_string(count)] = {Type::I64};
+        depth.classFields["D" + std::to_string(count)] = {
+            {Type("D" + std::to_string(count - 1)), 0, 1, false}};
+    }
+    accept("nested depth exactly four", depth);
+    rejectModule(
+        "nested depth five rejected", depth,
+        [](Module &m) {
+            m.classLayouts["D5"] = {Type::I64};
+            m.classFields["D5"] = {{Type("D4"), 0, 1, false}};
+        },
+        "exceeds depth 4");
+    auto capacity = baseline();
+    capacity.classLayouts["Child"] = std::vector<Type>(64, Type::I64);
+    capacity.classLayouts["Parent"] = capacity.classLayouts["Child"];
+    capacity.classFields["Parent"] = {{Type("Child"), 0, 64, false}};
+    accept("composed capacity exactly 64 scalar leaves", capacity);
+    rejectModule(
+        "composed capacity 65 leaves rejected", capacity,
+        [](Module &m) {
+            m.classLayouts["Parent"].push_back(Type::I64);
+            m.classFields["Parent"].push_back({Type::I64, 64, 1, false});
+        },
+        "exceeds 64 scalar leaves");
+    auto rejectEmpty = [&](const std::string &name, const std::function<void(Module &)> &change,
+                           const std::string &expected) {
+        rejectModule(name, composedEmptyBaseline(), change, expected);
+    };
+    rejectEmpty(
+        "empty nested copy cannot forge initialization",
+        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 2); },
+        "nested class field not completely initialized");
+    rejectEmpty(
+        "empty nested constructor missing logical initialization",
+        [](Module &m) { m.functions[1].code.erase(m.functions[1].code.begin() + 1); },
+        "returns before all class fields initialized");
+    rejectEmpty(
+        "empty nested destination still owns one storage word",
+        [](Module &m) { m.functions[0].slots[16] = Type::I64; },
+        "scalar slot overlaps empty object");
+    rejectEmpty(
+        "empty nested duplicate whole copy rejected",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 7, CopyObject{16, 32});
+        },
+        "already initialized");
+    rejectEmpty(
+        "empty nested missing init on one branch",
+        [](Module &m) {
+            auto &code = m.functions[1].code;
+            code.insert(code.begin() + 1, {Constant{1, Type::Bool}, BranchFalse{1}});
+            code.insert(code.begin() + 4, Label{1});
+        },
+        "returns before all class fields initialized");
+    rejectEmpty(
+        "empty nested duplicate init through backedge",
+        [](Module &m) {
+            auto &code = m.functions[1].code;
+            code.insert(code.begin() + 1, Label{1});
+            code.insert(code.begin() + 3, {Constant{1, Type::Bool}, BranchFalse{1}});
+        },
+        "class field initialized more than once");
+    rejectEmpty(
+        "empty nested logical completion reset by lifetime",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 3,
+                                       {EndObject{16}, BeginObject{16}});
+        },
+        "nested class field not completely initialized");
+    const auto assembly = X86Emitter{}.emit(validate(composedBaseline()));
+    const auto start = assembly.find("construct_outer:\n");
+    if (start == std::string::npos ||
+        assembly.find("movq %r10, -56(%rbp)", start) == std::string::npos ||
+        assembly.find("movq %r11, -64(%rbp)", start) == std::string::npos)
+        throw Error("constructor receiver and packed argument record share private storage");
+    ++passed;
+    std::cout << "PASS IR constructor receiver and argument record use distinct private slots\n";
+}
+
 } // namespace
 int main(int argc, char **argv) {
     try {
@@ -941,6 +1440,11 @@ int main(int argc, char **argv) {
             std::cout << X86Emitter{}.emit(validate(arrayNativeModule()));
             return 0;
         }
+        if (argc == 2 && std::string(argv[1]) == "--emit-composed-fields") {
+            std::cout << X86Emitter{}.emit(validate(composedNativeModule()));
+            return 0;
+        }
+        composedTests();
         arrayReceiverTests();
         unsignedTests();
         for (const auto operation : {Binary::CheckedDivide, Binary::CheckedRemainder}) {

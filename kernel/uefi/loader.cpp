@@ -112,6 +112,9 @@ auto __attribute__((ms_abi)) entry(void* image,void* system) -> U64 {
 #endif
 #ifdef AURORA_UEFI_ACPI
     if (!tables.prepare_window()) fail("firmware window tables");
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    if (!tables.prepare_interrupts()) fail("interrupt tables");
+#endif
 #endif
     put(handoff,96,tables.used());
     std::uint32_t a,b,c,d;

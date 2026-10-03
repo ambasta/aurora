@@ -151,7 +151,7 @@ class ModuleLoader {
 class ModuleResolver {
     enum class Kind { Function, Class, Template, Any };
     const ClassDefinition *activeClass = nullptr;
-    bool initializingReceiver = false;
+    bool initializingReceiver = false, classTypesResolved = false;
     class Declaration {
       public:
         Kind kind;
@@ -163,7 +163,12 @@ class ModuleResolver {
     };
     ModuleLoader::Graph graph;
     std::map<std::string, std::map<std::string, Declaration>> declarations;
+    std::map<std::string, const Declaration *> nativeClasses;
     std::map<std::string, std::vector<Type>> signatures;
+    std::map<std::string, std::vector<TemplateArgument>> instanceArguments;
+    std::map<std::string, std::vector<Type>> publicTypes;
+    std::vector<std::pair<std::string, Type>> argumentVisibilityChecks;
+    std::map<std::string, std::string> instanceDisplayNames;
     const std::set<std::string> builtins = {"i64",
                                             "u64",
                                             "own",
@@ -272,6 +277,8 @@ class ModuleResolver {
                                                 ? "duplicate or reserved class name"
                                                 : "duplicate or reserved function name") +
                                 " in module " + name + ": " + qualified);
+                if (kind == Kind::Class)
+                    nativeClasses.emplace(native, &table.at(qualified));
                 return native;
             };
             for (auto &definition : unit.program.classes) {
@@ -345,6 +352,29 @@ class ModuleResolver {
             }
         return nullptr;
     }
+    std::vector<TemplateArgument> resolveArguments(const std::vector<TemplateArgument> &arguments,
+                                                   const ModuleLoader::Unit &unit,
+                                                   const std::string &scope) {
+        auto result = arguments;
+        for (auto &argument : result) {
+            if (argument.kind != TemplateArgumentKind::Type || argument.type != TypeKind::Class)
+                continue;
+            const auto *declaration = lookup(unit, scope, argument.className, Kind::Class);
+            if (!declaration)
+                throw Error("unknown named class template argument: " + argument.className);
+            // A source argument must name an ordinary concrete class, never an
+            // implicit or nested specialization. Its defining module is identity.
+            if (instanceArguments.contains(declaration->native))
+                throw Error("template arguments require named concrete classes");
+            argument.className = declaration->native;
+            argument.displayName = declaration->qualified;
+        }
+        return result;
+    }
+    std::string displayName(const Declaration &declaration) const {
+        const auto found = instanceDisplayNames.find(declaration.native);
+        return found == instanceDisplayNames.end() ? declaration.qualified : found->second;
+    }
     class TemplateRequest {
       public:
         std::string module, scope, name;
@@ -415,25 +445,37 @@ class ModuleResolver {
             const auto *declaration =
                 lookup(usingUnit, request.scope, request.name, Kind::Template);
             if (!declaration)
-                throw Error("unsupported type or unknown class template: " + request.name);
+                throw Error(
+                    "unsupported type or unknown class template; expected a declared template: " +
+                    request.name);
             const auto &source = *declaration->templateDefinition;
             if (request.arguments.size() != source.templateParameters.size())
                 throw Error("wrong number of class template arguments for " + request.name);
-            const auto suffix = ClassTemplateExpansion::argumentSuffix(request.arguments);
+            const auto arguments = resolveArguments(request.arguments, usingUnit, request.scope);
+            for (const auto &argument : arguments)
+                if (argument.kind == TemplateArgumentKind::Type && argument.type == TypeKind::Class)
+                    argumentVisibilityChecks.emplace_back(
+                        request.module, ClassTemplateExpansion::argumentType(argument));
+            const auto suffix = ClassTemplateExpansion::argumentSuffix(arguments);
             const auto qualified = declaration->qualified + suffix;
             auto &table = declarations.at(declaration->module);
             if (table.contains(qualified))
                 continue;
             if (++instanceCount > 256)
                 throw Error("module graph exceeds 256 class template instantiations");
-            auto definition = ClassTemplateExpansion::instantiate(source, request.arguments);
+            auto definition = ClassTemplateExpansion::instantiate(source, arguments);
             definition.name =
                 mangle('c', declaration->module, definition.scope, definition.token.text) +
-                ClassTemplateExpansion::nativeSuffix(request.arguments);
+                ClassTemplateExpansion::nativeSuffix(arguments);
             auto &definingUnit = *graph.units.at(declaration->module);
             registerMembers(definition, definingUnit);
+            instanceArguments.emplace(definition.name, arguments);
+            instanceDisplayNames.emplace(
+                definition.name,
+                declaration->qualified + ClassTemplateExpansion::argumentSuffix(arguments, true));
             table.emplace(qualified, Declaration{Kind::Class, qualified, definition.name,
                                                  declaration->exported, declaration->module});
+            nativeClasses.emplace(definition.name, &table.at(qualified));
             definingUnit.program.classes.push_back(std::move(definition));
         }
     }
@@ -442,9 +484,12 @@ class ModuleResolver {
                                       const std::vector<TemplateArgument> &arguments) {
         const auto *declaration = lookup(unit, scope, name, Kind::Template);
         if (!declaration)
-            throw Error("unsupported type or unknown class template: " + name);
+            throw Error(
+                "unsupported type or unknown class template; expected a declared template: " +
+                name);
         const auto qualified =
-            declaration->qualified + ClassTemplateExpansion::argumentSuffix(arguments);
+            declaration->qualified +
+            ClassTemplateExpansion::argumentSuffix(resolveArguments(arguments, unit, scope));
         const auto &table = declarations.at(declaration->module);
         const auto found = table.find(qualified);
         if (found == table.end())
@@ -458,6 +503,11 @@ class ModuleResolver {
             throw Error("unsubstituted array element or capacity parameter");
         if (!type.isClass())
             return;
+        if (type.resolvedClass) {
+            if (!classDeclaration(type))
+                throw Error("unknown resolved class identity: " + type.className);
+            return;
+        }
         if (type.className == "array" || type.className == "builtin::array")
             throw Error("builtin array requires explicit element and length arguments");
         const Declaration *declaration = nullptr;
@@ -469,45 +519,123 @@ class ModuleResolver {
             type.className = activeClass->name;
             type.displayName =
                 qualify(activeClass->scope, activeClass->token.text) +
-                ClassTemplateExpansion::argumentSuffix(activeClass->templateArguments);
+                ClassTemplateExpansion::argumentSuffix(activeClass->templateArguments, true);
+            type.resolvedClass = true;
             return;
         } else
             declaration = lookup(unit, scope, type.className, Kind::Class);
         if (declaration) {
             type.className = declaration->native;
-            type.displayName = declaration->qualified;
+            type.displayName = displayName(*declaration);
+            type.resolvedClass = true;
             type.templateArguments.clear();
+            if (classTypesResolved && !typeVisible(type, unit))
+                throw Error("class type requires a direct visible import: " + typeName(type));
         }
     }
     const Declaration *classDeclaration(const Type &type) const {
-        for (const auto &[module, table] : declarations) {
-            (void)module;
-            for (const auto &[name, declaration] : table) {
-                (void)name;
-                if (declaration.kind == Kind::Class && declaration.native == type.className)
-                    return &declaration;
+        const auto found = nativeClasses.find(type.className);
+        return found == nativeClasses.end() ? nullptr : found->second;
+    }
+    bool typeAccessible(const Type &type, const ModuleLoader::Unit *unit) const {
+        std::vector<Type> pending{type};
+        std::set<std::string> visited;
+        while (!pending.empty()) {
+            const auto current = std::move(pending.back());
+            pending.pop_back();
+            if (!current.isClass() || !visited.insert(current.className).second)
+                continue;
+            const auto *declaration = classDeclaration(current);
+            if (!declaration)
+                return false;
+            if (!unit) {
+                if (!declaration->exported)
+                    return false;
+            } else if (declaration->module != unit->program.moduleName) {
+                if (!declaration->exported ||
+                    std::none_of(
+                        unit->program.imports.begin(), unit->program.imports.end(),
+                        [&](const Token &import) { return import.text == declaration->module; }))
+                    return false;
             }
+            // A specialization's exported template alone cannot expose an
+            // otherwise private or transitively imported nominal argument.
+            if (const auto found = instanceArguments.find(current.className);
+                found != instanceArguments.end())
+                for (const auto &argument : found->second)
+                    if (argument.kind == TemplateArgumentKind::Type)
+                        pending.push_back(ClassTemplateExpansion::argumentType(argument));
+            // Iterate instead of recursing: visibility runs before semantic
+            // containment validation and also follows non-containment signatures.
+            if (const auto found = publicTypes.find(current.className); found != publicTypes.end())
+                pending.insert(pending.end(), found->second.begin(), found->second.end());
         }
-        return nullptr;
+        return true;
     }
     bool typeVisible(const Type &type, const ModuleLoader::Unit &unit) const {
-        if (!type.isClass())
-            return true;
-        const auto contains = [&](const std::string &module, bool imported) {
-            for (const auto &[name, declaration] : declarations.at(module)) {
-                (void)name;
-                if (declaration.kind == Kind::Class && declaration.native == type.className &&
-                    (!imported || declaration.exported))
-                    return true;
+        return typeAccessible(type, &unit);
+    }
+    bool typeExported(const Type &type) const { return typeAccessible(type, nullptr); }
+    void resolveClassTypes() {
+        for (const auto &name : graph.order) {
+            auto &unit = *graph.units.at(name);
+            for (auto &definition : unit.program.classes) {
+                activeClass = &definition;
+                auto resolve = [&](Type &type) {
+                    resolveType(type, unit, definition.scope);
+                    if (type.isClass() && !classDeclaration(type))
+                        throw Error("unknown class type in class declaration: " + typeName(type));
+                };
+                for (auto &field : definition.fields) {
+                    resolve(field.type);
+                    if (field.publicAccess)
+                        publicTypes[definition.name].push_back(field.type);
+                }
+                for (auto &method : definition.methods) {
+                    resolve(method.result);
+                    for (auto &parameter : method.params) {
+                        resolve(parameter.type);
+                        if (method.publicAccess)
+                            publicTypes[definition.name].push_back(parameter.type);
+                    }
+                }
+                activeClass = nullptr;
             }
-            return false;
-        };
-        if (contains(unit.program.moduleName, false))
-            return true;
-        for (const auto &import : unit.program.imports)
-            if (contains(import.text, true))
-                return true;
-        return false;
+        }
+        classTypesResolved = true;
+        for (const auto &name : graph.order) {
+            const auto &unit = *graph.units.at(name);
+            for (const auto &definition : unit.program.classes) {
+                // Generated instances may legitimately contain a caller-private
+                // type. Check their exposure at each source signature/use instead.
+                if (!definition.templateArguments.empty())
+                    continue;
+                auto visibleType = [&](const Type &type) {
+                    if (!typeVisible(type, unit))
+                        throw Error("class signature type requires a direct visible import: " +
+                                    typeName(type));
+                };
+                for (const auto &field : definition.fields)
+                    visibleType(field.type);
+                for (const auto &method : definition.methods)
+                    for (const auto &parameter : method.params)
+                        visibleType(parameter.type);
+                if (!definition.exported)
+                    continue;
+                for (const auto &type : publicTypes[definition.name]) {
+                    if (!typeExported(type))
+                        throw Error("exported class public signature exposes private type: " +
+                                    typeName(type));
+                    if (!typeVisible(type, unit))
+                        throw Error("class signature type requires a direct visible import: " +
+                                    typeName(type));
+                }
+            }
+        }
+        for (const auto &[module, type] : argumentVisibilityChecks)
+            if (!typeVisible(type, *graph.units.at(module)))
+                throw Error("template argument type requires a direct visible import: " +
+                            typeName(type));
     }
     void resolveSignatures() {
         for (const auto &name : graph.order) {
@@ -520,7 +648,11 @@ class ModuleResolver {
                         if (!declaration)
                             throw Error("unknown class type in function signature: " +
                                         typeName(type));
-                        if (function.exported && !declaration->exported)
+                        if (!typeVisible(type, unit))
+                            throw Error(
+                                "function signature type requires a direct visible import: " +
+                                typeName(type));
+                        if (function.exported && !typeExported(type))
                             throw Error("exported function signature exposes private type: " +
                                         typeName(type));
                     }
@@ -546,7 +678,11 @@ class ModuleResolver {
                 specialization(unit, scope, value->token.text, value->templateArguments);
             value->resolvedName = declaration->native;
             value->reflectedType = Type(declaration->native);
-            value->reflectedType.displayName = declaration->qualified;
+            value->reflectedType.displayName = displayName(*declaration);
+            value->reflectedType.resolvedClass = true;
+            if (!typeVisible(value->reflectedType, unit))
+                throw Error("class construction type requires a direct visible import: " +
+                            typeName(value->reflectedType));
             if (value->op == "call")
                 value->op = "constructor_call";
             value->templateArguments.clear();
@@ -604,7 +740,14 @@ class ModuleResolver {
                 if (declaration->kind == Kind::Class) {
                     value->op = "constructor_call";
                     value->reflectedType = Type(declaration->native);
-                    value->reflectedType.displayName = declaration->qualified;
+                    value->reflectedType.displayName = displayName(*declaration);
+                    value->reflectedType.resolvedClass = true;
+                    const bool generatedSelf = activeClass &&
+                                               !activeClass->templateArguments.empty() &&
+                                               declaration->native == activeClass->name;
+                    if (!generatedSelf && !typeVisible(value->reflectedType, unit))
+                        throw Error("class construction type requires a direct visible import: " +
+                                    typeName(value->reflectedType));
                 }
             }
         } else if (value->op == "construct") {
@@ -633,6 +776,7 @@ class ModuleResolver {
     Program resolve() {
         registerDeclarations();
         expandTemplates();
+        resolveClassTypes();
         resolveSignatures();
         Program result;
         result.moduleName = graph.root;
@@ -684,7 +828,8 @@ class ModuleResolver {
             auto &reflected = result.reflectionAccess[unit.scope];
             for (const auto &qualified : names)
                 for (const auto *declaration : visible(unit, qualified))
-                    if (declaration->kind == Kind::Class)
+                    if (declaration->kind == Kind::Class &&
+                        typeVisible(Type(declaration->native), unit))
                         reflected.insert(declaration->native);
         }
         if (result.functions.empty())

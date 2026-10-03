@@ -2,6 +2,7 @@
 #include "ir.hpp"
 #include <algorithm>
 #include <deque>
+#include <functional>
 #include <type_traits>
 
 namespace aurora::ir {
@@ -47,6 +48,11 @@ class State {
     std::set<int> receiverMaybeInitialized;
     std::set<int> maybeConstructedObjects;
     std::set<int> activeObjects;
+    // Logical completion is independent of leaf initialization: empty embedded
+    // values also require one complete, nominally checked initialization.
+    std::set<std::pair<int, int>> objectClassesInitialized;
+    std::set<int> receiverClassesInitialized;
+    std::set<int> receiverClassesMaybeInitialized;
     bool operator==(const State &) const = default;
 };
 inline void require(bool condition, const std::string &message) {
@@ -65,19 +71,20 @@ inline void verifyFunction(Function &function,
                            const std::map<std::string, std::vector<Type>> &classLayouts = {},
                            const std::map<std::string, std::vector<ClassField>> &classFields = {}) {
     require(availableScopes.contains(function.moduleScope), "unknown function module scope");
-    auto boundaryType = [&](const Type &type) {
+    auto boundaryType = [&](const Type &type, bool parameter) {
         if (scalar(type))
             return;
-        require(!function.receiver, "receiver signatures must remain scalar");
+        require(!function.receiver || (parameter && function.receiver->constructor),
+                "receiver signatures must remain scalar");
         require(type.isClass() && type == Type(type.className), "invalid value boundary type");
         require(classLayouts.contains(type.className), "unknown value boundary class");
         require(classLayouts.at(type.className).size() <= 64,
                 "value boundary class exceeds 64 scalar fields");
     };
-    boundaryType(function.result);
+    boundaryType(function.result, false);
     require(function.parameters.size() <= 6, "too many parameters");
     for (const auto &type : function.parameters)
-        boundaryType(type);
+        boundaryType(type, true);
     require(function.frameBytes >= 0 && function.frameBytes <= 65536 &&
                 function.frameBytes % 16 == 0,
             "invalid frame size");
@@ -110,10 +117,16 @@ inline void verifyFunction(Function &function,
     std::map<int, const ObjectSlot *> objectFields;
     std::map<int, int> objectBases;
     std::set<int> objectStorage;
+    std::set<int> nestedObjectLeaves;
     for (const auto &[base, object] : function.objectSlots) {
         require(classLayouts.contains(object.className), "unknown object class");
         const auto &layout = classLayouts.at(object.className);
         const auto words = std::max<std::size_t>(1, layout.size());
+        if (classFields.contains(object.className))
+            for (const auto &field : classFields.at(object.className))
+                if (field.elementType.isClass())
+                    for (int leaf = 0; leaf < field.length; ++leaf)
+                        nestedObjectLeaves.insert(base - (field.firstLeaf + leaf) * 8);
         require(base > 0 && base <= function.frameBytes && base % 8 == 0 &&
                     static_cast<std::size_t>(base / 8) >= words,
                 "invalid object layout offset");
@@ -184,6 +197,11 @@ inline void verifyFunction(Function &function,
             states[0]->receiverInitialized.insert(static_cast<int>(field));
             states[0]->receiverMaybeInitialized.insert(static_cast<int>(field));
         }
+        for (std::size_t field = 0; field < receiverFields->size(); ++field)
+            if ((*receiverFields)[field].elementType.isClass()) {
+                states[0]->receiverClassesInitialized.insert(static_cast<int>(field));
+                states[0]->receiverClassesMaybeInitialized.insert(static_cast<int>(field));
+            }
     }
     std::deque<std::size_t> pending{0};
     std::size_t retainedValueFacts = 0;
@@ -199,13 +217,15 @@ inline void verifyFunction(Function &function,
     auto facts = [](const State &state) {
         return state.stack.size() + state.initialized.size() + state.maybeInitialized.size() +
                state.receiverInitialized.size() + state.receiverMaybeInitialized.size() +
-               state.maybeConstructedObjects.size() + state.activeObjects.size();
+               state.maybeConstructedObjects.size() + state.activeObjects.size() +
+               state.objectClassesInitialized.size() + state.receiverClassesInitialized.size() +
+               state.receiverClassesMaybeInitialized.size();
     };
     retainedValueFacts = facts(*states[0]);
     if (metrics)
         metrics->peakRetainedValueFacts = retainedValueFacts;
-    auto intersection = [](const std::set<int> &left, const std::set<int> &right) {
-        std::set<int> result;
+    auto intersection = [](const auto &left, const auto &right) {
+        std::decay_t<decltype(left)> result;
         std::set_intersection(left.begin(), left.end(), right.begin(), right.end(),
                               std::inserter(result, result.end()));
         return result;
@@ -234,6 +254,12 @@ inline void verifyFunction(Function &function,
         merged.initialized = intersection(merged.initialized, state.initialized);
         merged.receiverInitialized =
             intersection(merged.receiverInitialized, state.receiverInitialized);
+        merged.objectClassesInitialized =
+            intersection(merged.objectClassesInitialized, state.objectClassesInitialized);
+        merged.receiverClassesInitialized =
+            intersection(merged.receiverClassesInitialized, state.receiverClassesInitialized);
+        merged.receiverClassesMaybeInitialized.insert(state.receiverClassesMaybeInitialized.begin(),
+                                                      state.receiverClassesMaybeInitialized.end());
         merged.maybeInitialized.insert(state.maybeInitialized.begin(),
                                        state.maybeInitialized.end());
         merged.receiverMaybeInitialized.insert(state.receiverMaybeInitialized.begin(),
@@ -276,6 +302,8 @@ inline void verifyFunction(Function &function,
             auto store = [&](int offset, const Type &type) {
                 slot(offset, type);
                 activeObjectField(offset);
+                require(!nestedObjectLeaves.contains(offset),
+                        "scalar store cannot write nested class field");
                 require(!scalarParameterSlots.contains(offset) ||
                             !state.maybeInitialized.contains(offset),
                         "write to immutable scalar parameter");
@@ -295,7 +323,7 @@ inline void verifyFunction(Function &function,
             };
             auto receiverField = [&](int fieldIndex, const Type &type) -> const ClassField & {
                 const auto &field = receiverShape(fieldIndex);
-                require(!field.array && field.elementType == type,
+                require(!field.array && scalar(field.elementType) && field.elementType == type,
                         "receiver field type/layout mismatch");
                 return field;
             };
@@ -336,6 +364,53 @@ inline void verifyFunction(Function &function,
                 require(value.type == Type::I64 && value.guard == std::optional<BoundsEvidence>(
                                                                       Guard{offset, length, type}),
                         "index access lacks matching dominating bounds token");
+            };
+            auto logicalComplete = [&](int base) {
+                const auto &name = function.objectSlots.at(base).className;
+                if (classFields.contains(name))
+                    for (std::size_t field = 0; field < classFields.at(name).size(); ++field)
+                        if (classFields.at(name)[field].elementType.isClass())
+                            require(state.objectClassesInitialized.contains(
+                                        {base, static_cast<int>(field)}),
+                                    "nested class field not completely initialized");
+            };
+            auto markObject = [&](int base) {
+                const auto &name = function.objectSlots.at(base).className;
+                const auto &layout = classLayouts.at(name);
+                state.maybeConstructedObjects.insert(base);
+                for (std::size_t leaf = 0; leaf < layout.size(); ++leaf) {
+                    const int offset = base - static_cast<int>(leaf * 8);
+                    state.initialized.insert(offset);
+                    state.maybeInitialized.insert(offset);
+                }
+                if (classFields.contains(name))
+                    for (std::size_t field = 0; field < classFields.at(name).size(); ++field)
+                        if (classFields.at(name)[field].elementType.isClass())
+                            state.objectClassesInitialized.insert({base, static_cast<int>(field)});
+            };
+            auto completeObject = [&](int base) -> const ObjectSlot & {
+                require(function.objectSlots.contains(base), "copy requires exact object slot");
+                require(state.activeObjects.contains(base), "copy object outside active lifetime");
+                const auto &object = function.objectSlots.at(base);
+                const auto &layout = classLayouts.at(object.className);
+                for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
+                    require(state.initialized.contains(base - static_cast<int>(leaf * 8)),
+                            "copy source object not fully initialized");
+                logicalComplete(base);
+                return object;
+            };
+            auto copyTarget = [&](int base, const std::string &name) {
+                require(function.objectSlots.contains(base), "copy requires exact object slot");
+                require(state.activeObjects.contains(base), "copy object outside active lifetime");
+                require(function.objectSlots.at(base).className == name,
+                        "copy nominal class mismatch");
+                require(!state.maybeConstructedObjects.contains(base),
+                        "copy result object already initialized");
+                const auto &layout = classLayouts.at(name);
+                for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
+                    require(!state.maybeInitialized.contains(base - static_cast<int>(leaf * 8)),
+                            "copy requires pristine result object");
+                markObject(base);
             };
             std::visit(
                 [&](const auto &operation) {
@@ -462,6 +537,8 @@ inline void verifyFunction(Function &function,
                         guard(pop(), operation.offset, operation.length, operation.elementType);
                         for (int element = 0; element < operation.length; ++element) {
                             const int offset = operation.offset - element * 8;
+                            require(!nestedObjectLeaves.contains(offset),
+                                    "indexed store cannot write nested class field");
                             require(!scalarParameterSlots.contains(offset),
                                     "indexed write to immutable scalar parameter");
                             require(!objectFields.contains(offset) ||
@@ -529,6 +606,7 @@ inline void verifyFunction(Function &function,
                                 require(
                                     state.initialized.contains(base - static_cast<int>(field * 8)),
                                     "aggregate argument object not fully initialized");
+                            logicalComplete(base);
                         }
                         if (target.result.isClass()) {
                             const int base = operation.resultOffset;
@@ -548,12 +626,7 @@ inline void verifyFunction(Function &function,
                                 require(!state.maybeInitialized.contains(
                                             base - static_cast<int>(field * 8)),
                                         "aggregate result requires uninitialized object");
-                            state.maybeConstructedObjects.insert(base);
-                            for (std::size_t field = 0; field < layout.size(); ++field) {
-                                const int offset = base - static_cast<int>(field * 8);
-                                state.initialized.insert(offset);
-                                state.maybeInitialized.insert(offset);
-                            }
+                            markObject(base);
                             state.current.reset();
                         } else {
                             require(scalar(target.result), "invalid aggregate result type");
@@ -584,6 +657,66 @@ inline void verifyFunction(Function &function,
                             state.maybeInitialized.erase(offset);
                         }
                         state.maybeConstructedObjects.erase(operation.offset);
+                        for (auto field = state.objectClassesInitialized.begin();
+                             field != state.objectClassesInitialized.end();) {
+                            if (field->first == operation.offset)
+                                field = state.objectClassesInitialized.erase(field);
+                            else
+                                ++field;
+                        }
+                    } else if constexpr (std::is_same_v<Op, CopyObject>) {
+                        require(operation.sourceOffset != operation.resultOffset,
+                                "copy source aliases result");
+                        const auto &source = completeObject(operation.sourceOffset);
+                        copyTarget(operation.resultOffset, source.className);
+                        state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, ObjectFieldCopy>) {
+                        const ClassField *field = nullptr;
+                        if (operation.sourceOffset == 0) {
+                            field = &receiverShape(operation.fieldIndex);
+                            require(!function.receiver->constructor,
+                                    "constructor cannot project receiver during initialization");
+                            require(state.receiverClassesInitialized.contains(operation.fieldIndex),
+                                    "receiver nested class field not initialized");
+                        } else {
+                            require(operation.sourceOffset != operation.resultOffset,
+                                    "projection source aliases result");
+                            const auto &source = completeObject(operation.sourceOffset);
+                            require(classFields.contains(source.className) &&
+                                        operation.fieldIndex >= 0 &&
+                                        static_cast<std::size_t>(operation.fieldIndex) <
+                                            classFields.at(source.className).size(),
+                                    "projection logical field index out of range");
+                            field = &classFields.at(source.className)[operation.fieldIndex];
+                        }
+                        require(!field->array && field->elementType.isClass(),
+                                "projection requires class field");
+                        copyTarget(operation.resultOffset, field->elementType.className);
+                        state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, InitializeObjectField>) {
+                        require(operation.objectOffset == 0,
+                                "class field initialization requires bound constructor receiver");
+                        const auto &field = receiverShape(operation.fieldIndex);
+                        require(function.receiver->constructor && function.receiver->mutableValue,
+                                "class field initialization requires constructor receiver");
+                        require(!field.array && field.elementType.isClass(),
+                                "class field initialization requires class field");
+                        const auto &source = completeObject(operation.sourceOffset);
+                        require(source.className == field.elementType.className,
+                                "class field initializer nominal class mismatch");
+                        require(
+                            !state.receiverClassesMaybeInitialized.contains(operation.fieldIndex),
+                            "constructor class field initialized more than once");
+                        for (int leaf = 0; leaf < field.length; ++leaf) {
+                            require(
+                                !state.receiverMaybeInitialized.contains(field.firstLeaf + leaf),
+                                "constructor class field leaves already initialized");
+                            state.receiverInitialized.insert(field.firstLeaf + leaf);
+                            state.receiverMaybeInitialized.insert(field.firstLeaf + leaf);
+                        }
+                        state.receiverClassesInitialized.insert(operation.fieldIndex);
+                        state.receiverClassesMaybeInitialized.insert(operation.fieldIndex);
+                        state.current.reset();
                     } else if constexpr (std::is_same_v<Op, ReceiverLoad>) {
                         const auto &field = receiverField(operation.fieldIndex, operation.type);
                         require(!function.receiver->constructor,
@@ -632,9 +765,40 @@ inline void verifyFunction(Function &function,
                                 "method call requires receiver target");
                         require(scalar(target.result) &&
                                     std::all_of(target.parameters.begin(), target.parameters.end(),
-                                                [](const Type &type) { return scalar(type); }),
+                                                [&](const Type &type) {
+                                                    return scalar(type) ||
+                                                           (target.receiver->constructor &&
+                                                            type.isClass());
+                                                }),
                                 "receiver signatures must remain scalar");
                         const auto &receiver = *target.receiver;
+                        const bool aggregate =
+                            std::any_of(target.parameters.begin(), target.parameters.end(),
+                                        [](const Type &type) { return type.isClass(); });
+                        require(aggregate
+                                    ? operation.objectArguments.size() == target.parameters.size()
+                                    : operation.objectArguments.empty(),
+                                "constructor object argument vector size mismatch");
+                        std::set<int> argumentStorage;
+                        for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
+                            const auto &type = target.parameters[arg - 1];
+                            if (scalar(type)) {
+                                require(!aggregate || operation.objectArguments[arg - 1] == 0,
+                                        "scalar constructor argument cannot name object storage");
+                                require(pop().type == type, "method argument type mismatch");
+                            } else {
+                                const int base = operation.objectArguments[arg - 1];
+                                require(base != operation.receiverOffset,
+                                        "constructor receiver aliases argument snapshot");
+                                require(argumentStorage.insert(base).second,
+                                        "constructor argument snapshots must be distinct");
+                                const auto &object = completeObject(base);
+                                require(object.className == type.className,
+                                        "constructor argument nominal class mismatch");
+                                require(!object.mutableValue,
+                                        "constructor argument snapshot must be readonly");
+                            }
+                        }
                         require(operation.receiverOffset >= 0, "invalid method receiver offset");
                         if (operation.receiverOffset == 0) {
                             require(function.receiver.has_value(),
@@ -663,13 +827,7 @@ inline void verifyFunction(Function &function,
                                         !state.maybeInitialized.contains(
                                             operation.receiverOffset - static_cast<int>(field * 8)),
                                         "constructor requires uninitialized object");
-                                state.maybeConstructedObjects.insert(operation.receiverOffset);
-                                for (std::size_t field = 0; field < layout.size(); ++field) {
-                                    const int offset =
-                                        operation.receiverOffset - static_cast<int>(field * 8);
-                                    state.initialized.insert(offset);
-                                    state.maybeInitialized.insert(offset);
-                                }
+                                markObject(operation.receiverOffset);
                             } else {
                                 require(!receiver.mutableValue || object.mutableValue,
                                         "const object cannot supply mutable receiver");
@@ -677,11 +835,9 @@ inline void verifyFunction(Function &function,
                                     require(state.initialized.contains(operation.receiverOffset -
                                                                        static_cast<int>(field * 8)),
                                             "method receiver object not fully initialized");
+                                logicalComplete(operation.receiverOffset);
                             }
                         }
-                        for (auto argument = target.parameters.rbegin();
-                             argument != target.parameters.rend(); ++argument)
-                            require(pop().type == *argument, "method argument type mismatch");
                         state.current = Value{target.result, {}};
                     } else if constexpr (std::is_same_v<Op, MetadataQuery>) {
                         require(operation.query == Query::Size ||
@@ -705,9 +861,16 @@ inline void verifyFunction(Function &function,
                         require(scalar(function.result), "scalar return cannot return class value");
                         current(function.result);
                         require(state.stack.empty(), "unbalanced stack at return");
-                        if (function.receiver && function.receiver->constructor)
+                        if (function.receiver && function.receiver->constructor) {
                             require(state.receiverInitialized.size() == receiverLayout->size(),
                                     "constructor returns before all fields initialized");
+                            for (std::size_t field = 0; field < receiverFields->size(); ++field)
+                                if ((*receiverFields)[field].elementType.isClass())
+                                    require(
+                                        state.receiverClassesInitialized.contains(
+                                            static_cast<int>(field)),
+                                        "constructor returns before all class fields initialized");
+                        }
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnObject>) {
                         require(function.result.isClass(), "object return requires class result");
@@ -723,6 +886,7 @@ inline void verifyFunction(Function &function,
                             require(state.initialized.contains(operation.offset -
                                                                static_cast<int>(field * 8)),
                                     "returned object not fully initialized");
+                        logicalComplete(operation.offset);
                         require(state.stack.empty(), "unbalanced stack at object return");
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, BindObjectParameter>) {
@@ -740,10 +904,7 @@ inline void verifyFunction(Function &function,
                         require(!state.activeObjects.contains(operation.offset),
                                 "object parameter lifetime already active");
                         state.activeObjects.insert(operation.offset);
-                        state.maybeConstructedObjects.insert(operation.offset);
-                        const auto &layout = classLayouts.at(object.className);
-                        for (std::size_t field = 0; field < layout.size(); ++field)
-                            store(operation.offset - static_cast<int>(field * 8), layout[field]);
+                        markObject(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BindParameter>) {
                         require(operation.index >= 0 && static_cast<std::size_t>(operation.index) <
                                                             function.parameters.size(),
@@ -824,27 +985,9 @@ inline ValidatedModule validate(Module module) {
         for (const auto &field : layout)
             verification::require(scalar(field), "non-scalar class layout field");
     }
-    for (const auto &[name, fields] : module.classFields) {
+    for (const auto &[name, fields] : module.classFields)
         verification::require(module.classLayouts.contains(name),
                               "logical fields reference unknown class layout");
-        const auto &layout = module.classLayouts.at(name);
-        std::size_t nextLeaf = 0;
-        for (const auto &field : fields) {
-            verification::require(scalar(field.elementType) && field.firstLeaf >= 0 &&
-                                      static_cast<std::size_t>(field.firstLeaf) == nextLeaf &&
-                                      field.length >= 1 && field.length <= (field.array ? 64 : 1),
-                                  "invalid logical class field shape");
-            verification::require(nextLeaf + static_cast<std::size_t>(field.length) <=
-                                      layout.size(),
-                                  "logical class field range exceeds layout");
-            for (int element = 0; element < field.length; ++element)
-                verification::require(layout[nextLeaf + element] == field.elementType,
-                                      "logical class field leaf type mismatch");
-            nextLeaf += static_cast<std::size_t>(field.length);
-        }
-        verification::require(nextLeaf == layout.size(),
-                              "logical class fields do not cover complete layout");
-    }
     for (const auto &[name, layout] : module.classLayouts) {
         if (module.classFields.contains(name))
             continue;
@@ -852,6 +995,72 @@ inline ValidatedModule validate(Module module) {
         for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
             fields.push_back(ClassField{layout[leaf], static_cast<int>(leaf), 1, false});
     }
+    for (const auto &[name, fields] : module.classFields) {
+        const auto &layout = module.classLayouts.at(name);
+        std::size_t nextLeaf = 0;
+        bool composed = false;
+        for (const auto &field : fields) {
+            const bool child = field.elementType.isClass();
+            verification::require(field.firstLeaf >= 0 &&
+                                      static_cast<std::size_t>(field.firstLeaf) == nextLeaf,
+                                  "invalid logical class field shape");
+            if (child) {
+                composed = true;
+                verification::require(!field.array &&
+                                          field.elementType == Type(field.elementType.className) &&
+                                          module.classLayouts.contains(field.elementType.className),
+                                      "invalid nominal nested class field");
+                const auto &childLayout = module.classLayouts.at(field.elementType.className);
+                verification::require(field.length >= 0 && field.length <= 64 &&
+                                          static_cast<std::size_t>(field.length) ==
+                                              childLayout.size(),
+                                      "nested class field length mismatch");
+                verification::require(nextLeaf + childLayout.size() <= layout.size(),
+                                      "logical class field range exceeds layout");
+                for (std::size_t leaf = 0; leaf < childLayout.size(); ++leaf)
+                    verification::require(layout[nextLeaf + leaf] == childLayout[leaf],
+                                          "nested class field leaf type mismatch");
+            } else {
+                verification::require(scalar(field.elementType) && field.length >= 1 &&
+                                          field.length <= (field.array ? 64 : 1),
+                                      "invalid logical class field shape");
+                verification::require(nextLeaf + static_cast<std::size_t>(field.length) <=
+                                          layout.size(),
+                                      "logical class field range exceeds layout");
+                for (int element = 0; element < field.length; ++element)
+                    verification::require(layout[nextLeaf + element] == field.elementType,
+                                          "logical class field leaf type mismatch");
+            }
+            nextLeaf += static_cast<std::size_t>(field.length);
+        }
+        verification::require(nextLeaf == layout.size(),
+                              "logical class fields do not cover complete layout");
+        verification::require(!composed || layout.size() <= 64,
+                              "composed class exceeds 64 scalar leaves");
+    }
+    // The graph walk is bounded before recursion, including zero-leaf cycles.
+    // Leaf vectors alone cannot establish the logical shape or nesting depth.
+    std::map<std::string, int> depths;
+    std::set<std::string> visiting;
+    std::function<int(const std::string &, int)> depth = [&](const std::string &name, int path) {
+        verification::require(!visiting.contains(name), "cyclic nested class layout");
+        verification::require(path <= 4, "nested class layout exceeds depth 4");
+        if (depths.contains(name)) {
+            verification::require(path + depths.at(name) - 1 <= 4,
+                                  "nested class layout exceeds depth 4");
+            return depths.at(name);
+        }
+        visiting.insert(name);
+        int result = 1;
+        for (const auto &field : module.classFields.at(name))
+            if (field.elementType.isClass())
+                result = std::max(result, 1 + depth(field.elementType.className, path + 1));
+        visiting.erase(name);
+        depths[name] = result;
+        return result;
+    };
+    for (const auto &[name, fields] : module.classFields)
+        depth(name, 1);
     for (auto &function : module.functions)
         verification::verifyFunction(function, functions, nullptr, scopes, module.classLayouts,
                                      module.classFields);

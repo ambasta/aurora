@@ -1,6 +1,6 @@
 # Bootstrap commands share the image/output directory; serialize their execution.
 .NOTPARALLEL:
-.PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-scheduling smoke-uefi test-uefi test-acpi test-division smoke-acpi smoke-division test-pci test-unsigned smoke-pci smoke-unsigned test-uefi-runtime smoke-uefi-runtime test-uefi-ipc smoke-uefi-ipc smoke-all
+.PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-scheduling smoke-uefi test-uefi test-acpi test-division smoke-acpi smoke-division test-pci test-unsigned smoke-pci smoke-unsigned test-uefi-runtime smoke-uefi-runtime test-uefi-ipc smoke-uefi-ipc test-uefi-budget smoke-uefi-budget smoke-all
 
 all: compiler kernel
 
@@ -47,7 +47,10 @@ test-uefi-runtime:
 test-uefi-ipc:
 	./scripts/kernel-uefi-ipc-tests.sh
 
-test: test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-semantics
+test-uefi-budget:
+	./scripts/kernel-uefi-budget-tests.sh
+
+test: test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-semantics
 
 # QEMU is intentionally a separate acceptance gate, never silently skipped.
 smoke:
@@ -83,6 +86,9 @@ smoke-uefi-runtime:
 smoke-uefi-ipc:
 	./scripts/kernel-uefi-ipc-all.sh
 
+smoke-uefi-budget:
+	./scripts/kernel-uefi-budget-all.sh
+
 smoke-all:
 	./scripts/kernel-protection-smoke.sh
 	./scripts/kernel-scheduling-smoke.sh
@@ -93,3 +99,4 @@ smoke-all:
 	./scripts/kernel-unsigned-smoke.sh
 	./scripts/kernel-uefi-runtime-all.sh
 	./scripts/kernel-uefi-ipc-all.sh
+	./scripts/kernel-uefi-budget-all.sh

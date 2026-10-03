@@ -414,7 +414,7 @@ def rejection_cases(suite):
         ("public legacy array alias field", "class Bad{public:array<i64,2> data;Bad():data{}{} };"),
         ("array field capacity 65", "class Bad{builtin::array<i64,65> data;public:Bad():data{}{} };"),
         ("array field capacity zero", "class Bad{builtin::array<i64,0> data;public:Bad():data{}{} };"),
-        ("nested class field", "class Bad{std::array<i64,2> data;public:Bad():data{}{} };"),
+        ("nested class rejects array zero initializer", "class Bad{std::array<i64,2> data;public:Bad():data{}{} };"),
         ("nested builtin array field", "class Bad{builtin::array<array<i64,1>,2> data;public:Bad():data{}{} };"),
         ("owning array field", "class Bad{builtin::array<own<i64>,2> data;public:Bad():data{}{} };"),
         ("reference array field", "class Bad{builtin::array<ref<i64>,2> data;public:Bad():data{}{} };"),

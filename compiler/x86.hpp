@@ -69,6 +69,30 @@ class X86Emitter {
     const ir::ClassField &receiverField(int fieldIndex) const {
         return classFields->at(currentFunction->receiver->className)[fieldIndex];
     }
+    int packArguments(const ir::Function &target, const std::vector<int> &objects) {
+        for (std::size_t index = target.parameters.size(); index > 0; --index)
+            if (scalar(target.parameters[index - 1]))
+                pop(argumentRegisters[index - 1]);
+        const int recordBytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
+        if (recordBytes)
+            line("subq $" + std::to_string(recordBytes) + ", %rsp");
+        for (std::size_t index = 0; index < target.parameters.size(); ++index) {
+            const auto &type = target.parameters[index];
+            const int offset = recordOffset(target, index);
+            if (scalar(type))
+                line("movq " + argumentRegisters[index] + ", " + std::to_string(offset) + "(%rsp)");
+            else {
+                const auto &layout = classLayouts->at(type.className);
+                for (std::size_t field = 0; field < layout.size(); ++field) {
+                    line("movq " + address(objects[index] - static_cast<int>(field * 8)) +
+                         ", %rax");
+                    line("movq %rax, " + std::to_string(offset + field * 8) + "(%rsp)");
+                }
+            }
+        }
+        line("movq %rsp, %r11");
+        return recordBytes;
+    }
     void checkedDivision(bool remainder, bool unsignedValue) {
         const auto suffix = std::to_string(functionIndex) + "_" + std::to_string(divisionIndex++);
         const auto ready = ".Ldivision_ready_" + suffix;
@@ -244,33 +268,7 @@ class X86Emitter {
                     call(operation.callee);
                 } else if constexpr (std::is_same_v<Op, ir::AggregateCall>) {
                     const auto &target = *functions.at(operation.callee);
-                    // Scalar operands retain source evaluation order on the value
-                    // stack. Extract them before allocating the separate call record.
-                    for (std::size_t index = target.parameters.size(); index > 0; --index)
-                        if (scalar(target.parameters[index - 1]))
-                            pop(argumentRegisters[index - 1]);
-                    const int recordBytes =
-                        (recordOffset(target, target.parameters.size()) + 15) & ~15;
-                    if (recordBytes)
-                        line("subq $" + std::to_string(recordBytes) + ", %rsp");
-                    for (std::size_t index = 0; index < target.parameters.size(); ++index) {
-                        const auto &type = target.parameters[index];
-                        const int offset = recordOffset(target, index);
-                        if (scalar(type)) {
-                            line("movq " + argumentRegisters[index] + ", " +
-                                 std::to_string(offset) + "(%rsp)");
-                        } else {
-                            const auto &layout = classLayouts->at(type.className);
-                            for (std::size_t field = 0; field < layout.size(); ++field) {
-                                line("movq " +
-                                     address(operation.objectArguments[index] -
-                                             static_cast<int>(field * 8)) +
-                                     ", %rax");
-                                line("movq %rax, " + std::to_string(offset + field * 8) + "(%rsp)");
-                            }
-                        }
-                    }
-                    line("movq %rsp, %r11");
+                    const int recordBytes = packArguments(target, operation.objectArguments);
                     if (target.result.isClass())
                         line("leaq " + address(operation.resultOffset) + ", %r10");
                     call(operation.callee);
@@ -280,6 +278,41 @@ class X86Emitter {
                                      std::is_same_v<Op, ir::EndObject>) {
                     // Scalar-only class lifetimes need no runtime action. The
                     // verifier prevents use outside their lexical lifetime.
+                } else if constexpr (std::is_same_v<Op, ir::CopyObject>) {
+                    const auto &name =
+                        currentFunction->objectSlots.at(operation.sourceOffset).className;
+                    const auto &layout = classLayouts->at(name);
+                    for (std::size_t leaf = 0; leaf < layout.size(); ++leaf) {
+                        line("movq " +
+                             address(operation.sourceOffset - static_cast<int>(leaf * 8)) +
+                             ", %rax");
+                        line("movq %rax, " +
+                             address(operation.resultOffset - static_cast<int>(leaf * 8)));
+                    }
+                } else if constexpr (std::is_same_v<Op, ir::ObjectFieldCopy>) {
+                    const ir::ClassField *field = nullptr;
+                    if (operation.sourceOffset == 0) {
+                        field = &receiverField(operation.fieldIndex);
+                        line("movq " + address(receiverSaveOffset) + ", %r10");
+                    } else {
+                        const auto &name =
+                            currentFunction->objectSlots.at(operation.sourceOffset).className;
+                        field = &classFields->at(name)[operation.fieldIndex];
+                        line("leaq " + address(operation.sourceOffset) + ", %r10");
+                    }
+                    for (int leaf = 0; leaf < field->length; ++leaf) {
+                        line("movq " + std::to_string((field->firstLeaf + leaf) * 8) +
+                             "(%r10), %rax");
+                        line("movq %rax, " + address(operation.resultOffset - leaf * 8));
+                    }
+                } else if constexpr (std::is_same_v<Op, ir::InitializeObjectField>) {
+                    const auto &field = receiverField(operation.fieldIndex);
+                    line("movq " + address(receiverSaveOffset) + ", %r10");
+                    for (int leaf = 0; leaf < field.length; ++leaf) {
+                        line("movq " + address(operation.sourceOffset - leaf * 8) + ", %rax");
+                        line("movq %rax, " + std::to_string((field.firstLeaf + leaf) * 8) +
+                             "(%r10)");
+                    }
                 } else if constexpr (std::is_same_v<Op, ir::ReceiverLoad>) {
                     line("movq " + address(receiverSaveOffset) + ", %r10");
                     line("movq " +
@@ -311,14 +344,21 @@ class X86Emitter {
                     line("movq " + address(receiverSaveOffset) + ", %r10");
                     line("movq %rax, " + std::to_string(field.firstLeaf * 8) + "(%r10,%rcx,8)");
                 } else if constexpr (std::is_same_v<Op, ir::MethodCall>) {
-                    for (std::size_t index = argumentCounts.at(operation.callee); index > 0;
-                         --index)
-                        pop(argumentRegisters[index - 1]);
+                    const auto &target = *functions.at(operation.callee);
+                    const bool aggregate = aggregateSignature(target);
+                    const int recordBytes =
+                        aggregate ? packArguments(target, operation.objectArguments) : 0;
+                    if (!aggregate)
+                        for (std::size_t index = argumentCounts.at(operation.callee); index > 0;
+                             --index)
+                            pop(argumentRegisters[index - 1]);
                     if (operation.receiverOffset == 0)
                         line("movq " + address(receiverSaveOffset) + ", %r10");
                     else
                         line("leaq " + address(operation.receiverOffset) + ", %r10");
                     call(operation.callee);
+                    if (recordBytes)
+                        line("addq $" + std::to_string(recordBytes) + ", %rsp");
                 } else if constexpr (std::is_same_v<Op, ir::MetadataQuery>) {
                     line("movq %rax, %rdi");
                     call(querySymbol(operation.query, operation.moduleScope));
@@ -395,7 +435,8 @@ class X86Emitter {
             line("pushq %rbp");
             line("movq %rsp, %rbp");
             receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
-            callRecordSaveOffset = aggregate ? function.frameBytes + 8 : 0;
+            callRecordSaveOffset =
+                aggregate ? function.frameBytes + (function.receiver ? 16 : 8) : 0;
             resultSaveOffset = aggregate ? function.frameBytes + 16 : 0;
             const int frameBytes = function.frameBytes + (function.receiver || aggregate ? 16 : 0);
             line("subq $" + std::to_string(frameBytes) + ", %rsp");

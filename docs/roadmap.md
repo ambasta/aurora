@@ -121,3 +121,12 @@ Resolve these by prototypes and RFCs rather than presenting the initial proposal
 - The formal model, proof tooling, target architectures, and optimizer-validation strategy.
 
 The next practical priority is to close scalar and class semantic evidence gaps, validate the current kernel additions, and resolve review findings before broadening the language. Partial implementations in later stages do not count as passing earlier gates; more syntax alone would make the safety story harder to validate.
+
+## Current bounded checkpoint: milestone011
+
+Inline Value composition and verified UEFI service-budget recovery are implemented
+and reviewed. The former composes existing class abstractions without heap or
+reference ownership; the latter bounds non-yielding service runs by actual
+interrupt count without promising milliseconds or general client scheduling.
+Next proposed work is ordinary enum/result integration and a bounded multi-client
+service dispatcher, each with a separate acceptance gate.
