@@ -8,6 +8,12 @@ The target assumes open, inspectable firmware and vendors willing to implement A
 
 No C/C++ source, header, object model, calling convention, or library compatibility is promised by the new language. The first bootstrap uses existing host tools, a modern C++ kernel shim, architecture-specific assembly, and a temporary link boundary to run an Aurora-compiled function. These are replaceable construction tools, not language features or a commitment to preserve their interfaces.
 
+## Language identity and assurance goals
+
+Aurora should feel recognizably like a modern C++ API while discarding unsafe features and C/source/ABI compatibility. The confirmed brief combines C-level performance ambitions, Rust-level memory-safety ambitions, Java-inspired encapsulation/interfaces, and a safe TypeScript-inspired type algebra with both compile-time and runtime reflection. Those are independent obligations to specify and verify, not interchangeable slogans or inherited guarantees.
+
+Inline classes and explicit static/dynamic dispatch avoid making Java-inspired OOP imply mandatory boxing or garbage collection. Key queries, mapped types and conditional types must preserve nominal resource identity, visibility, ownership and effects. Reflection may inspect or invoke only through checked authority; neither type transformations nor dynamic calls can fabricate a borrow or bypass privacy. The ordinary language offers no unsafe assertion escape hatch. Necessary hardware operations remain a small trusted implementation boundary.
+
 ## Proposed system boundaries
 
 The privileged nucleus owns address spaces, page ownership, threads, scheduling budgets, interrupts, capability tables, IPC endpoints, and the mechanism for configuring DMA isolation. It should contain neither a general filesystem nor network, graphics, or ordinary device-driver policy.
@@ -36,11 +42,11 @@ The initial assurance boundary includes compiler, privileged intrinsics, kernel,
 
 ## Compiler architecture
 
-The intended pipeline is source modules → typed syntax → ownership/effect checked IR → lowered IR → machine code. Typed IR retains lifetimes, initialization state, authority requirements, and destruction edges long enough to validate transformations. Runtime type descriptors and IPC serializers derive from the same checked type model.
+The intended pipeline is source modules → typed syntax → ownership/effect checked IR → lowered IR → machine code. Typed IR retains lifetimes, initialization state, authority requirements, and destruction edges long enough to validate transformations. Runtime type descriptors and IPC serializers derive from the same checked type model. A bounded type-evaluation layer handles key sets, mapped types and conditional types while retaining visibility, ownership and effect constraints. Its result is checked type information, never authority to reinterpret live storage.
 
 Compile-time computation is deterministic and resource-bounded. It cannot read arbitrary host files, access the network, or acquire credentials. Build inputs and permitted tools must be declared. Diagnostics should identify the resource or borrow involved, the conflicting use, and the point that established it.
 
-The bootstrap emits GNU x86-64 assembly for scalars and local class values containing scalar fields. It performs lexical integer ownership checks and generates limited built-in/class reflection metadata. It is not yet the compiler architecture above. Self-hosting follows semantic stability and differential tests, rather than becoming evidence of correctness by itself.
+The bootstrap uses modern C++-recognizable declarations and emits GNU x86-64 assembly for scalars, local scalar-field class values and fixed scalar arrays. It checks local integer ownership, signed arithmetic overflow and array bounds, supports restricted while loops, and generates limited type-size/field-count reflection metadata. The old fn/let source syntax is not retained. Independent review and a fresh aggregate build passed for this expansion; the verification record contains the receipts. It is not yet the compiler architecture above. Self-hosting follows semantic stability and differential tests, rather than becoming evidence of correctness by itself.
 
 ## Tradeoffs and alternatives
 
@@ -48,9 +54,13 @@ Service isolation adds IPC, scheduling, and operational complexity. Copy-based I
 
 These are proposed choices for an auditable general ecosystem, not a claim of a universally best kernel. Measure alternatives against attack surface, worst-case latency, throughput, power, memory use, developer effort, and recovery behavior. Keep exceptions explicit and limited to profiles whose tests demonstrate their costs.
 
+## Performance acceptance
+
+The C-like performance goal requires equivalent-C benchmarks with matched algorithms, semantic/error behavior, optimization settings and named platforms. Publish latency, throughput, memory and code-size results, including unfavorable outcomes. Track layout/padding, allocations, atomics, contention, dispatch, checks and reflection costs separately. Safety-check elimination requires validated reasoning; unchecked comparison baselines do not justify weakening semantics. No blanket zero-cost abstraction or no-overhead claim is part of this proposal.
+
 ## Current boundary and next reading
 
-The current bootstrap has booted under QEMU, called an Aurora-compiled function, and reported 42 over serial. This establishes the compiler-to-kernel execution path for that emulator configuration. Subsequent implementation adds IDT breakpoint dispatch, fail-stop exception paths, validation of an E820 usable-memory map, and a bounded 128-page arena allocator with move-only generation/epoch tickets. Fresh integration, sanitizer/model checks and all three emulator gates passed; the verification record owns the exact evidence. This allocator is trusted C++ bootstrap code, not Aurora-language heap ownership. Exception delivery is not a scheduler or a general hardware-interrupt stack. Paging used to enter an execution mode is not process isolation. Printing a value is not a scheduler, IPC implementation, device framework, or memory-safety proof. Consult the [verification record](verification.md) and current build/test output for the tested snapshot and remaining limits.
+The current bootstrap has booted under QEMU, called an Aurora-compiled function, and reported 42 over serial. This establishes the compiler-to-kernel execution path for that emulator configuration. Subsequent implementation adds IDT breakpoint dispatch, fail-stop exception paths, validation of an E820 usable-memory map, and a bounded 128-page arena allocator with move-only generation/epoch tickets. Fresh integration, sanitizer/model checks and all 13 protection/exception emulator gates passed; the verification record owns the exact evidence. Explicit 4 KiB page permissions now enforce W^X/NX/WP, with guarded stacks and a controlled integer-only ring-3 probe exercising denied accesses and privileged instructions. There is no scheduler or general address-space lifecycle. This allocator is trusted C++ bootstrap code, not Aurora-language heap ownership. Exception delivery is not a scheduler or a general hardware-interrupt stack. Paging used to enter an execution mode is not process isolation. Printing a value is not a scheduler, IPC implementation, device framework, or memory-safety proof. Consult the [verification record](verification.md) and current build/test output for the tested snapshot and remaining limits.
 
 See [language design](language.md), [device contract](device-contract.md), and [roadmap](roadmap.md).
 

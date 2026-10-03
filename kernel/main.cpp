@@ -5,6 +5,8 @@
 #include <string_view>
 #include "pages.hpp"
 #include "interrupts.hpp"
+#include "protection.hpp"
+#include "firmware-memory.hpp"
 namespace aurora::hardware {
 using Byte = unsigned char;
 using Port = unsigned short;
@@ -46,6 +48,11 @@ namespace {
 constinit aurora::memory::PhysicalPages pages;
 constinit aurora::memory::PhysicalPages foreign_pages;
 constinit std::array<std::optional<aurora::memory::PageLease>, aurora::memory::PhysicalPages::capacity> leases{};
+#ifdef AURORA_TEST_NX
+alignas(4096) constinit std::array<std::uint8_t, 4096> nx_probe{};
+#endif
+volatile bool user_expected = false;
+volatile unsigned user_returns = 0;
 volatile bool breakpoint_expected = false;
 volatile unsigned breakpoint_count = 0;
 [[noreturn]] auto fail(std::string_view message) -> void {
@@ -65,21 +72,8 @@ auto physical_read(std::uint64_t address, unsigned bytes) -> std::uint64_t {
     return result;
 }
 auto arena_is_usable(std::uint64_t start, std::uint64_t end) -> bool {
-    const auto entries = physical_read(0x5000, 2);
-    if (entries == 0 || entries > 32) return false;
-    auto covered = false;
-    for (auto index = std::uint64_t{0}; index < entries; ++index) {
-        const auto entry = 0x5008 + index * 24;
-        const auto base = physical_read(entry, 8);
-        const auto size = physical_read(entry + 8, 8);
-        const auto type = physical_read(entry + 16, 4);
-        const auto attributes = physical_read(entry + 20, 4);
-        if ((attributes & 1) == 0 || size == 0) continue;
-        if (base > UINT64_MAX - size) return false;
-        if (base < end && base + size > start && type != 1) return false;
-        if (type == 1 && base <= start && base + size >= end) covered = true;
-    }
-    return covered;
+    const auto bytes = std::span{reinterpret_cast<const std::byte*>(0x5000), std::size_t{8 + 32 * 24}};
+    return aurora::memory::FirmwareMemory::grants(bytes, start, end);
 }
 auto page_self_test() -> void {
     constexpr auto base = std::uint64_t{0x100000};
@@ -124,20 +118,40 @@ auto page_self_test() -> void {
     aurora::hardware::Serial::text("AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free\r\n");
 }
 }
-auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t instruction) -> void asm("aurora_exception_dispatch");
-auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t instruction) -> void {
-    if (vector == 3 && breakpoint_expected) {
+auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t instruction,
+    std::uint64_t code, std::uint64_t frame, std::uint64_t user_value) -> std::uint64_t asm("aurora_exception_dispatch");
+auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t instruction,
+    std::uint64_t code, std::uint64_t frame, std::uint64_t user_value) -> std::uint64_t {
+    using aurora::hardware::Protection;
+    const auto cpl = code & 3;
+    if (vector == 3 && breakpoint_expected && cpl == 0) {
         breakpoint_count = breakpoint_count + 1;
-        return;
+        return 0;
+    }
+    const auto on_entry_stack = frame >= Protection::entry_stack_bottom && frame < Protection::entry_stack_top;
+    if (vector == 128 && user_expected && cpl == 3 && on_entry_stack && user_value == 42
+        && instruction >= Protection::user_code && instruction < Protection::user_code + 4096) {
+        user_returns = user_returns + 1;
+        return 1; // Dedicated assembly continuation restores only the saved privileged stack.
     }
     using aurora::hardware::Serial;
     Serial::text("AURORA_EXCEPTION_FATAL: "); Serial::number(vector);
     Serial::text(" error="); Serial::number(error);
     Serial::text(" rip="); Serial::number(instruction); Serial::text("\r\n");
+    std::uint64_t cr2;
+    asm volatile("mov %%cr2, %0" : "=r"(cr2));
+    Serial::text("AURORA_EXCEPTION_CONTEXT: cpl="); Serial::number(cpl);
+    Serial::text(" frame="); Serial::number(frame);
+    Serial::text(" cr2="); Serial::number(cr2); Serial::text("\r\n");
+    if (cpl == 3 && on_entry_stack) Serial::text("AURORA_TSS_ENTRY_OK\r\n");
+    if (vector == 8 && frame >= Protection::emergency_stack_bottom && frame < Protection::emergency_stack_top)
+        Serial::text("AURORA_IST_OK\r\n");
     fail("Exception halted safely");
 }
 // Deliberately narrow temporary assembly symbols, not a supported C source/ABI contract.
+extern const std::byte protected_image_end asm("__write_end");
 auto language_value() -> long long asm("aurora_kernel_value");
+auto user_probe(unsigned long long mode) -> unsigned long long asm("aurora_user_probe");
 auto breakpoint_probe() -> unsigned long long asm("aurora_breakpoint_probe");
 auto kernel_main() -> void asm("aurora_kernel_main");
 auto kernel_main() -> void {
@@ -145,6 +159,13 @@ auto kernel_main() -> void {
     Serial::initialize();
     Serial::text("Aurora bootstrap: x86-64 long mode\r\n");
     aurora::hardware::Interrupts::initialize();
+    using aurora::hardware::Protection;
+    require(arena_is_usable(0x10000, reinterpret_cast<std::uint64_t>(&protected_image_end))
+        && arena_is_usable(Protection::emergency_stack_bottom, Protection::main_stack_top)
+        && arena_is_usable(Protection::user_code, Protection::user_code + 4096)
+        && arena_is_usable(Protection::user_stack_bottom, Protection::user_stack_top), "Firmware does not grant protected image, stacks or controlled user pages");
+    require(Protection::activate(), "Required NX capability or protected mapping validation failed");
+    Serial::text("AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards\r\n");
     breakpoint_expected = true;
     const auto registers_preserved = breakpoint_probe();
     breakpoint_expected = false;
@@ -159,6 +180,26 @@ auto kernel_main() -> void {
     static_cast<void>(*reinterpret_cast<volatile const std::uint8_t*>(0x400000));
     fail("Page fault failed to dispatch");
 #endif
+#ifdef AURORA_TEST_WP
+    *reinterpret_cast<volatile std::uint8_t*>(0x10000) = 0;
+    fail("Supervisor write protection failed");
+#endif
+#ifdef AURORA_TEST_NX
+    nx_probe[0] = 0xc3;
+    Serial::text("AURORA_FAULT_TARGET: "); Serial::number(reinterpret_cast<std::uint64_t>(nx_probe.data())); Serial::text("\r\n");
+    reinterpret_cast<void (*)()>(nx_probe.data())();
+    fail("Data execution was permitted");
+#endif
+#ifdef AURORA_TEST_STACK
+    asm volatile("mov $0x88000, %%rsp; pushq $0" : : : "memory");
+    fail("Stack guard failed");
+#endif
+    user_expected = true;
+    Serial::text("AURORA_USER_ENTER: "); Serial::number(AURORA_USER_PROBE_MODE); Serial::text("\r\n");
+    const auto user_result = user_probe(AURORA_USER_PROBE_MODE);
+    user_expected = false;
+    require(user_result == 1 && user_returns == 1 && Protection::verify(), "Controlled user boundary did not return intact");
+    Serial::text("AURORA_USER_OK: ring3, own stack, TSS entry, controlled return\r\n");
     const auto value = language_value();
     Serial::text("Aurora language result: ");
     Serial::number(static_cast<unsigned long long>(value));

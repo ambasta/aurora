@@ -8,19 +8,25 @@ Produce a reproducible host build, a small source compiler, negative parser/type
 
 **Gate:** fresh build succeeds; accepted examples execute correctly; rejected examples fail with diagnostics; emulator serial output demonstrates entry, the compiled function result, and a controlled terminal state. Record exact tools and test commands. A built image without a boot log is only a build result.
 
-The current integration has passed the QEMU boot path and reported 42 from compiled Aurora code. This is milestone evidence for that snapshot, not a claim that the later gates have passed. Class values/reflection and kernel exception/memory bring-up have since expanded; fresh integration and all three emulator gates passed for that expanded checkpoint. See the [verification record](verification.md) for final build and test results.
+The current integration has passed the QEMU boot path and reported 42 from compiled Aurora code. This is milestone evidence for that snapshot, not a claim that the later gates have passed. Class values/reflection and kernel exception/memory bring-up have since expanded; fresh integration and all 13 protection/exception emulator gates passed for that expanded checkpoint. See the [verification record](verification.md) for final build and test results.
+
+## Design priorities and syntax direction
+
+Preserve a recognizable modern C++ API and identity while removing unsafe features, C compatibility and C ABI promises. C-like performance, Rust-like safety, Java-inspired OOP, and safe TypeScript-style key/mapped/conditional type expressiveness are acceptance goals alongside compile-time and runtime reflection. The type algebra must not introduce `any`/assertion loopholes, erase ownership, bypass access control or require heap-boxing ordinary values. Performance must be measured against equivalent C workloads, not asserted.
+
+The compiler now implements modern C++ declarations, private-by-default scalar class fields, fixed arrays, restricted while loops and checked signed arithmetic; independent review and fresh aggregate integration verification passed. The earlier `fn`/`let` syntax and wrapping-arithmetic evidence belong to the historical checkpoint; they are not a compatibility promise. The compiler reference defines the exact supported grammar; new verification must identify this changed source/semantic checkpoint.
 
 ## 1 Precise scalar semantics
 
-Specify evaluation order, integer overflow, division, conversions, initialization, branch joins, local mutation, moves, and lexical borrow boundaries. Current supported scalar arithmetic intentionally wraps modulo 2^64; decide and test the transition to the proposed checked-default arithmetic before changing that behavior. Memory/index/range arithmetic must be separately checked when introduced. Align emitted behavior with the specification. Add malformed-source fuzzing and differential execution against a simple reference interpreter. Ensure unsupported forms fail closed.
+Specify evaluation order, integer overflow, division, conversions, initialization, branch joins, local mutation, moves, and lexical borrow boundaries. The compiler now checks signed +, -, *, unary negation and fixed-array bounds with fail-stop traps, replacing historical wrapping behavior. Specify and test that failure contract, loop flow and const-owner rules. Future memory/range arithmetic must be checked when introduced. Align emitted behavior with the specification. Add malformed-source fuzzing and differential execution against a simple reference interpreter. Ensure unsupported forms fail closed.
 
 **Gate:** executable semantics and compiler agree across edge cases and generated programs, including failing paths. Document coverage and counterexamples. Do not generalize scalar ownership checks into claims about heap safety.
 
 ## 2 Class and lifetime core
 
-A partial implementation exists: local scalar-field classes, named initialization, independent value copies, and field access/mutation. It deliberately excludes methods, nested aggregates, heap storage, aggregate borrowing, and class arguments/results. This partial stage does not waive the scalar semantic evidence gate or satisfy the lifetime gate below.
+A partial implementation exists: private-by-default local scalar-field classes, designated initialization, independent value copies and access-checked field reads/mutation. Local fixed scalar arrays are also present. It deliberately excludes methods, nested aggregates, heap storage, aggregate borrowing, and class arguments/results. This partial stage does not waive the scalar semantic evidence gate or satisfy the lifetime gate below.
 
-Implement inline value classes, explicit reference ownership, fields, construction, deterministic destruction, borrowing across function calls, and constrained generics. Define lifetimes, aliasing, pointer provenance, synchronization, and trusted intrinsics in a formal core calculus before claiming soundness. Classify which language features the model actually covers.
+Implement inline value classes, Java-inspired encapsulation/interfaces, explicit reference ownership and dispatch, fields, construction, deterministic destruction, borrowing across function calls, and constrained generics. Do not make interfaces or identity force heap allocation, garbage collection, or boxing. Define lifetimes, aliasing, pointer provenance, synchronization, and trusted intrinsics in a formal core calculus before claiming soundness. Classify which language features the model actually covers.
 
 **Gate:** tests cover partial initialization, exception/error paths, move/drop ordering, nested and escaping borrows, generic instantiation, and invalidation. Complete an independent soundness review and publish remaining assumptions. Demonstrate that safe clients cannot violate trusted interfaces. A proof of a core calculus is not yet a proof of the compiler.
 
@@ -28,7 +34,7 @@ Implement inline value classes, explicit reference ownership, fields, constructi
 
 Current type size/ID/field-count queries and runtime size/count lookup include declared classes. They are useful metadata plumbing, not the typed generation or safe dynamic invocation required here.
 
-Add typed compile-time reflection and generation. Introduce opt-in runtime descriptors, checked invocation, exported visibility, dynamic ownership, effect enforcement, and descriptor leases. Define versioned module/package identities and an Aurora-native ABI without adopting C++ layouts.
+Specify and implement safe key-set queries, mapped types and conditional types with bounded evaluation, checked refinement and ownership-preserving constraints. Reject unchecked top types, assertion loopholes, private-member exposure and transformations that duplicate resources. Add typed compile-time reflection and generation. Introduce opt-in runtime descriptors, checked invocation, exported visibility, dynamic ownership, effect enforcement, and descriptor leases. Define versioned module/package identities and an Aurora-native ABI without adopting C++ layouts.
 
 **Gate:** reflective paths enforce the same authority and lifetime rules as static paths; malformed descriptors and stale generations are rejected; metadata stripping is tested; builds are reproducible and compile-time resource limits work. Keep dynamic borrowed returns disabled until their safety model is established.
 
@@ -52,11 +58,33 @@ Publish device schemas, vendor reference firmware, simulation models, and confor
 
 **Gate:** each supported hardware/firmware tuple passes discovery, DMA isolation, fault injection, power transition, update/recovery, and performance tests. Independent implementations demonstrate protocol interoperability. Advertise only tested tuples and explicit limitations.
 
-## 7 Production assurance
+## 7 Native desktop and developer system
+
+Build the requested Sway-like tiling desktop, Foot-like terminal, and Wayland-like display protocol as native Aurora components after process isolation, input/display services, text libraries, GPU buffer contracts and native package tooling are usable. These are functional design references, not C source, configuration, wire-protocol, ABI or POSIX compatibility promises. The target remains a native system authored in Aurora.
+
+**Gate:** demonstrate tiling/workspaces and window lifecycle, hotplugged input/outputs, authority-checked clipboard/selection, accessible keyboard navigation and assistive interfaces, text shaping/input methods, GPU composition and reset recovery. The terminal must pass a specified Unicode/emulation profile and native PTY-equivalent process/session tests for resize, backpressure, EOF/hangup and job control. Use the detailed [system-release acceptance inventory](system-release.md); none of these desktop facilities is implemented by the current boot milestone.
+
+## 8 Native runtime and FOSS ports
+
+After the foundation is mature, choose useful language runtimes, libraries and FOSS applications to port to the native kernel/compiler ecosystem. Inventory dependencies and unsafe assumptions before selecting native backend/API adaptation or an Aurora safety-oriented rewrite. Specify runtime ownership, threading and error boundaries; do not quietly add a C compatibility layer or promise that existing Linux source/binaries run unchanged. Resolve any exception to the all-Aurora implementation goal explicitly.
+
+**Gate:** each selected port has a named version, reviewed licensing/attribution plan, native dependencies, functional/isolation tests, package/update owner and documented exclusions. The existence of an upstream project is neither permission to copy its code indiscriminately nor proof of port feasibility. Ports follow readiness of their foundation rather than an arbitrary date.
+
+## Performance qualification
+
+Add representative algorithm, allocation, dispatch, synchronization, reflection and systems workloads with equivalent C baselines. Keep algorithms, validation/error behavior, data layouts where comparable, optimization settings and hardware explicit. Record layout/padding, allocation counts, atomics/contention, dynamic dispatch and reflective-operation costs rather than declaring every abstraction zero-cost.
+
+**Gate:** publish reproducible throughput, latency, memory and code-size comparisons, identify remaining regressions, and validate any safety-check elimination. Real-time profiles also require bounded/worst-case behavior. A benchmark result applies to its workload and target, not to every program.
+
+## 9 Production assurance
 
 Stabilize release/update policy, reproducible packages, recovery, security response, developer tooling, standard libraries, accessibility, and platform-specific performance/energy budgets. Extend formal verification toward the implemented nucleus and critical compiler transformations; state what is outside each proof.
 
 **Gate:** independent review, sustained adversarial testing, defined support ownership, recoverable upgrades, and published assurance arguments. General-purpose readiness requires usable applications and operations as well as a booting kernel.
+
+## Evidence and checkpoint history
+
+Preserve the milestone001 source manifest and associated logs as historical evidence for their original checkpoint and earlier source language, including its then-wrapping arithmetic. Do not edit historical receipts to imply they tested the new C++-style syntax or semantics. Every later verification batch identifies its own source snapshot and outcomes; new capability claims cannot be backdated into the earlier manifest. Track requirements and passed/failed/missing gates without speculative completion percentages.
 
 ## Open decisions
 

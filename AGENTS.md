@@ -1,6 +1,10 @@
 # Aurora development contract
 
 Aurora is a clean-slate, safe systems-language and operating-system project.
+The language is an intentionally incompatible safe C++ dialect, not a Rust-syntax
+replacement. Priorities are extreme safety, modern/elegant design, then measured
+performance comparable to equivalent C implementations.
+
 The destination is a self-hosting distribution with native toolchain, libraries,
 package management, drivers, services, desktop, and utilities. It is not a C/C++
 compatibility layer. Read README.md and docs/completeness-matrix.md first.
@@ -12,6 +16,12 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - Class values must not require heap allocation. Resource ownership, borrowing,
   initialization and lifetime rules must be explicit and tested.
 - Reflection must not bypass type, lifetime, visibility, or capability checks.
+  The target includes TypeScript-style type-level transformations, compile-time
+  reflection, and runtime reflection, with no unchecked assertions or any loophole.
+- Preserve C++-recognizable APIs, class privacy and strong encapsulation. Java-like
+  object design does not imply forced boxing, heap allocation or a mandatory GC.
+- Prefer checked operations and explicit failures to undefined behavior. Optimize
+  away a safety check only with a valid proof of its preconditions.
 - Temporary host C++/assembly adapters are bootstrap machinery, not the final
   language or a claim that the kernel is written in Aurora already.
 - Hardware qualification targets every Zen generation and Navi/RDNA onward,

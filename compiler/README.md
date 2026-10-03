@@ -1,8 +1,6 @@
-# Aurora bootstrap compiler
+# Aurora safe C++ dialect bootstrap
 
-A genuine, deliberately small compiler written in C++23. It lexes and parses Aurora source into an AST, checks types and lexical ownership while emitting x86-64 GNU assembly, and uses the system assembler/linker. It does not translate Aurora to C or C++. Standard C++ library headers bootstrap the implementation; Aurora has no includes, macros, or C/C++ source-compatibility layer.
-
-Build from the repository root:
+Aurora is a deliberately incompatible, safe-by-default C++ dialect under development. This is a small executable subset, not a complete C++ implementation or a production safety guarantee. The C++23 bootstrap compiler has its own lexer, AST, type/lifetime checks and x86-64 assembly emitter. It does not translate Aurora into C. Host standard-library headers are temporary implementation machinery; the language has no C header, macro, raw-pointer, unsafe-block or foreign-C-ABI feature.
 
 ```sh
 make -C compiler
@@ -11,86 +9,116 @@ build/aurorac examples/kernel.au -o build/kernel-language.s
 as --64 build/kernel-language.s -o build/kernel-language.o
 ```
 
-## Implemented surface
+## Current syntax
 
 ```text
 module demo;
 
-fn plus(a: i64, b: i64) -> i64 {
-    return a + b;
-}
+class Point {
+public:
+    i64 x;
+    i64 y;
+};
 
-fn answer() -> i64 {
-    static_assert(size_of(i64) == 8);
-    let token: own<i64> = own(40);
-    {
-        let edit: mutref<i64> = borrow_mut(token);
-        write(edit, read(edit) + 2);
+auto answer(i64 input) -> i64 {
+    const Point origin = Point{.x = 20, .y = 22};
+    i64 total = input;
+    const array<i64, 2> values = {origin.x, origin.y};
+    i64 index = 0;
+    while (index < len(values)) {
+        total = total + values[index];
+        index = index + 1;
     }
-    let final: own<i64> = move(token);
-    return read(final);
+    return total;
 }
 ```
 
-- One mandatory module declaration per source file. It is currently a label, not a separate-compilation/import system.
-- `fn`, explicit parameter/result types, up to six scalar parameters, forward calls and recursion.
-- `i64`, `bool`, `own<i64>`, `ref<i64>`, `mutref<i64>` and user-defined scalar-field class locals.
-- Immutable `let` bindings; `let mut` for scalar reassignment and class field assignment. Initialization is mandatory. Lexical shadowing is allowed, duplicate names in one scope are rejected.
-- Lexical blocks, `if (bool) { ... } else { ... }`, return statements. Functions must return on every path. Unreachable statements are rejected.
-- Decimal literals, booleans, parentheses, unary `-` and `!`, `+`, `-`, `*`, `==`, `!=`, `<`, `>`, `<=`, `>=`.
-- Arithmetic currently wraps modulo 2^64; ordering is signed. There is no division, shift, pointer arithmetic, or implicit scalar conversion. Positive literals must fit signed i64; the minimum value can be expressed as `-9223372036854775807 - 1`.
-- `//` line comments.
+- One mandatory `module name;` declaration per file. Imports/separate compilation are not implemented.
+- Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar parameters, forward calls and recursion work. Parameters are immutable in this bootstrap subset; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
+- Local declarations are `const Type name = initializer;` or `Type name = initializer;`. Initialization is mandatory. Const scalar/aggregate locals cannot be assigned; unqualified scalar locals and scalar fields/elements of unqualified aggregates can be assigned. Ownership binding rules are stricter below.
+- Scalar types are `i64` and `bool`. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
+- Blocks, `if (bool) { ... } else { ... }`, `while (bool) { ... }`, `return`, and `static_assert` are supported. `break`, `continue`, and `for` are deferred.
+- Functions must return on every statically continuing path. A while-loop is conservatively allowed to run zero times even for literal `true`, so it does not by itself prove a function returns. Unreachable statements following an unconditional return are rejected.
+- Decimal integers, booleans, parentheses, unary `-`/`!`, `+`, `-`, `*`, and comparisons `== != < > <= >=` are supported. There are no implicit scalar conversions, division, shifts, pointer arithmetic, increment operators, or short-circuit boolean operators yet.
+- `//` comments are supported. Previous `fn`/`let` prototype syntax is rejected. This intentional source break follows the project's C++ identity; conventional C declarations such as `int main()` are also rejected.
 
-## Actual safety boundary
+## Defined integer and evaluation semantics
 
-`own<i64>` is an affine, stack-resident scalar capability. It is not a heap allocation or a general resource implementation. `own(value)` initializes it; `move(name)` transfers it and invalidates the old binding. No implicit owned-value copies are permitted. Dropping unused owners is allowed.
+Signed i64 addition, subtraction, multiplication and negation are checked. Overflow branches to the compiler's fail-stop `UD2` trap rather than wrapping or executing with undefined arithmetic behavior. Both `9223372036854775807` and `-9223372036854775808` are expressible; an out-of-range positive literal is rejected. Negating the minimum value traps. No wrapping operation is currently offered.
 
-`borrow(owner)` creates a lexically scoped shared reference; `borrow_mut(owner)` creates an exclusive reference. Multiple shared references are permitted. Shared and exclusive borrows cannot overlap. Owners cannot move while borrowed, and cannot be read through the owner while exclusively borrowed. `read` copies the scalar value through an owner or reference; `write` changes it through a mutable reference and returns the written i64. Borrow lifetimes end at the declaring block's end, even if their last use was earlier.
+Operands and function arguments evaluate left to right. Class/array initializers evaluate in written order before the new binding enters scope. Class names and initializer fields are statically checked. Array assignment evaluates its index once, checks bounds, then evaluates the right-hand side once and stores. An invalid index traps before evaluating the right-hand side or computing a memory address.
 
-References cannot be returned, passed to functions, copied, rebound, or stored in another value. Borrowing references is unsupported. This deliberate restriction avoids reference escape in this subset. References may only target already-declared owners. At conditional joins, an owner is considered moved if any continuing path moved it; terminated return paths do not contaminate continuing paths. Constants do not eliminate branches during checking.
+Fail-stop means no recovery or unwinding is promised. On the hosted Linux test harness, `UD2` is observed as specifically SIGILL; other signals and timeouts fail the tests. In the bootstrap kernel, the hardware invalid-opcode exception must be handled by its trusted fail-stop exception path. No destructor or cleanup semantics are implied by these traps.
 
-These checks are meaningful within this restricted scalar language. They are not a claim of a production-complete Rust-equivalent safety system. Classes currently contain only copyable scalar fields. There are no methods, inheritance, nested class fields, arrays, heap allocation, destructors, generics, threads, concurrency rules, unsafe blocks, or foreign calls yet. Stack exhaustion through deep recursion remains possible. Hardware/bootstrap assembly is outside these language checks.
-
-## Class values
+## Owned scalar safety and const
 
 ```text
-class Point {
-    x: i64;
-    y: i64;
+own<i64> seed = own(40);
+{
+    mutref<i64> edit = borrow_mut(seed);
+    write(edit, read(edit) + 2);
 }
-
-fn class_demo() -> i64 {
-    let mut p: Point = Point { y: 22, x: 20 };
-    let snapshot: Point = p;
-    p.x = 40;
-    return snapshot.x + snapshot.y;
-}
+const own<i64> answer = move(seed);
 ```
 
-Class declarations may precede or follow functions. Fields must be `i64` or `bool`, and field names must be unique. Every field must be initialized exactly once; named fields may appear in any order. Initializer expressions evaluate in written order, before the new local enters scope. Uninitialized field reads, unknown fields, type mismatches and mismatched constructors are rejected.
+`own<i64>` is an affine stack-resident scalar capability, not a heap allocation or a general resource implementation. `own(value)` initializes it; `move(name)` transfers its value and invalidates the old binding. Owners never support reassignment, even without `const`; unused owners may be dropped. Implicit owner copies are rejected.
 
-A same-type class local initializer copies every scalar field into independent stack storage. Mutating the original does not change the copy. Field writes require `let mut`; the field's type cannot change. Whole-class reassignment is not yet supported. Class values cannot currently be function arguments/results, contain ownership/reference fields, or be borrowed. `own<Point>` is rejected. These restrictions prevent silently inventing aggregate ownership/escape semantics.
+`borrow(owner)` creates a shared reference. `borrow_mut(owner)` creates an exclusive reference and requires a non-const owner. Multiple shared references may coexist; shared/exclusive borrows cannot overlap. A borrowed owner cannot move, and an exclusively borrowed owner cannot be read through its original binding. `read` copies a scalar value through an owner/reference; `write` changes it through a non-const mutable-reference binding and returns the written value.
 
-Each scalar field currently occupies an aligned eight-byte slot, including bool fields. Fields appear in declaration order. The complete class size is eight times its field count, with a minimum of eight bytes for empty classes. This padded bootstrap layout is internal to Aurora, not a C-compatible layout guarantee. The compiler generates direct offset-based field loads, stores and copies; classes are not a cosmetic alias for i64.
+Const is deliberately stronger than shallow C++ smart-pointer constness: a const owner cannot be mutably borrowed, nor moved into a mutable owner. Moving it to another const owner is permitted. A `const mutref<i64>` binding cannot write through that binding. This does not provide arbitrary casts, type assertions or a way to remove constness.
 
-See `examples/class_values.au` for a runnable function combining immutable snapshots, field mutation and reflection. Methods, generics, nested values and general ownership are later language stages.
+Borrow lifetimes end at the declaring block's end, not at inferred last use. References cannot be returned, passed to functions, copied, rebound, placed in aggregates, or borrowed again. They target already-declared scalar owners only. At conditional joins an owner is unavailable if any continuing path moved it; return-only paths do not constrain later code. Unsupported reference escape and aggregate borrowing fail closed.
+
+## Precise while-loop ownership rule
+
+The compiler records incoming owner-liveness and borrow state before the condition. It checks the condition and body once under that state. Each continuing backedge must preserve every incoming local's owner-liveness and borrow counts; moving an outer owner on any continuing path is rejected, even if the condition is a constant or appears to permit just one iteration. Moves on paths that definitely return are permitted because those paths never take the backedge.
+
+Body-local owners may be created, moved and dropped on each iteration. Body-local borrows expire at the iteration block's end. Existing outer references can be read/written according to their capability. Since the condition can initially be false, exit state restores incoming ownership facts; scalar/aggregate value mutations remain real runtime effects. Nested loops obey the same rule. There is no claimed general fixed-point lifetime solver, loop escape reference model or `break`/`continue` behavior yet.
+
+## Class value types and visibility
+
+Classes are private by default and end with `;`. Current externally constructible value classes must declare all fields under `public:`. `private:` switches back to private access. Private-field classes can be declared and queried for size, but cannot be constructed in this subset; methods, constructors and private factory access have not been implemented.
+
+Fields must be `i64` or `bool` and have unique names. Named construction uses `Point{.x = 20, .y = 22}`. Each field must be initialized exactly once; named fields may appear in any order and evaluate in written order. Unknown fields, missing fields and type mismatches are rejected.
+
+`const Point snapshot = current;` copies all scalar fields into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Class values cannot yet be function arguments/results, nested fields, ownership fields, or borrow targets. `own<Point>` is rejected.
+
+Each field occupies eight bytes, including bool, in declaration order. Complete size is eight times total field count, minimum eight bytes for an empty class. This is an internal padded layout, not a C or C++ ABI promise. Private fields participate in size but are excluded from field-count reflection and cannot be read through member syntax.
+
+## Fixed-size arrays
+
+```text
+array<i64, 4> values = {10, 20, 5, 7};
+const array<i64, 4> snapshot = values;
+values[0] = 11;
+```
+
+`array<ScalarType, N>` permits i64/bool elements and a decimal literal length from 1 through 4096. All elements must be initialized exactly once by an exact-length braced list, or by copying a same-type array. Copies have independent storage. No partial/uninitialized arrays or default fills are implied.
+
+`len(array_local)` returns its fixed length as i64. Indexes must be i64. Every load/store checks the index using an unsigned comparison against length, which rejects negative signed indexes as well as indexes at/above the upper bound. The compiler computes the element address only after the guard. Stores require a non-const array local.
+
+Elements occupy eight bytes each, including bool, matching actual generated loads/stores and reflected array size. Array length is statically capped to prevent layout overflow; combined local storage in a function is capped at 65536 bytes, including class/scalar/array slots. This limit is a compiler resource bound, not a promise that every target stack has that much space: expression temporaries and call depth need additional stack, and stack exhaustion remains possible.
+
+Arrays cannot currently be borrowed, returned, passed to functions, nested, or placed inside classes. Arrays of class/owned/reference values are rejected. No raw pointer, slice, unchecked indexing, cast or `any` escape hatch is provided.
 
 ## Working reflection
 
-`size_of(Type)`, `type_id(Type)` and `field_count(Type)` are compile-time values for builtins and user-defined classes. `static_assert(bool_expression)` verifies a restricted constant expression: literals, these reflection queries, comparisons and logical negation. Arithmetic in static assertions is currently rejected.
+`size_of(Type)`, `type_id(Type)` and `field_count(Type)` are compile-time queries. `static_assert(bool_expression)` accepts literals, these queries, comparisons and logical negation; general arithmetic constant evaluation and code generation remain deferred.
 
-Stable bootstrap type IDs: i64 = 1, bool = 2, own<i64> = 3, ref<i64> = 4, mutref<i64> = 5. Sizes are respectively 8, 1, 8, 8, 8 bytes. The backend uses eight-byte stack slots even for bool; reflected bool size is the language value size, not a promise of a packed user layout.
+Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. Builtin sizes are 8,1,8,8,8. Scalar bool's logical size is one byte, but its current stack slot is eight bytes. Class IDs begin at 100 in declaration order and are module-local. Mentioned array types have IDs `1000000 + 2*N + B`, where B is one for bool and zero for i64. Class IDs cannot collide with the array range.
 
-`reflect_size(id)` and `reflect_field_count(id)` perform actual runtime lookups for dynamic i64 IDs; unknown IDs return zero. Scalar/ownership builtins have zero fields. Class IDs begin at 100 in declaration order and are deterministic within this module, not globally stable identifiers. Class size/count metadata is derived from the same definitions as actual field code generation. Member names/type traversal and compile-time code generation are deferred.
+`reflect_size(id)` and `reflect_field_count(id)` execute runtime lookups. Unknown IDs return zero. Descriptor entries are emitted for builtins, declared classes and array types used in storage/size/type-ID queries. Array size is `8*N`; arrays and builtins have zero named fields. Class field counts include public fields only, and class size includes all fields. Reflection cannot expose private values or bypass lifetime checks. Member traversal, invocation, mapped/conditional types and `keyof`-style type algebra remain design goals.
 
-## Machine interface
+## Temporary machine integration
 
-The temporary freestanding bridge uses the scalar subset of the x86-64 System V register convention: arguments RDI, RSI, RDX, RCX, R8, R9; result RAX. Functions preserve RBP and do not touch RBX/R12–R15. RSP is aligned to sixteen bytes immediately before each call; callers must enter with the corresponding standard alignment. No red-zone use, stack protector, runtime library, SIMD, dynamic allocation, or libc dependency is generated. Bool values are canonical zero/one; external assembly callers must uphold that invariant.
+The bootstrap assembly boundary currently passes six scalar arguments in RDI, RSI, RDX, RCX, R8, R9 and returns RAX. It preserves RBP, does not touch RBX/R12–R15, and aligns RSP to sixteen bytes immediately before calls. No red zone, libc, heap allocation, SIMD or runtime library is generated. External assembly callers must provide canonical zero/one bools and correct stack alignment.
 
-Function names are exported without mangling for the bootstrap bridge. Runtime reflection exports `aurora_reflect_size` and `aurora_reflect_field_count`, so separately compiling and linking multiple modules is not supported yet. The compiler emits no source-level C ABI or compatibility syntax; the register convention is purely the current assembly integration contract.
+These temporary register choices are implementation machinery, not a source-level C ABI or binary interoperability promise. Function symbols are presently unmangled for the bootstrap assembly bridge. Reflection helper symbols are emitted per module, so separately linking multiple compiled modules is not supported yet. A versioned Aurora-native ABI remains to be designed.
 
-`examples/kernel.au` exports `aurora_kernel_value()`, which returns 42 after a real mutable borrow and ownership move. Assembly entry/exit and hardware I/O remain in the kernel bootstrap.
+`examples/kernel.au` performs a mutable borrow, releases it, moves ownership and returns 42. `examples/class_values.au` demonstrates class copies/visibility/reflection. `examples/loops_arrays.au` demonstrates checked traversal and independent arrays.
 
-## Long-term scope
+## Evidence and honest limits
 
-This compiler is a staged bootstrap toward a self-hosted, safe-by-default systems language and a native operating-system ecosystem. Full modern C++ expressiveness, self-hosting, assembler/linker tools, package tooling, graphical composition and terminal applications are goals, not implemented capabilities of this milestone. The kernel's planned Zen/RDNA hardware coverage likewise does not establish physical-device support. No source-level unsafe blocks or C foreign-function compatibility feature is provided.
+Tests execute assembled/linked machine code without libc, check compiler rejection diagnostics, and distinguish bounds/overflow SIGILL from crashes or timeouts. Tests are evidence for this constrained implementation, not a soundness proof or a claim of complete Rust-equivalent safety.
+
+Self-hosting, complete modern C++ expressiveness, methods, constructors/destructors, nested values, general ownership, generics, heap storage, concurrency, typed compile-time generation, imports and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.

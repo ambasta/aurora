@@ -1,20 +1,21 @@
 module examples.class_values;
 
 class Sample {
-    value: i64;
-    ready: bool;
-}
+public:
+    i64 value;
+    bool ready;
+};
 
-fn sample_size(type: i64) -> i64 {
+auto sample_size(i64 type) -> i64 {
     return reflect_size(type);
 }
 
-fn class_demo() -> i64 {
+auto class_demo() -> i64 {
     static_assert(size_of(Sample) == 16);
     static_assert(field_count(Sample) == 2);
 
-    let mut current: Sample = Sample { value: 40, ready: false };
-    let snapshot: Sample = current;
+    Sample current = Sample{.value = 40, .ready = false};
+    const Sample snapshot = current;
     current.value = current.value + 2;
     current.ready = true;
 
