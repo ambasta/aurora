@@ -230,15 +230,17 @@ def invalid_cases():
         yield f'malformed-token-{index}', source(token + ' return 0;'), {'reject': True}
 
 
-def limits():
+def limits(sanitized_compiler=False):
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     resource.setrlimit(resource.RLIMIT_CPU, (3, 3))
-    resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024,) * 2)
+    if not sanitized_compiler:
+        resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024,) * 2)
     resource.setrlimit(resource.RLIMIT_FSIZE, (8 * 1024 * 1024,) * 2)
 
 
-def command(args):
-    return subprocess.run(list(map(str, args)), capture_output=True, timeout=5, preexec_fn=limits)
+def command(args, sanitized_compiler=False):
+    return subprocess.run(list(map(str, args)), capture_output=True, timeout=5,
+                          preexec_fn=lambda: limits(sanitized_compiler))
 
 
 def must_run(args):
@@ -271,11 +273,11 @@ _start:
 '''
 
 
-def check(compiler, directory, code, expected):
+def check(compiler, directory, code, expected, sanitized_compiler=False):
     src, asm = directory / 'input.au', directory / 'output.s'
     asm.unlink(missing_ok=True)
     src.write_text(code)
-    result = command([compiler, src, '-o', asm])
+    result = command([compiler, src, '-o', asm], sanitized_compiler=sanitized_compiler)
     if 'reject' in expected:
         if not (result.returncode > 0 and result.stderr.strip() and not asm.exists()):
             raise AssertionError(f'expected clean rejection with diagnostic/no assembly, got status={result.returncode}, stderr={result.stderr!r}, assembly={asm.exists()}')
@@ -301,6 +303,8 @@ def main():
     parser.add_argument('--seed', type=int, default=20261002)
     parser.add_argument('--cases', type=int, default=128, help='random cases, plus fixed/model/invalid corpus (0..10000)')
     parser.add_argument('--failure-dir', type=Path, default=Path('build/semantics-failure'))
+    parser.add_argument('--sanitized-compiler', action='store_true',
+                        help='omit only compiler RLIMIT_AS for sanitizer shadow memory; native limits stay unchanged')
     args = parser.parse_args()
     if not 0 <= args.cases <= 10000:
         parser.error('--cases must be in [0, 10000]')
@@ -313,18 +317,20 @@ def main():
         shutil.copy2(args.compiler.resolve(), compiler)  # Pin executable during concurrent rebuilds.
         digest = hashlib.sha256(compiler.read_bytes()).hexdigest()
         print(f'seed={args.seed} generated={args.cases} compiler_sha256={digest}', flush=True)
+        print('compiler_as_limit=' + ('inherited (sanitizer mode)' if args.sanitized_compiler else '512MiB') +
+              ' native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded', flush=True)
         (directory / 'entry.s').write_text(BRIDGE)
         must_run(['as', '--64', directory / 'entry.s', '-o', directory / 'entry.o'])
         cases = itertools.chain(fixed_cases(), ownership_cases(), invalid_cases(),
                                 ((f'generated-{i}', *generated(rng, i)) for i in range(args.cases)))
         for number, (name, code, expected) in enumerate(cases):
             try:
-                counts[check(compiler, directory, code, expected)] += 1
+                counts[check(compiler, directory, code, expected, args.sanitized_compiler)] += 1
             except (AssertionError, subprocess.TimeoutExpired) as error:
                 args.failure_dir.mkdir(parents=True, exist_ok=True)
                 (args.failure_dir / 'repro.au').write_text(code)
                 report = dict(seed=args.seed, name=name, ordinal=number, expected=expected,
-                              compiler_sha256=digest, error=str(error))
+                              compiler_sha256=digest, sanitized_compiler=args.sanitized_compiler, error=str(error))
                 (args.failure_dir / 'failure.json').write_text(json.dumps(report, indent=2) + '\n')
                 print('FAIL ' + json.dumps(report), flush=True)
                 print(f'reproducer: {args.failure_dir / "repro.au"}')

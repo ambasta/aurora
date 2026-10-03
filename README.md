@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 110 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` runs all 122 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -63,10 +63,11 @@ auto answer() -> i64 {
 - Typed functions, initialized locals, branches and conservative while-loop checks.
 - Checked signed arithmetic and bounds-checked fixed-size scalar arrays.
 - Local class values, designated field initialization, independent copies and
-  access-checked fields. The compiler also supports complete scalar
-  constructors, private methods and const-correct receiver calls. Ordinary
-  functions also accept and return bounded scalar-field values as independent
-  copies; see [class behavior](compiler/CLASSES.md) and
+  access-checked fields. The compiler supports complete constructors, private
+  methods, const-correct receiver calls and bounded nested value composition.
+  Ordinary functions accept and return independent class copies; the reviewed
+  milestone012 candidate also supports copied class-valued method results
+  and closed nominal enums; see [class behavior](compiler/CLASSES.md) and
   [value-call semantics](compiler/VALUE-CALLS.md).
 - Scoped ownership/borrowing of owned integers and explicit moves. This is not
   a general heap/lifetime implementation or a proof of Rust-equivalent safety.
@@ -269,3 +270,27 @@ The [UEFI service budget](kernel/uefi/service-budget.md) can interrupt/resume a
 non-yielding service, cancel its request at a verified interrupt-count budget,
 drain pending interrupts, scrub/recreate it and complete a fresh request. This
 is neither calibrated wall-clock timing nor a general scheduler.
+
+## Verified enums, recoverable results and staged dispatch
+
+Milestone012 integrates [closed enums and copied method results](compiler/ENUM-RESULTS.md)
+with the verified Value-composition baseline. Value accepts nominal enums; Scalar
+remains exactly i64/u64/bool. Enum values have no numeric conversion or invalid
+case construction. Complete method results copy into fresh typed locals, including
+array, enum and empty-class descendants, with distinct receiver/result storage.
+
+The compiled `std.decimal` module provides `DecimalAccumulator`, `DecimalResult`
+and `DecimalStatus`: numeric digits accumulate a checked u64 value, invalid digits
+and unrepresentable input produce sticky recoverable status, and `finish()`
+returns an independent report. This is a numeric API, not a text representation.
+See [the combined example](library/examples/enum_composition.au).
+
+Milestone012 passes 107 combined cases, 196 decimal cases and 592 direct IR
+cases, plus existing language regressions and address/undefined-behavior sanitizer
+gates. Independent compiler and kernel review passed. The bounded three-domain
+UEFI dispatcher serves two isolated clients through one service, confines replies
+to the selected transaction, and preserves committed replies during service
+failure/restart. All 122 emulator modes and fresh parent aggregate checks pass;
+see [verification](docs/verification.md) for source identity and receipt provenance.
+Clients remain cooperative; this is not a general scheduler or physical hardware
+qualification. No equivalent-C performance claim or general expected/text API is implied.

@@ -56,7 +56,7 @@ __attribute__((noinline)) auto timer_drain() -> bool {
     Serial::text("AURORA_UEFI_TIMER_PENDING: epoch="); Serial::number(timer_owner_epoch); Serial::text("\r\n");
 }
 auto timer_finish() -> void {
-    require(root()==kernel_root && active==2 && timer_armed && timer_drain(),"timer terminal drain");
+    require(root()==kernel_root && active==L::domain_count && timer_armed && timer_drain(),"timer terminal drain");
     Serial::text("AURORA_UEFI_TIMER_QUIET: epoch="); Serial::number(timer_owner_epoch); Serial::text(" ticks="); Serial::number(timer_ticks);
     Serial::text(" drains="); Serial::number(timer_drains); Serial::text(" compiled="); Serial::number(timer_compiled_hits); Serial::text(" context="); Serial::number(timer_context_hits); Serial::text(" root="); Serial::number(root()); Serial::text("\r\n");
     timer_armed=false; timer_owner.reset(); timer_owner_epoch=0;
@@ -104,7 +104,7 @@ auto initialize_service_timer() -> void {
     Serial::text(" root="); Serial::number(root()); Serial::text("\r\n");
 }
 auto timer_begin(unsigned index) -> void {
-    require(index==1 && selected_phase==ipc::Phase::service && mailbox->state()==ipc::State::delivered
+    require(index==1 && selected_phase==ipc::Phase::service && service_delivered()
         && registry.active(*domains[index].handle) && !timer_armed && timer_epoch!=UINT64_MAX,"timer run authority");
     timer_owner=*domains[index].handle; timer_owner_epoch=++timer_epoch; timer_ticks=0; timer_resumes=0; timer_drains=0; timer_context_hits=0; timer_compiled_hits=0;
     timer_exhausted=false; timer_remaining=launch[0]==5 ? 3 : 128; timer_armed=true;
@@ -115,7 +115,7 @@ auto timer_begin(unsigned index) -> void {
 auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> std::optional<U64> {
     if (vector!=timer_vector) return std::nullopt;
     if (timer_draining) {
-        require(error==0 && cs==8 && root()==kernel_root && active==2 && irq_off()
+        require(error==0 && cs==8 && root()==kernel_root && active==L::domain_count && irq_off()
             && timer_armed && timer_owner && timer_owner_epoch==timer_epoch && registry.ready(*timer_owner)
             && frame>=arena+Handoff::stack_bottom && frame<=arena+Handoff::stack_top-176 && frame%8==0
             && pc>=reinterpret_cast<U64>(&service_drain_begin) && pc<=reinterpret_cast<U64>(&service_drain_end),"timer drain interrupt authority");
@@ -131,7 +131,7 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
     }
     require(active==1 && domains[1].handle && timer_owner && registry.active(*timer_owner)
         && registry.active(*domains[1].handle) && root()==domains[1].tables->root() && selected_phase==ipc::Phase::service
-        && mailbox->state()==ipc::State::delivered && timer_armed && timer_owner_epoch==timer_epoch && timer_owner_epoch!=0
+        && service_delivered() && timer_armed && timer_owner_epoch==timer_epoch && timer_owner_epoch!=0
         && timer_remaining!=0 && saved_rsp%8==0 && saved_rsp>=arena+Handoff::stack_bottom && saved_rsp<=arena+Handoff::stack_top-56
         && frame>=arena+L::rsp0_bottom && frame<=arena+L::rsp0_top-176 && frame%8==0,"timer active origin");
     const auto context=ServiceContext::capture(std::span<const U64>{reinterpret_cast<const U64*>(frame),22},frame,*domains[1].contract);
@@ -160,6 +160,6 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
     require(program.cancel(),"timer run cancellation"); timer_exhausted=true;
     asm volatile("mov %0,%%cr3"::"r"(kernel_root):"memory");
     require(root()==kernel_root && registry.deactivate(*domains[1].handle),"timer kernel restoration");
-    active=2;
+    active=L::domain_count;
     return 1;
 }

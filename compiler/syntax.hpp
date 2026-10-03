@@ -15,6 +15,7 @@ class Expression {
     std::vector<std::string> fieldNames;
     std::vector<TemplateArgument> templateArguments;
     Type reflectedType;
+    int enumOrdinal = -1;
     Expression(std::string o, Token t) : op(std::move(o)), token(std::move(t)) {}
 };
 using ExpressionPtr = std::shared_ptr<Expression>;
@@ -71,6 +72,16 @@ class ClassDefinition {
     int id = 0;
     explicit ClassDefinition(Token token) : name(token.text), token(std::move(token)) {}
 };
+class EnumDefinition {
+  public:
+    std::string name;
+    std::string scope;
+    bool exported = false;
+    Token token;
+    std::vector<Token> cases;
+    int id = 0;
+    explicit EnumDefinition(Token token) : name(token.text), token(std::move(token)) {}
+};
 class Program {
   public:
     std::string moduleName;
@@ -81,6 +92,7 @@ class Program {
     std::vector<Function> functions;
     std::vector<ClassDefinition> classes;
     std::vector<ClassDefinition> templates;
+    std::vector<EnumDefinition> enums;
 };
 
 } // namespace aurora

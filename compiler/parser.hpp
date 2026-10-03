@@ -57,10 +57,11 @@ class Parser {
             !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
             fail("expected identifier");
         static const std::set<std::string> reserved = {
-            "fn",     "module", "let",           "mut",       "if",        "else",     "return",
-            "true",   "false",  "static_assert", "class",     "while",     "break",    "continue",
-            "auto",   "const",  "public",        "private",   "protected", "unsafe",   "extern",
-            "struct", "export", "import",        "namespace", "this",      "template", "Scalar"};
+            "fn",        "module",   "let",      "mut",           "if",     "else",
+            "return",    "true",     "false",    "static_assert", "class",  "while",
+            "break",     "continue", "auto",     "const",         "public", "private",
+            "protected", "unsafe",   "extern",   "struct",        "export", "import",
+            "namespace", "this",     "template", "Scalar",        "enum"};
         if (t.text == "builtin" || (t.text == "array" && !allowArray))
             fail("reserved builtin storage name");
         if (t.text.starts_with("__au_"))
@@ -92,7 +93,7 @@ class Parser {
         do {
             if (arguments.size() >= 2)
                 fail("template arguments are limited to one or two types or capacity literals");
-            // Named classes are resolved in the requesting module; arguments never
+            // Named classes and enums resolve in the requesting module; arguments never
             // recursively parse a template-id, resource, reference or array type.
             if (eat("i64"))
                 arguments.push_back(TypeKind::I64);
@@ -121,8 +122,8 @@ class Parser {
                     fail("nested template arguments are not supported");
                 arguments.emplace_back(argument.text);
             } else
-                fail("template arguments require scalar or named class types, or capacities from 1 "
-                     "to 64");
+                fail("template arguments require scalar, named class or enum types, or capacities "
+                     "from 1 to 64");
         } while (eat(","));
         need(">");
         return arguments;
@@ -146,8 +147,8 @@ class Parser {
     Type type() {
         Nesting nesting(typeNesting, 64, peek().line, "type");
         static const std::set<std::string> forbidden = {
-            "fn",     "let", "mut",  "auto", "const", "class",  "unsafe", "struct",
-            "extern", "int", "void", "char", "float", "double", "new",    "delete"};
+            "fn",  "let",  "mut",  "auto",  "const",  "class", "unsafe", "struct", "extern",
+            "int", "void", "char", "float", "double", "new",   "delete", "enum"};
         if (forbidden.contains(peek().text))
             fail("unsupported or reserved type spelling");
         if (eat("i64"))
@@ -434,11 +435,13 @@ class Parser {
                 Param parameter;
                 parameter.type = type();
                 parameter.name = ident().text;
-                if (!scalarOrParameter(parameter.type) && !(allowClass && parameter.type.isClass()))
+                // Nominal names are unresolved here; module resolution permits
+                // enum method arguments and class constructor/function arguments.
+                if (!scalarOrParameter(parameter.type) && !parameter.type.isClass())
                     fail(allowClass
                              ? "only scalar function parameters or scalar-field class values are "
                                "supported"
-                             : "only scalar method and constructor parameters are supported");
+                             : "only scalar or enum method parameters are supported");
                 function.params.push_back(parameter);
             } while (eat(","));
             need(")");
@@ -470,6 +473,34 @@ class Parser {
                 need("{");
                 declarations(program, fullScope, exported, true);
                 need("}");
+                continue;
+            }
+            if (eat("enum")) {
+                need("class");
+                EnumDefinition definition(ident());
+                definition.scope = scope;
+                definition.exported = exported;
+                if (program.enums.size() >= 64)
+                    fail("module exceeds 64 enum definitions");
+                need("{");
+                if (peek().text == "}")
+                    fail("enum class requires at least one named case");
+                std::set<std::string> cases;
+                do {
+                    if (definition.cases.size() >= 256)
+                        fail("enum class exceeds 256 named cases");
+                    auto name = ident();
+                    if (!cases.insert(name.text).second)
+                        fail("duplicate enum case: " + name.text);
+                    if (peek().text == "=")
+                        fail("enum cases cannot have explicit values");
+                    definition.cases.push_back(std::move(name));
+                    if (!eat(",") || peek().text == "}")
+                        break;
+                } while (true);
+                need("}");
+                need(";");
+                program.enums.push_back(std::move(definition));
                 continue;
             }
             std::vector<TemplateParameter> declaredParameters;
@@ -565,8 +596,8 @@ class Parser {
                             method.receiverConst = eat("const");
                             need("->");
                             method.result = type();
-                            if (!scalarOrParameter(method.result))
-                                fail("only scalar method results are supported");
+                            if (!scalarOrParameter(method.result) && !method.result.isClass())
+                                fail("only scalar, enum or class method results are supported");
                             method.body = block();
                         }
                         definition.methods.push_back(std::move(method));

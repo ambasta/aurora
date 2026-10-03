@@ -118,3 +118,8 @@ not their backend cases; its first value-return execution failed. The final
 candidate must use exhaustive compile-time instruction dispatch in both the
 verifier and emitter so future additions cannot silently emit successful partial
 artifacts. This was an incomplete development state, not a published release.
+
+The milestone012 candidate also permits complete copied method results as defined
+in [ENUM-RESULTS.md](ENUM-RESULTS.md). This retains ordinary function value records
+and adds a separate receiver/result convention; enum leaves preserve exact nominal
+types across both forms.

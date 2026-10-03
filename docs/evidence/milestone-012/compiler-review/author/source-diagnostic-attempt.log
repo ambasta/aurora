@@ -1,0 +1,105 @@
+PASS leading zero decimal
+PASS leading zero eight
+PASS leading zero reflection agreement
+PASS precedence
+PASS signed arithmetic
+PASS checked addition overflow
+PASS mutable scalar
+PASS scalar shadowing
+PASS branch then
+PASS branch else
+PASS bool comparison
+PASS nested functions
+PASS six argument ABI
+PASS forward call
+PASS bool function
+PASS owned initializer compact spacing
+PASS owned move
+PASS shared borrows
+PASS exclusive borrow
+PASS borrow release
+PASS branch borrow release
+PASS return path excludes move
+PASS return else excludes move
+PASS reflection constant
+PASS reflection dynamic
+PASS reflection bool
+PASS reflection unknown
+PASS reflection negative
+PASS use after move
+PASS double move
+PASS copy owner
+PASS implicit owned initialization
+PASS move shared borrowed
+PASS move mutably borrowed
+PASS shared then mutable
+PASS mutable then shared
+PASS two mutable borrows
+PASS owner read during exclusive borrow
+PASS write shared ref
+PASS borrow expired scope
+PASS moved on then path
+PASS moved on else path
+PASS nested branch move
+PASS immutable assignment
+PASS type mismatch
+PASS nonboolean condition
+PASS missing return
+PASS missing branch return
+PASS uninitialized local
+PASS out of scope
+PASS duplicate local
+PASS failed assertion
+PASS nonconstant assertion
+PASS overflow literal
+PASS unknown function
+PASS borrow scalar
+PASS reference escape
+PASS unsupported pointer
+PASS class declaration needs semicolon
+PASS unreachable code
+PASS duplicate function
+PASS builtin collision
+PASS argument type
+PASS argument count
+PASS parenthesized class field
+PASS class construct and fields
+PASS class reordered fields
+PASS class independent copy
+PASS class mutable field
+PASS class shadow copy
+PASS class branch field update
+PASS class reflection static
+PASS class reflection runtime
+PASS class runtime dynamic id
+PASS class bool field
+PASS empty class
+PASS classes declared after function
+PASS class call fields
+PASS multiple class type IDs
+PASS missing class field
+PASS duplicate class initializer
+PASS unknown class initializer
+PASS class field type mismatch
+PASS class unknown field read
+PASS class immutable mutation
+PASS class mutation type mismatch
+PASS class local uninitialized read
+PASS class wrong constructor
+PASS class unknown type
+PASS class unavailable outside scope
+PASS class wrong scalar context
+PASS class borrow not yet supported
+PASS class unknown reflection
+PASS class duplicate declaration
+PASS class duplicate fields
+PASS class owned field rejected
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora/tests/compiler/run.py", line 171, in <module>
+    check("class unknown nested field rejected", 'module test; class A { public: Point x; }; auto test() -> i64 { return 0; }', error="unknown class type")
+  File "/workspace/scratch/48c5de6446f8/aurora/tests/compiler/run.py", line 34, in check
+    require(error in result.stderr, f"{name}: expected {error!r}: {result.stderr}")
+  File "/workspace/scratch/48c5de6446f8/aurora/tests/compiler/run.py", line 16, in require
+    raise AssertionError(message)
+AssertionError: class unknown nested field rejected: expected 'unknown class type': aurorac: unknown nominal type in class declaration: Point
+

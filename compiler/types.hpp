@@ -15,7 +15,7 @@ class Token {
     int line;
     Token(std::string t, int l) : text(std::move(t)), line(l) {}
 };
-enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter };
+enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter, Enum };
 enum class TemplateArgumentKind { Type, Value };
 class TemplateArgument {
   public:
@@ -49,7 +49,7 @@ class Type {
     TypeKind kind = TypeKind::I64;
     std::string className;
     std::string displayName;
-    // Resolved types substituted into another module retain their nominal identity.
+    // Resolved class and enum types keep their nominal identity across substitutions.
     bool resolvedClass = false;
     std::vector<TemplateArgument> templateArguments;
     TypeKind elementKind = TypeKind::I64;
@@ -66,7 +66,13 @@ class Type {
                templateArguments == other.templateArguments;
     }
     bool isClass() const { return kind == TypeKind::Class; }
+    bool isEnum() const { return kind == TypeKind::Enum; }
     bool isArray() const { return kind == TypeKind::Array; }
+    static Type enumeration(std::string name) {
+        Type type(TypeKind::Enum);
+        type.className = std::move(name);
+        return type;
+    }
     static Type array(TypeKind element, int count) {
         Type type(TypeKind::Array);
         type.elementKind = element;
@@ -97,6 +103,8 @@ inline std::string typeName(const Type &type) {
         return "mutref<i64>";
     case TypeKind::Parameter:
         return type.className;
+    case TypeKind::Enum:
+        return type.displayName.empty() ? type.className : type.displayName;
     case TypeKind::Class: {
         std::string name = type.displayName.empty() ? type.className : type.displayName;
         if (!type.templateArguments.empty()) {
@@ -106,7 +114,7 @@ inline std::string typeName(const Type &type) {
                     name += ", ";
                 const auto &argument = type.templateArguments[index];
                 name += argument.kind == TemplateArgumentKind::Type
-                            ? (argument.type == TypeKind::Class
+                            ? (argument.type == TypeKind::Class || argument.type == TypeKind::Enum
                                    ? (argument.displayName.empty() ? argument.className
                                                                    : argument.displayName)
                                    : typeName(Type(argument.type)))
@@ -127,5 +135,6 @@ inline std::string typeName(const Type &type) {
     return "?";
 }
 inline bool scalar(Type t) { return t == Type::I64 || t == Type::U64 || t == Type::Bool; }
+inline bool scalarValue(const Type &type) { return scalar(type) || type.isEnum(); }
 
 } // namespace aurora

@@ -1,0 +1,2098 @@
+make: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+python3 ../tests/compiler/run.py /tmp/aurora-m012-sanitizer/aurorac
+PASS leading zero decimal
+PASS leading zero eight
+PASS leading zero reflection agreement
+PASS precedence
+PASS signed arithmetic
+PASS checked addition overflow
+PASS mutable scalar
+PASS scalar shadowing
+PASS branch then
+PASS branch else
+PASS bool comparison
+PASS nested functions
+PASS six argument ABI
+PASS forward call
+PASS bool function
+PASS owned initializer compact spacing
+PASS owned move
+PASS shared borrows
+PASS exclusive borrow
+PASS borrow release
+PASS branch borrow release
+PASS return path excludes move
+PASS return else excludes move
+PASS reflection constant
+PASS reflection dynamic
+PASS reflection bool
+PASS reflection unknown
+PASS reflection negative
+PASS use after move
+PASS double move
+PASS copy owner
+PASS implicit owned initialization
+PASS move shared borrowed
+PASS move mutably borrowed
+PASS shared then mutable
+PASS mutable then shared
+PASS two mutable borrows
+PASS owner read during exclusive borrow
+PASS write shared ref
+PASS borrow expired scope
+PASS moved on then path
+PASS moved on else path
+PASS nested branch move
+PASS immutable assignment
+PASS type mismatch
+PASS nonboolean condition
+PASS missing return
+PASS missing branch return
+PASS uninitialized local
+PASS out of scope
+PASS duplicate local
+PASS failed assertion
+PASS nonconstant assertion
+PASS overflow literal
+PASS unknown function
+PASS borrow scalar
+PASS reference escape
+PASS unsupported pointer
+PASS class declaration needs semicolon
+PASS unreachable code
+PASS duplicate function
+PASS builtin collision
+PASS argument type
+PASS argument count
+PASS parenthesized class field
+PASS class construct and fields
+PASS class reordered fields
+PASS class independent copy
+PASS class mutable field
+PASS class shadow copy
+PASS class branch field update
+PASS class reflection static
+PASS class reflection runtime
+PASS class runtime dynamic id
+PASS class bool field
+PASS empty class
+PASS classes declared after function
+PASS class call fields
+PASS multiple class type IDs
+PASS missing class field
+PASS duplicate class initializer
+PASS unknown class initializer
+PASS class field type mismatch
+PASS class unknown field read
+PASS class immutable mutation
+PASS class mutation type mismatch
+PASS class local uninitialized read
+PASS class wrong constructor
+PASS class unknown type
+PASS class unavailable outside scope
+PASS class wrong scalar context
+PASS class borrow not yet supported
+PASS class unknown reflection
+PASS class duplicate declaration
+PASS class duplicate fields
+PASS class owned field rejected
+PASS class unknown nested field rejected
+PASS class reserved name
+PASS class function name collision
+PASS class wrong copy type
+PASS class parameter value copy
+PASS class return requires named local
+PASS scalar field count
+PASS unknown field count
+PASS obsolete fn declaration rejected
+PASS obsolete let declaration rejected
+PASS C function declaration rejected
+PASS C int type rejected
+PASS raw pointer rejected
+PASS unsafe block rejected
+PASS private class construction rejected
+PASS explicit private class construction rejected
+PASS private metadata hides field count
+PASS const owner shared read
+PASS const owner mutable borrow rejected
+PASS const owner move preserved
+PASS const owner move cannot thaw
+PASS const mutable reference cannot write
+PASS owner never rebound
+PASS signed maximum boundary
+PASS signed minimum literal
+PASS signed minimum literal negation
+PASS signed minimum literal leading zeros
+PASS signed literal below minimum
+PASS signed minimum boundary
+PASS checked subtraction overflow
+PASS checked multiplication overflow
+PASS checked negation overflow
+PASS minimum times negative one
+PASS minimum times one
+PASS while sum
+PASS while zero iterations
+PASS nested while
+PASS while local ownership
+PASS while mutable borrowing
+PASS while existing borrow
+PASS while returning move
+PASS while branch returning move
+PASS while zero path retains owner
+PASS while backedge move rejected
+PASS while branch backedge move rejected
+PASS while condition type
+PASS while cannot escape borrow
+PASS while does not prove return
+PASS while local move use rejected
+PASS while break deferred
+PASS array load
+PASS array mutate
+PASS array copy independent
+PASS array shadow copy
+PASS array sum loop
+PASS array bool storage
+PASS array reflection
+PASS array reflection fields
+PASS array calls initialization
+PASS array index exactly once
+PASS array assignment index before rhs
+PASS array initializer written order
+PASS array parenthesized indexing
+PASS array negative index traps
+PASS array upper index traps
+PASS array maximum index traps
+PASS array minimum index traps
+PASS array negative store traps
+PASS array upper store traps
+PASS array bounds before RHS
+PASS array immutable assignment
+PASS array bool index rejected
+PASS array element type rejected
+PASS array store type rejected
+PASS array short initializer
+PASS array long initializer
+PASS array zero length rejected
+PASS array oversized rejected
+PASS array enormous length rejected
+PASS array nested element rejected
+PASS array owned element rejected
+PASS array wrong copy length
+PASS array wrong copy element
+PASS array borrowing rejected
+PASS array element borrowing rejected
+PASS array returned rejected
+PASS array parameter deferred
+PASS array lifetime ends
+PASS array initializer cannot see itself
+PASS scalar cannot index
+PASS scalar cannot len
+PASS class public array field rejected
+PASS array reserved class name
+PASS maximum supported array
+PASS stack layout cap
+PASS deep bounded parentheses
+PASS deep bounded blocks
+PASS bounded skew expression
+PASS mixed bounded block and expression depths
+PASS arithmetic differential 0
+PASS arithmetic differential 1
+PASS arithmetic differential 2
+PASS arithmetic differential 3
+PASS arithmetic differential 4
+PASS arithmetic differential 5
+PASS arithmetic differential 6
+PASS arithmetic differential 7
+PASS arithmetic differential 8
+PASS arithmetic differential 9
+PASS arithmetic differential 10
+PASS arithmetic differential 11
+207 compiler tests passed
+python3 ../tests/compiler/classes.py /tmp/aurora-m012-sanitizer/aurorac
+PASS classes constructor and private mutation
+PASS classes const accessor
+PASS classes argument before exclusive call
+PASS classes readonly sibling reborrow
+PASS classes complete private copies independent
+PASS classes mutable copy of const scalar-field value
+PASS classes receiver preserved across ordinary call
+PASS classes receiver method branches loops
+PASS classes local shadows receiver field
+PASS classes constructor parameter shadows field
+PASS classes construction overflow traps
+PASS classes method overflow traps
+PASS classes public aggregate method
+PASS classes empty constructor class
+PASS classes bool receiver field canonical
+PASS classes six scalar method arguments
+PASS classes nested argument snapshots
+PASS classes private public reflection count
+PASS classes global name cannot hijack private helper
+PASS classes const receiver mutation
+PASS classes private field read
+PASS classes private field write
+PASS classes private method call
+PASS classes constructor designated bypass
+PASS classes constructor wrong argument
+PASS classes constructor wrong count
+PASS classes method wrong argument
+PASS classes method wrong count
+PASS classes temporary receiver denied
+PASS classes receiver does not escape
+PASS classes constructor missing field
+PASS classes constructor duplicate field
+PASS classes constructor unknown field
+PASS classes constructor self field forbidden
+PASS classes constructor self method forbidden
+PASS classes constructor nonempty body
+PASS classes const method write
+PASS classes const method exclusive reborrow
+PASS classes private constructor denied
+PASS classes duplicate methods rejected
+PASS classes method field collision
+PASS classes method ownership parameter rejected
+PASS classes method aggregate result requires typed initializer
+PASS classes method direct recursion rejected
+PASS classes method mutual recursion rejected
+PASS classes imported encapsulated class
+PASS classes imported private method denied
+PASS classes imported private constructor denied
+PASS classes imported helper lexical identity
+PASS classes namespace class identity
+PASS classes library method cannot call root helper
+PASS classes freestanding accumulator library
+PASS classes accumulator private state
+PASS classes accumulator checked overflow
+PASS classes loop-local receiver lifetimes
+PASS classes loop-local const aggregate lifetimes
+PASS classes branch constructor lifetimes
+PASS classes early return ends receiver lifetime
+PASS classes method shadow not callable
+PASS classes field name prevents global hijack
+PASS classes six argument nested receiver calls
+PASS classes constructor multiple declaration-order fields
+PASS classes method caller owner lifetime preserved
+PASS classes method private fields of independent same-class local
+PASS classes const method cannot mutate const local
+PASS classes scalar intermediary method cycle denied
+PASS classes pure scalar recursion preserved
+PASS classes constructor argument local shadowing uses prior object
+PASS classes initializer calls follow declaration order
+PASS classes method postfix depth bounded
+PASS classes constructor nesting depth bounded
+PASS classes constructor return type rejected
+PASS classes long acyclic receiver call graph
+PASS classes long receiver cycle graph rejected
+74 class constructor and method checks passed
+python3 ../tests/compiler/value_calls.py /tmp/aurora-m012-sanitizer/aurorac
+PASS values private-field factory result
+PASS values class parameter snapshot
+PASS values copy result independent
+PASS values callee mutable copy cannot alias caller
+PASS values argument snapshot before later mutation
+PASS values argument snapshot after earlier mutation
+PASS values same source independent argument snapshots
+PASS values six mixed arguments preserve order
+PASS values odd scalar expression depth
+PASS values class return branch
+PASS values class return other branch
+PASS values class result lifetime in loop
+PASS values parameter snapshot lifetime in loop
+PASS values class result shadows earlier binding after args
+PASS values class result through intermediate local
+PASS values bool fields across boundary
+PASS values empty class value boundary
+PASS values public aggregate class return
+PASS values class return checked overflow
+PASS values scalar result with class input checked overflow
+PASS values ordinary class-value recursion
+PASS values method calls class consumer and preserves receiver
+PASS values class parameter immutable field
+PASS values class parameter mutable method denied
+PASS values class parameter private field denied
+PASS values return scalar as class denied
+PASS values constructor temporary return denied
+PASS values forwarded class call return needs local
+PASS values temporary class argument denied
+PASS values class-return call argument needs local
+PASS values discard class-return call denied
+PASS values class return missing path
+PASS values wrong scalar argument to class parameter
+PASS values class value cannot enter scalar argument
+PASS values nominal class parameter mismatch
+PASS values nominal class return mismatch
+PASS values method class parameter still denied
+PASS values class method result cannot return scalar field
+PASS values cross-module factory consumer
+PASS values namespace factory nominal type
+PASS values exported private return type rejected
+PASS values exported private parameter type rejected
+PASS values transitive result type not implicitly exported
+PASS values direct type import permits factory
+PASS values private value function allowed within defining module
+PASS values public factory cannot bypass designated restriction
+PASS values minmax standard-shaped scalar algorithm
+PASS values minmax signed endpoint preservation
+PASS values range width checked overflow
+PASS values minmax private representation
+PASS values boundary 64 fields
+PASS values boundary 65 fields
+PASS values six maximum-width class arguments
+PASS values maximum-width result with mixed arguments
+PASS values receiver survives class-result hidden pointer
+PASS values returned parameter survives clobbering helper
+PASS values class parameter copied mutable local in loop
+PASS values class result reflection layout preserved
+PASS values seven class arguments rejected
+59 class value function-boundary checks passed
+python3 ../tests/compiler/templates.py /tmp/aurora-m012-sanitizer/aurorac
+PASS templates ordered tuple i64 i64 native copies and value ABI
+PASS templates ordered tuple i64 u64 native copies and value ABI
+PASS templates ordered tuple i64 bool native copies and value ABI
+PASS templates ordered tuple u64 i64 native copies and value ABI
+PASS templates ordered tuple u64 u64 native copies and value ABI
+PASS templates ordered tuple u64 bool native copies and value ABI
+PASS templates ordered tuple bool i64 native copies and value ABI
+PASS templates ordered tuple bool u64 native copies and value ABI
+PASS templates ordered tuple bool bool native copies and value ABI
+PASS templates private i64 field placeholder locals arguments and results
+PASS templates private i64 raw result preserves all bits
+PASS templates private u64 field placeholder locals arguments and results
+PASS templates private u64 raw result preserves all bits
+PASS templates private bool field placeholder locals arguments and results
+PASS templates private bool raw result preserves all bits
+PASS templates std.utility pair i64 i64
+PASS templates std.utility pair i64 u64
+PASS templates std.utility pair i64 bool
+PASS templates std.utility pair u64 i64
+PASS templates std.utility pair u64 u64
+PASS templates std.utility pair u64 bool
+PASS templates std.utility pair bool i64
+PASS templates std.utility pair bool u64
+PASS templates std.utility pair bool bool
+PASS templates ordered argument tuple nominal identity and runtime metadata
+PASS templates repeated specialization shares one nominal type
+PASS templates all nine specializations coexist through constructor and value ABI
+PASS templates three getter and local substitutions coexist without AST aliasing
+PASS templates generic constructor parameter shadows same-named field
+PASS templates generic aggregate designated initialization
+PASS templates generic empty class has bounded layout
+PASS templates generic argument snapshot precedes later receiver mutation
+PASS templates generic six mixed ordinary parameters preserve complete values
+PASS templates generic result lifetime repeats through loop
+PASS templates maximum-width generic value survives six parameter snapshots and result
+PASS templates imported generic getter
+PASS templates namespace generic constructor and qualified signature
+PASS templates defining module private helper beats root shadow
+PASS templates generic helper cannot resolve into caller
+PASS templates private template unavailable to importing caller
+PASS templates private generic usable inside defining module
+PASS templates export cannot expose private specialization result
+PASS templates export cannot expose private specialization parameter
+PASS templates transitive specialization does not become directly visible
+PASS templates direct template import permits concrete factory result
+PASS templates same imported specialization unifies across modules
+PASS templates private generic metadata hidden in caller view
+PASS templates duplicate template definition
+PASS templates template ordinary class collision
+PASS templates template function collision
+PASS templates imported template ambiguity
+PASS templates qualified different template definitions retain identity
+PASS templates copy cross specialization
+PASS templates argument cross specialization
+PASS templates result cross specialization
+PASS templates constructor cross specialization
+PASS templates constructor substituted scalar argument
+PASS templates constructor omitted argument
+PASS templates constructor designated initialization bypass
+PASS templates constructor deduction unsupported
+PASS templates temporary generic argument
+PASS templates temporary generic result
+PASS templates immutable generic parameter
+PASS templates const generic field write
+PASS templates private substituted field read
+PASS templates private substituted field write
+PASS templates const generic receiver
+PASS templates method substituted scalar argument
+PASS templates generic ownership escape
+PASS templates missing field initialization after substitution
+PASS templates duplicate initializer after substitution
+PASS templates wrong initializer type after substitution
+PASS templates const method mutation after substitution
+PASS templates wrong method result after substitution
+PASS templates wrong generic local after substitution
+PASS templates generic method cycle after substitution
+PASS templates generic body owner move while borrowed
+PASS templates private generic constructor
+PASS templates generic i64 method retains checked overflow
+PASS templates generic u64 method retains checked overflow
+PASS templates bool generic arithmetic rejected
+PASS templates unsupported template zero arguments
+PASS templates unsupported template one argument
+PASS templates unsupported template three arguments
+PASS templates unsupported template unknown argument
+PASS templates unsupported template class argument
+PASS templates unsupported template array argument
+PASS templates unsupported template owner argument
+PASS templates unsupported template reference argument
+PASS templates unsupported template nested specialization argument
+PASS templates unsupported template value argument
+PASS templates unsupported template qualified scalar argument
+PASS templates unsupported template declaration missing constraint
+PASS templates unsupported template declaration unknown constraint
+PASS templates unsupported template declaration three parameters
+PASS templates unsupported template declaration duplicate parameter
+PASS templates unsupported template declaration builtin parameter name
+PASS templates unsupported template declaration function template
+PASS templates unsupported template declaration explicit specialization
+PASS templates unsupported template declaration default argument
+PASS templates unsupported template declaration non-type parameter
+PASS templates template-local instantiation rejected nested field
+PASS templates template-local instantiation rejected recursive field
+PASS templates template-local instantiation rejected method local
+PASS templates template-local instantiation rejected reflection query
+PASS templates template declaration boundary 64
+PASS templates template graph declaration boundary 64
+PASS templates template declaration boundary 65
+PASS templates template graph declaration boundary 65
+PASS templates concrete class boundary 256
+PASS templates concrete graph class boundary 256
+PASS templates concrete class boundary 257
+PASS templates concrete graph class boundary 257
+PASS templates repeated concrete use does not consume instantiation budget
+PASS templates template rejection preserves existing artifact
+PASS templates injected self type constructor and reflection
+PASS templates injected self type designated construction
+117 scalar template checks passed
+python3 ../tests/compiler/fixed_containers.py /tmp/aurora-m012-sanitizer/aurorac
+INFO fixed containers compiler=/tmp/aurora-m012-sanitizer/aurorac sha256=3c5272f7e8a32fdbd9561de88f6a7cede2fcd34d3cab7218f8e504faa07551b1
+INFO fixed containers std.array sha256=4075cece31d008b9ed7f08326e84f755ef6f5cca56238c1fe861dec4bb4a590d
+PASS fixed containers observer: exact bounds UD2, wrong-site/signal/output rejection
+PASS fixed containers i64 capacity 1: full zero initialization, set, at, size
+PASS fixed containers i64 capacity 1: six complete snapshots and independent result
+PASS fixed containers i64 capacity 2: full zero initialization, set, at, size
+PASS fixed containers i64 capacity 2: six complete snapshots and independent result
+PASS fixed containers i64 capacity 63: full zero initialization, set, at, size
+PASS fixed containers i64 capacity 63: six complete snapshots and independent result
+PASS fixed containers i64 capacity 64: full zero initialization, set, at, size
+PASS fixed containers i64 capacity 64: six complete snapshots and independent result
+PASS fixed containers i64 raw result preserves all bits
+PASS fixed containers i64 all 64 slots reinitialize after reuse
+PASS fixed containers i64 independent user template uses the actual N parameter
+PASS fixed containers i64 dependent local builtin alias and copy
+PASS fixed containers u64 capacity 1: full zero initialization, set, at, size
+PASS fixed containers u64 capacity 1: six complete snapshots and independent result
+PASS fixed containers u64 capacity 2: full zero initialization, set, at, size
+PASS fixed containers u64 capacity 2: six complete snapshots and independent result
+PASS fixed containers u64 capacity 63: full zero initialization, set, at, size
+PASS fixed containers u64 capacity 63: six complete snapshots and independent result
+PASS fixed containers u64 capacity 64: full zero initialization, set, at, size
+PASS fixed containers u64 capacity 64: six complete snapshots and independent result
+PASS fixed containers u64 raw result preserves all bits
+PASS fixed containers u64 all 64 slots reinitialize after reuse
+PASS fixed containers u64 independent user template uses the actual N parameter
+PASS fixed containers u64 dependent local builtin alias and copy
+PASS fixed containers bool capacity 1: full zero initialization, set, at, size
+PASS fixed containers bool capacity 1: six complete snapshots and independent result
+PASS fixed containers bool capacity 2: full zero initialization, set, at, size
+PASS fixed containers bool capacity 2: six complete snapshots and independent result
+PASS fixed containers bool capacity 63: full zero initialization, set, at, size
+PASS fixed containers bool capacity 63: six complete snapshots and independent result
+PASS fixed containers bool capacity 64: full zero initialization, set, at, size
+PASS fixed containers bool capacity 64: six complete snapshots and independent result
+PASS fixed containers bool raw result preserves all bits
+PASS fixed containers bool all 64 slots reinitialize after reuse
+PASS fixed containers bool independent user template uses the actual N parameter
+PASS fixed containers bool dependent local builtin alias and copy
+PASS fixed containers leading-zero capacity spellings canonicalize to one nominal type
+PASS fixed containers scalar and capacity are both part of specialization identity
+PASS fixed containers result lifetime survives repeated loop construction
+PASS fixed containers scalar at result is copied before later mutation
+PASS fixed containers array argument snapshot precedes later set argument
+PASS fixed containers private array length query returns a scalar copy
+PASS fixed containers multiple typed arrays plus leading and trailing scalar offsets
+PASS fixed containers flattened boundary 64 words
+PASS fixed containers flattened boundary 65 words
+PASS fixed containers 65-word class remains usable as a local value
+PASS fixed containers 65-word parameter is rejected independently of result
+PASS fixed containers 65-word result is rejected independently of parameters
+PASS fixed containers multiple array fields flatten to 64 boundary words
+PASS fixed containers multiple array fields flatten to 65 boundary words
+PASS fixed containers unqualified array alias cannot be shadowed by namespace template
+PASS fixed containers builtin alias retains original large local capacity
+PASS fixed containers canonical builtin array remains available without std.array
+PASS fixed containers i64 1 at bounds -1
+PASS fixed containers i64 1 set bounds -1
+PASS fixed containers i64 1 at bounds 1
+PASS fixed containers i64 1 set bounds 1
+PASS fixed containers i64 2 at bounds -1
+PASS fixed containers i64 2 set bounds -1
+PASS fixed containers i64 2 at bounds 2
+PASS fixed containers i64 2 set bounds 2
+PASS fixed containers i64 63 at bounds -1
+PASS fixed containers i64 63 set bounds -1
+PASS fixed containers i64 63 at bounds 63
+PASS fixed containers i64 63 set bounds 63
+PASS fixed containers i64 64 at bounds -1
+PASS fixed containers i64 64 set bounds -1
+PASS fixed containers i64 64 at bounds 64
+PASS fixed containers i64 64 set bounds 64
+PASS fixed containers u64 1 at bounds -1
+PASS fixed containers u64 1 set bounds -1
+PASS fixed containers u64 1 at bounds 1
+PASS fixed containers u64 1 set bounds 1
+PASS fixed containers u64 2 at bounds -1
+PASS fixed containers u64 2 set bounds -1
+PASS fixed containers u64 2 at bounds 2
+PASS fixed containers u64 2 set bounds 2
+PASS fixed containers u64 63 at bounds -1
+PASS fixed containers u64 63 set bounds -1
+PASS fixed containers u64 63 at bounds 63
+PASS fixed containers u64 63 set bounds 63
+PASS fixed containers u64 64 at bounds -1
+PASS fixed containers u64 64 set bounds -1
+PASS fixed containers u64 64 at bounds 64
+PASS fixed containers u64 64 set bounds 64
+PASS fixed containers bool 1 at bounds -1
+PASS fixed containers bool 1 set bounds -1
+PASS fixed containers bool 1 at bounds 1
+PASS fixed containers bool 1 set bounds 1
+PASS fixed containers bool 2 at bounds -1
+PASS fixed containers bool 2 set bounds -1
+PASS fixed containers bool 2 at bounds 2
+PASS fixed containers bool 2 set bounds 2
+PASS fixed containers bool 63 at bounds -1
+PASS fixed containers bool 63 set bounds -1
+PASS fixed containers bool 63 at bounds 63
+PASS fixed containers bool 63 set bounds 63
+PASS fixed containers bool 64 at bounds -1
+PASS fixed containers bool 64 set bounds -1
+PASS fixed containers bool 64 at bounds 64
+PASS fixed containers bool 64 set bounds 64
+PASS fixed containers full signed index at -9223372036854775808
+PASS fixed containers full signed index set -9223372036854775808
+PASS fixed containers full signed index at 9223372036854775807
+PASS fixed containers full signed index set 9223372036854775807
+PASS fixed containers std.set evaluates all arguments before checking receiver bounds
+PASS fixed containers at index arithmetic fails at overflow before bounds
+PASS fixed containers private field bounds precede store RHS evaluation
+PASS fixed containers zero capacity
+PASS fixed containers negative capacity
+PASS fixed containers capacity 65
+PASS fixed containers enormous capacity
+PASS fixed containers u64 capacity
+PASS fixed containers boolean capacity
+PASS fixed containers expression capacity
+PASS fixed containers parenthesized capacity
+PASS fixed containers hex capacity
+PASS fixed containers type capacity
+PASS fixed containers variable capacity
+PASS fixed containers missing capacity
+PASS fixed containers extra capacity
+PASS fixed containers missing scalar
+PASS fixed containers class element
+PASS fixed containers nested class element
+PASS fixed containers builtin array element
+PASS fixed containers owner element
+PASS fixed containers reference element
+PASS fixed containers unknown element
+PASS fixed containers wrong element type
+PASS fixed containers wrong signed index type
+PASS fixed containers wrong boolean index type
+PASS fixed containers const array set
+PASS fixed containers immutable by-value parameter set
+PASS fixed containers capacity copy mismatch
+PASS fixed containers scalar copy mismatch
+PASS fixed containers capacity argument mismatch
+PASS fixed containers capacity result mismatch
+PASS fixed containers private storage read
+PASS fixed containers private storage write
+PASS fixed containers private storage local escape
+PASS fixed containers no whole wrapper indexing
+PASS fixed containers no wrapper builtin len
+PASS fixed containers no wrapper borrow
+PASS fixed containers no at result borrow
+PASS fixed containers no temporary result escape
+PASS fixed containers no temporary parameter bypass
+PASS fixed containers no constructor arguments
+PASS fixed containers no designated private storage construction
+PASS fixed containers no bare template deduction
+PASS fixed containers no builtin wrapper fallback
+PASS fixed containers no qualified builtin constructor
+PASS fixed containers missing array initialization
+PASS fixed containers duplicate zero initialization
+PASS fixed containers nonzero brace initialization
+PASS fixed containers explicit zero list still unsupported
+PASS fixed containers parenthesized array initialization
+PASS fixed containers no implicit array constructor
+PASS fixed containers public builtin array field
+PASS fixed containers public legacy array alias field
+PASS fixed containers array field capacity 65
+PASS fixed containers array field capacity zero
+PASS fixed containers nested class rejects array zero initializer
+PASS fixed containers nested builtin array field
+PASS fixed containers owning array field
+PASS fixed containers reference array field
+PASS fixed containers slice field
+PASS fixed containers scalar field cannot use array zero initializer
+PASS fixed containers const private array store
+PASS fixed containers non-i64 constant parameter
+PASS fixed containers reversed parameter order
+PASS fixed containers duplicate constant parameter name
+PASS fixed containers default constant parameter
+PASS fixed containers bare constant parameter
+PASS fixed containers capacity shadowed by scalar field
+PASS fixed containers capacity shadowed by method
+PASS fixed containers capacity shadowed by method parameter
+PASS fixed containers capacity shadowed by constructor parameter
+PASS fixed containers capacity shadowed by local
+PASS fixed containers capacity shadowed by nested local
+PASS fixed containers capacity assignment
+PASS fixed containers capacity move
+PASS fixed containers capacity borrow
+PASS fixed containers capacity callable
+PASS fixed containers capacity used as type
+PASS fixed containers implicit private field cannot escape via builtin copy
+PASS fixed containers implicit private field cannot be borrowed
+PASS fixed containers implicit private field is not scalar
+PASS fixed containers reserved builtin spelling namespace builtin{}
+PASS fixed containers reserved builtin spelling namespace builtin::extra{}
+PASS fixed containers reserved builtin spelling namespace builtin{class array{};}
+PASS fixed containers reserved builtin spelling class builtin{};
+PASS fixed containers reserved builtin spelling auto builtin()->i64{return 42;}
+PASS fixed containers root class cannot shadow legacy array alias
+PASS fixed containers root template cannot shadow legacy array alias
+PASS fixed containers non-std namespace template cannot shadow legacy array alias
+PASS fixed containers namespace bare constructor cannot fall back to wrapper
+PASS fixed containers malformed container preserves existing output
+PASS fixed containers same specialization unifies across importing modules
+PASS fixed containers transitive array template import is not public visibility
+PASS fixed containers constant-parameter template definition budget 64
+PASS fixed containers constant-parameter template definition budget 65
+PASS fixed containers scalar-and-capacity specialization budget 256
+PASS fixed containers scalar-and-capacity specialization budget 257
+PASS fixed containers canonical repeated capacities do not consume specialization budget
+PASS fixed containers independent sequence model i64 1, seed=10011, steps=64
+PASS fixed containers independent sequence model i64 2, seed=10012, steps=64
+PASS fixed containers independent sequence model i64 63, seed=10073, steps=64
+PASS fixed containers independent sequence model i64 64, seed=10074, steps=64
+PASS fixed containers independent sequence model u64 1, seed=11011, steps=64
+PASS fixed containers independent sequence model u64 2, seed=11012, steps=64
+PASS fixed containers independent sequence model u64 63, seed=11073, steps=64
+PASS fixed containers independent sequence model u64 64, seed=11074, steps=64
+PASS fixed containers independent sequence model bool 1, seed=12011, steps=64
+PASS fixed containers independent sequence model bool 2, seed=12012, steps=64
+PASS fixed containers independent sequence model bool 63, seed=12073, steps=64
+PASS fixed containers independent sequence model bool 64, seed=12074, steps=64
+PASS fixed containers: 216 cases, 55 exact-site traps, 96 normal rejections; seed=10010, steps=64; elapsed=9.31s
+python3 ../tests/compiler/composed_values.py /tmp/aurora-m012-sanitizer/aurorac
+INFO composed values compiler=/tmp/aurora-m012-sanitizer/aurorac sha256=3c5272f7e8a32fdbd9561de88f6a7cede2fcd34d3cab7218f8e504faa07551b1
+INFO composed values std.utility sha256=824a07976cbd14aebd4d513415afd89e8a294cf2681cb07966d5f4f11dbe616c
+PASS composed values observer: exact native UD2 and invalid-result rejection
+PASS composed values Value scalar compatibility i64 i64
+PASS composed values Value scalar compatibility i64 u64
+PASS composed values Value scalar compatibility i64 bool
+PASS composed values Value scalar compatibility u64 i64
+PASS composed values Value scalar compatibility u64 u64
+PASS composed values Value scalar compatibility u64 bool
+PASS composed values Value scalar compatibility bool i64
+PASS composed values Value scalar compatibility bool u64
+PASS composed values Value scalar compatibility bool bool
+PASS composed values library pair with private MinMax and scalar
+PASS composed values library class in second field with preceding u64
+PASS composed values two distinct library class fields retain independent private state
+PASS composed values class-valued specialization identity includes ordered arguments
+PASS composed values single Value parameter supports a named concrete class
+PASS composed values mixed constraints Scalar T,Value U
+PASS composed values mixed constraints Value T,Scalar U
+PASS composed values Value remains usable as an ordinary contextual class name
+PASS composed values qualified and local class arguments reuse one specialization
+PASS composed values constructor copy and public-field extraction are independent
+PASS composed values composed value ordinary parameter and complete return
+PASS composed values copy public class field from readonly value parameter
+PASS composed values factory result survives local frame and reinitialization loop
+PASS composed values six mixed ordinary arguments preserve nested storage
+PASS composed values composed result chooses complete branch
+PASS composed values result may shadow source only after argument snapshot
+PASS composed values ordinary function recursion preserves composed values
+PASS composed values nested i64 raw return preserves bits
+PASS composed values nested u64 raw return preserves bits
+PASS composed values nested bool raw return preserves bits
+PASS composed values private nested receiver field projects into independent method local
+PASS composed values ordinary field and constructor accept concrete array specialization
+PASS composed values empty nested value remains complete through constructor projection and ABI
+PASS composed values two empty fields initialize and project as distinct logical fields
+PASS composed values empty field does not shift neighboring scalar payload
+PASS composed values empty constructor snapshot survives repeated loop lifetimes
+PASS composed values empty child still requires exactly one initialization: missing
+PASS composed values empty child still requires exactly one initialization: empty braces
+PASS composed values empty child still requires exactly one initialization: duplicate
+PASS composed values empty siblings are not interchangeable constructor arguments
+PASS composed values empty siblings are not interchangeable projections
+PASS composed values zero-leaf composition still enforces class-depth 4
+PASS composed values zero-leaf composition still enforces class-depth 5
+PASS composed values constructor snapshots class before later scalar mutation
+PASS composed values constructor snapshots class after earlier scalar mutation
+PASS composed values same constructor source creates separate left-to-right snapshots
+PASS composed values declaration order cannot change constructor argument snapshots
+PASS composed values constructor snapshot cannot be overwritten by later class-return call
+PASS composed values scalar field mutation after class-field copy cannot alter snapshot
+PASS composed values constructor class parameter supports readonly scalar observations
+PASS composed values nested i64 array 1: full zero and complete boundary copy
+PASS composed values nested i64 array 2: full zero and complete boundary copy
+PASS composed values nested i64 array 61: full zero and complete boundary copy
+PASS composed values independent nested list model i64, seed=11011, steps=24
+PASS composed values nested u64 array 1: full zero and complete boundary copy
+PASS composed values nested u64 array 2: full zero and complete boundary copy
+PASS composed values nested u64 array 61: full zero and complete boundary copy
+PASS composed values independent nested list model u64, seed=12011, steps=24
+PASS composed values nested bool array 1: full zero and complete boundary copy
+PASS composed values nested bool array 2: full zero and complete boundary copy
+PASS composed values nested bool array 61: full zero and complete boundary copy
+PASS composed values independent nested list model bool, seed=13011, steps=24
+PASS composed values checked arithmetic after copying private nested value
+PASS composed values constructor later scalar trap remains exact overflow
+PASS composed values constructor later scalar trap remains exact division zero
+PASS composed values copied nested i64 array exact bounds at -1
+PASS composed values copied nested i64 array exact bounds at 2
+PASS composed values copied nested i64 array exact bounds at -9223372036854775808
+PASS composed values copied nested i64 array exact bounds at 9223372036854775807
+PASS composed values copied nested u64 array exact bounds at -1
+PASS composed values copied nested u64 array exact bounds at 2
+PASS composed values copied nested u64 array exact bounds at -9223372036854775808
+PASS composed values copied nested u64 array exact bounds at 9223372036854775807
+PASS composed values copied nested bool array exact bounds at -1
+PASS composed values copied nested bool array exact bounds at 2
+PASS composed values copied nested bool array exact bounds at -9223372036854775808
+PASS composed values copied nested bool array exact bounds at 9223372036854775807
+PASS composed values nested copy bounds check precedes overflowing store RHS
+PASS composed values composition class-depth boundary 1
+PASS composed values composition class-depth boundary 2
+PASS composed values composition class-depth boundary 3
+PASS composed values composition class-depth boundary 4
+PASS composed values composition class-depth boundary 5
+PASS composed values composition flattened leaf boundary 63
+PASS composed values composition flattened leaf boundary 64
+PASS composed values composition flattened leaf boundary 65
+PASS composed values composed local alone cannot exceed 64 leaves
+PASS composed values six maximum-width composed function arguments
+PASS composed values chained scalar read
+PASS composed values chained method call
+PASS composed values chained mutable method
+PASS composed values chained scalar mutation
+PASS composed values whole nested field assignment
+PASS composed values const whole nested field assignment
+PASS composed values nested field passed directly
+PASS composed values nested field constructor argument requires local copy
+PASS composed values nested constructor temporary argument
+PASS composed values nested constructor result argument
+PASS composed values nested constructor scalar mismatch
+PASS composed values nested copy scalar mismatch
+PASS composed values nested field borrow
+PASS composed values nested field move
+PASS composed values nested class designated initializer
+PASS composed values nested field cannot be scalar arithmetic
+PASS composed values missing class field initialization
+PASS composed values duplicate class field initialization
+PASS composed values class field zero braces
+PASS composed values class field constructor expression
+PASS composed values class field function expression
+PASS composed values class field scalar initializer
+PASS composed values class field no complete constructor
+PASS composed values mutable constructor class parameter
+PASS composed values method class parameter remains unsupported
+PASS composed values direct inline self cycle
+PASS composed values indirect inline cycle
+PASS composed values owning field remains unsupported
+PASS composed values reference field remains unsupported
+PASS composed values method class result copies into typed local
+PASS composed values unsupported Value argument 'own<i64>'
+PASS composed values unsupported Value argument 'ref<i64>'
+PASS composed values unsupported Value argument 'array<i64,2>'
+PASS composed values unsupported Value argument 'builtin::array<i64,2>'
+PASS composed values unsupported Value argument 'Pair<i64,i64>'
+PASS composed values unsupported Value argument 'std::array<i64,2>'
+PASS composed values unsupported Value argument 'Unknown'
+PASS composed values unsupported Value argument '42'
+PASS composed values unsupported Value argument ''
+PASS composed values malformed Value parameter template<Value T=Leaf>
+PASS composed values malformed Value parameter template<Value... T>
+PASS composed values malformed Value parameter template<Value>
+PASS composed values malformed Value parameter template<Value T,Value T>
+PASS composed values malformed Value parameter template<Value T,Value U,Value V>
+PASS composed values malformed Value parameter template<Value T,i64 N>
+PASS composed values Scalar constraint still rejects concrete classes
+PASS composed values Value class method return requires a complete named local copy
+PASS composed values Value substitution cannot authorize builtin arrays of classes
+PASS composed values returning nested field requires a complete local copy
+PASS composed values private field remains private after extraction
+PASS composed values private class field cannot be extracted by caller
+PASS composed values wrong constructor nominal type despite equal bytes
+PASS composed values wrong extracted nominal type despite equal bytes
+PASS composed values same-byte reordered nominal argument
+PASS composed values same-byte reordered nominal result
+PASS composed values invalid class copy leaves previous artifact byte-exact
+PASS composed values imported signature unifies template and class identities
+PASS composed values signature requires each direct visible type import pairs;import factory;
+PASS composed values signature requires each direct visible type import leaves;import factory;
+PASS composed values signature requires each direct visible type import factory;
+PASS composed values exported specialization result cannot expose private class argument
+PASS composed values exported specialization parameter cannot expose private class argument
+PASS composed values exported public class field cannot expose private nominal type
+PASS composed values exported constructor signature cannot expose private nominal type
+PASS composed values private nested representation and private constructor stay encapsulated
+PASS composed values equal-byte imported class arguments remain nominally distinct
+PASS composed values equal-byte imported template identities reflected distinctly
+PASS composed values import rejection preserves all inputs and prior artifact
+PASS composed values template helpers bind in defining module and class arguments in caller
+PASS composed values same-spelling private class arguments from two modules remain distinct
+PASS composed values specialization hard-coded hidden public type rejected in local
+PASS composed values specialization hard-coded hidden public type rejected in reflection
+PASS composed values specialization hard-coded hidden public type rejected in construction
+PASS composed values specialization hard-coded hidden public type rejected in ordinary field
+INFO composed values: 161 passed, 16 exact-site traps, 77 normal rejections, 0 failures; seed=11011, steps=24; elapsed=4.15s
+PASS composed values complete
+python3 ../tests/compiler/decimal_values.py /tmp/aurora-m012-sanitizer/aurorac
+PASS decimal values enum ready == ready
+PASS decimal values enum ready != ready
+PASS decimal values enum ready == done
+PASS decimal values enum ready != done
+PASS decimal values enum ready == failed
+PASS decimal values enum ready != failed
+PASS decimal values enum done == ready
+PASS decimal values enum done != ready
+PASS decimal values enum done == done
+PASS decimal values enum done != done
+PASS decimal values enum done == failed
+PASS decimal values enum done != failed
+PASS decimal values enum failed == ready
+PASS decimal values enum failed != ready
+PASS decimal values enum failed == done
+PASS decimal values enum failed != done
+PASS decimal values enum failed == failed
+PASS decimal values enum failed != failed
+PASS decimal values enum locals and assignment
+PASS decimal values enum compile time equality
+PASS decimal values builtin Scalar template remains available
+PASS decimal values enum fields and independent class copies
+PASS decimal values enum constructor and mutable method boundary
+PASS decimal values enum ordinary function parameters and result
+PASS decimal values six enum function arguments
+PASS decimal values enum field copied across function result
+PASS decimal values enum reflection nominal identity
+PASS decimal values enum field reflection matches class layout
+PASS decimal values exported enum module boundary
+PASS decimal values imported enum reflection
+PASS decimal values namespace enums keep nominal identity
+PASS decimal values wrong enum local
+PASS decimal values wrong enum assignment
+PASS decimal values different enum equality
+PASS decimal values different enum inequality
+PASS decimal values integer enum initialization
+PASS decimal values unsigned enum initialization
+PASS decimal values boolean enum initialization
+PASS decimal values enum integer local
+PASS decimal values enum unsigned local
+PASS decimal values enum boolean local
+PASS decimal values enum condition
+PASS decimal values enum logical negation
+PASS decimal values enum signed conversion
+PASS decimal values enum unsigned conversion
+PASS decimal values signed enum construction
+PASS decimal values unsigned enum construction
+PASS decimal values enum designated construction
+PASS decimal values unknown enum case
+PASS decimal values unqualified enum case
+PASS decimal values immutable enum local
+PASS decimal values enum builtin array
+PASS decimal values enum scalar template argument
+PASS decimal values enum numeric operator +
+PASS decimal values enum numeric operator -
+PASS decimal values enum numeric operator *
+PASS decimal values enum numeric operator /
+PASS decimal values enum numeric operator %
+PASS decimal values enum numeric operator &
+PASS decimal values enum numeric operator |
+PASS decimal values enum numeric operator ^
+PASS decimal values enum numeric operator <<
+PASS decimal values enum numeric operator >>
+PASS decimal values enum ordering <
+PASS decimal values enum ordering <=
+PASS decimal values enum ordering >
+PASS decimal values enum ordering >=
+PASS decimal values enum unary -
+PASS decimal values enum unary ~
+PASS decimal values duplicate enum case
+PASS decimal values explicit enum numeric value
+PASS decimal values enum underlying numeric type
+PASS decimal values unscoped enum syntax
+PASS decimal values wrong enum function argument
+PASS decimal values wrong enum function return
+PASS decimal values enum returned as integer
+PASS decimal values enum function parameter immutable
+PASS decimal values wrong enum class field
+PASS decimal values same named enums in modules are distinct
+PASS decimal values wrong enum constructor argument
+PASS decimal values wrong enum method argument
+PASS decimal values false enum equality static assertion
+PASS decimal values const method class result
+PASS decimal values mutable method class result
+PASS decimal values method result independent after receiver changes
+PASS decimal values method result local may independently mutate
+PASS decimal values mutable method result independent after next call
+PASS decimal values bound sibling class result
+PASS decimal values class result survives receiver block exit
+PASS decimal values method full unsigned result
+PASS decimal values copied method result through function
+PASS decimal values method result in loop
+PASS decimal values method arguments evaluate left to right
+PASS decimal values six explicit arguments with receiver and class result
+PASS decimal values enum explicit argument and class result
+PASS decimal values empty class method result
+PASS decimal values class method result through module
+PASS decimal values class result remains independent of another result
+PASS decimal values const binding copied into mutable method result
+PASS decimal values class result method calls ordinary aggregate function
+PASS decimal values mutable result method calls nested result methods and function
+PASS decimal values method result copies private fixed array leaves
+PASS decimal values method class result 1 scalar leaves
+PASS decimal values method class result 64 scalar leaves
+PASS decimal values mutable result method on const receiver
+PASS decimal values class result cannot initialize scalar
+PASS decimal values method result requires typed local
+PASS decimal values method result cannot be temporary argument
+PASS decimal values method result cannot be returned directly
+PASS decimal values method result wrong nominal class
+PASS decimal values const method result cannot mutate
+PASS decimal values explicit method class parameter remains unsupported
+PASS decimal values class method result requires complete named return
+PASS decimal values decimal empty
+PASS decimal values decimal exact value 0
+PASS decimal values decimal exact value 1
+PASS decimal values decimal exact value 9
+PASS decimal values decimal exact value 10
+PASS decimal values decimal exact value 42
+PASS decimal values decimal exact value 99
+PASS decimal values decimal exact value 100
+PASS decimal values decimal exact value 1000
+PASS decimal values decimal exact value 9223372036854775807
+PASS decimal values decimal exact value 9223372036854775808
+PASS decimal values decimal exact value 9223372036854775809
+PASS decimal values decimal exact value 1844674407370955161
+PASS decimal values decimal exact value 18446744073709551614
+PASS decimal values decimal exact value 18446744073709551615
+PASS decimal values decimal leading zeros
+PASS decimal values decimal repeated zero success
+PASS decimal values decimal many leading zeros at maximum
+PASS decimal values decimal invalid first digit
+PASS decimal values decimal invalid high unsigned digit
+PASS decimal values decimal invalid after zero
+PASS decimal values decimal invalid after accepted digits
+PASS decimal values decimal invalid stays latched
+PASS decimal values decimal maximum plus one
+PASS decimal values decimal maximum then digit
+PASS decimal values decimal overflow stays latched
+PASS decimal values decimal reset empty
+PASS decimal values decimal reset success
+PASS decimal values decimal reset invalid
+PASS decimal values decimal reset overflow
+PASS decimal values decimal repeated resets and snapshots
+PASS decimal values decimal final boundary digit 0
+PASS decimal values decimal final boundary digit 1
+PASS decimal values decimal final boundary digit 2
+PASS decimal values decimal final boundary digit 3
+PASS decimal values decimal final boundary digit 4
+PASS decimal values decimal final boundary digit 5
+PASS decimal values decimal final boundary digit 6
+PASS decimal values decimal final boundary digit 7
+PASS decimal values decimal final boundary digit 8
+PASS decimal values decimal final boundary digit 9
+PASS decimal values decimal empty fallback 0
+PASS decimal values decimal zero fallback 0
+PASS decimal values decimal success fallback 0
+PASS decimal values decimal invalid fallback 0
+PASS decimal values decimal overflow fallback 0
+PASS decimal values decimal empty fallback 1
+PASS decimal values decimal zero fallback 1
+PASS decimal values decimal success fallback 1
+PASS decimal values decimal invalid fallback 1
+PASS decimal values decimal overflow fallback 1
+PASS decimal values decimal empty fallback 9223372036854775808
+PASS decimal values decimal zero fallback 9223372036854775808
+PASS decimal values decimal success fallback 9223372036854775808
+PASS decimal values decimal invalid fallback 9223372036854775808
+PASS decimal values decimal overflow fallback 9223372036854775808
+PASS decimal values decimal empty fallback 18446744073709551615
+PASS decimal values decimal zero fallback 18446744073709551615
+PASS decimal values decimal success fallback 18446744073709551615
+PASS decimal values decimal invalid fallback 18446744073709551615
+PASS decimal values decimal overflow fallback 18446744073709551615
+PASS decimal values decimal modeled sequence 0 seed 10011
+PASS decimal values decimal modeled sequence 1 seed 10011
+PASS decimal values decimal modeled sequence 2 seed 10011
+PASS decimal values decimal modeled sequence 3 seed 10011
+PASS decimal values decimal modeled sequence 4 seed 10011
+PASS decimal values decimal modeled sequence 5 seed 10011
+PASS decimal values decimal modeled sequence 6 seed 10011
+PASS decimal values decimal modeled sequence 7 seed 10011
+PASS decimal values decimal accumulator copies have independent input
+PASS decimal values decimal result ordinary function copy
+PASS decimal values decimal finish accepts const copied accumulator
+PASS decimal values decimal success fallback evaluates eagerly
+PASS decimal values decimal empty fallback evaluates eagerly
+PASS decimal values decimal invalid fallback evaluates eagerly
+PASS decimal values decimal overflow fallback evaluates eagerly
+PASS decimal values decimal result status nominal reflection
+PASS decimal values decimal digit must be unsigned
+PASS decimal values decimal fallback must be unsigned
+PASS decimal values decimal status cannot mix other enum
+PASS decimal values decimal push requires mutable accumulator
+PASS decimal values decimal reset requires mutable accumulator
+PASS decimal values decimal finish requires result local
+196 decimal value checks passed: 130 native executions, 66 ordinary type/syntax rejections, 1396 independently modeled decimal steps; seed 10011
+python3 ../tests/compiler/enum_composition.py /tmp/aurora-m012-sanitizer/aurorac
+PASS enum composition harness: exact 64-bit native values and rejected invalid observations
+INFO enum composition compiler=/tmp/aurora-m012-sanitizer/aurorac sha256=3c5272f7e8a32fdbd9561de88f6a7cede2fcd34d3cab7218f8e504faa07551b1
+INFO enum composition utility.au sha256=824a07976cbd14aebd4d513415afd89e8a294cf2681cb07966d5f4f11dbe616c
+INFO enum composition decimal.au sha256=d584466845aed22a4b5b8f0d9c85bfa0ff2492e4f6270285de56927c2615df24
+PASS enum composition Value enum pair Status Status
+PASS enum composition Value enum pair Status Other
+PASS enum composition Value enum pair Other Status
+PASS enum composition Value enum pair Other Other
+PASS enum composition Value mixed enum i64 enum_first=True
+PASS enum composition Value mixed enum i64 enum_first=False
+PASS enum composition Value mixed enum u64 enum_first=True
+PASS enum composition Value mixed enum u64 enum_first=False
+PASS enum composition Value mixed enum bool enum_first=True
+PASS enum composition Value mixed enum bool enum_first=False
+PASS enum composition Value enum class pair enum_first=True
+PASS enum composition Value enum class pair enum_first=False
+PASS enum composition enum specialization identity includes ordered nominal arguments
+PASS enum composition Value substituted enum method and class constructor
+PASS enum composition Value substituted class result copies complete named local
+PASS enum composition enum side effect separates class constructor snapshots
+PASS enum composition later class result call cannot overwrite enum constructor snapshot
+PASS enum composition readonly constructor parameter permits copied class result
+PASS enum composition nested enum class result snapshot
+PASS enum composition nested enum class result forwarded
+PASS enum composition mutable result independent of later receiver and result mutation
+PASS enum composition nested result survives receiver and method stack lifetimes
+PASS enum composition class-result hidden receiver survives nested and ordinary result calls
+PASS enum composition class-result hidden destination survives two nested receivers
+PASS enum composition six explicit method arguments plus receiver and result preserve order
+PASS enum composition method result can return complete branch copies
+PASS enum composition zero-leaf nested method result preserves logical completion
+PASS enum composition four-level 64-leaf enum array empty result make
+PASS enum composition four-level 64-leaf enum array empty result forwarded
+PASS enum composition enum leaves count toward composed 64-leaf limit
+PASS enum composition empty descendant counts toward composed four-level limit
+PASS enum composition named wrapper around std array is a Value argument and method result
+PASS enum composition independent enum/class snapshot model seed=12012 steps=24
+PASS enum composition imported Value template forwards caller-private nominal enum
+PASS enum composition imported Value template forwards caller-private nominal class
+PASS enum composition imported enum class template and result use exact direct identities
+PASS enum composition class result requires direct visible import states
+PASS enum composition class result requires direct visible import leaves
+PASS enum composition class result requires direct visible import std.utility
+PASS enum composition export visibility rejects hidden enum Value result
+PASS enum composition export visibility rejects hidden enum Value parameter
+PASS enum composition export visibility rejects hidden enum public field
+PASS enum composition export visibility rejects hidden enum public constructor
+PASS enum composition export visibility rejects hidden class result public method
+PASS enum composition export visibility rejects hidden enum result public method
+PASS enum composition private enum representation remains encapsulated
+PASS enum composition same spelling private enum specializations keep defining module identity
+PASS enum composition same layout imported enums yield distinct pair identities
+PASS enum composition same layout imported enum pair copy rejects nominal substitution
+PASS enum composition std.decimal named result enum composition empty
+PASS enum composition std.decimal named result enum composition zero
+PASS enum composition std.decimal named result enum composition success
+PASS enum composition std.decimal named result enum composition maximum
+PASS enum composition std.decimal named result enum composition invalid
+PASS enum composition std.decimal named result enum composition overflow
+PASS enum composition std.decimal two different result snapshots share no state
+PASS enum composition wrong enum pair constructor
+PASS enum composition wrong enum pair field assignment
+PASS enum composition wrong enum extracted pair field
+PASS enum composition integer extracted pair field
+PASS enum composition enum field used as condition
+PASS enum composition enum field numeric conversion
+PASS enum composition enum field unsigned conversion
+PASS enum composition nested enum field wrong equality
+PASS enum composition enum pair copied into different enum specialization
+PASS enum composition enum pair copied into reordered specialization
+PASS enum composition nested field whole assignment
+PASS enum composition nested field method result chaining
+PASS enum composition enum builtin array
+PASS enum composition enum std array
+PASS enum composition nested template id Value argument
+PASS enum composition composed enum arithmetic rejected +
+PASS enum composition composed enum arithmetic rejected -
+PASS enum composition composed enum arithmetic rejected *
+PASS enum composition composed enum arithmetic rejected /
+PASS enum composition composed enum arithmetic rejected %
+PASS enum composition composed enum arithmetic rejected &
+PASS enum composition composed enum arithmetic rejected |
+PASS enum composition composed enum arithmetic rejected ^
+PASS enum composition composed enum arithmetic rejected <<
+PASS enum composition composed enum arithmetic rejected >>
+PASS enum composition composed enum ordering rejected <
+PASS enum composition composed enum ordering rejected <=
+PASS enum composition composed enum ordering rejected >
+PASS enum composition composed enum ordering rejected >=
+PASS enum composition Scalar rejects nominal enum
+PASS enum composition Scalar rejects named concrete class
+PASS enum composition mixed constraints preserve Scalar exclusion Scalar T,Value U
+PASS enum composition mixed constraints preserve Scalar exclusion Value T,Scalar U
+PASS enum composition class result cannot initialize scalar
+PASS enum composition class result requires exact nominal destination
+PASS enum composition class result cannot be discarded
+PASS enum composition class result requires fresh local
+PASS enum composition class result cannot be temporary argument
+PASS enum composition class result cannot be directly returned
+PASS enum composition mutable result method rejects const receiver
+PASS enum composition const result field cannot mutate
+PASS enum composition wrong enum method argument
+PASS enum composition class method parameter remains rejected
+PASS enum composition nested class method parameter remains rejected
+PASS enum composition direct class construction return remains rejected
+PASS enum composition wrong nominal class return remains rejected
+PASS enum composition wrong nominal enum return remains rejected
+PASS enum composition Value substitution does not authorize class method parameter
+PASS enum composition Value enum substitution does not authorize builtin enum arrays
+PASS enum composition decimal enum cannot satisfy Scalar constraint
+PASS enum composition decimal result private enum field remains private after composition
+INFO enum composition: 107 passed, 44 native executions, 63 ordinary rejections (126 artifact checks), 24 snapshot model steps, 0 failures; seed=12012; elapsed=3.60s
+PASS enum composition complete
+python3 ../tests/compiler/integers.py /tmp/aurora-m012-sanitizer/aurorac
+PASS integer quotient 85 2
+PASS integer remainder 85 2
+PASS integer quotient -85 2
+PASS integer remainder -85 2
+PASS integer quotient 85 -2
+PASS integer remainder 85 -2
+PASS integer quotient -85 -2
+PASS integer remainder -85 -2
+PASS integer quotient 1 2
+PASS integer remainder 1 2
+PASS integer quotient -1 2
+PASS integer remainder -1 2
+PASS integer quotient 1 -2
+PASS integer remainder 1 -2
+PASS integer quotient -1 -2
+PASS integer remainder -1 -2
+PASS integer quotient -9223372036854775808 1
+PASS integer remainder -9223372036854775808 1
+PASS integer quotient -9223372036854775808 2
+PASS integer remainder -9223372036854775808 2
+PASS integer quotient -9223372036854775808 9223372036854775807
+PASS integer remainder -9223372036854775808 9223372036854775807
+PASS integer quotient 9223372036854775807 -9223372036854775808
+PASS integer remainder 9223372036854775807 -9223372036854775808
+PASS integer quotient 0 -1
+PASS integer remainder 0 -1
+PASS integer minimum remainder negative one
+PASS integer minimum quotient negative one traps
+PASS integer zero divisor 0 /
+PASS integer zero divisor 0 %
+PASS integer zero divisor 1 /
+PASS integer zero divisor 1 %
+PASS integer zero divisor -1 /
+PASS integer zero divisor -1 %
+PASS integer zero divisor -9223372036854775808 /
+PASS integer zero divisor -9223372036854775808 %
+PASS integer zero divisor 9223372036854775807 /
+PASS integer zero divisor 9223372036854775807 %
+PASS integer multiplicative left associativity
+PASS integer remainder multiplication precedence
+PASS integer arithmetic precedence
+PASS integer comment and division lexing
+PASS integer nested function division
+PASS integer quotient evaluates once left to right
+PASS integer remainder evaluates once left to right
+PASS integer division operand type true / false
+PASS integer division operand type true % false
+PASS integer division operand type 1 / true
+PASS integer division operand type false % 1
+PASS integer owned integer not implicitly divisible
+PASS integer division in checked index
+PASS integer division through class result ABI
+PASS integer class result remainder
+PASS integer div result private field
+PASS integer div result designated construction denied
+PASS integer library div zero traps
+PASS integer library div quotient overflow traps
+PASS integer library gcd 0 0
+PASS integer library lcm 0 0
+PASS integer library gcd 0 42
+PASS integer library lcm 0 42
+PASS integer library gcd 42 0
+PASS integer library lcm 42 0
+PASS integer library gcd -6 21
+PASS integer library lcm -6 21
+PASS integer library gcd 6 -21
+PASS integer library lcm 6 -21
+PASS integer library gcd -6 -21
+PASS integer library lcm -6 -21
+PASS integer library gcd 21 6
+PASS integer library lcm 21 6
+PASS integer library gcd -9223372036854775808 2
+PASS integer library lcm -9223372036854775808 2
+PASS integer library gcd -9223372036854775808 -1
+PASS integer library lcm -9223372036854775808 -1
+PASS integer library gcd -9223372036854775808 9223372036854775807
+PASS integer library lcm -9223372036854775808 9223372036854775807
+PASS integer library gcd 9223372036854775807 9223372036854775807
+PASS integer library lcm 9223372036854775807 9223372036854775807
+PASS integer library gcd -9223372036854775808 0
+PASS integer library lcm -9223372036854775808 0
+PASS integer library gcd -9223372036854775808 -9223372036854775808
+PASS integer library lcm -9223372036854775808 -9223372036854775808
+PASS integer lcm divides before multiplication
+84 checked integer and library checks passed
+python3 ../tests/compiler/unsigned.py /tmp/aurora-m012-sanitizer/aurorac
+PASS unsigned maximum literal
+PASS unsigned leading zero decimal
+PASS unsigned leading zero eight
+PASS unsigned complement zero
+PASS unsigned complement maximum
+PASS unsigned complement high bit
+PASS unsigned add high
+PASS unsigned subtract maximum
+PASS unsigned multiply high
+PASS unsigned divide high
+PASS unsigned remainder high
+PASS unsigned bit and
+PASS unsigned bit or
+PASS unsigned bit xor
+PASS unsigned left count 63
+PASS unsigned zero left 63
+PASS unsigned right count 63
+PASS unsigned logical high shift
+PASS unsigned left count zero
+PASS unsigned right count zero
+PASS unsigned bit precedence
+PASS unsigned shift addition precedence
+PASS unsigned shift left associativity
+PASS unsigned conversion to unsigned
+PASS unsigned conversion to signed
+PASS unsigned unsigned comparison <
+PASS unsigned unsigned comparison <=
+PASS unsigned unsigned comparison >
+PASS unsigned unsigned comparison >=
+PASS unsigned unsigned comparison ==
+PASS unsigned unsigned comparison !=
+PASS unsigned addition overflow
+PASS unsigned subtraction underflow
+PASS unsigned multiplication overflow
+PASS unsigned division zero
+PASS unsigned remainder zero
+PASS unsigned left overflow
+PASS unsigned left negative
+PASS unsigned right negative
+PASS unsigned left 64
+PASS unsigned right 64
+PASS unsigned conversion negative
+PASS unsigned conversion high
+PASS unsigned literal overflow
+PASS unsigned signed literal overflow
+PASS unsigned unknown suffix
+PASS unsigned partial minimum literal suffix
+PASS unsigned negative unsigned minimum
+PASS unsigned negative unsigned
+PASS unsigned mixed add
+PASS unsigned mixed comparison
+PASS unsigned signed bitwise
+PASS unsigned signed complement
+PASS unsigned signed shift
+PASS unsigned unsigned shift count
+PASS unsigned bool conversion
+PASS unsigned identity conversion
+PASS unsigned implicit result conversion
+PASS unsigned implicit local conversion
+PASS unsigned unsigned owner unsupported
+PASS unsigned unsigned index rejected
+PASS unsigned metadata index unsigned
+PASS unsigned private builtin conversion name
+PASS unsigned literal static assert mismatch
+PASS unsigned reflection and high static comparison
+PASS unsigned array independent copy
+PASS unsigned unsigned class value boundary
+PASS unsigned std.bit popcount 0
+PASS unsigned std.bit bit_width 0
+PASS unsigned std.bit has_single_bit 0
+PASS unsigned std.bit popcount 1
+PASS unsigned std.bit bit_width 1
+PASS unsigned std.bit has_single_bit 1
+PASS unsigned std.bit popcount 2
+PASS unsigned std.bit bit_width 2
+PASS unsigned std.bit has_single_bit 2
+PASS unsigned std.bit popcount 3
+PASS unsigned std.bit bit_width 3
+PASS unsigned std.bit has_single_bit 3
+PASS unsigned std.bit popcount 42
+PASS unsigned std.bit bit_width 42
+PASS unsigned std.bit has_single_bit 42
+PASS unsigned std.bit popcount 9223372036854775808
+PASS unsigned std.bit bit_width 9223372036854775808
+PASS unsigned std.bit has_single_bit 9223372036854775808
+PASS unsigned std.bit popcount 18446744073709551615
+PASS unsigned std.bit bit_width 18446744073709551615
+PASS unsigned std.bit has_single_bit 18446744073709551615
+PASS unsigned six maximum-width unsigned value parameters
+PASS unsigned mixed six scalar unsigned arguments
+PASS unsigned receiver high payload survives divide and shifts
+PASS unsigned unsigned recursive scalar
+PASS unsigned unsigned class result preserves snapshot
+PASS unsigned cross-module u64 private field and result
+PASS unsigned unsigned and signed array metadata separate
+95 unsigned tests passed
+CXX="g++" python3 ../tests/compiler/unsigned_oracle.py /tmp/aurora-m012-sanitizer/aurorac
+INFO unsigned oracle compiler=/tmp/aurora-m012-sanitizer/aurorac sha256=3c5272f7e8a32fdbd9561de88f6a7cede2fcd34d3cab7218f8e504faa07551b1
+INFO unsigned oracle std.bit sha256=a782f1ddee3b09239e5c5f9e8aa639189fc780d7f9412eb98095aad96987e2e2
+INFO unsigned oracle std.integer sha256=b08857ab2d164c1b78be50b05fcc4277ef84ae736e1bc0f09668082433fd5a54
+PASS unsigned oracle self-tests: full-width u64/i64, wrong values/signals, three exact UD2 sites, hardware #DE and timeout rejection
+PASS unsigned oracle: 4219 native cases, 501 exact-site traps, 67 rejection cases with absent/existing output checks; seed=8008, random-count=32; elapsed=16.59s
+CXX="g++" python3 ../tests/compiler/integer_oracle.py /tmp/aurora-m012-sanitizer/aurorac
+INFO integer oracle compiler=/tmp/aurora-m012-sanitizer/aurorac sha256=3c5272f7e8a32fdbd9561de88f6a7cede2fcd34d3cab7218f8e504faa07551b1
+INFO integer oracle std.integer sha256=b08857ab2d164c1b78be50b05fcc4277ef84ae736e1bc0f09668082433fd5a54
+PASS integer oracle self-tests: full-width output, wrong values, wrong signals, exact UD2 sites
+PASS integer oracle: 1510 native cases, 181 exact-site traps; seed=7043, random-count=32; elapsed=6.95s
+g++ -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -Wall -Wextra -Wpedantic -Werror -I. ../tests/compiler/ir_tests.cpp -o /tmp/aurora-m012-sanitizer/ir-tests
+/tmp/aurora-m012-sanitizer/ir-tests
+PASS IR enum constant store call and equality
+PASS IR enum undeclared case -1
+PASS IR enum undeclared case 2
+PASS IR enum undeclared case 256
+PASS IR enum constant wrong type i64
+PASS IR enum constant wrong type bool
+PASS IR enum constant wrong type Mode
+PASS IR enum constant wrong type Unknown
+PASS IR enum constant malformed metadata
+PASS IR integer constant cannot forge enum
+PASS IR cross enum store rejected
+PASS IR cross enum call rejected
+PASS IR cross enum comparison rejected
+PASS IR cross enum comparison stack rejected
+PASS IR enum ordering rejected 2
+PASS IR enum ordering rejected 3
+PASS IR enum ordering rejected 4
+PASS IR enum ordering rejected 5
+PASS IR enum arithmetic rejected
+PASS IR enum local arrays rejected
+PASS IR unknown enum slot rejected
+PASS IR unknown enum boundary rejected
+PASS IR enum case count bound 0
+PASS IR enum case count bound -1
+PASS IR enum case count bound 257
+PASS IR enum name bounds
+PASS IR enum name bounds
+PASS IR enum declaration count cap
+PASS IR enum class nominal name collision
+PASS IR enum exact declaration and case limits
+PASS IR method result with composed enum array empty descendants
+PASS IR method result native combined fixtures
+PASS IR method result exact destination 0
+PASS IR method result exact destination 144
+PASS IR method result exact destination -152
+PASS IR method result exact destination 200
+PASS IR method result aliases receiver
+PASS IR method result physical overlap
+PASS IR method result inactive destination
+PASS IR method result partial destination
+PASS IR method result complete destination
+PASS IR method result conditional partial destination
+PASS IR method result scalar call destination forbidden
+PASS IR method result const receiver blocks mutable method
+PASS IR method result forwarding const receiver blocks mutable method
+PASS IR method result recursive nominal shape mismatch
+PASS IR method result enum nominal field mismatch
+PASS IR method result enum arrays remain forbidden
+PASS IR method result unknown enum layout leaf
+PASS IR method result cannot omit empty constructor child
+PASS IR method result wrong enum scalar argument
+PASS IR constructor record wrong enum argument
+PASS IR method class arguments remain forbidden
+PASS IR method object-argument vector not repurposed as result
+PASS IR method result cannot expose scalar current value
+PASS IR method enum receiver field nominal mismatch
+PASS IR constructor enum receiver store nominal mismatch
+PASS IR method enum return nominal mismatch
+PASS IR method empty result already complete
+PASS IR method aggregate result cannot use scalar return
+PASS IR method result source partial object
+PASS IR method result cannot hide receiver recursion
+PASS IR method receiver and class result use distinct saved capabilities
+PASS IR composed nominal copies and mixed constructor record
+PASS IR composed empty class has logical initialization
+PASS IR composed receiver and ordinary call native fixtures
+PASS IR projection invalid logical index -1
+PASS IR projection invalid logical index 3
+PASS IR projection invalid logical index 99
+PASS IR projection scalar field rejected
+PASS IR projection wrong nominal child
+PASS IR whole copy equal-byte nominal forgery
+PASS IR projection interior source
+PASS IR projection interior result
+PASS IR projection aliases owner
+PASS IR whole copy aliases source
+PASS IR copy inactive source
+PASS IR copy inactive result
+PASS IR copy partially initialized source
+PASS IR copy partially initialized result
+PASS IR copy initialized result
+PASS IR copy stale current register rejected
+PASS IR nested direct scalar initialization rejected
+PASS IR nested direct scalar mutation rejected
+PASS IR nested direct indexed mutation rejected
+PASS IR class receiver scalar store forgery
+PASS IR constructor class field absent
+PASS IR constructor empty class field absent
+PASS IR constructor repeated logical field 1
+PASS IR constructor repeated logical field 2
+PASS IR class initialization local receiver unsupported
+PASS IR class initialization scalar logical field rejected
+PASS IR class initialization wrong nominal child
+PASS IR constructor receiver projection rejected
+PASS IR constructor argument missing vector
+PASS IR constructor scalar argument object forgery
+PASS IR constructor argument mutable snapshot
+PASS IR constructor argument aliases receiver
+PASS IR constructor argument reused snapshot
+PASS IR constructor argument wrong nominal class
+PASS IR constructor argument incomplete snapshot
+PASS IR constructor argument scalar operand missing
+PASS IR constructor parameter mutable rejected
+PASS IR ordinary method class parameter rejected
+PASS IR constructor class result rejected
+PASS IR nested metadata wrong flattened length
+PASS IR nested metadata wrong leaf type
+PASS IR nested metadata missing class
+PASS IR nested metadata array class forbidden
+PASS IR nested metadata unresolved specialization
+PASS IR nested metadata overlap
+PASS IR nested metadata negative length
+PASS IR nested metadata nonvalue ref<i64>
+PASS IR nested metadata nonvalue mutref<i64>
+PASS IR nested metadata nonvalue own<i64>
+PASS IR empty nested self cycle
+PASS IR empty nested indirect cycle
+PASS IR nested depth exactly four
+PASS IR nested depth five rejected
+PASS IR composed capacity exactly 64 scalar leaves
+PASS IR composed capacity 65 leaves rejected
+PASS IR empty nested copy cannot forge initialization
+PASS IR empty nested constructor missing logical initialization
+PASS IR empty nested destination still owns one storage word
+PASS IR empty nested duplicate whole copy rejected
+PASS IR empty nested missing init on one branch
+PASS IR empty nested duplicate init through backedge
+PASS IR empty nested logical completion reset by lifetime
+PASS IR constructor receiver and argument record use distinct private slots
+PASS IR logical array fields constructor and checked methods
+PASS IR array fields copied through complete private value ABI
+PASS IR logical fields unknown nominal layout
+PASS IR logical array range offset -1
+PASS IR logical array range offset 0
+PASS IR logical array range offset 2
+PASS IR logical array range offset 8192
+PASS IR logical array length -1
+PASS IR logical array length 0
+PASS IR logical array length 65
+PASS IR logical scalar range cannot hide array
+PASS IR logical arrays require scalar leaves
+PASS IR logical array leaf payload matches layout
+PASS IR logical array range cannot escape layout
+PASS IR logical fields cover every leaf
+PASS IR explicit empty shape cannot hide payload
+PASS IR absent shape cannot forge array access
+PASS IR scalar receiver load cannot access array
+PASS IR scalar receiver init cannot partially initialize array
+PASS IR array constructor must initialize every field
+PASS IR array constructor rejects repeated zero
+PASS IR array constructor conditional missing zero
+PASS IR array constructor conditional duplicate zero
+PASS IR array constructor loop cannot repeat initialization
+PASS IR array zero requires constructor
+PASS IR array write requires mutable receiver
+PASS IR array zero requires receiver
+PASS IR array guard requires receiver
+PASS IR array load requires receiver
+PASS IR array store requires receiver
+PASS IR array operation rejects scalar or invalid zero
+PASS IR array operation rejects scalar or invalid guard
+PASS IR array operation rejects scalar or invalid load
+PASS IR array operation rejects scalar or invalid store
+PASS IR array operation rejects scalar or invalid guard negative field
+PASS IR array operation rejects scalar or invalid guard past field
+PASS IR constructor cannot use indexed guard
+PASS IR constructor cannot use indexed load
+PASS IR constructor cannot use indexed store
+PASS IR receiver index requires signed i64
+PASS IR receiver load requires bounds evidence
+PASS IR receiver store requires saved evidence
+PASS IR same shape other field cannot reuse load token
+PASS IR same shape other field cannot reuse store token
+PASS IR bool array store rejects integer payload
+PASS IR scalar arithmetic cannot retain receiver bounds
+PASS IR conversion roundtrip cannot retain receiver bounds
+PASS IR unguarded pop cannot forge receiver bounds
+PASS IR slot reload cannot retain receiver bounds
+PASS IR local token cannot authorize receiver access
+PASS IR receiver token cannot authorize local access
+PASS IR array receiver nominal mismatch rejected
+PASS IR saved receiver token survives scalar RHS call
+PASS IR saved receiver token survives mutable receiver reborrow
+PASS IR returned scalar cannot forge receiver token
+PASS IR unchanged receiver token survives push and pop
+PASS IR same receiver field bounds evidence survives CFG join
+PASS IR cross-field bounds evidence cannot survive CFG join
+PASS IR branch cannot bypass receiver bounds check
+PASS IR i64 array 64-leaf boundary
+PASS IR i64 array plus scalar exceeds boundary
+PASS IR i64 local class may exceed boundary leaf cap
+PASS IR u64 array 64-leaf boundary
+PASS IR u64 array plus scalar exceeds boundary
+PASS IR u64 local class may exceed boundary leaf cap
+PASS IR bool array 64-leaf boundary
+PASS IR bool array plus scalar exceeds boundary
+PASS IR bool local class may exceed boundary leaf cap
+PASS IR array zero, scalar mapping, bool stride and checked index emission
+PASS IR receiver store guard precedes RHS and receiver reload follows call
+PASS IR unsigned operation callable fixture
+PASS IR u64 binary 0
+PASS IR u64 binary 0 signed left
+PASS IR u64 binary 0 bool right
+PASS IR u64 binary 0 missing left
+PASS IR u64 binary 0 bool operation type
+PASS IR u64 binary 0 invalid operation
+PASS IR u64 binary 0 forged scalar type
+PASS IR u64 binary 0 wrong right signedness
+PASS IR u64 binary 1
+PASS IR u64 binary 1 signed left
+PASS IR u64 binary 1 bool right
+PASS IR u64 binary 1 missing left
+PASS IR u64 binary 1 bool operation type
+PASS IR u64 binary 1 invalid operation
+PASS IR u64 binary 1 forged scalar type
+PASS IR u64 binary 1 wrong right signedness
+PASS IR u64 binary 2
+PASS IR u64 binary 2 signed left
+PASS IR u64 binary 2 bool right
+PASS IR u64 binary 2 missing left
+PASS IR u64 binary 2 bool operation type
+PASS IR u64 binary 2 invalid operation
+PASS IR u64 binary 2 forged scalar type
+PASS IR u64 binary 2 wrong right signedness
+PASS IR u64 binary 3
+PASS IR u64 binary 3 signed left
+PASS IR u64 binary 3 bool right
+PASS IR u64 binary 3 missing left
+PASS IR u64 binary 3 bool operation type
+PASS IR u64 binary 3 invalid operation
+PASS IR u64 binary 3 forged scalar type
+PASS IR u64 binary 3 wrong right signedness
+PASS IR u64 binary 3 native division guard
+PASS IR u64 binary 4
+PASS IR u64 binary 4 signed left
+PASS IR u64 binary 4 bool right
+PASS IR u64 binary 4 missing left
+PASS IR u64 binary 4 bool operation type
+PASS IR u64 binary 4 invalid operation
+PASS IR u64 binary 4 forged scalar type
+PASS IR u64 binary 4 wrong right signedness
+PASS IR u64 binary 4 native division guard
+PASS IR u64 binary 5
+PASS IR u64 binary 5 signed left
+PASS IR u64 binary 5 bool right
+PASS IR u64 binary 5 missing left
+PASS IR u64 binary 5 bool operation type
+PASS IR u64 binary 5 invalid operation
+PASS IR u64 binary 5 forged scalar type
+PASS IR u64 binary 5 wrong right signedness
+PASS IR u64 binary 5 signed operation type
+PASS IR u64 binary 6
+PASS IR u64 binary 6 signed left
+PASS IR u64 binary 6 bool right
+PASS IR u64 binary 6 missing left
+PASS IR u64 binary 6 bool operation type
+PASS IR u64 binary 6 invalid operation
+PASS IR u64 binary 6 forged scalar type
+PASS IR u64 binary 6 wrong right signedness
+PASS IR u64 binary 6 signed operation type
+PASS IR u64 binary 7
+PASS IR u64 binary 7 signed left
+PASS IR u64 binary 7 bool right
+PASS IR u64 binary 7 missing left
+PASS IR u64 binary 7 bool operation type
+PASS IR u64 binary 7 invalid operation
+PASS IR u64 binary 7 forged scalar type
+PASS IR u64 binary 7 wrong right signedness
+PASS IR u64 binary 7 signed operation type
+PASS IR u64 binary 8
+PASS IR u64 binary 8 signed left
+PASS IR u64 binary 8 bool right
+PASS IR u64 binary 8 missing left
+PASS IR u64 binary 8 bool operation type
+PASS IR u64 binary 8 invalid operation
+PASS IR u64 binary 8 forged scalar type
+PASS IR u64 binary 8 wrong right signedness
+PASS IR u64 binary 8 signed operation type
+PASS IR u64 binary 8 native guard order
+PASS IR u64 binary 9
+PASS IR u64 binary 9 signed left
+PASS IR u64 binary 9 bool right
+PASS IR u64 binary 9 missing left
+PASS IR u64 binary 9 bool operation type
+PASS IR u64 binary 9 invalid operation
+PASS IR u64 binary 9 forged scalar type
+PASS IR u64 binary 9 wrong right signedness
+PASS IR u64 binary 9 signed operation type
+PASS IR u64 binary 9 native guard order
+PASS IR i64 checked conversion
+PASS IR i64 checked conversion wrong source value
+PASS IR i64 checked conversion invalid target bool
+PASS IR i64 checked conversion invalid source bool
+PASS IR i64 checked conversion invalid target ref<i64>
+PASS IR i64 checked conversion invalid source ref<i64>
+PASS IR i64 checked conversion invalid target mutref<i64>
+PASS IR i64 checked conversion invalid source mutref<i64>
+PASS IR i64 checked conversion invalid target own<i64>
+PASS IR i64 checked conversion invalid source own<i64>
+PASS IR i64 checked conversion invalid target Pair
+PASS IR i64 checked conversion invalid source Pair
+PASS IR i64 checked conversion invalid target array<u64, 1>
+PASS IR i64 checked conversion invalid source array<u64, 1>
+PASS IR i64 checked conversion invalid target ?
+PASS IR i64 checked conversion invalid source ?
+PASS IR i64 checked conversion identity rejected
+PASS IR u64 checked conversion
+PASS IR u64 checked conversion wrong source value
+PASS IR u64 checked conversion invalid target bool
+PASS IR u64 checked conversion invalid source bool
+PASS IR u64 checked conversion invalid target ref<i64>
+PASS IR u64 checked conversion invalid source ref<i64>
+PASS IR u64 checked conversion invalid target mutref<i64>
+PASS IR u64 checked conversion invalid source mutref<i64>
+PASS IR u64 checked conversion invalid target own<i64>
+PASS IR u64 checked conversion invalid source own<i64>
+PASS IR u64 checked conversion invalid target Pair
+PASS IR u64 checked conversion invalid source Pair
+PASS IR u64 checked conversion invalid target array<u64, 1>
+PASS IR u64 checked conversion invalid source array<u64, 1>
+PASS IR u64 checked conversion invalid target ?
+PASS IR u64 checked conversion invalid source ?
+PASS IR u64 checked conversion identity rejected
+PASS IR unary signed or bool operation on u64
+PASS IR unary signed or bool operation on u64
+PASS IR bitwise not requires u64 i64
+PASS IR bitwise not requires u64 bool
+PASS IR u64 comparison 0
+PASS IR u64 comparison 0 signed left
+PASS IR u64 comparison 0 signed right
+PASS IR u64 comparison 0 invalid enum
+PASS IR u64 comparison 0 reference forgery
+PASS IR u64 comparison 1
+PASS IR u64 comparison 1 signed left
+PASS IR u64 comparison 1 signed right
+PASS IR u64 comparison 1 invalid enum
+PASS IR u64 comparison 1 reference forgery
+PASS IR u64 comparison 2
+PASS IR u64 comparison 2 signed left
+PASS IR u64 comparison 2 signed right
+PASS IR u64 comparison 2 invalid enum
+PASS IR u64 comparison 2 reference forgery
+PASS IR u64 comparison 3
+PASS IR u64 comparison 3 signed left
+PASS IR u64 comparison 3 signed right
+PASS IR u64 comparison 3 invalid enum
+PASS IR u64 comparison 3 reference forgery
+PASS IR u64 comparison 4
+PASS IR u64 comparison 4 signed left
+PASS IR u64 comparison 4 signed right
+PASS IR u64 comparison 4 invalid enum
+PASS IR u64 comparison 4 reference forgery
+PASS IR u64 comparison 5
+PASS IR u64 comparison 5 signed left
+PASS IR u64 comparison 5 signed right
+PASS IR u64 comparison 5 invalid enum
+PASS IR u64 comparison 5 reference forgery
+PASS IR u64 scalar call boundary
+PASS IR signed argument cannot cross u64 scalar call boundary
+PASS IR u64 nominal receiver construction and forwarding
+PASS IR u64 receiver field cannot be loaded as signed
+PASS IR conversion roundtrip cannot preserve bounds token
+PASS IR u64 array guarded load
+PASS IR u64 array guarded store
+PASS IR u64 array store requires matching token
+PASS IR u64 array index cannot be u64
+PASS IR u64 array token cannot alias signed layout
+PASS IR u64 payload cannot mint borrow capability
+PASS IR typed checked division
+PASS IR division bool right operand
+PASS IR division bool left operand
+PASS IR division missing left operand
+PASS IR division guard ordering
+PASS IR typed checked remainder
+PASS IR remainder bool right operand
+PASS IR remainder bool left operand
+PASS IR remainder missing left operand
+PASS IR remainder guard ordering
+PASS IR typed load/store
+PASS IR empty module
+PASS IR symbol injection
+PASS IR reserved symbol
+PASS IR duplicate function
+PASS IR bad frame
+PASS IR oversized frame
+PASS IR bad slot
+PASS IR slot past frame
+PASS IR noncanonical bool
+PASS IR load uninitialized
+PASS IR load wrong type
+PASS IR store wrong type
+PASS IR stack underflow
+PASS IR push undefined
+PASS IR unbalanced return
+PASS IR wrong return
+PASS IR fallthrough
+PASS IR unknown jump
+PASS IR duplicate label
+PASS IR unreachable operation
+PASS IR unreachable bad parameter
+PASS IR jump over stack effect
+PASS IR missing parameter prefix
+PASS IR parameter rebound after call
+PASS IR unknown call
+PASS IR bad unary enum
+PASS IR bad binary enum
+PASS IR bad query enum
+PASS IR bad descriptor
+PASS IR borrow uninitialized payload
+PASS IR unchecked index
+PASS IR guard invalidated by value change
+PASS IR guard wrong length
+PASS IR guard wrong base
+PASS IR guard bypass through branch
+PASS IR partial array initialization
+PASS IR array layout underflow
+PASS IR store without checked index
+PASS IR initialization missing branch
+PASS IR loop backedge loses current guard
+PASS IR late predecessor removes initialization
+PASS IR identical guards join safely
+PASS IR constructor, const object and receiver forwarding
+PASS IR missing class layout
+PASS IR non-scalar class layout
+PASS IR unknown bound receiver nominal type
+PASS IR forged object type
+PASS IR forged object scalar layout
+PASS IR missing object field slot
+PASS IR overlapping object layouts
+PASS IR object base underflows layout
+PASS IR object base outside frame
+PASS IR receiver load without bound receiver
+PASS IR receiver store without bound receiver
+PASS IR negative receiver field
+PASS IR receiver field past layout
+PASS IR receiver field type forged
+PASS IR receiver cannot become scalar
+PASS IR receiver write through readonly capability
+PASS IR scalar call receiver bypass
+PASS IR method call scalar target
+PASS IR unknown method
+PASS IR method requires exact object base
+PASS IR method rejects negative base
+PASS IR receiver cannot alias arbitrary scalar
+PASS IR forwarding requires receiver
+PASS IR forwarding preserves nominal identity
+PASS IR const receiver cannot forward exclusively
+PASS IR const local cannot supply mutable receiver
+PASS IR constructor requires mutable receiver
+PASS IR constructor requires i64 internal result
+PASS IR constructor missing field
+PASS IR constructor duplicate field
+PASS IR constructor receiver read even after final write
+PASS IR constructor cannot forward receiver
+PASS IR ordinary method cannot forward as constructor
+PASS IR method requires full object initialization
+PASS IR constructor rejects partially initialized object
+PASS IR constructor cannot run twice
+PASS IR constructor argument type
+PASS IR constructor argument underflow
+PASS IR const object field direct overwrite
+PASS IR const object field indexed overwrite
+PASS IR object cannot forge scalar borrow capability
+PASS IR parameter cannot alias object
+PASS IR self-recursive receiver
+PASS IR mutually recursive receivers
+PASS IR receiver recursion through scalar intermediary
+PASS IR unreachable receiver instruction
+PASS IR constructor conditional field omitted
+PASS IR constructor conditional duplicate field
+PASS IR constructor loop duplicate field
+PASS IR conditional object initialization before construction
+PASS IR fully initialized aggregate supplies receiver
+PASS IR mutable receiver reborrow downgrades and returns
+PASS IR receiver function ordinary scalar helper
+PASS IR pure scalar recursion stays supported
+PASS IR constructor disjoint branch initialization
+PASS IR empty object reserves private receiver storage
+PASS IR empty object constructor cannot repeat
+PASS IR empty object cannot alias scalar slot
+PASS IR object method before lifetime begin
+PASS IR object field store before lifetime begin
+PASS IR object field load after lifetime end
+PASS IR object indexed access after lifetime end
+PASS IR object method after lifetime end
+PASS IR object double begin
+PASS IR object end before begin
+PASS IR object double end
+PASS IR object begin requires exact base
+PASS IR object end requires exact base
+PASS IR new lifetime cannot inherit initialized fields
+PASS IR branch cannot skip lifetime end
+PASS IR branch cannot skip lifetime begin
+PASS IR loop cannot silently restart active object
+PASS IR new lifetime permits constructing same storage again
+PASS IR const constructor object lifetime ends before loop backedge
+PASS IR const aggregate object lifetime ends before loop backedge
+PASS IR six scalar method arguments with odd live operand depth
+PASS IR private receiver ABI frame and field layout
+PASS IR deep receiver-to-scalar call graph uses iterative verification
+PASS IR deep scalar bridge cannot hide receiver cycle
+PASS IR receiver may call a pure scalar recursive component
+PASS IR class arguments and result use independent value storage
+PASS IR unknown value call
+PASS IR missing value argument vector
+PASS IR extra value argument vector entry
+PASS IR scalar argument cannot contain object base
+PASS IR class argument cannot be scalar zero
+PASS IR class argument cannot be negative
+PASS IR class argument requires exact base
+PASS IR argument snapshots cannot alias
+PASS IR argument nominal class identity
+PASS IR argument snapshot readonly
+PASS IR argument snapshot inactive
+PASS IR argument snapshot partially initialized
+PASS IR argument snapshot uninitialized
+PASS IR argument scalar type mismatch
+PASS IR argument missing scalar operand
+PASS IR result cannot be zero
+PASS IR result cannot be negative
+PASS IR result cannot be interior field
+PASS IR result cannot alias snapshot
+PASS IR result nominal class identity
+PASS IR result lifetime required
+PASS IR result pristine field requirement
+PASS IR result cannot initialize twice
+PASS IR result cannot conditionally initialize twice
+PASS IR result scalar current cannot carry class capability
+PASS IR plain call cannot bypass value ABI
+PASS IR object return exact slot
+PASS IR object return nominal identity
+PASS IR object return active lifetime
+PASS IR object return complete initialization
+PASS IR object return balanced scalar stack
+PASS IR scalar return cannot bypass value ABI
+PASS IR object return cannot bypass scalar result
+PASS IR object bind cannot use scalar instruction
+PASS IR scalar bind cannot use object instruction
+PASS IR object bind wrong index
+PASS IR object bind wrong declared class
+PASS IR object bind wrong slot class
+PASS IR object bind requires exact slot
+PASS IR object bind readonly requirement
+PASS IR object parameters cannot alias
+PASS IR object bind outside prefix
+PASS IR object parameter cannot restart lifetime
+PASS IR object parameter cannot overwrite field
+PASS IR scalar value-call parameter immutable
+PASS IR scalar value-call parameter indexed immutable
+PASS IR method aggregate result signature denied
+PASS IR value-call hidden frame slot inaccessible
+PASS IR value-call class capabilities are not scalar slots
+PASS IR value signature cannot contain reference
+PASS IR value signature cannot contain mutable reference
+PASS IR value signature cannot contain owner
+PASS IR value signature cannot contain array
+PASS IR value signature unknown nominal type
+PASS IR value signature malformed class payload
+PASS IR value signature at most six parameters
+PASS IR value boundary at most 64 fields
+PASS IR aggregate call cannot replace scalar call
+PASS IR value arguments with scalar result
+PASS IR scalar result rejects object result storage
+PASS IR result storage reused only after lifetime transition
+PASS IR returned value has caller-selected mutability
+PASS IR saved bounds token survives value call
+PASS IR class parameter returned through independent caller result
+PASS IR empty values use reserved distinct storage
+PASS IR empty value result cannot initialize twice
+PASS IR empty parameter cannot become result target
+PASS IR empty result cannot alias empty argument
+PASS IR 64-field value boundary accepted
+PASS IR aggregate edge cannot conceal receiver recursion
+PASS IR receiver may call acyclic ordinary value helper
+PASS IR receiver aggregate parameter denied
+PASS IR private value ABI uses packed record and hidden result slot
+PASS IR bounded maximum initializer: snapshots=1, peak operand depth=4096, retained facts=0
+PASS IR query cannot change module view
+PASS IR unknown function module view
+PASS IR view cannot name missing descriptor
+PASS IR module view scope cap
+PASS IR scoped helper name reserved
+PASS IR saved guard survives RHS query
+PASS IR unreachable structural cleanup
+PASS IR unsubstituted template parameter result
+PASS IR unsubstituted template parameter slot
+PASS IR unsubstituted template parameter constant
+PASS IR unresolved specialization arguments on result
+PASS IR unresolved specialization arguments on parameter
+PASS IR same-layout specialization argument forgery
+PASS IR same-layout specialization result forgery
+PASS IR same-layout specialization receiver forgery
+592 typed IR tests passed
+CXX="g++" python3 ../tests/compiler/ir_exhaustive.py /tmp/aurora-m012-sanitizer/ir-tests
+PASS IR exhaustive unchanged ir_verify.hpp control
+PASS IR exhaustive unchanged x86.hpp control
+PASS IR exhaustive unknown variant rejected by ir_verify.hpp
+PASS IR exhaustive unknown variant rejected by x86.hpp
+PASS IR exhaustive unknown Unary enum rejected by ir_verify.hpp
+PASS IR exhaustive unknown Unary enum rejected by x86.hpp
+PASS IR exhaustive unknown Binary enum rejected by ir_verify.hpp
+PASS IR exhaustive unknown Binary enum rejected by x86.hpp
+PASS IR exhaustive unknown Comparison enum rejected by ir_verify.hpp
+PASS IR exhaustive unknown Comparison enum rejected by x86.hpp
+10 exhaustive IR dispatch checks passed
+18 native receiver-array IR checks passed (10 exact-site traps; scalar mapping, bool stride, zero init, copy ABI and bounds-before-RHS)
+8 native composed-value IR checks passed (nominal projection, independent snapshots/copies, bool stride, empty values and distinct receiver/argument records)
+13 native enum/composed-method-result IR checks passed (two-element arrays, enum and empty descendants, constructor snapshots, independent projection, forwarded receivers and nested hidden-register clobbers)
+python3 ../tests/modules/run.py /tmp/aurora-m012-sanitizer/aurorac
+PASS modules old root seam
+PASS modules std core execution
+PASS modules std min signed limits
+PASS modules std max signed limits
+PASS modules std abs negative
+PASS modules std abs minimum traps
+PASS modules std private helper inaccessible
+PASS modules root helper cannot hijack std
+PASS modules namespace forwards and reopen
+PASS modules namespace nested spelling
+PASS modules namespace relative lookup
+PASS modules export function
+PASS modules private function rejection
+PASS modules defining module missing helper cannot use root
+PASS modules two private helpers have separate identity
+PASS modules mangling module namespace boundary
+PASS modules direct dependency visible to defining body
+PASS modules transitive exports not implicit
+PASS modules explicit reexport deferred
+PASS modules exports require interface
+PASS modules import requires interface
+PASS modules duplicate module declaration rejected
+PASS modules import after declaration rejected
+PASS modules duplicate import rejected
+PASS modules duplicate visible exports
+PASS modules root and imported export duplicate
+PASS modules duplicate namespace declaration
+PASS modules namespace function name collision
+PASS modules imported namespace local declaration collision
+PASS modules reserved native symbol declaration
+PASS modules reserved native symbol call
+PASS modules reserved reflection scope selector
+PASS modules exported class inline local
+PASS modules private class construction rejected
+PASS modules private compile-time reflection rejected
+PASS modules private runtime id guessed
+PASS modules private runtime returned id unavailable
+PASS modules private runtime field count unavailable
+PASS modules defining module can intentionally reveal own facts
+PASS modules public class runtime reflection
+PASS modules callee cannot reflect caller private type
+PASS modules private type through transitive reflection unavailable
+PASS modules class-only exported module
+PASS modules qualified private fields still private
+PASS modules aggregate parameter by value
+PASS modules no ambient module search
+PASS modules missing module
+PASS modules header mismatch
+PASS modules cycle
+PASS modules self cycle
+PASS modules ambiguous module roots
+PASS modules duplicate roots
+PASS modules symlink file escape
+PASS modules symlink directory escape
+PASS modules contained symlink rejected
+PASS modules same file cannot alias module identity
+PASS modules path traversal syntax rejected
+PASS modules too many roots
+PASS modules FIFO source rejected without blocking
+PASS modules directory source rejected
+PASS modules imported argument type diagnostic
+PASS modules imported arity diagnostic uses source spelling
+PASS modules file byte cap
+PASS modules graph byte cap
+PASS modules graph file cap
+PASS modules import depth cap
+PASS modules namespace depth cap
+PASS modules module component count cap
+PASS modules invalid module preserves existing artifact
+PASS modules output alias rejected root
+PASS modules output alias rejected import
+PASS modules output alias rejected hardlink
+72 module/library tests passed
+python3 ../tests/modules/robustness.py /tmp/aurora-m012-sanitizer/aurorac
+PASS depth reported body stack overflow
+PASS depth reported parenthesis stack overflow
+PASS depth unary recursion
+PASS depth type recursion
+PASS depth left-skew AST
+PASS depth member-skew AST
+PASS depth index-skew AST
+PASS depth right nested expression
+PASS depth call recursion
+PASS depth nested conditional bodies
+PASS depth nested loop bodies
+11 bounded-depth rejection cases passed
+g++ -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -Wall -Wextra -Wpedantic -Werror -pthread -I. ../tests/modules/host_sources_tests.cpp -o /tmp/aurora-m012-sanitizer/host-source-tests
+python3 ../tests/modules/host_sources.py /tmp/aurora-m012-sanitizer/host-source-tests
+PASS source adapter exact bounded read
+PASS source adapter read byte cap
+PASS source adapter excessive read request
+PASS source adapter relative parent escape
+PASS source adapter absolute escape
+PASS source adapter directory not a source file
+PASS source adapter contained symlink
+PASS source adapter external symlink
+PASS source adapter explicit root source symlink
+PASS source adapter missing module
+PASS source adapter pinned root survives replacement
+PASS source adapter new symlink root rejected
+PASS source adapter replacement race: safe=588, denied=212
+g++ -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -Wall -Wextra -Wpedantic -Werror -I. ../tests/modules/host_output_tests.cpp -o /tmp/aurora-m012-sanitizer/host-output-tests
+python3 ../tests/modules/host_sources.py /tmp/aurora-m012-sanitizer/host-output-tests
+PASS artifact adapter destination cannot be its own temporary
+PASS artifact adapter atomic complete replacement
+PASS artifact adapter root source alias
+PASS artifact adapter hardlink source alias
+PASS artifact adapter symlink output policy
+PASS artifact adapter nonregular output policy
+PASS artifact adapter filename leaf required
+PASS artifact adapter abandoned write preserves old output
+PASS artifact adapter changed temporary rejected
+PASS artifact adapter cleanup preserves unrelated replacement entry
+PASS artifact adapter destination hardlink swap
+PASS artifact adapter destination symlink swap
+PASS artifact adapter pinned output parent survives replacement
+PASS artifact adapter write once
+PASS artifact adapter misused writer cannot commit
+PASS artifact adapter commit requires complete write
+PASS artifact adapter out-of-order commit poisons writer
+PASS artifact adapter empty artifact replacement
+PASS artifact adapter artifact byte budget
+PASS artifact adapter partial OS write failure preserves output
+PASS artifact adapter failed writer rejects empty retry and commit
+PASS artifact adapter OS rename failure preserves output
+22 artifact adapter tests passed
+make: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'

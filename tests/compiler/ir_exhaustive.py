@@ -120,3 +120,18 @@ if len(sys.argv) > 1:
         print(f"{len(names)} native composed-value IR checks passed "
               "(nominal projection, independent snapshots/copies, bool stride, empty values "
               "and distinct receiver/argument records)")
+
+    with tempfile.TemporaryDirectory(prefix="aurora-ir-method-results-native-") as temporary:
+        directory = Path(temporary)
+        assembly = command([Path(sys.argv[1]).resolve(), "--emit-method-results"]).stdout.decode()
+        runner = NativeRunner(directory, None, 5)
+        names = ["test", "method_result_header", "method_result_first_array",
+                 "method_result_enum", "method_result_bool", "method_source_snapshot",
+                 "method_source_header", "method_result_independence", "method_forwarded_result",
+                 "method_empty_result", "method_empty_from_result", "method_enum_receiver_read",
+                 "method_result_saved_operand"]
+        observed, _ = runner.assemble(assembly, names)
+        validate_values(observed, [42, 29, 11, 1, 1, 99, 12, 42, 29, 42, 42, 1, 45], names)
+        print(f"{len(names)} native enum/composed-method-result IR checks passed "
+              "(two-element arrays, enum and empty descendants, constructor snapshots, "
+              "independent projection, forwarded receivers and nested hidden-register clobbers)")

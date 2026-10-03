@@ -1,0 +1,26 @@
+{
+  "/tmp/aurora-m012-compiler-candidate": {
+    "sha256": "a6de1e89e307b076672a1e2ee8a5e848625ac92e386622c1fa5fe7c6ab675026",
+    "bytes": 880176
+  },
+  "/tmp/aurora-m012-compiler-sanitized": {
+    "sha256": "3c5272f7e8a32fdbd9561de88f6a7cede2fcd34d3cab7218f8e504faa07551b1",
+    "bytes": 25350376
+  },
+  "/tmp/aurora-m012-sanitizer/aurorac": {
+    "sha256": "3c5272f7e8a32fdbd9561de88f6a7cede2fcd34d3cab7218f8e504faa07551b1",
+    "bytes": 25350376
+  },
+  "/tmp/aurora-m012-sanitizer/ir-tests": {
+    "sha256": "1f8acd34a5a11340490ce174fff8b179b67477b77564ad943823aac3ef0b7064",
+    "bytes": 39331872
+  },
+  "/tmp/aurora-m012-sanitizer/host-source-tests": {
+    "sha256": "910e040dd45e2da0b7867f3964091c6f5db9459576554a659db1c0532b6440b1",
+    "bytes": 961928
+  },
+  "/tmp/aurora-m012-sanitizer/host-output-tests": {
+    "sha256": "3fe5818461ee53890a55dc64b287a88f275b377dcf406c553d317beb22da95e2",
+    "bytes": 1469896
+  }
+}

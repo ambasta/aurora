@@ -8,9 +8,10 @@ BASE=0x10000000000
 def need(value,message):
     if not value: raise ValueError(message)
 
-def verify(data,blob,base,symbols):
+def verify(data,blob,base,symbols,*,image_count=2):
     need(len(data)>=64,'Truncated ELF header')
-    need(base in (BASE,BASE+4096),'Foreign virtual image layout')
+    need(type(image_count) is int and image_count in (2,3),'Unknown bounded image profile')
+    need(base in tuple(BASE+index*4096 for index in range(image_count)),'Foreign virtual image layout')
     need(data[:7]==b'\x7fELF\x02\x01\x01','ELF64 little-endian required')
     kind,machine=struct.unpack_from('<HH',data,16)
     entry,phoff=struct.unpack_from('<QQ',data,24)

@@ -149,7 +149,7 @@ class ModuleLoader {
 };
 
 class ModuleResolver {
-    enum class Kind { Function, Class, Template, Any };
+    enum class Kind { Function, Class, Template, Enum, Any };
     const ClassDefinition *activeClass = nullptr;
     bool initializingReceiver = false, classTypesResolved = false;
     class Declaration {
@@ -160,6 +160,7 @@ class ModuleResolver {
         bool exported;
         std::string module;
         const ClassDefinition *templateDefinition = nullptr;
+        const EnumDefinition *enumDefinition = nullptr;
     };
     ModuleLoader::Graph graph;
     std::map<std::string, std::map<std::string, Declaration>> declarations;
@@ -246,7 +247,7 @@ class ModuleResolver {
         }
     }
     void registerDeclarations() {
-        std::size_t templateCount = 0;
+        std::size_t templateCount = 0, enumCount = 0;
         for (const auto &name : graph.order) {
             auto &unit = *graph.units.at(name);
             auto &table = declarations[name];
@@ -269,7 +270,9 @@ class ModuleResolver {
                     kind == Kind::Function && unit.root && scope.empty() && !valueBoundary
                         ? leaf
                         : mangle(kind == Kind::Function ? (valueBoundary ? 'v' : 'f')
-                                                        : (kind == Kind::Template ? 't' : 'c'),
+                                                        : (kind == Kind::Template ? 't'
+                                                           : kind == Kind::Enum   ? 'e'
+                                                                                  : 'c'),
                                  name, scope, leaf);
                 if (!table.emplace(qualified, Declaration{kind, qualified, native, exported, name})
                          .second)
@@ -277,10 +280,26 @@ class ModuleResolver {
                                                 ? "duplicate or reserved class name"
                                                 : "duplicate or reserved function name") +
                                 " in module " + name + ": " + qualified);
-                if (kind == Kind::Class)
+                if (kind == Kind::Class || kind == Kind::Enum)
                     nativeClasses.emplace(native, &table.at(qualified));
                 return native;
             };
+            for (auto &definition : unit.program.enums) {
+                if (++enumCount > 64)
+                    throw Error("module graph exceeds 64 enum definitions");
+                if (definition.cases.empty() || definition.cases.size() > 256)
+                    throw Error("enum class requires between 1 and 256 named cases");
+                std::set<std::string> cases;
+                for (const auto &value : definition.cases) {
+                    sourceName(value.text);
+                    if (!cases.insert(value.text).second)
+                        throw Error("duplicate enum case: " + value.text);
+                }
+                definition.name =
+                    add(Kind::Enum, definition.scope, definition.token.text, definition.exported);
+                table.at(qualify(definition.scope, definition.token.text)).enumDefinition =
+                    &definition;
+            }
             for (auto &definition : unit.program.classes) {
                 definition.name =
                     add(Kind::Class, definition.scope, definition.token.text, definition.exported);
@@ -345,10 +364,9 @@ class ModuleResolver {
                 const auto &symbols = declarations.at(import.text);
                 if (auto found = symbols.find(candidate);
                     found != symbols.end() && !found->second.exported)
-                    throw Error(
-                        std::string("private ") +
-                        (kind == Kind::Class || kind == Kind::Template ? "type" : "function") +
-                        " is not imported: " + candidate);
+                    throw Error(std::string("private ") +
+                                (found->second.kind == Kind::Function ? "function" : "type") +
+                                " is not imported: " + candidate);
             }
         return nullptr;
     }
@@ -359,13 +377,17 @@ class ModuleResolver {
         for (auto &argument : result) {
             if (argument.kind != TemplateArgumentKind::Type || argument.type != TypeKind::Class)
                 continue;
-            const auto *declaration = lookup(unit, scope, argument.className, Kind::Class);
+            const auto *declaration = lookup(unit, scope, argument.className, Kind::Any);
             if (!declaration)
-                throw Error("unknown named class template argument: " + argument.className);
-            // A source argument must name an ordinary concrete class, never an
+                throw Error("unknown named class or enum template argument: " + argument.className);
+            if (declaration->kind != Kind::Class && declaration->kind != Kind::Enum)
+                throw Error("template argument requires a named concrete class or enum: " +
+                            argument.className);
+            // A source argument must name an ordinary concrete class or enum, never an
             // implicit or nested specialization. Its defining module is identity.
             if (instanceArguments.contains(declaration->native))
                 throw Error("template arguments require named concrete classes");
+            argument.type = declaration->kind == Kind::Enum ? TypeKind::Enum : TypeKind::Class;
             argument.className = declaration->native;
             argument.displayName = declaration->qualified;
         }
@@ -453,7 +475,8 @@ class ModuleResolver {
                 throw Error("wrong number of class template arguments for " + request.name);
             const auto arguments = resolveArguments(request.arguments, usingUnit, request.scope);
             for (const auto &argument : arguments)
-                if (argument.kind == TemplateArgumentKind::Type && argument.type == TypeKind::Class)
+                if (argument.kind == TemplateArgumentKind::Type &&
+                    (argument.type == TypeKind::Class || argument.type == TypeKind::Enum))
                     argumentVisibilityChecks.emplace_back(
                         request.module, ClassTemplateExpansion::argumentType(argument));
             const auto suffix = ClassTemplateExpansion::argumentSuffix(arguments);
@@ -501,7 +524,7 @@ class ModuleResolver {
             throw Error("unsubstituted class template parameter: " + type.className);
         if (!type.elementParameter.empty() || !type.lengthParameter.empty())
             throw Error("unsubstituted array element or capacity parameter");
-        if (!type.isClass())
+        if (!type.isClass() && !type.isEnum())
             return;
         if (type.resolvedClass) {
             if (!classDeclaration(type))
@@ -523,8 +546,12 @@ class ModuleResolver {
             type.resolvedClass = true;
             return;
         } else
-            declaration = lookup(unit, scope, type.className, Kind::Class);
+            declaration = lookup(unit, scope, type.className, Kind::Any);
         if (declaration) {
+            if (declaration->kind != Kind::Class && declaration->kind != Kind::Enum)
+                throw Error("declaration is not a concrete type: " + type.className);
+            if (declaration->kind == Kind::Enum)
+                type.kind = TypeKind::Enum;
             type.className = declaration->native;
             type.displayName = displayName(*declaration);
             type.resolvedClass = true;
@@ -543,7 +570,8 @@ class ModuleResolver {
         while (!pending.empty()) {
             const auto current = std::move(pending.back());
             pending.pop_back();
-            if (!current.isClass() || !visited.insert(current.className).second)
+            if ((!current.isClass() && !current.isEnum()) ||
+                !visited.insert(current.className).second)
                 continue;
             const auto *declaration = classDeclaration(current);
             if (!declaration)
@@ -583,8 +611,8 @@ class ModuleResolver {
                 activeClass = &definition;
                 auto resolve = [&](Type &type) {
                     resolveType(type, unit, definition.scope);
-                    if (type.isClass() && !classDeclaration(type))
-                        throw Error("unknown class type in class declaration: " + typeName(type));
+                    if ((type.isClass() || type.isEnum()) && !classDeclaration(type))
+                        throw Error("unknown nominal type in class declaration: " + typeName(type));
                 };
                 for (auto &field : definition.fields) {
                     resolve(field.type);
@@ -593,8 +621,17 @@ class ModuleResolver {
                 }
                 for (auto &method : definition.methods) {
                     resolve(method.result);
+                    if (method.publicAccess && !method.constructor)
+                        publicTypes[definition.name].push_back(method.result);
                     for (auto &parameter : method.params) {
                         resolve(parameter.type);
+                        if (!scalarValue(parameter.type) &&
+                            !(method.constructor && parameter.type.isClass()))
+                            throw Error(
+                                method.constructor
+                                    ? "only scalar, enum or class constructor parameters "
+                                      "are supported"
+                                    : "only scalar or enum method parameters are supported");
                         if (method.publicAccess)
                             publicTypes[definition.name].push_back(parameter.type);
                     }
@@ -617,9 +654,12 @@ class ModuleResolver {
                 };
                 for (const auto &field : definition.fields)
                     visibleType(field.type);
-                for (const auto &method : definition.methods)
+                for (const auto &method : definition.methods) {
+                    if (!method.constructor)
+                        visibleType(method.result);
                     for (const auto &parameter : method.params)
                         visibleType(parameter.type);
+                }
                 if (!definition.exported)
                     continue;
                 for (const auto &type : publicTypes[definition.name]) {
@@ -643,7 +683,7 @@ class ModuleResolver {
             for (auto &function : unit.program.functions) {
                 auto resolve = [&](Type &type) {
                     resolveType(type, unit, function.scope);
-                    if (type.isClass()) {
+                    if (type.isClass() || type.isEnum()) {
                         const auto *declaration = classDeclaration(type);
                         if (!declaration)
                             throw Error("unknown class type in function signature: " +
@@ -729,6 +769,8 @@ class ModuleResolver {
                 if (declaration->kind == Kind::Template)
                     throw Error("class template requires explicit type arguments: " +
                                 value->token.text);
+                if (declaration->kind == Kind::Enum)
+                    throw Error("enum values require a named case: " + value->token.text);
                 value->resolvedName = declaration->native;
                 if (declaration->kind == Kind::Function) {
                     for (const auto &type : signatures.at(declaration->native))
@@ -753,10 +795,34 @@ class ModuleResolver {
         } else if (value->op == "construct") {
             Type type(value->token.text);
             resolveType(type, unit, scope);
+            if (type.isEnum())
+                throw Error("enum values require a named case: " + value->token.text);
             value->reflectedType = type;
 
-        } else if (value->op == "name")
+        } else if (value->op == "name") {
             sourceName(value->token.text);
+            const auto separator = value->token.text.rfind("::");
+            if (separator != std::string::npos) {
+                const auto enumName = value->token.text.substr(0, separator);
+                const auto caseName = value->token.text.substr(separator + 2);
+                const auto *declaration = lookup(unit, scope, enumName, Kind::Enum);
+                if (declaration) {
+                    const auto &cases = declaration->enumDefinition->cases;
+                    const auto found =
+                        std::find_if(cases.begin(), cases.end(), [&](const Token &candidate) {
+                            return candidate.text == caseName;
+                        });
+                    if (found == cases.end())
+                        throw Error("unknown enum case: " + value->token.text);
+                    value->op = "enum_case";
+                    value->resolvedName = declaration->native;
+                    value->reflectedType = Type::enumeration(declaration->native);
+                    value->reflectedType.displayName = declaration->qualified;
+                    value->reflectedType.resolvedClass = true;
+                    value->enumOrdinal = static_cast<int>(found - cases.begin());
+                }
+            }
+        }
         for (const auto &argument : value->args)
             expression(argument, unit, scope);
     }
@@ -828,10 +894,13 @@ class ModuleResolver {
             auto &reflected = result.reflectionAccess[unit.scope];
             for (const auto &qualified : names)
                 for (const auto *declaration : visible(unit, qualified))
-                    if (declaration->kind == Kind::Class &&
+                    if ((declaration->kind == Kind::Class || declaration->kind == Kind::Enum) &&
                         typeVisible(Type(declaration->native), unit))
                         reflected.insert(declaration->native);
         }
+        for (const auto &name : graph.order)
+            for (auto &definition : graph.units.at(name)->program.enums)
+                result.enums.push_back(std::move(definition));
         if (result.functions.empty())
             throw Error("module graph must contain a function");
         return result;

@@ -140,3 +140,11 @@ The current unsigned candidate adds the real scalar-specialized `std.bit` module
 The current class-template candidate adds one or two explicit builtin Scalar- or Value-constrained type parameters, or one Scalar plus a bounded i64 capacity parameter and the real `std.utility` module exporting `std::pair<T,U>`. Specializations are concrete nominal classes checked by the existing class/value-call pipeline. [TEMPLATES.md](TEMPLATES.md) defines visibility, substitution, identity, caps and deferred generic features. This does not add function templates, nested arguments, deduction or general concepts.
 
 The current fixed-container candidate adds real `std.array`/`std::array<T,N>` with completely zero-initialized private `builtin::array<T,N>` storage, copied at(), mutable set() and size(). The unqualified array type is a globally fixed builtin alias, never an injected wrapper name. See [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md) for exact naming, capacity, flattened-layout and receiver-bound evidence rules.
+
+## Integrated enum and method-result candidate
+
+[ENUM-RESULTS.md](ENUM-RESULTS.md) specifies closed nominal enums, enum arguments
+under Value (Scalar unchanged), copied composed method results and the real
+std.decimal recoverable numeric API. It preserves the complete nested-value and
+constructor-snapshot contracts. Independent compiler review passed; final parent/kernel verification remains
+pending; this is not a new kernel or physical-hardware qualification.

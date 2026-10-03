@@ -85,3 +85,12 @@ of an extracted copy while the original remains unchanged. Compile it with
 Its test function returns 42. The implementation and new adversarial tests are
 still awaiting final review and integration. See compiler/COMPOSED-VALUES.md for
 the four-level/64-leaf bounds and excluded resource/borrow operations.
+
+## Recoverable results with composed values
+
+The candidate std.decimal module implements closed DecimalStatus values and
+DecimalAccumulator/DecimalResult. Its copied reports compose with ordinary value
+classes and enum-constrained Value arguments in std::pair. The
+[combined example](examples/enum_composition.au) returns 42 while preserving a
+report across reset. See [the exact contract](../compiler/ENUM-RESULTS.md). Compact
+text storage and general expected/optional remain deferred.

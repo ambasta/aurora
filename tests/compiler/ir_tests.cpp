@@ -4,6 +4,7 @@
 #include <functional>
 #include <iostream>
 #include <string>
+#include <tuple>
 
 using namespace aurora;
 using namespace aurora::ir;
@@ -1425,6 +1426,594 @@ void composedTests() {
     std::cout << "PASS IR constructor receiver and argument record use distinct private slots\n";
 }
 
+Module enumBaseline() {
+    const auto mode = Type::enumeration("Mode");
+    Module module;
+    module.enumCases = {{"Mode", 2}, {"OtherMode", 2}};
+    aurora::ir::Function entry;
+    entry.name = "test";
+    entry.result = Type::Bool;
+    entry.frameBytes = 16;
+    entry.slots[8] = mode;
+    entry.code = {EnumConstant{mode, 1},
+                  Store{8, mode},
+                  Load{8, mode},
+                  Push{},
+                  Call{"identity_mode"},
+                  Push{},
+                  EnumConstant{mode, 1},
+                  Compare{Comparison::Equal, mode},
+                  Return{}};
+    aurora::ir::Function identity;
+    identity.name = "identity_mode";
+    identity.result = mode;
+    identity.parameters = {mode};
+    identity.frameBytes = 16;
+    identity.slots[8] = mode;
+    identity.code = {BindParameter{0, 8, mode}, Load{8, mode}, Return{}};
+    module.functions = {entry, identity};
+    return module;
+}
+aurora::ir::Function &namedFunction(Module &module, const std::string &name) {
+    for (auto &function : module.functions)
+        if (function.name == name)
+            return function;
+    throw Error("missing IR test function " + name);
+}
+MethodCall &namedMethodCall(aurora::ir::Function &function, const std::string &name) {
+    for (auto &instruction : function.code)
+        if (auto *call = std::get_if<MethodCall>(&instruction); call && call->callee == name)
+            return *call;
+    throw Error("missing IR test method call " + name);
+}
+void addObject(Module &module, aurora::ir::Function &function, int base, const std::string &name,
+               bool mutableValue = false) {
+    function.objectSlots[base] = ObjectSlot{name, mutableValue};
+    const auto &layout = module.classLayouts.at(name);
+    for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
+        function.slots[base - static_cast<int>(leaf * 8)] = layout[leaf];
+}
+// A class result combines a two-element array, an enum, bool and zero-leaf child.
+// The method invokes a class-parameter constructor and an ordinary aggregate call,
+// then reuses its receiver after both hidden registers have been clobbered.
+Module methodResultBaseline() {
+    const auto mode = Type::enumeration("Mode");
+    Module module;
+    module.enumCases = {{"Mode", 2}, {"OtherMode", 2}};
+    module.classLayouts = {{"Empty", {}},
+                           {"Leaf", {mode, Type::I64, Type::I64, Type::Bool}},
+                           {"Outer", {Type::I64, mode, Type::I64, Type::I64, Type::Bool}}};
+    module.classFields["Leaf"] = {{mode, 0, 1, false},
+                                  {Type::I64, 1, 2, true},
+                                  {Type::Bool, 3, 1, false},
+                                  {Type("Empty"), 4, 0, false}};
+    module.classFields["Outer"] = {
+        {Type::I64, 0, 1, false}, {Type("Leaf"), 1, 4, false}, {Type("Empty"), 5, 0, false}};
+    aurora::ir::Function leaf;
+    leaf.name = "construct_leaf";
+    leaf.result = Type::I64;
+    leaf.parameters = {mode, Type::Bool, Type("Empty")};
+    leaf.receiver = Receiver{"Leaf", true, true};
+    leaf.frameBytes = 32;
+    leaf.slots = {{8, mode}, {16, Type::Bool}};
+    addObject(module, leaf, 24, "Empty");
+    leaf.code = {BindParameter{0, 8, mode},
+                 BindParameter{1, 16, Type::Bool},
+                 BindObjectParameter{2, 24, "Empty"},
+                 Load{8, mode},
+                 ReceiverStore{0, mode},
+                 Load{16, Type::Bool},
+                 ReceiverStore{2, Type::Bool},
+                 ReceiverArrayZero{1},
+                 InitializeObjectField{0, 3, 24},
+                 Constant{0, Type::I64},
+                 Return{}};
+    aurora::ir::Function outer;
+    outer.name = "construct_outer";
+    outer.result = Type::I64;
+    outer.parameters = {Type::I64, Type("Leaf"), Type("Empty"), Type::I64};
+    outer.receiver = Receiver{"Outer", true, true};
+    outer.frameBytes = 64;
+    outer.slots = {{8, Type::I64}, {56, Type::I64}};
+    addObject(module, outer, 40, "Leaf");
+    addObject(module, outer, 48, "Empty");
+    outer.code = {BindParameter{0, 8, Type::I64},
+                  BindObjectParameter{1, 40, "Leaf"},
+                  BindObjectParameter{2, 48, "Empty"},
+                  BindParameter{3, 56, Type::I64},
+                  Load{8, Type::I64},
+                  Push{},
+                  Load{56, Type::I64},
+                  BinaryValue{Binary::CheckedAdd},
+                  ReceiverStore{0, Type::I64},
+                  InitializeObjectField{0, 1, 40},
+                  InitializeObjectField{0, 2, 48},
+                  Constant{0, Type::I64},
+                  Return{}};
+    aurora::ir::Function setter;
+    setter.name = "set_leaf";
+    setter.result = Type::I64;
+    setter.parameters = {Type::I64, Type::I64};
+    setter.receiver = Receiver{"Leaf", true, false};
+    setter.frameBytes = 16;
+    setter.slots = {{8, Type::I64}, {16, Type::I64}};
+    setter.code = {BindParameter{0, 8, Type::I64},
+                   BindParameter{1, 16, Type::I64},
+                   Load{8, Type::I64},
+                   ReceiverBoundsGuard{1},
+                   Push{},
+                   Load{16, Type::I64},
+                   ReceiverIndexStore{1},
+                   Constant{0, Type::I64},
+                   Return{}};
+    aurora::ir::Function getter;
+    getter.name = "get_outer_header";
+    getter.result = Type::I64;
+    getter.receiver = Receiver{"Outer", false, false};
+    getter.code = {ReceiverLoad{0, Type::I64}, Return{}};
+    auto enumGetter = getter;
+    enumGetter.name = "get_leaf_mode";
+    enumGetter.result = mode;
+    enumGetter.receiver = Receiver{"Leaf", false, false};
+    enumGetter.code = {ReceiverLoad{0, mode}, Return{}};
+    aurora::ir::Function copy;
+    copy.name = "copy_outer";
+    copy.result = Type("Outer");
+    copy.parameters = {Type("Outer")};
+    copy.frameBytes = 48;
+    addObject(module, copy, 40, "Outer");
+    copy.code = {BindObjectParameter{0, 40, "Outer"}, ReturnObject{40}};
+    aurora::ir::Function clobber;
+    clobber.name = "clobber_scalar";
+    clobber.result = Type::I64;
+    clobber.code = {Constant{81, Type::I64}, Push{}, Constant{9, Type::I64},
+                    BinaryValue{Binary::CheckedDivide}, Return{}};
+    auto identity = enumBaseline().functions[1];
+    aurora::ir::Function method;
+    method.name = "snapshot_outer";
+    method.result = Type("Outer");
+    method.parameters = {Type::I64, mode};
+    method.receiver = Receiver{"Outer", false, false};
+    method.frameBytes = 160;
+    method.slots = {{8, Type::I64}, {16, mode}, {144, Type::Bool}};
+    addObject(module, method, 48, "Leaf");
+    addObject(module, method, 56, "Empty");
+    addObject(module, method, 96, "Outer");
+    addObject(module, method, 136, "Outer", true);
+    method.code = {BindParameter{0, 8, Type::I64},
+                   BindParameter{1, 16, mode},
+                   BeginObject{48},
+                   ObjectFieldCopy{0, 1, 48},
+                   BeginObject{56},
+                   ObjectFieldCopy{0, 2, 56},
+                   Load{16, mode},
+                   Push{},
+                   Call{"identity_mode"},
+                   Push{},
+                   Load{48, mode},
+                   Compare{Comparison::Equal, mode},
+                   Store{144, Type::Bool},
+                   Call{"clobber_scalar"},
+                   BeginObject{96},
+                   Load{8, Type::I64},
+                   Push{},
+                   ReceiverLoad{0, Type::I64},
+                   Push{},
+                   MethodCall{"construct_outer", 96, {0, 48, 56, 0}},
+                   BeginObject{136},
+                   AggregateCall{"copy_outer", {96}, 136},
+                   MethodCall{"get_outer_header", 0},
+                   Push{},
+                   Load{136, Type::I64},
+                   BinaryValue{Binary::CheckedAdd},
+                   Store{136, Type::I64},
+                   Load{144, Type::Bool},
+                   BranchFalse{1},
+                   ReturnObject{136},
+                   Label{1},
+                   Constant{1, Type::I64},
+                   Push{},
+                   Constant{0, Type::I64},
+                   BinaryValue{Binary::CheckedDivide},
+                   ReturnObject{136}};
+    aurora::ir::Function relay;
+    relay.name = "relay_outer";
+    relay.result = Type("Outer");
+    relay.parameters = method.parameters;
+    relay.receiver = method.receiver;
+    relay.frameBytes = 64;
+    relay.slots = {{8, Type::I64}, {16, mode}};
+    addObject(module, relay, 56, "Outer");
+    relay.code = {BindParameter{0, 8, Type::I64},
+                  BindParameter{1, 16, mode},
+                  BeginObject{56},
+                  Load{8, Type::I64},
+                  Push{},
+                  Load{16, mode},
+                  Push{},
+                  MethodCall{"snapshot_outer", 0, {}, 56},
+                  ReturnObject{56}};
+    aurora::ir::Function empty;
+    empty.name = "snapshot_empty";
+    empty.result = Type("Empty");
+    empty.receiver = Receiver{"Outer", false, false};
+    empty.frameBytes = 16;
+    addObject(module, empty, 8, "Empty");
+    empty.code = {BeginObject{8}, ObjectFieldCopy{0, 2, 8}, Call{"clobber_scalar"},
+                  ReturnObject{8}};
+    aurora::ir::Function entry;
+    entry.name = "test";
+    entry.result = Type::I64;
+    entry.frameBytes = 192;
+    addObject(module, entry, 8, "Empty");
+    addObject(module, entry, 40, "Leaf", true);
+    addObject(module, entry, 72, "Leaf");
+    addObject(module, entry, 112, "Outer");
+    addObject(module, entry, 152, "Outer");
+    addObject(module, entry, 184, "Leaf", true);
+    addObject(module, entry, 192, "Empty");
+    entry.code = {BeginObject{8},
+                  BeginObject{40},
+                  EnumConstant{mode, 1},
+                  Push{},
+                  Constant{1, Type::Bool},
+                  Push{},
+                  MethodCall{"construct_leaf", 40, {0, 0, 8}},
+                  Constant{0, Type::I64},
+                  Push{},
+                  Constant{11, Type::I64},
+                  Push{},
+                  MethodCall{"set_leaf", 40},
+                  Constant{1, Type::I64},
+                  Push{},
+                  Constant{42, Type::I64},
+                  Push{},
+                  MethodCall{"set_leaf", 40},
+                  BeginObject{72},
+                  CopyObject{40, 72},
+                  Constant{1, Type::I64},
+                  Push{},
+                  Constant{99, Type::I64},
+                  Push{},
+                  MethodCall{"set_leaf", 40},
+                  BeginObject{112},
+                  Constant{7, Type::I64},
+                  Push{},
+                  Constant{5, Type::I64},
+                  Push{},
+                  MethodCall{"construct_outer", 112, {0, 72, 8, 0}},
+                  BeginObject{152},
+                  Constant{5, Type::I64},
+                  Push{},
+                  EnumConstant{mode, 1},
+                  Push{},
+                  MethodCall{"snapshot_outer", 112, {}, 152},
+                  BeginObject{184},
+                  ObjectFieldCopy{152, 1, 184},
+                  Load{168, Type::I64},
+                  Return{}};
+    module.functions = {entry,   leaf,     outer,  setter, getter, copy,
+                        clobber, identity, method, relay,  empty,  enumGetter};
+    return module;
+}
+Module methodResultNativeModule() {
+    auto module = methodResultBaseline();
+    auto entry = module.functions[0];
+    for (const auto &[name, offset, type] : std::vector<std::tuple<std::string, int, Type>>{
+             {"method_result_header", 152, Type::I64},
+             {"method_result_first_array", 176, Type::I64},
+             {"method_result_enum", 184, Type::enumeration("Mode")},
+             {"method_result_bool", 160, Type::Bool},
+             {"method_source_snapshot", 24, Type::I64},
+             {"method_source_header", 112, Type::I64}}) {
+        entry.name = name;
+        entry.result = type;
+        entry.code[entry.code.size() - 2] = Load{offset, type};
+        module.functions.push_back(entry);
+    }
+    entry = module.functions[0];
+    entry.name = "method_result_independence";
+    entry.code.resize(entry.code.size() - 2);
+    entry.code.insert(entry.code.end(),
+                      {Constant{1, Type::I64}, Push{}, Constant{-13, Type::I64}, Push{},
+                       MethodCall{"set_leaf", 184}, Load{128, Type::I64}, Return{}});
+    module.functions.push_back(entry);
+    entry = module.functions[0];
+    entry.name = "method_forwarded_result";
+    namedMethodCall(entry, "snapshot_outer").callee = "relay_outer";
+    entry.code[entry.code.size() - 2] = Load{152, Type::I64};
+    module.functions.push_back(entry);
+    entry = module.functions[0];
+    entry.name = "method_empty_result";
+    entry.code.resize(entry.code.size() - 2);
+    entry.code.insert(entry.code.end(),
+                      {BeginObject{192}, MethodCall{"snapshot_empty", 112, {}, 192},
+                       Constant{42, Type::I64}, Return{}});
+    module.functions.push_back(entry);
+    entry.name = "method_empty_from_result";
+    namedMethodCall(entry, "snapshot_empty").receiverOffset = 152;
+    module.functions.push_back(entry);
+    entry = module.functions[0];
+    entry.name = "method_enum_receiver_read";
+    entry.result = Type::enumeration("Mode");
+    entry.code[entry.code.size() - 2] = MethodCall{"get_leaf_mode", 184};
+    module.functions.push_back(entry);
+    entry = module.functions[0];
+    entry.name = "method_result_saved_operand";
+    entry.code.insert(entry.code.begin() + 30, {Constant{3, Type::I64}, Push{}});
+    entry.code.insert(entry.code.end() - 1, BinaryValue{Binary::CheckedAdd});
+    module.functions.push_back(entry);
+    return module;
+}
+void enumAndMethodResultTests() {
+    const auto mode = Type::enumeration("Mode");
+    const auto other = Type::enumeration("OtherMode");
+    accept("enum constant store call and equality", enumBaseline());
+    auto rejectEnum = [&](const std::string &name, const std::function<void(Module &)> &change,
+                          const std::string &expected) {
+        rejectModule(name, enumBaseline(), change, expected);
+    };
+    for (const int value : {-1, 2, 256})
+        rejectEnum(
+            "enum undeclared case " + std::to_string(value),
+            [=](Module &m) { std::get<EnumConstant>(m.functions[0].code[0]).caseIndex = value; },
+            "not a declared case");
+    for (const auto &type : {Type::I64, Type::Bool, Type("Mode"), Type::enumeration("Unknown")})
+        rejectEnum(
+            "enum constant wrong type " + typeName(type),
+            [=](Module &m) { std::get<EnumConstant>(m.functions[0].code[0]).type = type; },
+            "invalid enum constant type");
+    rejectEnum(
+        "enum constant malformed metadata",
+        [](Module &m) { std::get<EnumConstant>(m.functions[0].code[0]).type.length = 1; },
+        "invalid enum constant type");
+    rejectEnum(
+        "integer constant cannot forge enum",
+        [=](Module &m) { m.functions[0].code[0] = Constant{1, mode}; }, "invalid constant type");
+    rejectEnum(
+        "cross enum store rejected",
+        [=](Module &m) { m.functions[0].code[0] = EnumConstant{other, 1}; },
+        "mistyped current value");
+    rejectEnum(
+        "cross enum call rejected",
+        [=](Module &m) { m.functions[0].code[2] = EnumConstant{other, 1}; },
+        "call argument type mismatch");
+    rejectEnum(
+        "cross enum comparison rejected",
+        [=](Module &m) { m.functions[0].code[6] = EnumConstant{other, 1}; },
+        "mistyped current value");
+    rejectEnum(
+        "cross enum comparison stack rejected",
+        [=](Module &m) {
+            m.functions[0].code[6] = EnumConstant{other, 1};
+            std::get<Compare>(m.functions[0].code[7]).operandType = other;
+        },
+        "comparison type mismatch");
+    for (const auto operation :
+         {Comparison::Less, Comparison::Greater, Comparison::LessEqual, Comparison::GreaterEqual})
+        rejectEnum(
+            "enum ordering rejected " + std::to_string(static_cast<int>(operation)),
+            [=](Module &m) { std::get<Compare>(m.functions[0].code[7]).operation = operation; },
+            "ordered bool comparison or enum comparison");
+    rejectEnum(
+        "enum arithmetic rejected",
+        [=](Module &m) { m.functions[0].code[7] = BinaryValue{Binary::CheckedAdd, mode}; },
+        "invalid binary operand type");
+    rejectEnum(
+        "enum local arrays rejected",
+        [=](Module &m) {
+            m.functions[0].code = {EnumConstant{mode, 1},  Store{8, mode},
+                                   Constant{0, Type::I64}, BoundsGuard{8, 1, mode},
+                                   IndexLoad{8, 1, mode},  Return{}};
+        },
+        "invalid array shape");
+    rejectEnum(
+        "unknown enum slot rejected",
+        [](Module &m) { m.functions[0].slots[8] = Type::enumeration("Unknown"); },
+        "invalid slot payload type");
+    rejectEnum(
+        "unknown enum boundary rejected",
+        [](Module &m) { m.functions[0].result = Type::enumeration("Unknown"); },
+        "invalid value boundary type");
+    for (const int cases : {0, -1, 257})
+        rejectEnum(
+            "enum case count bound " + std::to_string(cases),
+            [=](Module &m) { m.enumCases["Mode"] = cases; }, "invalid nominal enum declaration");
+    for (const auto &name : {std::string{}, std::string(4097, 'E')})
+        rejectEnum(
+            "enum name bounds", [=](Module &m) { m.enumCases[name] = 1; },
+            "invalid nominal enum declaration");
+    rejectEnum(
+        "enum declaration count cap",
+        [](Module &m) {
+            for (int index = 0; index < 63; ++index)
+                m.enumCases["E" + std::to_string(index)] = 1;
+        },
+        "too many enum declarations");
+    rejectEnum(
+        "enum class nominal name collision", [](Module &m) { m.classLayouts["Mode"] = {}; },
+        "class and enum nominal names overlap");
+    auto maximum = enumBaseline();
+    maximum.enumCases["Mode"] = 256;
+    std::get<EnumConstant>(maximum.functions[0].code[0]).caseIndex = 255;
+    for (int index = 0; index < 62; ++index)
+        maximum.enumCases["E" + std::to_string(index)] = 1;
+    accept("enum exact declaration and case limits", maximum);
+
+    accept("method result with composed enum array empty descendants", methodResultBaseline());
+    accept("method result native combined fixtures", methodResultNativeModule());
+    auto rejectResult = [&](const std::string &name, const std::function<void(Module &)> &change,
+                            const std::string &expected) {
+        rejectModule(name, methodResultBaseline(), change, expected);
+    };
+    for (const int offset : {0, 144, -152, 200})
+        rejectResult(
+            "method result exact destination " + std::to_string(offset),
+            [=](Module &m) {
+                namedMethodCall(m.functions[0], "snapshot_outer").resultOffset = offset;
+            },
+            "method result requires exact object slot");
+    rejectResult(
+        "method result aliases receiver",
+        [](Module &m) { namedMethodCall(m.functions[0], "snapshot_outer").resultOffset = 112; },
+        "method result aliases receiver");
+    rejectResult(
+        "method result physical overlap",
+        [=](Module &m) {
+            m.classLayouts["EnumLeaf"] = {mode};
+            m.functions[0].objectSlots[144] = ObjectSlot{"EnumLeaf", false};
+        },
+        "overlapping object layouts");
+    rejectResult(
+        "method result inactive destination",
+        [](Module &m) {
+            auto &code = m.functions[0].code;
+            code.erase(std::remove_if(code.begin(), code.end(),
+                                      [](const Instruction &instruction) {
+                                          const auto *begin =
+                                              std::get_if<BeginObject>(&instruction);
+                                          return begin && begin->offset == 152;
+                                      }),
+                       code.end());
+        },
+        "method result outside active object lifetime");
+    rejectResult(
+        "method result partial destination",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 31,
+                                       {Constant{0, Type::I64}, Store{152, Type::I64}});
+        },
+        "method result requires uninitialized object");
+    rejectResult(
+        "method result complete destination",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 31, CopyObject{112, 152});
+        },
+        "method result object already initialized");
+    rejectResult(
+        "method result conditional partial destination",
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 31,
+                                       {Constant{1, Type::Bool}, BranchFalse{7},
+                                        Constant{0, Type::I64}, Store{152, Type::I64}, Label{7}});
+        },
+        "method result requires uninitialized object");
+    rejectResult(
+        "method result scalar call destination forbidden",
+        [](Module &m) { namedMethodCall(m.functions[0], "construct_outer").resultOffset = 152; },
+        "scalar method result cannot name object storage");
+    rejectResult(
+        "method result const receiver blocks mutable method",
+        [](Module &m) { namedFunction(m, "snapshot_outer").receiver->mutableValue = true; },
+        "const object cannot supply mutable receiver");
+    rejectResult(
+        "method result forwarding const receiver blocks mutable method",
+        [](Module &m) {
+            m.functions[0].objectSlots[112].mutableValue = true;
+            namedFunction(m, "snapshot_outer").receiver->mutableValue = true;
+        },
+        "const receiver cannot forward mutable capability");
+    rejectResult(
+        "method result recursive nominal shape mismatch",
+        [](Module &m) {
+            m.classLayouts["OtherLeaf"] = m.classLayouts.at("Leaf");
+            m.classFields["OtherLeaf"] = m.classFields.at("Leaf");
+            m.classLayouts["OtherOuter"] = m.classLayouts.at("Outer");
+            m.classFields["OtherOuter"] = m.classFields.at("Outer");
+            m.classFields["OtherOuter"][1].elementType = Type("OtherLeaf");
+            m.functions[0].objectSlots[152].className = "OtherOuter";
+        },
+        "method result nominal class mismatch");
+    rejectResult(
+        "method result enum nominal field mismatch",
+        [=](Module &m) {
+            m.classLayouts["Leaf"][0] = other;
+            m.classFields["Leaf"][0].elementType = other;
+        },
+        "nested class field leaf type mismatch");
+    rejectResult(
+        "method result enum arrays remain forbidden",
+        [=](Module &m) { m.classFields["Leaf"][0].array = true; },
+        "invalid logical class field shape");
+    rejectResult(
+        "method result unknown enum layout leaf",
+        [](Module &m) { m.classLayouts["Leaf"][0] = Type::enumeration("Missing"); },
+        "non-scalar class layout field");
+    rejectResult(
+        "method result cannot omit empty constructor child",
+        [](Module &m) {
+            auto &code = namedFunction(m, "construct_leaf").code;
+            code.erase(code.begin() + 8);
+        },
+        "constructor returns before all class fields initialized");
+    rejectResult(
+        "method result wrong enum scalar argument",
+        [=](Module &m) { m.functions[0].code[33] = EnumConstant{other, 1}; },
+        "method argument type mismatch");
+    rejectResult(
+        "constructor record wrong enum argument",
+        [=](Module &m) { m.functions[0].code[2] = EnumConstant{other, 1}; },
+        "method argument type mismatch");
+    rejectResult(
+        "method class arguments remain forbidden",
+        [](Module &m) { namedFunction(m, "snapshot_outer").parameters[1] = Type("Empty"); },
+        "receiver signatures must remain scalar");
+    rejectResult(
+        "method object-argument vector not repurposed as result",
+        [](Module &m) {
+            namedMethodCall(m.functions[0], "snapshot_outer").objectArguments = {152};
+        },
+        "constructor object argument vector size mismatch");
+    rejectResult(
+        "method result cannot expose scalar current value",
+        [](Module &m) { m.functions[0].code.insert(m.functions[0].code.begin() + 36, Push{}); },
+        "push without current value");
+    rejectResult(
+        "method enum receiver field nominal mismatch",
+        [=](Module &m) { namedFunction(m, "get_leaf_mode").code[0] = ReceiverLoad{0, other}; },
+        "receiver field type/layout mismatch");
+    rejectResult(
+        "constructor enum receiver store nominal mismatch",
+        [=](Module &m) { namedFunction(m, "construct_leaf").code[3] = EnumConstant{other, 1}; },
+        "mistyped current value");
+    rejectResult(
+        "method enum return nominal mismatch",
+        [=](Module &m) { namedFunction(m, "get_leaf_mode").result = other; },
+        "mistyped current value");
+    rejectResult(
+        "method empty result already complete",
+        [](Module &m) {
+            auto &code = m.functions[0].code;
+            code.insert(code.end() - 2,
+                        {BeginObject{192}, MethodCall{"snapshot_empty", 112, {}, 192},
+                         MethodCall{"snapshot_empty", 112, {}, 192}});
+        },
+        "method result object already initialized");
+    rejectResult(
+        "method aggregate result cannot use scalar return",
+        [](Module &m) { namedFunction(m, "snapshot_empty").code.back() = Return{}; },
+        "scalar return cannot return class value");
+    rejectResult(
+        "method result source partial object",
+        [](Module &m) { namedFunction(m, "snapshot_outer").code[21] = Constant{0, Type::I64}; },
+        "load before initialization");
+    rejectResult(
+        "method result cannot hide receiver recursion",
+        [](Module &m) {
+            namedMethodCall(namedFunction(m, "relay_outer"), "snapshot_outer").callee =
+                "relay_outer";
+        },
+        "recursive receiver call cycle");
+    const auto assembly = X86Emitter{}.emit(validate(methodResultBaseline()));
+    for (const auto &fragment :
+         {"movq %r10, -168(%rbp)", "movq %r11, -176(%rbp)", "leaq -152(%rbp), %r11",
+          "movq %rdi, -8(%rbp)", "movq %rsi, -16(%rbp)"})
+        if (assembly.find(fragment) == std::string::npos)
+            throw Error(std::string("method result ABI emission mismatch: ") + fragment);
+    ++passed;
+    std::cout << "PASS IR method receiver and class result use distinct saved capabilities\n";
+}
+
 } // namespace
 int main(int argc, char **argv) {
     try {
@@ -1444,6 +2033,11 @@ int main(int argc, char **argv) {
             std::cout << X86Emitter{}.emit(validate(composedNativeModule()));
             return 0;
         }
+        if (argc == 2 && std::string(argv[1]) == "--emit-method-results") {
+            std::cout << X86Emitter{}.emit(validate(methodResultNativeModule()));
+            return 0;
+        }
+        enumAndMethodResultTests();
         composedTests();
         arrayReceiverTests();
         unsignedTests();

@@ -30,9 +30,9 @@ A partial implementation exists: private-by-default local scalar-field classes, 
 
 The milestone006 compiler adds immutable by-value class parameters and complete independent results for ordinary functions, with explicit nominal call-record/result-capability IR. Its real `std::minmax`/`std::MinMax` and `std::range_width` APIs demonstrate factory and consumer boundaries. The checkpoint passes 59 new value-call cases, 206 direct IR tests and four exhaustive-dispatch compiler checks, plus baseline/oracle/sanitizer gates; independent compiler review passed. Final integrated verification passed. [VALUE-CALLS.md](../compiler/VALUE-CALLS.md) specifies left-to-right snapshots, signature visibility, 64-field/6-argument limits and the temporary private ABI.
 
-The reviewed milestone009 compiler establishes reusable value definitions through explicit one/two-parameter Scalar-constrained class templates and a real `std.utility` pair. Instances preserve defining-module lexical binding, nominal ordered-tuple identity, private access, complete initialization and independent value boundaries. The graph is capped at 64 templates and 256 concrete specializations. Its 117 template cases and 393 direct IR cases pass with existing suites, ten exhaustive-dispatch checks and sanitizers; final integrated verification passed. See [TEMPLATES.md](../compiler/TEMPLATES.md). General concepts, deduction, function templates, nested arguments and recursive instantiation remain deferred. Milestone010 now implements that bounded collection: compiled `std::array<T,N>` with scalar T, literal N from 1..64, complete zero initialization, private fixed-array fields, checked copied access and mutable set. Canonical `builtin::array` and its fixed bare `array` alias are distinct from the explicitly qualified wrapper; the builtin namespace is reserved. Logical field metadata and flat leaf layout remain separate, and ordinary value boundaries copy at most 64 leaves per class. The checkpoint passes 216 container cases, 463 direct IR cases, ten exhaustive-dispatch controls, 18 native receiver-array IR checks and existing suites/sanitizers. Independent compiler review passed; final milestone010 integration verification passed. See [FIXED-CONTAINERS.md](../compiler/FIXED-CONTAINERS.md). The next dependency should support composition of non-scalar value abstractions with explicit initialization, copy and failure rules; its scope still requires a separate design and acceptance gate.
+The reviewed milestone009 compiler establishes reusable value definitions through explicit one/two-parameter Scalar-constrained class templates and a real `std.utility` pair. Instances preserve defining-module lexical binding, nominal ordered-tuple identity, private access, complete initialization and independent value boundaries. The graph is capped at 64 templates and 256 concrete specializations. Its 117 template cases and 393 direct IR cases pass with existing suites, ten exhaustive-dispatch checks and sanitizers; final integrated verification passed. See [TEMPLATES.md](../compiler/TEMPLATES.md). General concepts, deduction, function templates, nested arguments and recursive instantiation remain deferred. Milestone010 now implements that bounded collection: compiled `std::array<T,N>` with scalar T, literal N from 1..64, complete zero initialization, private fixed-array fields, checked copied access and mutable set. Canonical `builtin::array` and its fixed bare `array` alias are distinct from the explicitly qualified wrapper; the builtin namespace is reserved. Logical field metadata and flat leaf layout remain separate, and ordinary value boundaries copy at most 64 leaves per class. The checkpoint passes 216 container cases, 463 direct IR cases, ten exhaustive-dispatch controls, 18 native receiver-array IR checks and existing suites/sanitizers. Independent compiler review passed; final milestone010 integration verification passed. See [FIXED-CONTAINERS.md](../compiler/FIXED-CONTAINERS.md). Milestone011 subsequently established bounded Value composition; the reviewed milestone012 candidate adds closed enums and copied method results for recoverable numeric reports.
 
-General constructor bodies, overloads, inheritance/interfaces, nested/resource fields, heap storage, source-visible aggregate borrowing and class parameters/results on methods or constructors remain deferred. Constructor/method call cycles are conservatively rejected; ordinary scalar recursion still permits stack exhaustion. This partial stage does not waive the scalar semantic evidence gate or satisfy the general lifetime gate below.
+General constructor bodies, overloads, inheritance/interfaces, resource fields, heap storage, source-visible aggregate borrowing and class-valued method parameters remain deferred. Bounded nested class fields and constructor class snapshots are implemented; copied class-valued method results are reviewed in milestone012. Constructor/method call cycles are conservatively rejected; ordinary scalar recursion still permits stack exhaustion. This partial stage does not waive the scalar semantic evidence gate or satisfy the general lifetime gate below.
 
 Implement inline value classes, Java-inspired encapsulation/interfaces, explicit reference ownership and dispatch, fields, construction, deterministic destruction, borrowing across function calls, and constrained generics. Do not make interfaces or identity force heap allocation, garbage collection, or boxing. Define lifetimes, aliasing, pointer provenance, synchronization, and trusted intrinsics in a formal core calculus before claiming soundness. Classify which language features the model actually covers.
 
@@ -122,11 +122,26 @@ Resolve these by prototypes and RFCs rather than presenting the initial proposal
 
 The next practical priority is to close scalar and class semantic evidence gaps, validate the current kernel additions, and resolve review findings before broadening the language. Partial implementations in later stages do not count as passing earlier gates; more syntax alone would make the safety story harder to validate.
 
-## Current bounded checkpoint: milestone011
+## Current bounded checkpoint: milestone012
 
-Inline Value composition and verified UEFI service-budget recovery are implemented
-and reviewed. The former composes existing class abstractions without heap or
-reference ownership; the latter bounds non-yielding service runs by actual
-interrupt count without promising milliseconds or general client scheduling.
-Next proposed work is ordinary enum/result integration and a bounded multi-client
-service dispatcher, each with a separate acceptance gate.
+Inline Value composition now supports closed nominal enums and independently
+copied class-valued method results. The compiled std.decimal accumulator returns
+recoverable reports. The UEFI dispatcher serves two isolated cooperative clients
+through a budgeted service, with transaction-confined replies and tested
+cancellation/restart. Independent review and final 122 emulator gates pass;
+[verification.md](verification.md) distinguishes the retained complete run from
+fresh parent aggregate and selected emulator checks.
+
+Next language/library scope is checked u8 semantics followed by byte-stride
+storage and a recoverable 32-bit little/big-endian codec. Numeric semantics and
+physical layout have separate acceptance gates. No compact layout is inferred
+from a narrow numeric range. Encoding, text views and variable-length storage
+remain subsequent designs; equivalent-semantics performance is a separate gate.
+
+Next kernel scope is interrupt-count budgeting for every controlled user phase,
+including clients, with bounded disposal/rebinding of the failed client while a
+peer progresses. Reuse requires quiescence, invalidated mappings, scrubbed frames
+and fresh incarnation-bound grants. Unknown/malformed fault origins stay fail-stop.
+This is not a commitment to general scheduling, wall-clock deadlines or arbitrary
+process recovery. DMA/storage drivers remain downstream of resource, interrupt
+and IOMMU authority design. These next scopes are not implemented by this checkpoint.

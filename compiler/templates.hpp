@@ -94,7 +94,7 @@ class ClassTemplateExpansion {
   public:
     static Type argumentType(const TemplateArgument &argument) {
         Type result(argument.type);
-        if (argument.type == TypeKind::Class) {
+        if (argument.type == TypeKind::Class || argument.type == TypeKind::Enum) {
             result.className = argument.className;
             result.displayName = argument.displayName;
             result.resolvedClass = true;
@@ -110,7 +110,7 @@ class ClassTemplateExpansion {
             const auto &argument = arguments[index];
             if (argument.kind == TemplateArgumentKind::Value)
                 result += std::to_string(argument.value);
-            else if (argument.type == TypeKind::Class)
+            else if (argument.type == TypeKind::Class || argument.type == TypeKind::Enum)
                 result += display && !argument.displayName.empty() ? argument.displayName
                                                                    : argument.className;
             else
@@ -124,11 +124,13 @@ class ClassTemplateExpansion {
             if (argument.kind == TemplateArgumentKind::Type) {
                 if (argument.type == TypeKind::Class && !argument.className.empty())
                     result += "_c" + std::to_string(argument.className.size()) + argument.className;
+                else if (argument.type == TypeKind::Enum && !argument.className.empty())
+                    result += "_e" + std::to_string(argument.className.size()) + argument.className;
                 else if (scalar(Type(argument.type)))
                     result += "_" + typeName(Type(argument.type));
                 else
                     throw Error(
-                        "class template type arguments require scalar or named class values");
+                        "class template type arguments require scalar, named class or enum values");
             } else {
                 if (argument.value < 1 || argument.value > 64)
                     throw Error("class template capacity must be between 1 and 64");
@@ -174,9 +176,10 @@ class ClassTemplateExpansion {
             } else if (parameter.kind == TemplateParameterKind::Value) {
                 if (argument.kind != TemplateArgumentKind::Type ||
                     (!scalar(Type(argument.type)) &&
-                     (argument.type != TypeKind::Class || argument.className.empty())))
-                    throw Error(
-                        "class template Value argument requires scalar or named class values");
+                     ((argument.type != TypeKind::Class && argument.type != TypeKind::Enum) ||
+                      argument.className.empty())))
+                    throw Error("class template Value argument requires scalar, named class or "
+                                "enum values");
                 expansion.substitutions.emplace(parameter.name, argumentType(argument));
             } else {
                 if (argument.kind != TemplateArgumentKind::Value || argument.value < 1 ||

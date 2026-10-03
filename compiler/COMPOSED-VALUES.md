@@ -6,8 +6,8 @@ not a proof of whole-language safety.
 
 ## Value types and construction
 
-`Value` is a template constraint accepting i64, u64, bool, or a named concrete
-class. `Scalar` keeps its original meaning. `Value` is contextual in a template
+`Value` is a template constraint accepting i64, u64, bool, a closed nominal enum,
+or a named concrete class. `Scalar` keeps its original meaning. `Value` is contextual in a template
 constraint position, so existing classes named Value remain valid. A class argument has its defining
 module's nominal identity; equal layouts do not make different classes
 interchangeable. Arguments must be visible through the requesting module's own
@@ -48,9 +48,10 @@ the extracted copy cannot change the containing object. Ordinary by-value
 function arguments and results also copy all scalar leaves of composed values.
 
 Chained field mutation, whole nested-field assignment after initialization,
-escaping subobject references, nested receiver calls, aggregate method signatures,
+escaping subobject references, nested receiver calls, class-valued method parameters,
 resource fields, heap storage and inheritance remain unsupported. Constructors
-accept class arguments; ordinary methods still accept and return scalars.
+accept class arguments. Methods accept scalar/enum parameters and may return a
+complete copied class into a fresh typed local under the enum/result contract.
 
 Reflection retains logical public field counts, including a class field as one
 field even when it contains many leaves or none. Sizes include flattened payload

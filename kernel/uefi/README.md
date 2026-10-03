@@ -144,9 +144,17 @@ controller identities, not device activation or physical Framework support.
 [Sequential protected user domains](runtime.md) now have a separate version-3
 handoff profile, backed entirely by the owned arena and tested under real OVMF.
 
-The next staged request/reply IPC profile is documented in [ipc.md](ipc.md).
-Its acceptance status is recorded separately from the verified runtime checkpoint.
+The staged request/reply IPC profile is documented in [ipc.md](ipc.md) and
+was verified in milestone010; its original gates remain in the current aggregate.
 
 The opt-in [UEFI service-budget profile](service-budget.md) adds verified local-timer
 preemption and recovery of a non-yielding staged service. See its dedicated
 acceptance gates and emulator-only boundaries.
+
+The [three-domain staged dispatcher](dispatcher.md) has passed all 12 new actual
+OVMF modes independently and in the full 122-mode exact-source run (37 BIOS and
+85 UEFI modes). The earlier 110 gates remain passing. Hosted policy/layout tests
+also passed fatal ASan/UBSan. Fresh parent aggregate, sanitizer and selected
+BIOS/dispatcher/recovery/drain checks passed. See the milestone012 verification
+record for exact provenance. These tests do not establish physical hardware
+support or a general scheduler.

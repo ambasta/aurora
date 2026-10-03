@@ -29,6 +29,12 @@ class Constant {
     std::int64_t value;
     Type type;
 };
+// An enum value names a declared case of one exact nominal enum.
+class EnumConstant {
+  public:
+    Type type;
+    int caseIndex;
+};
 class Load {
   public:
     int offset;
@@ -160,6 +166,7 @@ class MethodCall {
     std::string callee;
     int receiverOffset;                    // zero forwards this; positive names an ObjectSlot base
     std::vector<int> objectArguments = {}; // constructor snapshots; scalar entries are zero
+    int resultOffset = 0; // pristine class result destination; zero for scalar results
 };
 class MetadataQuery {
   public:
@@ -196,12 +203,12 @@ class BindParameter {
     Type type;
 };
 using Instruction =
-    std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Convert, Compare,
-                 BoundsGuard, IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall, BeginObject,
-                 EndObject, CopyObject, ObjectFieldCopy, InitializeObjectField, ReceiverLoad,
-                 ReceiverStore, ReceiverArrayZero, ReceiverBoundsGuard, ReceiverIndexLoad,
-                 ReceiverIndexStore, MethodCall, MetadataQuery, Label, Jump, BranchFalse, Return,
-                 ReturnObject, BindParameter, BindObjectParameter>;
+    std::variant<Constant, EnumConstant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Convert,
+                 Compare, BoundsGuard, IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall,
+                 BeginObject, EndObject, CopyObject, ObjectFieldCopy, InitializeObjectField,
+                 ReceiverLoad, ReceiverStore, ReceiverArrayZero, ReceiverBoundsGuard,
+                 ReceiverIndexLoad, ReceiverIndexStore, MethodCall, MetadataQuery, Label, Jump,
+                 BranchFalse, Return, ReturnObject, BindParameter, BindObjectParameter>;
 class ObjectSlot {
   public:
     std::string className;
@@ -251,6 +258,7 @@ class Module {
     std::map<std::string, std::vector<ClassField>> classFields;
     std::map<int, Descriptor> descriptors;
     std::map<int, std::set<int>> descriptorViews{{0, {}}};
+    std::map<std::string, int> enumCases;
 };
 class ValidatedModule;
 ValidatedModule validate(Module module);

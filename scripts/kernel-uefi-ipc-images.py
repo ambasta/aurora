@@ -11,8 +11,8 @@ def need(value,message):
 import importlib.util
 _spec=importlib.util.spec_from_file_location('uefi_image_builder',ROOT/'scripts/kernel-uefi-user-images.py')
 _base=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(_base)
-def verify(data,blob,base,symbols,probe_opcode=b'\x0f\x0b'):
-    result=_base.verify(data,blob,base,symbols)
+def verify(data,blob,base,symbols,probe_opcode=b'\x0f\x0b',*,dispatcher=False):
+    result=_base.verify(data,blob,base,symbols,image_count=3 if dispatcher else 2)
     need(result['probe_offset']==0,'IPC has no address literal authority')
     probe=result['probe_pc']
     if probe:
@@ -30,18 +30,21 @@ def service_metadata(meta,blob,symbols,function_size):
     if probe_begin:need(blob[probe_begin-base:probe_end-base]==b'\x48\xff\x0c\x24\x75\xfa','Exact register-preservation loop')
     return dict(meta,compiled_begin=begin,compiled_end=end,context_begin=probe_begin,context_end=probe_end)
 
-def build(compiler,out,mode,service_budget=False):
+def build(compiler,out,mode,service_budget=False,dispatcher=False):
+    need(not dispatcher or service_budget,"Dispatcher requires service timer profile")
     out.mkdir(parents=True,exist_ok=True)
     run=lambda args:subprocess.run([str(x) for x in args],cwd=ROOT,check=True)
     records={}; header=['#pragma once','#include <array>','#include <cstddef>','namespace aurora::uefi::images {']
-    for index,name in enumerate(('clean','bounds')):
+    for index,name in enumerate(('clean','bounds','peer') if dispatcher else ('clean','bounds')):
         prefix=out/f'user-{name}'
         fixture='budget-service' if service_budget and index==1 else 'ipc-client' if index==0 else 'ipc-service'
+        if dispatcher:fixture='dispatch-service' if index==1 else 'dispatch-client-a' if index==0 else 'dispatch-client-b'
         run([compiler,ROOT/f'tests/kernel-programs/{fixture}.au','--module-root',ROOT/'library','-o',prefix.with_suffix('.s')])
         run(['as','--64','-L',prefix.with_suffix('.s'),'-o',prefix.with_suffix('.o')])
         adapter=out/f'user-{name}-entry.o'
         hostile=(index==0 and mode in ('owner','stale','version','phase','site','unknown')) or (index==1 and mode in ('transaction','mmio','softint','fpu','context'))
-        flags=['--defsym',f'IPC_{mode.upper()}=1'] if hostile else []
+        if dispatcher and index==2 and mode=='peer-code':hostile=True
+        flags=['--defsym',f'IPC_{mode.upper().replace(chr(45),chr(95))}=1'] if hostile else []
         run(['as','--64',*flags,ROOT/'kernel/uefi/ipc-user-entry.S','-o',adapter])
         elf=prefix.with_suffix('.elf'); binary=prefix.with_suffix('.bin');base=BASE+index*4096
         run(['ld','-nostdlib','--discard-none','-T',ROOT/'kernel/program.ld','--defsym',f'USER_BASE={base}', '-z','max-page-size=0x1000',adapter,prefix.with_suffix('.o'),'-o',elf])
@@ -49,8 +52,8 @@ def build(compiler,out,mode,service_budget=False):
         need('There are no relocations' in subprocess.check_output(['readelf','-rW',elf],text=True),'Unresolved image relocations')
         symbols={line.split()[2]:int(line.split()[0],16) for line in subprocess.check_output(['nm','-a',elf],text=True).splitlines() if len(line.split())==3}
         blob=binary.read_bytes()
-        opcode={'mmio':b'\x8b\x00','softint':b'\xcd\x40','fpu':b'\xd9\xd0'}.get(mode,b'\x0f\x0b')
-        meta=verify(elf.read_bytes(),blob,base,symbols,opcode)
+        opcode={'mmio':b'\x8b\x00','softint':b'\xcd\x40','fpu':b'\xd9\xd0','peer-code':b'\x49\x8b\x02'}.get(mode,b'\x0f\x0b')
+        meta=verify(elf.read_bytes(),blob,base,symbols,opcode,dispatcher=dispatcher)
         if service_budget:
             functions=[line.split() for line in subprocess.check_output(['readelf','-sW',elf],text=True).splitlines() if line.split() and line.split()[-1]=='aurora_user_main']
             need(len(functions)==1 and functions[0][3]=='FUNC','Exact compiled function symbol')
@@ -62,9 +65,10 @@ def build(compiler,out,mode,service_budget=False):
     header.append('}')
     (out/'uefi-user-images.hpp').write_text('\n'.join(header)+'\n')
     (out/'user-images.json').write_text(json.dumps(records,indent=2)+'\n')
-    print('PASS: two independently compiled staged IPC RX images')
+    print('PASS: '+str(len(records))+' independently compiled staged IPC RX images')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--compiler',required=True);parser.add_argument('--output',default='build/uefi');parser.add_argument('--mode',default='normal',choices=['normal','owner','stale','version','phase','transaction','site','unknown','mmio','softint','fpu','context'])
+    parser=argparse.ArgumentParser();parser.add_argument('--compiler',required=True);parser.add_argument('--output',default='build/uefi');parser.add_argument('--mode',default='normal',choices=['normal','owner','stale','version','phase','transaction','site','unknown','mmio','softint','fpu','context','peer-code'])
     parser.add_argument('--service-budget',action='store_true')
-    args=parser.parse_args();build(Path(args.compiler).resolve(),Path(args.output).resolve(),args.mode,args.service_budget)
+    parser.add_argument('--dispatcher',action='store_true')
+    args=parser.parse_args();build(Path(args.compiler).resolve(),Path(args.output).resolve(),args.mode,args.service_budget,args.dispatcher)

@@ -97,6 +97,9 @@ auto __attribute__((ms_abi)) entry(void* image,void* system) -> U64 {
     };
     install_user(0,clean_bytes,std::array<U64,8>{clean_entry,clean_size,clean_return_pc,clean_bounds_pc,clean_overflow_pc,clean_division_zero_pc,clean_shift_count_pc,clean_probe_offset});
     install_user(1,bounds_bytes,std::array<U64,8>{bounds_entry,bounds_size,bounds_return_pc,bounds_bounds_pc,bounds_overflow_pc,bounds_division_zero_pc,bounds_shift_count_pc,bounds_probe_offset});
+#ifdef AURORA_UEFI_DISPATCH
+    install_user(2,peer_bytes,std::array<U64,8>{peer_entry,peer_size,peer_return_pc,peer_bounds_pc,peer_overflow_pc,peer_division_zero_pc,peer_shift_count_pc,peer_probe_offset});
+#endif
 #endif
     put(handoff,16,Handoff::arena_bytes); put(handoff,24,arena);
     put(handoff,56,payload_size); put(handoff,64,aurora::uefi::payload_text_end);

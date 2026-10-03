@@ -1,0 +1,14 @@
+{
+  "compiler/host_sources.hpp": "ca6f557288b94db0bcd431efb086bba185390b9831543436d184c76263a06794",
+  "compiler/ir.hpp": "47c5f9d23cb693fadcf1a09069c901d166dfad8b4af694cdf38f4db2daeffe67",
+  "compiler/ir_verify.hpp": "7bc996679c3b9a44614da3073b4b2e53602672a5d5ec8db08ccf635058f268f1",
+  "compiler/lexer.hpp": "c33b789738e3fd625f5f1b786cfaad22e90db9bed8e757aa4ad8af726f62c7b6",
+  "compiler/main.cpp": "9a8bc5fefaf16c75cba0aec254a3d54420ae04a3b7eac9da0fe30f95a7b8a431",
+  "compiler/modules.hpp": "cbcdd730d5c88209c59026ae3804ed8945123fbeb9ceaa871e352f4d4401b966",
+  "compiler/parser.hpp": "fe166ddbc4b4f090556aef57dc2d76e2a84f03fd06f3f5034055408d393a878d",
+  "compiler/semantics.hpp": "44a470c2ad6760e6bba604d8fe4bdcd97d59f0f9e8d173f244ec5db7520040b8",
+  "compiler/syntax.hpp": "9a2cb78053770303994be3faccd90135a7490ad55401fb0f28a8b3d6822b5c99",
+  "compiler/templates.hpp": "7d9196ceace1869ccbc2b83b54033f9a551a7a93303c7f7a7d8d906df5e9dc81",
+  "compiler/types.hpp": "8ad9b7260895b972b65036eeb0a90974e28a3894f5e3ac042cd06a291a746e41",
+  "compiler/x86.hpp": "399f9d7bb049263e61a9258af2e3b4c6e3cb56b38c39505fb06a20b0c394632e"
+}

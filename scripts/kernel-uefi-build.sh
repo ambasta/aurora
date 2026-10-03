@@ -8,6 +8,9 @@ flags=(-std=c++23 -O2 -Wall -Wextra -Werror -ffreestanding -fno-exceptions -fno-
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ dispatch|dispatch-budget|dispatch-fault|dispatch-mixed|dispatch-pending|dispatch-cross-reply|dispatch-client-owner|dispatch-stale|dispatch-duplicate|dispatch-full|dispatch-root|dispatch-peer-code)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET -DAURORA_UEFI_DISPATCH)
+   if [[ "$UEFI_MODE" != dispatch ]]; then flag="${UEFI_MODE#dispatch-}"; flag="${flag//-/_}"; extra+=("-DAURORA_DISPATCH_${flag^^}"); fi ;;
  budget|budget-fault|budget-noapic|budget-smp|budget-discovery|budget-cache|budget-alias|budget-pending|budget-forged|budget-root|budget-mmio|budget-softint|budget-fpu|budget-context|budget-epoch)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET)
    if [[ "$UEFI_MODE" != budget ]]; then flag="${UEFI_MODE#budget-}"; flag="${flag//-/_}"; extra+=("-DAURORA_BUDGET_${flag^^}"); fi ;;
@@ -33,10 +36,15 @@ case "${UEFI_MODE:-normal}" in
  *) echo 'Unknown UEFI build mode' >&2; exit 2 ;;
 esac
 runtime_objects=()
-if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* ]]; then
+if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* || "${UEFI_MODE:-normal}" == dispatch* ]]; then
  mode="${UEFI_MODE#runtime-}"
  case "$mode" in code|stack|kernel|window|write|nx|return|unknown|syscall|sysenter) ;; *) mode=normal ;; esac
- if [[ "$UEFI_MODE" == budget* ]]; then
+ if [[ "$UEFI_MODE" == dispatch* ]]; then
+   mode=normal
+   if [[ "$UEFI_MODE" == dispatch-peer-code ]]; then mode=peer-code; fi
+   python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode" --service-budget --dispatcher
+   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+ elif [[ "$UEFI_MODE" == budget* ]]; then
    mode="${UEFI_MODE#budget-}"
    case "$mode" in mmio|softint|fpu|context) ;; *) mode=normal ;; esac
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode" --service-budget
