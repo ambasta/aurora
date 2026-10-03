@@ -1,0 +1,33 @@
+{
+  "division_fixture": "none",
+  "0": {
+    "base": 1769472,
+    "size": 1062,
+    "return": 1769790,
+    "bounds": 1770528,
+    "overflow": 1770530,
+    "division_zero": 1770532,
+    "probe_begin": 1769645,
+    "probe_end": 1769651
+  },
+  "1": {
+    "base": 1773568,
+    "size": 348,
+    "return": 1773629,
+    "bounds": 1773910,
+    "overflow": 1773912,
+    "division_zero": 1773914,
+    "probe_begin": 0,
+    "probe_end": 0
+  },
+  "2": {
+    "base": 1777664,
+    "size": 349,
+    "return": 1777725,
+    "bounds": 1778007,
+    "overflow": 1778009,
+    "division_zero": 1778011,
+    "probe_begin": 0,
+    "probe_end": 0
+  }
+}

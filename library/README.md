@@ -50,3 +50,14 @@ The returned value and consumed argument are independent copies. Width traps on
 signed overflow, including the full minimum-to-maximum i64 range. This is an
 Aurora value API, not standard C++ pair/reference ABI compatibility or a generic
 container implementation. See compiler/VALUE-CALLS.md for its current restrictions.
+
+## Checked scalar integer algorithms
+
+`import std.integer;` adds i64-specialized `std::gcd`, `std::lcm` and `std::div`.
+The latter returns an independent private-field `std::DivResult` with readonly
+quot()/rem() methods. Division truncates toward zero; remainder follows the
+dividend sign. Zero divisors and unrepresentable quotients trap at defined UD2
+sites. Minimum i64 % -1 is explicitly zero. Gcd/lcm return nonnegative mathematical
+results when representable, otherwise checked overflow; lcm is zero when either
+input is zero. These are freestanding Aurora value APIs, not C runtime or generic
+standard-library compatibility. See compiler/INTEGERS.md for edge cases and bounds.

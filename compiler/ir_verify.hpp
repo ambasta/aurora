@@ -210,11 +210,12 @@ inline void verifyFunction(Function &function,
         merged.initialized = intersection(merged.initialized, state.initialized);
         merged.receiverInitialized =
             intersection(merged.receiverInitialized, state.receiverInitialized);
-        merged.maybeInitialized.insert(state.maybeInitialized.begin(), state.maybeInitialized.end());
+        merged.maybeInitialized.insert(state.maybeInitialized.begin(),
+                                       state.maybeInitialized.end());
         merged.receiverMaybeInitialized.insert(state.receiverMaybeInitialized.begin(),
                                                state.receiverMaybeInitialized.end());
         merged.maybeConstructedObjects.insert(state.maybeConstructedObjects.begin(),
-                                             state.maybeConstructedObjects.end());
+                                              state.maybeConstructedObjects.end());
         if (merged != *states[index]) {
             retainedValueFacts -= facts(*states[index]);
             retainedValueFacts += facts(merged);
@@ -319,10 +320,17 @@ inline void verifyFunction(Function &function,
                         current(type);
                         state.current = Value{type, {}};
                     } else if constexpr (std::is_same_v<Op, BinaryValue>) {
-                        require(operation.operation == Binary::CheckedAdd ||
-                                    operation.operation == Binary::CheckedSubtract ||
-                                    operation.operation == Binary::CheckedMultiply,
-                                "invalid binary operation");
+                        bool valid = false;
+                        switch (operation.operation) {
+                        case Binary::CheckedAdd:
+                        case Binary::CheckedSubtract:
+                        case Binary::CheckedMultiply:
+                        case Binary::CheckedDivide:
+                        case Binary::CheckedRemainder:
+                            valid = true;
+                            break;
+                        }
+                        require(valid, "invalid binary operation");
                         current(Type::I64);
                         require(pop().type == Type::I64, "noninteger left operand");
                         state.current = Value{Type::I64, {}};
@@ -383,7 +391,8 @@ inline void verifyFunction(Function &function,
                             require(pop().type == *argument, "call argument type mismatch");
                         state.current = Value{target.result, {}};
                     } else if constexpr (std::is_same_v<Op, AggregateCall>) {
-                        require(functions.contains(operation.callee), "unknown aggregate call target");
+                        require(functions.contains(operation.callee),
+                                "unknown aggregate call target");
                         const auto &target = *functions.at(operation.callee);
                         require(!target.receiver, "aggregate call cannot target receiver function");
                         require(target.result.isClass() ||
@@ -398,7 +407,8 @@ inline void verifyFunction(Function &function,
                             const int base = operation.objectArguments[arg - 1];
                             if (scalar(type)) {
                                 require(base == 0, "scalar argument cannot name object storage");
-                                require(pop().type == type, "aggregate scalar argument type mismatch");
+                                require(pop().type == type,
+                                        "aggregate scalar argument type mismatch");
                                 continue;
                             }
                             require(type.isClass() && classLayouts.contains(type.className),
@@ -416,8 +426,9 @@ inline void verifyFunction(Function &function,
                                     "aggregate argument outside active object lifetime");
                             const auto &layout = classLayouts.at(type.className);
                             for (std::size_t field = 0; field < layout.size(); ++field)
-                                require(state.initialized.contains(base - static_cast<int>(field * 8)),
-                                        "aggregate argument object not fully initialized");
+                                require(
+                                    state.initialized.contains(base - static_cast<int>(field * 8)),
+                                    "aggregate argument object not fully initialized");
                         }
                         if (target.result.isClass()) {
                             const int base = operation.resultOffset;
@@ -434,7 +445,8 @@ inline void verifyFunction(Function &function,
                                     "aggregate result object already initialized");
                             const auto &layout = classLayouts.at(object.className);
                             for (std::size_t field = 0; field < layout.size(); ++field)
-                                require(!state.maybeInitialized.contains(base - static_cast<int>(field * 8)),
+                                require(!state.maybeInitialized.contains(
+                                            base - static_cast<int>(field * 8)),
                                         "aggregate result requires uninitialized object");
                             state.maybeConstructedObjects.insert(base);
                             for (std::size_t field = 0; field < layout.size(); ++field) {
@@ -491,7 +503,8 @@ inline void verifyFunction(Function &function,
                     } else if constexpr (std::is_same_v<Op, MethodCall>) {
                         require(functions.contains(operation.callee), "unknown method call target");
                         const auto &target = *functions.at(operation.callee);
-                        require(target.receiver.has_value(), "method call requires receiver target");
+                        require(target.receiver.has_value(),
+                                "method call requires receiver target");
                         require(scalar(target.result) &&
                                     std::all_of(target.parameters.begin(), target.parameters.end(),
                                                 [](const Type &type) { return scalar(type); }),
@@ -499,7 +512,8 @@ inline void verifyFunction(Function &function,
                         const auto &receiver = *target.receiver;
                         require(operation.receiverOffset >= 0, "invalid method receiver offset");
                         if (operation.receiverOffset == 0) {
-                            require(function.receiver.has_value(), "forwarding without bound receiver");
+                            require(function.receiver.has_value(),
+                                    "forwarding without bound receiver");
                             require(!function.receiver->constructor && !receiver.constructor,
                                     "constructor cannot forward receiver during initialization");
                             require(function.receiver->className == receiver.className,
@@ -516,15 +530,18 @@ inline void verifyFunction(Function &function,
                                     "method receiver nominal class mismatch");
                             const auto &layout = classLayouts.at(object.className);
                             if (receiver.constructor) {
-                                require(!state.maybeConstructedObjects.contains(operation.receiverOffset),
+                                require(!state.maybeConstructedObjects.contains(
+                                            operation.receiverOffset),
                                         "object constructor called more than once");
                                 for (std::size_t field = 0; field < layout.size(); ++field)
-                                    require(!state.maybeInitialized.contains(
-                                                operation.receiverOffset - static_cast<int>(field * 8)),
-                                            "constructor requires uninitialized object");
+                                    require(
+                                        !state.maybeInitialized.contains(
+                                            operation.receiverOffset - static_cast<int>(field * 8)),
+                                        "constructor requires uninitialized object");
                                 state.maybeConstructedObjects.insert(operation.receiverOffset);
                                 for (std::size_t field = 0; field < layout.size(); ++field) {
-                                    const int offset = operation.receiverOffset - static_cast<int>(field * 8);
+                                    const int offset =
+                                        operation.receiverOffset - static_cast<int>(field * 8);
                                     state.initialized.insert(offset);
                                     state.maybeInitialized.insert(offset);
                                 }
@@ -532,8 +549,8 @@ inline void verifyFunction(Function &function,
                                 require(!receiver.mutableValue || object.mutableValue,
                                         "const object cannot supply mutable receiver");
                                 for (std::size_t field = 0; field < layout.size(); ++field)
-                                    require(state.initialized.contains(
-                                                operation.receiverOffset - static_cast<int>(field * 8)),
+                                    require(state.initialized.contains(operation.receiverOffset -
+                                                                       static_cast<int>(field * 8)),
                                             "method receiver object not fully initialized");
                             }
                         }
@@ -578,7 +595,8 @@ inline void verifyFunction(Function &function,
                                 "object return outside active lifetime");
                         const auto &layout = classLayouts.at(object.className);
                         for (std::size_t field = 0; field < layout.size(); ++field)
-                            require(state.initialized.contains(operation.offset - static_cast<int>(field * 8)),
+                            require(state.initialized.contains(operation.offset -
+                                                               static_cast<int>(field * 8)),
                                     "returned object not fully initialized");
                         require(state.stack.empty(), "unbalanced stack at object return");
                         fallsThrough = false;
@@ -611,7 +629,8 @@ inline void verifyFunction(Function &function,
                                 "parameter cannot bind object field storage");
                         store(operation.offset, operation.type);
                     } else {
-                        static_assert(!std::is_same_v<Op, Op>, "unhandled typed IR verifier operation");
+                        static_assert(!std::is_same_v<Op, Op>,
+                                      "unhandled typed IR verifier operation");
                     }
                 },
                 function.code[index]);
@@ -740,7 +759,8 @@ inline ValidatedModule validate(Module module) {
             pending.pop_back();
             ++componentSize;
             hasReceiver |= module.functions[index].receiver.has_value();
-            selfEdge |= std::find(calls[index].begin(), calls[index].end(), index) != calls[index].end();
+            selfEdge |=
+                std::find(calls[index].begin(), calls[index].end(), index) != calls[index].end();
             for (const auto next : callers[index])
                 if (!visited[next]) {
                     visited[next] = true;

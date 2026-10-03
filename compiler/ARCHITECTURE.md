@@ -80,3 +80,7 @@ See [CLASSES.md](CLASSES.md) for the source and IR contract. Nominal class layou
 ## Ordinary class-value calls
 
 [VALUE-CALLS.md](VALUE-CALLS.md) specifies immutable independent parameter copies and complete nominal class returns. AggregateCall, BindObjectParameter and ReturnObject preserve value boundaries explicitly; hidden record/result capabilities never enter scalar operands. The verifier rejects incomplete, mutable or aliasing snapshots/results and mismatched nominal layouts. Exported signature type privacy and direct-import availability are resolved by the frontend. Backend and verifier dispatch are compile-time exhaustive so an added instruction variant cannot silently produce partial successful output.
+
+## Checked division boundary
+
+CheckedDivide/CheckedRemainder retain zero and signed-overflow guards as part of the lowering operation. No native IDIV is issued for zero divisors or the minimum/-1 pair; remainder handles the latter as zero. The dedicated division-zero UD2 label is distinct from checked arithmetic overflow. Integer enum switches are exhaustive under warning-as-error builds, and mutation tests cover both future enum members and instruction variants. See [INTEGERS.md](INTEGERS.md).

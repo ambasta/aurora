@@ -508,3 +508,36 @@ below4GiB arena, private stack/page tables and compiled-language payload. Run
 run the BIOS path's domain/scheduler self-tests through UEFI; those remain the
 28 separate BIOS gates. No Framework hardware or peripheral support follows from
 this emulator-only firmware milestone.
+
+## Bounded firmware topology discovery
+
+The optional [ACPI profile](uefi/acpi.md) now reads actual OVMF RSDP/XSDT/MADT
+through a supervisor read-only/NX window after firmware exit, validates copied
+snapshots and processor metadata, then revokes the mapping. Run
+`scripts/kernel-acpi-all.sh` for11 additional actual emulator modes and
+`SANITIZE=1 scripts/kernel-acpi-tests.sh` for range/parser/lifetime checks.
+This discovers metadata; it does not program APICs, start secondary CPUs,
+evaluate AML or provide Framework peripheral drivers.
+
+## Checked division faults in compiled user programs
+
+The scalar return/fault contract now recognizes the compiler's distinct
+`.Laurora_division_zero_trap` only when linked metadata identifies an in-image
+UD2 site separate from return, bounds and overflow sites. Older development
+images without that optional site receive no division-fault authority. CPL0,
+wrong-vector, wrong-PC and malformed-image cases remain rejected; hardware
+vector0 is never accepted as a compiler division outcome.
+
+`scripts/kernel-division-smoke.sh` runs five dedicated BIOS modes: quotient by
+zero, remainder by zero, signed minimum divided by minus one, signed minimum
+remainder minus one, and a kernel-origin jump to the exact division trap. The
+first two produce a contained typed division_zero event, the quotient overflow
+uses the existing overflow event, the remainder edge case returns zero within a
+clean42 computation, and the kernel-origin trap fails closed. Successful cases
+retain domain/root restoration, clean runs after faults, scrubbed reuse and
+teardown checks. The wrapper finishes with an ordinary normal boot.
+
+`scripts/kernel-division-tests.sh` adds hosted contract, image metadata and
+transcript checks. These fixtures exercise the controlled sequential user runner;
+they do not add an unsafe operation, a raw syscall or general arithmetic-fault
+recovery for arbitrary executables.

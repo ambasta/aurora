@@ -346,11 +346,15 @@ class SemanticAnalyzer {
             push();
             auto r = expression(e->args[1]);
             match(r, l, e->token);
-            if (n == "+" || n == "-" || n == "*") {
+            if (n == "+" || n == "-" || n == "*" || n == "/" || n == "%") {
                 match(l, Type::I64, e->token);
-                emit(ir::BinaryValue{n == "+"   ? ir::Binary::CheckedAdd
-                                     : n == "-" ? ir::Binary::CheckedSubtract
-                                                : ir::Binary::CheckedMultiply});
+                static const std::map<std::string, ir::Binary> operations = {
+                    {"+", ir::Binary::CheckedAdd},
+                    {"-", ir::Binary::CheckedSubtract},
+                    {"*", ir::Binary::CheckedMultiply},
+                    {"/", ir::Binary::CheckedDivide},
+                    {"%", ir::Binary::CheckedRemainder}};
+                emit(ir::BinaryValue{operations.at(n)});
                 return Type::I64;
             }
             if (n != "==" && n != "!=")

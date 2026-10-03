@@ -8,6 +8,9 @@ flags=(-std=c++23 -O2 -Wall -Wextra -Werror -ffreestanding -fno-exceptions -fno-
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ acpi|acpi-two) extra+=(-DAURORA_UEFI_ACPI) ;;
+ acpi-duplicate-root|acpi-changed-header|acpi-checksum|acpi-bad-entry|acpi-duplicate|acpi-disabled|acpi-bad-source|acpi-write|acpi-revoked)
+   flag="${UEFI_MODE#acpi-}"; flag="${flag//-/_}"; extra+=(-DAURORA_UEFI_ACPI "-DAURORA_ACPI_${flag^^}") ;;
  stale-exhausted) extra+=(-DAURORA_UEFI_EXHAUSTED) ;;
  stale) extra+=(-DAURORA_UEFI_STALE) ;;
  bad-handoff) extra+=(-DAURORA_UEFI_BAD_HANDOFF) ;;
@@ -21,7 +24,8 @@ esac
 as --64 build/uefi/language.s -o build/uefi/language.o
 as --64 kernel/uefi/payload-entry.S -o build/uefi/payload-entry.o
 g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/payload.cpp -o build/uefi/payload.o
-ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 build/uefi/payload-entry.o build/uefi/payload.o build/uefi/language.o -o build/uefi/payload.elf
+g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/acpi.cpp -o build/uefi/acpi.o
+ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 build/uefi/payload-entry.o build/uefi/payload.o build/uefi/acpi.o build/uefi/language.o -o build/uefi/payload.elf
 objcopy -O binary build/uefi/payload.elf build/uefi/payload.bin
 python3 - <<'PY'
 from pathlib import Path

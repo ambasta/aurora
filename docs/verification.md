@@ -317,3 +317,56 @@ Fixes and independent evidence are in [review.md](review.md). No unresolved
 reproduced defect remains within the reviewed slice; this is not a full-language
 proof, complete runtime/stdlib, multi-user filesystem system or hardware release.
 Historical milestone receipts are unchanged.
+
+## Milestone 007: checked integers and ACPI discovery (2026-10-03)
+
+Final parent aggregate and independent review passed on compiler SHA-256
+`6bed4b61d50cb2f40f2b1f6f4564172daade95336df852f80938c3f0726998b1`.
+[Integer semantics](../compiler/INTEGERS.md) cover checked division/remainder and
+native gcd/lcm/DivResult. Zero divisors trap before IDIV; minimum/-1 quotient
+traps for overflow while remainder is explicitly zero. BIOS fixtures validate
+exact user-trap containment, clean restarts and fatal kernel-origin misuse.
+
+[ACPI discovery](../kernel/uefi/acpi.md) now snapshots RSDP/XSDT/MADT after firmware
+exit, using one revocable supervisor read-only/non-executable window. Source
+ranges are admitted separately from allocator ownership; runtime/ACPI readability
+does not grant allocation. Actual OVMF gates cover one/two CPU descriptions,
+disabled CPU exclusion, malformed tables/roots/header changes, write denial and
+revoked-window fault. This does not perform AML, SMP startup, PCI/device-driver
+activation or Framework qualification.
+
+Evidence:
+- [Aggregate](evidence/milestone-007/test.log): 207 original source, 74 methods,
+  59 value calls, 84 integer cases, 216 IR and six exhaustive-dispatch checks;
+  72 modules, 11 depth, 13 reader and 22 writer cases; kernel policy suites.
+  Division host checks ran explicitly after the aggregate and are now included
+  in the Makefile's test-division dependency.
+- [Integer oracle](evidence/milestone-007/integer-oracle-independent.log): 1,510
+  native cases with 181 exact trap-site checks. Independent reviewer seed8731
+  additionally covered 1,792 cases/213 traps on release and sanitizer binaries;
+  sets overlap and must not be summed as disjoint coverage.
+- [Scalar stress](evidence/milestone-007/semantics-stress.log): 1,526 cases,
+  supplementing seven harness self-tests and 630 default scalar cases.
+- [Compiler/IR sanitizers](evidence/milestone-007/compiler-sanitizers.log),
+  [host I/O sanitizers](evidence/milestone-007/host-io-sanitizers.log), and
+  [kernel/UEFI/ACPI/division sanitizers](evidence/milestone-007/kernel-sanitizers.log).
+- [Actual emulator aggregate](evidence/milestone-007/emulator.log): 52 unique
+  modes (28 previous BIOS + eight UEFI + eleven ACPI + five division), plus a
+  repeated normal BIOS confirmation. No aggregate count treats the repeat as
+  a new mode. Normal BIOS/UEFI artifacts are restored by the wrappers.
+- [Image metadata](evidence/milestone-007/image-metadata/) and
+  [source identities](evidence/milestone-007/source.sha256).
+
+ACPI policy testing includes 16,475 cases; transcript controls are eleven positive
+and 217 negative. Division metadata controls are three positive/30 negative and
+transcript controls five positive/210 negative. Existing UEFI policy124 and
+transcript8/148 controls remain separate. Sanitizers use address/undefined-behavior
+checks with halt-on-error; LeakSanitizer stays disabled in the tracing environment.
+Sanitized compiler SHA: `50457148c8c22d4c5bf3ce1b7044fe5ada38bb827593728b951d14db4b0ba160`.
+Sanitized IR SHA: `142cad295cfddb6ea37b94a0b29c3eeb6b9de28f64e5c6347e35149676cbcc87`.
+
+[Independent review](review.md) records fixes for nonzero x2APIC reserved bytes,
+NV-tagged firmware source pages and two over-permissive transcript checks.
+Original counterexamples now reject. No unresolved reproduced defect remains in
+this reviewed slice. Previous receipts are unchanged; no full safety proof,
+complete numeric library, physical hardware or complete OS claim is made.

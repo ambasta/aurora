@@ -17,13 +17,18 @@ auto context(std::uint64_t pc, std::uint64_t vector = 129, std::uint64_t error =
 }
 auto main() -> int {
     constexpr auto base = std::uint64_t{0x1b0000};
-    constexpr auto ret = base + 32, bounds = base + 64, overflow = base + 66;
-    const auto contract = ProgramContract{base, 128, ret, bounds, overflow};
+    constexpr auto ret = base + 32, bounds = base + 64, overflow = base + 66, division = base + 68;
+    const auto contract = ProgramContract{base, 128, ret, bounds, overflow, division};
+    const auto legacy = ProgramContract{base, 128, ret, bounds, overflow};
     check(contract.valid(), "valid contract");
     check(contract.classify(context(ret)) == ProgramEvent::returned, "typed return");
     check(contract.classify(context(bounds, 6, 0, 0x1b, 0x23, Protection::user_stack_top - 32, 0x10002))
         == ProgramEvent::bounds, "bounds label with CPU resume flag");
     check(contract.classify(context(overflow, 6)) == ProgramEvent::overflow, "overflow label");
+    check(contract.classify(context(division, 6)) == ProgramEvent::division_zero, "division-zero label");
+    check(legacy.valid() && legacy.division_zero_pc() == 0
+        && legacy.classify(context(division, 6)) == ProgramEvent::rejected
+        && legacy.classify(context(0, 6)) == ProgramEvent::rejected, "absent division site grants no authority");
     const std::array invalid{
         context(ret + 1), context(ret + 4096), context(ret, 128), context(ret, 129, 1),
         context(ret, 129, 0, 8), context(ret, 129, 0, 0x3b), context(ret, 129, 0, 0x1b, 0x10),
@@ -38,21 +43,41 @@ auto main() -> int {
         context(ret, 129, 0, 0x1b, 0x23, Protection::user_stack_top, 2, 0x82001),
         context(ret, 6), context(bounds, 129), context(bounds + 1, 6), context(overflow + 4096, 6),
         context(bounds, 6, 0, 8, 0x10), // Exact known trap address is insufficient at kernel privilege.
+        context(division, 0), context(division, 129), context(division, 6, 1), context(division + 1, 6),
+        context(division, 6, 0, 8, 0x10), context(division, 6, 0, 0x1b, 0x10),
+        context(division, 6, 0, 0x1b, 0x23, Protection::user_stack_bottom - 8),
+        context(division, 6, 0, 0x1b, 0x23, Protection::user_stack_top + 8),
+        context(division, 6, 0, 0x1b, 0x23, Protection::user_stack_top - 1),
+        context(division, 6, 0, 0x1b, 0x23, Protection::user_stack_top, 2, 0),
+        context(division, 6, 0, 0x1b, 0x23, Protection::user_stack_top, 2, 0x85ff8),
+        context(division, 6, 0, 0x1b, 0x23, Protection::user_stack_top, 2, 0x82001),
     };
     for (const auto& candidate : invalid) check(contract.classify(candidate) == ProgramEvent::rejected, "forged context");
-    for (const auto flag : {8, 9, 10, 12, 13, 14, 17})
+    for (const auto flag : {8, 9, 10, 12, 13, 14, 17}) {
         check(contract.classify(context(ret, 129, 0, 0x1b, 0x23, Protection::user_stack_top, 2 | (1ULL << flag)))
             == ProgramEvent::rejected, "privileged/unsafe return flags");
+        check(contract.classify(context(division, 6, 0, 0x1b, 0x23, Protection::user_stack_top, 2 | (1ULL << flag)))
+            == ProgramEvent::rejected, "privileged/unsafe division fault flags");
+    }
     for (const auto& bad : std::array{
         ProgramContract{base + 1, 128, ret, bounds, overflow}, ProgramContract{UINT64_MAX, 128, ret, bounds, overflow},
         ProgramContract{base, 0, ret, bounds, overflow}, ProgramContract{base, 4097, ret, bounds, overflow},
         ProgramContract{base, 128, base + 1, bounds, overflow}, ProgramContract{base, 128, ret, ret, overflow},
-        ProgramContract{base, 128, ret, bounds, base + 128}}) check(!bad.valid(), "invalid metadata");
+        ProgramContract{base, 128, ret, bounds, base + 128},
+        ProgramContract{base, 128, ret, bounds, overflow, ret},
+        ProgramContract{base, 128, ret, bounds, overflow, bounds},
+        ProgramContract{base, 128, ret, bounds, overflow, overflow},
+        ProgramContract{base, 128, ret, bounds, overflow, base - 1},
+        ProgramContract{base, 128, ret, bounds, overflow, base + 127},
+        ProgramContract{base, 128, ret, bounds, overflow, UINT64_MAX}}) check(!bad.valid(), "invalid metadata");
     std::array<std::byte, 128> bytes{};
     bytes[30] = std::byte{0xcd}; bytes[31] = std::byte{0x81};
-    for (const auto offset : {32, 64, 66}) { bytes[offset] = std::byte{0x0f}; bytes[offset + 1] = std::byte{0x0b}; }
+    for (const auto offset : {32, 64, 66, 68}) { bytes[offset] = std::byte{0x0f}; bytes[offset + 1] = std::byte{0x0b}; }
     const auto image = ProgramImage{bytes, contract};
     check(image.valid(), "exact image opcodes");
+    bytes[68] = std::byte{0x90}; check(!image.valid(), "non-UD2 division metadata");
+    check(ProgramImage{bytes, legacy}.valid(), "legacy image needs no division opcode"); bytes[68] = std::byte{0x0f};
+    bytes[69] = std::byte{0x90}; check(!image.valid(), "incomplete division UD2"); bytes[69] = std::byte{0x0b};
     bytes[64] = std::byte{0x90}; check(!image.valid(), "non-UD2 metadata"); bytes[64] = std::byte{0x0f};
     bytes[31] = std::byte{0x80}; check(!image.valid(), "wrong return gate"); bytes[31] = std::byte{0x81};
     check(!ProgramImage{std::span(bytes).first(127), contract}.valid(), "truncated image");
@@ -66,5 +91,13 @@ auto main() -> int {
     check(run.begin(contract) && run.accept(context(bounds, 6), 999), "next fault run");
     check(run.event() == ProgramEvent::bounds && run.value() == 0, "fault retained stale result");
     check(run.begin(contract) && run.accept(context(ret), 42) && run.value() == 42, "clean run after fault");
-    std::cout << "PASS: scalar return authority, exact trap metadata, origin/stack/flags rejection, replay/lifetime/reset policy\n";
+    check(!run.accept(context(division, 6), 99), "division without active authority");
+    check(run.begin(contract) && !run.begin(contract), "single division authority");
+    check(!run.accept(context(division, 0), 99) && run.running(), "hardware divide fault consumed authority");
+    check(!run.accept(context(division, 6, 0, 8, 0x10), 99) && run.running(), "kernel division fault consumed authority");
+    check(run.accept(context(division, 6), UINT64_MAX) && !run.running()
+        && run.event() == ProgramEvent::division_zero && run.value() == 0, "typed division cleared scalar result");
+    check(!run.accept(context(division, 6), 99), "replayed division fault");
+    check(run.begin(contract) && run.accept(context(ret), 42) && run.value() == 42, "clean run after division fault");
+    std::cout << "PASS: scalar return authority, bounds/overflow/division metadata, origin/stack/flags rejection, replay/lifetime/reset policy\n";
 }

@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 36 normal/adversarial BIOS and UEFI gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` runs all 52 unique normal/adversarial BIOS, UEFI, ACPI and division gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -84,7 +84,7 @@ Imports use explicit roots, bounded graph loading, exports and defining-module
 name resolution. Runtime type queries use defining-module visibility views.
 This is whole-graph compilation, not a separately compiled stable binary ABI.
 See [modules and host I/O](compiler/MODULES.md) and [core library](library/README.md).
-The library is an initial scalar module, not a complete runtime or standard library.
+The library contains initial scalar-specialized modules, not a complete runtime or standard library.
 
 The compiler also supports `import std.numeric;` and an inline
 `std::Accumulator(initial)` with checked `.add(amount)` and readonly `.value()`.
@@ -96,11 +96,20 @@ an inline `std::MinMax`, with readonly `.min()`/`.max()` and checked
 left-to-right; results are complete independent values. Private signatures and
 caller type visibility are checked across imports.
 
-This checkpoint passes 59 new value-call cases, 206 direct IR cases and four
-exhaustive-dispatch compile checks, alongside the existing source, module,
-constructor/method, scalar-oracle and sanitizer suites. Independent compiler review
-passed. Final integration verification passed;
-historical milestone005 receipts remain unchanged.
+Milestone006 verified the value-call checkpoint with 59 new value-call cases,
+206 direct IR cases and four exhaustive-dispatch compile checks. Those receipts
+remain historical.
+
+The reviewed milestone007 compiler adds checked i64 division and remainder plus
+`import std.integer;`: `std::gcd`, `std::lcm`, and `std::div` returning an inline
+`std::DivResult` with readonly `.quot()`/`.rem()`. Division truncates toward zero;
+remainder follows the dividend sign. Zero divisors trap at a distinct defined site,
+minimum i64 divided by -1 traps for overflow, and minimum i64 remainder -1 is zero.
+See [integer semantics](compiler/INTEGERS.md). The compiler passes 84 new
+integer cases, 216 direct IR cases, six exhaustive-dispatch checks and an independent
+1,510-case integer oracle with 181 exact trap-site checks, including sanitizer
+runs. Independent compiler review passed; final milestone007 integration verification
+is pending. This does not establish a complete numeric library or a performance claim.
 
 
 The previous `fn`/`let` prototype syntax is intentionally removed. The current
@@ -166,7 +175,7 @@ firmware contract or stable native ABI. Authored C++ uses classes, not structs.
 ## Repository map
 
 - `compiler/`, `examples/`: compiler implementation and compilable programs
-- `library/`: initial native freestanding core module
+- `library/`: initial native freestanding scalar core/numeric/integer modules
 - `kernel/`, `scripts/`, `tests/`: trusted bootstrap and executable validation
 - `docs/`: requirements, design, independent review and historical evidence
 - `AGENTS.md`: development and verification contract
@@ -179,3 +188,8 @@ faults. The payload uses its own memory ownership, page tables and guarded stack
 after ExitBootServices and executes generated Aurora code. This does not yet
 port the BIOS scheduler to UEFI or support a physical Framework. See the
 [UEFI contract](kernel/uefi/README.md).
+
+The optional [ACPI discovery profile](kernel/uefi/acpi.md) now validates firmware
+CPU/APIC topology through a bounded read-only mapping window. Eleven OVMF gates
+cover discovery, malformed inputs, read-only enforcement and revocation. It does
+not yet configure interrupts, start secondary CPUs or activate device drivers.

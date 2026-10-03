@@ -1,5 +1,6 @@
 #include "handoff.hpp"
 #include "tables.hpp"
+#include "acpi.hpp"
 #include "../console.hpp"
 #include "../pages.hpp"
 using aurora::hardware::Serial;
@@ -70,6 +71,9 @@ auto payload_main(U64 arena,U64 size) -> void {
 #ifdef AURORA_UEFI_NX
     *reinterpret_cast<volatile std::uint8_t*>(arena+Handoff::pool_offset)=0xc3;
     reinterpret_cast<void(*)()>(arena+Handoff::pool_offset)();
+#endif
+#ifdef AURORA_UEFI_ACPI
+    if (!aurora::uefi::discover_acpi(arena,h)) fail("ACPI discovery");
 #endif
     if (!pool.initialize(arena+Handoff::pool_offset,16)) fail("owned pool initialization");
     auto page=pool.acquire();

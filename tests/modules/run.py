@@ -214,7 +214,7 @@ def alias_identity(base, roots):
 
 
 check("same file cannot alias module identity", app("return 42;", "import one; import two;"), setup=alias_identity, error="module header mismatch")
-check("path traversal syntax rejected", app("return 42;", "import ../escape;"), error="unsupported character")
+check("path traversal syntax rejected", app("return 42;", "import ../escape;"), error="expected identifier")
 check("too many roots", app("return 42;"), root_sets=[{} for _ in range(17)], error="at most 16")
 check("FIFO source rejected without blocking", app("return 42;", "import pipe;"), setup=lambda base, roots: os.mkfifo(roots[0] / "pipe.au"), error="not a regular file")
 check("directory source rejected", app("return 42;", "import directory;"), setup=lambda base, roots: (roots[0] / "directory.au").mkdir(), error="not a regular file")
