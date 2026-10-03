@@ -574,3 +574,7 @@ bounded controlled programs, not a general process or syscall interface.
 The protected compiled-program contract also runs after the UEFI handoff:
 [sequential UEFI domains](uefi/runtime.md) use owned physical backing, distinct
 virtual layouts/roots, guarded privileged stacks and checked scalar returns.
+
+The UEFI [staged request/reply IPC foundation](uefi/ipc.md) adds bounded copied
+scalar messages and revocable endpoint authority between controlled domains.
+See its dedicated gates and limitations; it is not a general scheduler or service stack.

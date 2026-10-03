@@ -1,0 +1,22 @@
+Working directory: /workspace/scratch/48c5de6446f8/aurora
+Started: 2026-10-03T06:50:02Z
+AURORAC=/tmp/aurora-m010-compiler-frozen
+AURORAC_SHA256=d91e06fad144a89c1c836e16db20ef48b8a644bf4c23b22a1517e08f25e1d82c
+QEMU=/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64
+QEMU_DATA=/tmp/aurora-qemu/firmware
+LD_LIBRARY_PATH=/tmp/aurora-qemu/root/usr/lib/x86_64-linux-gnu
+OVMF=/tmp/aurora-ovmf/root/usr/share/ovmf/OVMF.fd
+Commands, sequential with failure stopping the chain:
+scripts/kernel-protection-smoke.sh
+scripts/kernel-scheduling-smoke.sh
+scripts/kernel-division-smoke.sh
+scripts/kernel-unsigned-smoke.sh
+scripts/kernel-uefi-all.sh
+scripts/kernel-acpi-all.sh
+scripts/kernel-pci-all.sh
+scripts/kernel-uefi-runtime-all.sh
+scripts/kernel-uefi-ipc-all.sh
+Aggregate logs: build/m010-final-bios.log and build/uefi/m010-final-uefi.log
+37 distinct BIOS plus 58 distinct UEFI modes; two BIOS restored-normal runs are duplicates.
+Source code unchanged after start. Only kernel/uefi/runtime.md and kernel/uefi/ipc.md evidence prose updated after start; parent/reviewer own other documentation and root Makefile.
+Source-input manifest captured during run; compare again at completion. No claim of a pre-run snapshot.

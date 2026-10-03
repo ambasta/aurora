@@ -69,3 +69,7 @@ standard-library compatibility. See compiler/INTEGERS.md for edge cases and boun
 ## Reusable scalar pairs
 
 The current template candidate supplies `import std.utility;` and `std::pair<T,U>` for explicit i64/u64/bool type arguments. A complete constructor initializes public first/second fields; exact-type mutation and independent ordinary-function value copies use the existing safe class semantics. All nine scalar tuples compile from one actual Aurora template definition. No deduction, nested/reference pairs, operator overloads or foreign pair ABI is provided. See compiler/TEMPLATES.md for nominal identity, module privacy and bounded instantiation.
+
+## Fixed initialized containers
+
+The current fixed-container candidate supplies `import std.array;` and `std::array<T,N>` for scalar T and explicit capacity1..64. Construction zero-initializes all elements; size() returns the capacity, at() returns a checked copy, and mutable set() checks/stores/returns an exact-type value. Class copies and function boundaries copy all leaves independently. The implementation is real Aurora source over private builtin::array storage, without heap or foreign calls. This is not a reference-returning span, dynamic vector or text/runtime package; see compiler/FIXED-CONTAINERS.md.

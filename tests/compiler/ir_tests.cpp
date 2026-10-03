@@ -460,6 +460,472 @@ void unsignedTests() {
         "u64 payload cannot mint borrow capability", array,
         [](Module &m) { m.functions[0].code[4] = BorrowHandle{8, Type::Ref}; }, "slot type/layout");
 }
+Module arrayReceiverBaseline() {
+    Module module;
+    module.classLayouts["ArrayBox"] = {Type::I64,  Type::I64,  Type::I64, Type::Bool,
+                                       Type::Bool, Type::Bool, Type::I64, Type::I64};
+    module.classFields["ArrayBox"] = {{Type::I64, 0, 1, false},
+                                      {Type::I64, 1, 2, true},
+                                      {Type::Bool, 3, 1, false},
+                                      {Type::Bool, 4, 2, true},
+                                      {Type::I64, 6, 2, true}};
+    aurora::ir::Function entry;
+    entry.name = "test";
+    entry.result = Type::I64;
+    entry.frameBytes = 64;
+    entry.objectSlots[64] = ObjectSlot{"ArrayBox", true};
+    for (std::size_t leaf = 0; leaf < module.classLayouts["ArrayBox"].size(); ++leaf)
+        entry.slots[64 - static_cast<int>(leaf * 8)] = module.classLayouts["ArrayBox"][leaf];
+    entry.code = {BeginObject{64},
+                  MethodCall{"construct_array", 64},
+                  Constant{1, Type::I64},
+                  Push{},
+                  Constant{42, Type::I64},
+                  Push{},
+                  MethodCall{"set_array", 64},
+                  Constant{1, Type::I64},
+                  Push{},
+                  MethodCall{"get_array", 64},
+                  Return{}};
+    aurora::ir::Function constructor;
+    constructor.name = "construct_array";
+    constructor.result = Type::I64;
+    constructor.receiver = Receiver{"ArrayBox", true, true};
+    constructor.code = {Constant{7, Type::I64},  ReceiverStore{0, Type::I64},  ReceiverArrayZero{1},
+                        Constant{1, Type::Bool}, ReceiverStore{2, Type::Bool}, ReceiverArrayZero{3},
+                        ReceiverArrayZero{4},    Constant{0, Type::I64},       Return{}};
+    aurora::ir::Function getter;
+    getter.name = "get_array";
+    getter.result = Type::I64;
+    getter.parameters = {Type::I64};
+    getter.frameBytes = 16;
+    getter.slots[8] = Type::I64;
+    getter.receiver = Receiver{"ArrayBox", false, false};
+    getter.code = {BindParameter{0, 8, Type::I64}, Load{8, Type::I64}, ReceiverBoundsGuard{1},
+                   ReceiverIndexLoad{1}, Return{}};
+    aurora::ir::Function setter;
+    setter.name = "set_array";
+    setter.result = Type::I64;
+    setter.parameters = {Type::I64, Type::I64};
+    setter.frameBytes = 16;
+    setter.slots = {{8, Type::I64}, {16, Type::I64}};
+    setter.receiver = Receiver{"ArrayBox", true, false};
+    setter.code = {BindParameter{0, 8, Type::I64},
+                   BindParameter{1, 16, Type::I64},
+                   Load{8, Type::I64},
+                   ReceiverBoundsGuard{1},
+                   Push{},
+                   Load{16, Type::I64},
+                   ReceiverIndexStore{1},
+                   Constant{0, Type::I64},
+                   Return{}};
+    module.functions = {entry, constructor, getter, setter};
+    return module;
+}
+Module arrayNativeModule() {
+    auto module = arrayReceiverBaseline();
+    auto mapping = module.functions[2];
+    mapping.name = "array_scalar_getter";
+    mapping.parameters.clear();
+    mapping.code = {ReceiverLoad{0, Type::I64}, Return{}};
+    module.functions.push_back(mapping);
+    mapping.name = "array_bool_getter";
+    mapping.result = Type::Bool;
+    mapping.code = {ReceiverLoad{2, Type::Bool}, Return{}};
+    module.functions.push_back(mapping);
+    mapping.name = "array_bool_index_getter";
+    mapping.code = {Constant{1, Type::I64}, ReceiverBoundsGuard{3}, ReceiverIndexLoad{3}, Return{}};
+    module.functions.push_back(mapping);
+    mapping.name = "array_bool_setter";
+    mapping.result = Type::I64;
+    mapping.receiver->mutableValue = true;
+    mapping.code = {
+        Constant{1, Type::I64}, ReceiverBoundsGuard{3}, Push{},  Constant{1, Type::Bool},
+        ReceiverIndexStore{3},  Constant{0, Type::I64}, Return{}};
+    module.functions.push_back(mapping);
+    auto entry = module.functions[0];
+    entry.name = "array_scalar_mapping";
+    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64},
+                  MethodCall{"array_scalar_getter", 64}, Return{}};
+    module.functions.push_back(entry);
+    entry.name = "array_bool_mapping";
+    entry.result = Type::Bool;
+    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64},
+                  MethodCall{"array_bool_getter", 64}, Return{}};
+    module.functions.push_back(entry);
+    entry.name = "array_bool_zero";
+    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64},
+                  MethodCall{"array_bool_index_getter", 64}, Return{}};
+    module.functions.push_back(entry);
+    entry.name = "array_bool_store";
+    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64},
+                  MethodCall{"array_bool_setter", 64}, MethodCall{"array_bool_index_getter", 64},
+                  Return{}};
+    module.functions.push_back(entry);
+    entry.name = "array_dynamic";
+    entry.result = Type::I64;
+    entry.parameters = {Type::I64};
+    entry.frameBytes = 80;
+    entry.slots[72] = Type::I64;
+    entry.code = {BindParameter{0, 72, Type::I64},
+                  BeginObject{64},
+                  MethodCall{"construct_array", 64},
+                  Load{72, Type::I64},
+                  Push{},
+                  MethodCall{"get_array", 64},
+                  Return{}};
+    module.functions.push_back(entry);
+    auto explosive = module.functions[3];
+    explosive.name = "array_explosive_setter";
+    explosive.code[5] = Call{"array_explosive_rhs"};
+    module.functions.push_back(explosive);
+    explosive.name = "array_explosive_rhs";
+    explosive.receiver.reset();
+    explosive.parameters.clear();
+    explosive.code = {Constant{1, Type::I64}, Push{}, Constant{0, Type::I64},
+                      BinaryValue{Binary::CheckedDivide}, Return{}};
+    module.functions.push_back(explosive);
+    entry.name = "array_store_dynamic";
+    entry.code = {BindParameter{0, 72, Type::I64},
+                  BeginObject{64},
+                  MethodCall{"construct_array", 64},
+                  Load{72, Type::I64},
+                  Push{},
+                  Constant{42, Type::I64},
+                  Push{},
+                  MethodCall{"array_explosive_setter", 64},
+                  Return{}};
+    module.functions.push_back(entry);
+    aurora::ir::Function copy;
+    copy.name = "copy_array_box";
+    copy.result = Type("ArrayBox");
+    copy.parameters = {Type("ArrayBox")};
+    copy.frameBytes = 64;
+    copy.slots = module.functions[0].slots;
+    copy.objectSlots[64] = ObjectSlot{"ArrayBox", false};
+    copy.code = {BindObjectParameter{0, 64, "ArrayBox"}, ReturnObject{64}};
+    module.functions.push_back(copy);
+    entry = module.functions[0];
+    entry.name = "array_copy";
+    entry.frameBytes = 192;
+    entry.objectSlots[128] = ObjectSlot{"ArrayBox", false};
+    entry.objectSlots[192] = ObjectSlot{"ArrayBox", false};
+    for (std::size_t leaf = 0; leaf < module.classLayouts["ArrayBox"].size(); ++leaf) {
+        const auto type = module.classLayouts["ArrayBox"][leaf];
+        entry.slots[128 - static_cast<int>(leaf * 8)] = type;
+        entry.slots[192 - static_cast<int>(leaf * 8)] = type;
+    }
+    entry.code.resize(7);
+    entry.code.push_back(BeginObject{128});
+    for (std::size_t leaf = 0; leaf < module.classLayouts["ArrayBox"].size(); ++leaf) {
+        const auto type = module.classLayouts["ArrayBox"][leaf];
+        entry.code.push_back(Load{64 - static_cast<int>(leaf * 8), type});
+        entry.code.push_back(Store{128 - static_cast<int>(leaf * 8), type});
+    }
+    entry.code.insert(entry.code.end(),
+                      {BeginObject{192}, AggregateCall{"copy_array_box", {128}, 192},
+                       Constant{1, Type::I64}, Push{}, Constant{99, Type::I64}, Push{},
+                       MethodCall{"set_array", 64}, Constant{1, Type::I64}, Push{},
+                       MethodCall{"get_array", 192}, Return{}});
+    module.functions.push_back(entry);
+    return module;
+}
+void arrayReceiverTests() {
+    accept("logical array fields constructor and checked methods", arrayReceiverBaseline());
+    accept("array fields copied through complete private value ABI", arrayNativeModule());
+    auto rejectArray = [](const std::string &name, const std::function<void(Module &)> &mutate,
+                          const std::string &expected) {
+        rejectModule(name, arrayReceiverBaseline(), mutate, expected);
+    };
+    rejectArray(
+        "logical fields unknown nominal layout",
+        [](Module &m) { m.classFields["Unknown"] = m.classFields.at("ArrayBox"); },
+        "unknown class layout");
+    for (int first : {-1, 0, 2, 8192})
+        rejectArray(
+            "logical array range offset " + std::to_string(first),
+            [=](Module &m) { m.classFields["ArrayBox"][1].firstLeaf = first; },
+            "invalid logical class field shape");
+    for (int length : {-1, 0, 65})
+        rejectArray(
+            "logical array length " + std::to_string(length),
+            [=](Module &m) { m.classFields["ArrayBox"][1].length = length; },
+            "invalid logical class field shape");
+    rejectArray(
+        "logical scalar range cannot hide array",
+        [](Module &m) { m.classFields["ArrayBox"][1].array = false; },
+        "invalid logical class field shape");
+    rejectArray(
+        "logical arrays require scalar leaves",
+        [](Module &m) { m.classFields["ArrayBox"][1].elementType = Type::Own; },
+        "invalid logical class field shape");
+    rejectArray(
+        "logical array leaf payload matches layout",
+        [](Module &m) { m.classLayouts["ArrayBox"][2] = Type::U64; }, "leaf type mismatch");
+    rejectArray(
+        "logical array range cannot escape layout",
+        [](Module &m) { m.classFields["ArrayBox"].back().length = 3; }, "range exceeds layout");
+    rejectArray(
+        "logical fields cover every leaf", [](Module &m) { m.classFields["ArrayBox"].pop_back(); },
+        "do not cover complete layout");
+    rejectArray(
+        "explicit empty shape cannot hide payload",
+        [](Module &m) { m.classFields["ArrayBox"].clear(); }, "do not cover complete layout");
+    rejectArray(
+        "absent shape cannot forge array access", [](Module &m) { m.classFields.clear(); },
+        "requires array field");
+    rejectArray(
+        "scalar receiver load cannot access array",
+        [](Module &m) { m.functions[2].code[2] = ReceiverLoad{1, Type::I64}; },
+        "receiver field type/layout");
+    rejectArray(
+        "scalar receiver init cannot partially initialize array",
+        [](Module &m) { m.functions[1].code[2] = ReceiverStore{1, Type::I64}; },
+        "receiver field type/layout");
+    rejectArray(
+        "array constructor must initialize every field",
+        [](Module &m) { m.functions[1].code.erase(m.functions[1].code.begin() + 5); },
+        "before all fields initialized");
+    rejectArray(
+        "array constructor rejects repeated zero",
+        [](Module &m) {
+            m.functions[1].code.insert(m.functions[1].code.begin() + 3, ReceiverArrayZero{1});
+        },
+        "array initialized more than once");
+    rejectArray(
+        "array constructor conditional missing zero",
+        [](Module &m) {
+            m.functions[1].code.insert(m.functions[1].code.begin() + 2,
+                                       {Constant{1, Type::Bool}, BranchFalse{1}});
+            m.functions[1].code.insert(m.functions[1].code.begin() + 5, Label{1});
+        },
+        "before all fields initialized");
+    rejectArray(
+        "array constructor conditional duplicate zero",
+        [](Module &m) {
+            m.functions[1].code.insert(
+                m.functions[1].code.begin() + 3,
+                {Constant{1, Type::Bool}, BranchFalse{1}, ReceiverArrayZero{1}, Label{1}});
+        },
+        "array initialized more than once");
+    rejectArray(
+        "array constructor loop cannot repeat initialization",
+        [](Module &m) {
+            m.functions[1].code.insert(m.functions[1].code.begin() + 2, Label{1});
+            m.functions[1].code.insert(
+                m.functions[1].code.begin() + 4,
+                {Constant{1, Type::Bool}, BranchFalse{2}, Jump{1}, Label{2}});
+        },
+        "array initialized more than once");
+    rejectArray(
+        "array zero requires constructor",
+        [](Module &m) { m.functions[2].code[2] = ReceiverArrayZero{1}; },
+        "zero requires constructor");
+    rejectArray(
+        "array write requires mutable receiver",
+        [](Module &m) { m.functions[3].receiver->mutableValue = false; },
+        "write through const receiver");
+    for (const auto &[name, operation] :
+         std::vector<std::pair<std::string, Instruction>>{{"zero", ReceiverArrayZero{1}},
+                                                          {"guard", ReceiverBoundsGuard{1}},
+                                                          {"load", ReceiverIndexLoad{1}},
+                                                          {"store", ReceiverIndexStore{1}}}) {
+        rejectArray(
+            "array " + name + " requires receiver",
+            [=](Module &m) { m.functions[0].code.insert(m.functions[0].code.begin(), operation); },
+            "without bound receiver");
+    }
+    for (const auto &[name, operation] : std::vector<std::pair<std::string, Instruction>>{
+             {"zero", ReceiverArrayZero{0}},
+             {"guard", ReceiverBoundsGuard{0}},
+             {"load", ReceiverIndexLoad{0}},
+             {"store", ReceiverIndexStore{0}},
+             {"guard negative field", ReceiverBoundsGuard{-1}},
+             {"guard past field", ReceiverBoundsGuard{5}}}) {
+        rejectArray(
+            "array operation rejects scalar or invalid " + name,
+            [=](Module &m) { m.functions[2].code[2] = operation; },
+            name.find("field") == std::string::npos ? "requires array field" : "field type/layout");
+    }
+    for (const auto &[name, operation] :
+         std::vector<std::pair<std::string, Instruction>>{{"guard", ReceiverBoundsGuard{1}},
+                                                          {"load", ReceiverIndexLoad{1}},
+                                                          {"store", ReceiverIndexStore{1}}}) {
+        rejectArray(
+            "constructor cannot use indexed " + name,
+            [=](Module &m) {
+                m.functions[1].code.insert(m.functions[1].code.end() - 1, operation);
+            },
+            "constructor cannot access receiver array");
+    }
+    rejectArray(
+        "receiver index requires signed i64",
+        [](Module &m) { m.functions[2].code[1] = Constant{0, Type::U64}; }, "mistyped current");
+    rejectArray(
+        "receiver load requires bounds evidence",
+        [](Module &m) { m.functions[2].code[2] = Constant{0, Type::I64}; }, "bounds token");
+    rejectArray(
+        "receiver store requires saved evidence",
+        [](Module &m) { m.functions[3].code[3] = Constant{0, Type::I64}; }, "bounds token");
+    rejectArray(
+        "same shape other field cannot reuse load token",
+        [](Module &m) { m.functions[2].code[3] = ReceiverIndexLoad{4}; }, "bounds token");
+    rejectArray(
+        "same shape other field cannot reuse store token",
+        [](Module &m) { m.functions[3].code[6] = ReceiverIndexStore{4}; }, "bounds token");
+    rejectArray(
+        "bool array store rejects integer payload",
+        [](Module &m) {
+            m.functions[3].code[3] = ReceiverBoundsGuard{3};
+            m.functions[3].code[6] = ReceiverIndexStore{3};
+        },
+        "mistyped current");
+    rejectArray(
+        "scalar arithmetic cannot retain receiver bounds",
+        [](Module &m) {
+            m.functions[2].code.insert(m.functions[2].code.begin() + 3,
+                                       UnaryValue{Unary::CheckedNegate});
+        },
+        "bounds token");
+    rejectArray(
+        "conversion roundtrip cannot retain receiver bounds",
+        [](Module &m) {
+            m.functions[2].code.insert(
+                m.functions[2].code.begin() + 3,
+                {Convert{Type::I64, Type::U64}, Convert{Type::U64, Type::I64}});
+        },
+        "bounds token");
+    rejectArray(
+        "unguarded pop cannot forge receiver bounds",
+        [](Module &m) {
+            m.functions[2].code.insert(m.functions[2].code.begin() + 2, Push{});
+            m.functions[2].code.insert(m.functions[2].code.begin() + 4, Pop{});
+        },
+        "bounds token");
+    rejectArray(
+        "slot reload cannot retain receiver bounds",
+        [](Module &m) {
+            m.functions[2].slots[16] = Type::I64;
+            m.functions[2].code.insert(m.functions[2].code.begin() + 3,
+                                       {Store{16, Type::I64}, Load{16, Type::I64}});
+        },
+        "bounds token");
+    rejectArray(
+        "local token cannot authorize receiver access",
+        [](Module &m) { m.functions[2].code[2] = BoundsGuard{8, 1, Type::I64}; }, "bounds token");
+    rejectArray(
+        "receiver token cannot authorize local access",
+        [](Module &m) { m.functions[2].code[3] = IndexLoad{8, 1, Type::I64}; }, "bounds token");
+    rejectArray(
+        "array receiver nominal mismatch rejected",
+        [](Module &m) {
+            m.classLayouts["OtherBox"] = m.classLayouts["ArrayBox"];
+            m.classFields["OtherBox"] = m.classFields["ArrayBox"];
+            m.functions[2].receiver->className = "OtherBox";
+        },
+        "nominal class mismatch");
+    auto saved = arrayReceiverBaseline();
+    auto helper = baseline().functions[0];
+    helper.name = "array_rhs";
+    helper.frameBytes = 0;
+    helper.slots.clear();
+    helper.code = {Constant{42, Type::I64}, Return{}};
+    saved.functions.push_back(helper);
+    saved.functions[3].code[5] = Call{"array_rhs"};
+    accept("saved receiver token survives scalar RHS call", saved);
+    helper.name = "array_rhs_method";
+    helper.receiver = Receiver{"ArrayBox", true, false};
+    helper.code = {Constant{1, Type::I64},  ReceiverBoundsGuard{4}, Push{},
+                   Constant{42, Type::I64}, ReceiverIndexStore{4},  Return{}};
+    saved.functions.push_back(helper);
+    saved.functions[3].code[5] = MethodCall{"array_rhs_method", 0};
+    accept("saved receiver token survives mutable receiver reborrow", saved);
+    rejectModule(
+        "returned scalar cannot forge receiver token", saved,
+        [](Module &m) { m.functions[2].code[2] = Call{"array_rhs"}; }, "bounds token");
+    auto restored = arrayReceiverBaseline();
+    restored.functions[2].code.insert(restored.functions[2].code.begin() + 3,
+                                      {Push{}, Constant{99, Type::I64}, Pop{}});
+    accept("unchanged receiver token survives push and pop", restored);
+    auto joined = arrayReceiverBaseline();
+    joined.functions[2].code = {BindParameter{0, 8, Type::I64},
+                                Constant{1, Type::Bool},
+                                BranchFalse{1},
+                                Load{8, Type::I64},
+                                ReceiverBoundsGuard{1},
+                                Jump{2},
+                                Label{1},
+                                Load{8, Type::I64},
+                                ReceiverBoundsGuard{1},
+                                Label{2},
+                                ReceiverIndexLoad{1},
+                                Return{}};
+    accept("same receiver field bounds evidence survives CFG join", joined);
+    rejectModule(
+        "cross-field bounds evidence cannot survive CFG join", joined,
+        [](Module &m) { m.functions[2].code[8] = ReceiverBoundsGuard{4}; }, "mistyped current");
+    rejectModule(
+        "branch cannot bypass receiver bounds check", joined,
+        [](Module &m) { m.functions[2].code[8] = Constant{0, Type::I64}; }, "mistyped current");
+    for (const auto &type : {Type::I64, Type::U64, Type::Bool}) {
+        auto module = baseline();
+        module.classLayouts["Capacity"] = std::vector<Type>(64, type);
+        module.classFields["Capacity"] = {{type, 0, 64, true}};
+        auto ctor = helper;
+        ctor.name = "capacity_ctor";
+        ctor.result = Type::I64;
+        ctor.receiver = Receiver{"Capacity", true, true};
+        ctor.code = {ReceiverArrayZero{0}, Constant{0, Type::I64}, Return{}};
+        module.functions.push_back(ctor);
+        aurora::ir::Function copy;
+        copy.name = "capacity_copy";
+        copy.result = Type("Capacity");
+        copy.parameters = {Type("Capacity")};
+        copy.frameBytes = 512;
+        copy.objectSlots[512] = ObjectSlot{"Capacity", false};
+        for (int leaf = 0; leaf < 64; ++leaf)
+            copy.slots[512 - leaf * 8] = type;
+        copy.code = {BindObjectParameter{0, 512, "Capacity"}, ReturnObject{512}};
+        module.functions.push_back(copy);
+        accept(typeName(type) + " array 64-leaf boundary", module);
+        rejectModule(
+            typeName(type) + " array plus scalar exceeds boundary", module,
+            [=](Module &m) {
+                m.classLayouts["Capacity"].push_back(type);
+                m.classFields["Capacity"].push_back({type, 64, 1, false});
+                m.functions[1].code.insert(m.functions[1].code.end() - 2,
+                                           {Constant{0, type}, ReceiverStore{1, type}});
+            },
+            "exceeds 64 scalar fields");
+        module.functions.pop_back();
+        module.classLayouts["Capacity"].push_back(type);
+        module.classFields["Capacity"].push_back({type, 64, 1, false});
+        module.functions[1].code.insert(module.functions[1].code.end() - 2,
+                                        {Constant{0, type}, ReceiverStore{1, type}});
+        accept(typeName(type) + " local class may exceed boundary leaf cap", module);
+    }
+    const auto assembly = X86Emitter{}.emit(validate(arrayNativeModule()));
+    for (const std::string fragment :
+         {"movq $0, 8(%r10)", "movq $0, 16(%r10)", "movq %rax, 24(%r10)", "movq $0, 32(%r10)",
+          "movq $0, 40(%r10)", "movq $0, 48(%r10)", "movq $0, 56(%r10)",
+          "cmpq $2, %rax\n    jae .Laurora_bounds_trap", "movq 8(%r10,%rax,8), %rax",
+          "movq %rax, 8(%r10,%rcx,8)", "movq 32(%r10,%rax,8), %rax", "movq %rax, 32(%r10,%rcx,8)"})
+        if (assembly.find(fragment) == std::string::npos)
+            throw Error("array receiver emission missing " + fragment);
+    ++passed;
+    std::cout << "PASS IR array zero, scalar mapping, bool stride and checked index emission\n";
+    const auto savedAssembly = X86Emitter{}.emit(validate(saved));
+    const auto start = savedAssembly.find("set_array:");
+    const auto bounds = savedAssembly.find("jae .Laurora_bounds_trap", start);
+    const auto rhs = savedAssembly.find("call array_rhs_method", start);
+    const auto write = savedAssembly.find("movq %rax, 8(%r10,%rcx,8)", start);
+    if (start == std::string::npos || bounds >= rhs || rhs >= write ||
+        savedAssembly.find("movq -24(%rbp), %r10", rhs) >= write)
+        throw Error("array store must check bounds before RHS and reload receiver after call");
+    ++passed;
+    std::cout << "PASS IR receiver store guard precedes RHS and receiver reload follows call\n";
+}
+
 } // namespace
 int main(int argc, char **argv) {
     try {
@@ -471,6 +937,11 @@ int main(int argc, char **argv) {
             std::cout << X86Emitter{}.emit(validate(unsignedOperations()));
             return 0;
         }
+        if (argc == 2 && std::string(argv[1]) == "--emit-array-fields") {
+            std::cout << X86Emitter{}.emit(validate(arrayNativeModule()));
+            return 0;
+        }
+        arrayReceiverTests();
         unsignedTests();
         for (const auto operation : {Binary::CheckedDivide, Binary::CheckedRemainder}) {
             const auto name = operation == Binary::CheckedDivide ? "division" : "remainder";

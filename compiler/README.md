@@ -79,11 +79,11 @@ Body-local owners may be created, moved and dropped on each iteration. Body-loca
 
 Classes are private by default and end with `;`. `public:` and `private:` control fields, constructors and methods. Classes can now declare a single complete initializer-list constructor and scalar methods with readonly `const` or mutable receivers. See [the exact constructor, method and scoped receiver contract](CLASSES.md). Classes without constructors retain public-field designated construction; constructor-bearing classes reject that shortcut.
 
-Fields must be `i64`, `u64` or `bool` and have unique names. Named construction uses `Point{.x = 20, .y = 22}`. Each field must be initialized exactly once; named fields may appear in any order and evaluate in written order. Unknown fields, missing fields and type mismatches are rejected.
+Scalar fields use `i64`, `u64` or `bool` and have unique names. Private fixed scalar-array fields now have the complete-construction and checked-access contract in [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md). Named construction uses `Point{.x = 20, .y = 22}`. Each field must be initialized exactly once; named fields may appear in any order and evaluate in written order. Unknown fields, missing fields and type mismatches are rejected.
 
-`const Point snapshot = current;` copies all scalar fields into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Ordinary functions now accept and return bounded scalar-field class values as independent copies. Method and constructor signatures remain scalar-only. Nested/resource fields and class borrow targets remain unsupported. `own<Point>` is rejected.
+`const Point snapshot = current;` copies all scalar fields into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Ordinary functions now accept and return bounded scalar-field class values as independent copies. Method and constructor signatures remain scalar-only. Nested class/resource fields and class borrow targets remain unsupported. `own<Point>` is rejected.
 
-Each field occupies eight bytes, including bool, in declaration order. Complete size is eight times total field count, minimum eight bytes for an empty class. This is an internal padded layout, not a C or C++ ABI promise. Private fields participate in size but are excluded from field-count reflection and cannot be read by external member syntax. Methods of the declaring class can access private fields.
+Each scalar leaf occupies eight bytes, including bool, in declaration order. A private array field contributes its element count in leaves. Complete size is eight times total leaf count, minimum eight bytes for an empty class. This is an internal padded layout, not a C or C++ ABI promise. Private fields participate in size but are excluded from field-count reflection and cannot be read by external member syntax. Methods of the declaring class can access private fields.
 
 ## Fixed-size arrays
 
@@ -99,7 +99,7 @@ values[0] = 11;
 
 Elements occupy eight bytes each, including bool, matching actual generated loads/stores and reflected array size. Array length is statically capped to prevent layout overflow; combined local storage in a function is capped at 65536 bytes, including class/scalar/array slots. This limit is a compiler resource bound, not a promise that every target stack has that much space: expression temporaries and call depth need additional stack, and stack exhaustion remains possible.
 
-Arrays cannot currently be borrowed, returned, passed to functions, nested, or placed inside classes. Arrays of class/owned/reference values are rejected. No raw pointer, slice, unchecked indexing, cast or `any` escape hatch is provided.
+Builtin arrays cannot currently be borrowed, returned, passed directly to functions or nested. Private class array storage is supported through the fixed-container contract; class snapshots/results copy its leaves. Arrays of class/owned/reference values are rejected. No raw pointer, slice, unchecked indexing, cast or `any` escape hatch is provided.
 
 ## Working reflection
 
@@ -137,4 +137,6 @@ The compiler implements ordinary class-value function boundaries and the real sc
 
 The current unsigned candidate adds the real scalar-specialized `std.bit` module, checked u64 arithmetic/conversions and explicit bit operations. [UNSIGNED.md](UNSIGNED.md) specifies failure sites, exact 64-bit behavior, type identity and limits. Ownership/reference types remain i64-only; this is not a raw-memory or general numeric-conversion API.
 
-The current class-template candidate adds one or two explicit builtin Scalar-constrained type parameters and the real `std.utility` module exporting `std::pair<T,U>`. Specializations are concrete nominal classes checked by the existing class/value-call pipeline. [TEMPLATES.md](TEMPLATES.md) defines visibility, substitution, identity, caps and deferred generic features. This does not add function templates, nested arguments, deduction or general concepts.
+The current class-template candidate adds one or two explicit builtin Scalar-constrained type parameters, or one Scalar plus a bounded i64 capacity parameter and the real `std.utility` module exporting `std::pair<T,U>`. Specializations are concrete nominal classes checked by the existing class/value-call pipeline. [TEMPLATES.md](TEMPLATES.md) defines visibility, substitution, identity, caps and deferred generic features. This does not add function templates, nested arguments, deduction or general concepts.
+
+The current fixed-container candidate adds real `std.array`/`std::array<T,N>` with completely zero-initialized private `builtin::array<T,N>` storage, copied at(), mutable set() and size(). The unqualified array type is a globally fixed builtin alias, never an injected wrapper name. See [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md) for exact naming, capacity, flattened-layout and receiver-bound evidence rules.

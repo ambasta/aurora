@@ -267,8 +267,8 @@ check("array lifetime ends", "{ const array<i64, 1> a = {42}; } return a[0];", e
 check("array initializer cannot see itself", "const array<i64, 1> a = {a[0]}; return 0;", error="unknown local")
 check("scalar cannot index", "const i64 a = 42; return a[0];", error="indexing requires an array")
 check("scalar cannot len", "const i64 a = 42; return len(a);", error="len requires an array")
-check("class array field deferred", "module test; class A { public: array<i64, 1> a; }; auto test() -> i64 { return 0; }", error="class fields currently require")
-check("array reserved class name", "module test; class array {}; auto test() -> i64 { return 0; }", error="duplicate or reserved class")
+check("class public array field rejected", "module test; class A { public: array<i64, 1> a; }; auto test() -> i64 { return 0; }", error="array fields must be private")
+check("array reserved class name", "module test; class array {}; auto test() -> i64 { return 0; }", error="reserved builtin storage name")
 # Both per-array and aggregate frame resource limits are checked before offset arithmetic.
 large_init = ",".join("1" for _ in range(4096))
 check("maximum supported array", "const array<i64, 4096> a = {" + large_init + "}; return a[4095] + 41;")

@@ -13,7 +13,7 @@ class Expression {
     Token token;
     std::vector<std::shared_ptr<Expression>> args;
     std::vector<std::string> fieldNames;
-    std::vector<TypeKind> templateArguments;
+    std::vector<TemplateArgument> templateArguments;
     Type reflectedType;
     Expression(std::string o, Token t) : op(std::move(o)), token(std::move(t)) {}
 };
@@ -54,6 +54,7 @@ class Field {
     Token token;
     Type type;
     int offset = 0;
+    int index = 0;
     bool publicAccess = false;
     Field(Token name, Type value) : token(std::move(name)), type(std::move(value)) {}
 };
@@ -63,8 +64,8 @@ class ClassDefinition {
     std::string scope;
     bool exported = false;
     Token token;
-    std::vector<std::string> templateParameters;
-    std::vector<TypeKind> templateArguments;
+    std::vector<TemplateParameter> templateParameters;
+    std::vector<TemplateArgument> templateArguments;
     std::vector<Field> fields;
     std::vector<Function> methods;
     int id = 0;

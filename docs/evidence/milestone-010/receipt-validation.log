@@ -1,0 +1,4 @@
+PASS: every retained receipt hash verified; all139 captured build/test inputs match before parent Makefile wiring.
+PASS:95 distinct final modes; exact frozen compiler hash matches build/aurorac.
+Full kernel run retained without relabeling it as a new parent-run invocation; independent reviewer repeated15 new modes.
+Parent subsequently adds test-uefi-ipc/smoke-uefi-ipc wiring only; executable/test sources remain unchanged.

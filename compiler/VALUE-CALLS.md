@@ -16,8 +16,10 @@ auto answer() -> i64 {
 
 ## Source contract
 
-A function may take and return a named class whose fields are all `i64`/`bool`.
-Each boundary class may contain at most 64 scalar fields; the total parameter
+A function may take and return a named class whose leaves are `i64`/`u64`/`bool`.
+Private array fields contribute all of their initialized elements under the
+[fixed-container contract](FIXED-CONTAINERS.md). Each boundary class may contain
+at most 64 flattened scalar leaves; the total parameter
 count remains at most six. Larger classes are still permitted as local values
 under the existing frame-size cap. Arrays, owners and references cannot cross
 these boundaries. There are no implicit conversions between nominal classes,

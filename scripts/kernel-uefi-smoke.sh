@@ -27,7 +27,10 @@ timeout 30 "$qemu" "${args[@]}" -machine q35 -accel tcg -cpu "$cpu" -smp "$cpus"
 status=$?
 set -e
 cat "$log"
-if [[ "$mode" == runtime* ]]; then
+if [[ "$mode" == ipc* ]]; then
+    cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
+    python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
+elif [[ "$mode" == runtime* ]]; then
     cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
     python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
 elif [[ "$mode" == pci* ]]; then

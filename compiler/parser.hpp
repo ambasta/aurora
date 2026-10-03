@@ -9,6 +9,7 @@ class Parser {
     std::size_t position = 0;
     int expressionNesting = 0, blockNesting = 0, typeNesting = 0;
     std::set<std::string> templateParameters;
+    std::set<std::string> capacityParameters;
     class Nesting {
         int &depth;
 
@@ -50,7 +51,7 @@ class Parser {
         if (!eat(s))
             fail("expected '" + s + "'");
     }
-    Token ident() {
+    Token ident(bool allowArray = false) {
         auto t = peek();
         if (t.text.empty() ||
             !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
@@ -60,6 +61,8 @@ class Parser {
             "true",   "false",  "static_assert", "class",     "while",     "break",    "continue",
             "auto",   "const",  "public",        "private",   "protected", "unsafe",   "extern",
             "struct", "export", "import",        "namespace", "this",      "template", "Scalar"};
+        if (t.text == "builtin" || (t.text == "array" && !allowArray))
+            fail("reserved builtin storage name");
         if (t.text.starts_with("__au_"))
             fail("reserved compiler identifier prefix: __au_");
         if (reserved.count(t.text))
@@ -75,17 +78,17 @@ class Parser {
     Token moduleIdent() {
         auto token = ident();
         while (eat("."))
-            token.text += "." + ident().text;
+            token.text += "." + ident(true).text;
         return token;
     }
     bool scalarOrParameter(const Type &value) const {
         return scalar(value) || value.kind == TypeKind::Parameter;
     }
-    std::vector<TypeKind> templateArguments() {
+    std::vector<TemplateArgument> templateArguments() {
         if (!templateParameters.empty())
             fail("template-id references inside template definitions are not supported");
         need("<");
-        std::vector<TypeKind> arguments;
+        std::vector<TemplateArgument> arguments;
         do {
             if (arguments.size() >= 2)
                 fail("template arguments are limited to one or two Scalar types");
@@ -96,8 +99,21 @@ class Parser {
                 arguments.push_back(TypeKind::U64);
             else if (eat("bool"))
                 arguments.push_back(TypeKind::Bool);
-            else
-                fail("template arguments must satisfy Scalar: i64, u64 or bool");
+            else if (!peek().text.empty() &&
+                     std::isdigit(static_cast<unsigned char>(peek().text[0]))) {
+                const auto argument = take();
+                try {
+                    std::size_t used = 0;
+                    const auto value = std::stoull(argument.text, &used);
+                    if (used != argument.text.size() || value < 1 || value > 64)
+                        fail("capacity template arguments must be decimal literals from 1 to 64");
+                    arguments.push_back(
+                        TemplateArgument::capacity(static_cast<std::int64_t>(value)));
+                } catch (const std::exception &) {
+                    fail("capacity template arguments must be decimal literals from 1 to 64");
+                }
+            } else
+                fail("template arguments require Scalar types or capacity literals from 1 to 64");
         } while (eat(","));
         need(">");
         return arguments;
@@ -132,6 +148,11 @@ class Parser {
         if (eat("bool"))
             return Type::Bool;
         auto t = take();
+        if (t.text == "builtin") {
+            need("::");
+            need("array");
+            t.text = "array";
+        }
         if (templateParameters.contains(t.text)) {
             Type parameter(TypeKind::Parameter);
             parameter.className = t.text;
@@ -140,23 +161,30 @@ class Parser {
         if (t.text == "array") {
             need("<");
             const auto element = type();
-            if (!scalar(element))
+            if (!scalarOrParameter(element))
                 fail("array elements currently require i64, u64 or bool");
             need(",");
             const auto count = take();
-            unsigned long long length = 0;
-            try {
-                std::size_t used = 0;
-                length = std::stoull(count.text, &used);
-                if (used != count.text.size())
-                    fail("array length requires a decimal integer literal");
-            } catch (const std::exception &) {
-                fail("array length requires a decimal integer literal");
+            Type result = Type::array(element.kind, 0);
+            if (element.kind == TypeKind::Parameter)
+                result.elementParameter = element.className;
+            if (capacityParameters.contains(count.text))
+                result.lengthParameter = count.text;
+            else {
+                try {
+                    std::size_t used = 0;
+                    const auto length = std::stoull(count.text, &used);
+                    if (used != count.text.size())
+                        fail("array length requires a decimal integer literal");
+                    if (length < 1 || length > 4096)
+                        fail("array length must be between 1 and 4096");
+                    result.length = static_cast<int>(length);
+                } catch (const std::exception &) {
+                    fail("array length requires a decimal integer literal between 1 and 4096");
+                }
             }
-            if (length < 1 || length > 4096)
-                fail("array length must be between 1 and 4096");
             need(">");
-            return Type::array(element.kind, static_cast<int>(length));
+            return result;
         }
         Type v;
         if (t.text == "own")
@@ -170,7 +198,7 @@ class Parser {
                 !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
                 fail("expected type name");
             while (eat("::"))
-                t.text += "::" + ident().text;
+                t.text += "::" + ident(true).text;
             Type result(t.text);
             if (peek().text == "<")
                 result.templateArguments = templateArguments();
@@ -241,7 +269,7 @@ class Parser {
         if (!(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
             fail("expected expression");
         while (eat("::"))
-            t.text += "::" + ident().text;
+            t.text += "::" + ident(true).text;
         e->token.text = t.text;
         if (templateExpressionAhead())
             e->templateArguments = templateArguments();
@@ -435,27 +463,42 @@ class Parser {
                 need("}");
                 continue;
             }
-            std::vector<std::string> declaredParameters;
+            std::vector<TemplateParameter> declaredParameters;
             if (eat("template")) {
                 need("<");
                 do {
                     if (declaredParameters.size() >= 2)
                         fail("templates require one or two Scalar parameters");
-                    need("Scalar");
+                    TemplateParameterKind kind;
+                    if (eat("Scalar"))
+                        kind = TemplateParameterKind::Scalar;
+                    else if (eat("i64"))
+                        kind = TemplateParameterKind::Capacity;
+                    else
+                        fail("template parameters require Scalar or bounded i64 capacity");
                     const auto parameter = ident().text;
                     if (parameter == "i64" || parameter == "u64" || parameter == "bool" ||
                         parameter == "own" || parameter == "ref" || parameter == "mutref" ||
-                        parameter == "array" || !templateParameters.insert(parameter).second)
+                        parameter == "array" || templateParameters.contains(parameter) ||
+                        capacityParameters.contains(parameter))
                         fail("duplicate or reserved template parameter");
-                    declaredParameters.push_back(parameter);
+                    if (kind == TemplateParameterKind::Scalar)
+                        templateParameters.insert(parameter);
+                    else
+                        capacityParameters.insert(parameter);
+                    declaredParameters.emplace_back(kind, parameter);
                 } while (eat(","));
                 need(">");
+                if (declaredParameters.front().kind != TemplateParameterKind::Scalar ||
+                    (declaredParameters.size() == 1 && !capacityParameters.empty()))
+                    fail("template capacity requires a preceding Scalar parameter");
                 if (peek().text != "class")
                     fail("only Scalar-constrained class templates are supported");
             }
             if (eat("class")) {
-                ClassDefinition definition(ident());
-                if (templateParameters.contains(definition.name))
+                ClassDefinition definition(ident(scope == "std"));
+                if (templateParameters.contains(definition.name) ||
+                    capacityParameters.contains(definition.name))
                     fail("class name cannot shadow a template parameter");
                 definition.templateParameters = declaredParameters;
                 definition.scope = scope;
@@ -473,11 +516,13 @@ class Parser {
                         publicAccess = false;
                         continue;
                     }
-                    if (peek().text == definition.token.text || peek().text == "auto") {
+                    if ((peek().text == definition.token.text &&
+                         tokens.at(position + 1).text == "(") ||
+                        peek().text == "auto") {
                         const bool constructor = peek().text != "auto";
                         if (!constructor)
                             take();
-                        Function method(ident());
+                        Function method(ident(constructor && definition.token.text == "array"));
                         if (!constructor && method.token.text == definition.token.text)
                             fail("constructor cannot have a return type");
                         method.scope = scope;
@@ -488,9 +533,16 @@ class Parser {
                             if (eat(":")) {
                                 do {
                                     auto fieldName = ident();
-                                    need("(");
-                                    auto value = expr();
-                                    need(")");
+                                    ExpressionPtr value;
+                                    if (eat("{")) {
+                                        need("}");
+                                        value =
+                                            std::make_shared<Expression>("array_zero", fieldName);
+                                    } else {
+                                        need("(");
+                                        value = expr();
+                                        need(")");
+                                    }
                                     method.initializers.emplace_back(fieldName, value);
                                 } while (eat(","));
                             }
@@ -509,8 +561,15 @@ class Parser {
                     }
                     auto fieldType = type();
                     auto fieldName = ident();
-                    if (!scalarOrParameter(fieldType))
-                        fail("class fields currently require i64, u64 or bool");
+                    if (fieldType.isArray()) {
+                        if (publicAccess)
+                            fail("array fields must be private");
+                        if (fieldType.lengthParameter.empty() &&
+                            (fieldType.length < 1 || fieldType.length > 64))
+                            fail("class array field capacity must be between 1 and 64");
+                    } else if (!scalarOrParameter(fieldType))
+                        fail(
+                            "class fields currently require scalar or private fixed-array storage");
                     need(";");
                     definition.fields.emplace_back(fieldName, fieldType);
                     definition.fields.back().publicAccess = publicAccess;
@@ -521,6 +580,7 @@ class Parser {
                 else
                     program.templates.push_back(std::move(definition));
                 templateParameters.clear();
+                capacityParameters.clear();
                 continue;
             }
             need("auto");

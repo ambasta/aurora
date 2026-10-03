@@ -8,6 +8,9 @@ flags=(-std=c++23 -O2 -Wall -Wextra -Werror -ffreestanding -fno-exceptions -fno-
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ ipc|ipc-fault|ipc-cancel|ipc-owner|ipc-stale|ipc-version|ipc-phase|ipc-transaction|ipc-site|ipc-unknown|ipc-root|ipc-kernel-trap|ipc-duplicate|ipc-late|ipc-exhausted)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC)
+   if [[ "$UEFI_MODE" != ipc ]]; then flag="${UEFI_MODE#ipc-}"; flag="${flag//-/_}"; extra+=("-DAURORA_IPC_${flag^^}"); fi ;;
  runtime|runtime-code|runtime-stack|runtime-kernel|runtime-window|runtime-root|runtime-kernel-trap|runtime-entry-stack|runtime-write|runtime-nx|runtime-return|runtime-unknown|runtime-syscall|runtime-sysenter)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME)
    if [[ "$UEFI_MODE" != runtime ]]; then flag="${UEFI_MODE#runtime-}"; flag="${flag//-/_}"; extra+=("-DAURORA_RUNTIME_${flag^^}"); fi ;;
@@ -27,11 +30,18 @@ case "${UEFI_MODE:-normal}" in
  *) echo 'Unknown UEFI build mode' >&2; exit 2 ;;
 esac
 runtime_objects=()
-if [[ "${UEFI_MODE:-normal}" == runtime* ]]; then
+if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* ]]; then
  mode="${UEFI_MODE#runtime-}"
  case "$mode" in code|stack|kernel|window|write|nx|return|unknown|syscall|sysenter) ;; *) mode=normal ;; esac
- python3 scripts/kernel-uefi-user-images.py --compiler "$compiler" --mode "$mode"
- as --64 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+ if [[ "$UEFI_MODE" == ipc* ]]; then
+   mode="${UEFI_MODE#ipc-}"
+   case "$mode" in owner|version|phase|transaction|site|unknown) ;; *) mode=normal ;; esac
+   python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode"
+   as --64 --defsym AURORA_IPC=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+ else
+   python3 scripts/kernel-uefi-user-images.py --compiler "$compiler" --mode "$mode"
+   as --64 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+ fi
  as --64 --defsym AURORA_RELATIVE_ONLY=1 kernel/exceptions.S -o build/uefi/runtime-exceptions.o
  runtime_objects+=(build/uefi/runtime-entry.o build/uefi/runtime-exceptions.o)
 fi

@@ -6,11 +6,18 @@
 #include "../domain-policy.hpp"
 #include "../pages.hpp"
 #include "../console.hpp"
+#ifdef AURORA_UEFI_IPC
+#include "../ipc-policy.hpp"
+#endif
 #include <array>
 #include <optional>
 namespace aurora::uefi {
 extern std::uint64_t saved_rsp asm("uefi_runtime_saved_rsp") __attribute__((visibility("hidden")));
+#ifdef AURORA_UEFI_IPC
+auto enter(std::uint64_t,std::uint64_t,const std::uint64_t*) -> std::uint64_t asm("uefi_runtime_enter") __attribute__((visibility("hidden")));
+#else
 auto enter(std::uint64_t,std::uint64_t) -> std::uint64_t asm("uefi_runtime_enter") __attribute__((visibility("hidden")));
+#endif
 auto handler(unsigned) -> std::uint64_t asm("uefi_runtime_handler") __attribute__((visibility("hidden")));
 namespace {
 using U64=std::uint64_t;
@@ -29,6 +36,12 @@ constinit std::array<Domain,2> domains;
 constinit memory::PhysicalPages frames;
 constinit user::DomainRegistry registry;
 constinit user::ProgramRun program;
+#ifdef AURORA_UEFI_IPC
+constinit std::optional<ipc::Mailbox> mailbox;
+std::array<U64,6> launch{};
+U64 transaction{};
+ipc::Phase selected_phase=ipc::Phase::inactive;
+#endif
 U64 arena{},kernel_root{};
 std::optional<Bytes> handoff{};
 unsigned active=2;
@@ -156,6 +169,7 @@ auto install_architecture() -> void {
     const std::uint16_t null_selector=0; asm volatile("mov %0,%%fs; mov %0,%%gs"::"r"(null_selector):"memory");
     for (const std::uint32_t msr:{0xc0000100U,0xc0000101U,0xc0000102U}) asm volatile("wrmsr"::"c"(msr),"a"(0),"d"(0):"memory");
 }
+#ifndef AURORA_UEFI_IPC
 auto execute(unsigned index,ProgramEvent wanted) -> void {
     auto& domain=domains[index];
     require(root()==kernel_root && active==2 && verify(domain),"entry root/tree");
@@ -182,6 +196,10 @@ auto execute(unsigned index,ProgramEvent wanted) -> void {
     Serial::text(" stack="); Serial::number(current_stack); Serial::text(" event="); Serial::text(wanted==ProgramEvent::returned ? "returned" : "bounds");
     Serial::text(" value="); Serial::number(program.value()); Serial::text("\r\n");
 }
+#endif
+#ifdef AURORA_UEFI_IPC
+#include "ipc-runtime.inc"
+#endif
 }
 auto dispatch(U64,U64,U64,U64,U64,U64) -> U64 asm("aurora_exception_dispatch") __attribute__((visibility("hidden")));
 auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
@@ -193,7 +211,7 @@ auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
         require(frame>=arena+L::ist_bottom && frame<=arena+L::ist_top-176,"double fault IST authority");
         Serial::text("AURORA_UEFI_RUNTIME_IST_OK\r\n"); stop("double fault");
     }
-#ifdef AURORA_RUNTIME_ROOT
+#if defined(AURORA_RUNTIME_ROOT) || defined(AURORA_IPC_ROOT)
     asm volatile("mov %0,%%cr3"::"r"(kernel_root):"memory");
     Serial::text("AURORA_UEFI_RUNTIME_ROOT_PROBE: root="); Serial::number(root()); Serial::text("\r\n");
 #endif
@@ -204,6 +222,32 @@ auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
     const Bytes captured{view(frame,176)};
     const user::ProgramContext context{vector,error,pc,cs,captured.get(168),captured.get(160),captured.get(152),frame};
     require(program.accept(context,result),"exception site authority");
+#ifdef AURORA_UEFI_IPC
+    if (program.event()==ProgramEvent::returned) {
+        Serial::text("AURORA_UEFI_IPC_ENVELOPE: phase="); Serial::number(captured.get(64));
+        Serial::text(" version="); Serial::number(captured.get(72)); Serial::text(" slot="); Serial::number(captured.get(88));
+        Serial::text(" generation="); Serial::number(captured.get(96)); Serial::text(" transaction="); Serial::number(captured.get(56));
+        Serial::text(" first="); Serial::number(result); Serial::text(" second="); Serial::number(captured.get(48)); Serial::text("\r\n");
+        require(captured.get(64)==launch[0] && captured.get(72)==1,"IPC phase/version authority");
+        const ipc::Endpoint endpoint{captured.get(88),captured.get(96)};
+        const auto actor=*domains[active].handle;
+        if (selected_phase==ipc::Phase::request) {
+            require(captured.get(56)==0,"IPC request transaction");
+            const auto ticket=mailbox->submit(actor,selected_phase,endpoint,ipc::Request{result,captured.get(48)});
+            require(ticket.has_value(),"IPC request capability/state"); transaction=*ticket;
+            ipc_record("SUBMIT",result,captured.get(48));
+        } else if (selected_phase==ipc::Phase::service) {
+            require(mailbox->reply(actor,selected_phase,endpoint,captured.get(56),result),"IPC reply capability/transaction/state");
+            ipc_record("REPLY",result,0);
+        } else {
+            const auto expected_endpoint=mailbox->endpoint(actor);
+            require(selected_phase==ipc::Phase::completion && expected_endpoint
+                && expected_endpoint->slot()==endpoint.slot() && expected_endpoint->generation()==endpoint.generation()
+                && captured.get(56)==transaction && mailbox->state()==ipc::State::consumed,"IPC completion authority");
+            ipc_record("COMPLETE",result,0);
+        }
+    } else require(selected_phase==ipc::Phase::service && program.event()==ProgramEvent::bounds,"IPC fault phase");
+#endif
     const auto index=active;
     asm volatile("mov %0,%%cr3"::"r"(kernel_root):"memory");
     require(root()==kernel_root && registry.deactivate(*domains[index].handle),"kernel root restoration");
@@ -216,6 +260,10 @@ auto run_protected(U64 owned_arena,const Bytes& h) -> bool {
     if (!PageTables{kernel_root,static_cast<std::size_t>(h.get(96))}.verify(arena,h)) return false;
     if (!frames.initialize(arena+L::stack_frames_offset,16)) return false;
     install_architecture();
+#ifdef AURORA_UEFI_IPC
+    run_ipc();
+    return true;
+#else
     const auto first=create(0),second=create(1);
     require(first && second && *first==0 && *second==1,"two owned domains");
     const auto original=*frames.address(*domains[0].stacks[0]);
@@ -236,6 +284,7 @@ auto run_protected(U64 owned_arena,const Bytes& h) -> bool {
     require(root()==kernel_root && frames.used()==0 && active==2 && !program.running(),"final root/lease state");
     Serial::text("AURORA_UEFI_DOMAIN_CLEANUP_OK: used=0\r\nAURORA_UEFI_RUNTIME_OK\r\n");
     return true;
+#endif
 }
 }
 #endif

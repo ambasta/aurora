@@ -16,6 +16,7 @@ class X86Emitter {
     int resultSaveOffset = 0;
     const ir::Function *currentFunction = nullptr;
     const std::map<std::string, std::vector<Type>> *classLayouts = nullptr;
+    const std::map<std::string, std::vector<ir::ClassField>> *classFields = nullptr;
     std::map<std::string, const ir::Function *> functions;
     std::map<std::string, std::size_t> argumentCounts;
     const std::vector<std::string> argumentRegisters = {"%rdi", "%rsi", "%rdx",
@@ -64,6 +65,9 @@ class X86Emitter {
         for (std::size_t index = 0; index < parameter; ++index)
             offset += argumentWords(function.parameters[index]) * 8;
         return offset;
+    }
+    const ir::ClassField &receiverField(int fieldIndex) const {
+        return classFields->at(currentFunction->receiver->className)[fieldIndex];
     }
     void checkedDivision(bool remainder, bool unsignedValue) {
         const auto suffix = std::to_string(functionIndex) + "_" + std::to_string(divisionIndex++);
@@ -278,10 +282,34 @@ class X86Emitter {
                     // verifier prevents use outside their lexical lifetime.
                 } else if constexpr (std::is_same_v<Op, ir::ReceiverLoad>) {
                     line("movq " + address(receiverSaveOffset) + ", %r10");
-                    line("movq " + std::to_string(operation.fieldIndex * 8) + "(%r10), %rax");
+                    line("movq " +
+                         std::to_string(receiverField(operation.fieldIndex).firstLeaf * 8) +
+                         "(%r10), %rax");
                 } else if constexpr (std::is_same_v<Op, ir::ReceiverStore>) {
                     line("movq " + address(receiverSaveOffset) + ", %r10");
-                    line("movq %rax, " + std::to_string(operation.fieldIndex * 8) + "(%r10)");
+                    line("movq %rax, " +
+                         std::to_string(receiverField(operation.fieldIndex).firstLeaf * 8) +
+                         "(%r10)");
+                } else if constexpr (std::is_same_v<Op, ir::ReceiverArrayZero>) {
+                    const auto &field = receiverField(operation.fieldIndex);
+                    line("movq " + address(receiverSaveOffset) + ", %r10");
+                    for (int element = 0; element < field.length; ++element)
+                        line("movq $0, " + std::to_string((field.firstLeaf + element) * 8) +
+                             "(%r10)");
+                } else if constexpr (std::is_same_v<Op, ir::ReceiverBoundsGuard>) {
+                    const auto &field = receiverField(operation.fieldIndex);
+                    // The unsigned comparison also rejects every negative i64 index.
+                    line("cmpq $" + std::to_string(field.length) + ", %rax");
+                    line("jae .Laurora_bounds_trap");
+                } else if constexpr (std::is_same_v<Op, ir::ReceiverIndexLoad>) {
+                    const auto &field = receiverField(operation.fieldIndex);
+                    line("movq " + address(receiverSaveOffset) + ", %r10");
+                    line("movq " + std::to_string(field.firstLeaf * 8) + "(%r10,%rax,8), %rax");
+                } else if constexpr (std::is_same_v<Op, ir::ReceiverIndexStore>) {
+                    const auto &field = receiverField(operation.fieldIndex);
+                    pop("%rcx");
+                    line("movq " + address(receiverSaveOffset) + ", %r10");
+                    line("movq %rax, " + std::to_string(field.firstLeaf * 8) + "(%r10,%rcx,8)");
                 } else if constexpr (std::is_same_v<Op, ir::MethodCall>) {
                     for (std::size_t index = argumentCounts.at(operation.callee); index > 0;
                          --index)
@@ -347,6 +375,7 @@ class X86Emitter {
         argumentCounts.clear();
         functions.clear();
         classLayouts = &module.classLayouts;
+        classFields = &module.classFields;
         functionIndex = 0;
         for (const auto &function : module.functions) {
             argumentCounts[function.name] = function.parameters.size();

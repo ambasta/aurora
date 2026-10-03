@@ -7,8 +7,9 @@ separate CR3 roots. A known bounds trap is contained, clean execution follows,
 and retired stack frames are scrubbed and reused. There is no scheduler, IPC,
 controller activation, DMA ownership or general process lifecycle in this slice.
 
-The clean fixture also executes `std::pair<i64,u64>` template-generated code,
-returning 42 through the same scalar transition. Trusted C++/assembly remains
+The clean fixture executes `std::pair<i64,u64>` template-generated code and,
+in the next candidate, stores and reads that result through `std::array<i64,2>`
+`set`/`at`, returning 42 through the same scalar transition. Trusted C++/assembly remains
 temporary bootstrap machinery; this is not a language-native complete kernel.
 
 ## Relocation and ownership

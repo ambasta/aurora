@@ -51,13 +51,19 @@ class SemanticAnalyzer {
             return classDefinition(type, token).id;
         return static_cast<int>(type.kind) + 1;
     }
+    std::int64_t classWords(const ClassDefinition &definition) const {
+        std::int64_t words = 0;
+        for (const auto &member : definition.fields)
+            words += member.type.isArray() ? member.type.length : 1;
+        return words;
+    }
     std::int64_t typeSize(const Type &type, const Token &token) {
         if (type.isArray()) {
             typeId(type, token);
             return type.length * 8;
         }
         if (type.isClass())
-            return std::max<std::int64_t>(8, classDefinition(type, token).fields.size() * 8);
+            return std::max<std::int64_t>(8, classWords(classDefinition(type, token)) * 8);
         return type == Type::Bool ? 1 : 8;
     }
     std::int64_t fieldCount(const Type &type, const Token &token) {
@@ -81,6 +87,17 @@ class SemanticAnalyzer {
     }
     int fieldOffset(int local, const Field &value) {
         return locals.at(local).offset - value.offset;
+    }
+    void copyClass(int original, int destination, const ClassDefinition &definition) {
+        for (const auto &member : definition.fields) {
+            const int length = member.type.isArray() ? member.type.length : 1;
+            const Type payload =
+                member.type.isArray() ? Type(member.type.elementKind) : member.type;
+            for (int index = 0; index < length; ++index) {
+                emit(ir::Load{fieldOffset(original, member) - index * 8, payload});
+                emit(ir::Store{fieldOffset(destination, member) - index * 8, payload});
+            }
+        }
     }
     Type payloadType(const Type &type) { return type == Type::Own ? Type::I64 : type; }
     std::int64_t reflectedValue(ExpressionPtr expression) {
@@ -156,8 +173,13 @@ class SemanticAnalyzer {
             lowered.objectSlots[l.offset] = ir::ObjectSlot{t.className, mut};
             if (begin)
                 emit(ir::BeginObject{l.offset});
-            for (const auto &member : classDefinition(t, tok).fields)
-                lowered.slots[l.offset - member.offset] = member.type;
+            for (const auto &member : classDefinition(t, tok).fields) {
+                const int length = member.type.isArray() ? member.type.length : 1;
+                const Type payload =
+                    member.type.isArray() ? Type(member.type.elementKind) : member.type;
+                for (int index = 0; index < length; ++index)
+                    lowered.slots[l.offset - member.offset - index * 8] = payload;
+            }
         } else if (t.isArray()) {
             for (int index = 0; index < t.length; ++index)
                 lowered.slots[l.offset - index * 8] = Type(t.elementKind);
@@ -169,19 +191,35 @@ class SemanticAnalyzer {
             scopes.back()[n] = i;
         return i;
     }
-    int checkedIndex(ExpressionPtr index) {
+    class IndexedStorage {
+      public:
+        int local = -1;
+        const Field *member = nullptr;
+        Type type;
+    };
+    IndexedStorage checkedIndex(ExpressionPtr index) {
         if (index->args[0]->op != "name")
-            fail(index->token, "indexing currently requires an array local");
-        const int local = source(index->args[0]);
-        const Type type = locals[local].type;
-        if (!type.isArray())
-            fail(index->token, "indexing requires an array local");
+            fail(index->token,
+                 "indexing requires an array local or implicit private receiver field");
+        IndexedStorage storage;
+        const auto &name = index->args[0]->token;
+        if (lookupLocal(name) < 0)
+            storage.member = receiverField(name);
+        if (storage.member)
+            storage.type = storage.member->type;
+        else {
+            storage.local = source(index->args[0]);
+            storage.type = locals[storage.local].type;
+        }
+        if (!storage.type.isArray())
+            fail(index->token, "indexing requires an array local or receiver field");
         match(expression(index->args[1]), Type::I64, index->token);
-        // Unsigned comparison rejects negative i64 indices as well as upper-bound
-        // violations. No address computation or memory access occurs before the
-        // guard.
-        emit(ir::BoundsGuard{offset(local), type.length, Type(type.elementKind)});
-        return local;
+        if (storage.member)
+            emit(ir::ReceiverBoundsGuard{storage.member->index});
+        else
+            emit(ir::BoundsGuard{offset(storage.local), storage.type.length,
+                                 Type(storage.type.elementKind)});
+        return storage;
     }
     const Function &method(const Type &type, const Token &token, bool constructor = false) {
         const auto &definition = classDefinition(type, token);
@@ -244,10 +282,7 @@ class SemanticAnalyzer {
                 const int original = source(argument);
                 match(locals[original].type, type, argument->token);
                 const int snapshot = add("", type, false, argument->token, false);
-                for (const auto &member : classDefinition(type, argument->token).fields) {
-                    emit(ir::Load{fieldOffset(original, member), member.type});
-                    emit(ir::Store{fieldOffset(snapshot, member), member.type});
-                }
+                copyClass(original, snapshot, classDefinition(type, argument->token));
                 arguments[index] = offset(snapshot);
                 snapshots.push_back(offset(snapshot));
             } else {
@@ -300,10 +335,13 @@ class SemanticAnalyzer {
             return Type::Bool;
         }
         if (e->op == "index") {
-            const int local = checkedIndex(e);
-            emit(ir::IndexLoad{offset(local), locals[local].type.length,
-                               Type(locals[local].type.elementKind)});
-            return Type(locals[local].type.elementKind);
+            const auto storage = checkedIndex(e);
+            if (storage.member)
+                emit(ir::ReceiverIndexLoad{storage.member->index});
+            else
+                emit(ir::IndexLoad{offset(storage.local), storage.type.length,
+                                   Type(storage.type.elementKind)});
+            return Type(storage.type.elementKind);
         }
         if (e->op == "array_literal")
             fail(e->token, "array literals require a typed local initializer");
@@ -312,6 +350,8 @@ class SemanticAnalyzer {
                 fail(e->token, "field access currently requires a class local");
             int local = source(e->args[0]);
             const auto &member = field(locals[local].type, e->token);
+            if (member.type.isArray())
+                fail(e->token, "array fields cannot escape as values");
             emit(ir::Load{fieldOffset(local, member), member.type});
             return member.type;
         }
@@ -322,7 +362,9 @@ class SemanticAnalyzer {
         if (e->op == "name") {
             if (lookupLocal(e->token) < 0)
                 if (const auto *member = receiverField(e->token)) {
-                    emit(ir::ReceiverLoad{member->offset / 8, member->type});
+                    if (member->type.isArray())
+                        fail(e->token, "array fields require checked indexing or len");
+                    emit(ir::ReceiverLoad{member->index, member->type});
                     return member->type;
                 }
             int i = source(e);
@@ -415,10 +457,14 @@ class SemanticAnalyzer {
         }
         if (n == "len") {
             arity(e, 1);
-            const int local = source(e->args[0]);
-            if (!locals[local].type.isArray())
-                fail(e->token, "len requires an array local");
-            emit(ir::Constant{locals[local].type.length, Type::I64});
+            if (e->args[0]->op != "name")
+                fail(e->token, "len requires an array local or receiver field");
+            const Field *member =
+                lookupLocal(e->args[0]->token) < 0 ? receiverField(e->args[0]->token) : nullptr;
+            const Type type = member ? member->type : locals[source(e->args[0])].type;
+            if (!type.isArray())
+                fail(e->token, "len requires an array local or receiver field");
+            emit(ir::Constant{type.length, Type::I64});
             return Type::I64;
         }
         if (n == "read") {
@@ -529,10 +575,7 @@ class SemanticAnalyzer {
             match(locals[original].type, statement->type, expression->token);
             const int destination =
                 add(statement->name, statement->type, statement->mutableValue, statement->token);
-            for (const auto &member : definition.fields) {
-                emit(ir::Load{fieldOffset(original, member), member.type});
-                emit(ir::Store{fieldOffset(destination, member), member.type});
-            }
+            copyClass(original, destination, definition);
             return;
         }
         if (expression->op == "call") {
@@ -698,13 +741,19 @@ class SemanticAnalyzer {
             return false;
         }
         if (s->kind == "index_assign") {
-            const int local = checkedIndex(s->target);
-            if (!locals[local].mut)
+            const auto storage = checkedIndex(s->target);
+            if (storage.member) {
+                if (currentFunction->receiverConst)
+                    fail(s->token, "const method cannot write receiver arrays");
+            } else if (!locals[storage.local].mut)
                 fail(s->token, "index assignment requires a mutable array local");
             push();
-            match(expression(s->expr), Type(locals[local].type.elementKind), s->token);
-            emit(ir::IndexStore{offset(local), locals[local].type.length,
-                                Type(locals[local].type.elementKind)});
+            match(expression(s->expr), Type(storage.type.elementKind), s->token);
+            if (storage.member)
+                emit(ir::ReceiverIndexStore{storage.member->index});
+            else
+                emit(ir::IndexStore{offset(storage.local), storage.type.length,
+                                    Type(storage.type.elementKind)});
             return false;
         }
         if (s->kind == "while") {
@@ -737,6 +786,8 @@ class SemanticAnalyzer {
             if (!locals[local].mut)
                 fail(s->token, "field assignment requires a mutable class local");
             const auto &member = field(locals[local].type, Token(s->fieldName, s->token.line));
+            if (member.type.isArray())
+                fail(s->token, "whole array field assignment is unsupported");
             match(expression(s->expr), member.type, s->token);
             emit(ir::Store{fieldOffset(local, member), member.type});
             return false;
@@ -747,8 +798,10 @@ class SemanticAnalyzer {
                 if (const auto *member = receiverField(target)) {
                     if (currentFunction->receiverConst)
                         fail(target, "const method cannot write receiver fields");
+                    if (member->type.isArray())
+                        fail(target, "whole array field assignment is unsupported");
                     match(expression(s->expr), member->type, target);
-                    emit(ir::ReceiverStore{member->offset / 8, member->type});
+                    emit(ir::ReceiverStore{member->index, member->type});
                     return false;
                 }
             int i = find(Token(s->name, s->token.line));
@@ -815,7 +868,7 @@ class SemanticAnalyzer {
             throw Error("too many class types for bootstrap type IDs");
         for (std::size_t index = 0; index < classes.size(); ++index) {
             auto &definition = classes[index];
-            if (definition.fields.size() > maxFrameSlots)
+            if (classWords(definition) > maxFrameSlots)
                 fail(definition.token, "class layout exceeds 65536 bytes");
             const auto &name = definition.name;
             if (builtins.contains(name) || name == "i64" || name == "u64" || name == "bool" ||
@@ -824,13 +877,32 @@ class SemanticAnalyzer {
             classNames[name] = index;
             definition.id = 100 + static_cast<int>(index);
             std::set<std::string> fields;
-            int offset = 0;
+            int offset = 0, logicalIndex = 0;
+            bool hasArray = false;
             for (auto &member : definition.fields) {
                 if (!fields.insert(member.token.text).second)
                     fail(member.token, "duplicate class field");
                 member.offset = offset;
-                offset += 8;
+                member.index = logicalIndex++;
+                if (member.type.isArray()) {
+                    hasArray = true;
+                    if (member.publicAccess || member.type.length < 1 || member.type.length > 64 ||
+                        !scalar(Type(member.type.elementKind)) ||
+                        !member.type.elementParameter.empty() ||
+                        !member.type.lengthParameter.empty())
+                        fail(member.token, "class array fields require private concrete scalar "
+                                           "storage of length 1 to 64");
+                    typeId(member.type, member.token);
+                    offset += member.type.length * 8;
+                } else {
+                    if (!scalar(member.type))
+                        fail(member.token, "class field must be concrete scalar or private array");
+                    offset += 8;
+                }
             }
+            if (hasArray && std::none_of(definition.methods.begin(), definition.methods.end(),
+                                         [](const Function &method) { return method.constructor; }))
+                fail(definition.token, "array fields require a declared complete constructor");
         }
         for (std::size_t i = 0; i < sourceFunctions.size(); ++i) {
             if (builtins.count(sourceFunctions[i].name) ||
@@ -841,9 +913,9 @@ class SemanticAnalyzer {
                 fail(sourceFunctions[i].token, "at most six parameters supported");
             auto checkBoundaryType = [&](const Type &type) {
                 if (type.isClass() &&
-                    classDefinition(type, sourceFunctions[i].token).fields.size() > 64)
-                    fail(sourceFunctions[i].token,
-                         "function-boundary classes are limited to 64 scalar fields");
+                    classWords(classDefinition(type, sourceFunctions[i].token)) > 64)
+                    fail(sourceFunctions[i].token, "function-boundary classes are limited to 64 "
+                                                   "scalar fields or flattened leaf words");
             };
             checkBoundaryType(sourceFunctions[i].result);
             for (const auto &parameter : sourceFunctions[i].params)
@@ -853,8 +925,16 @@ class SemanticAnalyzer {
         ir::Module module;
         for (const auto &definition : classes) {
             auto &layout = module.classLayouts[definition.name];
-            for (const auto &member : definition.fields)
-                layout.push_back(member.type);
+            auto &shape = module.classFields[definition.name];
+            for (const auto &member : definition.fields) {
+                const int length = member.type.isArray() ? member.type.length : 1;
+                const Type payload =
+                    member.type.isArray() ? Type(member.type.elementKind) : member.type;
+                shape.push_back(ir::ClassField{payload, static_cast<int>(layout.size()), length,
+                                               member.type.isArray()});
+                for (int index = 0; index < length; ++index)
+                    layout.push_back(payload);
+            }
         }
         for (auto &function : sourceFunctions) {
             currentFunction = &function;
@@ -898,9 +978,19 @@ class SemanticAnalyzer {
                 if (initializers.size() != definition.fields.size())
                     fail(function.token, "constructor must initialize every field exactly once");
                 for (const auto &member : definition.fields) {
-                    match(expression(initializers.at(member.token.text)), member.type,
-                          member.token);
-                    emit(ir::ReceiverStore{member.offset / 8, member.type});
+                    const auto &initializer = initializers.at(member.token.text);
+                    if (member.type.isArray()) {
+                        if (initializer->op != "array_zero")
+                            fail(member.token,
+                                 "array fields require explicit empty-brace zero initialization");
+                        emit(ir::ReceiverArrayZero{member.index});
+                    } else {
+                        if (initializer->op == "array_zero")
+                            fail(member.token, "empty-brace constructor initialization is "
+                                               "restricted to array fields");
+                        match(expression(initializer), member.type, member.token);
+                        emit(ir::ReceiverStore{member.index, member.type});
+                    }
                 }
                 emit(ir::Constant{0, Type::I64});
                 emit(ir::Return{});
