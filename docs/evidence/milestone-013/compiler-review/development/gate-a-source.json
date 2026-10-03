@@ -1,0 +1,14 @@
+{
+  "compiler/host_sources.hpp": "ca6f557288b94db0bcd431efb086bba185390b9831543436d184c76263a06794",
+  "compiler/ir.hpp": "ff62ff25a1ab847ca66c13673a657626d1985fb7df1a6ee8f2f909e21c916881",
+  "compiler/ir_verify.hpp": "23a9c827b6a07b0864926071aef970adc4961df9953c44ca0eaf06ce5a026b06",
+  "compiler/lexer.hpp": "c33b789738e3fd625f5f1b786cfaad22e90db9bed8e757aa4ad8af726f62c7b6",
+  "compiler/modules.hpp": "3cace1da76fc69006cf7d7256070785e854e307deabf7034478d5a107079f49d",
+  "compiler/parser.hpp": "4e407d9b3ff47b519beb6fee6d68a6153f439e433ce10c3d103e31b35e615309",
+  "compiler/semantics.hpp": "570f51331baaa4a4c67d0ecaff4c7ff39a3a3ae3c344e635b2d5793daae3dd89",
+  "compiler/syntax.hpp": "9a2cb78053770303994be3faccd90135a7490ad55401fb0f28a8b3d6822b5c99",
+  "compiler/templates.hpp": "9558565e74e6828102d8b99ce5f36ee8ae9f0fecc21ab7666cedd3a77c03e554",
+  "compiler/types.hpp": "d0d05ccc61a4e22f6d3df20b05237b2fbdb84b88807901db27e5cf8db0584e99",
+  "compiler/x86.hpp": "e2b4bc80d29164392a1d3a11b60156b852ad4528ab7ee587829b466306158741",
+  "compiler/main.cpp": "9a8bc5fefaf16c75cba0aec254a3d54420ae04a3b7eac9da0fe30f95a7b8a431"
+}

@@ -1,0 +1,4 @@
+usage: run.py [-h] [--seed SEED] [--cases CASES] [--failure-dir FAILURE_DIR]
+              [--sanitized-compiler]
+              compiler
+run.py: error: unrecognized arguments: --compiler

@@ -1,0 +1,71 @@
+export module std.bytes;
+
+export namespace std {
+    enum class ByteCodecStatus { success, out_of_range };
+
+    class Bytes4 {
+        builtin::array<u8, 4> elements;
+    public:
+        Bytes4() : elements{} {}
+        auto at(i64 index) const -> u8 { return elements[index]; }
+        auto set(i64 index, u8 value) -> u8 {
+            elements[index] = value;
+            return value;
+        }
+    };
+
+    class Encode32Result {
+        ByteCodecStatus outcome;
+        Bytes4 payload;
+    public:
+        Encode32Result(ByteCodecStatus status, Bytes4 bytes)
+            : outcome(status), payload(bytes) {}
+        auto status() const -> ByteCodecStatus { return outcome; }
+        auto bytes_or_zero() const -> Bytes4 {
+            if (outcome == ByteCodecStatus::success) {
+                const Bytes4 result = payload;
+                return result;
+            }
+            const Bytes4 zero = Bytes4();
+            return zero;
+        }
+    };
+
+    auto encode_le32(u64 value) -> Encode32Result {
+        Bytes4 bytes = Bytes4();
+        if (value > 4294967295u64) {
+            const Encode32Result failure = Encode32Result(ByteCodecStatus::out_of_range, bytes);
+            return failure;
+        }
+        bytes.set(0, u8(value & 255u64));
+        bytes.set(1, u8((value >> 8) & 255u64));
+        bytes.set(2, u8((value >> 16) & 255u64));
+        bytes.set(3, u8((value >> 24) & 255u64));
+        const Encode32Result result = Encode32Result(ByteCodecStatus::success, bytes);
+        return result;
+    }
+
+    auto encode_be32(u64 value) -> Encode32Result {
+        Bytes4 bytes = Bytes4();
+        if (value > 4294967295u64) {
+            const Encode32Result failure = Encode32Result(ByteCodecStatus::out_of_range, bytes);
+            return failure;
+        }
+        bytes.set(0, u8((value >> 24) & 255u64));
+        bytes.set(1, u8((value >> 16) & 255u64));
+        bytes.set(2, u8((value >> 8) & 255u64));
+        bytes.set(3, u8(value & 255u64));
+        const Encode32Result result = Encode32Result(ByteCodecStatus::success, bytes);
+        return result;
+    }
+
+    auto decode_le32(Bytes4 bytes) -> u64 {
+        return u64(bytes.at(0)) | (u64(bytes.at(1)) << 8) |
+               (u64(bytes.at(2)) << 16) | (u64(bytes.at(3)) << 24);
+    }
+
+    auto decode_be32(Bytes4 bytes) -> u64 {
+        return (u64(bytes.at(0)) << 24) | (u64(bytes.at(1)) << 16) |
+               (u64(bytes.at(2)) << 8) | u64(bytes.at(3));
+    }
+}

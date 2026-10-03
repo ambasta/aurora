@@ -1,0 +1,2352 @@
+{
+  "started_utc": "2026-10-03T09:53:41.697929+00:00",
+  "completed_utc": "2026-10-03T10:07:46.674906+00:00",
+  "distinct_modes": 139,
+  "bios_distinct": 37,
+  "uefi_distinct": 102,
+  "compiler_sha256": "02771e0d94ad9fe9821041ee10081d31a4f4114dde81b7d476e16cba8d5c75d2",
+  "source_inputs_unchanged_at_completion": true,
+  "source_input_count": 202,
+  "source_input_manifest_sha256": "3b3cb2acece05399f770638a00d34404f7829b4f4335e54077e8dabcdaec2889",
+  "normal_images_restored": true,
+  "independent_new_modes": 17,
+  "independent_logs": "/tmp/aurora-review-m13-user",
+  "modes": [
+    {
+      "family": "bios",
+      "mode": "--division-kernel-trap",
+      "started_utc": "2026-10-03T09:53:41.763374+00:00",
+      "completed_utc": "2026-10-03T09:53:45.601743+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--division-kernel-trap"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/division-kernel-trap.command.log": "8ce37275ca822c63b701385a0607d56165f19a69badcb06922f7af24d32663df",
+        "bios/division-kernel-trap.log": "16308d4efc6f197919eacbcfc9db8b1af1f675050ee3a5cac4d8009aa9d0a854",
+        "bios/division-kernel-trap.metadata.json": "865034e9a98b4568f871691d52ffb6425d30ffdb6ca2fa50a14792f7697e2a06"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--division-overflow",
+      "started_utc": "2026-10-03T09:53:45.602677+00:00",
+      "completed_utc": "2026-10-03T09:53:49.651152+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--division-overflow"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/division-overflow.command.log": "cd3cf55901894474bc38b465d9043db0368f88e2bb47b90aa0a5e24ca8a2aae9",
+        "bios/division-overflow.log": "146a049212056039a66965c3e8a39b16420829ba67e2f891efa8e0d0ef1ebd04",
+        "bios/division-overflow.metadata.json": "eeb5c93bc4316bbbd3e4d7f55388d79fd84c30be18277ed873a1cd7168624321"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--division-remainder-min",
+      "started_utc": "2026-10-03T09:53:49.652119+00:00",
+      "completed_utc": "2026-10-03T09:53:53.869184+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--division-remainder-min"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/division-remainder-min.command.log": "9e33cd186211872991a4b4152b1286ea51b767dbd0f802872795ee6a2a9f12de",
+        "bios/division-remainder-min.log": "718df28dbec0d2bf98b4b505a9201b10c5130d34876399fd581b9dc75c494b85",
+        "bios/division-remainder-min.metadata.json": "86dfa2cdf44d7c724d7fa436b0897270a8684085bc86b4af849cdcd903bec97d"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--division-remainder-zero",
+      "started_utc": "2026-10-03T09:53:53.870293+00:00",
+      "completed_utc": "2026-10-03T09:53:57.979553+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--division-remainder-zero"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/division-remainder-zero.command.log": "4af991ff40d8b3c6842c79af2fb636d000ef5886aea0cb4d61f0a7055a93bac9",
+        "bios/division-remainder-zero.log": "4d903eda56b7cb76805a9e9cf38da5c156057cd3294e284d042a637cba8e68d3",
+        "bios/division-remainder-zero.metadata.json": "31e078a7a6a99b2bbff000da110f57d54eaa95906d57a175c735b9eab6a08368"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--division-zero",
+      "started_utc": "2026-10-03T09:53:57.980575+00:00",
+      "completed_utc": "2026-10-03T09:54:02.102059+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--division-zero"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/division-zero.command.log": "9b4d47ef67abe81cfee604c81b1eadb320c168719197aea3f4f4c9251046cecc",
+        "bios/division-zero.log": "48833232d34dd35e6c820ff97d5d997cfce65d45b8d3116345b67099f01b4107",
+        "bios/division-zero.metadata.json": "53918606b4f2b48fb55af368edcdb5ef6083c452f0a4b88b8c062823a88331d7"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--domain-code",
+      "started_utc": "2026-10-03T09:54:02.103156+00:00",
+      "completed_utc": "2026-10-03T09:54:06.264662+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--domain-code"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/domain-code.command.log": "f2482463a58dcf2f4738d3c984480b29fc584d3f685a881e5c6f6cb97a8ef974",
+        "bios/domain-code.log": "1f26c92df6d3d93f199d57563d679bb91d76916aaa99ca895d5773e1acc88409",
+        "bios/domain-code.metadata.json": "e7bad1da1601e22fea0ca1e49c9191c013239b6ba6e14b4caa060724e00b2fd7"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--domain-root-mismatch",
+      "started_utc": "2026-10-03T09:54:06.265624+00:00",
+      "completed_utc": "2026-10-03T09:54:10.289955+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--domain-root-mismatch"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/domain-root-mismatch.command.log": "d95079799b658c285b5aa99b8ab6569ad3de4f92a4f003f66cc04cb613914e0c",
+        "bios/domain-root-mismatch.log": "3acb6a6c06839fd5fd370bb18b0077022ae7f0916ac6b50bd1354f897de634b4",
+        "bios/domain-root-mismatch.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--domain-stack",
+      "started_utc": "2026-10-03T09:54:10.291077+00:00",
+      "completed_utc": "2026-10-03T09:54:14.346933+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--domain-stack"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/domain-stack.command.log": "35f1882165748be9b7f8a53a1c3740f74a10a29dbd349050308b1f743b0c66db",
+        "bios/domain-stack.log": "5bcec8c55b2e461120f8401e2596942d9345f0dbef730ecb051f22297c7b08e1",
+        "bios/domain-stack.metadata.json": "16b2d91374ff468a6c4caf6903752358bb3692847125e6c27da9b5c57ee22b21"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--fault",
+      "started_utc": "2026-10-03T09:54:14.347892+00:00",
+      "completed_utc": "2026-10-03T09:54:18.400362+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--fault"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/fault.command.log": "0dcf431b5c1a61bcbb5139f3198ab11e5fed86af6c3676ab733f3ac378aa0ff1",
+        "bios/fault.log": "9a120e7cd30f74bbdbe3c8b0e398fd69edbf2ed9581c4f8b432a53ee8f3ab2de",
+        "bios/fault.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--no-nx",
+      "started_utc": "2026-10-03T09:54:18.403042+00:00",
+      "completed_utc": "2026-10-03T09:54:22.731690+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--no-nx"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/no-nx.command.log": "90d473100144412b0c048c9e846bfb63b07970967721b0ce5649a6ab6b17b412",
+        "bios/no-nx.log": "36e4b1ef5b62a0528ec21e748b7e7531504715a04971ec8e36c645d5370849da",
+        "bios/no-nx.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--nx",
+      "started_utc": "2026-10-03T09:54:22.732814+00:00",
+      "completed_utc": "2026-10-03T09:54:26.704878+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--nx"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/nx.command.log": "6f61a66851ea4d326da843f118996a2a5174c975ddb5db828f7eb95f73c611fe",
+        "bios/nx.log": "2478da76922ffc088c92fe8f5dc753d63f3788e342f50f1018e4b725cd87e633",
+        "bios/nx.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--page-fault",
+      "started_utc": "2026-10-03T09:54:26.705873+00:00",
+      "completed_utc": "2026-10-03T09:54:30.453193+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--page-fault"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/page-fault.command.log": "33b6cc2036c9d3254dee38c3ad6bd6aab0c621e8e30ff845fb44d26dc8d7156b",
+        "bios/page-fault.log": "3a96f87429b960f884c65203cc30eaec19cba6ea79317dfd6c12ebf3fabfb162",
+        "bios/page-fault.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--program-bad-return",
+      "started_utc": "2026-10-03T09:54:30.454204+00:00",
+      "completed_utc": "2026-10-03T09:54:34.569639+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--program-bad-return"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/program-bad-return.command.log": "062daf3b4b9fc80994f4ce0939f4cfbb01bbcc03fa4b2aad14fd904087cf220b",
+        "bios/program-bad-return.log": "184993731cf4ef991189296e8dbb49d6d1e450952464e2119d0241ed44b1c4f6",
+        "bios/program-bad-return.metadata.json": "16b2d91374ff468a6c4caf6903752358bb3692847125e6c27da9b5c57ee22b21"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--program-kernel-trap",
+      "started_utc": "2026-10-03T09:54:34.570673+00:00",
+      "completed_utc": "2026-10-03T09:54:38.552182+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--program-kernel-trap"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/program-kernel-trap.command.log": "f0c55df23ec75ffe7a35c996b8595a1d20bb9ec844830cc7cd1818fceb2b7e91",
+        "bios/program-kernel-trap.log": "8ad36df34f8eace2581c18d806b047caa8d167667da647802c7844c762c72c8e",
+        "bios/program-kernel-trap.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--program-unknown-trap",
+      "started_utc": "2026-10-03T09:54:38.553202+00:00",
+      "completed_utc": "2026-10-03T09:54:42.631847+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--program-unknown-trap"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/program-unknown-trap.command.log": "44d5f435e3efbf744ab02c0a0e61a33f6714538d285d7008a4a9de3bfd816149",
+        "bios/program-unknown-trap.log": "ef307894f425e837cdd54109ce661a1ebe82005032cb85de316ca416ec3ba352",
+        "bios/program-unknown-trap.metadata.json": "0d05b47a721a10792f09df52eb943ab54ed8a7a34258762588caae90067fe1e0"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule",
+      "started_utc": "2026-10-03T09:54:42.632888+00:00",
+      "completed_utc": "2026-10-03T09:54:46.513642+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--schedule"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/schedule.command.log": "3a2e4014664d6fb2fac686af993cb913bd29d8d44e2e1ef35030c40692147ef6",
+        "bios/schedule.log": "8b424b9d09b8083c3b9129f04c617e5ed340dd0abe575f8b35ec90421869fd36",
+        "bios/schedule.metadata.json": "9e9f187cf7f4f193715a23b978b16b94a8a40c86a0c99bde8d71e485c9e53dc7"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-context",
+      "started_utc": "2026-10-03T09:54:46.514669+00:00",
+      "completed_utc": "2026-10-03T09:54:50.399108+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--schedule-context"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/schedule-context.command.log": "49d485ac1230b5849cc3a7b672a5bb46d610be4c53e4276b4cf340dafd687fc8",
+        "bios/schedule-context.log": "c22b834a2958fc275c43ca415bdd6729b4105962afe7ec449fa1a5885b9328ba",
+        "bios/schedule-context.metadata.json": "9e9f187cf7f4f193715a23b978b16b94a8a40c86a0c99bde8d71e485c9e53dc7"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-forged",
+      "started_utc": "2026-10-03T09:54:50.400215+00:00",
+      "completed_utc": "2026-10-03T09:54:54.427969+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--schedule-forged"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/schedule-forged.command.log": "469ea0b3f6ef2a6fd4ba84892a4e6370ff55e0b8fb8ab62808b7118e19d09bf8",
+        "bios/schedule-forged.log": "bfcdcc5735cfcc44c593cda6271d7682929dd015eb19ba6786abd1d3132ee838",
+        "bios/schedule-forged.metadata.json": "9e9f187cf7f4f193715a23b978b16b94a8a40c86a0c99bde8d71e485c9e53dc7"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-fpu",
+      "started_utc": "2026-10-03T09:54:54.429080+00:00",
+      "completed_utc": "2026-10-03T09:54:58.251669+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--schedule-fpu"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/schedule-fpu.command.log": "b2c5f4405c8db87d9427ee79f037b60f9f006944c9656a823d44350169dce57b",
+        "bios/schedule-fpu.log": "712d7a51b85683ccdc5cb3ae3d259acb9cdda3e2e7e91dd4e3523accc9d47b06",
+        "bios/schedule-fpu.metadata.json": "fbde8aea0e5af5633e32d654d43a69db1ccc3d520ef68cefaddef5ddae63d33a"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-mmio",
+      "started_utc": "2026-10-03T09:54:58.252953+00:00",
+      "completed_utc": "2026-10-03T09:55:02.046812+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--schedule-mmio"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/schedule-mmio.command.log": "ee684c045aa0448cc99abf917d19456cf030695e9afe1461f70c7b0de9a6fbbe",
+        "bios/schedule-mmio.log": "13bbfb067af7eb2443ddfd55642466e92d48eb4fcb7d487f0e7393f5087d1b1d",
+        "bios/schedule-mmio.metadata.json": "9ee4fa69afb13ac3e65235c0e9904f65c771663585901b03f6966af9df025dcf"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-no-apic",
+      "started_utc": "2026-10-03T09:55:02.048951+00:00",
+      "completed_utc": "2026-10-03T09:55:05.761156+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--schedule-no-apic"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/schedule-no-apic.command.log": "7f7c26fea42b1698ac6a31667a4e5993addc1174b7e8c9cddbee23ae6d2d146c",
+        "bios/schedule-no-apic.log": "b64900acd73980ce60bd6e16a8eef0c204d6e1d82937b7924448d06e43737731",
+        "bios/schedule-no-apic.metadata.json": "9e9f187cf7f4f193715a23b978b16b94a8a40c86a0c99bde8d71e485c9e53dc7"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-root",
+      "started_utc": "2026-10-03T09:55:05.762272+00:00",
+      "completed_utc": "2026-10-03T09:55:09.545506+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--schedule-root"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/schedule-root.command.log": "5953c084b9f88afe3a83f7b801b8f7808143bc1543a3bd34f966c72cec4f011c",
+        "bios/schedule-root.log": "4f2df2a09382477d0abce268b80aa9207e4d612e42c938e9af2c153cf645ada8",
+        "bios/schedule-root.metadata.json": "9e9f187cf7f4f193715a23b978b16b94a8a40c86a0c99bde8d71e485c9e53dc7"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-smp",
+      "started_utc": "2026-10-03T09:55:09.547027+00:00",
+      "completed_utc": "2026-10-03T09:55:13.323669+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--schedule-smp"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/schedule-smp.command.log": "ee6ff2dd6931db268135d1f541a02cc563ad043b43805574dda339234954f28c",
+        "bios/schedule-smp.log": "b64900acd73980ce60bd6e16a8eef0c204d6e1d82937b7924448d06e43737731",
+        "bios/schedule-smp.metadata.json": "9e9f187cf7f4f193715a23b978b16b94a8a40c86a0c99bde8d71e485c9e53dc7"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-softint",
+      "started_utc": "2026-10-03T09:55:13.324846+00:00",
+      "completed_utc": "2026-10-03T09:55:17.028924+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--schedule-softint"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/schedule-softint.command.log": "f96024ed7585ef422c598f43d090d11437630b58d483d8cba3af38a62e5f1a84",
+        "bios/schedule-softint.log": "c5e9d0ecf99487674a8102f2feb44d57846b2fe380ba99f762be489534ce8629",
+        "bios/schedule-softint.metadata.json": "fbde8aea0e5af5633e32d654d43a69db1ccc3d520ef68cefaddef5ddae63d33a"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--stack",
+      "started_utc": "2026-10-03T09:55:17.030180+00:00",
+      "completed_utc": "2026-10-03T09:55:20.699354+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--stack"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/stack.command.log": "c450f33a2f4c8958ff97be801a134da545bea1f83be32196ffeb46da1a6bf9ca",
+        "bios/stack.log": "6ba0f5b757c258ff80bea68af6de1816584e32c023d19ff9b75b1306400094df",
+        "bios/stack.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--unsigned-conversion-overflow",
+      "started_utc": "2026-10-03T09:55:20.700443+00:00",
+      "completed_utc": "2026-10-03T09:55:24.627968+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--unsigned-conversion-overflow"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/unsigned-conversion-overflow.command.log": "685a46c653b9d6d2d8532e6cdf769c196d45d130fecceebe0ad76f4966668866",
+        "bios/unsigned-conversion-overflow.log": "415ebd5384ffe0604807ed8cebc46d285bf15a1179feb9228e3ca495277b5f68",
+        "bios/unsigned-conversion-overflow.metadata.json": "88c29828652bc4ccef81c184c2ee5256875498c27098229f255f76b40351a998"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--unsigned-kernel-trap",
+      "started_utc": "2026-10-03T09:55:24.629096+00:00",
+      "completed_utc": "2026-10-03T09:55:28.434890+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--unsigned-kernel-trap"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/unsigned-kernel-trap.command.log": "b05a670e729823d8a3d10b0f27dbaef193f2075927eb987e8397af47f785a05c",
+        "bios/unsigned-kernel-trap.log": "596e67dfa61765d73c451fab259983c51cd70214c5f7d0b05bb982f17679a508",
+        "bios/unsigned-kernel-trap.metadata.json": "9daa1a40aebaeb42f09a86f49e9dd066c5a7940d5fe944c8a0e7d1de3a7df7d6"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--unsigned-shift-count",
+      "started_utc": "2026-10-03T09:55:28.436130+00:00",
+      "completed_utc": "2026-10-03T09:55:32.271042+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--unsigned-shift-count"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/unsigned-shift-count.command.log": "5b69de7d2e63a2c8ab63b6ed0016f6bd0fbf6bd8ed0e020a4de58526e6cee57c",
+        "bios/unsigned-shift-count.log": "111b133ffbfc6dafd8740afc49f47260ac6b6879779a15fe4a09882dcbe0a8ff",
+        "bios/unsigned-shift-count.metadata.json": "c96976350566231b398aaab2439d85588240ef4840328baa421e4cc846ccb638"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--unsigned-valid",
+      "started_utc": "2026-10-03T09:55:32.272222+00:00",
+      "completed_utc": "2026-10-03T09:55:36.384773+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--unsigned-valid"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/unsigned-valid.command.log": "e1b66952fe78712cef46d05ad21c4c7390466ae82baa5cb369c33d65bebb2e3f",
+        "bios/unsigned-valid.log": "69f8aa5666b467f153e39f9aa0bd89efbd51b890c8cc763b13ccebea90fc1f15",
+        "bios/unsigned-valid.metadata.json": "b4b47ae45ab290ca43acf0375b63804099fb211551cd4cd00c388b9ca3348763"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--user-cli",
+      "started_utc": "2026-10-03T09:55:36.385997+00:00",
+      "completed_utc": "2026-10-03T09:55:40.336424+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--user-cli"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/user-cli.command.log": "326caffacb800cbca667c77a4fe1d99ac91993249b303bdb24cb6456a3099180",
+        "bios/user-cli.log": "6933a7380c2cdd60bff2c40529037daad54f5bf0172235dddb8263aadc426eac",
+        "bios/user-cli.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--user-code-write",
+      "started_utc": "2026-10-03T09:55:40.337638+00:00",
+      "completed_utc": "2026-10-03T09:55:44.467906+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--user-code-write"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/user-code-write.command.log": "a62ecbb44bb52833273769a6f21cf29e6fbbbf36af8ed7aea71bc68979ac17a1",
+        "bios/user-code-write.log": "1a1b94e41b05ad18a42751ea0971e57294c686ab9ffa809fa5aac3bcea3408ed",
+        "bios/user-code-write.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--user-io",
+      "started_utc": "2026-10-03T09:55:44.469057+00:00",
+      "completed_utc": "2026-10-03T09:55:48.764116+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--user-io"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/user-io.command.log": "3dbe5c22974b634df7335c355ad4dfd0e6b9649741a52fc0576b03209026134e",
+        "bios/user-io.log": "221f8716a931f3ca26d1da86ea01fc2c9e7bb59f9a3e55d3c10f7bb2d7acb7ab",
+        "bios/user-io.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--user-nx",
+      "started_utc": "2026-10-03T09:55:48.765244+00:00",
+      "completed_utc": "2026-10-03T09:55:52.914241+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--user-nx"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/user-nx.command.log": "d5344701d5a858b56c65eff86675094f5361c7830b07f42d3fbe50353239e6ab",
+        "bios/user-nx.log": "58a47de405fa85ecd7b84faac0793eab4db0d16cc032589d77035aa171259c24",
+        "bios/user-nx.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--user-read",
+      "started_utc": "2026-10-03T09:55:52.915472+00:00",
+      "completed_utc": "2026-10-03T09:55:56.898909+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--user-read"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/user-read.command.log": "34bd1c334c1e572757dbfbf500f8e4f95d4cacc1c952150040ef68628ebd289b",
+        "bios/user-read.log": "81587e58153577ac96e51d9c4b6df5169f571cf91471d37bf5d1f38577647cf5",
+        "bios/user-read.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--user-write",
+      "started_utc": "2026-10-03T09:55:56.900148+00:00",
+      "completed_utc": "2026-10-03T09:56:00.832217+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--user-write"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/user-write.command.log": "2f7c95890e2bd9a4c879a1e4fa5db7bdd851779b6a0aa149dc56d8ecebcb1666",
+        "bios/user-write.log": "7d4181a54cdbd7950dd395ea61ebb693b6a85eaaf38466d9cb1f38a86980da6d",
+        "bios/user-write.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "--wp",
+      "started_utc": "2026-10-03T09:56:00.833443+00:00",
+      "completed_utc": "2026-10-03T09:56:04.579428+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "--wp"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/wp.command.log": "1f2fbfbd556cc2b53f00104c9fd64498949efca833b02aa6cf161b63ba1a174f",
+        "bios/wp.log": "4fda772d7d19c1af2be7775dbb8e6e7927166a7472a76be0ca9b878bde5d6c0f",
+        "bios/wp.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "bios",
+      "mode": "normal",
+      "started_utc": "2026-10-03T09:56:04.580604+00:00",
+      "completed_utc": "2026-10-03T09:56:06.654850+00:00",
+      "command": [
+        "./scripts/kernel-smoke.sh",
+        "normal"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "bios/normal.command.log": "56b5e92987c7b8d30ea5aa948eab424c929b9b960c8755970f6862e0ab83542d",
+        "bios/normal.log": "801f096508d53e381fc4c101196db0ccb8a4915d6c0bce3620269eda70304806",
+        "bios/normal.metadata.json": "12189257fd74335fc83e88d2900575fee2961665021cee7e47b03b2d5d0a2c78"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "normal",
+      "started_utc": "2026-10-03T09:56:06.656450+00:00",
+      "completed_utc": "2026-10-03T09:56:10.015535+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "normal"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/normal.command.log": "7db54cc87708f8be014c2cad95aed7687d1ea13bb00cdc9f099aaf32c3fb777e",
+        "uefi/normal.log": "1e685f1cfd14f102b5ae935cd8cf2a9d8a0a8d5ed6e0b42d7a30266d76f10254"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "stale",
+      "started_utc": "2026-10-03T09:56:10.016734+00:00",
+      "completed_utc": "2026-10-03T09:56:14.957134+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "stale"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/stale.command.log": "4f3a5bca2d128e9743d11b1d0a2ffb44e42eef85650b91b37c8760d9dea127e5",
+        "uefi/stale.log": "0f82bc279ba5fa7e2231c3badbc0ffb43593b39061cfb45ff2ffd6430047195d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "stale-exhausted",
+      "started_utc": "2026-10-03T09:56:14.958614+00:00",
+      "completed_utc": "2026-10-03T09:56:20.029548+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "stale-exhausted"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/stale-exhausted.command.log": "cc08361ecda5608b4898fa545cac8fa9ec53921c35f2db7ce4831aeb0687cf84",
+        "uefi/stale-exhausted.log": "adf9f1c0862869ab32f4ef6b5ca7d2c629144a12d8f852a9749f529b2886d8a4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "bad-handoff",
+      "started_utc": "2026-10-03T09:56:20.031198+00:00",
+      "completed_utc": "2026-10-03T09:56:25.073732+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "bad-handoff"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/bad-handoff.command.log": "c5d9fbd92578fb419b5d1a4cad8170216f56976e9622ee1c5bc6dd9cb505281c",
+        "uefi/bad-handoff.log": "749ff0cb232f086337146802bde911132671134aea28952c6b931cfaa9267a8a"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "bad-map",
+      "started_utc": "2026-10-03T09:56:25.075005+00:00",
+      "completed_utc": "2026-10-03T09:56:30.119952+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "bad-map"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/bad-map.command.log": "a6f9571c2ab6664f58ce651c674f2c594e9fbb4c784b93ff3f0d4896ae5680df",
+        "uefi/bad-map.log": "c01d5c62b716534313283a80de57c2b0972e0442f9128489361d39b6f3ce15b6"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "bad-table",
+      "started_utc": "2026-10-03T09:56:30.121201+00:00",
+      "completed_utc": "2026-10-03T09:56:35.171270+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "bad-table"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/bad-table.command.log": "8bc9c163931840c5ce861b575ba795890b2d80903936b4fa30c875bd51aba471",
+        "uefi/bad-table.log": "4f0cd702e7502880923504a3105f7422fb231b3440fbb90620ed472db5294b3b"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "wp",
+      "started_utc": "2026-10-03T09:56:35.172628+00:00",
+      "completed_utc": "2026-10-03T09:56:40.341325+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "wp"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/wp.command.log": "b79367d7504cf91754d648774c4e7236da62c235aa95895dbccac03a6892121e",
+        "uefi/wp.log": "5aa14e4b162079d4e780572e77f1cb712772e116520a669f63ff06a0a53ff9c3"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "nx",
+      "started_utc": "2026-10-03T09:56:40.342943+00:00",
+      "completed_utc": "2026-10-03T09:56:45.851316+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "nx"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/nx.command.log": "a6cd01040a35e8b12a99a884c3cb629c86a0743224153e19b591fcb76d76e5a8",
+        "uefi/nx.log": "686d642dc6e70b97b974dd8ca6f8952f6276b8dabac827a55516744706f0196b"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi",
+      "started_utc": "2026-10-03T09:56:45.852924+00:00",
+      "completed_utc": "2026-10-03T09:56:51.309022+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi.command.log": "9617e8d591cb380b0ee1516ea20b3f4e5768539766a7f17f8dc95bf32ef5c307",
+        "uefi/acpi.log": "6b198157893b950086a3efc460645c1df6e4b91404bf99312cc427559910c413"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-two",
+      "started_utc": "2026-10-03T09:56:51.310368+00:00",
+      "completed_utc": "2026-10-03T09:56:56.615569+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-two"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-two.command.log": "ddd21e249adaa518ed7ccd55a3879d79e6458e00a10524e8f92cd1fffd07fbb6",
+        "uefi/acpi-two.log": "9372695b290557baa1b41dbee1eea0ee4d0e4a55f6d7ed3d2ec0ca389ed9a802"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-disabled",
+      "started_utc": "2026-10-03T09:56:56.616873+00:00",
+      "completed_utc": "2026-10-03T09:57:01.851448+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-disabled"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-disabled.command.log": "7faf0b4eeae6fe21328dbe18a88c792f8f0735b2fa519ab74619eee15583c1e8",
+        "uefi/acpi-disabled.log": "3a382607c2c8459523608976214599433077ec1400c9d3639c716791f5a00aa0"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-checksum",
+      "started_utc": "2026-10-03T09:57:01.853658+00:00",
+      "completed_utc": "2026-10-03T09:57:07.255083+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-checksum"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-checksum.command.log": "bcf0c495af32d10a32438a5d74738297a448eaa7851187195ada846d569b5dc4",
+        "uefi/acpi-checksum.log": "e17d54889241fb88899e6a08651033429380201a0d4956d8c9e903ffcd10c063"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-bad-entry",
+      "started_utc": "2026-10-03T09:57:07.256506+00:00",
+      "completed_utc": "2026-10-03T09:57:12.858892+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-bad-entry"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-bad-entry.command.log": "c886d743263eb2a2ffd72ec183696db80184783a92e1d1a7307e9de908563884",
+        "uefi/acpi-bad-entry.log": "e17d54889241fb88899e6a08651033429380201a0d4956d8c9e903ffcd10c063"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-duplicate",
+      "started_utc": "2026-10-03T09:57:12.860413+00:00",
+      "completed_utc": "2026-10-03T09:57:18.171235+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-duplicate"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-duplicate.command.log": "3159c297d82f717ab396a67484b20810221dbb22a840c5b5f5f951d0e3b0340c",
+        "uefi/acpi-duplicate.log": "e17d54889241fb88899e6a08651033429380201a0d4956d8c9e903ffcd10c063"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-bad-source",
+      "started_utc": "2026-10-03T09:57:18.172756+00:00",
+      "completed_utc": "2026-10-03T09:57:23.702186+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-bad-source"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-bad-source.command.log": "6537eb98a2b55ee16a4b53b0afac72021b8a3a7ce0eaa2720405e2523c02ce14",
+        "uefi/acpi-bad-source.log": "e17d54889241fb88899e6a08651033429380201a0d4956d8c9e903ffcd10c063"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-changed-header",
+      "started_utc": "2026-10-03T09:57:23.703912+00:00",
+      "completed_utc": "2026-10-03T09:57:29.093100+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-changed-header"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-changed-header.command.log": "73825db1d28fc77be36653f987f6c47b4fbaccfd9cd8594178a978532042d260",
+        "uefi/acpi-changed-header.log": "e17d54889241fb88899e6a08651033429380201a0d4956d8c9e903ffcd10c063"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-duplicate-root",
+      "started_utc": "2026-10-03T09:57:29.095191+00:00",
+      "completed_utc": "2026-10-03T09:57:34.657924+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-duplicate-root"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-duplicate-root.command.log": "0477403a5bef3c0b5388251920150b67a08a47b05c9eadfe2cd4b36a518edc59",
+        "uefi/acpi-duplicate-root.log": "4f4141a8923d79e526e18d2537ce5c744582757376e524fb026ad153ec0985ba"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-write",
+      "started_utc": "2026-10-03T09:57:34.659905+00:00",
+      "completed_utc": "2026-10-03T09:57:39.649946+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-write"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-write.command.log": "ca3227bc895ec024b224db2ede67c11d1e5d880908db8151ae3a1416af6810f7",
+        "uefi/acpi-write.log": "9f25fb8e6c865bca19a7923918121d0c8284069e2ab89d7f312ddcf97cb97cf0"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-revoked",
+      "started_utc": "2026-10-03T09:57:39.651471+00:00",
+      "completed_utc": "2026-10-03T09:57:44.729398+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "acpi-revoked"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/acpi-revoked.command.log": "f0947336e61775f886baa169d33e73e28e152ab4258214be9d29d77b295a225c",
+        "uefi/acpi-revoked.log": "64a6d6ebafc2498b5ceeced129fb22cce15ada957328554a65649c05781c77e6"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci",
+      "started_utc": "2026-10-03T09:57:44.730775+00:00",
+      "completed_utc": "2026-10-03T09:57:50.734969+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci.command.log": "ac5f5e8d6ec04d493647d5caaa91b4820fe44450c10aab5be33440ad4100860a",
+        "uefi/pci.log": "ad1b2a849706b84f81b7106dced4fae2907bf963ca14158453d67a22187e054c"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-devices",
+      "started_utc": "2026-10-03T09:57:50.736484+00:00",
+      "completed_utc": "2026-10-03T09:57:57.013562+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci-devices"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci-devices.command.log": "64defec0afddc812772255106be0e627bf781e73d5170ce0bee99e2fe57d192e",
+        "uefi/pci-devices.log": "d52f5dc401e667460d32d0e176c19553a825824789bf614a8a668e8a4b7a61f6"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-bridge",
+      "started_utc": "2026-10-03T09:57:57.015151+00:00",
+      "completed_utc": "2026-10-03T09:58:03.404705+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci-bridge"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci-bridge.command.log": "f2c575cc98b47eb12719a810a5453522488205a3d2b55ed5b0a9455d538ca383",
+        "uefi/pci-bridge.log": "0d7f6ac64c1d3fd6ec56819a0e345b488d5cc9e2b6a1f909f69f31538ef96d8b"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-checksum",
+      "started_utc": "2026-10-03T09:58:03.406514+00:00",
+      "completed_utc": "2026-10-03T09:58:09.507649+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci-checksum"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci-checksum.command.log": "dbda55f77b62afb93d51687ee7027786f53350b380e607719c1888e54562354c",
+        "uefi/pci-checksum.log": "c1668f66deade420791b67f39c84b6722ada63b888a34c43d2df07901822359a"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-reserved",
+      "started_utc": "2026-10-03T09:58:09.509059+00:00",
+      "completed_utc": "2026-10-03T09:58:15.243186+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci-reserved"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci-reserved.command.log": "3555d31780006b664835a7433381c494d292242cbedb7cff4fdea0aa47dfb972",
+        "uefi/pci-reserved.log": "c1668f66deade420791b67f39c84b6722ada63b888a34c43d2df07901822359a"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-overlap",
+      "started_utc": "2026-10-03T09:58:15.244577+00:00",
+      "completed_utc": "2026-10-03T09:58:20.894848+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci-overlap"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci-overlap.command.log": "866c43fd77278bebbbf90d9a97cd500a09e77a40d901a86cd8b3f0c622d6c55f",
+        "uefi/pci-overlap.log": "c1668f66deade420791b67f39c84b6722ada63b888a34c43d2df07901822359a"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-range",
+      "started_utc": "2026-10-03T09:58:20.896679+00:00",
+      "completed_utc": "2026-10-03T09:58:26.372848+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci-range"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci-range.command.log": "9e71f21974ab463bb316bbea3d038788084fdd07d32c8a42a12d1e5b476dfbab",
+        "uefi/pci-range.log": "c1668f66deade420791b67f39c84b6722ada63b888a34c43d2df07901822359a"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-cycle",
+      "started_utc": "2026-10-03T09:58:26.374348+00:00",
+      "completed_utc": "2026-10-03T09:58:32.393078+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci-cycle"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci-cycle.command.log": "99d3babf05133bac3dbbc42235133c78cd6dec3746c87608ccc85249b623e07a",
+        "uefi/pci-cycle.log": "041fa03f3daaf2921d9bd582f72c2096c3979dcbc2f49de48ce3ac82824b73cc"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-write",
+      "started_utc": "2026-10-03T09:58:32.395189+00:00",
+      "completed_utc": "2026-10-03T09:58:38.157390+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci-write"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci-write.command.log": "135c1bd1c71a81459a39d5f43cf8f93a433494844c3d6777053eeb4e623b8cb7",
+        "uefi/pci-write.log": "7ef90b4a3bc35d8de96bcd481bed22a4819ed3caa04667c97960f3ee4767307f"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-revoked",
+      "started_utc": "2026-10-03T09:58:38.159411+00:00",
+      "completed_utc": "2026-10-03T09:58:43.504474+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "pci-revoked"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/pci-revoked.command.log": "46005d24e3a8b3e5103bbbcb37c4e85da993e73bb6523ea0893295a53e0cd848",
+        "uefi/pci-revoked.log": "3b22a16cd5326daf61e1deafcea5879cde18e716e2df6f4dadbe8008a7c4d133"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime",
+      "started_utc": "2026-10-03T09:58:43.505916+00:00",
+      "completed_utc": "2026-10-03T09:58:50.075453+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime.command.log": "f2fdccbf0684eac129924d77b180397a66f4f1c7aafe23fd642d34388ad77efc",
+        "uefi/runtime.log": "d4855a0e7b7789900db85b0231654dee541ff7c2e17a0936f50ca15a9f930d6e",
+        "uefi/runtime.metadata.json": "9a5a70221ea3a3666a5a4cd0868c9e3f4098804ad3305dc36a2f427e9df2c51f"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-code",
+      "started_utc": "2026-10-03T09:58:50.076903+00:00",
+      "completed_utc": "2026-10-03T09:58:57.025854+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-code"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-code.command.log": "62477bc3a8b74dd8e298692ccd9cbf3bf57382848014023b6c8f5acf42ceb872",
+        "uefi/runtime-code.log": "74054f3dd237d5f1eead18e8d2cde8eb5cec2d5843353257343d0ff2fcab787e",
+        "uefi/runtime-code.metadata.json": "08d7ee349dd1fef0620571da385c6ca2d43fe7785da9c2b2b0db6087e84598b2"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-stack",
+      "started_utc": "2026-10-03T09:58:57.027527+00:00",
+      "completed_utc": "2026-10-03T09:59:03.852453+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-stack"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-stack.command.log": "9e0940b057d459e649ded2bd28e4357ead38074e3b3d24fd8db0d78077377ffc",
+        "uefi/runtime-stack.log": "ee3320a64159dbb100d48b5cb9d8b10fc2c83b9e6595448ea8ad31d161252469",
+        "uefi/runtime-stack.metadata.json": "09b439028dc7441926443818e04f07a65ff50d9f5266c4d5e203ad97b8a752d4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-kernel",
+      "started_utc": "2026-10-03T09:59:03.854061+00:00",
+      "completed_utc": "2026-10-03T09:59:10.736284+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-kernel"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-kernel.command.log": "59da9afff62cc45918f3433c723ca5fefff4aad252c7f75569eeddf80bd73822",
+        "uefi/runtime-kernel.log": "6e887da8317c6a2214203e42e08b978f45d1a467edb9fc94d469d984ddace441",
+        "uefi/runtime-kernel.metadata.json": "ed26306fdd0874808e116b197bcf6cfbfd084ffe58626dea4215ccc9c3012b56"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-window",
+      "started_utc": "2026-10-03T09:59:10.737975+00:00",
+      "completed_utc": "2026-10-03T09:59:17.639684+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-window"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-window.command.log": "fac2256a872dc6629a07cbbc9273ca0a64511548194dad221012984cbacdc010",
+        "uefi/runtime-window.log": "3aa0b7176ec3225b2a7d01158f9c53da8310e6d01cd34bb059ab0a96fab9d460",
+        "uefi/runtime-window.metadata.json": "09b439028dc7441926443818e04f07a65ff50d9f5266c4d5e203ad97b8a752d4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-root",
+      "started_utc": "2026-10-03T09:59:17.641223+00:00",
+      "completed_utc": "2026-10-03T09:59:24.397436+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-root"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-root.command.log": "0432c0a532e27da4cebcfd9a7539827e526919b088560a8b631e454669c037f2",
+        "uefi/runtime-root.log": "79637b75fe2fad3bf5ff3055727e71c2b4378574e64b4c8499bf0f0cbd2483bb",
+        "uefi/runtime-root.metadata.json": "9a5a70221ea3a3666a5a4cd0868c9e3f4098804ad3305dc36a2f427e9df2c51f"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-kernel-trap",
+      "started_utc": "2026-10-03T09:59:24.398957+00:00",
+      "completed_utc": "2026-10-03T09:59:30.928943+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-kernel-trap"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-kernel-trap.command.log": "5742d68220623947ed5aaa9c5a40cf4fa6d02e4fa73c20f615933c6d36d8c875",
+        "uefi/runtime-kernel-trap.log": "47c08ad2020285f03aa2c855b54d1bfe1be524c09c204a41d6a0536154c3aa7f",
+        "uefi/runtime-kernel-trap.metadata.json": "9a5a70221ea3a3666a5a4cd0868c9e3f4098804ad3305dc36a2f427e9df2c51f"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-entry-stack",
+      "started_utc": "2026-10-03T09:59:30.930431+00:00",
+      "completed_utc": "2026-10-03T09:59:37.500423+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-entry-stack"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-entry-stack.command.log": "ea6281de858f4b61073bbb1a5cd5059f6bde637f8a068054fb51c088c9b3fa6d",
+        "uefi/runtime-entry-stack.log": "5fed4c39857d131025fb290cef23d23667646bde4d599f3251fb6257f28e804d",
+        "uefi/runtime-entry-stack.metadata.json": "9a5a70221ea3a3666a5a4cd0868c9e3f4098804ad3305dc36a2f427e9df2c51f"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-write",
+      "started_utc": "2026-10-03T09:59:37.501935+00:00",
+      "completed_utc": "2026-10-03T09:59:44.144951+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-write"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-write.command.log": "a1b0096c4086a296102ead857a37a418bddd2bcc81f5afea5e969d0304222d56",
+        "uefi/runtime-write.log": "f84d1621ae0640ebcf389cc8da4b27f35b42de2a34ea6863362f2d5f97074b36",
+        "uefi/runtime-write.metadata.json": "5d659162709428e952e8e5b0d417de3415b325bc338fae947f2f248b8baa6478"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-nx",
+      "started_utc": "2026-10-03T09:59:44.146498+00:00",
+      "completed_utc": "2026-10-03T09:59:51.318243+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-nx"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-nx.command.log": "03ab2d1860e3ce2a32653f8c8e72677aeecc6b05aa20b2a0046683e1d18ee7ef",
+        "uefi/runtime-nx.log": "9b65d9b4ac88688262220fac3f9bbdee3be006033cf82a23cdb0d32a856efbe1",
+        "uefi/runtime-nx.metadata.json": "08d7ee349dd1fef0620571da385c6ca2d43fe7785da9c2b2b0db6087e84598b2"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-return",
+      "started_utc": "2026-10-03T09:59:51.319878+00:00",
+      "completed_utc": "2026-10-03T09:59:58.357368+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-return"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-return.command.log": "9f8d0a50db1aa7176bf7f552173577fd910883107a266810490e655349294055",
+        "uefi/runtime-return.log": "491389ff740760178c8213fa0ac268989420e5d21c6ff2b8f9da080793be46d7",
+        "uefi/runtime-return.metadata.json": "b010141ecd3ee2bcce2088cb2372dd29b47c571c743e8e7010fddfe7415e8e48"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-unknown",
+      "started_utc": "2026-10-03T09:59:58.359188+00:00",
+      "completed_utc": "2026-10-03T10:00:05.304831+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-unknown"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-unknown.command.log": "5f131875f988baf70894989245b0b2dbab4b6482b25ccff4f3338a5766453a89",
+        "uefi/runtime-unknown.log": "bba3b9e8f23393f3e1ee29b771e3b1fb455e05a5a8c74947bcc92432908f8f68",
+        "uefi/runtime-unknown.metadata.json": "cd9bfdad6e8c8dfa0584d5d524981c5f18d3b5dce1c323bf8ad0dfa3d9fc38b1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-syscall",
+      "started_utc": "2026-10-03T10:00:05.306505+00:00",
+      "completed_utc": "2026-10-03T10:00:12.257649+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-syscall"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-syscall.command.log": "3deff4ef91015f9143d7b317d2b61a96c2f4bac6c92d30333994a3f0969ac50c",
+        "uefi/runtime-syscall.log": "bba3b9e8f23393f3e1ee29b771e3b1fb455e05a5a8c74947bcc92432908f8f68",
+        "uefi/runtime-syscall.metadata.json": "cd9bfdad6e8c8dfa0584d5d524981c5f18d3b5dce1c323bf8ad0dfa3d9fc38b1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-sysenter",
+      "started_utc": "2026-10-03T10:00:12.259380+00:00",
+      "completed_utc": "2026-10-03T10:00:18.576556+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-sysenter"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/runtime-sysenter.command.log": "8bc6d95b44e9472b987cbdcf5dcf7243878760cc81d88faf86cc8cd33bcd4f95",
+        "uefi/runtime-sysenter.log": "27be107fe9acad60210401ea822f1c0a352807be4bacb4d9dca399abc45d91b9",
+        "uefi/runtime-sysenter.metadata.json": "cd9bfdad6e8c8dfa0584d5d524981c5f18d3b5dce1c323bf8ad0dfa3d9fc38b1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc",
+      "started_utc": "2026-10-03T10:00:18.578078+00:00",
+      "completed_utc": "2026-10-03T10:00:25.389059+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc.command.log": "1d78503daa24867d6188418a77aaffc4046af98d58a4a00cb9512f630866017b",
+        "uefi/ipc.log": "a41c9c41d24119a8d4e12ce9717b6ebe6c5cc2a045626a1d39af2b52f8d990cd",
+        "uefi/ipc.metadata.json": "476c3932f2abad1a131889c7c7e58a9b3761e33b0e640cd391fa835c5c36789d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-fault",
+      "started_utc": "2026-10-03T10:00:25.390641+00:00",
+      "completed_utc": "2026-10-03T10:00:32.203530+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-fault"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-fault.command.log": "981195eb348b3b3c211355b04b785fc754e85c453f1039a4411543bc1cb69053",
+        "uefi/ipc-fault.log": "cd3bfec32a1469dd35e377b399b17f8d934fc4be275fa918031dec661da5ba4a",
+        "uefi/ipc-fault.metadata.json": "476c3932f2abad1a131889c7c7e58a9b3761e33b0e640cd391fa835c5c36789d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-cancel",
+      "started_utc": "2026-10-03T10:00:32.205680+00:00",
+      "completed_utc": "2026-10-03T10:00:38.944102+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-cancel"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-cancel.command.log": "75dd15c0e0652ac2e079c32086b7cb2d47eda1311effcafb944311ae118c2aa0",
+        "uefi/ipc-cancel.log": "579c559cf50010aac08b0845a855c7bd117703fadd1059657163f761aa47237c",
+        "uefi/ipc-cancel.metadata.json": "476c3932f2abad1a131889c7c7e58a9b3761e33b0e640cd391fa835c5c36789d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-owner",
+      "started_utc": "2026-10-03T10:00:38.945676+00:00",
+      "completed_utc": "2026-10-03T10:00:45.852590+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-owner"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-owner.command.log": "1e0c0da6990aecbd3aeb70bd6be52e51aa5bbff2ffdc4939d6b2267b63e2f5d0",
+        "uefi/ipc-owner.log": "1a565a2cd797001e46278febf5c6a17164af9daf9362d65eca27220159820d68",
+        "uefi/ipc-owner.metadata.json": "317e6b64a937ab5c886cc60ad36f6f7cf3f493ae423908fac85e3e3e0c30a252"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-stale",
+      "started_utc": "2026-10-03T10:00:45.854227+00:00",
+      "completed_utc": "2026-10-03T10:00:52.881792+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-stale"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-stale.command.log": "40e62ed9c1906dade0c7e9650ac73db2f4eaa62d2b3fe464025b6da12ddcc424",
+        "uefi/ipc-stale.log": "a02461c952d7bc2197347a4707ae99e97b609f4be4a6620920e3c85535abd69a",
+        "uefi/ipc-stale.metadata.json": "476c3932f2abad1a131889c7c7e58a9b3761e33b0e640cd391fa835c5c36789d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-version",
+      "started_utc": "2026-10-03T10:00:52.883411+00:00",
+      "completed_utc": "2026-10-03T10:00:59.666470+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-version"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-version.command.log": "56e3e9fc74d06c52811a6683e094c0e62d32ee6bf30f15ee552f3f9c5ee7b26e",
+        "uefi/ipc-version.log": "8d515225e53e63e4713a8714a651d2899c3597fb0a93b4370a2a783fd360fd9e",
+        "uefi/ipc-version.metadata.json": "9d1739699b13efb3ac73ec32e19ccfacf5af6e58714e2016707b39c0f0040c93"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-phase",
+      "started_utc": "2026-10-03T10:00:59.668082+00:00",
+      "completed_utc": "2026-10-03T10:01:06.496583+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-phase"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-phase.command.log": "d80f6293b352c47d303cf272c3a69e389a8fe7297e4375435faccf58492242d6",
+        "uefi/ipc-phase.log": "5a19876d4ce02bf683ebbc5db1a482fbe2c88768280a9dd27f338dbddd080e67",
+        "uefi/ipc-phase.metadata.json": "9d1739699b13efb3ac73ec32e19ccfacf5af6e58714e2016707b39c0f0040c93"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-transaction",
+      "started_utc": "2026-10-03T10:01:06.498191+00:00",
+      "completed_utc": "2026-10-03T10:01:13.319826+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-transaction"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-transaction.command.log": "ed6f799a5820ba564de8c6f2d7c1534ecf56eaa60f8b4e13214f008b213f951b",
+        "uefi/ipc-transaction.log": "e8f3136093121e8bc51f9dffb524e43d73b4fa8f52730089dd5c4c87f9e7740f",
+        "uefi/ipc-transaction.metadata.json": "0f9589143515bfcbf37f9708070861974d8b03111726c50a91f7589a3a547a8c"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-site",
+      "started_utc": "2026-10-03T10:01:13.321588+00:00",
+      "completed_utc": "2026-10-03T10:01:20.251305+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-site"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-site.command.log": "163572bc76b43ea3dda1e04b3806a4d547b676ab98527b99bf55c17fcd7c227c",
+        "uefi/ipc-site.log": "4b8153f4593f165ce6823a26b09d225ac850ed95129709a7ad240d8e9a45e59f",
+        "uefi/ipc-site.metadata.json": "89d1d7058f08d5744fa362198a4f6d7d786c7d5b256c3dd6876a1ad9b3871b06"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-unknown",
+      "started_utc": "2026-10-03T10:01:20.252880+00:00",
+      "completed_utc": "2026-10-03T10:01:27.078666+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-unknown"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-unknown.command.log": "01040f768c7dc78dce3ed58b6b4f1231ffb8af8944d37fd083957d42f5ac471c",
+        "uefi/ipc-unknown.log": "6ae528bdb10b94a9df0110a282fa43387042c09c32e25dc0528bd1d95edc27f8",
+        "uefi/ipc-unknown.metadata.json": "7c4777d3989100beef7e6922c07bb4fbc22ca13b0671b2ce60f8709995221830"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-root",
+      "started_utc": "2026-10-03T10:01:27.080323+00:00",
+      "completed_utc": "2026-10-03T10:01:34.041245+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-root"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-root.command.log": "2989eb0a30363b2f8bf6acc891d995fb61bd5d821f311b729c777ea2639009d8",
+        "uefi/ipc-root.log": "dbd9bfb88f45ed729193814c1481fda69389f89d1c887f591b1414d4492807f3",
+        "uefi/ipc-root.metadata.json": "476c3932f2abad1a131889c7c7e58a9b3761e33b0e640cd391fa835c5c36789d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-kernel-trap",
+      "started_utc": "2026-10-03T10:01:34.042952+00:00",
+      "completed_utc": "2026-10-03T10:01:41.003867+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-kernel-trap"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-kernel-trap.command.log": "a6db2aa7b09b1916a241e1f9da3eef01f6f3436edd1fe0f51f6423442d04a75b",
+        "uefi/ipc-kernel-trap.log": "c04db6f905f256d804c5c59da33ef69eb3e164210582f036e4068cadee40e7a6",
+        "uefi/ipc-kernel-trap.metadata.json": "476c3932f2abad1a131889c7c7e58a9b3761e33b0e640cd391fa835c5c36789d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-duplicate",
+      "started_utc": "2026-10-03T10:01:41.006161+00:00",
+      "completed_utc": "2026-10-03T10:01:48.148166+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-duplicate"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-duplicate.command.log": "dc7881d40d84890b9c1d7a8ac0db10c1a46512be7ff6dac7899c5e2b82e2f9ee",
+        "uefi/ipc-duplicate.log": "f51d189b8e700e8df0b0a3391f1a42072f25664ffcb7ef303e1e5f4593e3cc6c",
+        "uefi/ipc-duplicate.metadata.json": "476c3932f2abad1a131889c7c7e58a9b3761e33b0e640cd391fa835c5c36789d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-late",
+      "started_utc": "2026-10-03T10:01:48.150177+00:00",
+      "completed_utc": "2026-10-03T10:01:54.955105+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-late"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-late.command.log": "b82455aca33319851e9def71383db6a6840da184edf2bf8bd568a80955668425",
+        "uefi/ipc-late.log": "198c6b2f5d0ffca78c1b5a411de79d131f6d6a8f3d5da8b4ab748ae275b35b0f",
+        "uefi/ipc-late.metadata.json": "476c3932f2abad1a131889c7c7e58a9b3761e33b0e640cd391fa835c5c36789d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-exhausted",
+      "started_utc": "2026-10-03T10:01:54.956907+00:00",
+      "completed_utc": "2026-10-03T10:02:01.834927+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "ipc-exhausted"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/ipc-exhausted.command.log": "5dc8bf13dbbb3642476b38051a40b9f604cc25a9482bdfa6ca75ea0104ac3b00",
+        "uefi/ipc-exhausted.log": "a02461c952d7bc2197347a4707ae99e97b609f4be4a6620920e3c85535abd69a",
+        "uefi/ipc-exhausted.metadata.json": "476c3932f2abad1a131889c7c7e58a9b3761e33b0e640cd391fa835c5c36789d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget",
+      "started_utc": "2026-10-03T10:02:01.837107+00:00",
+      "completed_utc": "2026-10-03T10:02:09.632480+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget.command.log": "45d7d7662751e4b7b0d5770363f9fa1907c07c02a136374ee6885b1ee8ae8ce3",
+        "uefi/budget.log": "00583bf8d4f26da833cfa730585a3b829588ba8f2b36e2538f7f72083cb7b645",
+        "uefi/budget.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-fault",
+      "started_utc": "2026-10-03T10:02:09.634231+00:00",
+      "completed_utc": "2026-10-03T10:02:17.252776+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-fault"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-fault.command.log": "d6868c98a64128eac1df38bcd7112e577e635f55bd33bacd24d4a7a9c408da8c",
+        "uefi/budget-fault.log": "7badd56b90334cba455480f7004ac58a4ef058af15b6fd027fad699eb791dfaf",
+        "uefi/budget-fault.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-context",
+      "started_utc": "2026-10-03T10:02:17.254792+00:00",
+      "completed_utc": "2026-10-03T10:02:24.724100+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-context"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-context.command.log": "0b2520bab19a270fb1862060b57df8892b41b90e360c368785a9e42d4312056b",
+        "uefi/budget-context.log": "3d7a95f54f4b9e400fb6fd777906edba515ea8da74b9c6612eb6b7aa8944e65d",
+        "uefi/budget-context.metadata.json": "508f7b671ac75405a9a1860bd66d7a2024b0431bf23f3c358ae0cc6891568b2c"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-pending",
+      "started_utc": "2026-10-03T10:02:24.726251+00:00",
+      "completed_utc": "2026-10-03T10:02:32.232463+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-pending"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-pending.command.log": "e5f445cedc226cafd7a4d7cca37e8cdb351d028554592cb43d63e96ad0e0222e",
+        "uefi/budget-pending.log": "d6175055d355cab233e5ff00fa9860f0cb5a9fd6eb2871569d0a79b112805919",
+        "uefi/budget-pending.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-noapic",
+      "started_utc": "2026-10-03T10:02:32.234158+00:00",
+      "completed_utc": "2026-10-03T10:02:38.967382+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-noapic"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-noapic.command.log": "cab3aa6ebcae7c55dbd42650976df6c9bea6273b082a54da375104d4b61de057",
+        "uefi/budget-noapic.log": "af4442512d6f26eeddb3f4e3a31a57f2eed3fdb11606d8042beea26bba273b42",
+        "uefi/budget-noapic.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-smp",
+      "started_utc": "2026-10-03T10:02:38.969410+00:00",
+      "completed_utc": "2026-10-03T10:02:46.634335+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-smp"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-smp.command.log": "99b60ad9d7aa5fedcd36359b9a3b7e6b6a0601500cdabdf8ac2971a328b9aea0",
+        "uefi/budget-smp.log": "f00ad74e1b7c59fd34d8fefc1497b4304090886ddffbadb9e76670b4453f4088",
+        "uefi/budget-smp.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-discovery",
+      "started_utc": "2026-10-03T10:02:46.636146+00:00",
+      "completed_utc": "2026-10-03T10:02:54.159633+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-discovery"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-discovery.command.log": "7f9aee7fc08269a9611798b8733a4f8e3a50425bc4950578a0e72fa0becd2094",
+        "uefi/budget-discovery.log": "af4442512d6f26eeddb3f4e3a31a57f2eed3fdb11606d8042beea26bba273b42",
+        "uefi/budget-discovery.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-cache",
+      "started_utc": "2026-10-03T10:02:54.161356+00:00",
+      "completed_utc": "2026-10-03T10:03:01.819362+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-cache"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-cache.command.log": "fb5f0e21e48aa6ab7669cce5bf7dfe70996a2a6f744b9e406c86e0e7c6ab4a89",
+        "uefi/budget-cache.log": "af4442512d6f26eeddb3f4e3a31a57f2eed3fdb11606d8042beea26bba273b42",
+        "uefi/budget-cache.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-alias",
+      "started_utc": "2026-10-03T10:03:01.821088+00:00",
+      "completed_utc": "2026-10-03T10:03:09.508199+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-alias"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-alias.command.log": "a8f28edd68aba02c12189ce839a33b90322dbd928439ec56c87616194fd3ca39",
+        "uefi/budget-alias.log": "19f6577342ff46cada95eddf6599142a8657537577b3f949bef4b321ace86130",
+        "uefi/budget-alias.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-forged",
+      "started_utc": "2026-10-03T10:03:09.510048+00:00",
+      "completed_utc": "2026-10-03T10:03:17.233118+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-forged"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-forged.command.log": "89e0f5f98a86699763000f910d3a2f9e77130d4792ac3746bae6597606ed6bef",
+        "uefi/budget-forged.log": "7b43e31c69e6f01ac14751f230d5c10ae1a86553b0860dc764abef1455680beb",
+        "uefi/budget-forged.metadata.json": "2f18b167b85e96f3c3b924ea742d348473e1ab3b140773c1ca2947f24b80366a"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-root",
+      "started_utc": "2026-10-03T10:03:17.234965+00:00",
+      "completed_utc": "2026-10-03T10:03:24.894070+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-root"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-root.command.log": "a40d004c56599965bc8bc0387819e876ae185224feff55c9a8515c6992e06742",
+        "uefi/budget-root.log": "c6be35e3e677dc2ce2a8afcddb576ba860d8dd55e8db50949b6735dfb7d588cc",
+        "uefi/budget-root.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-mmio",
+      "started_utc": "2026-10-03T10:03:24.895951+00:00",
+      "completed_utc": "2026-10-03T10:03:32.671585+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-mmio"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-mmio.command.log": "2f22a63b995903fb55fd1aced765d77958220e3f1a5eb58a4d439ea16cd5ffa2",
+        "uefi/budget-mmio.log": "10f62b2dd6a1b1ecc6a2d75ed9ac4171cef1d500e5cc09d222cf67a69b7cc973",
+        "uefi/budget-mmio.metadata.json": "723f85379c402bb8ceb41ac60917ad13c39567b76abc316f073e96e6e1edb005"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-softint",
+      "started_utc": "2026-10-03T10:03:32.673468+00:00",
+      "completed_utc": "2026-10-03T10:03:40.297546+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-softint"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-softint.command.log": "c40ac07857a577c326c1c5a6fb4875d6c37e6faa4a496952b91c83a28ab2e935",
+        "uefi/budget-softint.log": "4b355214f51af3171605e751c965309fa49f2c96a9953ae24723d111a54b0dad",
+        "uefi/budget-softint.metadata.json": "2613f3ab3e11168c5c79bc3aa81c2671f7e6ec53f10bec3f021e0968a94685e2"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-fpu",
+      "started_utc": "2026-10-03T10:03:40.299380+00:00",
+      "completed_utc": "2026-10-03T10:03:47.578470+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-fpu"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-fpu.command.log": "3ccd08292fe88b10ed680aed70b360a35933d415a396fe1063e70904979d0587",
+        "uefi/budget-fpu.log": "28c280b99525d5e06413aa12e7256c6ba364b35b9a1979cc4349873ba0f7b4fd",
+        "uefi/budget-fpu.metadata.json": "2613f3ab3e11168c5c79bc3aa81c2671f7e6ec53f10bec3f021e0968a94685e2"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-epoch",
+      "started_utc": "2026-10-03T10:03:47.580354+00:00",
+      "completed_utc": "2026-10-03T10:03:55.021935+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "budget-epoch"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/budget-epoch.command.log": "0ebe767eddccf1a950bacde7ad5efdeec489bcb65952818722dc1444e12a3e76",
+        "uefi/budget-epoch.log": "252df6b650e509e75c18d7ca3516f8deee3f432766f028f51f85255d0289a0a4",
+        "uefi/budget-epoch.metadata.json": "db2c59c129447a227df80fc05f44bda9ad28f1d702106490019ef392fe0a8f2d"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch",
+      "started_utc": "2026-10-03T10:03:55.023783+00:00",
+      "completed_utc": "2026-10-03T10:04:02.726552+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch.command.log": "6a8e4706c8aa8323b3f2955d902db3bb291dc042efdf56178ef0d578af2537e4",
+        "uefi/dispatch.log": "35cdb6caa377eaff3e597537e1da3b9382be64da1b6beaddaf964c6a3194c26d",
+        "uefi/dispatch.metadata.json": "1d36a4e6d5f7ad3b63c025be1f06c3455e8cdc70cd2de51e4789970daaae24f4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-budget",
+      "started_utc": "2026-10-03T10:04:02.728526+00:00",
+      "completed_utc": "2026-10-03T10:04:10.548892+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-budget"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-budget.command.log": "d68e8320518f8ffa06dff448c7a4f146980d4e27fa6e803804beb66d5feb9294",
+        "uefi/dispatch-budget.log": "02039fe8416ea1a54c3fb8b4c43b29e1431b1c10e200ba147176d19adc3735f9",
+        "uefi/dispatch-budget.metadata.json": "598b79acc25f3e867236e34d202f4cf1d2f4e19787947b1e862c11cc265e4822"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-fault",
+      "started_utc": "2026-10-03T10:04:10.550824+00:00",
+      "completed_utc": "2026-10-03T10:04:18.346850+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-fault"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-fault.command.log": "21326f9eb3d47a02b512c65e3659b7f107bf09e5882c09243fcf2076ffe86779",
+        "uefi/dispatch-fault.log": "a783967cf82007cb95d8fd7cd297a9f7b12f0db789e66a19a5aa0a06fe12605b",
+        "uefi/dispatch-fault.metadata.json": "598b79acc25f3e867236e34d202f4cf1d2f4e19787947b1e862c11cc265e4822"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-mixed",
+      "started_utc": "2026-10-03T10:04:18.348849+00:00",
+      "completed_utc": "2026-10-03T10:04:26.313036+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-mixed"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-mixed.command.log": "e600fa88978fd894fb79654165df522af65ce4c3205074f1bdd811ec8146b2c3",
+        "uefi/dispatch-mixed.log": "5b44deae4c70ba500f6c45289346c0c228498770a8720eb6b3dd80b3431e3bd5",
+        "uefi/dispatch-mixed.metadata.json": "598b79acc25f3e867236e34d202f4cf1d2f4e19787947b1e862c11cc265e4822"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-pending",
+      "started_utc": "2026-10-03T10:04:26.314875+00:00",
+      "completed_utc": "2026-10-03T10:04:34.166803+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-pending"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-pending.command.log": "187a992fd76bf88528940b80f982e271c6cd102724e84a6c371fc398853b6545",
+        "uefi/dispatch-pending.log": "35b41242f066d30ed6983101b96d96cb0d0e91ba341aefa9a7a233c4e713fe05",
+        "uefi/dispatch-pending.metadata.json": "1d36a4e6d5f7ad3b63c025be1f06c3455e8cdc70cd2de51e4789970daaae24f4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-cross-reply",
+      "started_utc": "2026-10-03T10:04:34.168637+00:00",
+      "completed_utc": "2026-10-03T10:04:41.885388+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-cross-reply"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-cross-reply.command.log": "78a0c726ad34585ba78afe44fe87172da8611e22a13e6075486a08afbb9bb48c",
+        "uefi/dispatch-cross-reply.log": "6c864cd73213bbc5119b3d75f0e11915d34042af383150745f2c258ce8e6cfe2",
+        "uefi/dispatch-cross-reply.metadata.json": "1d36a4e6d5f7ad3b63c025be1f06c3455e8cdc70cd2de51e4789970daaae24f4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-client-owner",
+      "started_utc": "2026-10-03T10:04:41.887284+00:00",
+      "completed_utc": "2026-10-03T10:04:49.582013+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-client-owner"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-client-owner.command.log": "8b43fcc032ff891c529e86a89979b5b5b4ec3830c04cb771dfc40f068e6c754c",
+        "uefi/dispatch-client-owner.log": "f6fe906617313a78f33d288616bd8acfabbce38021dbf3005bb9035a6b1660e6",
+        "uefi/dispatch-client-owner.metadata.json": "1d36a4e6d5f7ad3b63c025be1f06c3455e8cdc70cd2de51e4789970daaae24f4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-stale",
+      "started_utc": "2026-10-03T10:04:49.583860+00:00",
+      "completed_utc": "2026-10-03T10:04:57.224057+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-stale"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-stale.command.log": "2a1373a39bfcf25f970e164e86bdc4e7ba942211c47dbb0bb6af1e415705b861",
+        "uefi/dispatch-stale.log": "b804804e1a79b11b2c8e9b1850a577c3cceebd4d2f60403001de14ce5c800cc4",
+        "uefi/dispatch-stale.metadata.json": "598b79acc25f3e867236e34d202f4cf1d2f4e19787947b1e862c11cc265e4822"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-duplicate",
+      "started_utc": "2026-10-03T10:04:57.225898+00:00",
+      "completed_utc": "2026-10-03T10:05:04.932208+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-duplicate"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-duplicate.command.log": "0d9007fb7e532564f78f020d51ec90b04acd9dc4d4f383994d51665f6a53ec96",
+        "uefi/dispatch-duplicate.log": "8961ecff7be0199635865207854a86c917f32414e660648fff2db7586f828175",
+        "uefi/dispatch-duplicate.metadata.json": "1d36a4e6d5f7ad3b63c025be1f06c3455e8cdc70cd2de51e4789970daaae24f4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-full",
+      "started_utc": "2026-10-03T10:05:04.934072+00:00",
+      "completed_utc": "2026-10-03T10:05:12.663201+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-full"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-full.command.log": "25ce51ffa972512f7dd12ec7cfa1774f7b6f170984df01b684f2519820c84233",
+        "uefi/dispatch-full.log": "1465373f2274e72376c58a88a739f580cc7679e1edb3c89a58b63287b5268729",
+        "uefi/dispatch-full.metadata.json": "1d36a4e6d5f7ad3b63c025be1f06c3455e8cdc70cd2de51e4789970daaae24f4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-root",
+      "started_utc": "2026-10-03T10:05:12.665033+00:00",
+      "completed_utc": "2026-10-03T10:05:20.379358+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-root"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-root.command.log": "1b772f554cb69202a6a3e3859085a3d17057ca6bc36a32bb5641865cb710e6a6",
+        "uefi/dispatch-root.log": "47036c7618687f835998261f19e403f634bb410c6eb67c6e02c00fb35ea5e7fa",
+        "uefi/dispatch-root.metadata.json": "1d36a4e6d5f7ad3b63c025be1f06c3455e8cdc70cd2de51e4789970daaae24f4"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-peer-code",
+      "started_utc": "2026-10-03T10:05:20.381233+00:00",
+      "completed_utc": "2026-10-03T10:05:28.549882+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "dispatch-peer-code"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/dispatch-peer-code.command.log": "05125f6adc81de5d1758c766837d3bb900ab757a2c41709b513f57a94781ac14",
+        "uefi/dispatch-peer-code.log": "5274f377d587f4fcc6a88675f8b369271206e64c283e1f2ddd6b666ce70f532f",
+        "uefi/dispatch-peer-code.metadata.json": "62bf68e63a67e873d1d33f64c598103f7a3343e5b642fba781057da2caa1d111"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-phases",
+      "started_utc": "2026-10-03T10:05:28.551954+00:00",
+      "completed_utc": "2026-10-03T10:05:36.575798+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-phases"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-phases.command.log": "1f300b0223e117f08da49d9ff2c5645533e4bb8b453d34179d5eeff71b967399",
+        "uefi/user-phases.log": "9e0fc2b53e8baeb04929dbe8a865c6079bf14e965d1ecf10232679788195f911",
+        "uefi/user-phases.metadata.json": "7d8c01d654d464baab393804e094501fa23747df974bc60f78004f3944462b8f"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-context",
+      "started_utc": "2026-10-03T10:05:36.577684+00:00",
+      "completed_utc": "2026-10-03T10:05:44.741056+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-context"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-context.command.log": "fcc3c2d657ffa4d17aa31a98a51833685bf844024c5205b1d131d22abc3d68db",
+        "uefi/user-context.log": "449124178e18889aa9744c9cd1e552e8a58346a5d1435ca06f8f694203a23750",
+        "uefi/user-context.metadata.json": "b74ad22ab3a2e86dbcc5631f7ff6c42c09d6698fdcafec391f2b1d8317515a93"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-retire-pending",
+      "started_utc": "2026-10-03T10:05:44.743039+00:00",
+      "completed_utc": "2026-10-03T10:05:53.233667+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-retire-pending"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-retire-pending.command.log": "d78e73bf30fe0fe3533dd2ed9091863b1c11132e0ddf88ce055942d048805454",
+        "uefi/user-retire-pending.log": "869568799aa6a28fe5813c5342d5f29547740c2718f873c5c2dbd6c821ea8786",
+        "uefi/user-retire-pending.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-request-budget",
+      "started_utc": "2026-10-03T10:05:53.235777+00:00",
+      "completed_utc": "2026-10-03T10:06:01.368620+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-request-budget"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-request-budget.command.log": "c7f10913a98038f792750fd40634d23558af610712290bbe1cc85063db3d21ca",
+        "uefi/user-request-budget.log": "f1214859231bd6aa36904af1d7b0212a9ec89fe7464e3b5eee401950b28003ca",
+        "uefi/user-request-budget.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-completion-budget",
+      "started_utc": "2026-10-03T10:06:01.370541+00:00",
+      "completed_utc": "2026-10-03T10:06:09.625998+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-completion-budget"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-completion-budget.command.log": "db1e02880f01f509b6189231dc7986624dd5087deef16840c3fab9b5c4530dc2",
+        "uefi/user-completion-budget.log": "3fefd83e79ad4e3c923cd4fcb4400977b9b1ce60b7d039e45436f6bfd7f59cf2",
+        "uefi/user-completion-budget.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-request-bounds",
+      "started_utc": "2026-10-03T10:06:09.627975+00:00",
+      "completed_utc": "2026-10-03T10:06:17.824486+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-request-bounds"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-request-bounds.command.log": "66803073bebf3e79526b24cb1fcbc5227bb9450cd6fb7ad16a3db6c4c1ba3dc4",
+        "uefi/user-request-bounds.log": "66c324db93eee82293dcb2c4d278bfd389c914ae29ece138789af5aeb0cf3ffe",
+        "uefi/user-request-bounds.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-completion-bounds",
+      "started_utc": "2026-10-03T10:06:17.826897+00:00",
+      "completed_utc": "2026-10-03T10:06:25.680809+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-completion-bounds"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-completion-bounds.command.log": "3c5b80c887e797b1efd3990ea26e2d467ef64207a24c3130c03c9a30a7d21944",
+        "uefi/user-completion-bounds.log": "601f8168fc0c0f3fd3a5aca4b634b65095b811ed2d7c622f9979f1883a851a1f",
+        "uefi/user-completion-bounds.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-request-overflow",
+      "started_utc": "2026-10-03T10:06:25.682852+00:00",
+      "completed_utc": "2026-10-03T10:06:33.711123+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-request-overflow"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-request-overflow.command.log": "ba414bf7d61e21cd3eeabac6ae74e81596c968d2e66cb09ed9028e304a0ff9e2",
+        "uefi/user-request-overflow.log": "8429a12d68a71ad92a60b3786bccfc223a0700a2a322ebc64d68d0d3a7c1d00b",
+        "uefi/user-request-overflow.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-completion-overflow",
+      "started_utc": "2026-10-03T10:06:33.713295+00:00",
+      "completed_utc": "2026-10-03T10:06:41.984444+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-completion-overflow"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-completion-overflow.command.log": "1245ee880296ff8a5543a6c0b8feda07cee71c075458fa0885bd0b70d177c949",
+        "uefi/user-completion-overflow.log": "f89843192425083f6c0e99d3f5532ff6c0691b63c31209af20124f5deec1c6bf",
+        "uefi/user-completion-overflow.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-pending",
+      "started_utc": "2026-10-03T10:06:41.986816+00:00",
+      "completed_utc": "2026-10-03T10:06:49.919486+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-pending"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-pending.command.log": "24d7b5f97c59c6ae04ca3900e7e1a93ea74ab23ed88069e453621e21e8a485b3",
+        "uefi/user-pending.log": "822a4f57a132871c38bbeaad47547962a50999f9afb1c6c1ce4530e8dc6ba13a",
+        "uefi/user-pending.metadata.json": "7d8c01d654d464baab393804e094501fa23747df974bc60f78004f3944462b8f"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-role",
+      "started_utc": "2026-10-03T10:06:49.921729+00:00",
+      "completed_utc": "2026-10-03T10:06:58.601661+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-role"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-role.command.log": "bf207955b9b89d865fd0c3b0d64bf2f6a722000605e579792fc55630951b64d3",
+        "uefi/user-role.log": "13351dab050c1f9f474d7906c0ac8e212bd058d3b3d995345243f9099afdfcf4",
+        "uefi/user-role.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-phase",
+      "started_utc": "2026-10-03T10:06:58.603814+00:00",
+      "completed_utc": "2026-10-03T10:07:06.532148+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-phase"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-phase.command.log": "e3604f8a7f9ef83f3d28f4cebdf311dab12da7de4ec5df460f1a62775abb8d29",
+        "uefi/user-phase.log": "4fc520b88fe021aa500bfae4c6478b076ab1c4d23d8d1fb235a77c5981cc27bf",
+        "uefi/user-phase.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-transaction",
+      "started_utc": "2026-10-03T10:07:06.534141+00:00",
+      "completed_utc": "2026-10-03T10:07:14.505368+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-transaction"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-transaction.command.log": "bce16b7a32774e58106c41500f1e387b74433c5c50dc35556298f9ffb77ae92c",
+        "uefi/user-transaction.log": "5076cf9f277029d42487c96ace4c89eae78423d1a2fe0a4a8c6e0f029228cb56",
+        "uefi/user-transaction.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-epoch",
+      "started_utc": "2026-10-03T10:07:14.507718+00:00",
+      "completed_utc": "2026-10-03T10:07:22.686720+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-epoch"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-epoch.command.log": "489523c9373a009f5ddf46d20e2476d308e6b22819671d579bd84153f9006d51",
+        "uefi/user-epoch.log": "4fc520b88fe021aa500bfae4c6478b076ab1c4d23d8d1fb235a77c5981cc27bf",
+        "uefi/user-epoch.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-root",
+      "started_utc": "2026-10-03T10:07:22.689211+00:00",
+      "completed_utc": "2026-10-03T10:07:30.892049+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-root"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-root.command.log": "00cf3dfc556ac8753b785e5a7f4c8807f76ef0ff7e492b7724c8dfa3a9770bdf",
+        "uefi/user-root.log": "ec65b373401a6cde87cc95c4b41af865b2e0700d835695627beb5c03c1dbd2ec",
+        "uefi/user-root.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-unknown",
+      "started_utc": "2026-10-03T10:07:30.894119+00:00",
+      "completed_utc": "2026-10-03T10:07:38.642510+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-unknown"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-unknown.command.log": "fa15cfa4613d4a9833e7f44e9b063bd800a5ee4efed5fa73ce6bfd804f34d9cd",
+        "uefi/user-unknown.log": "ae58a5143276a45686953dabe5e6cb8c5d2eeb09761afea856352a8e8397cf32",
+        "uefi/user-unknown.metadata.json": "98a8ff15348fa8a96f4318d19d40f685c549ca014381d80b75d81555cbbd85b2"
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "user-stale-grant",
+      "started_utc": "2026-10-03T10:07:38.644550+00:00",
+      "completed_utc": "2026-10-03T10:07:46.666243+00:00",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "user-stale-grant"
+      ],
+      "exit_code": 0,
+      "result": "PASS",
+      "files": {
+        "uefi/user-stale-grant.command.log": "809f04bed3945458f95a6520bc46f8ef546f0f0824c5e132af81d6fc05a4e19d",
+        "uefi/user-stale-grant.log": "e2d88cee1c5e1cb6505c2384c408578f709ec1273114054a6308bf9609e659ca",
+        "uefi/user-stale-grant.metadata.json": "178503324870555d9f0499f3680d2f108dda3a593b376f18a0dfe78cbdb873f1"
+      }
+    }
+  ],
+  "independent_compiler_sha256": "a6de1e89e307b076672a1e2ee8a5e848625ac92e386622c1fa5fe7c6ab675026",
+  "independent_scope": "17 new kernel modes on immutable M012 compiler; final139 integration here uses final M013 compiler and packed-byte clean fixture."
+}

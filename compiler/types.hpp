@@ -15,7 +15,8 @@ class Token {
     int line;
     Token(std::string t, int l) : text(std::move(t)), line(l) {}
 };
-enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter, Enum };
+// Append new kinds so existing IR and template identity ordinals remain stable.
+enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter, Enum, U8 };
 enum class TemplateArgumentKind { Type, Value };
 class TemplateArgument {
   public:
@@ -79,10 +80,11 @@ class Type {
         type.length = count;
         return type;
     }
-    static const Type I64, U64, Bool, Own, Ref, MutRef;
+    static const Type I64, U64, U8, Bool, Own, Ref, MutRef;
 };
 inline const Type Type::I64{TypeKind::I64};
 inline const Type Type::U64{TypeKind::U64};
+inline const Type Type::U8{TypeKind::U8};
 inline const Type Type::Bool{TypeKind::Bool};
 inline const Type Type::Own{TypeKind::Own};
 inline const Type Type::Ref{TypeKind::Ref};
@@ -93,6 +95,8 @@ inline std::string typeName(const Type &type) {
         return "i64";
     case TypeKind::U64:
         return "u64";
+    case TypeKind::U8:
+        return "u8";
     case TypeKind::Bool:
         return "bool";
     case TypeKind::Own:
@@ -134,7 +138,9 @@ inline std::string typeName(const Type &type) {
     }
     return "?";
 }
-inline bool scalar(Type t) { return t == Type::I64 || t == Type::U64 || t == Type::Bool; }
+inline bool scalar(Type t) {
+    return t == Type::I64 || t == Type::U64 || t == Type::U8 || t == Type::Bool;
+}
 inline bool scalarValue(const Type &type) { return scalar(type) || type.isEnum(); }
 
 } // namespace aurora

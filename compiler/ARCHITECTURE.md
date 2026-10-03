@@ -19,7 +19,7 @@ The implementation uses internal header units and one translation unit so existi
 
 The current value and temporary operand stack carry explicit scalar/reference payload types. Source owners lower to scalar payload slots after the source ownership checks succeed. Borrow bindings lower to typed compiler-internal stack handles. No instruction offers arbitrary address arithmetic, arbitrary indirect stores, source-level raw pointers or opaque assembly injection.
 
-Locals/fields/elements have assigned eight-byte frame slots. The IR records slot payload types and complete frame size. Logical bool values remain canonical zero/one even though their current slots are eight bytes. Source class layout, padding and metadata are computed in semantic analysis; no new ABI layout claim is introduced.
+The IR records typed byte-addressed slots and complete frame size. U8 fields/elements use width one; previous scalar storage stays width eight, including canonical bool values. Logical class shapes and canonical byte offsets/alignment/reserved extents are distinct. The verifier recomputes physical metadata from nominal shape, rejects conflicting supplied maps and checks occupied-byte disjointness. The backend consumes the validated map; packed loads zero-extend and padding is initialized without making it a source field. See BYTES.md for the developing representation gate.
 
 `CheckedAdd`, `CheckedSubtract`, `CheckedMultiply` and `CheckedNegate` retain their fail-stop overflow requirement through lowering. Comparison and logical-not operations are distinct. The backend always emits the appropriate overflow branch for checked arithmetic. There is no unguarded arithmetic operation in this IR for source numeric expressions.
 

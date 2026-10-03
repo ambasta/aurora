@@ -1,0 +1,13 @@
+module user_budget_client_a;
+auto aurora_user_main(i64 phase, i64 value, i64 second) -> i64 {
+    if (phase == 6) { i64 toggle = 0; while (true) { toggle = 1 - toggle; } }
+    if (phase == 7) { i64 toggle = 0; while (true) { toggle = 1 - toggle; } }
+    if (phase == 8) { const array<i64, 2> items = {1, 2}; return items[10]; }
+    if (phase == 10) { const array<i64, 2> items = {1, 2}; return items[10]; }
+    if (phase == 9) { const i64 maximum = 9223372036854775807; return maximum + 1; }
+    if (phase == 11) { const i64 maximum = 9223372036854775807; return maximum + 1; }
+    if (phase == 0) { return 40; }
+    if (phase == 2) { if (value == 42) { return 42; } }
+    if (phase == 3) { if (value == 0) { return 7; } }
+    return 0;
+}

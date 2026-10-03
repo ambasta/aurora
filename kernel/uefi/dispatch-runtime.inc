@@ -1,6 +1,9 @@
 // Bounded cooperative client stages; only service executions receive a timer budget.
 constexpr std::array<U64,2> request_first{40,70},request_second{2,3},reply_value{42,73},cancel_value{7,9};
 std::optional<ipc::Endpoint> stale_service_endpoint;
+#ifdef AURORA_UEFI_USER_BUDGET
+std::optional<ipc::Endpoint> stale_client_endpoint;
+#endif
 auto client_domain(unsigned client) -> unsigned { require(client<2,"dispatch client index"); return client==0 ? 0 : 2; }
 auto dispatch_record(std::string_view operation,unsigned client,U64 ticket,U64 first,U64 second) -> void {
     Serial::text("AURORA_UEFI_DISPATCH_"); Serial::text(operation); Serial::text(": client="); Serial::number(client);
@@ -20,32 +23,72 @@ auto dispatch_execute(unsigned client,unsigned index,ipc::Phase phase,U64 source
 #ifdef AURORA_DISPATCH_STALE
     if (phase==ipc::Phase::service && stale_service_endpoint) endpoint=stale_service_endpoint;
 #endif
+#ifdef AURORA_USER_STALE_GRANT
+    if (client==0 && phase==ipc::Phase::request && stale_client_endpoint) endpoint=stale_client_endpoint;
+#endif
     selected_client=client; selected_phase=phase;
     transaction=phase==ipc::Phase::request ? 0 : phase==ipc::Phase::completion ? completed_transaction : dispatcher->transaction(client).value_or(0);
     require(phase==ipc::Phase::request || transaction!=0,"dispatch launch transaction");
     launch={source_phase,first,endpoint->slot(),endpoint->generation(),transaction,second,phase==ipc::Phase::service ? 0x202ULL : 2ULL};
+#ifdef AURORA_UEFI_USER_BUDGET
+    selected_role=index==1 ? RunAuthority::Role::service : RunAuthority::Role::client;
+    launch[6]=0x202;
+#endif
     for (const auto& lease:domain.stacks) { const auto address=frames.address(*lease); require(address.has_value(),"dispatch stack lease"); fill(*address,0); }
     require(program.begin(*domain.contract) && registry.activate(*domain.handle),"dispatch launch state"); active=index;
     Serial::text("AURORA_UEFI_DISPATCH_ENTER: client="); Serial::number(client); Serial::text(" domain="); Serial::number(index);
     Serial::text(" phase="); Serial::number(source_phase); Serial::text(" root="); Serial::number(domain.tables->root());
     Serial::text(" grant="); Serial::number(endpoint->generation()); Serial::text(" transaction="); Serial::number(transaction); Serial::text("\r\n");
     const auto selected=domain.tables->root(); asm volatile("mov %0,%%cr3"::"r"(selected):"memory");
+#ifdef AURORA_UEFI_USER_BUDGET
+    timer_begin(index);
+    if (index==0) {
+#ifdef AURORA_USER_ROLE
+        selected_role=RunAuthority::Role::service;
+#endif
+#ifdef AURORA_USER_PHASE
+        selected_phase=ipc::Phase::completion;
+#endif
+#ifdef AURORA_USER_TRANSACTION
+        ++transaction;
+#endif
+#ifdef AURORA_USER_EPOCH
+        --timer_owner_epoch;
+#endif
+    }
+#else
     if (phase==ipc::Phase::service) timer_begin(index);
+#endif
     require(enter(domain.contract->entry(),domain.contract->layout().user_stack_top(),launch.data())==1,"dispatch continuation");
+#ifdef AURORA_UEFI_USER_BUDGET
+    timer_finish();
+#ifdef AURORA_USER_CONTEXT
+    if (index==0 && phase==ipc::Phase::request) require(timer_context_hits>0,"user register probe interrupt");
+#endif
+#else
     if (phase==ipc::Phase::service) timer_finish();
+#endif
     const auto current_stack=stack();
     require(root()==kernel_root && active==L::domain_count && saved_rsp==0 && !program.running() && irq_off()
         && current_stack>=arena+Handoff::stack_bottom && current_stack<arena+Handoff::stack_top,"dispatch restored authority");
     require(program.event()==event && (event!=ProgramEvent::returned || program.value()==value),"dispatch compiled result");
     Serial::text("AURORA_UEFI_DISPATCH_RESTORE: client="); Serial::number(client); Serial::text(" domain="); Serial::number(index);
     Serial::text(" root="); Serial::number(root()); Serial::text(" stack="); Serial::number(current_stack); Serial::text(" event=");
-    Serial::text(event==ProgramEvent::returned ? "returned" : event==ProgramEvent::bounds ? "bounds" : "budget");
+    Serial::text(event==ProgramEvent::returned ? "returned" : event==ProgramEvent::bounds ? "bounds" : event==ProgramEvent::overflow ? "overflow" : "budget");
     Serial::text(" value="); Serial::number(program.value()); Serial::text("\r\n");
     launch={}; selected_phase=ipc::Phase::inactive; selected_client=2; transaction=0;
 }
 auto dispatch_envelope(const Bytes& captured,U64 result) -> void {
     if (program.event()!=ProgramEvent::returned) {
+#ifdef AURORA_UEFI_USER_BUDGET
+        require(selected_client<2 && (program.event()==ProgramEvent::bounds || program.event()==ProgramEvent::overflow)
+            && ((selected_role==RunAuthority::Role::service && selected_phase==ipc::Phase::service && active==1)
+                || (selected_role==RunAuthority::Role::client && active==client_domain(selected_client)
+                    && (selected_phase==ipc::Phase::request || selected_phase==ipc::Phase::completion))),"user known fault phase");
+        return;
+#else
         require(selected_phase==ipc::Phase::service && program.event()==ProgramEvent::bounds,"dispatch fault phase"); return;
+#endif
     }
     require(selected_client<2 && captured.get(64)==launch[0] && captured.get(72)==1,"dispatch phase/version authority");
     Serial::text("AURORA_UEFI_DISPATCH_ENVELOPE: client="); Serial::number(selected_client);
@@ -109,7 +152,7 @@ auto dispatch_bind() -> void {
         dispatch_record("BIND",client,0,endpoint->generation(),client_domain(client));
     }
 }
-auto run_dispatcher() -> void {
+[[maybe_unused]] auto run_dispatcher() -> void {
     static_assert(L::domain_count==3 && L::image_pages==3);
     dispatcher.emplace(registry);
     require(create(0)==0 && create(1)==1 && create(2)==2 && frames.used()==12,"three owned dispatch domains");

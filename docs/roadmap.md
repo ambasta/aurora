@@ -122,26 +122,25 @@ Resolve these by prototypes and RFCs rather than presenting the initial proposal
 
 The next practical priority is to close scalar and class semantic evidence gaps, validate the current kernel additions, and resolve review findings before broadening the language. Partial implementations in later stages do not count as passing earlier gates; more syntax alone would make the safety story harder to validate.
 
-## Current bounded checkpoint: milestone012
+## Current bounded checkpoint: milestone013
 
-Inline Value composition now supports closed nominal enums and independently
-copied class-valued method results. The compiled std.decimal accumulator returns
-recoverable reports. The UEFI dispatcher serves two isolated cooperative clients
-through a budgeted service, with transaction-confined replies and tested
-cancellation/restart. Independent review and final 122 emulator gates pass;
-[verification.md](verification.md) distinguishes the retained complete run from
-fresh parent aggregate and selected emulator checks.
+Checked u8 arithmetic/conversions, compact byte-stride storage and recoverable
+endian codecs are implemented and independently reviewed. Controlled client and
+service phases have immutable interrupt-count authority; an offender can be
+retired and rebound after quiescence while a peer progresses. All 139 actual modes
+pass on the final packed-byte compiler. The verification record distinguishes
+independent slice review, complete final integration and fresh parent reruns.
 
-Next language/library scope is checked u8 semantics followed by byte-stride
-storage and a recoverable 32-bit little/big-endian codec. Numeric semantics and
-physical layout have separate acceptance gates. No compact layout is inferred
-from a narrow numeric range. Encoding, text views and variable-length storage
-remain subsequent designs; equivalent-semantics performance is a separate gate.
+Next language scope is readonly whole-array byte spans and synchronous forwarding,
+with static shared borrowing, bounded lexical/call lifetimes and a recoverable
+binary reader. No mutable view, return/field escape, raw-address conversion,
+private-wrapper exception or heap allocator is implied. Branch/backedge and
+argument-evaluation borrowing must fail closed when unsupported.
 
-Next kernel scope is interrupt-count budgeting for every controlled user phase,
-including clients, with bounded disposal/rebinding of the failed client while a
-peer progresses. Reuse requires quiescence, invalidated mappings, scrubbed frames
-and fresh incarnation-bound grants. Unknown/malformed fault origins stay fail-stop.
-This is not a commitment to general scheduling, wall-clock deadlines or arbitrary
-process recovery. DMA/storage drivers remain downstream of resource, interrupt
-and IOMMU authority design. These next scopes are not implemented by this checkpoint.
+Next platform scope is validated read-only PCI BAR resource handoff for a narrow
+namespace-free emulated NVMe fixture. Only documented non-destructive identity,
+capability and inactive-state register checks are contemplated. No controller
+reset, command/BME change, queues, DMA or interrupt activation is included. Active
+inherited firmware state must be reported and rejected rather than silently reset.
+IOMMU/requester authority, invalidation/fault handling and revocation are separate
+prerequisites before storage DMA. Neither next scope is implemented by this checkpoint.

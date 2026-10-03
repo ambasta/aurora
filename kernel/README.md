@@ -590,3 +590,8 @@ also passed fatal ASan/UBSan. Fresh parent aggregate, sanitizer and selected
 BIOS/dispatcher/recovery/drain checks passed. See the milestone012 verification
 record for exact provenance. These tests do not establish physical hardware
 support or a general scheduler.
+
+The opt-in [all-controlled-user-phase budget and retirement contract](uefi/user-phases.md)
+adds isolated client recovery. All 17 new modes passed independent review, and the
+final 139-mode integration passed with the packed-byte compiler. Parent aggregate and selected spot checks passed; see the contract for exact
+compiler provenance and limits.

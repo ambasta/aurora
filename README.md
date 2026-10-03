@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 122 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` runs all 139 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -65,8 +65,7 @@ auto answer() -> i64 {
 - Local class values, designated field initialization, independent copies and
   access-checked fields. The compiler supports complete constructors, private
   methods, const-correct receiver calls and bounded nested value composition.
-  Ordinary functions accept and return independent class copies; the reviewed
-  milestone012 candidate also supports copied class-valued method results
+  Ordinary functions accept and return independent class copies; milestone012 also supports copied class-valued method results
   and closed nominal enums; see [class behavior](compiler/CLASSES.md) and
   [value-call semantics](compiler/VALUE-CALLS.md).
 - Scoped ownership/borrowing of owned integers and explicit moves. This is not
@@ -294,3 +293,22 @@ failure/restart. All 122 emulator modes and fresh parent aggregate checks pass;
 see [verification](docs/verification.md) for source identity and receipt provenance.
 Clients remain cooperative; this is not a general scheduler or physical hardware
 qualification. No equivalent-C performance claim or general expected/text API is implied.
+
+
+## Checked bytes and controlled client recovery
+
+Milestone013 adds [checked u8 and compact storage](compiler/BYTES.md). Byte arrays
+have stride one; class fields follow verified byte offsets/alignment with typed
+copies and deterministic representation padding. Explicit narrowing traps outside
+0..255. Existing eight-byte scalar layouts stay unchanged. The native `std.bytes`
+module provides recoverable 32-bit little/big-endian encoding and copied decoding.
+No pointer, unchecked cast, C ABI, text encoding or heap API is introduced.
+
+[Controlled user phases](kernel/uefi/user-phases.md) now budget request, service
+and completion execution. A non-yielding or known-faulting client can be disposed
+and rebound while its peer progresses. Committed replies keep their terminal
+outcome; actual mapping retirement, scrub and old-epoch interrupt drain precede
+reuse. Unknown fault origins remain fail-stop. All 139 emulator gates pass on the
+packed-byte compiler; final parent evidence is in [verification](docs/verification.md).
+This remains a bounded single-CPU integer-only mechanism, not general process
+recovery, calibrated deadlines, SMP or physical Framework qualification.

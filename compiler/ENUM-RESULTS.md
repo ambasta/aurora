@@ -2,8 +2,9 @@
 
 Milestone012 integrates the separately developed enum/decimal language slice with
 the verified milestone011 value-composition baseline. This document describes the
-candidate implementation. Independent compiler review passed; final kernel and
-parent integration verification remain pending.
+milestone012 implementation. Independent compiler review and final kernel/parent
+integration verification passed. The later u8/layout extension described in
+BYTES.md remains a separately tested milestone013 candidate.
 The earlier frozen checkout and its receipts remain separate evidence.
 
 ## Nominal enums and Value
@@ -15,8 +16,10 @@ results. There is no integer or boolean conversion, ordering, arithmetic,
 explicit case ordinal, unspecified default value or source address conversion.
 The graph permits at most 64 enum declarations, each with 1..256 unique cases.
 
-Value explicitly accepts closed enum types as well as i64/u64/bool and named
-concrete class types. Scalar remains exactly i64/u64/bool. Builtin arrays and
+Value explicitly accepts closed enum types as well as numeric/bool and named
+concrete class types. At milestone012 Scalar was exactly i64/u64/bool; the
+milestone013 development candidate adds u8 to both domains while retaining
+enum exclusion from Scalar. Builtin arrays and
 std::array continue to reject enum elements. Named enum arguments retain their
 defining-module identity, so std::pair<Status,Report> is distinct from an otherwise
 equal-layout pair using another enum. Nested template-id arguments, deduction,

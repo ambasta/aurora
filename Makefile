@@ -1,6 +1,6 @@
 # Bootstrap commands share the image/output directory; serialize their execution.
 .NOTPARALLEL:
-.PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-scheduling smoke-uefi test-uefi test-acpi test-division smoke-acpi smoke-division test-pci test-unsigned smoke-pci smoke-unsigned test-uefi-runtime smoke-uefi-runtime test-uefi-ipc smoke-uefi-ipc test-uefi-budget smoke-uefi-budget test-uefi-dispatch smoke-uefi-dispatch smoke-all
+.PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-scheduling smoke-uefi test-uefi test-acpi test-division smoke-acpi smoke-division test-pci test-unsigned smoke-pci smoke-unsigned test-uefi-runtime smoke-uefi-runtime test-uefi-ipc smoke-uefi-ipc test-uefi-budget smoke-uefi-budget test-uefi-dispatch smoke-uefi-dispatch test-uefi-user-phases smoke-uefi-user-phases smoke-all
 
 all: compiler kernel
 
@@ -53,7 +53,10 @@ test-uefi-budget:
 test-uefi-dispatch:
 	./scripts/kernel-uefi-dispatch-tests.sh
 
-test: test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-semantics
+test-uefi-user-phases:
+	./scripts/kernel-uefi-user-phases-tests.sh
+
+test: test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases test-semantics
 
 # QEMU is intentionally a separate acceptance gate, never silently skipped.
 smoke:
@@ -95,6 +98,9 @@ smoke-uefi-budget:
 smoke-uefi-dispatch:
 	./scripts/kernel-uefi-dispatch-all.sh
 
+smoke-uefi-user-phases:
+	./scripts/kernel-uefi-user-phases-all.sh
+
 smoke-all:
 	./scripts/kernel-protection-smoke.sh
 	./scripts/kernel-scheduling-smoke.sh
@@ -107,3 +113,4 @@ smoke-all:
 	./scripts/kernel-uefi-ipc-all.sh
 	./scripts/kernel-uefi-budget-all.sh
 	./scripts/kernel-uefi-dispatch-all.sh
+	./scripts/kernel-uefi-user-phases-all.sh

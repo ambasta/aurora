@@ -1,5 +1,5 @@
 #pragma once
-#include "ir.hpp"
+#include "ir_layout.hpp"
 #include <algorithm>
 #include <deque>
 #include <functional>
@@ -74,7 +74,23 @@ inline void verifyFunction(Function &function,
                            Metrics *metrics = nullptr, const std::set<int> &availableScopes = {0},
                            const std::map<std::string, std::vector<Type>> &classLayouts = {},
                            const std::map<std::string, std::vector<ClassField>> &classFields = {},
-                           const std::map<std::string, int> &enumCases = {}) {
+                           const std::map<std::string, int> &enumCases = {},
+                           const std::map<std::string, ClassStorage> &classStorage = {}) {
+    std::map<std::string, ClassStorage> derivedStorage;
+    if (classStorage.empty() && !classLayouts.empty()) {
+        auto fields = classFields;
+        for (const auto &[name, leaves] : classLayouts)
+            if (!fields.contains(name)) {
+                auto &logical = fields[name];
+                for (std::size_t leaf = 0; leaf < leaves.size(); ++leaf)
+                    logical.push_back(ClassField{leaves[leaf], static_cast<int>(leaf), 1, false});
+            }
+        derivedStorage = computeClassStorageLayouts(classLayouts, fields);
+    }
+    const auto &storage = classStorage.empty() ? derivedStorage : classStorage;
+    auto objectLeaf = [&](int base, std::size_t leaf) {
+        return base - storage.at(function.objectSlots.at(base).className).leafOffsets.at(leaf);
+    };
     require(availableScopes.contains(function.moduleScope), "unknown function module scope");
     auto boundaryType = [&](const Type &type, bool parameter) {
         if (scalarValueType(type, enumCases))
@@ -94,11 +110,15 @@ inline void verifyFunction(Function &function,
     require(function.frameBytes >= 0 && function.frameBytes <= 65536 &&
                 function.frameBytes % 16 == 0,
             "invalid frame size");
+    std::set<int> occupiedSlotBytes;
     for (const auto &[offset, type] : function.slots) {
-        require(offset > 0 && offset <= function.frameBytes && offset % 8 == 0,
+        require(offset >= storageWidth(type) && offset <= function.frameBytes &&
+                    offset % storageAlignment(type) == 0,
                 "invalid slot offset");
         require(scalarValueType(type, enumCases) || type == Type::Ref || type == Type::MutRef,
                 "invalid slot payload type");
+        for (int byte = offset - storageWidth(type) + 1; byte <= offset; ++byte)
+            require(occupiedSlotBytes.insert(byte).second, "overlapping scalar slot storage");
     }
     const std::vector<Type> *receiverLayout = nullptr;
     const std::vector<ClassField> *receiverFields = nullptr;
@@ -118,8 +138,8 @@ inline void verifyFunction(Function &function,
         require(!receiver.constructor || (receiver.mutableValue && function.result == Type::I64),
                 "invalid constructor receiver signature");
     }
-    // Validate complete object ranges, including padding for an empty class.
-    // Scalar slots may describe actual fields, never padding or the hidden ABI slot.
+    // Physical reservation and logical completion are separate. Every occupied
+    // scalar byte is disjoint; object padding (including empty storage) has no slot.
     std::map<int, const ObjectSlot *> objectFields;
     std::map<int, int> objectBases;
     std::set<int> objectStorage;
@@ -127,28 +147,29 @@ inline void verifyFunction(Function &function,
     for (const auto &[base, object] : function.objectSlots) {
         require(classLayouts.contains(object.className), "unknown object class");
         const auto &layout = classLayouts.at(object.className);
-        const auto words = std::max<std::size_t>(1, layout.size());
+        const auto &physical = storage.at(object.className);
+        require(base > 0 && base <= function.frameBytes && base % 8 == 0 &&
+                    base >= physical.reservedBytes,
+                "invalid object layout offset");
         if (classFields.contains(object.className))
             for (const auto &field : classFields.at(object.className))
                 if (field.elementType.isClass())
                     for (int leaf = 0; leaf < field.length; ++leaf)
-                        nestedObjectLeaves.insert(base - (field.firstLeaf + leaf) * 8);
-        require(base > 0 && base <= function.frameBytes && base % 8 == 0 &&
-                    static_cast<std::size_t>(base / 8) >= words,
-                "invalid object layout offset");
-        for (std::size_t index = 0; index < words; ++index) {
-            const int offset = base - static_cast<int>(index * 8);
-            require(objectStorage.insert(offset).second, "overlapping object layouts");
-            if (index < layout.size()) {
-                require(function.slots.contains(offset) &&
-                            function.slots.at(offset) == layout[index],
-                        "object field slot type/layout mismatch");
-                objectFields.emplace(offset, &object);
-                objectBases.emplace(offset, base);
-            } else
-                require(!function.slots.contains(offset), "scalar slot overlaps empty object");
+                        nestedObjectLeaves.insert(objectLeaf(base, field.firstLeaf + leaf));
+        for (int byte = base - physical.reservedBytes + 1; byte <= base; ++byte)
+            require(objectStorage.insert(byte).second, "overlapping object layouts");
+        for (std::size_t index = 0; index < layout.size(); ++index) {
+            const int offset = objectLeaf(base, index);
+            require(function.slots.contains(offset) && function.slots.at(offset) == layout[index],
+                    "object field slot type/layout mismatch");
+            objectFields.emplace(offset, &object);
+            objectBases.emplace(offset, base);
         }
     }
+    for (const auto &[offset, type] : function.slots)
+        for (int byte = offset - storageWidth(type) + 1; byte <= offset; ++byte)
+            require(!objectStorage.contains(byte) || objectFields.contains(offset),
+                    "scalar slot overlaps empty object or padding");
     require(!function.code.empty(), "empty function body");
     std::set<int> scalarParameterSlots;
     std::set<int> objectParameterSlots;
@@ -358,9 +379,9 @@ inline void verifyFunction(Function &function,
             };
             auto array = [&](int offset, int length, const Type &type) {
                 require(scalar(type) && length >= 1 && length <= 4096, "invalid array shape");
-                require(offset >= length * 8, "array layout underflow");
+                require(offset >= length * storageWidth(type), "array layout underflow");
                 for (int element = 0; element < length; ++element) {
-                    const int elementOffset = offset - element * 8;
+                    const int elementOffset = offset - element * storageWidth(type);
                     slot(elementOffset, type);
                     activeObjectField(elementOffset);
                     require(state.initialized.contains(elementOffset),
@@ -386,7 +407,7 @@ inline void verifyFunction(Function &function,
                 const auto &layout = classLayouts.at(name);
                 state.maybeConstructedObjects.insert(base);
                 for (std::size_t leaf = 0; leaf < layout.size(); ++leaf) {
-                    const int offset = base - static_cast<int>(leaf * 8);
+                    const int offset = objectLeaf(base, leaf);
                     state.initialized.insert(offset);
                     state.maybeInitialized.insert(offset);
                 }
@@ -401,7 +422,7 @@ inline void verifyFunction(Function &function,
                 const auto &object = function.objectSlots.at(base);
                 const auto &layout = classLayouts.at(object.className);
                 for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
-                    require(state.initialized.contains(base - static_cast<int>(leaf * 8)),
+                    require(state.initialized.contains(objectLeaf(base, leaf)),
                             "copy source object not fully initialized");
                 logicalComplete(base);
                 return object;
@@ -415,7 +436,7 @@ inline void verifyFunction(Function &function,
                         "copy result object already initialized");
                 const auto &layout = classLayouts.at(name);
                 for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
-                    require(!state.maybeInitialized.contains(base - static_cast<int>(leaf * 8)),
+                    require(!state.maybeInitialized.contains(objectLeaf(base, leaf)),
                             "copy requires pristine result object");
                 markObject(base);
             };
@@ -427,6 +448,9 @@ inline void verifyFunction(Function &function,
                         require(operation.type != Type::Bool || operation.value == 0 ||
                                     operation.value == 1,
                                 "noncanonical bool");
+                        require(operation.type != Type::U8 ||
+                                    (operation.value >= 0 && operation.value <= 255),
+                                "noncanonical u8");
                         state.current = Value{operation.type, {}};
                     } else if constexpr (std::is_same_v<Op, EnumConstant>) {
                         require(operation.type.isEnum() &&
@@ -463,10 +487,14 @@ inline void verifyFunction(Function &function,
                             type = Type::Bool;
                             break;
                         case Unary::BitNot:
-                            type = Type::U64;
+                            require(operation.operandType == Type::U64 ||
+                                        operation.operandType == Type::U8,
+                                    "invalid unary operand type");
+                            type = operation.operandType;
                             break;
                         }
                         require(type.has_value(), "invalid unary operation");
+                        require(operation.operandType == *type, "invalid unary operand type");
                         current(*type);
                         state.current = Value{*type, {}};
                     } else if constexpr (std::is_same_v<Op, BinaryValue>) {
@@ -496,6 +524,7 @@ inline void verifyFunction(Function &function,
                         }
                         require(valid, "invalid binary operation");
                         require(operation.operandType == Type::U64 ||
+                                    operation.operandType == Type::U8 ||
                                     (!unsignedOnly && operation.operandType == Type::I64),
                                 "invalid binary operand type");
                         current(shift ? Type::I64 : operation.operandType);
@@ -503,10 +532,11 @@ inline void verifyFunction(Function &function,
                                 "noninteger left operand or binary type mismatch");
                         state.current = Value{operation.operandType, {}};
                     } else if constexpr (std::is_same_v<Op, Convert>) {
-                        require((operation.sourceType == Type::I64 &&
-                                 operation.resultType == Type::U64) ||
-                                    (operation.sourceType == Type::U64 &&
-                                     operation.resultType == Type::I64),
+                        const auto integer = [](const Type &type) {
+                            return type == Type::I64 || type == Type::U64 || type == Type::U8;
+                        };
+                        require(integer(operation.sourceType) && integer(operation.resultType) &&
+                                    operation.sourceType != operation.resultType,
                                 "invalid checked conversion types");
                         current(operation.sourceType);
                         // A value conversion never preserves an index's bounds evidence.
@@ -532,7 +562,8 @@ inline void verifyFunction(Function &function,
                                 "non-scalar comparison");
                         if (ordered)
                             require(operation.operandType == Type::I64 ||
-                                        operation.operandType == Type::U64,
+                                        operation.operandType == Type::U64 ||
+                                        operation.operandType == Type::U8,
                                     "ordered bool comparison or enum comparison");
                         current(operation.operandType);
                         require(pop().type == operation.operandType, "comparison type mismatch");
@@ -552,7 +583,8 @@ inline void verifyFunction(Function &function,
                         current(operation.elementType);
                         guard(pop(), operation.offset, operation.length, operation.elementType);
                         for (int element = 0; element < operation.length; ++element) {
-                            const int offset = operation.offset - element * 8;
+                            const int offset =
+                                operation.offset - element * storageWidth(operation.elementType);
                             require(!nestedObjectLeaves.contains(offset),
                                     "indexed store cannot write nested class field");
                             require(!scalarParameterSlots.contains(offset),
@@ -621,9 +653,8 @@ inline void verifyFunction(Function &function,
                                     "aggregate argument outside active object lifetime");
                             const auto &layout = classLayouts.at(type.className);
                             for (std::size_t field = 0; field < layout.size(); ++field)
-                                require(
-                                    state.initialized.contains(base - static_cast<int>(field * 8)),
-                                    "aggregate argument object not fully initialized");
+                                require(state.initialized.contains(objectLeaf(base, field)),
+                                        "aggregate argument object not fully initialized");
                             logicalComplete(base);
                         }
                         if (target.result.isClass()) {
@@ -641,8 +672,7 @@ inline void verifyFunction(Function &function,
                                     "aggregate result object already initialized");
                             const auto &layout = classLayouts.at(object.className);
                             for (std::size_t field = 0; field < layout.size(); ++field)
-                                require(!state.maybeInitialized.contains(
-                                            base - static_cast<int>(field * 8)),
+                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
                                         "aggregate result requires uninitialized object");
                             markObject(base);
                             state.current.reset();
@@ -671,7 +701,7 @@ inline void verifyFunction(Function &function,
                         const auto &object = function.objectSlots.at(operation.offset);
                         const auto &layout = classLayouts.at(object.className);
                         for (std::size_t field = 0; field < layout.size(); ++field) {
-                            const int offset = operation.offset - static_cast<int>(field * 8);
+                            const int offset = objectLeaf(operation.offset, field);
                             state.initialized.erase(offset);
                             state.maybeInitialized.erase(offset);
                         }
@@ -843,17 +873,16 @@ inline void verifyFunction(Function &function,
                                             operation.receiverOffset),
                                         "object constructor called more than once");
                                 for (std::size_t field = 0; field < layout.size(); ++field)
-                                    require(
-                                        !state.maybeInitialized.contains(
-                                            operation.receiverOffset - static_cast<int>(field * 8)),
-                                        "constructor requires uninitialized object");
+                                    require(!state.maybeInitialized.contains(
+                                                objectLeaf(operation.receiverOffset, field)),
+                                            "constructor requires uninitialized object");
                                 markObject(operation.receiverOffset);
                             } else {
                                 require(!receiver.mutableValue || object.mutableValue,
                                         "const object cannot supply mutable receiver");
                                 for (std::size_t field = 0; field < layout.size(); ++field)
-                                    require(state.initialized.contains(operation.receiverOffset -
-                                                                       static_cast<int>(field * 8)),
+                                    require(state.initialized.contains(
+                                                objectLeaf(operation.receiverOffset, field)),
                                             "method receiver object not fully initialized");
                                 logicalComplete(operation.receiverOffset);
                             }
@@ -873,8 +902,7 @@ inline void verifyFunction(Function &function,
                                     "method result object already initialized");
                             const auto &layout = classLayouts.at(object.className);
                             for (std::size_t field = 0; field < layout.size(); ++field)
-                                require(!state.maybeInitialized.contains(
-                                            base - static_cast<int>(field * 8)),
+                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
                                         "method result requires uninitialized object");
                             markObject(base);
                             state.current.reset();
@@ -928,8 +956,7 @@ inline void verifyFunction(Function &function,
                                 "object return outside active lifetime");
                         const auto &layout = classLayouts.at(object.className);
                         for (std::size_t field = 0; field < layout.size(); ++field)
-                            require(state.initialized.contains(operation.offset -
-                                                               static_cast<int>(field * 8)),
+                            require(state.initialized.contains(objectLeaf(operation.offset, field)),
                                     "returned object not fully initialized");
                         logicalComplete(operation.offset);
                         require(state.stack.empty(), "unbalanced stack at object return");
@@ -1117,9 +1144,14 @@ inline ValidatedModule validate(Module module) {
     };
     for (const auto &[name, fields] : module.classFields)
         depth(name, 1);
+    const auto canonicalStorage =
+        computeClassStorageLayouts(module.classLayouts, module.classFields);
+    verification::require(module.classStorage.empty() || module.classStorage == canonicalStorage,
+                          "noncanonical class storage metadata");
+    module.classStorage = canonicalStorage;
     for (auto &function : module.functions)
         verification::verifyFunction(function, functions, nullptr, scopes, module.classLayouts,
-                                     module.classFields, module.enumCases);
+                                     module.classFields, module.enumCases, module.classStorage);
     // Analyze the full call graph so scalar helpers cannot hide receiver
     // recursion. Iterative Kosaraju traversal is O(functions + calls) and does
     // not consume host call-stack depth on an adversarial source-sized graph.

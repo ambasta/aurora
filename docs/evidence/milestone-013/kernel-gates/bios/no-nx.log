@@ -1,0 +1,3 @@
+Aurora bootstrap: x86-64 long mode
+Required NX capability or protected mapping validation failed
+AURORA_BOOT_FAIL
