@@ -84,3 +84,7 @@ See [CLASSES.md](CLASSES.md) for the source and IR contract. Nominal class layou
 ## Checked division boundary
 
 CheckedDivide/CheckedRemainder retain zero and signed-overflow guards as part of the lowering operation. No native IDIV is issued for zero divisors or the minimum/-1 pair; remainder handles the latter as zero. The dedicated division-zero UD2 label is distinct from checked arithmetic overflow. Integer enum switches are exhaustive under warning-as-error builds, and mutation tests cover both future enum members and instruction variants. See [INTEGERS.md](INTEGERS.md).
+
+## Unsigned arithmetic boundary
+
+U64 is an exact scalar IR type. BinaryValue carries its operand type; shifts require u64 data and an i64 count. Convert accepts only checked cross-type i64/u64 conversions and clears bounds evidence. Unary complement is fixed to 64 bits. All array/class/value-call payload checks preserve the exact scalar type. Count validation and representability checks belong to the checked shift lowering operation, with distinct invalid-count and overflow UD2 sites. See [UNSIGNED.md](UNSIGNED.md); no scalar integer can become a receiver, record, result or borrow capability.

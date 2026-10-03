@@ -2,6 +2,7 @@
 #include "ir_verify.hpp"
 #include "syntax.hpp"
 #include <algorithm>
+#include <bit>
 #include <limits>
 #include <map>
 #include <set>
@@ -39,7 +40,10 @@ class SemanticAnalyzer {
     }
     std::int64_t typeId(const Type &type, const Token &token) {
         if (type.isArray()) {
-            const int id = 1000000 + type.length * 2 + (type.elementKind == TypeKind::Bool ? 1 : 0);
+            const int id =
+                type.elementKind == TypeKind::U64
+                    ? 2000000 + type.length
+                    : 1000000 + type.length * 2 + (type.elementKind == TypeKind::Bool ? 1 : 0);
             arrayTypes[id] = type;
             return id;
         }
@@ -263,22 +267,33 @@ class SemanticAnalyzer {
             emit(ir::EndObject{snapshot});
         return callee.result;
     }
+    ir::Constant literal(const Token &token) {
+        const bool unsignedValue = token.text.ends_with("u64");
+        const auto digits =
+            unsignedValue ? token.text.substr(0, token.text.size() - 3) : token.text;
+        try {
+            if (digits.empty() || !std::all_of(digits.begin(), digits.end(), [](unsigned char c) {
+                    return c >= '0' && c <= '9';
+                }))
+                fail(token, "integer literal out of range or invalid suffix");
+            std::size_t used = 0;
+            const auto value = std::stoull(digits, &used);
+            if (used != digits.size() ||
+                (!unsignedValue &&
+                 value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
+                fail(token, "integer literal out of range");
+            return {std::bit_cast<std::int64_t>(static_cast<std::uint64_t>(value)),
+                    unsignedValue ? Type::U64 : Type::I64};
+        } catch (const std::exception &) {
+            fail(token, "integer literal out of range or invalid suffix");
+        }
+    }
     Type expression(ExpressionPtr e) {
         const auto &n = e->resolvedName.empty() ? e->token.text : e->resolvedName;
         if (e->op == "number") {
-            unsigned long long value = 0;
-            try {
-                std::size_t used;
-                auto v = std::stoull(n, &used);
-                value = v;
-                if (used != n.size() ||
-                    v > static_cast<unsigned long long>(std::numeric_limits<std::int64_t>::max()))
-                    fail(e->token, "integer literal out of range");
-            } catch (const std::exception &) {
-                fail(e->token, "integer literal out of range");
-            }
-            emit(ir::Constant{static_cast<std::int64_t>(value), Type::I64});
-            return Type::I64;
+            const auto value = literal(e->token);
+            emit(ir::Constant{value.value, value.type});
+            return value.type;
         }
         if (e->op == "bool") {
             emit(ir::Constant{n == "true" ? 1 : 0, Type::Bool});
@@ -326,9 +341,12 @@ class SemanticAnalyzer {
         if (e->op == "unary") {
             // Recognize the minimum signed literal before range-checking its positive
             // magnitude.
-            if (n == "-" && e->args[0]->op == "number") {
+            if (n == "-" && e->args[0]->op == "number" &&
+                !e->args[0]->token.text.ends_with("u64")) {
                 try {
-                    if (std::stoull(e->args[0]->token.text) == (1ULL << 63)) {
+                    std::size_t used = 0;
+                    if (std::stoull(e->args[0]->token.text, &used) == (1ULL << 63) &&
+                        used == e->args[0]->token.text.size()) {
                         emit(ir::Constant{std::numeric_limits<std::int64_t>::min(), Type::I64});
                         return Type::I64;
                     }
@@ -337,33 +355,48 @@ class SemanticAnalyzer {
                 }
             }
             auto t = expression(e->args[0]);
-            match(t, n == "!" ? Type::Bool : Type::I64, e->token);
-            emit(ir::UnaryValue{n == "!" ? ir::Unary::LogicalNot : ir::Unary::CheckedNegate});
+            match(t, n == "!" ? Type::Bool : n == "~" ? Type::U64 : Type::I64, e->token);
+            emit(ir::UnaryValue{n == "!"   ? ir::Unary::LogicalNot
+                                : n == "~" ? ir::Unary::BitNot
+                                           : ir::Unary::CheckedNegate});
             return t;
         }
         if (e->op == "binary") {
-            auto l = expression(e->args[0]);
+            const auto left = expression(e->args[0]);
             push();
-            auto r = expression(e->args[1]);
-            match(r, l, e->token);
-            if (n == "+" || n == "-" || n == "*" || n == "/" || n == "%") {
-                match(l, Type::I64, e->token);
-                static const std::map<std::string, ir::Binary> operations = {
-                    {"+", ir::Binary::CheckedAdd},
-                    {"-", ir::Binary::CheckedSubtract},
-                    {"*", ir::Binary::CheckedMultiply},
-                    {"/", ir::Binary::CheckedDivide},
-                    {"%", ir::Binary::CheckedRemainder}};
-                emit(ir::BinaryValue{operations.at(n)});
-                return Type::I64;
+            const auto right = expression(e->args[1]);
+            if (n == "<<" || n == ">>") {
+                match(left, Type::U64, e->token);
+                match(right, Type::I64, e->token);
+                emit(ir::BinaryValue{n == "<<" ? ir::Binary::ShiftLeft : ir::Binary::ShiftRight,
+                                     left});
+                return Type::U64;
             }
-            if (n != "==" && n != "!=")
-                match(l, Type::I64, e->token);
+            match(right, left, e->token);
+            static const std::map<std::string, ir::Binary> operations = {
+                {"+", ir::Binary::CheckedAdd},
+                {"-", ir::Binary::CheckedSubtract},
+                {"*", ir::Binary::CheckedMultiply},
+                {"/", ir::Binary::CheckedDivide},
+                {"%", ir::Binary::CheckedRemainder},
+                {"&", ir::Binary::BitAnd},
+                {"|", ir::Binary::BitOr},
+                {"^", ir::Binary::BitXor}};
+            if (operations.contains(n)) {
+                if (n == "&" || n == "|" || n == "^")
+                    match(left, Type::U64, e->token);
+                else if (left != Type::I64 && left != Type::U64)
+                    fail(e->token, "expected i64 or u64 arithmetic operands");
+                emit(ir::BinaryValue{operations.at(n), left});
+                return left;
+            }
+            if (n != "==" && n != "!=" && left != Type::I64 && left != Type::U64)
+                fail(e->token, "expected i64 or u64 ordered comparison operands");
             static const std::map<std::string, ir::Comparison> comparisons = {
                 {"==", ir::Comparison::Equal},     {"!=", ir::Comparison::NotEqual},
                 {"<", ir::Comparison::Less},       {">", ir::Comparison::Greater},
                 {"<=", ir::Comparison::LessEqual}, {">=", ir::Comparison::GreaterEqual}};
-            emit(ir::Compare{comparisons.at(n), l});
+            emit(ir::Compare{comparisons.at(n), left});
             return Type::Bool;
         }
         if (e->op != "call")
@@ -371,6 +404,14 @@ class SemanticAnalyzer {
         if (n == "size_of" || n == "type_id" || n == "field_count") {
             emit(ir::Constant{reflectedValue(e), Type::I64});
             return Type::I64;
+        }
+        if (n == "u64" || n == "i64") {
+            arity(e, 1);
+            const auto sourceType = expression(e->args[0]);
+            const auto resultType = n == "u64" ? Type::U64 : Type::I64;
+            match(sourceType, n == "u64" ? Type::I64 : Type::U64, e->token);
+            emit(ir::Convert{sourceType, resultType});
+            return resultType;
         }
         if (n == "len") {
             arity(e, 1);
@@ -420,33 +461,44 @@ class SemanticAnalyzer {
             fail(e->token, "unknown function '" + n + "'");
         return callFunction(e, sourceFunctions[f->second]);
     }
-    std::int64_t constant(ExpressionPtr e) {
-        auto n = e->token.text;
+    ir::Constant constant(ExpressionPtr e) {
+        const auto &name = e->token.text;
         if (e->op == "bool")
-            return n == "true";
-        if (e->op == "number") {
-            expression(e);
-            return std::stoll(n);
-        }
-        if (e->op == "call" && (n == "size_of" || n == "type_id" || n == "field_count"))
-            return reflectedValue(e);
+            return {name == "true", Type::Bool};
+        if (e->op == "number")
+            return literal(e->token);
+        if (e->op == "call" && (name == "size_of" || name == "type_id" || name == "field_count"))
+            return {reflectedValue(e), Type::I64};
         if (e->op == "binary") {
-            auto a = constant(e->args[0]), b = constant(e->args[1]);
-            if (n == "==")
-                return a == b;
-            if (n == "!=")
-                return a != b;
-            if (n == "<")
-                return a < b;
-            if (n == ">")
-                return a > b;
-            if (n == "<=")
-                return a <= b;
-            if (n == ">=")
-                return a >= b;
+            const auto left = constant(e->args[0]), right = constant(e->args[1]);
+            match(right.type, left.type, e->token);
+            auto compare = [&](auto a, auto b) -> bool {
+                if (name == "==")
+                    return a == b;
+                if (name == "!=")
+                    return a != b;
+                if (name == "<")
+                    return a < b;
+                if (name == ">")
+                    return a > b;
+                if (name == "<=")
+                    return a <= b;
+                if (name == ">=")
+                    return a >= b;
+                fail(e->token,
+                     "static_assert supports literals, reflection, comparisons, and ! only");
+            };
+            const bool result = left.type == Type::U64
+                                    ? compare(std::bit_cast<std::uint64_t>(left.value),
+                                              std::bit_cast<std::uint64_t>(right.value))
+                                    : compare(left.value, right.value);
+            return {result, Type::Bool};
         }
-        if (e->op == "unary" && n == "!")
-            return !constant(e->args[0]);
+        if (e->op == "unary" && name == "!") {
+            const auto operand = constant(e->args[0]);
+            match(operand.type, Type::Bool, e->token);
+            return {!operand.value, Type::Bool};
+        }
         fail(e->token, "static_assert supports literals, reflection, comparisons, and ! only");
     }
     bool block(const std::vector<StatementPtr> &body) {
@@ -590,7 +642,7 @@ class SemanticAnalyzer {
             match(t, Type::Bool, s->token);
             auto v = constant(s->expr);
             lowered.code = std::move(saved);
-            if (!v)
+            if (!v.value)
                 fail(s->token, "static assertion failed");
             return false;
         }
@@ -743,7 +795,9 @@ class SemanticAnalyzer {
                 sourceFunctions.push_back(method);
     }
     ir::ValidatedModule analyze() {
-        static const std::set<std::string> builtins = {"own",
+        static const std::set<std::string> builtins = {"i64",
+                                                       "u64",
+                                                       "own",
                                                        "move",
                                                        "borrow",
                                                        "borrow_mut",
@@ -764,8 +818,8 @@ class SemanticAnalyzer {
             if (definition.fields.size() > maxFrameSlots)
                 fail(definition.token, "class layout exceeds 65536 bytes");
             const auto &name = definition.name;
-            if (builtins.contains(name) || name == "i64" || name == "bool" || name == "ref" ||
-                name == "mutref" || name == "array" || classNames.contains(name))
+            if (builtins.contains(name) || name == "i64" || name == "u64" || name == "bool" ||
+                name == "ref" || name == "mutref" || name == "array" || classNames.contains(name))
                 fail(definition.token, "duplicate or reserved class name");
             classNames[name] = index;
             definition.id = 100 + static_cast<int>(index);
@@ -857,6 +911,7 @@ class SemanticAnalyzer {
         }
         for (int id = 1; id <= 5; ++id)
             module.descriptors[id] = ir::Descriptor{id == 2 ? 1 : 8, 0};
+        module.descriptors[8] = ir::Descriptor{8, 0};
         for (const auto &definition : classes) {
             const Type type(definition.name);
             module.descriptors[definition.id] = ir::Descriptor{typeSize(type, definition.token),
@@ -874,7 +929,7 @@ class SemanticAnalyzer {
             auto &view = module.descriptorViews[scope];
             for (const auto &[id, descriptor] : module.descriptors) {
                 (void)descriptor;
-                if (id <= 5 || id >= 1000000)
+                if (id <= 5 || id == 8 || id >= 1000000)
                     view.insert(id);
             }
             for (const auto &name : visible)

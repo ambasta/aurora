@@ -1,0 +1,5 @@
+INFO unsigned oracle compiler=/tmp/aurora-m008-compiler-frozen sha256=11ad14a187f0cd69539626dbafaff2f6340762ff1dd0430059ec192332c9f99b
+INFO unsigned oracle std.bit sha256=a782f1ddee3b09239e5c5f9e8aa639189fc780d7f9412eb98095aad96987e2e2
+INFO unsigned oracle std.integer sha256=b08857ab2d164c1b78be50b05fcc4277ef84ae736e1bc0f09668082433fd5a54
+PASS unsigned oracle self-tests: full-width u64/i64, wrong values/signals, three exact UD2 sites, hardware #DE and timeout rejection
+PASS unsigned oracle: 8959 native cases, 1044 exact-site traps, 67 rejection cases with absent/existing output checks; seed=18446744073709551615, random-count=200; elapsed=22.36s

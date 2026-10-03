@@ -1,5 +1,6 @@
 #include "ir_verify.hpp"
 #include "x86.hpp"
+#include <bit>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -177,6 +178,244 @@ void accept(const std::string &name, Module module) {
     ++passed;
     std::cout << "PASS IR " << name << '\n';
 }
+Module unsignedBinary(Binary operation) {
+    auto module = baseline();
+    auto &function = module.functions[0];
+    function.result = Type::U64;
+    const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
+    function.code = {Constant{std::bit_cast<std::int64_t>(UINT64_MAX), Type::U64}, Push{},
+                     Constant{shift ? 0 : 1, shift ? Type::I64 : Type::U64},
+                     BinaryValue{operation, Type::U64}, Return{}};
+    return module;
+}
+Module unsignedOperations() {
+    Module module;
+    int index = 0;
+    for (const auto operation : {Binary::CheckedAdd, Binary::CheckedSubtract,
+                                Binary::CheckedMultiply, Binary::CheckedDivide,
+                                Binary::CheckedRemainder, Binary::BitAnd, Binary::BitOr,
+                                Binary::BitXor, Binary::ShiftLeft, Binary::ShiftRight}) {
+        const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
+        const auto right = shift ? Type::I64 : Type::U64;
+        auto function = unsignedBinary(operation).functions[0];
+        function.name = "unsigned_op" + std::to_string(index++);
+        function.parameters = {Type::U64, right};
+        function.slots = {{8, Type::U64}, {16, right}};
+        function.code = {BindParameter{0, 8, Type::U64}, BindParameter{1, 16, right},
+                         Load{8, Type::U64}, Push{}, Load{16, right},
+                         BinaryValue{operation, Type::U64}, Return{}};
+        module.functions.push_back(std::move(function));
+    }
+    for (const auto operation : {Comparison::Equal, Comparison::NotEqual, Comparison::Less,
+                                Comparison::Greater, Comparison::LessEqual,
+                                Comparison::GreaterEqual}) {
+        auto function = module.functions[0];
+        function.name = "unsigned_compare" + std::to_string(static_cast<int>(operation));
+        function.result = Type::Bool;
+        function.code[5] = Compare{operation, Type::U64};
+        module.functions.push_back(std::move(function));
+    }
+    auto function = module.functions[0];
+    function.name = "unsigned_not";
+    function.parameters = {Type::U64};
+    function.code = {BindParameter{0, 8, Type::U64}, Load{8, Type::U64},
+                     UnaryValue{Unary::BitNot}, Return{}};
+    module.functions.push_back(function);
+    for (const auto &source : {Type::I64, Type::U64}) {
+        function.name = source == Type::I64 ? "signed_to_unsigned" : "unsigned_to_signed";
+        function.result = source == Type::I64 ? Type::U64 : Type::I64;
+        function.parameters = {source};
+        function.slots = {{8, source}};
+        function.code = {BindParameter{0, 8, source}, Load{8, source},
+                         Convert{source, function.result}, Return{}};
+        module.functions.push_back(function);
+    }
+    return module;
+}
+void unsignedTests() {
+    accept("unsigned operation callable fixture", unsignedOperations());
+    for (const auto operation : {Binary::CheckedAdd, Binary::CheckedSubtract,
+                                Binary::CheckedMultiply, Binary::CheckedDivide,
+                                Binary::CheckedRemainder, Binary::BitAnd, Binary::BitOr,
+                                Binary::BitXor, Binary::ShiftLeft, Binary::ShiftRight}) {
+        const auto name = "u64 binary " + std::to_string(static_cast<int>(operation));
+        const auto module = unsignedBinary(operation);
+        accept(name, module);
+        rejectModule(name + " signed left", module,
+                     [](Module &m) { std::get<Constant>(m.functions[0].code[0]).type = Type::I64; },
+                     "left operand");
+        rejectModule(name + " bool right", module,
+                     [](Module &m) { m.functions[0].code[2] = Constant{1, Type::Bool}; },
+                     "mistyped current");
+        rejectModule(name + " missing left", module,
+                     [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 1); },
+                     "stack underflow");
+        rejectModule(name + " bool operation type", module,
+                     [](Module &m) {
+                         std::get<BinaryValue>(m.functions[0].code[3]).operandType = Type::Bool;
+                     }, "invalid binary operand type");
+        rejectModule(name + " invalid operation", module,
+                     [](Module &m) {
+                         std::get<BinaryValue>(m.functions[0].code[3]).operation =
+                             static_cast<Binary>(-1);
+                     }, "invalid binary operation");
+        rejectModule(name + " forged scalar type", module,
+                     [](Module &m) {
+                         std::get<BinaryValue>(m.functions[0].code[3]).operandType.className = "X";
+                     }, "invalid binary operand type");
+        const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
+        rejectModule(name + " wrong right signedness", module,
+                     [shift](Module &m) {
+                         std::get<Constant>(m.functions[0].code[2]).type =
+                             shift ? Type::U64 : Type::I64;
+                     }, "mistyped current");
+        if (operation == Binary::BitAnd || operation == Binary::BitOr ||
+            operation == Binary::BitXor || shift)
+            rejectModule(name + " signed operation type", module,
+                         [](Module &m) {
+                             std::get<BinaryValue>(m.functions[0].code[3]).operandType = Type::I64;
+                         }, "invalid binary operand type");
+        const auto emission = X86Emitter{}.emit(validate(module));
+        if (shift) {
+            const auto guard = emission.find("ja .Laurora_shift_count_trap");
+            const auto instruction = emission.find(operation == Binary::ShiftLeft
+                                                       ? "shlq %cl, %rax"
+                                                       : "shrq %cl, %rax");
+            if (guard == std::string::npos || instruction == std::string::npos ||
+                guard >= instruction)
+                throw Error("shift guard must precede hardware count masking");
+            if (operation == Binary::ShiftLeft &&
+                emission.find("cmpq %rdx, %r11\n    jne .Laurora_overflow_trap") == std::string::npos)
+                throw Error("left shift must check every discarded bit");
+            ++passed;
+            std::cout << "PASS IR " << name << " native guard order\n";
+        } else if (operation == Binary::CheckedDivide || operation == Binary::CheckedRemainder) {
+            const auto guard = emission.find("jz .Laurora_division_zero_trap");
+            const auto division = emission.find("divq %r11");
+            if (guard == std::string::npos || division == std::string::npos || guard >= division ||
+                emission.find("xorq %rdx, %rdx\n    divq %r11") == std::string::npos ||
+                emission.find("idivq") != std::string::npos ||
+                emission.find("cmpq $-1, %r11") != std::string::npos)
+                throw Error("unsigned division must clear high dividend and guard zero");
+            ++passed;
+            std::cout << "PASS IR " << name << " native division guard\n";
+        }
+    }
+    for (const auto &source : {Type::I64, Type::U64}) {
+        auto module = baseline();
+        auto &function = module.functions[0];
+        const auto result = source == Type::I64 ? Type::U64 : Type::I64;
+        function.result = result;
+        function.code = {Constant{42, source}, Convert{source, result}, Return{}};
+        const auto name = typeName(source) + " checked conversion";
+        accept(name, module);
+        rejectModule(name + " wrong source value", module,
+                     [result](Module &m) { std::get<Constant>(m.functions[0].code[0]).type = result; },
+                     "mistyped current");
+        for (const auto &target : {Type::Bool, Type::Ref, Type::MutRef, Type::Own, Type("Pair"),
+                                  Type::array(TypeKind::U64, 1), Type(static_cast<TypeKind>(99))}) {
+            rejectModule(name + " invalid target " + typeName(target), module,
+                         [target](Module &m) {
+                             std::get<Convert>(m.functions[0].code[1]).resultType = target;
+                         }, "invalid checked conversion types");
+            rejectModule(name + " invalid source " + typeName(target), module,
+                         [target](Module &m) {
+                             std::get<Convert>(m.functions[0].code[1]).sourceType = target;
+                         }, "invalid checked conversion types");
+        }
+        rejectModule(name + " identity rejected", module,
+                     [source](Module &m) {
+                         std::get<Convert>(m.functions[0].code[1]).resultType = source;
+                     }, "invalid checked conversion types");
+    }
+    for (const auto operation : {Unary::CheckedNegate, Unary::LogicalNot})
+        reject("unary signed or bool operation on u64", [operation](Module &m) {
+            m.functions[0].code = {Constant{1, Type::U64}, UnaryValue{operation}, Return{}};
+        }, "mistyped current");
+    for (const auto &source : {Type::I64, Type::Bool})
+        reject("bitwise not requires u64 " + typeName(source), [source](Module &m) {
+            m.functions[0].code = {Constant{1, source}, UnaryValue{Unary::BitNot}, Return{}};
+        }, "mistyped current");
+    for (const auto operation : {Comparison::Equal, Comparison::NotEqual, Comparison::Less,
+                                Comparison::Greater, Comparison::LessEqual,
+                                Comparison::GreaterEqual}) {
+        auto module = unsignedBinary(Binary::CheckedAdd);
+        module.functions[0].result = Type::Bool;
+        module.functions[0].code[3] = Compare{operation, Type::U64};
+        const auto name = "u64 comparison " + std::to_string(static_cast<int>(operation));
+        accept(name, module);
+        rejectModule(name + " signed left", module, [](Module &m) {
+            std::get<Constant>(m.functions[0].code[0]).type = Type::I64;
+        }, "comparison type mismatch");
+        rejectModule(name + " signed right", module, [](Module &m) {
+            std::get<Constant>(m.functions[0].code[2]).type = Type::I64;
+        }, "mistyped current");
+        rejectModule(name + " invalid enum", module, [](Module &m) {
+            std::get<Compare>(m.functions[0].code[3]).operation = static_cast<Comparison>(-1);
+        }, "invalid comparison");
+        rejectModule(name + " reference forgery", module, [](Module &m) {
+            std::get<Compare>(m.functions[0].code[3]).operandType = Type::Ref;
+        }, "non-scalar comparison");
+    }
+    auto call = unsignedOperations();
+    auto entry = baseline().functions[0];
+    entry.result = Type::U64;
+    entry.code = {Constant{-1, Type::U64}, Push{}, Constant{0, Type::U64}, Push{},
+                  Call{"unsigned_op0"}, Return{}};
+    call.functions.push_back(entry);
+    accept("u64 scalar call boundary", call);
+    rejectModule("signed argument cannot cross u64 scalar call boundary", call, [](Module &m) {
+        std::get<Constant>(m.functions.back().code[0]).type = Type::I64;
+    }, "call argument type mismatch");
+    auto receiver = receiverBaseline();
+    receiver.classLayouts["Pair"][0] = Type::U64;
+    receiver.functions[0].result = Type::U64;
+    receiver.functions[0].slots[16] = Type::U64;
+    receiver.functions[0].code[1] = Constant{-1, Type::U64};
+    receiver.functions[1].parameters[0] = Type::U64;
+    receiver.functions[1].slots[8] = Type::U64;
+    receiver.functions[1].code[0] = BindParameter{0, 8, Type::U64};
+    receiver.functions[1].code[2] = Load{8, Type::U64};
+    receiver.functions[1].code[3] = ReceiverStore{0, Type::U64};
+    receiver.functions[2].result = Type::U64;
+    receiver.functions[2].code[0] = ReceiverLoad{0, Type::U64};
+    receiver.functions[3].result = Type::U64;
+    accept("u64 nominal receiver construction and forwarding", receiver);
+    rejectModule("u64 receiver field cannot be loaded as signed", receiver, [](Module &m) {
+        m.functions[2].code[0] = ReceiverLoad{0, Type::I64};
+    }, "receiver field type/layout mismatch");
+    reject("conversion roundtrip cannot preserve bounds token", [](Module &m) {
+        m.functions[0].code = {Constant{42, Type::I64}, Store{8, Type::I64},
+                               Constant{0, Type::I64}, BoundsGuard{8, 1, Type::I64},
+                               Convert{Type::I64, Type::U64}, Convert{Type::U64, Type::I64},
+                               IndexLoad{8, 1, Type::I64}, Return{}};
+    }, "bounds token");
+    auto array = baseline();
+    array.functions[0].result = Type::U64;
+    array.functions[0].slots[8] = Type::U64;
+    array.functions[0].code = {Constant{-1, Type::U64}, Store{8, Type::U64},
+                               Constant{0, Type::I64}, BoundsGuard{8, 1, Type::U64},
+                               IndexLoad{8, 1, Type::U64}, Return{}};
+    accept("u64 array guarded load", array);
+    auto arrayStore = array;
+    arrayStore.functions[0].code = {
+        Constant{0, Type::U64}, Store{8, Type::U64}, Constant{0, Type::I64},
+        BoundsGuard{8, 1, Type::U64}, Push{}, Constant{-1, Type::U64},
+        IndexStore{8, 1, Type::U64}, Load{8, Type::U64}, Return{}};
+    accept("u64 array guarded store", arrayStore);
+    rejectModule("u64 array store requires matching token", arrayStore, [](Module &m) {
+        m.functions[0].code[3] = Constant{0, Type::I64};
+    }, "bounds token");
+    rejectModule("u64 array index cannot be u64", array, [](Module &m) {
+        std::get<Constant>(m.functions[0].code[2]).type = Type::U64;
+    }, "mistyped current");
+    rejectModule("u64 array token cannot alias signed layout", array, [](Module &m) {
+        m.functions[0].code[4] = IndexLoad{8, 1, Type::I64};
+    }, "slot type/layout");
+    rejectModule("u64 payload cannot mint borrow capability", array, [](Module &m) {
+        m.functions[0].code[4] = BorrowHandle{8, Type::Ref};
+    }, "slot type/layout");
+}
 } // namespace
 int main(int argc, char **argv) {
     try {
@@ -184,6 +423,11 @@ int main(int argc, char **argv) {
             std::cout << X86Emitter{}.emit(validate(valueBaseline()));
             return 0;
         }
+        if (argc == 2 && std::string(argv[1]) == "--emit-u64") {
+            std::cout << X86Emitter{}.emit(validate(unsignedOperations()));
+            return 0;
+        }
+        unsignedTests();
         for (const auto operation : {Binary::CheckedDivide, Binary::CheckedRemainder}) {
             const auto name = operation == Binary::CheckedDivide ? "division" : "remainder";
             auto arithmetic = baseline();

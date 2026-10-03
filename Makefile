@@ -1,6 +1,6 @@
 # Bootstrap commands share the image/output directory; serialize their execution.
 .NOTPARALLEL:
-.PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-scheduling smoke-uefi test-uefi test-acpi test-division smoke-acpi smoke-division smoke-all
+.PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-scheduling smoke-uefi test-uefi test-acpi test-division smoke-acpi smoke-division test-pci test-unsigned smoke-pci smoke-unsigned smoke-all
 
 all: compiler kernel
 
@@ -35,7 +35,13 @@ test-acpi:
 test-division:
 	./scripts/kernel-division-tests.sh
 
-test: test-compiler test-image test-kernel test-uefi test-acpi test-division test-semantics
+test-pci:
+	./scripts/kernel-pci-tests.sh
+
+test-unsigned:
+	./scripts/kernel-unsigned-tests.sh
+
+test: test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-semantics
 
 # QEMU is intentionally a separate acceptance gate, never silently skipped.
 smoke:
@@ -59,9 +65,17 @@ smoke-acpi:
 smoke-division:
 	./scripts/kernel-division-smoke.sh
 
+smoke-pci:
+	./scripts/kernel-pci-all.sh
+
+smoke-unsigned:
+	./scripts/kernel-unsigned-smoke.sh
+
 smoke-all:
 	./scripts/kernel-protection-smoke.sh
 	./scripts/kernel-scheduling-smoke.sh
 	./scripts/kernel-uefi-all.sh
 	./scripts/kernel-acpi-all.sh
 	./scripts/kernel-division-smoke.sh
+	./scripts/kernel-pci-all.sh
+	./scripts/kernel-unsigned-smoke.sh

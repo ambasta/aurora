@@ -7,12 +7,20 @@ compiler="${AURORAC:-build/aurorac}"
 if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi
 command -v "$compiler" >/dev/null || { echo "Missing compiler: $compiler" >&2; exit 2; }
 division_fixture="${KERNEL_TEST_DIVISION:-none}"
+unsigned_fixture="${KERNEL_TEST_UNSIGNED:-none}"
+case "$unsigned_fixture" in
+    none|valid|shift-count|conversion-overflow|kernel-trap) ;;
+    *) echo 'Invalid unsigned fixture' >&2; exit 2 ;;
+esac
 case "$division_fixture" in
     none|zero|remainder-zero|overflow|remainder-min|kernel-trap) ;;
     *) echo 'Invalid division fixture' >&2; exit 2 ;;
 esac
 if [[ "$division_fixture" != none && "${KERNEL_TEST_SCHEDULE:-0}" == 1 ]]; then
     echo 'Division fixtures require the sequential user-program gate' >&2; exit 2
+fi
+if [[ "$unsigned_fixture" != none && ( "$division_fixture" != none || "${KERNEL_TEST_SCHEDULE:-0}" == 1 ) ]]; then
+    echo 'Unsigned fixtures require the uncombined sequential user-program gate' >&2; exit 2
 fi
 "$compiler" examples/kernel.au -o build/kernel-language.s
 as --64 build/kernel-language.s -o build/kernel-language.o
@@ -37,6 +45,12 @@ for program in clean bounds overflow; do
         overflow:overflow) input=tests/kernel-programs/division-overflow.au ;;
         remainder-min:clean) input=tests/kernel-programs/division-remainder-min.au ;;
     esac
+    case "$unsigned_fixture:$program" in
+        valid:clean|shift-count:clean|conversion-overflow:clean|kernel-trap:clean)
+            input=tests/kernel-programs/unsigned-valid.au ;;
+        shift-count:bounds) input=tests/kernel-programs/unsigned-shift-count.au ;;
+        conversion-overflow:overflow) input=tests/kernel-programs/unsigned-conversion-overflow.au ;;
+    esac
     if [[ "${KERNEL_TEST_SCHEDULE:-0}" == 1 ]]; then
         case "$program" in
             clean) input=tests/kernel-programs/scheduled-clean.au ;;
@@ -54,13 +68,18 @@ for program in clean bounds overflow; do
     objcopy -O binary "build/user-$program.elf" "build/user-$program.bin"
     program_index=$((program_index + 1))
 done
-python3 tests/kernel-user-image.py --division-fixture "$division_fixture"
+python3 tests/kernel-user-image.py --division-fixture "$division_fixture" --unsigned-fixture "$unsigned_fixture"
 as --64 build/kernel-user-images.S -o build/kernel-user-images.o
 extra=()
 if [[ "$division_fixture" != none ]]; then extra+=("-DAURORA_DIVISION_FIXTURE=\"$division_fixture\""); fi
 case "$division_fixture" in
     zero|remainder-zero) extra+=(-DAURORA_TEST_DIVISION_ZERO) ;;
     kernel-trap) extra+=(-DAURORA_TEST_DIVISION_KERNEL_TRAP) ;;
+esac
+if [[ "$unsigned_fixture" != none ]]; then extra+=("-DAURORA_UNSIGNED_FIXTURE=\"$unsigned_fixture\""); fi
+case "$unsigned_fixture" in
+    shift-count) extra+=(-DAURORA_TEST_UNSIGNED_SHIFT_COUNT) ;;
+    kernel-trap) extra+=(-DAURORA_TEST_UNSIGNED_KERNEL_TRAP) ;;
 esac
 if [[ "${KERNEL_TEST_DIVIDE_ERROR:-0}" == 1 ]]; then extra+=(-DAURORA_TEST_DIVIDE_ERROR); fi
 if [[ "${KERNEL_TEST_PAGE_FAULT:-0}" == 1 ]]; then extra+=(-DAURORA_TEST_PAGE_FAULT); fi

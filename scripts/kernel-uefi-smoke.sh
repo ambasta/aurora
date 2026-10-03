@@ -12,6 +12,10 @@ cpus=1
 if [[ "$mode" == acpi-two ]]; then cpus=2; fi
 args=()
 if [[ -n "${QEMU_DATA:-}" ]]; then args+=(-L "$QEMU_DATA"); fi
+case "$mode" in
+ pci-devices) args+=(-device nvme,serial=AURORA_READ_ONLY -device qemu-xhci -device e1000e,romfile=) ;;
+ pci-bridge|pci-cycle) args+=(-device pcie-root-port,id=aurora_port,chassis=1,slot=2 -device nvme,bus=aurora_port,serial=AURORA_READ_ONLY) ;;
+esac
 log="build/uefi/$mode.log"
 set +e
 timeout 30 "$qemu" "${args[@]}" -machine q35 -accel tcg -cpu qemu64 -smp "$cpus" -m 128M \
@@ -21,7 +25,9 @@ timeout 30 "$qemu" "${args[@]}" -machine q35 -accel tcg -cpu qemu64 -smp "$cpus"
 status=$?
 set -e
 cat "$log"
-if [[ "$mode" == acpi* ]]; then
+if [[ "$mode" == pci* ]]; then
+    python3 tests/kernel-pci-smoke.py "$status" "$log" "$mode"
+elif [[ "$mode" == acpi* ]]; then
     python3 tests/kernel-acpi-smoke.py "$status" "$log" "$mode"
 else
     python3 tests/kernel-uefi-smoke.py "$status" "$log" "$mode"

@@ -28,19 +28,19 @@ inline std::vector<Token> lex(const std::string &s) {
         }
         if (std::isdigit(c)) {
             auto b = i++;
-            while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])))
+            while (i < s.size() && (std::isalnum(static_cast<unsigned char>(s[i])) || s[i] == '_'))
                 ++i;
             out.emplace_back(s.substr(b, i - b), line);
             continue;
         }
         auto two = s.substr(i, 2);
         if (two == "->" || two == "==" || two == "!=" || two == "<=" || two == ">=" ||
-            two == "::") {
+            two == "::" || two == "<<" || two == ">>") {
             out.emplace_back(two, line);
             i += 2;
             continue;
         }
-        if (std::string("(){}[]:;,=+-*/%<>!.").find(c) != std::string::npos) {
+        if (std::string("(){}[]:;,=+-*/%<>!.&|^~").find(c) != std::string::npos) {
             out.emplace_back(std::string(1, c), line);
             ++i;
             continue;

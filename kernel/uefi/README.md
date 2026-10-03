@@ -136,3 +136,7 @@ metadata after ExitBootServices, with read-only/NX mapping revocation and hostil
 input/hardware-fault gates. The default version1 consumer remains available.
 Run `scripts/kernel-acpi-all.sh`; this does not enable AML, interrupt routing or
 a physical device driver.
+
+The next read-only discovery slice is [MCFG/PCI ECAM inventory](pci.md), using
+an explicit OVMF/q35 aperture and a revocable UC mapping window. It provides
+controller identities, not device activation or physical Framework support.

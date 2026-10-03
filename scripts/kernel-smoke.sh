@@ -12,6 +12,10 @@ case "$mode" in
   --division-overflow) build_environment+=(KERNEL_TEST_DIVISION=overflow) ;;
   --division-remainder-min) build_environment+=(KERNEL_TEST_DIVISION=remainder-min) ;;
   --division-kernel-trap) build_environment+=(KERNEL_TEST_DIVISION=kernel-trap) ;;
+  --unsigned-valid) build_environment+=(KERNEL_TEST_UNSIGNED=valid) ;;
+  --unsigned-shift-count) build_environment+=(KERNEL_TEST_UNSIGNED=shift-count) ;;
+  --unsigned-conversion-overflow) build_environment+=(KERNEL_TEST_UNSIGNED=conversion-overflow) ;;
+  --unsigned-kernel-trap) build_environment+=(KERNEL_TEST_UNSIGNED=kernel-trap) ;;
   --schedule) build_environment+=(KERNEL_TEST_SCHEDULE=1) ;;
   --schedule-smp) build_environment+=(KERNEL_TEST_SCHEDULE=1); cpus=2 ;;
   --schedule-mmio) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_PROGRAM_APIC_READ=1) ;;
@@ -63,6 +67,8 @@ set -e
 cat "$log"
 if [[ "$mode" == --division-* ]]; then
     python3 tests/kernel-division-smoke.py "$status" "$log" "$mode" "$metadata"
+elif [[ "$mode" == --unsigned-* ]]; then
+    python3 tests/kernel-unsigned-smoke.py "$status" "$log" "$mode" "$metadata"
 elif [[ "$mode" == --schedule* ]]; then
     python3 tests/kernel-schedule-smoke.py "$status" "$log" "$mode" "$metadata"
 else

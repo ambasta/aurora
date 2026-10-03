@@ -48,15 +48,16 @@ with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
         if result.returncode == 0 or not expected.search(result.stderr):
             raise AssertionError(f"{header}: missing specific exhaustive-dispatch rejection:\n{result.stderr}")
         print(f"PASS IR exhaustive unknown variant rejected by {header}")
-    enum_pattern = re.compile(r"(enum class Binary\s*\{)(.*?)(\};)", re.DOTALL)
-    if len(enum_pattern.findall(original)) != 1:
-        raise AssertionError("could not uniquely locate Binary operation enumeration")
-    enum_injected = enum_pattern.sub(lambda match: match[1] + match[2].rstrip() +
-                                    ", ExhaustivenessProbe " + match[3], original)
-    (directory / "ir.hpp").write_text(enum_injected)
-    for header, _ in CONSUMERS:
-        result = compile_probe(directory, header)
-        if result.returncode == 0 or "ExhaustivenessProbe" not in result.stderr or "not handled in switch" not in result.stderr:
-            raise AssertionError(f"{header}: missing binary-enum exhaustive rejection:\n{result.stderr}")
-        print(f"PASS IR exhaustive unknown binary enum rejected by {header}")
-print("6 exhaustive IR dispatch checks passed")
+    for enumeration in ("Unary", "Binary", "Comparison"):
+        enum_pattern = re.compile(r"(enum class " + enumeration + r"\s*\{)(.*?)(\};)", re.DOTALL)
+        if len(enum_pattern.findall(original)) != 1:
+            raise AssertionError(f"could not uniquely locate {enumeration} operation enumeration")
+        enum_injected = enum_pattern.sub(lambda match: match[1] + match[2].rstrip() +
+                                        ", ExhaustivenessProbe " + match[3], original)
+        (directory / "ir.hpp").write_text(enum_injected)
+        for header, _ in CONSUMERS:
+            result = compile_probe(directory, header)
+            if result.returncode == 0 or "ExhaustivenessProbe" not in result.stderr or "not handled in switch" not in result.stderr:
+                raise AssertionError(f"{header}: missing {enumeration}-enum exhaustive rejection:\n{result.stderr}")
+            print(f"PASS IR exhaustive unknown {enumeration} enum rejected by {header}")
+print("10 exhaustive IR dispatch checks passed")

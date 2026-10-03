@@ -1,6 +1,9 @@
 #include "acpi.hpp"
 #include "acpi-policy.hpp"
 #include "tables.hpp"
+#ifdef AURORA_UEFI_PCI
+#include "pci.hpp"
+#endif
 #include "../console.hpp"
 namespace aurora::uefi {
 namespace {
@@ -118,6 +121,9 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
     auto xsdt=window.table(*xsdt_address,bytes(arena+0x60000,Acpi::maximum_table),"XSDT");
     if (!xsdt || !Acpi::xsdt(*xsdt,*xsdt_address)) return false;
     U64 madt_address=0;
+#ifdef AURORA_UEFI_PCI
+    U64 mcfg_address=0;
+#endif
     for (std::size_t at=36;at<xsdt->size();at+=8) {
         const auto candidate=Bytes{*xsdt}.get(at);
         if (candidate==source) return false;
@@ -125,6 +131,12 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
         if (!window.copy(candidate,header)) return false;
         const auto length=Bytes{header}.get(4,4);
         if (length<36 || length>Acpi::maximum_table || !ranges.readable(candidate,length)) return false;
+        #ifdef AURORA_UEFI_PCI
+        if (Acpi::signature(header,"MCFG")) {
+            if (mcfg_address) return false;
+            mcfg_address=candidate;
+        }
+#endif
         if (!Acpi::signature(header,"APIC")) continue;
         if (madt_address) return false;
         madt_address=candidate;
@@ -172,7 +184,16 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
     }
     Serial::text("AURORA_ACPI_TOPOLOGY: records="); Serial::number(topology->count()); Serial::text(" enabled="); Serial::number(enabled);
     Serial::text(" capable="); Serial::number(capable); Serial::text(" lapic="); Serial::number(topology->apic()); Serial::text("\r\n");
+    #ifdef AURORA_UEFI_PCI
+    if (!mcfg_address) return false;
+    auto mcfg=window.table(mcfg_address,bytes(arena+0x70000,Acpi::maximum_table),"MCFG");
+    if (!mcfg || !window.closed() || !tables.verify(arena,handoff)) return false;
+#endif
     Serial::text("AURORA_ACPI_WINDOW_CLOSED: copies="); Serial::number(window.copies()); Serial::text("\r\n");
+#ifdef AURORA_UEFI_PCI
+    return discover_pci(arena,handoff,*mcfg,physical_bits);
+#else
     return true;
+#endif
 }
 }
