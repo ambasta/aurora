@@ -1,0 +1,30 @@
+Sat Oct  3 06:19:35 UTC 2026
+PASS: physical-page ownership, invalid inputs, exhaustion, reuse, 10000 model steps
+PASS: 511 identity mappings, W^X/domain/default-deny policy, malformed/overlapping firmware grants
+PASS: scalar return authority, bounds/overflow/division/shift metadata, origin/stack/flags rejection, replay/lifetime/reset policy
+PASS: immutable validated BIOS/UEFI program layout, interval and canonical checks, exact code/stack/frame authority
+PASS: domain ownership, active/foreign/stale/rebirth rejection, bounded slots, nonidentity W^X aliases
+PASS: integer context, privileged flags, snapshot reset, exact trap/return and bounded slices
+PASS: smoke validators, 19 success cases and 134 failure regressions (no QEMU required)
+PASS: scheduler transcript 9 positives and 185 negative authority regressions
+PASS: 124 UEFI descriptor, ownership, bounded handoff and complete table-tree checks
+PASS: UEFI transcripts 8 positive and 148 negative cases
+PASS: 16475 ACPI root/checksum/topology/range/window-authority cases
+PASS: ACPI transcripts 11 positive and 217 negative cases
+PASS: scalar return authority, bounds/overflow/division/shift metadata, origin/stack/flags rejection, replay/lifetime/reset policy
+PASS: division image metadata, 3 positive and 30 negative cases
+PASS: division smoke validators, 5 positive and 210 negative cases
+PASS: division image metadata, 3 positive and 30 negative cases
+PASS: division smoke validators, 5 positive and 210 negative cases
+PASS: 71054 PCI MCFG/aperture/snapshot/topology/boundary cases
+PASS: PCI transcripts 10 positive and 289 negative cases
+PASS: scalar return authority, bounds/overflow/division/shift metadata, origin/stack/flags rejection, replay/lifetime/reset policy
+PASS: unsigned image metadata, 9 positive and 34 negative cases
+PASS: unsigned smoke validators, 4 positive and 197 negative cases
+PASS: unsigned image metadata, 9 positive and 34 negative cases
+PASS: unsigned smoke validators, 4 positive and 197 negative cases
+PASS: 4 exact kernel unsigned fixtures and bounded RX images: full-width values, negative/64 shift counts, conversion overflow
+PASS: immutable validated BIOS/UEFI program layout, interval and canonical checks, exact code/stack/frame authority
+PASS: 1274 UEFI runtime layout, owned table, permission, isolation, corruption and reuse checks
+PASS: UEFI user image metadata 3 positive and 64 negative cases
+PASS: UEFI runtime transcripts 14 positive and 716 negative cases

@@ -140,3 +140,6 @@ a physical device driver.
 The next read-only discovery slice is [MCFG/PCI ECAM inventory](pci.md), using
 an explicit OVMF/q35 aperture and a revocable UC mapping window. It provides
 controller identities, not device activation or physical Framework support.
+
+[Sequential protected user domains](runtime.md) now have a separate version-3
+handoff profile, backed entirely by the owned arena and tested under real OVMF.

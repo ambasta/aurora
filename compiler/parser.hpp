@@ -8,6 +8,7 @@ class Parser {
     std::vector<Token> tokens;
     std::size_t position = 0;
     int expressionNesting = 0, blockNesting = 0, typeNesting = 0;
+    std::set<std::string> templateParameters;
     class Nesting {
         int &depth;
 
@@ -55,10 +56,10 @@ class Parser {
             !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
             fail("expected identifier");
         static const std::set<std::string> reserved = {
-            "fn",     "module", "let",           "mut",       "if",        "else",   "return",
-            "true",   "false",  "static_assert", "class",     "while",     "break",  "continue",
-            "auto",   "const",  "public",        "private",   "protected", "unsafe", "extern",
-            "struct", "export", "import",        "namespace", "this"};
+            "fn",     "module", "let",           "mut",       "if",        "else",     "return",
+            "true",   "false",  "static_assert", "class",     "while",     "break",    "continue",
+            "auto",   "const",  "public",        "private",   "protected", "unsafe",   "extern",
+            "struct", "export", "import",        "namespace", "this",      "template", "Scalar"};
         if (t.text.starts_with("__au_"))
             fail("reserved compiler identifier prefix: __au_");
         if (reserved.count(t.text))
@@ -77,6 +78,46 @@ class Parser {
             token.text += "." + ident().text;
         return token;
     }
+    bool scalarOrParameter(const Type &value) const {
+        return scalar(value) || value.kind == TypeKind::Parameter;
+    }
+    std::vector<TypeKind> templateArguments() {
+        if (!templateParameters.empty())
+            fail("template-id references inside template definitions are not supported");
+        need("<");
+        std::vector<TypeKind> arguments;
+        do {
+            if (arguments.size() >= 2)
+                fail("template arguments are limited to one or two Scalar types");
+            // No recursive type parse here: the accepted domain is exactly three types.
+            if (eat("i64"))
+                arguments.push_back(TypeKind::I64);
+            else if (eat("u64"))
+                arguments.push_back(TypeKind::U64);
+            else if (eat("bool"))
+                arguments.push_back(TypeKind::Bool);
+            else
+                fail("template arguments must satisfy Scalar: i64, u64 or bool");
+        } while (eat(","));
+        need(">");
+        return arguments;
+    }
+    bool templateExpressionAhead() const {
+        if (peek().text != "<")
+            return false;
+        // Expression positions only parse an explicit template-id when followed by
+        // construction syntax. Comparisons retain their usual parser path.
+        for (std::size_t index = position + 1; index < tokens.size() && index < position + 16;
+             ++index) {
+            const auto &token = tokens[index].text;
+            if (token == ">")
+                return index + 1 < tokens.size() &&
+                       (tokens[index + 1].text == "(" || tokens[index + 1].text == "{");
+            if (token == ";" || token == "}" || token == "<eof>" || token == "(")
+                return false;
+        }
+        return false;
+    }
     Type type() {
         Nesting nesting(typeNesting, 64, peek().line, "type");
         static const std::set<std::string> forbidden = {
@@ -91,6 +132,11 @@ class Parser {
         if (eat("bool"))
             return Type::Bool;
         auto t = take();
+        if (templateParameters.contains(t.text)) {
+            Type parameter(TypeKind::Parameter);
+            parameter.className = t.text;
+            return parameter;
+        }
         if (t.text == "array") {
             need("<");
             const auto element = type();
@@ -125,9 +171,10 @@ class Parser {
                 fail("expected type name");
             while (eat("::"))
                 t.text += "::" + ident().text;
+            Type result(t.text);
             if (peek().text == "<")
-                fail("unsupported type " + t.text);
-            return Type(t.text);
+                result.templateArguments = templateArguments();
+            return result;
         }
         need("<");
         need("i64");
@@ -196,6 +243,8 @@ class Parser {
         while (eat("::"))
             t.text += "::" + ident().text;
         e->token.text = t.text;
+        if (templateExpressionAhead())
+            e->templateArguments = templateArguments();
         if (eat("(")) {
             e->op = "call";
             if (t.text == "size_of" || t.text == "type_id" || t.text == "field_count") {
@@ -271,6 +320,14 @@ class Parser {
         std::size_t look = position + 1;
         while (look + 1 < tokens.size() && tokens[look].text == "::")
             look += 2;
+        if (look < tokens.size() && tokens[look].text == "<") {
+            const auto argumentEnd = look + 16;
+            while (look < tokens.size() && look < argumentEnd && tokens[look].text != ">" &&
+                   tokens[look].text != ";" && tokens[look].text != "<eof>")
+                ++look;
+            if (look < tokens.size() && tokens[look].text == ">")
+                ++look;
+        }
         const auto &next = tokens.at(std::min(look, tokens.size() - 1)).text;
         return !next.empty() &&
                (std::isalpha(static_cast<unsigned char>(next[0])) || next[0] == '_') &&
@@ -340,7 +397,7 @@ class Parser {
                 Param parameter;
                 parameter.type = type();
                 parameter.name = ident().text;
-                if (!scalar(parameter.type) && !(allowClass && parameter.type.isClass()))
+                if (!scalarOrParameter(parameter.type) && !(allowClass && parameter.type.isClass()))
                     fail(allowClass
                              ? "only scalar function parameters or scalar-field class values are "
                                "supported"
@@ -378,8 +435,29 @@ class Parser {
                 need("}");
                 continue;
             }
+            std::vector<std::string> declaredParameters;
+            if (eat("template")) {
+                need("<");
+                do {
+                    if (declaredParameters.size() >= 2)
+                        fail("templates require one or two Scalar parameters");
+                    need("Scalar");
+                    const auto parameter = ident().text;
+                    if (parameter == "i64" || parameter == "u64" || parameter == "bool" ||
+                        parameter == "own" || parameter == "ref" || parameter == "mutref" ||
+                        parameter == "array" || !templateParameters.insert(parameter).second)
+                        fail("duplicate or reserved template parameter");
+                    declaredParameters.push_back(parameter);
+                } while (eat(","));
+                need(">");
+                if (peek().text != "class")
+                    fail("only Scalar-constrained class templates are supported");
+            }
             if (eat("class")) {
                 ClassDefinition definition(ident());
+                if (templateParameters.contains(definition.name))
+                    fail("class name cannot shadow a template parameter");
+                definition.templateParameters = declaredParameters;
                 definition.scope = scope;
                 definition.exported = exported;
                 need("{");
@@ -422,7 +500,7 @@ class Parser {
                             method.receiverConst = eat("const");
                             need("->");
                             method.result = type();
-                            if (!scalar(method.result))
+                            if (!scalarOrParameter(method.result))
                                 fail("only scalar method results are supported");
                             method.body = block();
                         }
@@ -431,14 +509,18 @@ class Parser {
                     }
                     auto fieldType = type();
                     auto fieldName = ident();
-                    if (!scalar(fieldType))
+                    if (!scalarOrParameter(fieldType))
                         fail("class fields currently require i64, u64 or bool");
                     need(";");
                     definition.fields.emplace_back(fieldName, fieldType);
                     definition.fields.back().publicAccess = publicAccess;
                 }
                 need(";");
-                program.classes.push_back(std::move(definition));
+                if (declaredParameters.empty())
+                    program.classes.push_back(std::move(definition));
+                else
+                    program.templates.push_back(std::move(definition));
+                templateParameters.clear();
                 continue;
             }
             need("auto");

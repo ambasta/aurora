@@ -2,6 +2,7 @@
 #include "host_sources.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
+#include "templates.hpp"
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -148,7 +149,7 @@ class ModuleLoader {
 };
 
 class ModuleResolver {
-    enum class Kind { Function, Class, Any };
+    enum class Kind { Function, Class, Template, Any };
     const ClassDefinition *activeClass = nullptr;
     bool initializingReceiver = false;
     class Declaration {
@@ -157,6 +158,8 @@ class ModuleResolver {
         std::string qualified;
         std::string native;
         bool exported;
+        std::string module;
+        const ClassDefinition *templateDefinition = nullptr;
     };
     ModuleLoader::Graph graph;
     std::map<std::string, std::map<std::string, Declaration>> declarations;
@@ -212,7 +215,28 @@ class ModuleResolver {
             result += std::to_string(part.size()) + part;
         return result + "_d" + std::to_string(name.size()) + name;
     }
+    void registerMembers(ClassDefinition &definition, const ModuleLoader::Unit &unit) {
+        std::set<std::string> members;
+        for (const auto &field : definition.fields)
+            members.insert(field.token.text);
+        const auto classScope = qualify(definition.scope, definition.token.text);
+        const auto instanceSuffix = definition.templateArguments.empty()
+                                        ? ""
+                                        : ClassTemplateExpansion::nativeSuffix(
+                                              definition.templateArguments);
+        for (auto &method : definition.methods) {
+            sourceName(method.token.text);
+            if (builtins.contains(method.token.text) ||
+                !members.insert(method.token.text).second)
+                throw Error("duplicate or reserved class member: " + method.token.text);
+            method.name = mangle(method.constructor ? 'k' : 'm', unit.program.moduleName,
+                                 classScope, method.token.text) + instanceSuffix;
+            method.receiverClass = definition.name;
+            method.moduleScope = unit.scope;
+        }
+    }
     void registerDeclarations() {
+        std::size_t templateCount = 0;
         for (const auto &name : graph.order) {
             auto &unit = *graph.units.at(name);
             auto &table = declarations[name];
@@ -224,18 +248,19 @@ class ModuleResolver {
                 if (unit.program.namespaces.contains(qualified))
                     throw Error("namespace and declaration name collide: " + qualified);
                 if (builtins.contains(leaf) ||
-                    (kind == Kind::Class && (leaf == "i64" || leaf == "bool" || leaf == "ref" ||
+                    (kind != Kind::Function && (leaf == "i64" || leaf == "bool" || leaf == "ref" ||
                                              leaf == "mutref" || leaf == "array")))
-                    throw Error(kind == Kind::Class ? "duplicate or reserved class name"
+                    throw Error(kind != Kind::Function ? "duplicate or reserved class name"
                                                     : "duplicate or reserved function name");
                 const auto native =
                     kind == Kind::Function && unit.root && scope.empty() && !valueBoundary
                         ? leaf
-                        : mangle(kind == Kind::Function ? (valueBoundary ? 'v' : 'f') : 'c', name,
-                                 scope, leaf);
-                if (!table.emplace(qualified, Declaration{kind, qualified, native, exported})
+                        : mangle(kind == Kind::Function ? (valueBoundary ? 'v' : 'f')
+                                                        : (kind == Kind::Template ? 't' : 'c'),
+                                 name, scope, leaf);
+                if (!table.emplace(qualified, Declaration{kind, qualified, native, exported, name})
                          .second)
-                    throw Error(std::string(kind == Kind::Class
+                    throw Error(std::string(kind != Kind::Function
                                                 ? "duplicate or reserved class name"
                                                 : "duplicate or reserved function name") +
                                 " in module " + name + ": " + qualified);
@@ -244,20 +269,16 @@ class ModuleResolver {
             for (auto &definition : unit.program.classes) {
                 definition.name =
                     add(Kind::Class, definition.scope, definition.token.text, definition.exported);
-                std::set<std::string> members;
-                for (const auto &field : definition.fields)
-                    members.insert(field.token.text);
-                for (auto &method : definition.methods) {
-                    sourceName(method.token.text);
-                    if (builtins.contains(method.token.text) ||
-                        !members.insert(method.token.text).second)
-                        throw Error("duplicate or reserved class member: " + method.token.text);
-                    method.name =
-                        mangle(method.constructor ? 'k' : 'm', name,
-                               qualify(definition.scope, definition.token.text), method.token.text);
-                    method.receiverClass = definition.name;
-                    method.moduleScope = unit.scope;
-                }
+                registerMembers(definition, unit);
+            }
+            for (auto &definition : unit.program.templates) {
+                if (++templateCount > 64)
+                    throw Error("module graph exceeds 64 class templates");
+                ClassTemplateExpansion::validate(definition);
+                definition.name = add(Kind::Template, definition.scope, definition.token.text,
+                                      definition.exported);
+                table.at(qualify(definition.scope, definition.token.text)).templateDefinition =
+                    &definition;
             }
             for (auto &function : unit.program.functions) {
                 const bool valueBoundary =
@@ -310,17 +331,136 @@ class ModuleResolver {
                 if (auto found = symbols.find(candidate);
                     found != symbols.end() && !found->second.exported)
                     throw Error(std::string("private ") +
-                                (kind == Kind::Class ? "type" : "function") +
+                                (kind == Kind::Class || kind == Kind::Template ? "type" : "function") +
                                 " is not imported: " + candidate);
             }
         return nullptr;
     }
+    class TemplateRequest {
+      public:
+        std::string module, scope, name;
+        std::vector<TypeKind> arguments;
+    };
+    void collectTemplateType(const Type &type, const ModuleLoader::Unit &unit,
+                             const std::string &scope, std::vector<TemplateRequest> &requests) {
+        if (type.kind == TypeKind::Parameter)
+            throw Error("unsubstituted class template parameter: " + type.className);
+        if (!type.templateArguments.empty())
+            requests.push_back({unit.program.moduleName, scope, type.className,
+                                type.templateArguments});
+    }
+    void collectTemplateExpression(const ExpressionPtr &value, const ModuleLoader::Unit &unit,
+                                   const std::string &scope,
+                                   std::vector<TemplateRequest> &requests) {
+        if (!value)
+            return;
+        collectTemplateType(value->reflectedType, unit, scope, requests);
+        if (!value->templateArguments.empty())
+            requests.push_back({unit.program.moduleName, scope, value->token.text,
+                                value->templateArguments});
+        for (const auto &argument : value->args)
+            collectTemplateExpression(argument, unit, scope, requests);
+    }
+    void collectTemplateStatements(const std::vector<StatementPtr> &values,
+                                   const ModuleLoader::Unit &unit, const std::string &scope,
+                                   std::vector<TemplateRequest> &requests) {
+        for (const auto &value : values) {
+            collectTemplateType(value->type, unit, scope, requests);
+            collectTemplateExpression(value->expr, unit, scope, requests);
+            collectTemplateExpression(value->target, unit, scope, requests);
+            collectTemplateStatements(value->body, unit, scope, requests);
+            collectTemplateStatements(value->other, unit, scope, requests);
+        }
+    }
+    void collectTemplateFunction(const Function &function, const ModuleLoader::Unit &unit,
+                                 std::vector<TemplateRequest> &requests) {
+        collectTemplateType(function.result, unit, function.scope, requests);
+        for (const auto &parameter : function.params)
+            collectTemplateType(parameter.type, unit, function.scope, requests);
+        for (const auto &[field, initializer] : function.initializers) {
+            (void)field;
+            collectTemplateExpression(initializer, unit, function.scope, requests);
+        }
+        collectTemplateStatements(function.body, unit, function.scope, requests);
+    }
+    void expandTemplates() {
+        // Collect before appending classes, so no traversal keeps a pointer into
+        // a class vector while concrete definitions are being added to it.
+        std::vector<TemplateRequest> requests;
+        for (const auto &name : graph.order) {
+            const auto &unit = *graph.units.at(name);
+            for (const auto &function : unit.program.functions)
+                collectTemplateFunction(function, unit, requests);
+            for (const auto &definition : unit.program.classes) {
+                for (const auto &field : definition.fields)
+                    collectTemplateType(field.type, unit, definition.scope, requests);
+                for (const auto &method : definition.methods)
+                    collectTemplateFunction(method, unit, requests);
+            }
+        }
+        std::size_t instanceCount = 0;
+        for (const auto &request : requests) {
+            const auto &usingUnit = *graph.units.at(request.module);
+            const auto *declaration = lookup(usingUnit, request.scope, request.name, Kind::Template);
+            if (!declaration)
+                throw Error("unsupported type or unknown class template: " + request.name);
+            const auto &source = *declaration->templateDefinition;
+            if (request.arguments.size() != source.templateParameters.size())
+                throw Error("wrong number of class template arguments for " + request.name);
+            const auto suffix = ClassTemplateExpansion::argumentSuffix(request.arguments);
+            const auto qualified = declaration->qualified + suffix;
+            auto &table = declarations.at(declaration->module);
+            if (table.contains(qualified))
+                continue;
+            if (++instanceCount > 256)
+                throw Error("module graph exceeds 256 class template instantiations");
+            auto definition = ClassTemplateExpansion::instantiate(source, request.arguments);
+            definition.name = mangle('c', declaration->module, definition.scope,
+                                     definition.token.text) +
+                              ClassTemplateExpansion::nativeSuffix(request.arguments);
+            auto &definingUnit = *graph.units.at(declaration->module);
+            registerMembers(definition, definingUnit);
+            table.emplace(qualified, Declaration{Kind::Class, qualified, definition.name,
+                                                  declaration->exported, declaration->module});
+            definingUnit.program.classes.push_back(std::move(definition));
+        }
+    }
+    const Declaration *specialization(const ModuleLoader::Unit &unit, const std::string &scope,
+                                      const std::string &name,
+                                      const std::vector<TypeKind> &arguments) {
+        const auto *declaration = lookup(unit, scope, name, Kind::Template);
+        if (!declaration)
+            throw Error("unsupported type or unknown class template: " + name);
+        const auto qualified = declaration->qualified +
+                               ClassTemplateExpansion::argumentSuffix(arguments);
+        const auto &table = declarations.at(declaration->module);
+        const auto found = table.find(qualified);
+        if (found == table.end())
+            throw Error("unexpanded class template specialization: " + qualified);
+        return &found->second;
+    }
     void resolveType(Type &type, const ModuleLoader::Unit &unit, const std::string &scope) {
+        if (type.kind == TypeKind::Parameter)
+            throw Error("unsubstituted class template parameter: " + type.className);
         if (!type.isClass())
             return;
-        if (const auto *declaration = lookup(unit, scope, type.className, Kind::Class)) {
+        const Declaration *declaration = nullptr;
+        if (!type.templateArguments.empty())
+            declaration = specialization(unit, scope, type.className, type.templateArguments);
+        else if (activeClass && !activeClass->templateArguments.empty() &&
+                 (type.className == activeClass->token.text ||
+                  type.className == qualify(activeClass->scope, activeClass->token.text))) {
+            type.className = activeClass->name;
+            type.displayName = qualify(activeClass->scope, activeClass->token.text) +
+                               ClassTemplateExpansion::argumentSuffix(
+                                   activeClass->templateArguments);
+            return;
+        } else
+            declaration = lookup(unit, scope, type.className, Kind::Class);
+        if (declaration) {
             type.className = declaration->native;
             type.displayName = declaration->qualified;
+            type.templateArguments.clear();
         }
     }
     const Declaration *classDeclaration(const Type &type) const {
@@ -380,6 +520,21 @@ class ModuleResolver {
                     const std::string &scope) {
         if (!value)
             return;
+        if (!value->templateArguments.empty()) {
+            if (value->op != "call" && value->op != "construct")
+                throw Error("template arguments require a class construction");
+            const auto *declaration =
+                specialization(unit, scope, value->token.text, value->templateArguments);
+            value->resolvedName = declaration->native;
+            value->reflectedType = Type(declaration->native);
+            value->reflectedType.displayName = declaration->qualified;
+            if (value->op == "call")
+                value->op = "constructor_call";
+            value->templateArguments.clear();
+            for (const auto &argument : value->args)
+                expression(argument, unit, scope);
+            return;
+        }
         if (value->op == "call") {
             if (value->token.text == "size_of" || value->token.text == "type_id" ||
                 value->token.text == "field_count")
@@ -405,11 +560,20 @@ class ModuleResolver {
                         expression(argument, unit, scope);
                     return;
                 }
-                const auto *declaration = lookup(unit, scope, value->token.text, Kind::Any);
+                const auto *declaration =
+                    activeClass && !activeClass->templateArguments.empty() &&
+                            (value->token.text == activeClass->token.text ||
+                             value->token.text == qualify(activeClass->scope,
+                                                          activeClass->token.text))
+                        ? classDeclaration(Type(activeClass->name))
+                        : lookup(unit, scope, value->token.text, Kind::Any);
                 if (!declaration)
                     throw Error("line " + std::to_string(value->token.line) +
                                 ": unknown function '" + value->token.text +
                                 "' in defining module " + unit.program.moduleName);
+                if (declaration->kind == Kind::Template)
+                    throw Error("class template requires explicit type arguments: " +
+                                value->token.text);
                 value->resolvedName = declaration->native;
                 if (declaration->kind == Kind::Function) {
                     for (const auto &type : signatures.at(declaration->native))
@@ -449,6 +613,7 @@ class ModuleResolver {
     explicit ModuleResolver(ModuleLoader::Graph value) : graph(std::move(value)) {}
     Program resolve() {
         registerDeclarations();
+        expandTemplates();
         resolveSignatures();
         Program result;
         result.moduleName = graph.root;

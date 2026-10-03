@@ -1,0 +1,13 @@
+export module std.utility;
+
+export namespace std {
+    template <Scalar T, Scalar U>
+    class pair {
+    public:
+        T first;
+        U second;
+
+        pair(T first_value, U second_value)
+            : first(first_value), second(second_value) {}
+    };
+}

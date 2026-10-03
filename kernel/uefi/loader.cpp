@@ -1,4 +1,7 @@
 #include "handoff.hpp"
+#ifdef AURORA_UEFI_RUNTIME
+#include "uefi-user-images.hpp"
+#endif
 #include "tables.hpp"
 #include "acpi-policy.hpp"
 #include "../console.hpp"
@@ -75,6 +78,25 @@ auto __attribute__((ms_abi)) entry(void* image,void* system) -> U64 {
     put(handoff,0,Handoff::magic); put(handoff,8,1,4); put(handoff,12,Handoff::header,4);
 #ifdef AURORA_UEFI_ACPI
     put(handoff,8,2,4);
+#endif
+#ifdef AURORA_UEFI_RUNTIME
+    using aurora::uefi::RuntimeLayout;
+    using namespace aurora::uefi::images;
+    if (!RuntimeLayout::valid(arena)) fail("runtime arena layout");
+    put(handoff,8,3,4); put(handoff,120,arena+RuntimeLayout::metadata_offset);
+    const auto install_user=[&](unsigned index,std::span<const std::byte> image,const auto& fields) {
+        if (image.empty() || image.size()>4096 || fields[1]!=image.size()) fail("bounded user image");
+        auto target=span(arena+RuntimeLayout::image_offset+index*4096,image.size());
+        for (std::size_t i=0;i<image.size();++i) target[i]=image[i];
+        auto descriptor=span(arena+RuntimeLayout::metadata_offset+index*64,64);
+        for (unsigned i=0;i<8;++i) put(descriptor,i*8,fields[i]);
+        if (fields[7]) {
+            if (!RuntimeLayout::valid_probe(image.size(),fields[7]) || Bytes{target}.get(fields[7])!=0) fail("controlled probe literal");
+            put(target,fields[7],arena);
+        }
+    };
+    install_user(0,clean_bytes,std::array<U64,8>{clean_entry,clean_size,clean_return_pc,clean_bounds_pc,clean_overflow_pc,clean_division_zero_pc,clean_shift_count_pc,clean_probe_offset});
+    install_user(1,bounds_bytes,std::array<U64,8>{bounds_entry,bounds_size,bounds_return_pc,bounds_bounds_pc,bounds_overflow_pc,bounds_division_zero_pc,bounds_shift_count_pc,bounds_probe_offset});
 #endif
     put(handoff,16,Handoff::arena_bytes); put(handoff,24,arena);
     put(handoff,56,payload_size); put(handoff,64,aurora::uefi::payload_text_end);

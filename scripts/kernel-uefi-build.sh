@@ -8,6 +8,9 @@ flags=(-std=c++23 -O2 -Wall -Wextra -Werror -ffreestanding -fno-exceptions -fno-
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ runtime|runtime-code|runtime-stack|runtime-kernel|runtime-window|runtime-root|runtime-kernel-trap|runtime-entry-stack|runtime-write|runtime-nx|runtime-return|runtime-unknown|runtime-syscall|runtime-sysenter)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME)
+   if [[ "$UEFI_MODE" != runtime ]]; then flag="${UEFI_MODE#runtime-}"; flag="${flag//-/_}"; extra+=("-DAURORA_RUNTIME_${flag^^}"); fi ;;
  pci|pci-devices|pci-bridge) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI) ;;
  pci-checksum|pci-reserved|pci-overlap|pci-range|pci-write|pci-revoked|pci-cycle)
    flag="${UEFI_MODE#pci-}"; flag="${flag//-/_}"; extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI "-DAURORA_PCI_${flag^^}") ;;
@@ -23,13 +26,23 @@ case "${UEFI_MODE:-normal}" in
  nx) extra+=(-DAURORA_UEFI_NX) ;;
  *) echo 'Unknown UEFI build mode' >&2; exit 2 ;;
 esac
+runtime_objects=()
+if [[ "${UEFI_MODE:-normal}" == runtime* ]]; then
+ mode="${UEFI_MODE#runtime-}"
+ case "$mode" in code|stack|kernel|window|write|nx|return|unknown|syscall|sysenter) ;; *) mode=normal ;; esac
+ python3 scripts/kernel-uefi-user-images.py --compiler "$compiler" --mode "$mode"
+ as --64 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+ as --64 --defsym AURORA_RELATIVE_ONLY=1 kernel/exceptions.S -o build/uefi/runtime-exceptions.o
+ runtime_objects+=(build/uefi/runtime-entry.o build/uefi/runtime-exceptions.o)
+fi
 "$compiler" examples/kernel.au -o build/uefi/language.s
 as --64 build/uefi/language.s -o build/uefi/language.o
 as --64 kernel/uefi/payload-entry.S -o build/uefi/payload-entry.o
 g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/payload.cpp -o build/uefi/payload.o
 g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/acpi.cpp -o build/uefi/acpi.o
 g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/pci.cpp -o build/uefi/pci.o
-ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 build/uefi/payload-entry.o build/uefi/payload.o build/uefi/acpi.o build/uefi/pci.o build/uefi/language.o -o build/uefi/payload.elf
+g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/runtime.cpp -o build/uefi/runtime.o
+ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 build/uefi/payload-entry.o build/uefi/payload.o build/uefi/acpi.o build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" build/uefi/language.o -o build/uefi/payload.elf
 objcopy -O binary build/uefi/payload.elf build/uefi/payload.bin
 python3 - <<'PY'
 from pathlib import Path

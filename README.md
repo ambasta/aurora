@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 66 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` runs all 80 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -71,7 +71,8 @@ auto answer() -> i64 {
 - Scoped ownership/borrowing of owned integers and explicit moves. This is not
   a general heap/lifetime implementation or a proof of Rust-equivalent safety.
 - Basic compile-time type queries and runtime metadata queries. Full type-level
-  transformations, reflective invocation and generics are not implemented.
+  transformations and reflective invocation are not implemented. Explicit scalar-constrained
+  class templates now have a narrow implemented subset.
 
 A first freestanding Aurora module now provides scalar `std::min`, `std::max`
 and checked `std::abs` through genuine imports and namespaces:
@@ -126,6 +127,20 @@ and address/undefined-behavior sanitizer gates pass. Independent compiler review
 passed; final milestone008 integration verification passed.
 
 
+The reviewed milestone009 compiler adds explicit `template <Scalar T, Scalar U>`
+class-value definitions and the real `std.utility` module with `std::pair<T,U>`.
+One or two type arguments must each be i64, u64 or bool. Instances are distinct
+nominal classes identified by defining module, template and ordered argument tuple;
+repeated uses share one specialization. Ordinary initialization, privacy, constness
+and independent class-copy rules apply after substitution. Graph limits are 64
+templates and 256 specializations; deduction, function templates, nested arguments,
+recursive instantiation and general concepts remain deferred.
+The checkpoint passes 117 template checks and 393 direct IR cases, alongside the
+existing suites, ten exhaustive-dispatch checks and sanitizer gates. Independent
+compiler review passed; final milestone009 integration verification passed.
+See [the template contract](compiler/TEMPLATES.md).
+
+
 The previous `fn`/`let` prototype syntax is intentionally removed. The current
 surface, evaluation order and unsupported features are specified in
 [compiler/README.md](compiler/README.md). Examples live in `examples/`.
@@ -172,7 +187,7 @@ and [roadmap](docs/roadmap.md).
 ## Important limits
 
 There is no production safety proof, optimizing compiler, general heap ownership,
-general interprocedural borrowing, generic methods, inheritance, concurrency model, scheduler, SMP,
+general interprocedural borrowing, function templates, generic methods, inheritance, concurrency model, scheduler, SMP,
 full virtual-memory manager, general runtime/standard library, driver stack,
 desktop, native package system or
 self-hosting compiler yet. C-level performance has not been established by an
@@ -189,7 +204,7 @@ firmware contract or stable native ABI. Authored C++ uses classes, not structs.
 ## Repository map
 
 - `compiler/`, `examples/`: compiler implementation and compilable programs
-- `library/`: initial native freestanding scalar core/numeric/integer/bit modules
+- `library/`: initial native freestanding native core/numeric/integer/bit/utility modules
 - `kernel/`, `scripts/`, `tests/`: trusted bootstrap and executable validation
 - `docs/`: requirements, design, independent review and historical evidence
 - `AGENTS.md`: development and verification contract
@@ -211,3 +226,9 @@ not yet configure interrupts, start secondary CPUs or activate device drivers.
 The [read-only PCI profile](kernel/uefi/pci.md) discovers emulated NVMe, USB and
 network controller identities, including a downstream bridge. Its explicit q35
 resource contract grants no BAR, DMA or driver-activation authority.
+
+The [UEFI protected-runtime profile](kernel/uefi/runtime.md) now runs compiled
+user programs in distinct owned roots after firmware discovery, contains exact
+language faults, and restores kernel authority before retirement and reuse.
+Fourteen runtime modes verify this bounded sequential path. It does not yet
+provide UEFI preemption, IPC, arbitrary processes or device activation.

@@ -9,6 +9,8 @@ command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing' >&2; exit 2; }
 UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh
 if [[ "$mode" != normal ]]; then trap './scripts/kernel-uefi-build.sh >/dev/null' EXIT; fi
 cpus=1
+cpu=qemu64
+if [[ "$mode" == runtime-sysenter ]]; then cpu=qemu64,vendor=GenuineIntel,+sep; fi
 if [[ "$mode" == acpi-two ]]; then cpus=2; fi
 args=()
 if [[ -n "${QEMU_DATA:-}" ]]; then args+=(-L "$QEMU_DATA"); fi
@@ -18,14 +20,17 @@ case "$mode" in
 esac
 log="build/uefi/$mode.log"
 set +e
-timeout 30 "$qemu" "${args[@]}" -machine q35 -accel tcg -cpu qemu64 -smp "$cpus" -m 128M \
+timeout 30 "$qemu" "${args[@]}" -machine q35 -accel tcg -cpu "$cpu" -smp "$cpus" -m 128M \
     -bios "$firmware" -drive format=raw,file=fat:ro:build/uefi/esp,snapshot=on \
     -nic none -display none -serial stdio -monitor none -no-reboot \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 >"$log" 2>&1
 status=$?
 set -e
 cat "$log"
-if [[ "$mode" == pci* ]]; then
+if [[ "$mode" == runtime* ]]; then
+    cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
+    python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
+elif [[ "$mode" == pci* ]]; then
     python3 tests/kernel-pci-smoke.py "$status" "$log" "$mode"
 elif [[ "$mode" == acpi* ]]; then
     python3 tests/kernel-acpi-smoke.py "$status" "$log" "$mode"

@@ -97,7 +97,11 @@ public:
     }
 };
 inline auto expected_flags(std::uint64_t offset,const Bytes& h) -> std::uint64_t {
-    if (h.get(8,4)==2 && offset>=0x60000 && offset<0x81000) return 3|PageTables::nx;
+    if (h.get(8,4)==3) {
+        const auto flags=RuntimeLayout::kernel_flags(offset);
+        if (flags) return flags;
+    }
+    if (h.get(8,4)>=2 && offset>=0x60000 && offset<0x81000) return 3|PageTables::nx;
     if (offset==0 || (offset>=Handoff::map_offset && offset<Handoff::tables_offset)) return 1|PageTables::nx;
     if ((offset>=Handoff::tables_offset && offset<Handoff::tables_offset+Handoff::table_pages*4096)
         || offset==Handoff::idt_offset || (offset>=Handoff::stack_bottom && offset<Handoff::stack_top)

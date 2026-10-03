@@ -1,0 +1,7 @@
+COMMAND: python3 tests/semantics/test_runner.py
+351a46e42c1ad2e0b224d01a57f249039c37ffe44e051a5d67b420eae54c9174  /tmp/aurora-m009-compiler-frozen
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.008s
+
+OK

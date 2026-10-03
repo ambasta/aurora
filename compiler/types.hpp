@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 namespace aurora {
 class Error : public std::runtime_error {
   public:
@@ -14,12 +15,13 @@ class Token {
     int line;
     Token(std::string t, int l) : text(std::move(t)), line(l) {}
 };
-enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64 };
+enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter };
 class Type {
   public:
     TypeKind kind = TypeKind::I64;
     std::string className;
     std::string displayName;
+    std::vector<TypeKind> templateArguments;
     TypeKind elementKind = TypeKind::I64;
     int length = 0;
     Type() = default;
@@ -27,7 +29,8 @@ class Type {
     explicit Type(std::string name) : kind(TypeKind::Class), className(std::move(name)) {}
     bool operator==(const Type &other) const {
         return kind == other.kind && className == other.className &&
-               elementKind == other.elementKind && length == other.length;
+               elementKind == other.elementKind && length == other.length &&
+               templateArguments == other.templateArguments;
     }
     bool isClass() const { return kind == TypeKind::Class; }
     bool isArray() const { return kind == TypeKind::Array; }
@@ -59,8 +62,21 @@ inline std::string typeName(const Type &type) {
         return "ref<i64>";
     case TypeKind::MutRef:
         return "mutref<i64>";
-    case TypeKind::Class:
-        return type.displayName.empty() ? type.className : type.displayName;
+    case TypeKind::Parameter:
+        return type.className;
+    case TypeKind::Class: {
+        std::string name = type.displayName.empty() ? type.className : type.displayName;
+        if (!type.templateArguments.empty()) {
+            name += "<";
+            for (std::size_t index = 0; index < type.templateArguments.size(); ++index) {
+                if (index)
+                    name += ", ";
+                name += typeName(Type(type.templateArguments[index]));
+            }
+            name += ">";
+        }
+        return name;
+    }
     case TypeKind::Array:
         return "array<" + typeName(Type(type.elementKind)) + ", " + std::to_string(type.length) +
                ">";

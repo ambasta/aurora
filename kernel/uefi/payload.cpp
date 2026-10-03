@@ -1,6 +1,7 @@
 #include "handoff.hpp"
 #include "tables.hpp"
 #include "acpi.hpp"
+#include "runtime.hpp"
 #include "../console.hpp"
 #include "../pages.hpp"
 using aurora::hardware::Serial;
@@ -74,6 +75,9 @@ auto payload_main(U64 arena,U64 size) -> void {
 #endif
 #ifdef AURORA_UEFI_ACPI
     if (!aurora::uefi::discover_acpi(arena,h)) fail("ACPI discovery");
+#endif
+#ifdef AURORA_UEFI_RUNTIME
+    if (!aurora::uefi::run_protected(arena,h)) fail("protected runtime");
 #endif
     if (!pool.initialize(arena+Handoff::pool_offset,16)) fail("owned pool initialization");
     auto page=pool.acquire();
