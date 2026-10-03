@@ -8,6 +8,7 @@ $(OUT): main.cpp $(wildcard *.hpp)
 	$(CXX) $(CXXFLAGS) $< -o $@
 test: $(OUT)
 	python3 ../tests/compiler/run.py $(abspath $(OUT))
+	python3 ../tests/compiler/classes.py $(abspath $(OUT))
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/ir_tests.cpp -o $(dir $(OUT))ir-tests
 	$(dir $(OUT))ir-tests
 	python3 ../tests/modules/run.py $(abspath $(OUT))

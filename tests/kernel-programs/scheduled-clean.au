@@ -1,0 +1,12 @@
+module scheduled_clean;
+import std.core;
+auto aurora_user_main() -> i64 {
+    i64 index=0;
+    i64 sum=0;
+    while(index<200000) {
+        sum=sum+1;
+        if(sum==42) { sum=0; }
+        index=index+1;
+    }
+    return std::max(sum, 0)+4;
+}

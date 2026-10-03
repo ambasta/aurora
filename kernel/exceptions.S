@@ -152,6 +152,11 @@ aurora_exception_31:
     pushq $0
     pushq $31
     jmp exception_common
+.global aurora_timer_interrupt
+aurora_timer_interrupt:
+    pushq $0
+    pushq $64
+    jmp exception_common
 .global aurora_program_return
 aurora_program_return:
     pushq $0

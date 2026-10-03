@@ -41,6 +41,9 @@ class Function {
     int moduleScope = 0;
     Token token;
     Type result;
+    std::string receiverClass;
+    bool receiverConst = false, constructor = false, publicAccess = false;
+    std::vector<std::pair<Token, ExpressionPtr>> initializers;
     std::vector<Param> params;
     std::vector<StatementPtr> body;
     explicit Function(Token t) : name(t.text), token(std::move(t)), result(Type::I64) {}
@@ -60,6 +63,7 @@ class ClassDefinition {
     bool exported = false;
     Token token;
     std::vector<Field> fields;
+    std::vector<Function> methods;
     int id = 0;
     explicit ClassDefinition(Token token) : name(token.text), token(std::move(token)) {}
 };

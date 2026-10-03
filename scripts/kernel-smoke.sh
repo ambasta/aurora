@@ -4,8 +4,18 @@ cd "$(dirname "$0")/.."
 mode="${1:-normal}"
 build_environment=()
 cpu=qemu64
+cpus=1
 case "$mode" in
   normal) ;;
+  --schedule) build_environment+=(KERNEL_TEST_SCHEDULE=1) ;;
+  --schedule-smp) build_environment+=(KERNEL_TEST_SCHEDULE=1); cpus=2 ;;
+  --schedule-mmio) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_PROGRAM_APIC_READ=1) ;;
+  --schedule-no-apic) build_environment+=(KERNEL_TEST_SCHEDULE=1); cpu=qemu64,-apic ;;
+  --schedule-forged) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_SCHEDULE_FORGED=1) ;;
+  --schedule-context) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_SCHEDULE_CONTEXT=1) ;;
+  --schedule-root) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_SCHEDULE_ROOT=1) ;;
+  --schedule-softint) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_PROGRAM_SOFTINT=1) ;;
+  --schedule-fpu) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_PROGRAM_FPU=1) ;;
   --fault) build_environment+=(KERNEL_TEST_DIVIDE_ERROR=1) ;;
   --page-fault) build_environment+=(KERNEL_TEST_PAGE_FAULT=1) ;;
   --wp) build_environment+=(KERNEL_TEST_WP=1) ;;
@@ -39,12 +49,16 @@ command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing; image is built b
 args=()
 if [[ -n "${QEMU_DATA:-}" ]]; then args+=(-L "$QEMU_DATA"); fi
 set +e
-timeout 15 "$qemu" "${args[@]}" -machine pc -accel tcg -cpu "$cpu" -m 32M \
+timeout 15 "$qemu" "${args[@]}" -machine pc -accel tcg -cpu "$cpu" -smp "$cpus" -m 32M \
     -drive file=build/aurora.img,format=raw,if=ide -boot c \
     -nic none -display none -serial stdio -monitor none -no-reboot \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 > "$log" 2>&1
 status=$?
 set -e
 cat "$log"
-python3 tests/kernel-smoke.py "$status" "$log" "$mode" "$metadata"
+if [[ "$mode" == --schedule* ]]; then
+    python3 tests/kernel-schedule-smoke.py "$status" "$log" "$mode" "$metadata"
+else
+    python3 tests/kernel-smoke.py "$status" "$log" "$mode" "$metadata"
+fi
 echo "PASS: kernel emulator verification ($mode)"

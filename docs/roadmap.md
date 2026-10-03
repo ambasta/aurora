@@ -24,7 +24,9 @@ Specify evaluation order, integer overflow, division, conversions, initializatio
 
 ## 2 Class and lifetime core
 
-A partial implementation exists: private-by-default local scalar-field classes, designated initialization, independent value copies and access-checked field reads/mutation. Local fixed scalar arrays are also present. It deliberately excludes methods, nested aggregates, heap storage, aggregate borrowing, and class arguments/results. This partial stage does not waive the scalar semantic evidence gate or satisfy the lifetime gate below.
+A partial implementation exists: private-by-default local scalar-field classes, designated initialization, independent value copies and access-checked field reads/mutation. Local fixed scalar arrays are also present. Milestone005 adds one complete initializer-list constructor per class, private scalar methods, const-correct hidden receivers and synchronous checked reborrows, with explicit lexical object lifetime IR. It passes 74 new source class cases and 132 direct IR checks alongside baseline/oracle/sanitizer gates; independent review and final aggregate verification passed. The real `std.numeric` accumulator module exercises this encapsulation. See [the narrow contract](../compiler/CLASSES.md).
+
+General constructor bodies, overloads, inheritance/interfaces, nested/resource fields, heap storage, source-visible aggregate borrowing and class arguments/results remain deferred. Constructor/method call cycles are conservatively rejected; ordinary scalar recursion still permits stack exhaustion. This partial stage does not waive the scalar semantic evidence gate or satisfy the general lifetime gate below.
 
 Implement inline value classes, Java-inspired encapsulation/interfaces, explicit reference ownership and dispatch, fields, construction, deterministic destruction, borrowing across function calls, and constrained generics. Do not make interfaces or identity force heap allocation, garbage collection, or boxing. Define lifetimes, aliasing, pointer provenance, synchronization, and trusted intrinsics in a formal core calculus before claiming soundness. Classify which language features the model actually covers.
 
@@ -40,7 +42,7 @@ Specify and implement safe key-set queries, mapped types and conditional types w
 
 ## 4 Isolated kernel services
 
-Trusted bootstrap code now includes breakpoint/exception entry, E820 usable-map validation, and a bounded page arena with generation/epoch tickets. These are partial prerequisites, not general protected processes or a physical/virtual memory manager. Separately compiled user fixtures now run sequentially in three owned CR3 domains with leased stacks, bounded scalar returns and validated compiler-fault containment. Foreign-access denial, zeroed frame reuse and root restoration are tested, but general process lifecycle, scheduling and native service APIs remain absent. The final exact-source aggregate passed all nineteen configured gates; see the verification record for snapshot-specific outcomes.
+Trusted bootstrap code now includes breakpoint/exception entry, E820 usable-map validation, and a bounded page arena with generation/epoch tickets. These are partial prerequisites, not general protected processes or a physical/virtual memory manager. Separately compiled user fixtures now run sequentially in three owned CR3 domains with leased stacks, bounded scalar returns and validated compiler-fault containment. Foreign-access denial, zeroed frame reuse and root restoration are tested. Milestone005 adds a bounded QEMU xAPIC integer-only preemption harness, forced spinner cancellation and safe context restoration. General process lifecycle, SMP, IPC and native service APIs remain absent. The final exact-source aggregate passed all twenty-eight configured gates; see the verification record for snapshot-specific outcomes.
 
 Replace the demo path with memory ownership, protected address spaces, traps, preemption, capability operations, bounded IPC, and service supervision. Introduce a minimal driver broker, then one emulator-backed device service. Design proof-friendly interfaces before adding broad subsystems.
 
@@ -61,6 +63,8 @@ Port compiler components and selected kernel services incrementally. Keep the bo
 **Gate:** the compiler compiles itself, builds the system, and passes differential and regression tests against the prior toolchain. Perform multi-stage reproducibility checks and analyze mismatches. Self-hosting proves ecosystem usefulness, not safety or freedom from compiler backdoors.
 
 ## 6 Hardware contracts and profiles
+
+The first complete-machine target is [Framework Laptop 13 / Ryzen 7 7840U](framework-13-7840u.md), including the mainboard and all installed device classes, multi-user services and persistent filesystems. This is a qualification target, not current hardware support.
 
 Publish device schemas, vendor reference firmware, simulation models, and conformance suites. Start with a narrowly defined platform and storage/network/input devices before expanding to graphics, mobile, embedded, accelerators, and specialized devices. Use distinct trusted-device and isolated-device profiles.
 

@@ -9,6 +9,7 @@ class X86Emitter {
     std::ostringstream output;
     int stackDepth = 0;
     int functionIndex = 0;
+    int receiverSaveOffset = 0;
     std::map<std::string, std::size_t> argumentCounts;
     const std::vector<std::string> argumentRegisters = {"%rdi", "%rsi", "%rdx",
                                                         "%rcx", "%r8",  "%r9"};
@@ -102,6 +103,25 @@ class X86Emitter {
                          --index)
                         pop(argumentRegisters[index - 1]);
                     call(operation.callee);
+                } else if constexpr (std::is_same_v<Op, ir::BeginObject> ||
+                                     std::is_same_v<Op, ir::EndObject>) {
+                    // Scalar-only class lifetimes need no runtime action. The
+                    // verifier prevents use outside their lexical lifetime.
+                } else if constexpr (std::is_same_v<Op, ir::ReceiverLoad>) {
+                    line("movq " + address(receiverSaveOffset) + ", %r10");
+                    line("movq " + std::to_string(operation.fieldIndex * 8) + "(%r10), %rax");
+                } else if constexpr (std::is_same_v<Op, ir::ReceiverStore>) {
+                    line("movq " + address(receiverSaveOffset) + ", %r10");
+                    line("movq %rax, " + std::to_string(operation.fieldIndex * 8) + "(%r10)");
+                } else if constexpr (std::is_same_v<Op, ir::MethodCall>) {
+                    for (std::size_t index = argumentCounts.at(operation.callee); index > 0;
+                         --index)
+                        pop(argumentRegisters[index - 1]);
+                    if (operation.receiverOffset == 0)
+                        line("movq " + address(receiverSaveOffset) + ", %r10");
+                    else
+                        line("leaq " + address(operation.receiverOffset) + ", %r10");
+                    call(operation.callee);
                 } else if constexpr (std::is_same_v<Op, ir::MetadataQuery>) {
                     line("movq %rax, %rdi");
                     call(querySymbol(operation.query, operation.moduleScope));
@@ -134,11 +154,17 @@ class X86Emitter {
         output << "# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n";
         for (const auto &function : module.functions) {
             stackDepth = 0;
-            output << ".globl " << function.name << "\n.type " << function.name << ", @function\n"
-                   << function.name << ":\n";
+            // Receiver entry points use a private compiler ABI and cannot be
+            // exposed as ordinary scalar-callable external symbols.
+            output << (function.receiver ? ".local " : ".globl ") << function.name
+                   << "\n.type " << function.name << ", @function\n" << function.name << ":\n";
             line("pushq %rbp");
             line("movq %rsp, %rbp");
-            line("subq $" + std::to_string(function.frameBytes) + ", %rsp");
+            receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
+            const int frameBytes = function.frameBytes + (function.receiver ? 16 : 0);
+            line("subq $" + std::to_string(frameBytes) + ", %rsp");
+            if (function.receiver)
+                line("movq %r10, " + address(receiverSaveOffset));
             for (const auto &operation : function.code)
                 instruction(operation);
             output << returnLabel() << ":\n";

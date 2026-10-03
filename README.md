@@ -22,7 +22,8 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs the normal boot and adversarial CPU/memory/program probes.
+`make smoke-all` runs all 28 normal/adversarial CPU, memory, program and
+preemption gates. `make smoke-scheduling` runs the nine scheduling gates alone.
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
 Do not write it to a physical disk or replace a host bootloader.
@@ -61,12 +62,14 @@ auto answer() -> i64 {
   dependencies; native replacements and self-hosting are future milestones.
 - Typed functions, initialized locals, branches and conservative while-loop checks.
 - Checked signed arithmetic and bounds-checked fixed-size scalar arrays.
-- Local class values, named field initialization, independent copies and field
-  access, with private-by-default class visibility and const enforcement.
+- Local class values, designated field initialization, independent copies and
+  access-checked fields. The compiler also supports complete scalar
+  constructors, private methods and const-correct receiver calls; see
+  [the precise class subset](compiler/CLASSES.md).
 - Scoped ownership/borrowing of owned integers and explicit moves. This is not
   a general heap/lifetime implementation or a proof of Rust-equivalent safety.
 - Basic compile-time type queries and runtime metadata queries. Full type-level
-  transformations, reflective invocation, methods and generics are not implemented.
+  transformations, reflective invocation and generics are not implemented.
 
 A first freestanding Aurora module now provides scalar `std::min`, `std::max`
 and checked `std::abs` through genuine imports and namespaces:
@@ -80,6 +83,14 @@ name resolution. Runtime type queries use defining-module visibility views.
 This is whole-graph compilation, not a separately compiled stable binary ABI.
 See [modules and host I/O](compiler/MODULES.md) and [core library](library/README.md).
 The library is an initial scalar module, not a complete runtime or standard library.
+
+The compiler also supports `import std.numeric;` and an inline
+`std::Accumulator(initial)` with checked `.add(amount)` and readonly `.value()`.
+This Aurora-specific scalar API exercises private state and constructors; it is
+not a claim that standard C++ has this class or that generic containers are ready.
+Milestone005 passes 74 class execution/rejection checks and 132 direct IR
+checks alongside the existing suites; see the exact verification receipts.
+
 
 The previous `fn`/`let` prototype syntax is intentionally removed. The current
 surface, evaluation order and unsupported features are specified in
@@ -127,7 +138,7 @@ and [roadmap](docs/roadmap.md).
 ## Important limits
 
 There is no production safety proof, optimizing compiler, general heap ownership,
-interprocedural borrowing, methods/generics, concurrency model, scheduler, SMP,
+general interprocedural borrowing, generic methods, inheritance, concurrency model, scheduler, SMP,
 full virtual-memory manager, general runtime/standard library, driver stack,
 desktop, native package system or
 self-hosting compiler yet. C-level performance has not been established by an

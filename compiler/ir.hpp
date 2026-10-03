@@ -69,6 +69,31 @@ class Call {
   public:
     std::string callee;
 };
+// Receiver capabilities are deliberately not scalar Values. Only these operations
+// can address the hidden receiver, and a call consumes a synchronous reborrow.
+class BeginObject {
+  public:
+    int offset;
+};
+class EndObject {
+  public:
+    int offset;
+};
+class ReceiverLoad {
+  public:
+    int fieldIndex;
+    Type type;
+};
+class ReceiverStore {
+  public:
+    int fieldIndex;
+    Type type;
+};
+class MethodCall {
+  public:
+    std::string callee;
+    int receiverOffset; // zero forwards this; positive names an ObjectSlot base
+};
 class MetadataQuery {
   public:
     Query query;
@@ -95,7 +120,19 @@ class BindParameter {
 };
 using Instruction = std::variant<Constant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Compare,
                                  BoundsGuard, IndexLoad, IndexStore, BorrowHandle, Call,
-                                 MetadataQuery, Label, Jump, BranchFalse, Return, BindParameter>;
+                                 BeginObject, EndObject, ReceiverLoad, ReceiverStore, MethodCall, MetadataQuery, Label, Jump,
+                                 BranchFalse, Return, BindParameter>;
+class ObjectSlot {
+  public:
+    std::string className;
+    bool mutableValue;
+};
+class Receiver {
+  public:
+    std::string className;
+    bool mutableValue;
+    bool constructor;
+};
 class Function {
   public:
     std::string name;
@@ -103,6 +140,10 @@ class Function {
     Type result;
     std::vector<Type> parameters;
     std::map<int, Type> slots;
+    // Field i lives at base - i*8 and has a matching scalar slot. Empty classes
+    // reserve one word but expose no scalar payload.
+    std::map<int, ObjectSlot> objectSlots;
+    std::optional<Receiver> receiver;
     int frameBytes = 0;
     std::vector<Instruction> code;
 };
@@ -114,6 +155,7 @@ class Descriptor {
 class Module {
   public:
     std::vector<Function> functions;
+    std::map<std::string, std::vector<Type>> classLayouts;
     std::map<int, Descriptor> descriptors;
     std::map<int, std::set<int>> descriptorViews{{0, {}}};
 };

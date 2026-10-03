@@ -122,7 +122,7 @@ negative = [
     ("borrow scalar", 'const i64 a = 42; const ref<i64> b = borrow(a); return 42;', "expected own"),
     ("reference escape", 'module test; auto test() -> ref<i64> { own<i64> a = own(42); return borrow(a); }', "only scalar function results"),
     ("unsupported pointer", 'const ptr<i64> x = 0; return 42;', "unsupported type"),
-    ("unsupported class methods", 'module test; class A { public: auto f() -> i64 { return 1; } }', "unsupported or reserved type spelling"),
+    ("class declaration needs semicolon", 'module test; class A { public: auto f() -> i64 { return 1; } }', "expected ';'"),
     ("unreachable code", "return 42; return 0;", "unreachable statement"),
     ("duplicate function", 'module test; auto test() -> i64 { return 42; } auto test() -> i64 { return 0; }', "duplicate or reserved"),
     ("builtin collision", 'module test; auto reflect_size() -> i64 { return 42; }', "duplicate or reserved"),

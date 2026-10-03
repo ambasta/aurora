@@ -1,0 +1,9 @@
+module scheduled_spin;
+auto aurora_user_main() -> i64 {
+    i64 count=0;
+    while(true) {
+        count=count+1;
+        if(count==1000) { count=0; }
+    }
+    return 0;
+}

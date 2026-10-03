@@ -34,3 +34,11 @@ The implementations are intentionally simple and currently retain ordinary funct
 There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, heap ownership, aggregate arguments/results and interprocedural borrowing have not been implemented soundly yet. Those mechanisms must precede the corresponding library contracts.
 
 The long-term goal remains a native runtime responsible for the useful roles currently served by libc, and a broad safe C++ standard-library ecosystem without C source/ABI compatibility. This module establishes actual imports, private implementation helpers, typed calls and executable scalar contracts toward that goal.
+
+## Encapsulated scalar accumulation
+
+`import std.numeric;` supplies `std::Accumulator(initial)`, `.add(amount)` and
+`.value() const`. This is a small Aurora-specific scalar API, not a claim that
+standard C++ defines `std::Accumulator` or that generic numeric algorithms are
+complete. It keeps the checked signed total private, uses no allocation, and
+traps on overflow before updating the total. Copies have independent totals.

@@ -1,0 +1,20 @@
+export module std.numeric;
+
+// Scalar-only, checked accumulation. No allocation or platform runtime is required.
+export namespace std {
+    class Accumulator {
+        i64 total;
+
+    public:
+        Accumulator(i64 initial) : total(initial) {}
+
+        auto add(i64 amount) -> i64 {
+            total = total + amount;
+            return total;
+        }
+
+        auto value() const -> i64 {
+            return total;
+        }
+    };
+}

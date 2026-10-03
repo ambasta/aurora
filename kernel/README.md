@@ -78,8 +78,9 @@ scrubbed: the pool must not cross security domains. The C++ bootstrap can still
 forge raw addresses and is trusted. Lease validation is not hardware isolation.
 
 The newer protection milestone below adds a TSS, dedicated double-fault IST,
-W^X and one controlled ring-3 probe. External IRQs remain masked; scheduler,
-APIC/timer setup and general SIMD/FPU contexts remain absent. Unexpected faults
+W^X and one controlled ring-3 probe. That gate keeps external IRQs masked.
+The later opt-in preemption gate below adds a bounded local APIC scheduler;
+general SIMD/FPU context management remains absent. Unexpected faults
 fail-stop. There is no complete process isolation, IOMMU, IPC or SMP, and no
 storage/network/GPU/input driver compatibility is claimed.
 
@@ -270,9 +271,10 @@ hash and rerun against the final compiler before claiming a checkpoint verified.
 ### Remaining assumptions
 
 This is a trusted build-time image installer and a sequential integer-only test
-runner. There is no arbitrary executable loader, timer/preemption, scheduler,
-a complete process model, cross-domain copy service, heap lifecycle or general
-syscall API. A hung program cannot yet be interrupted by this runner. Unexpected
+runner. This historical sequential gate has no arbitrary executable loader or
+complete process model, cross-domain copy service, heap lifecycle or general
+syscall API. A hung program cannot be interrupted by this sequential runner;
+the separate preemption mode below adds bounded timer cancellation. Unexpected
 faults, stack exhaustion and invalid returns still fail-stop; only the two known
 compiler traps are contained. FPU/SIMD and FS/GS/TLS lifecycle, asynchronous state,
 SMP, DMA isolation and speculative-execution mitigations remain outside this gate.
@@ -385,9 +387,113 @@ malformed-packet controls. No host disk or bootloader is modified.
 ### Still outside the claim
 
 Roots and code slots are static; stacks are explicitly leased and reclaimed.
-There is no arbitrary image loading, pageable VM, user heap, threads, scheduler,
+There is no arbitrary image loading, pageable VM, user heap, general threads,
 permissions service, signal delivery, shared-memory service, SMP, DMA isolation,
 FPU/TLS lifecycle or speculative-execution assurance. Only the specified compiler
 traps are contained. Other faults remain fail-stop. This checkpoint demonstrates
 bounded sequential hardware domains on QEMU, not complete process isolation or
 qualification of physical Zen/RDNA hardware.
+
+
+## Bounded single-CPU preemption gate
+
+This opt-in mechanism extends the owned-address-space foundation with an actual
+local APIC timer and a small round-robin integer-context runner. Build with
+`KERNEL_TEST_SCHEDULE=1 ./scripts/kernel-build.sh`, or run
+`./scripts/kernel-scheduling-smoke.sh` for its nine real emulator modes. The
+existing `./scripts/kernel-protection-smoke.sh` still runs all nineteen earlier
+modes. Neither wrapper substitutes transcript-only fixtures for emulator runs.
+
+### Platform and architectural contract
+
+The harness requires a single QEMU `pc` BSP, xAPIC CPUID/MSR/PAT support, an already
+enabled xAPIC at IA32_APIC_BASE address `0xfee00000`, no x2APIC mode, and PAT index3
+encoded UC. Advertised multi-logical-CPU configurations are rejected; the runner
+also explicitly launches QEMU with `-smp 1`. A zero CPUID logical-count field is
+accepted for older non-HT CPU models where that field is not meaningful. This is
+a checked emulator platform contract, not ACPI/MADT discovery or a claim that a
+Framework 13 Ryzen 7840U has been qualified.
+
+The additional shared page-table branch maps exactly one MMIO page supervisor
+RW/NX, nonglobal, with PCD/PWT selecting the verified UC PAT entry. It is identical
+in every root. The first-2-MiB ordinary-memory policy remains unchanged. The
+adapter validates the complete aperture tables and avoids cacheable aliases.
+User access to this page has a real protection-fault gate.
+
+A one-shot countdown uses divide16 and an arbitrary bounded initial count. The
+count is not milliseconds or a scheduler timing guarantee; no APIC frequency,
+ARAT, invariant TSC, TSC-deadline feature or physical Zen behavior is assumed.
+The legacy PC PIC and unrelated local sources are masked. Unsupported startup
+state, unexpected interrupts and spurious vectors fail-stop.
+
+Primary architectural reference checked for implementation: [Intel SDM Volume3A,
+chapter10](https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf),
+especially §10.5.4 (countdown/divide and stop semantics), §10.8.5 (IRR/ISR/EOI)
+and §10.9 (spurious interrupts), plus chapters6 and11 for interrupt entry and
+memory types. This defines the adapter mechanics; emulator tests establish only
+the behavior of the tested QEMU model. AMD physical qualification still requires
+its current APM/PPR, firmware discovery and machine-specific tests.
+
+### Context, continuation and timer authority
+
+Kernel code remains non-preemptible: IF is clear except in the tiny labeled
+pending-IRQ drain window. User IRET frames have IF set. Vector64 is a DPL0
+interrupt gate. A user software INT64 faults; a privileged software-forged INT64
+also cannot acquire scheduling authority. Delivery requires the active domain's
+actual CR3, a complete aligned frame on the guarded TSS.RSP0 stack, approved
+selectors/stack/RFLAGS and an RIP inside that domain's exact linked image. The
+APIC timer ISR bit must be set, with no unrelated in-service/pending source.
+
+All15 GPRs, RIP/RSP/selectors and RFLAGS are copied into privileged value storage.
+Each resumption revalidates the saved context and live domain ticket. It builds
+its IRET frame on the trusted kernel launch stack, restoring every integer
+register. No user address selects a privileged continuation. The shared TSS
+entry stack is used serially; no suspended task owns a kernel stack. Kernel
+root restoration occurs after every timer interruption, return and contained
+fault, before selecting another domain or reclaiming memory.
+
+Masking/stopping the timer does not imply clearing an already latched IRR.
+After restoring the kernel root, the runner drains only an actual pending timer
+in a bounded STI/NOP/CLI window. The handler additionally requires CPL0, a PC in
+that exact window, the privileged main stack and kernel root. It acknowledges
+the real ISR without charging a task. ISR/IRR must be empty before rearm or
+retirement. TPR stays zero; IF is clear on every ordinary exit. The test forces
+pending interrupts before task creation, between teardown and reuse, and after
+final cleanup rather than assuming this race never happens.
+
+The controlled compiled images contain integer-only instructions. CR0.TS is set
+so unsupported x87/MMX/SIMD use traps instead of sharing such state; FSGSBASE and
+OSXSAVE-enabled configurations are rejected. An x87 probe demonstrates fail-stop.
+This does not implement general extended-state or TLS lifecycle.
+
+### Observable acceptance
+
+Three private domains run a compiled finite loop, a compiled non-yielding loop,
+and a known bounds-failing program. The finite loop must return exactly42 after
+at least two preemptions. A linked trusted probe additionally loads15 distinct
+GPR values, sets DF, and checks them after repeated asynchronous resumptions.
+The infinite loop is cancelled at24 charged slices; the ordinary tasks have a
+hard256-slice cap. Only exact compiler UD2 metadata can produce a contained
+bounds/overflow event. Other faults remain fatal.
+
+Every terminal task is retired only under the kernel root with an empty APIC
+queue. Its saved context is cleared, stale handles are rejected, and leased
+stack pages are zeroed/read back before release. Once all three are gone, a
+fresh clean task reuses the first physical stack frames, verifies they are zero,
+and completes again under preemption. There is no user pointer, raw syscall,
+unsafe-language interface or user-selected return target in this protocol.
+
+New QEMU modes are `--schedule`, `--schedule-no-apic`, `--schedule-smp`,
+`--schedule-forged`, `--schedule-context`, `--schedule-root`,
+`--schedule-softint`, `--schedule-fpu`, and `--schedule-mmio`. The latter modes
+check absent/unsupported configuration, forged authority, malformed saved CS,
+actual root mismatch, DPL enforcement, unsupported state and supervisor MMIO
+protection. Hosted tests cover context/flag/range rejection, reset and budget
+exhaustion. The separate transcript suite currently has9 positive and185
+negative cases and still works with Python optimization enabled.
+
+This is a bounded single-CPU preemption foundation. It does not provide calibrated
+wall-clock time, arbitrary executables, dynamic thread creation, per-task kernel
+stacks, a general process lifecycle, SMP, IPC, persistent storage or device
+drivers. The trusted bootstrap remains C++23 and assembly; the computational
+workloads are actual Aurora safe-C++ compiler output.

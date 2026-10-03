@@ -4,6 +4,7 @@
 #include <cstdint>
 
 extern const std::array<std::uint64_t, 32> vectors asm("aurora_exception_vectors");
+auto timer_interrupt() -> void asm("aurora_timer_interrupt");
 auto program_return() -> void asm("aurora_program_return");
 auto user_return() -> void asm("aurora_user_return");
 auto unexpected() -> void asm("aurora_unexpected_interrupt");
@@ -35,7 +36,7 @@ auto aurora::hardware::Interrupts::initialize() -> void {
     asm volatile("lgdt %0" : : "m"(gdtr) : "memory");
     asm volatile("ltr %0" : : "r"(static_cast<std::uint16_t>(40)) : "memory");
     for (std::size_t vector = 0; vector < 256; ++vector) {
-        const auto address = vector < 32 ? vectors[vector] : vector == 128
+        const auto address = vector == 64 ? reinterpret_cast<std::uint64_t>(&timer_interrupt) : vector < 32 ? vectors[vector] : vector == 128
             ? reinterpret_cast<std::uint64_t>(&user_return) : vector == 129
             ? reinterpret_cast<std::uint64_t>(&program_return) : reinterpret_cast<std::uint64_t>(&unexpected);
         const auto slot = vector * 16;

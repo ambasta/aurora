@@ -8,8 +8,9 @@
 #include <set>
 
 namespace aurora {
-// Host bootstrap file reads are limited to named modules beneath explicit roots.
-// No source construct performs arbitrary filesystem or network operations.
+// Host bootstrap file reads are limited to named modules beneath explicit
+// roots. No source construct performs arbitrary filesystem or network
+// operations.
 class ModuleLoader {
   public:
     class Unit {
@@ -147,7 +148,9 @@ class ModuleLoader {
 };
 
 class ModuleResolver {
-    enum class Kind { Function, Class };
+    enum class Kind { Function, Class, Any };
+    const ClassDefinition *activeClass = nullptr;
+    bool initializingReceiver = false;
     class Declaration {
       public:
         Kind kind;
@@ -234,9 +237,24 @@ class ModuleResolver {
                                 " in module " + name + ": " + qualified);
                 return native;
             };
-            for (auto &definition : unit.program.classes)
+            for (auto &definition : unit.program.classes) {
                 definition.name =
                     add(Kind::Class, definition.scope, definition.token.text, definition.exported);
+                std::set<std::string> members;
+                for (const auto &field : definition.fields)
+                    members.insert(field.token.text);
+                for (auto &method : definition.methods) {
+                    sourceName(method.token.text);
+                    if (builtins.contains(method.token.text) ||
+                        !members.insert(method.token.text).second)
+                        throw Error("duplicate or reserved class member: " + method.token.text);
+                    method.name =
+                        mangle(method.constructor ? 'k' : 'm', name,
+                               qualify(definition.scope, definition.token.text), method.token.text);
+                    method.receiverClass = definition.name;
+                    method.moduleScope = unit.scope;
+                }
+            }
             for (auto &function : unit.program.functions)
                 function.name =
                     add(Kind::Function, function.scope, function.token.text, function.exported);
@@ -272,7 +290,7 @@ class ModuleResolver {
             if (choices.size() > 1)
                 throw Error("ambiguous visible declaration: " + candidate);
             if (!choices.empty()) {
-                if (choices[0]->kind != kind)
+                if (kind != Kind::Any && choices[0]->kind != kind)
                     throw Error("declaration has the wrong kind: " + candidate);
                 return choices[0];
             }
@@ -305,12 +323,37 @@ class ModuleResolver {
                 value->token.text == "field_count")
                 resolveType(value->reflectedType, unit, scope);
             else if (!builtins.contains(value->token.text)) {
-                const auto *declaration = lookup(unit, scope, value->token.text, Kind::Function);
+                if (activeClass) {
+                    for (const auto &member : activeClass->fields)
+                        if (member.token.text == value->token.text)
+                            throw Error("class field is not callable: " + value->token.text);
+                    for (const auto &method : activeClass->methods) {
+                        if (!method.constructor && method.token.text == value->token.text) {
+                            if (initializingReceiver)
+                                throw Error(
+                                    "constructor initializer cannot access receiver methods");
+                            value->op = "implicit_method_call";
+                            value->resolvedName = method.name;
+                            break;
+                        }
+                    }
+                }
+                if (value->op == "implicit_method_call") {
+                    for (const auto &argument : value->args)
+                        expression(argument, unit, scope);
+                    return;
+                }
+                const auto *declaration = lookup(unit, scope, value->token.text, Kind::Any);
                 if (!declaration)
                     throw Error("line " + std::to_string(value->token.line) +
                                 ": unknown function '" + value->token.text +
                                 "' in defining module " + unit.program.moduleName);
                 value->resolvedName = declaration->native;
+                if (declaration->kind == Kind::Class) {
+                    value->op = "constructor_call";
+                    value->reflectedType = Type(declaration->native);
+                    value->reflectedType.displayName = declaration->qualified;
+                }
             }
         } else if (value->op == "construct") {
             Type type(value->token.text);
@@ -370,8 +413,20 @@ class ModuleResolver {
                 statements(function.body, unit, function.scope);
                 result.functions.push_back(std::move(function));
             }
-            for (auto &definition : unit.program.classes)
+            for (auto &definition : unit.program.classes) {
+                activeClass = &definition;
+                for (auto &method : definition.methods) {
+                    initializingReceiver = method.constructor;
+                    for (const auto &[field, initializer] : method.initializers) {
+                        (void)field;
+                        expression(initializer, unit, definition.scope);
+                    }
+                    statements(method.body, unit, definition.scope);
+                }
+                activeClass = nullptr;
+                initializingReceiver = false;
                 result.classes.push_back(std::move(definition));
+            }
             auto &reflected = result.reflectionAccess[unit.scope];
             for (const auto &qualified : names)
                 for (const auto *declaration : visible(unit, qualified))

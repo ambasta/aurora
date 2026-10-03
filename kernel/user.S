@@ -137,3 +137,40 @@ user_bad:
     ud2
 aurora_user_payload_end:
 .section .note.GNU-stack,"",@progbits
+.section .text
+.global aurora_resume_integer
+aurora_resume_integer:
+    push %rbx
+    push %rbp
+    push %r12
+    push %r13
+    push %r14
+    push %r15
+    mov %rsp, aurora_saved_kernel_rsp(%rip)
+    /* All snapshot words are copied onto the privileged launch stack before pops. */
+    sub $176, %rsp
+    mov %rdi, %rsi
+    mov %rsp, %rdi
+    mov $22, %ecx
+    cld
+    rep movsq
+    mov $0x23, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %r12
+    pop %r11
+    pop %r10
+    pop %r9
+    pop %r8
+    pop %rdi
+    pop %rsi
+    pop %rbp
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+    add $16, %rsp
+    iretq
