@@ -20,9 +20,7 @@ class Parser {
         }
         Nesting(const Nesting &) = delete;
         Nesting &operator=(const Nesting &) = delete;
-        ~Nesting() {
-            --depth;
-        }
+        ~Nesting() { --depth; }
     };
     void attach(const ExpressionPtr &parent, const ExpressionPtr &child) {
         // Check before attaching: error cleanup must never own an over-deep tree.
@@ -34,12 +32,8 @@ class Parser {
 
   public:
     explicit Parser(std::vector<Token> t) : tokens(std::move(t)) {}
-    Token peek() const {
-        return tokens.at(position);
-    }
-    Token take() {
-        return tokens.at(position++);
-    }
+    Token peek() const { return tokens.at(position); }
+    Token take() { return tokens.at(position++); }
     [[noreturn]] void fail(const std::string &m) const {
         throw Error("line " + std::to_string(peek().line) + ": " + m + " (found '" + peek().text +
                     "')");
@@ -61,10 +55,10 @@ class Parser {
             !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
             fail("expected identifier");
         static const std::set<std::string> reserved = {
-            "fn",     "module", "let",           "mut",      "if",        "else",   "return",
-            "true",   "false",  "static_assert", "class",    "while",     "break",  "continue",
-            "auto",   "const",  "public",        "private",  "protected", "unsafe", "extern",
-            "struct", "export", "import",        "namespace"};
+            "fn",     "module", "let",           "mut",       "if",        "else",   "return",
+            "true",   "false",  "static_assert", "class",     "while",     "break",  "continue",
+            "auto",   "const",  "public",        "private",   "protected", "unsafe", "extern",
+            "struct", "export", "import",        "namespace", "this"};
         if (t.text.starts_with("__au_"))
             fail("reserved compiler identifier prefix: __au_");
         if (reserved.count(t.text))
@@ -143,6 +137,15 @@ class Parser {
             if (eat(".")) {
                 auto member = std::make_shared<Expression>("member", ident());
                 attach(member, expression);
+                if (eat("(")) {
+                    member->op = "method_call";
+                    if (!eat(")")) {
+                        do {
+                            attach(member, expr());
+                        } while (eat(","));
+                        need(")");
+                    }
+                }
                 expression = member;
             } else if (eat("[")) {
                 auto index = std::make_shared<Expression>("index", expression->token);
@@ -320,6 +323,21 @@ class Parser {
         }
         return s;
     }
+    void parameters(Function &function) {
+        need("(");
+        if (!eat(")")) {
+            do {
+                Param parameter;
+                parameter.type = type();
+                parameter.name = ident().text;
+                if (!scalar(parameter.type))
+                    fail("only scalar function parameters are supported; aggregate "
+                         "cross-module ABI is not implemented");
+                function.params.push_back(parameter);
+            } while (eat(","));
+            need(")");
+        }
+    }
     void declarations(Program &program, const std::string &scope, bool exportScope, bool nested) {
         if (std::count(scope.begin(), scope.end(), ':') > 62)
             fail("namespace nesting exceeds 32 components");
@@ -365,6 +383,40 @@ class Parser {
                         publicAccess = false;
                         continue;
                     }
+                    if (peek().text == definition.token.text || peek().text == "auto") {
+                        const bool constructor = peek().text != "auto";
+                        if (!constructor)
+                            take();
+                        Function method(ident());
+                        if (!constructor && method.token.text == definition.token.text)
+                            fail("constructor cannot have a return type");
+                        method.scope = scope;
+                        method.publicAccess = publicAccess;
+                        method.constructor = constructor;
+                        parameters(method);
+                        if (constructor) {
+                            if (eat(":")) {
+                                do {
+                                    auto fieldName = ident();
+                                    need("(");
+                                    auto value = expr();
+                                    need(")");
+                                    method.initializers.emplace_back(fieldName, value);
+                                } while (eat(","));
+                            }
+                            need("{");
+                            need("}");
+                        } else {
+                            method.receiverConst = eat("const");
+                            need("->");
+                            method.result = type();
+                            if (!scalar(method.result))
+                                fail("only scalar method results are supported");
+                            method.body = block();
+                        }
+                        definition.methods.push_back(std::move(method));
+                        continue;
+                    }
                     auto fieldType = type();
                     auto fieldName = ident();
                     if (!scalar(fieldType))
@@ -381,23 +433,12 @@ class Parser {
             Function function(ident());
             function.scope = scope;
             function.exported = exported;
-            need("(");
-            if (!eat(")")) {
-                do {
-                    Param parameter;
-                    parameter.type = type();
-                    parameter.name = ident().text;
-                    if (!scalar(parameter.type))
-                        fail("only scalar function parameters are supported; aggregate "
-                             "cross-module ABI is not implemented");
-                    function.params.push_back(parameter);
-                } while (eat(","));
-                need(")");
-            }
+            parameters(function);
             need("->");
             function.result = type();
             if (!scalar(function.result))
-                fail("only scalar function results are supported; aggregate cross-module ABI is "
+                fail("only scalar function results are supported; aggregate "
+                     "cross-module ABI is "
                      "not implemented");
             function.body = block();
             program.functions.push_back(std::move(function));

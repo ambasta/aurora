@@ -66,7 +66,12 @@ def main() -> None:
         binary = (build / f"user-{name}.bin").read_bytes()
         symbols = symbols_for(build / f"user-{name}.elf")
         ret, bounds, overflow = validate(elf, binary, base, symbols)
-        metadata[str(index)] = {"base": base, "size": len(binary), "return": ret, "bounds": bounds, "overflow": overflow}
+        if index == 0:
+            probe_begin = symbols.get("aurora_context_probe_begin", 0)
+            probe_end = symbols.get("aurora_context_probe_end", 0)
+            require((probe_begin == probe_end == 0) or base <= probe_begin < probe_end <= base + len(binary), "Invalid context probe range")
+            assembly += [".global aurora_schedule_probe", "aurora_schedule_probe:", f".quad {probe_begin}, {probe_end}"]
+        metadata[str(index)] = {"base": base, "size": len(binary), "return": ret, "bounds": bounds, "overflow": overflow, "probe_begin": symbols.get("aurora_context_probe_begin",0), "probe_end": symbols.get("aurora_context_probe_end",0)}
         assembly += [f".global aurora_image_{name}", f"aurora_image_{name}:", f'.incbin "build/user-{name}.bin"']
         declarations += [f'extern const std::array<std::byte, {len(binary)}> image_{name} asm("aurora_image_{name}");']
         contracts += ["ProgramImage{image_%s, ProgramContract{%d, %d, %d, %d, %d}}" % (name, base, len(binary), ret, bounds, overflow)]

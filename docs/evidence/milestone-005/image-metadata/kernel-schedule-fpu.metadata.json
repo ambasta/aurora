@@ -1,0 +1,29 @@
+{
+  "0": {
+    "base": 1769472,
+    "size": 1060,
+    "return": 1769790,
+    "bounds": 1770528,
+    "overflow": 1770530,
+    "probe_begin": 1769645,
+    "probe_end": 1769651
+  },
+  "1": {
+    "base": 1773568,
+    "size": 346,
+    "return": 1773629,
+    "bounds": 1773910,
+    "overflow": 1773912,
+    "probe_begin": 0,
+    "probe_end": 0
+  },
+  "2": {
+    "base": 1777664,
+    "size": 347,
+    "return": 1777725,
+    "bounds": 1778007,
+    "overflow": 1778009,
+    "probe_begin": 0,
+    "probe_end": 0
+  }
+}

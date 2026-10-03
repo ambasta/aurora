@@ -46,7 +46,7 @@ auto answer(i64 input) -> i64 {
 
 Signed i64 addition, subtraction, multiplication and negation are checked. Overflow branches to the compiler's fail-stop `UD2` trap rather than wrapping or executing with undefined arithmetic behavior. Both `9223372036854775807` and `-9223372036854775808` are expressible; an out-of-range positive literal is rejected. Negating the minimum value traps. No wrapping operation is currently offered.
 
-Operands and function arguments evaluate left to right. Class/array initializers evaluate in written order before the new binding enters scope. Class names and initializer fields are statically checked. Array assignment evaluates its index once, checks bounds, then evaluates the right-hand side once and stores. An invalid index traps before evaluating the right-hand side or computing a memory address.
+Operands and function arguments evaluate left to right. Designated class and array initializers evaluate in written order before the new binding enters scope. Constructor arguments evaluate left-to-right; constructor field initializer expressions then evaluate in field declaration order. Class names and initializer fields are statically checked. Array assignment evaluates its index once, checks bounds, then evaluates the right-hand side once and stores. An invalid index traps before evaluating the right-hand side or computing a memory address.
 
 Fail-stop means no recovery or unwinding is promised. On the hosted Linux test harness, `UD2` is observed as specifically SIGILL; other signals and timeouts fail the tests. In the bootstrap kernel, the hardware invalid-opcode exception must be handled by its trusted fail-stop exception path. No destructor or cleanup semantics are implied by these traps.
 
@@ -77,13 +77,13 @@ Body-local owners may be created, moved and dropped on each iteration. Body-loca
 
 ## Class value types and visibility
 
-Classes are private by default and end with `;`. Current externally constructible value classes must declare all fields under `public:`. `private:` switches back to private access. Private-field classes can be declared and queried for size, but cannot be constructed in this subset; methods, constructors and private factory access have not been implemented.
+Classes are private by default and end with `;`. `public:` and `private:` control fields, constructors and methods. Classes can now declare a single complete initializer-list constructor and scalar methods with readonly `const` or mutable receivers. See [the exact constructor, method and scoped receiver contract](CLASSES.md). Classes without constructors retain public-field designated construction; constructor-bearing classes reject that shortcut.
 
 Fields must be `i64` or `bool` and have unique names. Named construction uses `Point{.x = 20, .y = 22}`. Each field must be initialized exactly once; named fields may appear in any order and evaluate in written order. Unknown fields, missing fields and type mismatches are rejected.
 
 `const Point snapshot = current;` copies all scalar fields into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Class values cannot yet be function arguments/results, nested fields, ownership fields, or borrow targets. `own<Point>` is rejected.
 
-Each field occupies eight bytes, including bool, in declaration order. Complete size is eight times total field count, minimum eight bytes for an empty class. This is an internal padded layout, not a C or C++ ABI promise. Private fields participate in size but are excluded from field-count reflection and cannot be read through member syntax.
+Each field occupies eight bytes, including bool, in declaration order. Complete size is eight times total field count, minimum eight bytes for an empty class. This is an internal padded layout, not a C or C++ ABI promise. Private fields participate in size but are excluded from field-count reflection and cannot be read by external member syntax. Methods of the declaring class can access private fields.
 
 ## Fixed-size arrays
 
@@ -121,7 +121,7 @@ These temporary register choices are implementation machinery, not a source-leve
 
 Tests execute assembled/linked machine code without libc, check compiler rejection diagnostics, and distinguish bounds/overflow SIGILL from crashes or timeouts. Tests are evidence for this constrained implementation, not a soundness proof or a claim of complete Rust-equivalent safety.
 
-Self-hosting, complete modern C++ expressiveness, methods, constructors/destructors, nested values, general ownership, generics, heap storage, concurrency, typed compile-time generation, separate binary compilation and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
+Self-hosting, complete modern C++ expressiveness, constructor bodies, overloads, inheritance, destructors, nested values, general ownership, generics, heap storage, concurrency, typed compile-time generation, separate binary compilation and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
 
 ## Native library and host I/O
 
@@ -130,3 +130,5 @@ The real `library/std/core.au` module exports scalar `std::min`, `std::max` and 
 Source reads use pinned Linux directory/file descriptors and openat2 beneath-root/no-symlink policies, failing closed if unsupported. Outputs use exclusive temporaries and atomic replacement, with root/import-source inode-alias protection and one-shot failed transactions. There is no atomic file/repository snapshot or crash-durability claim. Native I/O fault tests require an unprivileged Linux user.
 
 Source implementation limits include128 nested parser expressions/blocks,64 type parses,32 namespace components and128 constructed expression-tree levels. Deep source is rejected normally before retaining an unsafe recursive tree; these are separate from file-byte limits and do not constitute global compiler resource bounds.
+
+The internal method ABI adds a non-source-visible receiver capability, with a private saved frame slot. It is validated separately from scalar operands; no source pointer or foreign-call API is introduced. `library/std/numeric.au` exercises private state through checked `std::Accumulator` methods.

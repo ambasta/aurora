@@ -59,7 +59,7 @@ The verifier protects the backend against malformed instruction modules through 
 
 ## Regression evidence
 
-`make -C compiler test` runs the existing 203 source acceptance/rejection/execution cases and direct typed-IR tests. The latter include guard deletion/bypass/mismatch, uninitialized slots, invalid types, malformed symbols, unknown targets, parameter rebinding, unreachable stack effects, shrinking predecessor/loop states and control-flow joins. A maximum-size 4096-element initializer test also bounds retained snapshot facts deterministically rather than increasing a wall-clock timeout. See RESOURCE-NOTE.md for the reproduced resource failure, repair and remaining scaling limit.
+`make -C compiler test` runs the existing source acceptance/rejection/execution cases and direct typed-IR tests. The latter include guard deletion/bypass/mismatch, uninitialized slots, invalid types, malformed symbols, unknown targets, parameter rebinding, unreachable stack effects, shrinking predecessor/loop states and control-flow joins. A maximum-size 4096-element initializer test also bounds retained snapshot facts deterministically rather than increasing a wall-clock timeout. See RESOURCE-NOTE.md for the reproduced resource failure, repair and remaining scaling limit.
 
 `python3 tests/compiler/equivalence.py BASELINE CANDIDATE` compares deterministic accepted programs, exact eight-byte integer results, SIGILL failure paths and rejection diagnostics against a saved previous compiler. This bounded differential test is not an equivalence proof. The independent `tests/semantics` oracle predicts results without relying on either compiler.
 
@@ -72,3 +72,7 @@ Basic-block snapshots remove the quadratic retained history of straight-line agg
 ## Source-depth implementation limits
 
 Parser-produced trees have bounded recursive depth: expression parsing128, block nesting128, type parsing64 and namespace components32. Constructed expression ASTs independently cap depth at128, including left-associative chains and postfix member/index chains that have shallow parser recursion. Child attachment checks precede retention of an over-deep tree, so normal rejection cannot leave an unbounded destructor chain. These caps address reproduced small-file stack overflows, not arbitrary internally forged ASTs or a general compiler-wide memory/work bound. Deep rejection tests disable core dumps and require normal exit1, no output and unchanged inputs.
+
+## Encapsulated receiver boundary
+
+See [CLASSES.md](CLASSES.md) for the source and IR contract. Nominal class layouts, lexical object lifetimes, constructor completion and readonly/exclusive receiver permissions are explicit in IR. Methods use a separate capability-bearing call instruction; receiver addresses cannot enter the scalar operand stack or be stored in source-visible slots. Constructor/method entrypoints retain their defining-module reflection scope. The semantic frontend remains trusted for lexical privacy and name resolution.

@@ -37,7 +37,7 @@ build/aurorac --module-root library application.au -o build/application.s
 - Every function body resolves in its defining module, including private helper calls. An unresolved call is rejected before the graph is merged; a root function cannot silently satisfy or hijack an undeclared imported helper.
 - A unit sees its own declarations and only directly imported exported declarations. Imports do not implicitly reexport their dependencies. `export import` is rejected explicitly.
 - Duplicate imports, duplicate declarations, namespace/declaration collisions and ambiguous visible exported names are rejected. Multiple search roots containing the same requested module are an error, not precedence-based shadowing.
-- Class exports permit checked inline scalar-field values in callers. Fields remain private by default and retain existing construction/const rules. Class/array/owned/reference parameters and results remain unsupported; no aggregate or interprocedural-borrow ABI is implied.
+- Class exports permit checked inline scalar-field values in callers. Fields remain private by default. Public constructors and methods of directly imported exported classes are available, with private access and const receiver checks; bodies resolve in the defining class and module. See CLASSES.md. Class/array/owned/reference parameters and results remain unsupported; no aggregate or interprocedural-borrow ABI is implied.
 
 ## Native identities and the temporary entry seam
 

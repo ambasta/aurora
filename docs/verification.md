@@ -217,3 +217,48 @@ Receipts:
 This is the first small freestanding core module, not libc/stdlib completeness.
 No full language-safety proof, production process model, self-hosting or physical
 Zen/Navi support is claimed. Prior receipts remain historical and unchanged.
+
+## Milestone 005: encapsulated classes and bounded preemption (2026-10-03)
+
+Final aggregate and independent review passed on release compiler SHA-256
+`d1aef9e30e8e5a874b02e6f2de589ac4908950f7264d64aab08ff89ff2141c1a`.
+The constructor/method subset is specified in [CLASSES.md](../compiler/CLASSES.md).
+The Aurora-authored `std.numeric` module exercises a private checked accumulator.
+One complete initializer-list constructor, scalar fields/arguments/results,
+private methods and scoped const/mutable receivers are supported. General
+constructor bodies, escaping receivers, generics and resource fields remain absent.
+
+Kernel preemption uses a feature-checked QEMU BSP xAPIC one-shot timer, with no
+calibrated time claim. It preserves integer state in privileged snapshots,
+validates domain/CR3 authority, interrupts a non-yielding compiled loop, cancels it
+after 24 slices and runs a fresh clean task after scrubbed frame reuse. Pending
+interrupts are drained across task lifetimes. Unknown user faults remain fail-stop
+in this harness; FPU/SIMD/TLS lifecycle, SMP, arbitrary programs and a general
+scheduler/process API are not implemented. This is not Framework hardware support.
+
+Final receipts:
+- [make test](evidence/milestone-005/test.log): 207 source, 74 class, 132 direct IR,
+  72 module, 11 depth, 13 source-reader and 22 output-writer tests; hosted kernel
+  policy and transcript tests; seven oracle harness tests and 630 default cases.
+- [Independent stress oracle](evidence/milestone-005/semantics-stress.log): 1,526
+  cases, seed404, pinned exact release binary. Default and stress sets overlap;
+  do not add their counts as disjoint coverage.
+- [Compiler/IR ASan+UBSan](evidence/milestone-005/compiler-sanitizers.log): 207
+  source, 74 class, 72 module, 11 depth and 132 IR cases. Sanitized compiler SHA
+  `060095244309c4db5bc04a19de53b39d36c264363ce0f3ede7488e05985b2032`;
+  IR binary SHA `5462faf7ae5c3defadf6b15dbd01550a25e20d8a79f26471f4fd823be615cadd`.
+- [Host I/O sanitizers](evidence/milestone-005/host-io-sanitizers.log) and
+  [kernel sanitizers](evidence/milestone-005/kernel-sanitizers.log).
+- [make smoke-all](evidence/milestone-005/emulator.log): all 28 actual QEMU gates,
+  preserving the old 19 and adding nine timer/preemption/adversarial modes.
+- [Normal image restored](evidence/milestone-005/normal-restored.log),
+  [image metadata](evidence/milestone-005/image-metadata/), and
+  [source identity](evidence/milestone-005/source.sha256).
+
+Sanitizers use address and undefined-behavior instrumentation; LeakSanitizer is
+explicitly disabled for the tracing environment, so no leak-check claim is made.
+The normal payload is 41,712 bytes within the existing 96-sector loader budget.
+The independent [review](review.md) records a typed-constructor syntax defect and
+an overly permissive per-slice transcript check, their fixes and regressions.
+Earlier evidence directories are preserved unchanged. All results are bounded
+bootstrap evidence, not a full-language safety proof or production OS release.

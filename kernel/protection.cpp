@@ -1,4 +1,5 @@
 #include "protection.hpp"
+#include "apic.hpp"
 #include "mapping.hpp"
 #include "user-program.hpp"
 #include <array>
@@ -62,6 +63,7 @@ auto Protection::activate() -> bool {
         || !map_range(user_code, user_code + 4096, PageAccess::read_execute, PageDomain::user)
         || !map_range(user_stack_bottom, user_stack_top, PageAccess::read_write, PageDomain::user)) return false;
     pml4[0] = reinterpret_cast<std::uint64_t>(pdpt.data()) | 7;
+    pdpt[3] = aurora::hardware::Apic::mapping();
     pdpt[0] = reinterpret_cast<std::uint64_t>(directory.data()) | 7;
     directory[0] = reinterpret_cast<std::uint64_t>(leaves.hardware_address()) | 7;
     const auto enabled = efer() | (std::uint64_t{1} << 11);
@@ -85,7 +87,8 @@ auto Protection::verify() -> bool {
         if ((entry & 4) != 0 && page != user_code && !(page >= aurora::user::UserPrograms::code_begin && page < aurora::user::UserPrograms::code_end)
             && !(page >= user_stack_bottom && page < user_stack_top)) return false;
     }
-    return leaves.entry(0) == 0 && leaves.entry(main_stack_bottom - 4096) == 0
+    return aurora::hardware::Apic::mapping_valid() && (pdpt[3] & ~0x60ULL) == aurora::hardware::Apic::mapping()
+        && leaves.entry(0) == 0 && leaves.entry(main_stack_bottom - 4096) == 0
         && leaves.entry(entry_stack_bottom - 4096) == 0 && leaves.entry(emergency_stack_bottom - 4096) == 0
         && leaves.entry(user_stack_bottom - 4096) == 0;
 }

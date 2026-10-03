@@ -26,6 +26,7 @@ class SemanticAnalyzer {
     ir::Function lowered;
     int slot = 0, label = 0;
     Type result = Type::I64;
+    const Function *currentFunction = nullptr;
 
     [[noreturn]] void fail(const Token &t, const std::string &m) {
         throw Error("line " + std::to_string(t.line) + ": " + m);
@@ -67,7 +68,8 @@ class SemanticAnalyzer {
         const auto &definition = classDefinition(type, token);
         for (const auto &value : definition.fields)
             if (value.token.text == token.text) {
-                if (!value.publicAccess)
+                if (!value.publicAccess &&
+                    (!currentFunction || currentFunction->receiverClass != type.className))
                     fail(token, "private class field is inaccessible");
                 return value;
             }
@@ -76,9 +78,7 @@ class SemanticAnalyzer {
     int fieldOffset(int local, const Field &value) {
         return locals.at(local).offset - value.offset;
     }
-    Type payloadType(const Type &type) {
-        return type == Type::Own ? Type::I64 : type;
-    }
+    Type payloadType(const Type &type) { return type == Type::Own ? Type::I64 : type; }
     std::int64_t reflectedValue(ExpressionPtr expression) {
         if (expression->token.text == "type_id")
             return typeId(expression->reflectedType, expression->token);
@@ -89,19 +89,33 @@ class SemanticAnalyzer {
     template <class Operation> void emit(Operation operation) {
         lowered.code.emplace_back(std::move(operation));
     }
-    int fresh() {
-        return label++;
-    }
-    int offset(int local) {
-        return locals.at(local).offset;
-    }
-    int find(const Token &t) {
+    int fresh() { return label++; }
+    int offset(int local) { return locals.at(local).offset; }
+    int lookupLocal(const Token &t) const {
         for (auto i = scopes.rbegin(); i != scopes.rend(); ++i) {
             auto v = i->find(t.text);
             if (v != i->end())
                 return v->second;
         }
-        fail(t, "unknown local '" + t.text + "'");
+        return -1;
+    }
+    int find(const Token &t) {
+        const int local = lookupLocal(t);
+        if (local < 0)
+            fail(t, "unknown local '" + t.text + "'");
+        return local;
+    }
+    const Field *receiverField(const Token &token) {
+        if (!currentFunction || currentFunction->receiverClass.empty())
+            return nullptr;
+        const auto &definition = classDefinition(Type(currentFunction->receiverClass), token);
+        for (const auto &member : definition.fields)
+            if (member.token.text == token.text) {
+                if (currentFunction->constructor)
+                    fail(token, "constructor initializer cannot access receiver fields");
+                return &member;
+            }
+        return nullptr;
     }
     int source(ExpressionPtr e) {
         if (e->op != "name")
@@ -119,12 +133,8 @@ class SemanticAnalyzer {
         if (got != want)
             fail(t, "expected " + typeName(want) + ", got " + typeName(got));
     }
-    void push() {
-        emit(ir::Push{});
-    }
-    void pop() {
-        emit(ir::Pop{});
-    }
+    void push() { emit(ir::Push{}); }
+    void pop() { emit(ir::Pop{}); }
     int add(const std::string &n, Type t, bool mut, const Token &tok) {
         if (scopes.back().count(n))
             fail(tok, "duplicate local '" + n + "'");
@@ -138,6 +148,8 @@ class SemanticAnalyzer {
         slot += static_cast<int>(needed);
         l.offset = 8 * slot;
         if (t.isClass()) {
+            lowered.objectSlots[l.offset] = ir::ObjectSlot{t.className, mut};
+            emit(ir::BeginObject{l.offset});
             for (const auto &member : classDefinition(t, tok).fields)
                 lowered.slots[l.offset - member.offset] = member.type;
         } else if (t.isArray()) {
@@ -158,10 +170,52 @@ class SemanticAnalyzer {
         if (!type.isArray())
             fail(index->token, "indexing requires an array local");
         match(expression(index->args[1]), Type::I64, index->token);
-        // Unsigned comparison rejects negative i64 indices as well as upper-bound violations.
-        // No address computation or memory access occurs before the guard.
+        // Unsigned comparison rejects negative i64 indices as well as upper-bound
+        // violations. No address computation or memory access occurs before the
+        // guard.
         emit(ir::BoundsGuard{offset(local), type.length, Type(type.elementKind)});
         return local;
+    }
+    const Function &method(const Type &type, const Token &token, bool constructor = false) {
+        const auto &definition = classDefinition(type, token);
+        for (const auto &candidate : definition.methods)
+            if (candidate.constructor == constructor &&
+                (constructor || candidate.token.text == token.text)) {
+                if (!candidate.publicAccess &&
+                    (!currentFunction || currentFunction->receiverClass != type.className))
+                    fail(token, constructor ? "private constructor is inaccessible"
+                                            : "private method is inaccessible");
+                return candidate;
+            }
+        fail(token, constructor ? "class has no declared constructor" : "unknown class method");
+    }
+    Type callMethod(ExpressionPtr value) {
+        const bool implicit = value->op == "implicit_method_call";
+        if (implicit && lookupLocal(value->token) >= 0)
+            fail(value->token, "local binding shadows method and is not callable");
+        int receiver = -1;
+        if (!implicit) {
+            if (value->args[0]->op != "name")
+                fail(value->token, "method receiver requires a class local");
+            receiver = source(value->args[0]);
+        }
+        const auto type = implicit ? Type(currentFunction->receiverClass) : locals[receiver].type;
+        const auto &callee = method(type, value->token);
+        const bool mutableReceiver =
+            implicit ? !currentFunction->receiverConst : locals[receiver].mut;
+        if (!callee.receiverConst && !mutableReceiver)
+            fail(value->token, "mutable method requires a mutable receiver");
+        const std::size_t first = implicit ? 0 : 1;
+        if (value->args.size() - first != callee.params.size())
+            fail(value->token, "wrong argument count for method");
+        // Evaluate scalar arguments before acquiring the synchronous receiver
+        // capability.
+        for (std::size_t index = 0; index < callee.params.size(); ++index) {
+            match(expression(value->args[index + first]), callee.params[index].type, value->token);
+            push();
+        }
+        emit(ir::MethodCall{callee.name, implicit ? 0 : offset(receiver)});
+        return callee.result;
     }
     Type expression(ExpressionPtr e) {
         const auto &n = e->resolvedName.empty() ? e->token.text : e->resolvedName;
@@ -200,24 +254,32 @@ class SemanticAnalyzer {
             emit(ir::Load{fieldOffset(local, member), member.type});
             return member.type;
         }
-        if (e->op == "construct")
+        if (e->op == "method_call" || e->op == "implicit_method_call")
+            return callMethod(e);
+        if (e->op == "construct" || e->op == "constructor_call")
             fail(e->token, "class construction requires a typed local initializer");
         if (e->op == "name") {
+            if (lookupLocal(e->token) < 0)
+                if (const auto *member = receiverField(e->token)) {
+                    emit(ir::ReceiverLoad{member->offset / 8, member->type});
+                    return member->type;
+                }
             int i = source(e);
             if (locals[i].type.isArray())
-                fail(e->token,
-                     "array values are only supported in local initializers and indexing");
+                fail(e->token, "array values are only supported in local initializers "
+                               "and indexing");
             if (locals[i].type.isClass())
-                fail(e->token,
-                     "class values are only supported in local initializers and field accesses");
+                fail(e->token, "class values are only supported in local initializers "
+                               "and field accesses");
             if (!scalar(locals[i].type))
-                fail(e->token,
-                     "owned values cannot be implicitly copied; use move, read, or borrow");
+                fail(e->token, "owned values cannot be implicitly copied; use move, "
+                               "read, or borrow");
             emit(ir::Load{offset(i), payloadType(locals[i].type)});
             return locals[i].type;
         }
         if (e->op == "unary") {
-            // Recognize the minimum signed literal before range-checking its positive magnitude.
+            // Recognize the minimum signed literal before range-checking its positive
+            // magnitude.
             if (n == "-" && e->args[0]->op == "number") {
                 try {
                     if (std::stoull(e->args[0]->token.text) == (1ULL << 63)) {
@@ -301,7 +363,8 @@ class SemanticAnalyzer {
             return Type::I64;
         }
         if (n == "own" || n == "move" || n == "borrow" || n == "borrow_mut")
-            fail(e->token, "ownership constructors are only supported in typed local initializers");
+            fail(e->token, "ownership constructors are only supported in typed local "
+                           "initializers");
         auto f = functions.find(n);
         if (f == functions.end())
             fail(e->token, "unknown function '" + n + "'");
@@ -357,6 +420,8 @@ class SemanticAnalyzer {
                 --locals[l.owner].shared;
             if (l.type == Type::MutRef)
                 locals[l.owner].exclusive = false;
+            if (l.type.isClass() && !terminal)
+                emit(ir::EndObject{l.offset});
         }
         scopes.pop_back();
         return terminal;
@@ -364,10 +429,6 @@ class SemanticAnalyzer {
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);
         const auto expression = statement->expr;
-        if (std::any_of(definition.fields.begin(), definition.fields.end(),
-                        [](const Field &field) { return !field.publicAccess; }))
-            fail(statement->token, "class construction requires public fields; private "
-                                   "construction is not implemented");
         if (expression->op == "name") {
             const int original = source(expression);
             match(locals[original].type, statement->type, expression->token);
@@ -379,9 +440,30 @@ class SemanticAnalyzer {
             }
             return;
         }
+        if (expression->op == "constructor_call") {
+            match(expression->reflectedType, statement->type, expression->token);
+            const auto &constructor = method(statement->type, expression->token, true);
+            arity(expression, constructor.params.size());
+            for (std::size_t index = 0; index < constructor.params.size(); ++index) {
+                match(this->expression(expression->args[index]), constructor.params[index].type,
+                      expression->token);
+                push();
+            }
+            const int destination =
+                add(statement->name, statement->type, statement->mutableValue, statement->token);
+            emit(ir::MethodCall{constructor.name, offset(destination)});
+            return;
+        }
+        if (std::any_of(definition.methods.begin(), definition.methods.end(),
+                        [](const Function &method) { return method.constructor; }))
+            fail(expression->token, "constructor-bearing class rejects designated initialization");
+        if (std::any_of(definition.fields.begin(), definition.fields.end(),
+                        [](const Field &field) { return !field.publicAccess; }))
+            fail(statement->token, "class construction requires public fields; private "
+                                   "construction requires a declared constructor");
         if (expression->op != "construct")
-            fail(expression->token,
-                 "class local requires named-field construction or same-type class copy");
+            fail(expression->token, "class local requires named-field construction "
+                                    "or same-type class copy");
         match(expression->reflectedType.isClass() ? expression->reflectedType
                                                   : Type(expression->token.text),
               statement->type, expression->token);
@@ -533,7 +615,8 @@ class SemanticAnalyzer {
                 }
                 emit(ir::Jump{start});
             }
-            // The loop may execute zero times. Body-only return paths cannot invalidate exit state.
+            // The loop may execute zero times. Body-only return paths cannot
+            // invalidate exit state.
             for (std::size_t index = 0; index < incoming.size(); ++index)
                 locals[index] = incoming[index];
             emit(ir::Label{done});
@@ -549,6 +632,15 @@ class SemanticAnalyzer {
             return false;
         }
         if (s->kind == "assign") {
+            const Token target(s->name, s->token.line);
+            if (lookupLocal(target) < 0)
+                if (const auto *member = receiverField(target)) {
+                    if (currentFunction->receiverConst)
+                        fail(target, "const method cannot write receiver fields");
+                    match(expression(s->expr), member->type, target);
+                    emit(ir::ReceiverStore{member->offset / 8, member->type});
+                    return false;
+                }
             int i = find(Token(s->name, s->token.line));
             if (!locals[i].mut || !scalar(locals[i].type))
                 fail(s->token, "assignment requires a mutable scalar local");
@@ -559,9 +651,10 @@ class SemanticAnalyzer {
         if (s->kind == "if") {
             match(expression(s->expr), Type::Bool, s->token);
             auto no = fresh(), end = fresh();
-            emit(ir::BranchFalse{no}); // Branch-local borrows expire before joining. A moved owner
-                                       // remains unavailable
-            // on every continuing path; return-only paths do not constrain later uses.
+            emit(ir::BranchFalse{no}); // Branch-local borrows expire before joining.
+                                       // A moved owner remains unavailable
+            // on every continuing path; return-only paths do not constrain later
+            // uses.
             auto before = locals;
             bool yesReturn = block(s->body);
             auto yes = locals;
@@ -586,7 +679,11 @@ class SemanticAnalyzer {
   public:
     explicit SemanticAnalyzer(Program program)
         : sourceFunctions(std::move(program.functions)), classes(std::move(program.classes)),
-          reflectionAccess(std::move(program.reflectionAccess)) {}
+          reflectionAccess(std::move(program.reflectionAccess)) {
+        for (const auto &definition : classes)
+            for (const auto &method : definition.methods)
+                sourceFunctions.push_back(method);
+    }
     ir::ValidatedModule analyze() {
         static const std::set<std::string> builtins = {"own",
                                                        "move",
@@ -633,7 +730,13 @@ class SemanticAnalyzer {
             functions[sourceFunctions[i].name] = i;
         }
         ir::Module module;
+        for (const auto &definition : classes) {
+            auto &layout = module.classLayouts[definition.name];
+            for (const auto &member : definition.fields)
+                layout.push_back(member.type);
+        }
         for (auto &function : sourceFunctions) {
+            currentFunction = &function;
             locals.clear();
             scopes.clear();
             scopes.emplace_back();
@@ -642,6 +745,9 @@ class SemanticAnalyzer {
             lowered.name = function.name;
             lowered.moduleScope = function.moduleScope;
             lowered.result = function.result;
+            if (!function.receiverClass.empty())
+                lowered.receiver = ir::Receiver{function.receiverClass, !function.receiverConst,
+                                                function.constructor};
             result = function.result;
             for (const auto &parameter : function.params)
                 lowered.parameters.push_back(parameter.type);
@@ -650,7 +756,29 @@ class SemanticAnalyzer {
                 const int local = add(parameter.name, parameter.type, false, function.token);
                 emit(ir::BindParameter{static_cast<int>(index), offset(local), parameter.type});
             }
-            if (!block(function.body))
+            if (function.constructor) {
+                const auto &definition =
+                    classDefinition(Type(function.receiverClass), function.token);
+                std::map<std::string, ExpressionPtr> initializers;
+                for (const auto &[field, value] : function.initializers) {
+                    const auto found = std::find_if(
+                        definition.fields.begin(), definition.fields.end(),
+                        [&](const Field &member) { return member.token.text == field.text; });
+                    if (found == definition.fields.end())
+                        fail(field, "unknown constructor field initializer");
+                    if (!initializers.emplace(field.text, value).second)
+                        fail(field, "duplicate constructor field initializer");
+                }
+                if (initializers.size() != definition.fields.size())
+                    fail(function.token, "constructor must initialize every field exactly once");
+                for (const auto &member : definition.fields) {
+                    match(expression(initializers.at(member.token.text)), member.type,
+                          member.token);
+                    emit(ir::ReceiverStore{member.offset / 8, member.type});
+                }
+                emit(ir::Constant{0, Type::I64});
+                emit(ir::Return{});
+            } else if (!block(function.body))
                 fail(function.token, "function must return on every path");
             lowered.frameBytes = ((slot * 8 + 15) / 16) * 16;
             module.functions.push_back(std::move(lowered));

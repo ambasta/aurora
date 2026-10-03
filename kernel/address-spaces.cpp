@@ -1,4 +1,5 @@
 #include "address-spaces.hpp"
+#include "apic.hpp"
 #include "mapping.hpp"
 #include "protection.hpp"
 #include "user-program.hpp"
@@ -39,6 +40,7 @@ public:
         for (std::size_t index = 0; index < frames.size(); ++index)
             if (!leaves_.map(Protection::user_stack_bottom + index * 4096, frames[index], PageAccess::read_write, PageDomain::user)) return false;
         pml4_[0] = reinterpret_cast<std::uint64_t>(pdpt_.data()) | 7;
+        pdpt_[3] = hardware::Apic::mapping();
         pdpt_[0] = reinterpret_cast<std::uint64_t>(directory_.data()) | 7;
         directory_[0] = reinterpret_cast<std::uint64_t>(leaves_.hardware_address()) | 7;
         return valid(image, frames);
@@ -48,7 +50,8 @@ public:
             || (pdpt_[0] & ~accessed_dirty) != (reinterpret_cast<std::uint64_t>(directory_.data()) | 7)
             || (directory_[0] & ~accessed_dirty) != (reinterpret_cast<std::uint64_t>(leaves_.hardware_address()) | 7)) return false;
         for (std::size_t index = 1; index < 512; ++index)
-            if (pml4_[index] != 0 || pdpt_[index] != 0 || directory_[index] != 0) return false;
+            if (pml4_[index] != 0 || (index == 3 ? (pdpt_[index] & ~accessed_dirty) != hardware::Apic::mapping() : pdpt_[index] != 0) || directory_[index] != 0) return false;
+        if (!hardware::Apic::mapping_valid()) return false;
         for (auto address = std::uint64_t{0}; address < 0x200000; address += 4096) {
             auto expected = Protection::kernel_entry(address) & ~accessed_dirty;
             if ((expected & 4) != 0 || (address >= UserPrograms::code_begin && address < UserPrograms::code_end)) expected = 0;
