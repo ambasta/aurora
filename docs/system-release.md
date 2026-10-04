@@ -71,3 +71,16 @@ dependency constraints, build execution, installation, authentication or updates
 Its freestanding example and full independent oracle/focused Make gates pass with
 the accepted M022 compiler; parent aggregate is required before acceptance. The native
 source-package release row above remains a requirement.
+
+
+## Declarative package metadata profile candidate
+
+The library-only [manifest profile](package-manifest-contract.md) advances the
+identity prerequisite with a real parser for one package and up to eight pinned
+direct dependencies. Unknown fields, scripts, duplicate names and self-dependencies
+reject; copied observations appear only after full validation. This authored,
+versioned grammar is an initial bounded metadata profile, not the complete source
+recipe format or a package manager. Source retrieval/integrity, version ranges,
+features, transitive resolution, build isolation, reproducibility, installation and
+updates remain the release requirements above. Candidate acceptance requires the
+independent native oracle, separate review and full unchanged-input aggregate.

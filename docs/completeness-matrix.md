@@ -332,3 +332,16 @@ This explicitly differs from whole-window `utf8_subrange` validation. Independen
 native review and a fresh full top-level aggregate passed on the frozen source.
 Compiler/kernel, old APIs, terminal behavior and hardware qualification are unchanged. See [the exact
 contract](utf8-lines-contract.md).
+
+
+## Declarative package manifest candidate
+
+A library-only `package.manifest` candidate parses an explicit versioned ASCII
+profile into copied package/dependency observations using the accepted package.identity
+module. It validates the entire manifest, canonical pinned versions, dependency-name
+uniqueness, self-name exclusion, exact line endings and trailing-byte rejection.
+The supported zero-to-eight dependency profile is bounded by current value/language
+limits. [The contract and gate](package-manifest-contract.md) describe independent
+native oracle, failure/ownership/privacy tests, separate review and fresh full
+aggregate required before acceptance. No compiler, kernel, resolver, build execution,
+installation or trust/cryptography capability is added.
