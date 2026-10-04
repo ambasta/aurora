@@ -1,0 +1,98 @@
+make: Entering directory '/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/compiler'
+python3 -O ../tests/compiler/utf8.py /workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/build/aurorac 
+PASS UTF-8 harness controls (active under Python -O)
+{"compiler_sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e", "utf8_sha256": "a9448bed52974ca1e690b9a10e86a5f879c5b24f475a12ab1ec079e4e97bc646", "test_sha256": "c30c913e6f5a81b724002a112acfdf7dc98b7c4dc4b9165f0a0999f005e9df84", "artifacts": "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/build/utf8-native-8tvfm79s"}
+PASS Python strict crosscheck: 1112064 scalars, 256 one-byte, 65536 two-byte, 24200 longer boundary inputs
+PASS native UTF-8 batch 1: 1 checks; all 1112064 Unicode scalars in native runtime loop
+PASS native UTF-8 batch 2: 1 checks; all 256 inputs of length 1, final and chunk
+PASS native UTF-8 batch 3: 1 checks; all 65536 inputs of length 2, final and chunk
+PASS native UTF-8 batch 4: 1 checks; 2200 length-3 boundary-class inputs, final and chunk
+PASS native UTF-8 batch 5: 1 checks; 22000 length-4 boundary-class inputs, final and chunk
+PASS native UTF-8 batch 6: 12 checks; scalar U+0000 window prefix 0, final=False
+PASS native UTF-8 batch 7: 12 checks; scalar U+0080 window prefix 0, final=False
+PASS native UTF-8 batch 8: 12 checks; scalar U+0800 window prefix 0, final=False
+PASS native UTF-8 batch 9: 12 checks; scalar U+D7FF window prefix 0, final=True
+PASS native UTF-8 batch 10: 12 checks; scalar U+FFFF window prefix 0, final=False
+PASS native UTF-8 batch 11: 12 checks; scalar U+10000 window prefix 4, final=False
+PASS native UTF-8 batch 12: 12 checks; scalar U+10FFFF window prefix 1, final=True
+PASS native UTF-8 batch 13: 12 checks; scalar U+FFFD window prefix 0, final=False
+PASS native UTF-8 batch 14: 12 checks; scalar U+FDD0 window prefix 0, final=True
+PASS native UTF-8 batch 15: 12 checks; scalar U+1FFFE window prefix 0, final=False
+PASS native UTF-8 batch 16: 12 checks; scalar U+0378 window prefix 2, final=False
+PASS native UTF-8 batch 17: 12 checks; range offset=-9223372036854775808 count=2 final=False
+PASS native UTF-8 batch 18: 12 checks; range offset=-1 count=1 final=False
+PASS native UTF-8 batch 19: 12 checks; range offset=0 count=0 final=False
+PASS native UTF-8 batch 20: 12 checks; range offset=1 count=-1 final=False
+PASS native UTF-8 batch 21: 12 checks; range offset=3 count=-9223372036854775808 final=False
+PASS native UTF-8 batch 22: 12 checks; range offset=3 count=9223372036854775807 final=False
+PASS native UTF-8 batch 23: 12 checks; range offset=4 count=4 final=False
+PASS native UTF-8 batch 24: 12 checks; range offset=5 count=2 final=False
+PASS native UTF-8 batch 25: 12 checks; range offset=9223372036854775807 count=1 final=False
+PASS native UTF-8 batch 26: 12 checks; validated prefix before c0 final=False
+PASS native UTF-8 batch 27: 12 checks; validated prefix before f08f final=False
+PASS native UTF-8 batch 28: 12 checks; validated prefix before e180 final=False
+PASS native UTF-8 batch 29: 12 checks; public success report scalar 55296
+PASS native UTF-8 batch 30: 12 checks; public end_of_input report scalar 0
+PASS native UTF-8 batch 31: 12 checks; public end_of_input report width 4 is ordinary data
+PASS native UTF-8 batch 32: 12 checks; public out_of_range report width 0 is ordinary data
+PASS native UTF-8 batch 33: 12 checks; public invalid_sequence report width -9223372036854775808 is ordinary data
+PASS native UTF-8 batch 34: 12 checks; public truncated report scalar 1114112
+PASS native UTF-8 batch 35: 12 checks; public need_more report scalar 57344
+PASS native UTF-8 batch 36: 12 checks; full maximum-capacity 4096-byte span
+PASS native UTF-8 batch 37: 12 checks; stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=10
+PASS native UTF-8 batch 38: 12 checks; one-byte chunk replay with at most three retained bytes 007fc280e0a080f0908080f48fbfbfefbbbfefb790
+PASS native UTF-8 batch 39: 5 checks; stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=11
+PASS UTF-8: 406 native checks in 39 bounded fixtures; all 1112064 scalars, 256 one-byte, 65536 two-byte, 24200 longer boundary inputs; artifacts=/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/build/utf8-native-8tvfm79s
+python3 -O ../tests/compiler/utf8_encoding.py /workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/build/aurorac 
+PASS UTF-8 encoding harness controls (active under Python -O)
+{"compiler_sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e", "utf8_sha256": "a9448bed52974ca1e690b9a10e86a5f879c5b24f475a12ab1ec079e4e97bc646", "array_sha256": "22bdc89a253e471f170b0d03fe2ad1290036b9d4fc06b55399f375329b344c51", "test_sha256": "e35b66182a56c8f7e87622d6ab65b74fa3e4a0199eb1c56f165a838c808ae1f5", "runner_sha256": "c30c913e6f5a81b724002a112acfdf7dc98b7c4dc4b9165f0a0999f005e9df84", "observation_sha256": "4baf61a087646ecec9d788c322871fe76fcbd1a9266c508bdfccaf3e987210fc", "artifacts": "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/build/utf8-encoding-native-0jtnru1y"}
+PASS Python strict encoding: 1112064 scalars, 2048 rejected surrogates
+PASS native UTF-8 encoding batch 1: 1 checks; owned array/report static and runtime size/visibility facts
+PASS native UTF-8 encoding batch 2: 1 checks; u8-surrounded owned array has six-byte layout
+PASS native UTF-8 encoding batch 3: 1 checks; u8-surrounded encoding report has forty-byte layout
+PASS native UTF-8 encoding batch 4: 1 checks; all scalar encodings in plane 0: 63488 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 5: 1 checks; all scalar encodings in plane 1: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 6: 1 checks; all scalar encodings in plane 2: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 7: 1 checks; all scalar encodings in plane 3: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 8: 1 checks; all scalar encodings in plane 4: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 9: 1 checks; all scalar encodings in plane 5: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 10: 1 checks; all scalar encodings in plane 6: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 11: 1 checks; all scalar encodings in plane 7: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 12: 1 checks; all scalar encodings in plane 8: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 13: 1 checks; all scalar encodings in plane 9: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 14: 1 checks; all scalar encodings in plane 10: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 15: 1 checks; all scalar encodings in plane 11: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 16: 1 checks; all scalar encodings in plane 12: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 17: 1 checks; all scalar encodings in plane 13: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 18: 1 checks; all scalar encodings in plane 14: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 19: 1 checks; all scalar encodings in plane 15: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 20: 1 checks; all scalar encodings in plane 16: 65536 values, byte model and strict fingerprint
+PASS native UTF-8 encoding batch 21: 1 checks; all 2048 surrogate code points reject with zero output
+PASS native UTF-8 encoding batch 22: 12 checks; scalar U+0000: exact encoding, padding and extreme access
+PASS native UTF-8 encoding batch 23: 12 checks; scalar U+FFFE: exact encoding, padding and extreme access
+PASS native UTF-8 encoding batch 24: 12 checks; scalar U+0378: exact encoding, padding and extreme access
+PASS native UTF-8 encoding batch 25: 12 checks; invalid scalar 9223372036854775808: normalized failure and extreme access
+PASS native UTF-8 encoding batch 26: 12 checks; forged success, width -1, bytes c080abcd: normalized access
+PASS native UTF-8 encoding batch 27: 12 checks; forged success, width 1, bytes c080abcd: normalized access
+PASS native UTF-8 encoding batch 28: 12 checks; forged success, width 3, bytes c080abcd: normalized access
+PASS native UTF-8 encoding batch 29: 12 checks; forged success, width 5, bytes c080abcd: normalized access
+PASS native UTF-8 encoding batch 30: 12 checks; forged invalid_scalar, width -9223372036854775808, bytes c080abcd: normalized access
+PASS native UTF-8 encoding batch 31: 12 checks; forged invalid_scalar, width 0, bytes c080abcd: normalized access
+PASS native UTF-8 encoding batch 32: 12 checks; forged invalid_scalar, width 2, bytes c080abcd: normalized access
+PASS native UTF-8 encoding batch 33: 12 checks; forged invalid_scalar, width 4, bytes c080abcd: normalized access
+PASS native UTF-8 encoding batch 34: 12 checks; forged invalid_scalar, width 9223372036854775807, bytes c080abcd: normalized access
+PASS native UTF-8 encoding batch 35: 9 checks; constructor success, width 3: input, report and output copies are independent
+PASS UTF-8 encoding rejection: encode_utf8 rejects implicit i64 argument; absent/existing output preserved
+PASS UTF-8 encoding rejection: encode_utf8 rejects implicit bool argument; absent/existing output preserved
+PASS UTF-8 encoding rejection: encode_utf8 rejects implicit u8 argument; absent/existing output preserved
+PASS UTF-8 encoding rejection: byte_or rejects u64 index; absent/existing output preserved
+PASS UTF-8 encoding rejection: byte_or rejects u8 index; absent/existing output preserved
+PASS UTF-8 encoding rejection: byte_or rejects bool index; absent/existing output preserved
+PASS UTF-8 encoding rejection: byte_or rejects i64 fallback; absent/existing output preserved
+PASS UTF-8 encoding rejection: byte_or rejects u64 fallback; absent/existing output preserved
+PASS UTF-8 encoding rejection: byte_or rejects bool fallback; absent/existing output preserved
+PASS UTF-8 encoding rejection: report payload remains private; absent/existing output preserved
+PASS UTF-8 encoding rejection: constructor rejects wrong nominal std::array<u8,3>; absent/existing output preserved
+PASS UTF-8 encoding rejection: constructor rejects wrong nominal std::array<u64,4>; absent/existing output preserved
+PASS UTF-8 encoding: 186 native checks in 35 bounded fixtures; 24 rejection compilations; all 1112064 scalars and 2048 surrogates; artifacts=/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/build/utf8-encoding-native-0jtnru1y
+make: Leaving directory '/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/compiler'

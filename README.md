@@ -486,3 +486,15 @@ and [fixture provenance](fixtures/xfs-root/README.md). Fresh standalone and port
 M022 gates and this checkout's full parent `make test` passed. Exact receipts and
 independent review are recorded in [the checkpoint evidence](docs/evidence/xfs-root-m022-20261004/README.md). No optional compiler/kernel feature, new emulator qualification,
 mount, replay, file-data read, or physical-device support is included.
+
+## Read-only UTF-8 scalar-range checkpoint
+
+`std.utf8_range` adds scalar-indexed substring byte observations over readonly
+spans. The entire selected window must be valid final UTF-8 before a copied
+relative byte offset/count is returned; errors expose zero coordinates.
+It preserves the previous UTF-8 APIs and accepted M022 compiler/kernel sources.
+Independent native review and the fresh full top-level `make test` passed on
+the frozen implementation. No string container, grapheme/normalization/display-width
+support, returned view,
+new emulator qualification, or performance guarantee is claimed. See [the exact
+contract](docs/utf8-range-contract.md).

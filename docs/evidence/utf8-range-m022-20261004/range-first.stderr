@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/tests/compiler/utf8_range.py", line 285, in <module>
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/tests/compiler/utf8_range.py", line 274, in main
+    for item in reject_cases():suite.reject(*item)
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/tests/compiler/utf8_range.py", line 231, in reject
+    require(diagnostic in error, f'{label}: expected diagnostic {diagnostic!r}; actual {error!r}')
+  File "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/tests/compiler/utf8_range.py", line 22, in require
+    raise AssertionError(message)
+AssertionError: mutation while readonly borrow live: expected diagnostic 'borrow'; actual 'aurorac: line 1: cannot mutate a byte array while a span is live\n'

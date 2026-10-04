@@ -297,3 +297,15 @@ passed. This isolated full parent `make test` passed; the
 The Storage/network/input row's absence of target drivers and filesystem services
 continues to apply: an offline root lookup is not a mount, allocation/existence
 proof, replay, file-data reader, block-device service, or read-write filesystem.
+
+## Read-only UTF-8 scalar-range checkpoint
+
+`std.utf8_range` adds scalar-indexed substring byte observations over readonly
+spans. The entire selected window must be valid final UTF-8 before a copied
+relative byte offset/count is returned; errors expose zero coordinates.
+It preserves the previous UTF-8 APIs and accepted M022 compiler/kernel sources.
+Independent native review and the fresh full top-level `make test` passed on
+the frozen implementation. No string container, grapheme/normalization/display-width
+support, returned view,
+new emulator qualification, or performance guarantee is claimed. See [the exact
+contract](utf8-range-contract.md).

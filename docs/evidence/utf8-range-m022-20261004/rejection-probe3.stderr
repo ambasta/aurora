@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/tests/compiler/utf8_range.py", line 231, in reject
+    require(diagnostic in error, f'{label}: expected diagnostic {diagnostic!r}; actual {error!r}')
+  File "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/tests/compiler/utf8_range.py", line 22, in require
+    raise AssertionError(message)
+AssertionError: unimported decoder module does not reexport dependency: expected diagnostic 'visible'; actual "aurorac: line 1: unknown function 'std::validate_utf8' in defining module rejection\n"
