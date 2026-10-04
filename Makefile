@@ -183,3 +183,14 @@ test-package-identity:
 	python3 -B -O tests/compiler/package_identity.py $(abspath $(PACKAGE_IDENTITY_COMPILER)) --candidate-cap-mib $(PACKAGE_IDENTITY_CAP_MIB) $(PACKAGE_IDENTITY_TEST_FLAGS)
 
 test: test-package-identity
+
+# Versioned declarative metadata only; no resolver, installer or execution authority.
+PACKAGE_MANIFEST_COMPILER ?= build/aurorac
+PACKAGE_MANIFEST_TEST_FLAGS ?=
+PACKAGE_MANIFEST_CAP_MIB ?= 256
+test: PACKAGE_MANIFEST_CAP_MIB = 512
+.PHONY: test-package-manifest
+test-package-manifest:
+	python3 -B -O tests/compiler/package_manifest.py $(abspath $(PACKAGE_MANIFEST_COMPILER)) --candidate-cap-mib $(PACKAGE_MANIFEST_CAP_MIB) $(PACKAGE_MANIFEST_TEST_FLAGS)
+
+test: test-package-manifest

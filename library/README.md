@@ -274,3 +274,21 @@ This explicitly differs from whole-window `utf8_subrange` validation. Independen
 native review and a fresh full top-level aggregate passed on the frozen source.
 Compiler/kernel, old APIs, terminal behavior and hardware qualification are unchanged. See [the exact
 contract](../docs/utf8-lines-contract.md).
+
+
+## Bounded declarative package manifest candidate
+
+`package.manifest` reads an exact versioned ASCII metadata profile containing one
+package.identity token and zero to eight pinned direct dependency identities. It
+rejects duplicate canonical dependency names, self-dependencies, unknown fields and
+trailing bytes. The complete manifest is validated before any copied summary or
+selected-dependency observation is returned. Imports of package.identity and std.array
+are also required by existing visibility rules. Results own their facts and survive
+input mutation; separate calls are independent observations, not one transaction.
+See the [grammar/API](../docs/package-manifest-contract.md) and
+[example](examples/package_manifest.au). This is a candidate pending the independent
+oracle, distinct review and full aggregate recorded in its evidence index.
+
+The eight-entry limit is a supported profile bound. Exact version pins are not
+version ranges; this metadata parser supplies no resolver, build scripts, source
+retrieval, installation, authentication, network, process or filesystem authority.

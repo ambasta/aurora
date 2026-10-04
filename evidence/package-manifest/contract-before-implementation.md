@@ -1,0 +1,140 @@
+# Bounded declarative package manifest: frozen initial contract
+
+The next source-package dependency is executable reading of one package identity
+and its pinned direct dependencies, using the accepted `package.identity` module.
+The system-release requirements name source recipes, dependency resolution,
+version/feature constraints, integrity, isolation and reproducibility but prescribe
+no concrete manifest syntax. Repository inspection found no existing parser or
+manifest format to duplicate. This authored version-1 metadata profile is a bounded
+prerequisite; it does not settle a future complete recipe or package format.
+
+Baseline: published, reviewed PR17 checkpoint commit
+`d8222ad235fa218629266aa28e7b42ba87f4ee5e`, tree
+`b8369852f9b316680bb24ee54ed228f1b4b5a095`. Compiler SHA256:
+`e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e`.
+Use only accepted M022 source syntax. No compiler or existing library changes,
+optional/extent/mutable-byte work, or dependency on parallel text work is allowed.
+
+## Exact grammar and supported bounds
+
+```
+manifest = "aurora-package 1\n"
+           "package " identity "\n"
+           ("depends " identity "\n"){0,8}
+           "end\n"
+```
+
+The selected byte window must match the entire grammar. Literals are case-sensitive
+ASCII. Newlines are exactly one LF byte. No CR, CRLF, leading/trailing whitespace,
+blank lines, comments, quotes, escape syntax, tabs, BOM, NUL, Unicode, unknown keys,
+optional fields, alternate order or bytes after the final LF are accepted. `1` is
+the exact schema version, without leading zeros. The required end marker makes
+truncation of a dependency list observable. The supported profile permits zero to
+eight direct dependencies; this is a profile limit, not a universal package limit.
+Valid manifest byte lengths range from 37 to 615 inclusive.
+
+Each `identity` is exactly the accepted package.identity token:
+`[a-z][a-z0-9]*("-"[a-z0-9]+)*@component.component.component` with a 1..24-byte
+name and each component canonical decimal 0..4294967295. No leading zeros except
+`0` itself. Leading digit, edge/consecutive hyphens and non-ASCII names reject.
+These are pinned exact-version requirements, not version ranges, complete SemVer,
+features, source URLs, repositories, hashes, trust policy or build recipes.
+Dependency names must be unique by canonical byte name irrespective of version;
+the root package name cannot appear among its dependencies. Input order is retained.
+Two different dependency names may pin the same version. No sorting or resolution
+is performed. Transitive cycles cannot be detected from one manifest and are not
+claimed; direct self-dependencies reject as malformed metadata.
+
+## API
+
+Consumers import `package.manifest`, `package.identity`, and `std.array` directly
+under existing visibility rules. The module itself imports only the latter two.
+
+`package::ManifestStatus { success, malformed, out_of_range }`.
+`package::ManifestResult` privately owns outcome, copied root IdentityResult and
+signed dependency count. Public constructor arguments in order are:
+`(ManifestStatus status, IdentityResult identity, i64 dependencies)`.
+Methods:
+- `status() const -> ManifestStatus`: explicit errors retain status; successful
+  construction revalidates root identity and count 0..8, otherwise malformed.
+- `identity_or_error() const -> IdentityResult`: independent valid copied root on
+  success; canonical malformed IdentityResult on any failure (zero owned storage).
+- `dependency_count_or(i64 fallback) const -> i64`: count on success, fallback otherwise.
+
+`package::parse_manifest(builtin::span<const u8> bytes, i64 offset, i64 count)
+-> ManifestResult` validates the entire selected window including every dependency,
+duplicates/self-name, final end marker and absence of trailing bytes before returning
+successful metadata. Invalid signed window returns out_of_range. Window checks are
+subtraction-first; a valid window violating grammar/profile constraints is malformed.
+All failures recover without a trap for every representable argument/input.
+
+`package::DependencyStatus { success, malformed, out_of_range, index_out_of_range }`.
+`package::DependencyResult` privately owns outcome, copied root and selected
+IdentityResults, count and selected zero-based index. Public constructor arguments:
+`(DependencyStatus status, IdentityResult identity, IdentityResult dependency,
+  i64 dependencies, i64 index)`.
+Methods:
+- `status() const -> DependencyStatus`: explicit errors retain status; successful
+  construction revalidates both identities, count 1..8, index 0..count-1 and
+  different root/dependency names; invalid success data normalizes to malformed.
+- `identity_or_error() const -> IdentityResult`: independent copied root on success,
+  canonical malformed IdentityResult otherwise.
+- `dependency_or_error() const -> IdentityResult`: independent copied selected
+  dependency on success, canonical malformed IdentityResult otherwise.
+- `dependency_count_or(i64 fallback) const -> i64`: count or fallback.
+- `index_or(i64 fallback) const -> i64`: selected index or fallback.
+
+`package::manifest_dependency(builtin::span<const u8> bytes, i64 offset, i64 count,
+ i64 index) -> DependencyResult` first validates the *whole* manifest using the same
+contract. A malformed late dependency, duplicate or missing end marker masks all
+facts even when an earlier requested dependency is valid. Window errors take
+precedence over grammar errors, which take precedence over invalid selection.
+Only after full validation does an invalid signed dependency index return
+index_out_of_range. A valid manifest with zero dependencies has no selectable index.
+All error getters mask both stored identities/count/index; fallbacks are eager.
+
+## Ownership, construction and authority
+
+Results store no span/reference/source offset and retain copied facts after input
+owner overwrite, copy, function return or scope exit. M022 class values have at
+most 64 flattened scalar leaves; the summary is 31 leaves and a selected-dependency
+report is 61. A full owned eight-identity list does not fit that contract, so queries
+return one observation at a time. Separate calls revalidate their own input;
+observations from different calls are not a transaction or a shared snapshot if the
+owner changes. A successful query includes its copied root identity for context.
+
+Public constructors are deliberately forgeable data constructors. Their local
+invariant checks do not prove that any bytes were parsed, that count matches an
+actual list, that other dependencies exist or are unique, or that metadata is trusted.
+No constructor or parser result grants resolver, install, filesystem, process,
+script, network, provenance, cryptographic or other authority. There is no IO,
+allocation, source retrieval, command execution, hashing or signature verification.
+Bounded duplicate comparisons may rescan prior identities (at most eight entries).
+No performance or memory-safety proof is inferred from finite tests.
+
+## Observable acceptance gate and resource boundary
+
+Freeze this contract before implementation or oracle authoring. Independently
+written Python grammar/integer model must agree with actual compiled x86-64 Aurora
+on complete output vectors, including all copied name bytes and high-bit numerical
+fallbacks. Native binaries have no unresolved symbols, interpreter or dynamic target
+libraries. Host GNU tools and a tiny observation entry are bootstrap test machinery.
+
+Cover valid empty/eight-dependency profiles, every truncation boundary, every byte
+value across grammar positions, malformed identity/version overflow, duplicate names
+with same/different versions, self-name, unknown fields/script-like input, CRLF/BOM/
+whitespace/trailing bytes, count limits, offset/count signed endpoints, all query
+indices and error precedence. Cover public constructor poisoning, owned copies,
+scope/lifetime, eager evaluation, defining-module helper shadowing, import visibility,
+private field/method rejection and absent/existing compiler output preservation.
+
+Run focused oracle and actual Make recipe, then an unchanged-input full `make test`
+with compiler/source/tool pins and a distinct source/integration reviewer independent
+of both production and oracle authors. Preserve failures and their exact sources.
+No kernel changes means no new device/emulator gate or qualification claim.
+
+Initial whole focused candidate budget is 256 MiB, with conservative growth reserve
+and a 1 GiB filesystem free floor. Aggregate may use 512 MiB only after measured
+approval from the parent. Keep an early verified source archive and preserve all
+failed test artifacts. Only losslessly verified successful-output compaction is
+permitted. No accepted-main write or publication before the parent seal.
