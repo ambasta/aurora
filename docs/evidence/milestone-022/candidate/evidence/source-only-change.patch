@@ -1,0 +1,2080 @@
+--- a/README.md
++++ b/README.md
+@@ -457,3 +457,12 @@
+ See [M020 evidence](docs/evidence/milestone-020/README.md) for exact pins, finite
+ coverage, preserved failures and generated-product omissions. Local functional
+ verification does not imply remote publication.
++
++## Milestone022 candidate: copied method values
++
++Ordinary methods now accept immutable copied class parameters and std::array
++adds exchange(replacement), returning independent old contents. The new combined
++receiver/argument/result private ABI is specified in
++[the candidate contract](compiler/METHOD-VALUES.md). Complete release/fatal host ASan/UBSan compiler validation and independent
++frozen review pass. Parent adoption and full 166-mode integration remain pending;
++M021 remains the accepted main checkpoint. No heap, reference API, generic methods or hardware support is added.
+--- a/compiler/CLASSES.md
++++ b/compiler/CLASSES.md
+@@ -2,7 +2,8 @@
+ 
+ This extension adds constructors and statically dispatched methods to Aurora's
+ safe C++ subset. It does not add inheritance, virtual dispatch, overloads,
+-general generics, destructors, object/reference parameters or object results on methods.
++general generics, destructors or reference parameters. Later copied method
++parameters/results follow [METHOD-VALUES.md](METHOD-VALUES.md).
+ Ordinary functions separately support bounded by-value classes under [VALUE-CALLS.md](VALUE-CALLS.md). Classes
+ remain inline values with scalar `i64`/`u64`/`bool` fields and independent copies.
+ The later [fixed-container extension](FIXED-CONTAINERS.md) also permits private
+@@ -55,7 +56,8 @@
+ ## Receiver and calls
+ 
+ - Methods use `auto name(parameters) const -> Scalar` for readonly access and omit
+-  `const` for mutation. Their explicit parameters and results must be scalar;
++  `const` for mutation. The original explicit parameters/results were scalar; subsequent copied class
++  boundaries follow [METHOD-VALUES.md](METHOD-VALUES.md);
+   at most six explicit parameters are supported. Method names cannot overload or
+   collide with fields. A method must return on every continuing path.
+ - Source code has no `this` pointer, object-reference conversion, pointer arithmetic
+@@ -107,10 +109,10 @@
+ are acyclic, at most four class levels and 64 scalar leaves. Public class fields
+ (and private fields inside their declaring class) project into fresh independent
+ locals. Class-field reassignment and chained mutation remain rejected. Empty
+-nested fields require logical initialization even without payload leaves. Ordinary
+-methods retain scalar signatures. This extension is awaiting final validation.
++nested fields require logical initialization even without payload leaves. Ordinary method copied class boundaries are specified separately in
++[METHOD-VALUES.md](METHOD-VALUES.md).
+ 
+ Milestone012's [enum/result candidate](ENUM-RESULTS.md) admits closed enum leaves
+ and copied class-valued method results, including the composed descendants above.
+-Class method arguments remain unsupported; complete constructor class snapshots
+-are preserved.
++The later [method-value candidate](METHOD-VALUES.md) admits copied class-valued
++ordinary method arguments and preserves complete constructor snapshots.
+--- a/compiler/COMPOSED-VALUES.md
++++ b/compiler/COMPOSED-VALUES.md
+@@ -50,10 +50,11 @@
+ function arguments and results also copy all scalar leaves of composed values.
+ 
+ Chained field mutation, whole nested-field assignment after initialization,
+-escaping subobject references, nested receiver calls, class-valued method parameters,
++escaping subobject references, nested receiver calls,
+ resource fields, heap storage and inheritance remain unsupported. Constructors
+-accept class arguments. Methods accept scalar/enum parameters and may return a
+-complete copied class into a fresh typed local under the enum/result contract.
++accept class arguments. Methods accept scalar/enum and copied class parameters
++and may return a complete copied class into a fresh typed local under the
++[method-value contract](METHOD-VALUES.md).
+ 
+ Reflection retains logical public field counts, including a class field as one
+ field even when it contains many leaves or none. Sizes include flattened payload
+--- a/compiler/ENUM-RESULTS.md
++++ b/compiler/ENUM-RESULTS.md
+@@ -50,7 +50,8 @@
+ All milestone011 construction rules remain: exact nominal class-field copies,
+ complete logical initialization including empty children, left-to-right readonly
+ constructor snapshots, acyclic containment, four class levels and 64 flattened
+-leaves for composed values. Class-valued method arguments remain unsupported.
++leaves for composed values. The later [M022 candidate](METHOD-VALUES.md) admits
++copied class-valued ordinary method arguments.
+ Constructors still return the internal i64 status and have empty bodies; their
+ explicit class arguments remain supported.
+ 
+@@ -66,7 +67,9 @@
+ Constructor calls with class parameters use a receiver in R10 and packed argument
+ record in R11. Class-returning methods use a receiver in R10 and fresh result
+ destination in R11; their explicit arguments are scalar or enum register values.
+-These modes are mutually exclusive. The receiver and record/result are saved in
++These modes were mutually exclusive at milestone012. The later
++[M022 method-value contract](METHOD-VALUES.md) adds an explicit combined mode
++with RAX result destination and three independent saved capabilities. The receiver and record/result are saved in
+ separate private frame slots before evaluating the body. Ordinary aggregate
+ functions retain their previous convention.
+ 
+--- /dev/null
++++ b/compiler/METHOD-VALUES.md
+@@ -0,0 +1,116 @@
++# Copied ordinary method parameters (milestone022 candidate)
++
++Status: isolated candidate passes complete release/fatal host ASan/UBSan
++compiler targets and independent frozen-source review. Parent adoption, fresh
++aggregate and all 166 existing emulator modes remain pending. This changes a private
++native calling convention even though it reuses existing typed IR instructions.
++
++## Source and lifetime contract
++
++Ordinary methods accept concrete class values alongside scalar and enum explicit
++parameters. Six explicit parameters remain the maximum. Every boundary class has
++at most 64 flattened scalar leaves. Nominal identity, class-depth four, template
++instance/definition limits, literal capacities and the source frame cap remain
++unchanged. Private signatures and direct-import visibility are checked as before.
++
++Receiver identity resolves first. Arguments then evaluate left-to-right; each
++class argument must be a complete named local and is copied immediately into a
++fresh readonly snapshot at its argument position. Later arguments can mutate the
++source or receiver without changing earlier snapshots. Repeated arguments and a
++receiver supplied as an argument are legal because their snapshots are distinct.
++Only after all argument evaluation is synchronous receiver authority acquired.
++
++The callee binds each class argument into its own immutable complete local copy.
++Const methods and explicit independent mutable copies are allowed. Mutating a
++parameter or calling a mutable method on it is rejected. Copying never reruns a
++constructor. Class results copy a complete named local or parameter into a fresh,
++exact-type destination, disjoint from receiver and argument snapshots. The result
++binding becomes visible only after all arguments are evaluated. Checked faults
++are fail-stop and do not promise rollback of earlier receiver side effects.
++
++Sibling calls preserve current const/exclusive forwarding rules and suspend then
++resume the caller's receiver authority. All constructor rules remain: complete
++initialization, readonly snapshots, empty body, field-declaration-order
++initializers, and no receiver access during initialization. Any call-graph cycle
++containing a method or constructor is still rejected.
++
++No temporary/chained receiver or class argument, direct returned call expression,
++reference, resource/span method parameter, generic method, overload, class-field
++reassignment or new template-body grammar is added. Use a named local for an
++intermediate projection/result. This is bounded value transport, not a general
++heap/lifetime or optional/expected implementation.
++
++## Typed IR contract
++
++MethodCall retains objectArguments and resultOffset. When any parameter is a
++class, objectArguments has one position per explicit parameter; scalar/enum
++positions are zero. Otherwise the vector is empty. Every class position denotes
++an active, complete, exact nominal, readonly, distinct snapshot. No snapshot may
++alias the receiver. A class result must be an exact active pristine object slot,
++separate from receiver and every argument snapshot. Logical completion remains
++required for nested and empty classes, independently of payload bytes.
++
++BindObjectParameter remains in the parameter entry prefix and creates an
++immutable local lifetime. ReturnObject requires a complete exact-type local and
++balanced scalar operand stack. Constructor forwarding, const-authority widening,
++ordinary/scalar calls targeting receiver entrypoints and forged physical storage
++continue to reject. Lexical privacy remains a trusted frontend responsibility.
++
++## Frozen private x86-64 convention
++
++All ordinary scalar/aggregate function conventions are unchanged. All constructor
++conventions are unchanged, including their internal i64 result. Existing methods
++with only scalar/enum parameters retain positional scalar registers and R10 as
++receiver. Such a method returning a class continues to use R11 as result address.
++
++A NEW class-parameter method returning scalar/enum uses R10 for receiver and R11
++for a packed explicit-argument record. All its explicit parameters, including
++scalars/enums, bind from that record using existing record offsets/padding.
++
++A NEW method combining class parameters and a class result uses three hidden
++inputs simultaneously: R10 receiver, R11 argument record, RAX result destination.
++The caller finishes scalar pops and record packing before loading R10 and then
++RAX. The record remains live until the call returns. Scalar argument positions
++are not compacted around class entries. Existing call-site alignment is retained.
++
++The callee saves hidden inputs before any binding/body operation. With source
++frame size F, receiver is saved at F+8 and argument record at F+16. Combined mode
++saves result at F+24, reserves 32 hidden bytes and preserves 16-byte alignment.
++Noncombined receiver modes reserve the existing 16 bytes. A result-only method
++retains F+8 receiver/F+16 result; ordinary aggregate saves remain unchanged.
++The hidden overhead is separate from the unchanged 65,536-byte source frame cap.
++No private capability is source-addressable, a scalar IR value, reflection data,
++or an externally advertised scalar-callable symbol. There is no C ABI promise.
++
++## Library deliverable
++
++std::array<T,N> gains mutable exchange(array replacement) -> array, using the
++existing qualified injected self-type spelling std::array without template
++arguments, including std::array previous = std::array(). Bare array retains
++its builtin reservation; array<T,N> always names builtin storage, and
++builtin::array is never callable. No parser or template-grammar change is made. It returns an independent copy of the old
++contents and replaces every receiver element from the replacement snapshot. The
++caller's replacement stays unchanged. Self-exchange returns the original value
++and leaves contents unchanged. The implementation constructs a fresh old-value
++array and copies checked elements through a loop; no class-field assignment,
++heap allocation, reference or escaping element capability is used.
++
++This is an Aurora member inspired by std::exchange, not a standard C++ std::array
++member, atomic operation, general lexer API or performance claim. Four Scalar
++element types and literal capacities 1..64 retain their existing restrictions.
++
++## Acceptance and limits
++
++Required evidence includes source success/rejections and independent array model,
++malformed direct IR, source-independent native ABI tests with handwritten entry
++and exit sides, exact traps, full release/fatal host ASan/UBSan compiler suites,
++old-library M021 differential controls, and independent frozen-source review.
++The old-library differential must use unchanged M021 module inputs, because the
++new exchange member legitimately changes emitted std.array instance bodies.
++
++Host compiler instrumentation does not instrument emitted Aurora programs.
++Coverage/model steps and overlapping seeds are not additive proof counts. No
++whole-program stack/resource bound, Rust-equivalent safety, binary compatibility
++or equivalent-C performance is claimed. Parent aggregate and all 166 existing
++emulator modes are a separate mandatory integration gate; this compiler worker
++neither runs shared images nor claims that gate or physical AMD qualification.
+--- a/compiler/Makefile
++++ b/compiler/Makefile
+@@ -21,6 +21,7 @@
+ 	python3 -O ../tests/compiler/nested_values.py $(abspath $(OUT))
+ 	python3 ../tests/compiler/decimal_values.py $(abspath $(OUT))
+ 	python3 ../tests/compiler/enum_composition.py $(abspath $(OUT))
++	python3 -O ../tests/compiler/method_values.py $(abspath $(OUT))
+ 	python3 ../tests/compiler/integers.py $(abspath $(OUT))
+ 	python3 ../tests/compiler/unsigned.py $(abspath $(OUT))
+ 	python3 ../tests/compiler/u8_numeric.py $(abspath $(OUT))
+@@ -39,6 +40,9 @@
+ 	$(IR_TEST_BUILD_PREFIX) $(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/ir_tests.cpp -o $(dir $(OUT))ir-tests
+ 	$(dir $(OUT))ir-tests
+ 	CXX="$(CXX)" python3 ../tests/compiler/ir_exhaustive.py $(abspath $(dir $(OUT))ir-tests)
++	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_values_ir.cpp -o $(dir $(OUT))method-values-ir-tests
++	$(dir $(OUT))method-values-ir-tests
++	python3 -O ../tests/compiler/method_values_abi.py $(abspath $(dir $(OUT))method-values-ir-tests)
+ 	python3 ../tests/modules/run.py $(abspath $(OUT))
+ 	python3 ../tests/modules/robustness.py $(abspath $(OUT))
+ 	$(CXX) $(CXXFLAGS) -pthread -I. ../tests/modules/host_sources_tests.cpp -o $(dir $(OUT))host-source-tests
+--- a/compiler/README.md
++++ b/compiler/README.md
+@@ -81,7 +81,8 @@
+ 
+ Numeric/bool fields use `i64`, `u64`, `u8` or `bool` and have unique names. Private fixed scalar-array fields now have the complete-construction and checked-access contract in [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md). Named construction uses `Point{.x = 20, .y = 22}`. Each field must be initialized exactly once; named fields may appear in any order and evaluate in written order. Unknown fields, missing fields and type mismatches are rejected.
+ 
+-`const Point snapshot = current;` copies every scalar leaf into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Ordinary functions now accept and return bounded inline class values as independent copies. The developing composition subset adds exact-type class fields and readonly class constructor parameters, plus projection into fresh locals; see [COMPOSED-VALUES.md](COMPOSED-VALUES.md). Ordinary methods retain scalar signatures. Resource fields and class borrow targets remain unsupported. `own<Point>` is rejected.
++`const Point snapshot = current;` copies every scalar leaf into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Ordinary functions now accept and return bounded inline class values as independent copies. The developing composition subset adds exact-type class fields and readonly class constructor parameters, plus projection into fresh locals; see [COMPOSED-VALUES.md](COMPOSED-VALUES.md). Ordinary methods now accept immutable copied class parameters under the
++[M022 candidate contract](METHOD-VALUES.md), including copied class results. Resource fields and class borrow targets remain unsupported. `own<Point>` is rejected.
+ 
+ U8 leaves occupy one byte; all earlier scalar storage, including bool and enums, remains eight bytes. Canonical class layouts record natural field alignment, explicit byte offsets and tail padding separately from logical leaf counts. Empty standalone classes retain eight bytes; nested empty children preserve their zero-payload logical completion rule. All layouts without u8 retain their earlier representation. This is an internal layout, not a C or C++ ABI promise. The current development contract and pending acceptance are in [BYTES.md](BYTES.md). Private fields participate in size but are excluded from field-count reflection and cannot be read by external member syntax. Methods of the declaring class can access private fields.
+ 
+--- a/compiler/VALUE-CALLS.md
++++ b/compiler/VALUE-CALLS.md
+@@ -5,8 +5,8 @@
+ and bounded composed values, copying all leaves independently. The developing
+ [composition contract](COMPOSED-VALUES.md) extends constructors with readonly class
+ parameters and nominal nested-field initialization. Aggregate references, resource
+-ownership transfer, class method signatures and a stable external ABI remain
+-unsupported. The scalar entrypoint contract remains unchanged.
++ownership transfer and a stable external ABI remain unsupported. Copied method
++signatures have their separate [M022 contract](METHOD-VALUES.md). The scalar entrypoint contract remains unchanged.
+ 
+ ```cpp
+ module example;
+--- a/compiler/ir.hpp
++++ b/compiler/ir.hpp
+@@ -213,7 +213,7 @@
+   public:
+     std::string callee;
+     int receiverOffset;                    // zero forwards this; positive names an ObjectSlot base
+-    std::vector<int> objectArguments = {}; // constructor snapshots; scalar entries are zero
++    std::vector<int> objectArguments = {}; // readonly copied snapshots; scalar entries are zero
+     int resultOffset = 0; // pristine class result destination; zero for scalar results
+ };
+ class MetadataQuery {
+--- a/compiler/ir_verify.hpp
++++ b/compiler/ir_verify.hpp
+@@ -123,9 +123,8 @@
+                     "readonly span is only an ordinary function parameter");
+             return;
+         }
+-        require(!function.receiver ||
+-                    (parameter ? function.receiver->constructor : !function.receiver->constructor),
+-                "receiver signatures must remain scalar");
++        require(!function.receiver || parameter || !function.receiver->constructor,
++                "constructor result must remain scalar");
+         require(type.isClass() && type == Type(type.className), "invalid value boundary type");
+         require(classLayouts.contains(type.className), "unknown value boundary class");
+         require(classLayouts.at(type.className).size() <= 64,
+@@ -1043,10 +1042,9 @@
+                                     std::all_of(target.parameters.begin(), target.parameters.end(),
+                                                 [&](const Type &type) {
+                                                     return scalarValueType(type, enumCases) ||
+-                                                           (target.receiver->constructor &&
+-                                                            type.isClass());
++                                                           type.isClass();
+                                                 }),
+-                                "receiver signatures must remain scalar");
++                                "receiver signature requires scalar, enum or class values");
+                         const auto &receiver = *target.receiver;
+                         const bool aggregate =
+                             std::any_of(target.parameters.begin(), target.parameters.end(),
+@@ -1054,25 +1052,37 @@
+                         require(aggregate
+                                     ? operation.objectArguments.size() == target.parameters.size()
+                                     : operation.objectArguments.empty(),
+-                                "constructor object argument vector size mismatch");
++                                (receiver.constructor
++                                     ? "constructor object argument vector size mismatch"
++                                     : "receiver object argument vector size mismatch"));
+                         std::set<int> argumentStorage;
+                         for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
+                             const auto &type = target.parameters[arg - 1];
+                             if (scalarValueType(type, enumCases)) {
+                                 require(!aggregate || operation.objectArguments[arg - 1] == 0,
+-                                        "scalar constructor argument cannot name object storage");
++                                        (receiver.constructor
++                                     ? "scalar constructor argument cannot name object storage"
++                                     : "scalar receiver argument cannot name object storage"));
+                                 require(pop().type == type, "method argument type mismatch");
+                             } else {
+                                 const int base = operation.objectArguments[arg - 1];
+                                 require(base != operation.receiverOffset,
+-                                        "constructor receiver aliases argument snapshot");
++                                        (receiver.constructor
++                                     ? "constructor receiver aliases argument snapshot"
++                                     : "receiver aliases argument snapshot"));
+                                 require(argumentStorage.insert(base).second,
+-                                        "constructor argument snapshots must be distinct");
++                                        (receiver.constructor
++                                     ? "constructor argument snapshots must be distinct"
++                                     : "receiver argument snapshots must be distinct"));
+                                 const auto &object = completeObject(base);
+                                 require(object.className == type.className,
+-                                        "constructor argument nominal class mismatch");
++                                        (receiver.constructor
++                                     ? "constructor argument nominal class mismatch"
++                                     : "receiver argument nominal class mismatch"));
+                                 require(!object.mutableValue,
+-                                        "constructor argument snapshot must be readonly");
++                                        (receiver.constructor
++                                     ? "constructor argument snapshot must be readonly"
++                                     : "receiver argument snapshot must be readonly"));
+                             }
+                         }
+                         require(operation.receiverOffset >= 0, "invalid method receiver offset");
+@@ -1117,6 +1127,8 @@
+                             const int base = operation.resultOffset;
+                             require(base != operation.receiverOffset,
+                                     "method result aliases receiver");
++                            require(!argumentStorage.contains(base),
++                                    "method result aliases argument snapshot");
+                             require(function.objectSlots.contains(base),
+                                     "method result requires exact object slot");
+                             const auto &object = function.objectSlots.at(base);
+--- a/compiler/modules.hpp
++++ b/compiler/modules.hpp
+@@ -797,13 +797,12 @@
+                         publicTypes[definition.name].push_back(method.result);
+                     for (auto &parameter : method.params) {
+                         resolve(parameter.type);
+-                        if (!scalarValue(parameter.type) &&
+-                            !(method.constructor && parameter.type.isClass()))
++                        if (!scalarValue(parameter.type) && !parameter.type.isClass())
+                             throw Error(
+                                 method.constructor
+                                     ? "only scalar, enum or class constructor parameters "
+                                       "are supported"
+-                                    : "only scalar or enum method parameters are supported");
++                                    : "only scalar, enum or class method parameters are supported");
+                         if (method.publicAccess)
+                             publicTypes[definition.name].push_back(parameter.type);
+                     }
+--- a/compiler/semantics.hpp
++++ b/compiler/semantics.hpp
+@@ -429,17 +429,36 @@
+         const std::size_t first = implicit ? 0 : 1;
+         if (value->args.size() - first != callee.params.size())
+             fail(value->token, "wrong argument count for method");
+-        // Evaluate scalar arguments before acquiring the synchronous receiver
+-        // capability.
++        // Resolve receiver identity first, then snapshot each argument at its
++        // left-to-right position before acquiring synchronous receiver authority.
++        std::vector<int> arguments(callee.params.size(), 0), snapshots;
++        bool packed = false;
+         for (std::size_t index = 0; index < callee.params.size(); ++index) {
+-            match(expression(value->args[index + first]), callee.params[index].type, value->token);
+-            push();
++            const auto &parameterType = callee.params[index].type;
++            const auto &argument = value->args[index + first];
++            if (parameterType.isClass()) {
++                packed = true;
++                if (argument->op != "name")
++                    fail(argument->token, "class argument requires a complete local name");
++                const int original = source(argument);
++                match(locals[original].type, parameterType, argument->token);
++                const int snapshot = add("", parameterType, false, argument->token, false);
++                copyClass(original, snapshot, classDefinition(parameterType, argument->token));
++                arguments[index] = offset(snapshot);
++                snapshots.push_back(offset(snapshot));
++            } else {
++                match(expression(argument), parameterType, argument->token);
++                push();
++            }
+         }
+         int destination = 0;
+         if (resultBinding)
+             destination = offset(add(resultBinding->name, resultBinding->type,
+                                      resultBinding->mutableValue, resultBinding->token));
+-        emit(ir::MethodCall{callee.name, implicit ? 0 : offset(receiver), {}, destination});
++        emit(ir::MethodCall{callee.name, implicit ? 0 : offset(receiver),
++                            packed ? arguments : std::vector<int>{}, destination});
++        for (int snapshot : snapshots)
++            emit(ir::EndObject{snapshot});
+         return callee.result;
+     }
+     Type callFunction(ExpressionPtr expression, const Function &callee,
+@@ -1207,9 +1226,9 @@
+                     fail(sourceFunctions[i].token, "methods require scalar, enum or class results");
+                 if (!sourceFunctions[i].constructor)
+                     for (const auto &parameter : sourceFunctions[i].params)
+-                        if (!scalarValue(parameter.type))
++                        if (!scalarValue(parameter.type) && !parameter.type.isClass())
+                             fail(sourceFunctions[i].token,
+-                                 "methods require scalar or enum parameters");
++                                 "methods require scalar, enum or class parameters");
+             }
+             auto checkBoundaryType = [&](const Type &type) {
+                 if (type.isClass() &&
+--- a/compiler/x86.hpp
++++ b/compiler/x86.hpp
+@@ -95,6 +95,10 @@
+             if (type.isClass() || type.isSpan())
+                 return true;
+         return false;
++    }
++    bool classParameters(const ir::Function &function) const {
++        return std::any_of(function.parameters.begin(), function.parameters.end(),
++                           [](const Type &type) { return type.isClass(); });
+     }
+     int argumentBytes(const Type &type) const {
+         return type.isClass()  ? classStorage->at(type.className).reservedBytes
+@@ -487,8 +491,7 @@
+                             ")");
+                 } else if constexpr (std::is_same_v<Op, ir::MethodCall>) {
+                     const auto &target = *functions.at(operation.callee);
+-                    const bool aggregate =
+-                        target.receiver->constructor && aggregateSignature(target);
++                    const bool aggregate = classParameters(target);
+                     const int recordBytes =
+                         aggregate ? packArguments(target, operation.objectArguments) : 0;
+                     if (!aggregate)
+@@ -500,7 +503,8 @@
+                     else
+                         line("leaq " + address(operation.receiverOffset) + ", %r10");
+                     if (target.result.isClass())
+-                        line("leaq " + address(operation.resultOffset) + ", %r11");
++                        line("leaq " + address(operation.resultOffset) +
++                             (aggregate ? ", %rax" : ", %r11"));
+                     call(operation.callee);
+                     if (recordBytes)
+                         line("addq $" + std::to_string(recordBytes) + ", %rsp");
+@@ -595,18 +599,27 @@
+             line("movq %rsp, %rbp");
+             receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
+             const bool packedArguments =
+-                aggregate && (!function.receiver || function.receiver->constructor);
++                function.receiver ? classParameters(function) : aggregate;
++            const bool combinedMethod =
++                function.receiver && packedArguments && function.result.isClass();
+             callRecordSaveOffset =
+                 packedArguments ? function.frameBytes + (function.receiver ? 16 : 8) : 0;
+-            resultSaveOffset = function.result.isClass() ? function.frameBytes + 16 : 0;
+-            const int frameBytes = function.frameBytes + (function.receiver || aggregate ? 16 : 0);
++            resultSaveOffset = function.result.isClass()
++                                   ? function.frameBytes + (combinedMethod ? 24 : 16)
++                                   : 0;
++            // Hidden capabilities never occupy source-addressable slots. The
++            // new combined mode needs three distinct saves, rounded to 16-byte
++            // alignment; every historical mode retains its original layout.
++            const int frameBytes = function.frameBytes +
++                                   (combinedMethod ? 32 : function.receiver || aggregate ? 16 : 0);
+             line("subq $" + std::to_string(frameBytes) + ", %rsp");
+             if (function.receiver)
+                 line("movq %r10, " + address(receiverSaveOffset));
+             if (packedArguments)
+                 line("movq %r11, " + address(callRecordSaveOffset));
+             if (function.result.isClass())
+-                line(std::string("movq ") + (function.receiver ? "%r11" : "%r10") + ", " +
++                line(std::string("movq ") +
++                     (combinedMethod ? "%rax" : function.receiver ? "%r11" : "%r10") + ", " +
+                      address(resultSaveOffset));
+             for (const auto &operation : function.code)
+                 instruction(operation);
+--- a/docs/completeness-matrix.md
++++ b/docs/completeness-matrix.md
+@@ -253,3 +253,13 @@
+ heap/resource/reference generics, complete library, self-hosting or physical
+ hardware support follows. See [contract](../compiler/FUNCTION-TEMPLATES.md) and
+ [evidence](evidence/milestone-021/README.md).
++
++## Milestone022 candidate
++
++Copied ordinary method class parameters and std::array exchange are implemented
++in an isolated candidate under [METHOD-VALUES.md](../compiler/METHOD-VALUES.md).
++They add a new combined private ABI with independent receiver, argument record
++and result capabilities. Complete release/fatal sanitizer suites and independent frozen-source review
++pass. Fresh parent aggregate/full166-mode integration remains pending. M021
++is still the accepted main checkpoint. No ownership/reference/generic-method,
++whole-program resource, production safety or physical-hardware claim is added.
+--- /dev/null
++++ b/examples/method_value_exchange.au
+@@ -0,0 +1,22 @@
++module method_value_exchange;
++import std.array;
++
++// All three arrays own independent inline storage after exchange.
++auto answer() -> i64 {
++    std::array<u8, 4> active = std::array<u8, 4>();
++    active.set(0, 21u8);
++    active.set(1, 7u8);
++    std::array<u8, 4> replacement = std::array<u8, 4>();
++    replacement.set(0, 42u8);
++    replacement.set(1, 9u8);
++
++    const std::array<u8, 4> previous = active.exchange(replacement);
++    replacement.set(0, 99u8);
++    if (previous.at(0) != 21u8) { return 0; }
++    if (previous.at(1) != 7u8) { return 0; }
++    if (active.at(1) != 9u8) { return 0; }
++
++    const std::array<u8, 4> self_snapshot = active.exchange(active);
++    active.set(0, 0u8);
++    return i64(self_snapshot.at(0));
++}
+--- a/library/README.md
++++ b/library/README.md
+@@ -187,3 +187,12 @@
+ [M021 evidence](../docs/evidence/milestone-021/README.md) for finite grammar,
+ combined graph budgets, preserved failures and verified pins. This is a copied
+ value factory, not general standard-library, text-consumer or self-hosting completion.
++
++## Copied exchange candidate
++
++std::array<T,N>::exchange(array replacement) returns the old complete contents
++and replaces its receiver from an immutable argument snapshot. Self-exchange is
++valid. Caller replacement, receiver and result remain independent values. This
++is an Aurora convenience member, not the standard C++ std::array API or an atomic
++operation. See [method values](../compiler/METHOD-VALUES.md) for the passed isolated compiler
++gates and pending parent integration.
+--- a/library/std/array.au
++++ b/library/std/array.au
+@@ -19,5 +19,16 @@
+             elements[index] = value;
+             return value;
+         }
++
++        auto exchange(std::array replacement) -> std::array {
++            std::array previous = std::array();
++            i64 index = 0;
++            while (index < N) {
++                previous.set(index, elements[index]);
++                elements[index] = replacement.at(index);
++                index = index + 1;
++            }
++            return previous;
++        }
+     };
+ }
+--- a/tests/compiler/composed_values.py
++++ b/tests/compiler/composed_values.py
+@@ -575,7 +575,6 @@
+         ("class field scalar initializer", "class Bad{Leaf item;public:Bad():item(42){} };"),
+         ("class field no complete constructor", "class Bad{public:Leaf item;};"),
+         ("mutable constructor class parameter", "class Bad{i64 value;Leaf item;public:Bad(Leaf source):value(source.add(1)),item(source){} };"),
+-        ("method class parameter remains unsupported", "class Bad{public:Bad(){}auto take(Leaf input)->i64{return 42;}};"),
+         ("direct inline self cycle", "class Bad{Bad item;public:Bad(Bad source):item(source){} };"),
+         ("indirect inline cycle", "class Bad{Other item;public:Bad(Other source):item(source){} };class Other{Bad item;public:Other(Bad source):item(source){} };"),
+         ("owning field remains unsupported", "class Bad{own<i64> item;public:Bad():item(42){} };"),
+@@ -583,6 +582,9 @@
+     ):
+         suite.check(name, program("return 42;", LEAF + definition,
+                                 "auto make()->Leaf{Leaf source=Leaf(42);return source;}"), error=True)
++    suite.check("method class parameter snapshot is independent", program(
++        "Leaf source=Leaf(42);Factory factory=Factory();Leaf result=factory.take(source);source.add(1);return result.get();", LEAF +
++        "class Factory{public:Factory(){}auto take(Leaf input)const->Leaf{return input;}};"))
+     suite.check("method class result copies into typed local", program(
+         "Factory factory=Factory();Leaf result=factory.get();return result.get();", LEAF +
+         "class Factory{public:Factory(){}auto get()->Leaf{Leaf value=Leaf(42);return value;}};"))
+--- a/tests/compiler/decimal_values.py
++++ b/tests/compiler/decimal_values.py
+@@ -405,9 +405,10 @@
+             helpers += "auto forward(Counter c)->Report{return c.snapshot();}"
+         suite.check(name, program(body, REPORT + "class Other{public:u64 value;};", helpers),
+                     reject=True)
+-    suite.check("explicit method class parameter remains unsupported", program(
+-        "return 42;", REPORT.replace("auto forwarded()", "auto take(Report r)"
+-        "const->Report{return r;}auto forwarded()")), reject=True)
++    suite.check("explicit method class parameter copies independent result", program(
++        "Counter receiver=Counter(0u64);Report source=Report(42u64);Report result=receiver.take(source);"
++        "source.set(0u64);return i64(result.get());", REPORT.replace("auto forwarded()", "auto take(Report r)"
++        "const->Report{return r;}auto forwarded()")))
+     suite.check("class method result requires complete named return", program(
+         "return 42;", REPORT.replace("return result;", "return Report(value);", 1)),
+         reject=True)
+--- a/tests/compiler/enum_composition.py
++++ b/tests/compiler/enum_composition.py
+@@ -659,18 +659,25 @@
+     ):
+         suite.check(label, program(body, BASE, helpers), reject=True)
+     for label, declaration in (
+-        ("class method parameter", "auto take(Leaf value)const->Leaf{return value;}"),
+-        ("nested class method parameter", "auto take(Packet value)const->Packet{return value;}"),
+         ("direct class construction return", "auto make()const->Leaf{return Leaf(Status::ok,42u64);}"),
+         ("wrong nominal class return", "auto make()const->Packet{Leaf value=Leaf(Status::ok,42u64);return value;}"),
+         ("wrong nominal enum return", "auto status()const->Status{return Other::ok;}"),
+     ):
+         suite.check(label + " remains rejected", program("return 42;", BASE +
+                     "class Invalid{public:Invalid(){}" + declaration + "};"), reject=True)
+-    suite.check("Value substitution does not authorize class method parameter", program(
+-        "Leaf leaf=Leaf(Status::ok,42u64);Box<Leaf> box=Box<Leaf>(leaf);return 42;", ENUMS + LEAF +
++    suite.check("copied class method parameter preserves enum payload", program(
++        "Leaf source=Leaf(Status::ok,42u64);Receiver receiver=Receiver();Leaf result=receiver.take(source);"
++        "source.change(Status::error);if(result.status()!=Status::ok){return 1;}return i64(result.get());", BASE +
++        "class Receiver{public:Receiver(){}auto take(Leaf value)const->Leaf{return value;}};"))
++    suite.check("nested class method parameter preserves copied result", program(
++        "Factory factory=Factory(Status::ok,42u64);Packet source=factory.snapshot();Receiver receiver=Receiver();"
++        "Packet result=receiver.take(source);const Leaf item=result.item;return i64(item.get());", BASE +
++        "class Receiver{public:Receiver(){}auto take(Packet value)const->Packet{return value;}};"))
++    suite.check("Value substitution authorizes copied class method parameter", program(
++        "Leaf leaf=Leaf(Status::ok,42u64);Box<Leaf> box=Box<Leaf>(leaf);Leaf result=box.take(leaf);"
++        "leaf.change(Status::error);if(result.status()!=Status::ok){return 1;}return i64(result.get());", ENUMS + LEAF +
+         "template<Value T>class Box{T item;public:Box(T source):item(source){}"
+-        "auto take(T source)const->T{return source;}};"), reject=True)
++        "auto take(T source)const->T{return source;}};"))
+     suite.check("Value enum substitution does not authorize builtin enum arrays", program(
+         "Box<Status> box=Box<Status>();return 42;", ENUMS +
+         "template<Value T>class Box{builtin::array<T,2> data;public:Box():data{}{} };"), reject=True)
+--- a/tests/compiler/ir_tests.cpp
++++ b/tests/compiler/ir_tests.cpp
+@@ -1626,13 +1626,16 @@
+         [](Module &m) { m.functions[1].objectSlots[24].mutableValue = true; },
+         "object parameter must be readonly");
+     rejectComposed(
+-        "ordinary method class parameter rejected",
+-        [](Module &m) { m.functions[1].receiver->constructor = false; },
+-        "receiver signatures must remain scalar");
++        "ordinary method copied arguments require complete receiver",
++        [](Module &m) {
++            m.functions[1].receiver->constructor = false;
++            m.functions[1].receiver->mutableValue = false;
++        },
++        "method receiver object not fully initialized");
+     rejectComposed(
+         "constructor class result rejected",
+         [](Module &m) { m.functions[1].result = Type("Outer"); },
+-        "receiver signatures must remain scalar");
++        "receiver signature requires scalar, enum or class values");
+     rejectComposed(
+         "nested metadata wrong flattened length",
+         [](Module &m) { m.classFields["Outer"][1].length = 1; },
+@@ -2487,15 +2490,15 @@
+         [=](Module &m) { m.functions[0].code[2] = EnumConstant{other, 1}; },
+         "method argument type mismatch");
+     rejectResult(
+-        "method class arguments remain forbidden",
++        "method class argument requires snapshot vector",
+         [](Module &m) { namedFunction(m, "snapshot_outer").parameters[1] = Type("Empty"); },
+-        "receiver signatures must remain scalar");
++        "object argument vector size mismatch");
+     rejectResult(
+         "method object-argument vector not repurposed as result",
+         [](Module &m) {
+             namedMethodCall(m.functions[0], "snapshot_outer").objectArguments = {152};
+         },
+-        "constructor object argument vector size mismatch");
++        "receiver object argument vector size mismatch");
+     rejectResult(
+         "method result cannot expose scalar current value",
+         [](Module &m) { m.functions[0].code.insert(m.functions[0].code.begin() + 36, Push{}); },
+@@ -4500,12 +4503,12 @@
+                                                     Load{16, Type::I64}, Return{}};
+         accept("receiver may call acyclic ordinary value helper", receiverValueCycle);
+         rejectModule(
+-            "receiver aggregate parameter denied", receiverValueCycle,
++            "receiver aggregate parameter requires explicit snapshot vector", receiverValueCycle,
+             [](Module &m) {
+                 m.functions.back().receiver = Receiver{"Pair", false, false};
+                 m.functions[2].code[5] = MethodCall{"value_bridge", 16};
+             },
+-            "receiver signatures must remain scalar");
++            "receiver object argument vector size mismatch");
+         const auto valueAssembly = X86Emitter{}.emit(validate(valueBaseline()));
+         for (const auto &fragment :
+              {".local copy_pair", "movq %r11, -72(%rbp)", "movq %r10, -80(%rbp)", "movq %rsp, %r11",
+--- /dev/null
++++ b/tests/compiler/method_values.py
+@@ -0,0 +1,650 @@
++#!/usr/bin/env python3
++"""Executable copied ordinary-method parameter contract (M022).
++
++Run: python3 -O tests/compiler/method_values.py build/aurorac
++     python3 -O tests/compiler/method_values.py --plan-only
++
++Native results preserve all 64 bits. Traps require kernel SIGILL at the exact
++named UD2 instruction. Every rejection preserves absent and byte-exact existing
++output, and all source/module/library inputs. Explicit require() checks survive
++-O. Successful temporary artifacts are deleted; failures retain reproduction
++source, modules, command, diagnostics and native artifacts under this checkout's
++evidence/. Model expectations use independent Python lists, not compiler output.
++These are finite regression/model checks, not a safety or performance proof.
++No kernel images or historical artifacts are created or removed.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import random
++import re
++import resource
++import shutil
++import subprocess
++import tempfile
++import time
++
++from composed_values import Trap, observer_self_test, program, require, signed_bits
++from integer_oracle import NativeRunner, validate_trap, validate_values
++
++ROOT = Path(__file__).resolve().parents[2]
++PRESERVED = b"previous verified assembly\x00\xff\n"
++SCALARS = ("i64", "u64", "u8", "bool")
++ENUMS = "enum class Status{ready,failed};enum class Other{ready,failed};"
++EMPTY = "class Empty{public:Empty(){}auto answer()const->i64{return 42;}};"
++COUNTER = """class Counter{
++    i64 value;
++public:
++    Counter(i64 n):value(n){}
++    auto get()const->i64{return value;}
++    auto set(i64 n)->i64{value=n;return value;}
++    auto add(i64 n)->i64{value=value+n;return value;}
++    auto inspect(Counter source)const->i64{return source.get();}
++    auto copy(Counter source)const->Counter{return source;}
++    auto replace(Counter source)->Counter{
++        const Counter old=Counter(value);value=source.get();return old;
++    }
++};"""
++
++
++def p(body, definitions="", helpers="", imports="", result="i64"):
++    return program(body, definitions, helpers, imports, result)
++
++
++def lit(scalar, value):
++    if scalar == "bool":
++        return "true" if value else "false"
++    return str(value) + (scalar if scalar in ("u64", "u8") else "")
++
++
++class Suite:
++    def __init__(self, directory, compiler, keep_going=False, fixture="", plan_only=False):
++        self.directory, self.compiler = directory, compiler
++        self.keep_going, self.fixture, self.plan_only = keep_going, fixture, plan_only
++        self.runner = None if plan_only else NativeRunner(directory, compiler, 5)
++        self.library_inputs = {} if plan_only else {
++            path: path.read_bytes() for path in (ROOT / "library").rglob("*.au")}
++        self.count = self.traps = self.rejections = self.negative_fixtures = 0
++        self.attempts = self.selected_fixtures = 0
++        self.failures, self.names = [], set()
++
++    def check(self, name, source, expected=42, error=None, modules=None,
++              existing_output=None, _selected=False):
++        if not _selected:
++            require(name not in self.names, "duplicate fixture name: " + name)
++            self.names.add(name)
++            if self.fixture and self.fixture.lower() not in name.lower():
++                return
++            self.selected_fixtures += 1
++        self.attempts += 1
++        if self.plan_only:
++            self.count += 1
++            self.rejections += int(error is not None)
++            self.traps += int(isinstance(expected, Trap) and error is None)
++            print("PLAN method values", name, flush=True)
++            return
++        slug = re.sub(r"[^a-zA-Z0-9]+", "-", name)[:75].strip("-")
++        directory = Path(tempfile.mkdtemp(prefix=slug + "-", dir=self.directory))
++        source_path, output = directory / "input.au", directory / "compiled.s"
++        source_path.write_text(source)
++        inputs = dict(self.library_inputs)
++        inputs[source_path] = source.encode()
++        roots = [ROOT / "library"]
++        if modules:
++            root = directory / "modules"
++            root.mkdir()
++            roots.insert(0, root)
++            for module, content in modules.items():
++                path = root / (module.replace(".", "/") + ".au")
++                path.parent.mkdir(parents=True, exist_ok=True)
++                path.write_text(content)
++                inputs[path] = content.encode()
++        if existing_output is not None:
++            output.write_bytes(existing_output)
++        command = [str(self.compiler), str(source_path), "-o", str(output)]
++        for root in roots:
++            command.extend(["--module-root", str(root)])
++        (directory / "command.json").write_text(json.dumps(command, indent=2) + "\n")
++        original_runner_directory = self.runner.directory
++        try:
++            compiled = subprocess.run(command, capture_output=True, timeout=10,
++                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)))
++            (directory / "stdout.bin").write_bytes(compiled.stdout)
++            (directory / "stderr.bin").write_bytes(compiled.stderr)
++            for path, before in inputs.items():
++                require(path.read_bytes() == before, name + ": input changed: " + str(path))
++            if error is not None:
++                require(compiled.returncode == 1,
++                        f"{name}: expected compiler exit 1, got {compiled.returncode}: {compiled.stderr!r}")
++                require(bool(compiled.stderr), name + ": missing rejection diagnostic")
++                if existing_output is None:
++                    require(not output.exists(), name + ": artifact created on rejection")
++                else:
++                    require(output.read_bytes() == existing_output,
++                            name + ": previous output changed on rejection")
++                if error is not True:
++                    fragments = (error,) if isinstance(error, str) else error
++                    require(any(x.lower().encode() in compiled.stderr.lower() for x in fragments),
++                            name + ": unexpected diagnostic: " + repr(compiled.stderr))
++                self.rejections += 1
++            else:
++                require(compiled.returncode == 0,
++                        f"{name}: compiler exit {compiled.returncode}: {compiled.stderr!r}")
++                self.runner.directory = directory
++                observed, symbols = self.runner.assemble(output.read_text(), ["test"])
++                if isinstance(expected, Trap):
++                    validate_trap(observed, expected, symbols, name)
++                    self.traps += 1
++                else:
++                    validate_values(observed, [signed_bits(expected)], [name])
++            self.count += 1
++            print("PASS method values", name, flush=True)
++        except (AssertionError, OSError, subprocess.TimeoutExpired) as failure:
++            details = f"{name}: {failure}\nPreserved reproduction: {directory}"
++            (directory / "failure.txt").write_text(details + "\n")
++            self.failures.append(details)
++            print("FAIL method values", details, flush=True)
++            if not self.keep_going:
++                raise AssertionError(details) from failure
++        else:
++            shutil.rmtree(directory)
++        finally:
++            self.runner.directory = original_runner_directory
++
++    def reject(self, name, source, error=True, modules=None):
++        require(name not in self.names, "duplicate fixture name: " + name)
++        self.names.add(name)
++        if self.fixture and self.fixture.lower() not in name.lower():
++            return
++        self.selected_fixtures += 1
++        before = self.rejections
++        for suffix, previous in (("absent output", None), ("saved output", PRESERVED)):
++            self.check(name + ": " + suffix, source, error=error, modules=modules,
++                       existing_output=previous, _selected=True)
++        if self.rejections == before + 2:
++            self.negative_fixtures += 1
++
++
++def native_cases(suite):
++    for receiver_const in (False, True):
++        for argument_const in (False, True):
++            for result_const in (False, True):
++                suite.check(f"readonly copy receiver={receiver_const} argument={argument_const} result={result_const}", p(
++                    f"{'const ' if receiver_const else ''}Counter receiver=Counter(0);"
++                    f"{'const ' if argument_const else ''}Counter source=Counter(42);"
++                    f"{'const ' if result_const else ''}Counter copied=receiver.copy(source);"
++                    "if(receiver.inspect(source)!=42){return 1;}"
++                    + ("if(copied.add(1)!=43){return 2;}" if not result_const else "")
++                    + "return source.get();", COUNTER))
++    suite.check("parenthesized named-local argument retains independent copy semantics", p(
++        "Counter source=Counter(42);Counter receiver=Counter(0);Counter result=receiver.copy((source));"
++        "source.set(7);return result.get();", COUNTER))
++    suite.check("mutable receiver and returned parameter are independent", p(
++        "Counter receiver=Counter(20);Counter source=Counter(22);"
++        "Counter old=receiver.replace(source);source.set(99);old.add(1);"
++        "if(source.get()!=99){return 1;}return old.get()+receiver.get()-1;", COUNTER))
++    suite.check("mutable self argument copied before receiver acquisition", p(
++        "Counter receiver=Counter(42);Counter old=receiver.replace(receiver);"
++        "receiver.set(7);return old.get();", COUNTER))
++    suite.check("readonly self argument and class result are distinct", p(
++        "Counter receiver=Counter(42);Counter saved=receiver.copy(receiver);"
++        "receiver.set(7);return saved.get();", COUNTER))
++    six = ("class Six{ i64 value; public:Six(i64 n):value(n){}"
++           "auto mix(Counter a,i64 n,Counter b,Status state,u64 big,u8 byte)->Counter{"
++           "if(n!=7){const Counter failed=Counter(1);return failed;}"
++           "if(state!=Status::ready){const Counter failed=Counter(2);return failed;}"
++           "if(big!=18446744073709551615u64){const Counter failed=Counter(3);return failed;}"
++           "if(byte!=255u8){const Counter failed=Counter(4);return failed;}"
++           "value=value+1;const Counter answer=Counter(a.get()+b.get()+value);return answer;}"
++           "auto check(bool yes,Counter a,u8 byte,Counter b,u64 big,Status state)const->bool{"
++           "if(!yes){return false;}if(byte!=255u8){return false;}"
++           "if(big!=18446744073709551615u64){return false;}"
++           "if(state!=Status::ready){return false;}return a.get()+b.get()==41;} };" )
++    suite.check("six mixed scalar enum class parameters with class result", p(
++        "Six receiver=Six(0);Counter a=Counter(20);Counter b=Counter(21);"
++        "Counter result=receiver.mix(a,7,b,Status::ready,18446744073709551615u64,255u8);"
++        "if(!receiver.check(true,a,255u8,b,18446744073709551615u64,Status::ready)){return 9;}"
++        "return result.get();", ENUMS+COUNTER+six))
++    order = COUNTER.replace("};", "auto order(Counter before,i64 first,Counter between,i64 second,Counter after,bool yes)->i64{"
++        "if(before.get()!=1){return 1;}if(first!=2){return 2;}if(between.get()!=2){return 3;}"
++        "if(second!=3){return 4;}if(after.get()!=3){return 5;}if(!yes){return 6;}"
++        "if(value!=3){return 7;}value=99;"
++        "if(before.get()!=1){return 8;}if(after.get()!=3){return 9;}return 42;}};")
++    suite.check("class snapshots scalar effects and receiver acquire left to right", p(
++        "Counter source=Counter(1);return source.order(source,source.add(1),source,source.add(1),source,true);", order))
++    suite.check("scalar side effect before first class argument is visible", p(
++        "Counter source=Counter(1);Reader reader=Reader();return reader.inspect(source.add(1),source);",
++        COUNTER+"class Reader{public:Reader(){}auto inspect(i64 n,Counter copy)const->i64{"
++        "if(n!=2){return 1;}if(copy.get()!=2){return 2;}return 42;}};"))
++    suite.check("repeated class snapshots independently copied into mutable locals", p(
++        "Counter source=Counter(20);Reader reader=Reader();return reader.inspect(source,source);",
++        COUNTER+"class Reader{public:Reader(){}auto inspect(Counter a,Counter b)const->i64{"
++        "Counter changed=a;changed.add(2);return changed.get()+b.get();}};"))
++    suite.check("inner result binding reads outer same-name argument and receiver", p(
++        "Counter value=Counter(42);if(true){Counter value=value.copy(value);"
++        "value.set(0);}return value.get();", COUNTER))
++    suite.check("class parameter shadows receiver scalar field", p(
++        "Counter source=Counter(42);Shadow receiver=Shadow(99);return receiver.inspect(source);",
++        COUNTER+"class Shadow{i64 source;public:Shadow(i64 n):source(n){}"
++        "auto inspect(Counter source)const->i64{return source.get();}};"))
++    suite.check("local class shadows readonly method parameter in inner scope", p(
++        "Counter source=Counter(42);Reader receiver=Reader();return receiver.inspect(source);",
++        COUNTER+"class Reader{public:Reader(){}auto inspect(Counter source)const->i64{"
++        "if(true){Counter source=source;source.add(1);}return source.get();}};"))
++    sibling = ("class Sibling{i64 value;auto take(Counter source,i64 extra)const->Counter{"
++               "const Counter result=Counter(source.get()+extra+value);return result;}"
++               "auto advance(Counter source)->Counter{value=value+1;const Counter result=take(source,1);return result;}"
++               "public:Sibling(i64 n):value(n){}auto get(Counter source)const->Counter{"
++               "const Counter result=take(source,2);return result;}"
++               "auto change(Counter source)->Counter{const Counter result=advance(source);return result;}};")
++    for method in ("get", "change"):
++        suite.check("private sibling copied argument and result " + method, p(
++            f"Counter source=Counter(20);Sibling receiver=Sibling(20);Counter result=receiver.{method}(source);"
++            "source.set(99);return result.get();", COUNTER+sibling))
++    suite.check("method parameter forwarded through ordinary function and receiver restored", p(
++        "Counter source=Counter(20);Forward receiver=Forward(22);Counter result=receiver.take(source);return result.get();",
++        COUNTER+"class Forward{i64 value;public:Forward(i64 n):value(n){}"
++        "auto take(Counter source)const->Counter{Counter result=identity(source);result.add(value);return result;}};",
++        "auto identity(Counter source)->Counter{return source;}"))
++    suite.check("class-result destination independent across loop lifetimes", p(
++        "Counter source=Counter(20);Counter receiver=Counter(0);i64 total=0;i64 i=0;"
++        "while(i<2){Counter result=receiver.copy(source);total=total+result.add(1);i=i+1;}return total;", COUNTER))
++    for scalar, value in (("i64",-(1<<63)),("u64",(1<<64)-1),("u8",255),("bool",True)):
++        definition=(f"class Value{{{scalar} item;public:Value({scalar} n):item(n){{}}"
++                    f"auto get()const->{scalar}{{return item;}}auto copy(Value source)const->Value{{return source;}}}};")
++        suite.check("full-width copied method parameter " + scalar, p(
++            f"Value value=Value({lit(scalar,value)});const Value result=value.copy(value);return result.get();",
++            definition, result=scalar), expected=int(value))
++    suite.check("nominal enum result with copied class parameter", p(
++        "Tagged source=Tagged(Status::ready);Tagged receiver=Tagged(Status::failed);"
++        "if(receiver.status(source)!=Status::ready){return 1;}return 42;", ENUMS+
++        "class Tagged{Status value;public:Tagged(Status n):value(n){}"
++        "auto status(Tagged source)const->Status{return source.value;}};"))
++    suite.check("empty parameter and result preserve nominal completeness", p(
++        "Empty source=Empty();Receiver receiver=Receiver();Empty result=receiver.copy(source,source);return result.answer();",
++        EMPTY+"class Receiver{public:Receiver(){}auto copy(Empty a,Empty b)const->Empty{return b;}};"))
++    suite.check("packed nested enum empty and private array payload all copy", p(
++        "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(0,255u8);bytes.set(2,40u8);"
++        "Empty empty=Empty();Packet source=Packet(7u8,bytes,Status::ready,empty,2u8);"
++        "Receiver receiver=Receiver();Packet result=receiver.copy(source);bytes.set(2,0u8);"
++        "std::array<u8,3> changed=result.data;changed.set(2,1u8);"
++        "const std::array<u8,3> saved=result.data;"
++        "if(saved.at(0)!=255u8){return 1;}if(result.state!=Status::ready){return 2;}"
++        "if(result.head!=7u8){return 3;}const Empty zero=result.zero;if(zero.answer()!=42){return 4;}"
++        "return i64(saved.at(2))+i64(result.tail);", ENUMS+EMPTY+
++        "class Packet{public:u8 head;std::array<u8,3> data;Status state;Empty zero;u8 tail;"
++        "Packet(u8 h,std::array<u8,3> b,Status s,Empty e,u8 t):head(h),data(b),state(s),zero(e),tail(t){} };"
++        "class Receiver{public:Receiver(){}auto copy(Packet value)const->Packet{return value;}};",
++        imports="import std.array;"))
++    suite.check("class template injected self supports ordinary copied parameter", p(
++        "Box<i64> source=Box<i64>(20);Box<i64> receiver=Box<i64>(22);"
++        "Box<i64> old=receiver.exchange(source);source.set(99);return old.get()+receiver.get();",
++        "template<Scalar T>class Box{T value;public:Box(T n):value(n){}"
++        "auto get()const->T{return value;}auto set(T n)->T{value=n;return value;}"
++        "auto exchange(Box source)->Box{const Box old=Box(value);value=source.get();return old;}};"))
++    suite.check("qualified wrapper self means exact active instance and bare array stays storage", p(
++        "std::array<u8,1> one=std::array<u8,1>();std::array<u64,3> three=std::array<u64,3>();"
++        "const std::array<u8,1> saved1=one.copy(one);const std::array<u64,3> saved3=three.copy(three);"
++        "static_assert(size_of(std::array<u8,1>)==1);static_assert(size_of(std::array<u64,3>)==24);"
++        "if(saved1.get(0)!=0u8){return 1;}if(saved3.get(2)!=0u64){return 2;}return 42;",
++        "namespace std{template<Scalar T,i64 N>class array{array<T,N> elements;public:array():elements{}{}"
++        "auto get(i64 index)const->T{return elements[index];}"
++        "auto copy(std::array source)const->std::array{const std::array result=source;return result;}};}"))
++    suite.check("Value substitution method argument and result use exact nested type", p(
++        "Counter source=Counter(42);Box<Counter> receiver=Box<Counter>(source);"
++        "Counter result=receiver.copy(source);source.set(99);return result.get();", COUNTER+
++        "template<Value T>class Box{T item;public:Box(T n):item(n){}"
++        "auto copy(T source)const->T{return source;}};"))
++    suite.check("nested class template argument copied through ordinary method", p(
++        "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(2,40u8);"
++        "std::pair<std::array<u8,3>,u8> source=std::pair<std::array<u8,3>,u8>(bytes,2u8);"
++        "Receiver receiver=Receiver();const std::pair<std::array<u8,3>,u8> result=receiver.copy(source);"
++        "const std::array<u8,3> saved=result.first;return i64(saved.at(2))+i64(result.second);",
++        "class Receiver{public:Receiver(){}auto copy(std::pair<std::array<u8,3>,u8> value)const"
++        "->std::pair<std::array<u8,3>,u8>{return value;}};",
++        imports="import std.array;import std.utility;"))
++
++def model_cases(suite, seed, steps):
++    rng = random.Random(seed)
++    edges = {"i64": [-(1<<63), (1<<63)-1, -1, 0, 1, 42],
++             "u64": [0, 1, 42, 1<<63, (1<<64)-1],
++             "u8": [0, 1, 42, 127, 128, 255], "bool": [False, True]}
++    for scalar in SCALARS:
++        for capacity in (1, 2, 3, 16, 63, 64):
++            concrete = f"std::array<{scalar},{capacity}>"
++            arrays = {name: [rng.choice(edges[scalar]) for _ in range(capacity)] for name in ("left", "right")}
++            body = [f"{concrete} left={concrete}();{concrete} right={concrete}();"]
++            for name, values in arrays.items():
++                body += [f"{name}.set({i},{lit(scalar,v)});" for i,v in enumerate(values)]
++            for step in range(steps):
++                target = "left" if step % 2 == 0 else "right"
++                source = target if step % 3 == 0 else ("right" if target == "left" else "left")
++                old = arrays[target].copy()
++                arrays[target] = arrays[source].copy()
++                # Every third operation is self-exchange. Independent result mutations
++                # and mutations of the replacement after the call test all aliases.
++                body.append("if(true){")
++                body.append(f"{concrete} saved={target}.exchange({source});")
++                for i,v in enumerate(old):
++                    body.append(f"if(saved.at({i})!={lit(scalar,v)}){{return 1;}}")
++                index = rng.randrange(capacity)
++                value = rng.choice([v for v in edges[scalar] if v != arrays[source][index]])
++                body.append(f"{source}.set({index},{lit(scalar,value)});")
++                arrays[source][index] = value
++                changed = rng.choice([v for v in edges[scalar] if v != old[0]])
++                body.append(f"saved.set(0,{lit(scalar,changed)});")
++                old[0] = changed
++                for name, values in arrays.items():
++                    for i,v in enumerate(values):
++                        body.append(f"if({name}.at({i})!={lit(scalar,v)}){{return 2;}}")
++                for i,v in enumerate(old):
++                    body.append(f"if(saved.at({i})!={lit(scalar,v)}){{return 3;}}")
++                body.append("}")
++            body.append("return 42;")
++            suite.check(f"seeded exchange snapshot model {scalar} capacity {capacity}", p(
++                "".join(body), imports="import std.array;"))
++    for scalar in SCALARS:
++        value = edges[scalar][-1]
++        concrete = f"std::array<{scalar},64>"
++        suite.check("array exchange accepts readonly replacement " + scalar, p(
++            f"{concrete} seed={concrete}();seed.set(63,{lit(scalar,value)});"
++            f"const {concrete} replacement=seed;{concrete} receiver={concrete}();"
++            f"const {concrete} old=receiver.exchange(replacement);"
++            f"if(receiver.at(63)!={lit(scalar,value)}){{return 1;}}"
++            f"if(old.at(63)!={lit(scalar,False if scalar=='bool' else 0)}){{return 2;}}"
++            "return 42;", imports="import std.array;"))
++
++
++def boundary_cases(suite):
++    for leaves in (1, 63, 64, 65):
++        fields="".join(f"i64 f{i};" for i in range(leaves))
++        initializers=",".join(f".f{i}={7 if i==leaves-1 else i}" for i in range(leaves))
++        wide="class Wide{public:"+fields+"};"
++        receiver=("class Receiver{public:Receiver(){}auto sum(Wide a,Wide b,Wide c,Wide d,Wide e,Wide f)const->i64{"
++                  f"return a.f{leaves-1}+b.f{leaves-1}+c.f{leaves-1}+d.f{leaves-1}+e.f{leaves-1}+f.f{leaves-1};}}}};")
++        source=p("Wide source=Wide{"+initializers+"};Receiver receiver=Receiver();"
++                 "return receiver.sum(source,source,source,source,source,source);", wide+receiver)
++        if leaves<=64:
++            suite.check(f"six copied arguments each with {leaves} scalar leaves",source)
++        else:
++            suite.reject("method parameter rejects 65 scalar leaves",source)
++    suite.check("six maximum-width class args plus receiver and class result", p(
++        "std::array<u64,64> source=std::array<u64,64>();source.set(63,18446744073709551615u64);"
++        "Receiver receiver=Receiver(42);const std::array<u64,64> result=receiver.pick(source,source,source,source,source,source);"
++        "if(result.at(63)!=18446744073709551615u64){return 1;}return receiver.get();",
++        "class Receiver{i64 value;public:Receiver(i64 n):value(n){}auto get()const->i64{return value;}"
++        "auto pick(std::array<u64,64> a,std::array<u64,64> b,std::array<u64,64> c,"
++        "std::array<u64,64> d,std::array<u64,64> e,std::array<u64,64> f)const->std::array<u64,64>{return f;}};",
++        imports="import std.array;"))
++    suite.reject("seventh explicit class method parameter exceeds limit",p("return 42;",COUNTER+
++        "class Receiver{public:Receiver(){}auto bad(Counter a,Counter b,Counter c,Counter d,Counter e,Counter f,Counter g)"
++        "const->i64{return 42;}};"), error="six")
++    for depth in (4,5):
++        definitions=COUNTER
++        body="Counter value0=Counter(42);"
++        current="Counter"
++        for level in range(1,depth):
++            name=f"Wrap{level}"
++            definitions+=f"class {name}{{public:{current} item;{name}({current} x):item(x){{}}}};"
++            body+=f"{name} value{level}={name}(value{level-1});"
++            current=name
++        definitions+=f"class Receiver{{public:Receiver(){{}}auto copy({current} value)const->{current}{{return value;}}}};"
++        body+=f"Receiver receiver=Receiver();{current} result=receiver.copy(value{depth-1});return 42;"
++        if depth==4:
++            suite.check("copied method parameter containment depth four",p(body,definitions))
++        else:
++            suite.reject("copied method parameter containment depth five rejected",p(body,definitions))
++
++
++def rejection_cases(suite):
++    prefix="Counter source=Counter(42);Counter receiver=Counter(0);"
++    for label, body, helpers in (
++        ("constructor temporary class argument", "return receiver.inspect(Counter(42));", ""),
++        ("function result temporary class argument", "return receiver.inspect(make());", "auto make()->Counter{Counter x=Counter(42);return x;}"),
++        ("method result temporary class argument", "return receiver.inspect(receiver.copy(source));", ""),
++        ("scalar literal cannot be copied class argument", "return receiver.inspect(42);", ""),
++        ("scalar local cannot be copied class argument", "i64 wrong=42;return receiver.inspect(wrong);", ""),
++        ("class argument cannot enter scalar slot", "return receiver.add(source);", ""),
++        ("missing class argument", "return receiver.inspect();", ""),
++        ("extra class argument", "return receiver.inspect(source,source);", ""),
++        ("result discarded", "receiver.copy(source);return 42;", ""),
++        ("result reassigned into existing class", "source=receiver.copy(source);return 42;", ""),
++        ("result cannot initialize scalar", "i64 result=receiver.copy(source);return result;", ""),
++        ("result cannot initialize inferred binding", "auto result=receiver.copy(source);return 42;", ""),
++        ("direct return class result", "Counter result=forward(source);return result.get();", "auto forward(Counter x)->Counter{Counter receiver=Counter(0);return receiver.copy(x);}"),
++        ("temporary receiver remains unsupported", "return Counter(0).inspect(source);", ""),
++        ("class argument outside lexical lifetime", "if(true){Counter gone=Counter(42);}return receiver.inspect(gone);", ""),
++        ("new result binding not visible in own argument", "Counter result=receiver.copy(result);return 42;", ""),
++        ("method extraction remains unsupported", "auto method=receiver.read;return 42;", ""),
++    ):
++        suite.reject(label,p(prefix+body,COUNTER,helpers))
++    suite.reject("equal-layout nominal mismatch remains rejected",p(prefix+
++        "Other source2=Other{.value=42};return receiver.inspect(source2);",COUNTER+"class Other{public:i64 value;};"))
++    suite.reject("wrong nominal class result destination",p(prefix+
++        "Other result=receiver.copy(source);return 42;",COUNTER+"class Other{public:i64 value;};"))
++    suite.reject("nested field argument requires projected named local",p(prefix+
++        "Holder outer=Holder(source);return receiver.inspect(outer.item);",COUNTER+
++        "class Holder{public:Counter item;Holder(Counter x):item(x){} };"))
++    suite.reject("private field remains inaccessible through copied parameter",p(
++        "Counter source=Counter(42);Reader receiver=Reader();return receiver.inspect(source);",COUNTER+
++        "class Reader{public:Reader(){}auto inspect(Counter source)const->i64{return source.value;}};"),error="private")
++    for label, code in (
++        ("mutable method on readonly class parameter","return source.add(1);"),
++        ("parameter rebinding","Counter other=Counter(1);source=other;return 42;"),
++        ("parameter scalar field write","source.value=42;return 42;"),
++        ("parameter array mutation","source.set(0,42u8);return 42;"),
++    ):
++        concrete="std::array<u8,1>" if "array" in label else "Counter"
++        initial="std::array<u8,1>()" if "array" in label else "Counter(42)"
++        definitions=COUNTER.replace("i64 value;","public:i64 value;",1)+f"class Receiver{{public:Receiver(){{}}auto take({concrete} source)->i64{{{code}}}}};"
++        suite.reject(label,p(f"{concrete} source={initial};Receiver receiver=Receiver();return receiver.take(source);",
++                             definitions,imports="import std.array;"))
++    suite.reject("mutable receiver method rejects const receiver with copied arg",p(
++        "const Counter receiver=Counter(0);Counter source=Counter(42);Counter result=receiver.replace(source);return 42;",COUNTER))
++    suite.reject("const sibling cannot forward to mutable sibling",p("return 42;",COUNTER+
++        "class Receiver{public:Receiver(){}auto take(Counter x)->Counter{return x;}"
++        "auto bad(Counter x)const->Counter{const Counter result=take(x);return result;}};"))
++    for type_name in ("own<i64>","ref<i64>","mut<i64>","builtin::array<u8,1>","builtin::span<const u8>"):
++        suite.reject("unsupported ordinary method parameter " + type_name,p("return 42;",
++            f"class Receiver{{public:Receiver(){{}}auto take({type_name} x)const->i64{{return 42;}}}};"))
++    suite.reject("copied parameter name shadows sibling method callable",p("return 42;",COUNTER+
++        "class Receiver{auto select(Counter source)const->Counter{return source;}public:Receiver(){}"
++        "auto take(Counter select)const->Counter{const Counter result=select(select);return result;}};"))
++    suite.reject("scalar parameter in copied signature remains immutable",p("return 42;",COUNTER+
++        "class Receiver{public:Receiver(){}auto take(Counter source,i64 n)const->i64{n=42;return n;}};"))
++    suite.reject("enum parameter in copied signature remains immutable",p("return 42;",ENUMS+COUNTER+
++        "class Receiver{public:Receiver(){}auto take(Counter source,Status state)const->i64{state=Status::failed;return 42;}};"))
++    for spelling in ("array", "builtin::array"):
++        for position, declaration in (
++            ("parameter",f"auto take({spelling} source)const->i64{{return 42;}}"),
++            ("result",f"auto take(std::array source)const->{spelling}{{return source;}}"),
++            ("local",f"auto take(std::array source)const->i64{{{spelling} value=source;return 42;}}"),
++            ("constructor",f"auto take(std::array source)const->i64{{std::array value={spelling}();return 42;}}"),
++        ):
++            suite.reject(f"reserved {spelling} never injected wrapper self in {position}",p(
++                "std::array<u8,1> value=std::array<u8,1>();return 42;",
++                "namespace std{template<Scalar T,i64 N>class array{builtin::array<T,N> elements;public:array():elements{}{}"
++                +declaration+"};}"))
++    suite.reject("qualified wrapper name outside template still requires type arguments",p(
++        "std::array value=std::array();return 42;",imports="import std.array;"))
++    suite.reject("qualified injected wrapper self rejects another active instance",p(
++        "std::array<u8,1> one=std::array<u8,1>();std::array<u8,2> two=std::array<u8,2>();"
++        "std::array<u8,1> result=one.copy(two);return 42;",
++        "namespace std{template<Scalar T,i64 N>class array{builtin::array<T,N> elements;public:array():elements{}{}"
++        "auto copy(std::array source)const->std::array{return source;}};}"))
++    suite.reject("generic methods remain unsupported",p("return 42;",
++        "class Receiver{public:Receiver(){}template<Value T>auto copy(T x)const->T{return x;}};"))
++    suite.reject("class field reassignment remains unsupported",p(
++        "Counter source=Counter(42);Holder value=Holder(source);value.item=source;return 42;",COUNTER+
++        "class Holder{public:Counter item;Holder(Counter x):item(x){} };"))
++    suite.reject("direct receiver class field return remains unsupported",p("return 42;",COUNTER+
++        "class Holder{Counter item;public:Holder(Counter x):item(x){}auto copy(Counter ignored)const->Counter{return item;}};"))
++    for label, methods, helpers in (
++        ("direct receiver cycle", "auto take(Counter x)const->Counter{const Counter result=take(x);return result;}", ""),
++        ("mutual receiver cycle", "auto take(Counter x)const->Counter{const Counter result=other(x);return result;}auto other(Counter x)const->Counter{const Counter result=take(x);return result;}", ""),
++        ("ordinary helper receiver cycle", "auto take(Counter x)const->Counter{const Counter result=helper(x);return result;}", "auto helper(Counter x)->Counter{Receiver receiver=Receiver();Counter result=receiver.take(x);return result;}"),
++    ):
++        suite.reject(label,p("return 42;",COUNTER+"class Receiver{public:Receiver(){}"+methods+"};",helpers),error="cycle")
++    suite.reject("self containment still rejected",p("return 42;",
++        "class Bad{Bad field;public:Bad(Bad x):field(x){}auto copy(Bad source)const->Bad{return source;}};"))
++    suite.reject("enum method argument retains exact nominal type",p(
++        "Counter source=Counter(42);Receiver receiver=Receiver();return receiver.take(source,Other::ready);",ENUMS+COUNTER+
++        "class Receiver{public:Receiver(){}auto take(Counter x,Status s)const->i64{return x.get();}};"))
++    for label, body in (
++        ("const receiver","const std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> source=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(source);"),
++        ("capacity mismatch","std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,2> source=std::array<u8,2>();std::array<u8,3> old=receiver.exchange(source);"),
++        ("scalar type mismatch","std::array<u8,3> receiver=std::array<u8,3>();std::array<i64,3> source=std::array<i64,3>();std::array<u8,3> old=receiver.exchange(source);"),
++        ("temporary replacement","std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(std::array<u8,3>());"),
++        ("private storage stays private","std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(receiver);return old.elements[0];"),
++    ):
++        suite.reject("array exchange " + label,p(body+"return 42;",imports="import std.array;"))
++
++def module_cases(suite):
++    modules={"values":"export module values;export "+COUNTER,
++             "receivers":"export module receivers;import values;export class Receiver{public:Receiver(){}"
++             "auto copy(Counter value)const->Counter{return value;}auto inspect(Counter value)const->i64{return value.get();}};"}
++    suite.check("direct imports preserve private payload through copied method signature",p(
++        "Counter source=Counter(42);Receiver receiver=Receiver();Counter result=receiver.copy(source);"
++        "source.set(99);return receiver.inspect(result);",imports="import receivers;import values;"),modules=modules)
++    suite.reject("transitive method signature type requires direct visible import",p(
++        "Counter source=Counter(42);Receiver receiver=Receiver();Counter result=receiver.copy(source);return result.get();",
++        imports="import receivers;"),modules=modules)
++    private_type="class Hidden{public:i64 value;};"
++    for signature in ("auto inspect(Hidden value)const->i64{return value.value;}",
++                      "auto copy(Hidden value)const->Hidden{return value;}"):
++        suite.reject("exported public method cannot expose private type " + ("result" if "->Hidden" in signature else "parameter"),p(
++            "return 42;",imports="import api;"),modules={"api":"export module api;"+private_type+
++            "export class Receiver{public:Receiver(){}"+signature+"};"})
++    suite.reject("public copied method signature cannot hide private nested template argument",p(
++        "return 42;",imports="import api;"),modules={"api":"export module api;import std.utility;"+private_type+
++        "export class Receiver{public:Receiver(){}auto take(std::pair<Hidden,u8> source)const->i64{return 42;}};"})
++    suite.check("private copied method may use defining-module private type",p(
++        "Receiver receiver=Receiver();return receiver.answer();",imports="import api;"),modules={"api":
++        "export module api;"+private_type+"export class Receiver{"
++        "auto inspect(Hidden value)const->i64{return value.value;}public:Receiver(){}"
++        "auto answer()const->i64{Hidden value=Hidden{.value=42};return inspect(value);}};"})
++    suite.reject("private copied method inaccessible to importing caller",p(
++        "Counter value=Counter(42);Receiver receiver=Receiver();return receiver.inspect(value);",imports="import api;"),modules={"api":
++        "export module api;export "+COUNTER+"export class Receiver{auto inspect(Counter value)const->i64{return value.get();}"
++        "public:Receiver(){} };"})
++    suite.check("namespace private sibling binding cannot be hijacked by caller helper",p(
++        "api::Value source=api::Value(42);api::Receiver receiver=api::Receiver();"
++        "api::Value result=receiver.copy(source);return result.get();",
++        helpers="auto internal(api::Value value)->api::Value{const api::Value wrong=api::Value(0);return wrong;}",imports="import api;"),modules={"api":
++        "export module api;namespace api{auto hidden(i64 value)->i64{return value;}"
++        "export class Value{i64 value;public:Value(i64 n):value(n){}auto get()const->i64{return value;}};"
++        "export class Receiver{auto internal(Value value)const->Value{return value;}public:Receiver(){}"
++        "auto copy(Value value)const->Value{const Value result=internal(value);return result;}};}"})
++    same={"left":"export module left;export namespace left{"+COUNTER+"}",
++          "right":"export module right;export namespace right{"+COUNTER+"}"}
++    suite.reject("same layout same basename across modules remains nominal",p(
++        "left::Counter receiver=left::Counter(0);right::Counter source=right::Counter(42);return receiver.inspect(source);",
++        imports="import left;import right;"),modules=same)
++    suite.check("imported class-template injected self parameter and result",p(
++        "api::Box<i64> source=api::Box<i64>(42);api::Box<i64> receiver=api::Box<i64>(0);"
++        "api::Box<i64> result=receiver.copy(source);return result.get();",imports="import api;"),modules={"api":
++        "export module api;export namespace api{template<Scalar T>class Box{T value;public:Box(T n):value(n){}"
++        "auto get()const->T{return value;}auto copy(Box source)const->Box{return source;}};}"})
++    suite.check("module class result and caller mutable copies preserve privacy",p(
++        "api::Secret source=api::make();api::Receiver receiver=api::Receiver();"
++        "api::Secret result=receiver.copy(source);return result.get();",imports="import api;"),modules={"api":
++        "export module api;export namespace api{class Secret{i64 value;public:Secret(i64 n):value(n){}"
++        "auto get()const->i64{return value;}auto copy(Secret value)const->Secret{return value;}};"
++        "auto make()->Secret{Secret value=Secret(42);return value;}"
++        "class Receiver{public:Receiver(){}auto copy(Secret value)const->Secret{return value;}};}"})
++
++
++def trap_cases(suite):
++    for scalar in SCALARS:
++        concrete=f"std::array<{scalar},3>"
++        for index in (-1,3):
++            suite.check(f"copied method parameter exact bounds trap {scalar}/{index}",p(
++                f"{concrete} source={concrete}();Receiver receiver=Receiver();return receiver.inspect(source,{index});",
++                f"class Receiver{{public:Receiver(){{}}auto inspect({concrete} source,i64 index)const->{scalar}{{return source.at(index);}}}};",
++                imports="import std.array;",result=scalar),expected=Trap.BOUNDS)
++    suite.check("class snapshot then scalar argument overflow precedes callee trap",p(
++        "Counter source=Counter(9223372036854775807);Receiver receiver=Receiver();"
++        "return receiver.inspect(source,source.add(1));",COUNTER+
++        "class Receiver{public:Receiver(){}auto inspect(Counter value,i64 ignored)const->i64{return 1/0;}};"),expected=Trap.OVERFLOW)
++    suite.check("early scalar bounds trap precedes later scalar overflow",p(
++        "Counter source=Counter(9223372036854775807);std::array<i64,1> values=std::array<i64,1>();"
++        "Receiver receiver=Receiver();return receiver.inspect(source,values.at(1),source.add(1));",COUNTER+
++        "class Receiver{public:Receiver(){}auto inspect(Counter value,i64 first,i64 second)const->i64{return 42;}};",
++        imports="import std.array;"),expected=Trap.BOUNDS)
++    suite.check("checked arithmetic on mutable copy of readonly method parameter",p(
++        "Counter source=Counter(9223372036854775807);Receiver receiver=Receiver();return receiver.inspect(source);",COUNTER+
++        "class Receiver{public:Receiver(){}auto inspect(Counter value)const->i64{Counter copy=value;return copy.add(1);}};"),expected=Trap.OVERFLOW)
++    suite.check("class-result method trap has no successful scalar observation",p(
++        "Counter source=Counter(9223372036854775807);Receiver receiver=Receiver();Counter result=receiver.inspect(source);return result.get();",COUNTER+
++        "class Receiver{public:Receiver(){}auto inspect(Counter value)const->Counter{Counter copy=value;copy.add(1);return copy;}};"),expected=Trap.OVERFLOW)
++    suite.check("exchange result retains exact independent bounds behavior",p(
++        "std::array<u8,64> source=std::array<u8,64>();std::array<u8,64> receiver=std::array<u8,64>();"
++        "std::array<u8,64> old=receiver.exchange(source);return i64(old.at(64));",imports="import std.array;"),expected=Trap.BOUNDS)
++
++
++def main():
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("compiler",type=Path,nargs="?",default=ROOT/"build/aurorac")
++    parser.add_argument("--seed",type=int,default=22022)
++    parser.add_argument("--steps",type=int,default=12)
++    parser.add_argument("--section",choices=("all","native","models","boundaries","rejections","modules","traps"),default="all")
++    parser.add_argument("--fixture",default="")
++    parser.add_argument("--self-test-only",action="store_true")
++    parser.add_argument("--plan-only",action="store_true")
++    parser.add_argument("--keep-going",action="store_true")
++    args=parser.parse_args()
++    require(1<=args.steps<=48,"steps must be between 1 and 48")
++    require(not(args.plan_only and args.self_test_only),"plan-only and self-test-only are exclusive")
++    compiler=args.compiler.resolve()
++    started=time.monotonic()
++    if not args.plan_only and not args.self_test_only:
++        require(compiler.is_file(),f"compiler unavailable: {compiler}")
++        print(f"INFO method values compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",flush=True)
++        for relative in ("tests/compiler/method_values.py","library/std/array.au"):
++            print(f"INFO method values {relative} sha256={hashlib.sha256((ROOT/relative).read_bytes()).hexdigest()}",flush=True)
++    # Only this run's successful artifacts are deleted. Historical evidence is untouched.
++    evidence=ROOT/"evidence"
++    evidence.mkdir(exist_ok=True)
++    directory=Path(tempfile.mkdtemp(prefix="method-values-",dir=evidence))
++    clean=False
++    try:
++        suite=Suite(directory,compiler,args.keep_going,args.fixture,args.plan_only)
++        if not args.plan_only:
++            observer_self_test(suite)
++        if args.self_test_only:
++            print("PASS method values observer self-tests; no compiler acceptance claimed",flush=True)
++            clean=True
++            return
++        sections={"native":lambda:native_cases(suite),"models":lambda:model_cases(suite,args.seed,args.steps),
++                  "boundaries":lambda:boundary_cases(suite),"rejections":lambda:rejection_cases(suite),
++                  "modules":lambda:module_cases(suite),"traps":lambda:trap_cases(suite)}
++        for name,run in sections.items():
++            if args.section in ("all",name):
++                before=(suite.count,suite.traps,suite.rejections,suite.selected_fixtures)
++                run()
++                print(f"INFO method values section={name} fixtures={suite.selected_fixtures-before[3]} executions={suite.count-before[0]} "
++                      f"traps={suite.traps-before[1]} rejection-runs={suite.rejections-before[2]}",flush=True)
++        require(suite.selected_fixtures>0,"no fixtures selected")
++        native=suite.count-suite.traps-suite.rejections
++        label="planned" if args.plan_only else "passed"
++        print(f"INFO method values: {suite.selected_fixtures} selected fixtures; {suite.count} {label} executions; "
++              f"{native} native returns; {suite.traps} exact-site traps; {suite.negative_fixtures} rejection fixtures / "
++              f"{suite.rejections} rejection runs; {len(suite.failures)} failed executions; section={args.section}; "
++              f"seed={args.seed}; steps={args.steps}; elapsed={time.monotonic()-started:.2f}s",flush=True)
++        require(suite.count+len(suite.failures)==suite.attempts,"execution accounting mismatch")
++        require(suite.rejections==2*suite.negative_fixtures or bool(suite.failures),"rejection accounting mismatch")
++        require(not suite.failures,f"{len(suite.failures)} failed executions; artifacts: {directory}")
++        print("PLAN method values complete (not executed)" if args.plan_only else "PASS method values complete",flush=True)
++        clean=True
++    finally:
++        if clean:
++            shutil.rmtree(directory)
++        else:
++            print("INFO method values retained artifacts:",directory,flush=True)
++
++
++if __name__=="__main__":
++    main()
+--- /dev/null
++++ b/tests/compiler/method_values_abi.py
+@@ -0,0 +1,367 @@
++#!/usr/bin/env python3
++"""Independent native tests for the NEW M022 hidden method ABI and old controls.
++
++Usage: method_values_abi.py path/to/prebuilt-method-values-ir [--work-dir DIR]
++The C++ fixture constructs IR directly, without source lowering. One boundary
++side is replaced by independently authored assembly in every execution. Expected
++records/offsets are literal protocol oracles, never obtained from emitter/layout
++helpers. Private local symbols stay local in the same assembly translation unit;
++these bootstrap adapters do not add a source-language C ABI.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import re
++import resource
++import shutil
++import subprocess
++import tempfile
++
++
++def require(ok, message):
++    if not ok:
++        raise AssertionError(message)
++
++
++def run(command, expected_exit=0):
++    completed = subprocess.run([str(x) for x in command], capture_output=True, timeout=30,
++        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)))
++    require(completed.returncode == expected_exit,
++            f"{command}: exit {completed.returncode}, stdout={completed.stdout!r}, stderr={completed.stderr!r}")
++    return completed.stdout
++
++
++def q(value):
++    return value.to_bytes(8, 'little', signed=False)
++
++
++# Literal wire model, intentionally independent of C++ layout calculation.
++TINY = bytes([3, 5]) + bytes(6)
++PACK = bytes([11]) + bytes(7) + q(13) + bytes([17]) + bytes(7)
++MIXED = TINY + bytes([7]) + bytes(7) + bytes(8) + q(1) + PACK + q(19)
++COMPOSED = bytes([3, 5]) + bytes(6) + q(1) + bytes([17]) + bytes(7)
++require(len(MIXED) == 64 and len(COMPOSED) == 24, 'independent protocol extent')
++COUNT = 0
++
++
++def data(name, contents):
++    return f'{name}:\n.byte ' + ','.join(str(x) for x in contents) + '\n'
++
++
++def replace(assembly, name, body):
++    pattern = rf'(?m)^{re.escape(name)}:\n[\s\S]*?^\.size {re.escape(name)},[^\n]*\n'
++    text, count = re.subn(pattern, f'{name}:\n{body}\n.size {name}, .-{name}\n', assembly)
++    require(count == 1, f'exactly one replaceable fixture {name}: {count}')
++    return text
++
++
++ALIGN = '''movq %rsp, %rcx
++andq $15, %rcx
++cmpq $8, %rcx
++jne .Labi_fail
++'''
++POISON = '''movq $-101, %rdi
++movq $-102, %rsi
++movq $-103, %rdx
++movq $-104, %rcx
++movq $-105, %r8
++movq $-106, %r9
++movq $-107, %rax
++'''
++CLOBBER = '''movq $-111, %r10
++movq $-112, %r11
++movq $-113, %rax
++ret
++'''
++
++
++def compare_bytes(pointer, blob, size, suffix):
++    return f'''xorq %rcx, %rcx
++.Lcompare_{suffix}:
++movzbq ({pointer},%rcx), %rsi
++cmpb {blob}(%rcx), %sil
++jne .Labi_fail
++incq %rcx
++cmpq ${size}, %rcx
++jne .Lcompare_{suffix}
++'''
++
++
++def disjoint(a, a_size, b, b_size, suffix):
++    return f'''leaq {a_size}({a}), %r8
++cmpq {b}, %r8
++jbe .Ldisjoint_{suffix}
++leaq {b_size}({b}), %r9
++cmpq {a}, %r9
++ja .Labi_fail
++.Ldisjoint_{suffix}:
++'''
++
++
++def check_record(expected, size, suffix):
++    return ALIGN + disjoint('%r10', 8, '%r11', size, suffix) + '''cmpq $1000, (%r10)
++jne .Labi_fail
++''' + compare_bytes('%r11', expected, size, suffix)
++
++
++def pack_write(pointer, number=13, first=11):
++    return f'movb ${first}, 0({pointer})\nmovq ${number}, 8({pointer})\nmovb $17, 16({pointer})\n'
++
++
++def test(name, assembly, entry, replacements=None, expected=42, input_record=MIXED,
++         result_bytes=None, extra_data='', expected_exit=0, result_capacity=32):
++    global COUNT
++    case = WORK / f'{COUNT:02d}-{name}'
++    case.mkdir()
++    code = assembly
++    for symbol, body in (replacements or {}).items():
++        code = replace(code, symbol, body)
++    code += '\n.text\n.globl _start\n_start:\n' + entry
++    code += f'''cmpq ${expected}, %rax
++jne .Labi_fail
++movq $60, %rax
++xorq %rdi, %rdi
++syscall
++.Labi_fail:
++movq $60, %rax
++movq $91, %rdi
++syscall
++.data
++.balign 16
++receiver: .quad 1000
++record_left: .quad 0x5252525252525252
++'''
++    code += data('input_record', input_record)
++    code += 'record_right: .quad 0x5353535353535353\n'
++    code += data('expected_record', MIXED)
++    code += data('expected_pack_record', PACK + bytes(8))
++    code += data('expected_composed_record', COMPOSED + bytes(8))
++    code += data('expected_empty_record', bytes(16))
++    code += f'''result_left: .quad 0x6161616161616161
++result: .fill {result_capacity},1,204
++result_right: .quad 0x6262626262626262
++'''
++    if result_bytes is not None:
++        code += data('expected_result', result_bytes)
++    code += extra_data + '\n.section .note.GNU-stack,"",@progbits\n'
++    (case / 'program.s').write_text(code)
++    run(['as', '--64', case / 'program.s', '-o', case / 'program.o'])
++    symbols = run(['nm', case / 'program.o']).decode()
++    # New and historical hidden conventions must stay private symbols.
++    for symbol in ['abi_in_scalar', 'abi_in_result', 'abi_composed', 'abi_empty',
++                   'abi_old_ordinary', 'abi_old_constructor', 'abi_old_result_method']:
++        require(re.search(rf'\bt {symbol}$', symbols, re.M), f'{name}: {symbol} lost local binding')
++    run(['ld', '-o', case / 'program', case / 'program.o'])
++    run([case / 'program'], expected_exit=expected_exit)
++    COUNT += 1
++    print('PASS method ABI', name, flush=True)
++
++
++def check_canaries(result_tail=24):
++    return f'''movabsq $0x5252525252525252, %rsi
++cmpq %rsi, record_left
++jne .Labi_fail
++movabsq $0x5353535353535353, %rsi
++cmpq %rsi, record_right
++jne .Labi_fail
++movabsq $0x6161616161616161, %rsi
++cmpq %rsi, result_left
++jne .Labi_fail
++movabsq $0x6262626262626262, %rsi
++cmpq %rsi, result_right
++jne .Labi_fail
++movabsq $0xcccccccccccccccc, %rsi
++cmpq %rsi, result+{result_tail}
++jne .Labi_fail
++'''
++
++
++def incoming_setup(target, mode='new'):
++    setup = POISON + 'leaq receiver, %r10\nleaq input_record, %r11\n'
++    if mode == 'new':
++        setup += 'leaq result, %rax\n'
++    elif mode == 'ordinary':
++        setup += 'leaq result, %r10\n'
++    elif mode == 'old_result':
++        setup += 'movq $13, %rdi\nleaq result, %r11\n'
++    elif mode == 'old_scalar':
++        setup += 'movq $13, %rdi\n'
++    elif mode == 'constructor':
++        setup += 'leaq result, %r10\n'
++    return setup + f'call {target}\n'
++
++
++def result_check(size, suffix):
++    return ('leaq result, %rdx\n' + compare_bytes('%rdx', 'expected_result', size, suffix)
++            + check_canaries(max(size,24)) + 'movq $42, %rax\n')
++
++
++def native_cases(assembly):
++    clobber = ALIGN + '''movb $201, input_record
++movb $202, input_record+1
++movb $203, input_record+8
++movq $0, input_record+24
++movb $204, input_record+32
++movq $205, input_record+40
++movb $206, input_record+48
++movq $207, input_record+56
++''' + CLOBBER
++    receiver_probe = ALIGN + '''leaq receiver, %rcx
++cmpq %rcx, %r10
++jne .Labi_fail
++''' + CLOBBER
++    nested_probe = check_record('expected_record', 8, 'nested') + CLOBBER
++    saved_inputs = '''leaq receiver, %rsi
++cmpq %rsi, -104(%rbp)
++jne .Labi_fail
++leaq input_record, %rsi
++cmpq %rsi, -112(%rbp)
++jne .Labi_fail
++'''
++    scalar_frame = '''leaq -120(%rbp), %rsi
++cmpq %rsi, %rsp
++jne .Labi_fail
++'''
++    result_frame = '''leaq result, %rsi
++cmpq %rsi, -120(%rbp)
++jne .Labi_fail
++leaq -136(%rbp), %rsi
++cmpq %rsi, %rsp
++jne .Labi_fail
++'''
++    replacements = {'abi_clobber': saved_inputs + scalar_frame + clobber, 'abi_receiver_probe': receiver_probe,
++                    'abi_nested_probe': nested_probe}
++    # Saved inputs are bound before both nested ordinary and forwarded calls
++    # overwrite the original record and caller-clobbered hidden registers.
++    test('incoming-six-mixed-scalar-nested', assembly,
++         incoming_setup('abi_in_scalar') + check_canaries(), replacements, expected=1075)
++    expected = bytes([3]) + bytes([204])*7 + q(1075) + bytes([17]) + bytes([204])*7
++    test('incoming-six-mixed-class-nested', assembly,
++         incoming_setup('abi_in_result') + result_check(24, 'new_result'),
++         {**replacements, 'abi_clobber': saved_inputs + result_frame + clobber}, result_bytes=expected)
++    # Generated callers keep an unrelated operand pushed. The independently
++    # written callee checks entry alignment and every byte, including padding.
++    scalar_target = check_record('expected_record', 64, 'out_scalar') + 'movq $42, %rax\nret\n'
++    test('outgoing-six-mixed-scalar-odd-stack', assembly, 'call abi_out_scalar\n',
++         {'abi_out_target_scalar': scalar_target}, expected=43)
++    result_target = '''testq $7, %rax
++jnz .Labi_fail
++cmpq %r10, %rax
++je .Labi_fail
++cmpq %r11, %rax
++je .Labi_fail
++movq %rax, %rdx
++''' + disjoint('%rdx', 24, '%r10', 8, 'result_receiver') + disjoint('%rdx', 24, '%r11', 64, 'result_record') + check_record('expected_record', 64, 'out_result') + pack_write('%rdx', 4242) + 'xorq %rax, %rax\nret\n'
++    test('outgoing-six-mixed-class-odd-stack', assembly, 'call abi_out_result\n',
++         {'abi_out_target_result': result_target}, expected=4243)
++    wrong = bytearray(MIXED)
++    wrong[8] = 8
++    detector = check_record('deliberately_wrong_record', 64, 'self_control') + 'movq $42, %rax\nret\n'
++    test('control-detects-wrong-packed-scalar', assembly, 'call abi_out_scalar\n',
++         {'abi_out_target_scalar': detector}, expected=43, expected_exit=91,
++         extra_data=data('deliberately_wrong_record', wrong))
++    composed_result = bytes([3, 5]) + bytes([204])*6 + q(1) + bytes([17]) + bytes([204])*7
++    test('incoming-composed-enum-empty-child', assembly,
++         incoming_setup('abi_composed') + result_check(24, 'composed_in'),
++         input_record=COMPOSED+bytes(8), result_bytes=composed_result)
++    composed_target = 'movq %rax, %rdx\n' + check_record('expected_composed_record', 32, 'composed_out') + '''movb $3, (%rdx)
++movb $5, 1(%rdx)
++movq $1, 8(%rdx)
++movb $17, 16(%rdx)
++xorq %rax, %rax
++ret
++'''
++    test('outgoing-forwarded-composed-shape', assembly,
++         incoming_setup('abi_relay_composed') + result_check(24, 'composed_relay'),
++         {'abi_composed': composed_target}, input_record=COMPOSED+bytes(8), result_bytes=composed_result)
++    test('incoming-empty-result-no-payload-store', assembly,
++         incoming_setup('abi_empty') + result_check(24, 'empty_in'),
++         input_record=bytes(16), result_bytes=bytes([204])*24)
++    empty_target = check_record('expected_empty_record', 16, 'empty_out') + 'xorq %rax, %rax\nret\n'
++    test('outgoing-empty-record-rounded-padding', assembly,
++         incoming_setup('abi_relay_empty') + result_check(24, 'empty_relay'),
++         {'abi_empty': empty_target}, input_record=bytes(16), result_bytes=bytes([204])*24)
++    maximum_record = b''.join(q(i) for i in range(1,385))
++    maximum_result = b''.join(q(i) for i in range(321,385))
++    test('incoming-maximum-3072-byte-scalar', assembly,
++         incoming_setup('abi_max_scalar')+check_canaries(), input_record=maximum_record, expected=3310)
++    test('incoming-maximum-3072-byte-class', assembly,
++         incoming_setup('abi_max_result')+result_check(512,'maximum_in'),
++         input_record=maximum_record, result_bytes=maximum_result, result_capacity=520)
++    max_scalar = check_record('maximum_expected',3072,'maximum_out_scalar')+'movq $42, %rax\nret\n'
++    test('outgoing-maximum-3072-byte-scalar',assembly,'call abi_out_max_scalar\n',
++         {'abi_max_scalar':max_scalar},expected=43,extra_data=data('maximum_expected',maximum_record))
++    max_result = 'movq %rax, %rdx\n'+disjoint('%rdx',512,'%r10',8,'max_receiver')+disjoint('%rdx',512,'%r11',3072,'max_record')
++    max_result += check_record('maximum_expected',3072,'maximum_out_result')+'''xorq %rcx, %rcx
++.Lwrite_max_result:
++movq maximum_result(%rcx), %rsi
++movq %rsi, (%rdx,%rcx)
++addq $8, %rcx
++cmpq $512, %rcx
++jne .Lwrite_max_result
++xorq %rax, %rax
++ret
++'''
++    test('outgoing-maximum-3072-byte-class',assembly,'call abi_out_max_result\n',
++         {'abi_max_result':max_result},expected=sum(range(321,385))+1,
++         extra_data=data('maximum_expected',maximum_record)+data('maximum_result',maximum_result))
++    pack_result = bytes([11])+bytes([204])*7+q(13)+bytes([17])+bytes([204])*7
++    for mode, symbol, record in [('ordinary','abi_old_ordinary',PACK+bytes(8)),
++                                 ('old_result','abi_old_result_method',bytes(16)),
++                                 ('constructor','abi_old_constructor',PACK+bytes(8))]:
++        test('incoming-control-'+mode, assembly,
++             incoming_setup(symbol, mode)+result_check(24,'old_'+mode),
++             input_record=record, result_bytes=pack_result)
++    test('incoming-control-scalar-method',assembly,
++         incoming_setup('abi_old_scalar_method','old_scalar')+check_canaries(),expected=1013)
++    ordinary_target = ALIGN + 'movq %r10, %rdx\n' + compare_bytes('%r11','expected_pack_record',32,'old_out_ordinary') + pack_write('%rdx') + 'xorq %rax, %rax\nret\n'
++    old_result_target = ALIGN + '''cmpq $1000, (%r10)
++jne .Labi_fail
++cmpq $13, %rdi
++jne .Labi_fail
++''' + pack_write('%r11') + 'xorq %rax, %rax\nret\n'
++    constructor_target = ALIGN + 'movq %r10, %rdx\n' + compare_bytes('%r11','expected_pack_record',32,'old_out_constructor') + pack_write('%rdx') + 'xorq %rax, %rax\nret\n'
++    scalar_control = ALIGN + '''cmpq $1000, (%r10)
++jne .Labi_fail
++cmpq $13, %rdi
++jne .Labi_fail
++movq $1013, %rax
++ret
++'''
++    for kind, body, expected_value in [('ordinary',ordinary_target,14),('result_method',old_result_target,14),
++                                       ('constructor',constructor_target,14),('scalar_method',scalar_control,1014)]:
++        test('outgoing-control-'+kind,assembly,'call abi_out_old_'+kind+'\n',
++             {'abi_old_'+kind:body},expected=expected_value)
++
++
++if __name__ == '__main__':
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('fixture',type=Path)
++    parser.add_argument('--work-dir',type=Path)
++    args=parser.parse_args()
++    fixture=args.fixture.resolve()
++    WORK=args.work_dir.resolve() if args.work_dir else Path(tempfile.mkdtemp(prefix='aurora-method-abi-'))
++    WORK.mkdir(parents=True,exist_ok=True)
++    print(f'fixture sha256={hashlib.sha256(fixture.read_bytes()).hexdigest()}',flush=True)
++    print(f'work directory: {WORK}',flush=True)
++    try:
++        assembly=run([fixture,'--emit-abi']).decode()
++        (WORK/'fixture.s').write_text(assembly)
++        # Freeze hidden-slot ownership as well as observable behavior. These
++        # numeric offsets are independently specified from each fixture frame.
++        for symbol, required in {
++            'abi_in_scalar': ['subq $112, %rsp', 'movq %r10, -104(%rbp)', 'movq %r11, -112(%rbp)'],
++            'abi_in_result': ['subq $128, %rsp', 'movq %r10, -104(%rbp)', 'movq %r11, -112(%rbp)', 'movq %rax, -120(%rbp)'],
++            'abi_empty': ['subq $48, %rsp', 'movq %r10, -24(%rbp)', 'movq %r11, -32(%rbp)', 'movq %rax, -40(%rbp)'],
++        }.items():
++            body=assembly.split(symbol+':\n', 1)[1].split('.size '+symbol+',', 1)[0]
++            for instruction in required:
++                require(instruction in body, f'{symbol}: frozen hidden frame instruction missing: {instruction}')
++        native_cases(assembly)
++        print(f'PASS method ABI: {COUNT} independent native cases; private symbols checked in every object',flush=True)
++    except Exception:
++        print(f'FAIL: retained native failure artifacts in {WORK}',flush=True)
++        raise
++    else:
++        if not args.work_dir:
++            shutil.rmtree(WORK)
+--- /dev/null
++++ b/tests/compiler/method_values_ir.cpp
+@@ -0,0 +1,308 @@
++// Independent direct-IR checks for the M022 copied method-parameter boundary.
++// --emit-abi emits fixtures consumed by method_values_abi.py. No parser is used.
++#include "ir_verify.hpp"
++#include "x86.hpp"
++#include <functional>
++#include <iostream>
++#include <string>
++
++using namespace aurora;
++using namespace aurora::ir;
++using IRFunction = aurora::ir::Function;
++namespace {
++int accepted = 0, rejected = 0;
++void require(bool ok, const std::string &message) { if (!ok) throw Error(message); }
++IRFunction &named(Module &m, const std::string &name) {
++    for (auto &f : m.functions) if (f.name == name) return f;
++    throw Error("missing fixture function " + name);
++}
++MethodCall &method(IRFunction &f, const std::string &name) {
++    for (auto &i : f.code) if (auto *c = std::get_if<MethodCall>(&i); c && c->callee == name) return *c;
++    throw Error("missing fixture method call " + name);
++}
++void accept(const std::string &name, Module m) {
++    require(!X86Emitter{}.emit(validate(std::move(m))).empty(), "empty assembly");
++    ++accepted; std::cout << "PASS method IR " << name << '\n';
++}
++void reject(const std::string &name, Module m, const std::function<void(Module &)> &change,
++            const std::string &diagnostic) {
++    change(m);
++    try { (void)validate(std::move(m)); }
++    catch (const Error &e) {
++        require(std::string(e.what()).find(diagnostic) != std::string::npos,
++                name + ": wrong diagnostic: " + e.what());
++        ++rejected; std::cout << "PASS method IR " << name << '\n'; return;
++    }
++    throw Error(name + ": malformed IR accepted");
++}
++Module baseline(bool result = true) {
++    Module m; m.classLayouts = {{"Box", {Type::I64}}, {"Other", {Type::I64}}};
++    IRFunction f; f.name = "entry"; f.result = Type::I64; f.frameBytes = 32;
++    f.slots = {{8, Type::I64}, {16, Type::I64}, {24, Type::I64}, {32, Type::I64}};
++    f.objectSlots = {{8, {"Box", true}}, {16, {"Box", false}},
++                     {24, {"Box", false}}, {32, {"Box", false}}};
++    f.code = {BeginObject{8}, Constant{40, Type::I64}, Store{8, Type::I64},
++              BeginObject{16}, Constant{1, Type::I64}, Store{16, Type::I64},
++              BeginObject{24}, Constant{2, Type::I64}, Store{24, Type::I64},
++              BeginObject{32}, Constant{3, Type::I64}, Push{},
++              MethodCall{"take", 8, {16, 0, 24}, result ? 32 : 0}};
++    if (result) f.code.push_back(Load{32, Type::I64});
++    f.code.push_back(Return{});
++    IRFunction g; g.name = "take"; g.result = result ? Type("Box") : Type::I64;
++    g.receiver = Receiver{"Box", false, false};
++    g.parameters = {Type("Box"), Type::I64, Type("Box")}; g.frameBytes = 32;
++    g.slots = {{8, Type::I64}, {16, Type::I64}, {24, Type::I64}};
++    g.objectSlots = {{8, {"Box", false}}, {24, {"Box", false}}};
++    g.code = {BindObjectParameter{0, 8, "Box"}, BindParameter{1, 16, Type::I64},
++              BindObjectParameter{2, 24, "Box"}};
++    if (result) g.code.push_back(ReturnObject{8});
++    else { g.code.push_back(ReceiverLoad{0, Type::I64}); g.code.push_back(Return{}); }
++    m.functions = {f, g}; return m;
++}
++Module logicalBaseline() {
++    Module m; m.classLayouts = {{"Box", {Type::I64}}, {"Empty", {}}, {"Envelope", {}}};
++    m.classFields["Envelope"] = {{Type("Empty"), 0, 0, false}};
++    IRFunction f; f.name="entry"; f.result=Type::I64; f.frameBytes=32;
++    f.slots={{8,Type::I64}};
++    f.objectSlots={{8,{"Box",false}},{16,{"Empty",false}},
++                   {24,{"Envelope",false}},{32,{"Envelope",false}}};
++    f.code={BeginObject{8},Constant{40,Type::I64},Store{8,Type::I64},BeginObject{16},
++            BeginObject{24},MethodCall{"construct_env",24,{16}},BeginObject{32},
++            MethodCall{"roundtrip_env",8,{24},32},Constant{42,Type::I64},Return{}};
++    IRFunction c; c.name="construct_env"; c.result=Type::I64; c.frameBytes=16;
++    c.parameters={Type("Empty")}; c.receiver=Receiver{"Envelope",true,true};
++    c.objectSlots={{8,{"Empty",false}}};
++    c.code={BindObjectParameter{0,8,"Empty"},InitializeObjectField{0,0,8},
++            Constant{0,Type::I64},Return{}};
++    IRFunction g; g.name="roundtrip_env"; g.result=Type("Envelope"); g.frameBytes=16;
++    g.parameters={Type("Envelope")}; g.receiver=Receiver{"Box",false,false};
++    g.objectSlots={{8,{"Envelope",false}}}; g.code={BindObjectParameter{0,8,"Envelope"},ReturnObject{8}};
++    m.functions={f,c,g}; return m;
++}
++void directTests() {
++    accept("copied class params and class result",baseline());
++    accept("copied class params and scalar result",baseline(false));
++    auto mutableReceiver=baseline(); named(mutableReceiver,"take").receiver->mutableValue=true;
++    accept("mutable receiver with readonly snapshots",mutableReceiver);
++    auto check=[&](const std::string &name,const std::function<void(Module &)> &change,const std::string &d){reject(name,baseline(),change,d);};
++    check("short argument vector",[](Module&m){method(m.functions[0],"take").objectArguments.pop_back();},"argument vector size mismatch");
++    check("long argument vector",[](Module&m){method(m.functions[0],"take").objectArguments.push_back(0);},"argument vector size mismatch");
++    check("scalar position names object",[](Module&m){method(m.functions[0],"take").objectArguments[1]=16;},"cannot name object storage");
++    check("class position zero",[](Module&m){method(m.functions[0],"take").objectArguments[0]=0;},"exact object slot");
++    check("class position interior",[](Module&m){method(m.functions[0],"take").objectArguments[0]=15;},"exact object slot");
++    check("mutable snapshot",[](Module&m){m.functions[0].objectSlots[16].mutableValue=true;},"snapshot must be readonly");
++    check("incomplete snapshot",[](Module&m){m.functions[0].code.erase(m.functions[0].code.begin()+5);},"not fully initialized");
++    check("inactive snapshot",[](Module&m){m.functions[0].code.insert(m.functions[0].code.begin()+9,EndObject{16});},"outside active lifetime");
++    check("wrong nominal snapshot",[](Module&m){m.functions[0].objectSlots[16].className="Other";},"nominal class mismatch");
++    check("reused snapshot",[](Module&m){method(m.functions[0],"take").objectArguments[2]=16;},"snapshots must be distinct");
++    check("snapshot aliases receiver",[](Module&m){method(m.functions[0],"take").objectArguments[0]=8;},"receiver aliases argument snapshot");
++    check("result aliases snapshot",[](Module&m){method(m.functions[0],"take").resultOffset=16;},"result aliases argument snapshot");
++    check("result aliases receiver",[](Module&m){method(m.functions[0],"take").resultOffset=8;},"result aliases receiver");
++    check("result interior",[](Module&m){method(m.functions[0],"take").resultOffset=31;},"exact object slot");
++    check("result inactive",[](Module&m){m.functions[0].code.erase(m.functions[0].code.begin()+9);},"result outside active object lifetime");
++    check("result nonpristine",[](Module&m){m.functions[0].code.insert(m.functions[0].code.begin()+10,{Constant{9,Type::I64},Store{32,Type::I64}});},"requires uninitialized object");
++    check("result wrong nominal",[](Module&m){m.functions[0].objectSlots[32].className="Other";},"result nominal class mismatch");
++    check("class result missing destination",[](Module&m){method(m.functions[0],"take").resultOffset=0;},"exact object slot");
++    reject("scalar result forbids destination",baseline(false),[](Module&m){method(m.functions[0],"take").resultOffset=32;},"scalar method result cannot name object storage");
++    check("wrong scalar stack type",[](Module&m){m.functions[0].code[10]=Constant{1,Type::Bool};},"method argument type mismatch");
++    check("missing scalar operand",[](Module&m){m.functions[0].code.erase(m.functions[0].code.begin()+11);},"value stack underflow");
++    check("method cannot use plain call",[](Module&m){m.functions[0].code[12]=Call{"take"};},"plain call cannot target receiver");
++    check("method cannot use ordinary aggregate call",[](Module&m){m.functions[0].code[12]=AggregateCall{"take",{16,0,24},32};},"aggregate call cannot target receiver");
++    check("object binding prefix missing",[](Module&m){m.functions[1].code[0]=Constant{1,Type::I64};},"object parameter bindings must form the entry prefix");
++    check("object binding wrong index",[](Module&m){std::get<BindObjectParameter>(m.functions[1].code[0]).index=2;},"entry prefix");
++    check("late object binding",[](Module&m){m.functions[1].code.insert(m.functions[1].code.begin()+3,BindObjectParameter{0,8,"Box"});},"outside entry prefix");
++    check("overlapping bindings",[](Module&m){std::get<BindObjectParameter>(m.functions[1].code[2]).offset=8;},"bindings overlap");
++    check("object binding wrong nominal",[](Module&m){m.functions[1].objectSlots[8].className="Other";},"object parameter nominal class mismatch");
++    check("object binding mutable",[](Module&m){m.functions[1].objectSlots[8].mutableValue=true;},"object parameter must be readonly");
++    check("binding scalar into object",[](Module&m){std::get<BindParameter>(m.functions[1].code[1]).offset=8;},"parameter cannot bind object field");
++    check("bound object cannot restart",[](Module&m){m.functions[1].code.insert(m.functions[1].code.begin()+3,BeginObject{8});},"parameter lifetime cannot restart");
++    check("bound object cannot be assigned",[](Module&m){m.functions[1].code.insert(m.functions[1].code.begin()+3,{Constant{1,Type::I64},Store{8,Type::I64}});},"write to initialized const object field");
++    for(const auto&t:{Type::Own,Type::Ref,Type::MutRef,Type::array(TypeKind::U8,2)})
++        check("invalid method parameter "+typeName(t),[t](Module&m){m.functions[1].parameters[0]=t;},"receiver signature requires scalar, enum or class values");
++    check("span method parameter",[](Module&m){m.functions[1].parameters[0]=Type::ByteSpan;},"receiver signature requires scalar, enum or class values");
++    check("const receiver cannot mutate",[](Module&m){m.functions[1].code.insert(m.functions[1].code.begin()+3,{Constant{1,Type::I64},ReceiverStore{0,Type::I64}});},"write through const receiver");
++    check("const local cannot supply mutable receiver",[](Module&m){m.functions[0].objectSlots[8].mutableValue=false;m.functions[1].receiver->mutableValue=true;},"const object cannot supply mutable receiver");
++    check("forward without receiver",[](Module&m){method(m.functions[0],"take").receiverOffset=0;},"forwarding without bound receiver");
++    auto forwarded=baseline();
++    auto leaf=named(forwarded,"take");leaf.name="take_leaf";
++    auto&g=named(forwarded,"take"); g.objectSlots[32]={"Box",false};g.slots[32]=Type::I64;
++    g.code.insert(g.code.begin()+3,{BeginObject{32},Load{16,Type::I64},Push{},MethodCall{"take_leaf",0,{8,0,24},32}});
++    g.code.back()=ReturnObject{32};forwarded.functions.push_back(leaf);
++    accept("forwarded receiver and copied arguments",forwarded);
++    reject("forwarding const receiver to mutable method",forwarded,[](Module&m){
++        auto h=m.functions[1];h.name="mutable_take";h.receiver->mutableValue=true;
++        h.code={BindObjectParameter{0,8,"Box"},BindParameter{1,16,Type::I64},BindObjectParameter{2,24,"Box"},ReturnObject{8}};
++        method(m.functions[1],"take_leaf").callee="mutable_take";m.functions.push_back(h);
++    },"const receiver cannot forward mutable capability");
++    accept("empty nested logical completion copied",logicalBaseline());
++    reject("empty nested snapshot not logically complete",logicalBaseline(),[](Module&m){m.functions[0].code.erase(m.functions[0].code.begin()+5);},"nested class field not completely initialized");
++    reject("empty nested constructor incomplete",logicalBaseline(),[](Module&m){m.functions[1].code.erase(m.functions[1].code.begin()+1);},"constructor returns before all class fields initialized");
++    reject("empty logical child initialized twice",logicalBaseline(),[](Module&m){m.functions[1].code.insert(m.functions[1].code.begin()+2,InitializeObjectField{0,0,8});},"initialized more than once");
++    reject("empty class result reused",logicalBaseline(),[](Module&m){m.functions[0].code.insert(m.functions[0].code.begin()+8,MethodCall{"roundtrip_env",8,{24},32});},"already initialized");
++    reject("empty result aliases argument",logicalBaseline(),[](Module&m){method(m.functions[0],"roundtrip_env").resultOffset=24;},"result aliases argument snapshot");
++}
++
++// ABI fixture layouts are deliberately declared here, while all expected byte
++// offsets and records in the Python/native harness are authored independently.
++Module abiModule() {
++    const auto mode=Type::enumeration("Mode");
++    Module m; m.enumCases["Mode"]=2;
++    m.classLayouts={{"Receiver",{Type::I64}},{"Tiny",{Type::U8,Type::U8}},
++                    {"Empty",{}},{"Pack",{Type::U8,Type::I64,Type::U8}},
++                    {"Composed",{Type::U8,Type::U8,mode,Type::U8}}};
++    m.classFields["Composed"]={{Type("Tiny"),0,2,false},{Type("Empty"),2,0,false},
++                              {mode,2,1,false},{Type::U8,3,1,false}};
++    IRFunction ordinary;ordinary.name="abi_clobber";ordinary.result=Type::I64;
++    ordinary.code={Constant{0,Type::I64},Return{}};m.functions.push_back(ordinary);
++    auto probe=ordinary;probe.name="abi_receiver_probe";probe.receiver=Receiver{"Receiver",false,false};m.functions.push_back(probe);
++    auto nested=probe;nested.name="abi_nested_probe";nested.parameters={Type("Tiny")};nested.frameBytes=16;
++    nested.objectSlots={{8,{"Tiny",false}}};nested.slots={{8,Type::U8},{7,Type::U8}};
++    nested.code={BindObjectParameter{0,8,"Tiny"},Constant{0,Type::I64},Return{}};m.functions.push_back(nested);
++    for(bool result:{false,true}) {
++        IRFunction g;g.name=result?"abi_in_result":"abi_in_scalar";g.result=result?Type("Pack"):Type::I64;
++        g.receiver=Receiver{"Receiver",false,false};
++        g.parameters={Type("Tiny"),Type::U8,Type("Empty"),mode,Type("Pack"),Type::I64};
++        g.frameBytes=96;g.objectSlots={{8,{"Tiny",false}},{24,{"Empty",false}},
++                                     {56,{"Pack",false}},{88,{"Pack",false}}};
++        g.slots={{8,Type::U8},{7,Type::U8},{16,Type::U8},{32,mode},{56,Type::U8},
++                 {48,Type::I64},{40,Type::U8},{64,Type::I64},
++                 {88,Type::U8},{80,Type::I64},{72,Type::U8}};
++        g.code={BindObjectParameter{0,8,"Tiny"},BindParameter{1,16,Type::U8},
++                BindObjectParameter{2,24,"Empty"},BindParameter{3,32,mode},
++                BindObjectParameter{4,56,"Pack"},BindParameter{5,64,Type::I64},
++                Constant{84,Type::I64},Push{},Constant{2,Type::I64},BinaryValue{Binary::CheckedDivide},
++                Constant{1,Type::U64},Push{},Constant{3,Type::I64},BinaryValue{Binary::ShiftLeft,Type::U64},
++                Call{"abi_clobber"},MethodCall{"abi_receiver_probe",0},
++                MethodCall{"abi_nested_probe",0,{8}},
++                Load{32,mode},Push{},EnumConstant{mode,1},Compare{Comparison::Equal,mode},BranchFalse{1}};
++        if(result) g.code.push_back(BeginObject{88});
++        g.code.push_back(ReceiverLoad{0,Type::I64});
++        for(auto [offset,type]:std::vector<std::pair<int,Type>>{{8,Type::U8},{7,Type::U8},{16,Type::U8},{56,Type::U8},{48,Type::I64},{40,Type::U8},{64,Type::I64}}) {
++            g.code.push_back(Push{});g.code.push_back(Load{offset,type});
++            if(type==Type::U8)g.code.push_back(Convert{Type::U8,Type::I64});
++            g.code.push_back(BinaryValue{Binary::CheckedAdd});
++        }
++        if(result) {
++            g.code.push_back(Store{80,Type::I64});
++            g.code.insert(g.code.end(),{Load{8,Type::U8},Store{88,Type::U8},Load{40,Type::U8},Store{72,Type::U8},ReturnObject{88},Label{1},ReturnObject{56}});
++        } else g.code.insert(g.code.end(),{Return{},Label{1},Constant{-1,Type::I64},Return{}});
++        m.functions.push_back(g);
++        auto target=g;target.name=result?"abi_out_target_result":"abi_out_target_scalar";m.functions.push_back(target);
++        IRFunction f;f.name=result?"abi_out_result":"abi_out_scalar";f.result=Type::I64;f.frameBytes=96;
++        f.objectSlots={{8,{"Receiver",true}},{16,{"Tiny",false}},{24,{"Empty",false}},
++                       {48,{"Pack",false}},{72,{"Pack",false}}};
++        f.slots={{8,Type::I64},{16,Type::U8},{15,Type::U8},{48,Type::U8},
++                 {40,Type::I64},{32,Type::U8},{72,Type::U8},{64,Type::I64},{56,Type::U8}};
++        f.code={BeginObject{8},Constant{1000,Type::I64},Store{8,Type::I64},
++                BeginObject{16},Constant{3,Type::U8},Store{16,Type::U8},Constant{5,Type::U8},Store{15,Type::U8},
++                BeginObject{24},BeginObject{48},Constant{11,Type::U8},Store{48,Type::U8},
++                Constant{13,Type::I64},Store{40,Type::I64},Constant{17,Type::U8},Store{32,Type::U8},
++                Constant{1,Type::I64},Push{},Constant{7,Type::U8},Push{},EnumConstant{mode,1},Push{},Constant{19,Type::I64},Push{}};
++        if(result)f.code.push_back(BeginObject{72});
++        f.code.push_back(MethodCall{target.name,8,{16,0,24,0,48,0},result?72:0});
++        if(result) f.code.push_back(Load{64,Type::I64});
++        f.code.insert(f.code.end(),{BinaryValue{Binary::CheckedAdd},Return{}});m.functions.push_back(f);
++    }
++    // Composed empty-child and enum shape copied in both directions.
++    IRFunction c;c.name="abi_composed";c.result=Type("Composed");c.receiver=Receiver{"Receiver",false,false};
++    c.parameters={Type("Composed")};c.frameBytes=32;c.objectSlots={{24,{"Composed",false}}};
++    c.slots={{24,Type::U8},{23,Type::U8},{16,mode},{8,Type::U8}};
++    c.code={BindObjectParameter{0,24,"Composed"},ReturnObject{24}};m.functions.push_back(c);
++    // Historical ordinary aggregate, scalar-method, class-result-only method,
++    // and aggregate constructor entry conventions are frozen controls.
++    IRFunction old;old.name="abi_old_ordinary";old.result=Type("Pack");old.parameters={Type("Pack")};
++    old.frameBytes=32;old.objectSlots={{24,{"Pack",false}}};old.slots={{24,Type::U8},{16,Type::I64},{8,Type::U8}};
++    old.code={BindObjectParameter{0,24,"Pack"},ReturnObject{24}};m.functions.push_back(old);
++    old.name="abi_old_result_method";old.receiver=Receiver{"Receiver",false,false};old.parameters={Type::I64};
++    old.slots[32]=Type::I64;old.code={BindParameter{0,32,Type::I64},BeginObject{24},
++        Constant{11,Type::U8},Store{24,Type::U8},Load{32,Type::I64},Store{16,Type::I64},
++        Constant{17,Type::U8},Store{8,Type::U8},ReturnObject{24}};m.functions.push_back(old);
++    old.name="abi_old_scalar_method";old.result=Type::I64;old.code={BindParameter{0,32,Type::I64},
++        ReceiverLoad{0,Type::I64},Push{},Load{32,Type::I64},BinaryValue{Binary::CheckedAdd},Return{}};m.functions.push_back(old);
++    old.name="abi_old_constructor";old.parameters={Type("Pack")};old.receiver=Receiver{"Pack",true,true};
++    old.code={BindObjectParameter{0,24,"Pack"},Load{24,Type::U8},ReceiverStore{0,Type::U8},
++        Load{16,Type::I64},ReceiverStore{1,Type::I64},Load{8,Type::U8},ReceiverStore{2,Type::U8},Constant{0,Type::I64},Return{}};m.functions.push_back(old);
++    // Largest legal explicit argument record: six 64-word values = 3072 bytes.
++    m.classLayouts["Wide"]=std::vector<Type>(64,Type::I64);
++    for(bool result:{false,true}) {
++        IRFunction g;g.name=result?"abi_max_result":"abi_max_scalar";
++        g.result=result?Type("Wide"):Type::I64;g.receiver=Receiver{"Receiver",false,false};g.frameBytes=3072;
++        for(int arg=0;arg<6;++arg) {
++            g.parameters.push_back(Type("Wide"));const int base=(arg+1)*512;
++            g.objectSlots[base]={"Wide",false};
++            for(int leaf=0;leaf<64;++leaf)g.slots[base-leaf*8]=Type::I64;
++            g.code.push_back(BindObjectParameter{arg,base,"Wide"});
++        }
++        if(result)g.code.push_back(ReturnObject{3072});
++        else {
++            g.code.push_back(ReceiverLoad{0,Type::I64});
++            for(int arg=0;arg<6;++arg)for(int leaf:{0,63})
++                g.code.insert(g.code.end(),{Push{},Load{(arg+1)*512-leaf*8,Type::I64},BinaryValue{Binary::CheckedAdd}});
++            g.code.push_back(Return{});
++        }
++        m.functions.push_back(g);
++        IRFunction f;f.name=result?"abi_out_max_result":"abi_out_max_scalar";f.result=Type::I64;f.frameBytes=3600;
++        f.objectSlots[8]={"Receiver",false};f.slots[8]=Type::I64;
++        f.code={BeginObject{8},Constant{1000,Type::I64},Store{8,Type::I64}};
++        std::vector<int> arguments;
++        for(int arg=0;arg<6;++arg) {
++            const int base=8+(arg+1)*512;arguments.push_back(base);f.objectSlots[base]={"Wide",false};
++            f.code.push_back(BeginObject{base});
++            for(int leaf=0;leaf<64;++leaf) {
++                f.slots[base-leaf*8]=Type::I64;
++                f.code.insert(f.code.end(),{Constant{arg*64+leaf+1,Type::I64},Store{base-leaf*8,Type::I64}});
++            }
++        }
++        f.code.insert(f.code.end(),{Constant{1,Type::I64},Push{}});
++        if(result) {
++            f.objectSlots[3592]={"Wide",false};
++            for(int leaf=0;leaf<64;++leaf)f.slots[3592-leaf*8]=Type::I64;
++            f.code.push_back(BeginObject{3592});
++        }
++        f.code.push_back(MethodCall{g.name,8,arguments,result?3592:0});
++        if(result) {
++            f.code.push_back(Load{3592,Type::I64});
++            for(int leaf=1;leaf<64;++leaf)
++                f.code.insert(f.code.end(),{Push{},Load{3592-leaf*8,Type::I64},BinaryValue{Binary::CheckedAdd}});
++        }
++        f.code.insert(f.code.end(),{BinaryValue{Binary::CheckedAdd},Return{}});m.functions.push_back(f);
++    }
++    auto relay=c;relay.name="abi_relay_composed";relay.frameBytes=64;
++    relay.objectSlots[48]={"Composed",false};relay.slots[48]=Type::U8;relay.slots[47]=Type::U8;
++    relay.slots[40]=mode;relay.slots[32]=Type::U8;
++    relay.code={BindObjectParameter{0,24,"Composed"},BeginObject{48},
++                MethodCall{"abi_composed",0,{24},48},ReturnObject{48}};m.functions.push_back(relay);
++    IRFunction empty;empty.name="abi_empty";empty.result=Type("Empty");empty.parameters={Type("Empty")};
++    empty.receiver=Receiver{"Receiver",false,false};empty.frameBytes=16;
++    empty.objectSlots={{8,{"Empty",false}}};empty.code={BindObjectParameter{0,8,"Empty"},ReturnObject{8}};
++    m.functions.push_back(empty);
++    auto emptyRelay=empty;emptyRelay.name="abi_relay_empty";emptyRelay.objectSlots[16]={"Empty",false};
++    emptyRelay.code={BindObjectParameter{0,8,"Empty"},BeginObject{16},MethodCall{"abi_empty",0,{8},16},ReturnObject{16}};
++    m.functions.push_back(emptyRelay);
++    for(const auto &kind:{"ordinary","result_method","scalar_method","constructor"}) {
++        IRFunction f;f.name=std::string("abi_out_old_")+kind;f.result=Type::I64;f.frameBytes=64;
++        f.objectSlots={{8,{"Receiver",false}},{32,{"Pack",false}},{56,{"Pack",false}}};
++        f.slots={{8,Type::I64},{32,Type::U8},{24,Type::I64},{16,Type::U8},
++                 {56,Type::U8},{48,Type::I64},{40,Type::U8}};
++        f.code={BeginObject{8},Constant{1000,Type::I64},Store{8,Type::I64},
++            BeginObject{32},Constant{11,Type::U8},Store{32,Type::U8},Constant{13,Type::I64},Store{24,Type::I64},
++            Constant{17,Type::U8},Store{16,Type::U8},BeginObject{56},Constant{1,Type::I64},Push{}};
++        const std::string k=kind;
++        if(k=="ordinary")f.code.push_back(AggregateCall{"abi_old_ordinary",{32},56});
++        else if(k=="constructor")f.code.push_back(MethodCall{"abi_old_constructor",56,{32}});
++        else {f.code.push_back(Constant{13,Type::I64});f.code.push_back(Push{});
++              f.code.push_back(MethodCall{"abi_old_"+k,8,{},k=="result_method"?56:0});}
++        if(k!="scalar_method")f.code.push_back(Load{48,Type::I64});
++        f.code.insert(f.code.end(),{BinaryValue{Binary::CheckedAdd},Return{}});m.functions.push_back(f);
++    }
++    return m;
++}
++}
++int main(int argc,char**argv) {
++    try {
++        if(argc==2&&std::string(argv[1])=="--emit-abi") {std::cout<<X86Emitter{}.emit(validate(abiModule()));return 0;}
++        require(argc==1,"usage: method-values-ir [--emit-abi]");directTests();
++        std::cout<<"PASS method IR: "<<accepted<<" accepted, "<<rejected<<" rejected, "<<accepted+rejected<<" total\n";
++        return 0;
++    } catch(const std::exception&e){std::cerr<<"FAIL method IR: "<<e.what()<<'\n';return 1;}
++}
+--- a/tests/compiler/nested_values.py
++++ b/tests/compiler/nested_values.py
+@@ -362,8 +362,12 @@
+         ("constructor", f"{bb} wrong={bb}(inner,0u8);return 42;", ""),
+     ):
+         suite.reject("equal-byte reordered nested nominal " + label, p(prefix + body, helpers=helpers))
+-    suite.reject("nested class method parameters remain unsupported", p("return 42;",
+-        "class Bad{public:Bad(){}auto consume(std::pair<std::array<u8,3>,u8> value)->i64{return 42;}};"))
++    suite.check("nested class method parameters make independent snapshots", p(
++        "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(2,40u8);"
++        "std::pair<std::array<u8,3>,u8> source=std::pair<std::array<u8,3>,u8>(bytes,2u8);"
++        "Receiver receiver=Receiver();return receiver.consume(source);",
++        "class Receiver{public:Receiver(){}auto consume(std::pair<std::array<u8,3>,u8> value)const->i64{"
++        "const std::array<u8,3> bytes=value.first;return i64(bytes.at(2))+i64(value.second);}};"))
+     suite.reject("direct nested projection result remains unsupported", p(valid +
+         "const std::array<u8,3> result=extract(value);return 42;", helpers=
+         "auto extract(std::pair<std::array<u8,3>,u8> value)->std::array<u8,3>{return value.first;}"))
+--- a/tests/compiler/packed_values.py
++++ b/tests/compiler/packed_values.py
+@@ -436,10 +436,12 @@
+          "enum class State{ok,error};template<Scalar T>class Box{T value;public:Box(T n):value(n){} };", ""),
+         ("enum is not a builtin scalar-array element", "array<State,1> a={State::ok};return 42u64;",
+          "enum class State{ok,error};", ""),
+-        ("class method aggregate parameters remain unsupported", "return 42u64;",
+-         CELL + "class Bad{public:Bad(){}auto take(Cell a)->u64{return u64(a.get());}};", ""),
+     ):
+         suite.reject(name, body, definitions, helpers)
++    suite.check("packed class method parameter copies independent result",
++                "Cell source=Cell(42u8);Receiver receiver=Receiver();Cell result=receiver.take(source);"
++                "source.set(0u8);return u64(result.get());",
++                definitions=CELL + "class Receiver{public:Receiver(){}auto take(Cell a)const->Cell{return a;}};")
+     for capacity in (0, 65):
+         suite.reject(f"packed array capacity {capacity} remains unsupported", "return 42u64;",
+                      byte_storage("Bad", capacity))
+--- a/tests/compiler/value_calls.py
++++ b/tests/compiler/value_calls.py
+@@ -155,7 +155,7 @@
+ 
+ check("nominal class parameter mismatch", program("Other c=Other{.value=42};return get(c);", "auto get(Counter c)->i64{return c.get();}", COUNTER+"class Other{public:i64 value;};"), error="expected Counter")
+ check("nominal class return mismatch", program("Counter c=make();return c.get();", "auto make()->Counter{Other c=Other{.value=42};return c;}", COUNTER+"class Other{public:i64 value;};"), error="expected Counter")
+-check("method class parameter still denied", program("return 42;", definition=COUNTER.replace("i64 n)->i64", "Counter n)->i64")), error="only scalar or enum method")
++check("method class parameter makes independent typed result", program("Counter c=Counter(42);Counter result=c.copy(c);c.add(1);return result.get();", definition=COUNTER.replace("};", "auto copy(Counter source)const->Counter{return source;}};")))
+ check("class method result cannot return scalar field", program("return 42;", definition=COUNTER.replace("get() const -> i64", "get() const -> Counter")), error="unknown local")
+ 
+ LIB = "export module counters;export "+COUNTER+"export auto make(i64 n)->Counter{Counter c=Counter(n);return c;}export auto consume(Counter c)->i64{return c.get();}"
+--- a/tests/compiler/xfs_geometry.py
++++ b/tests/compiler/xfs_geometry.py
+@@ -918,7 +918,10 @@
+                 "compiler SHA256 must be64 lowercase hex digits")
+         require(expected_pin == args.compiler_sha256, "explicit compiler identity mismatch")
+     if args.sanitized_compiler:
+-        require(os.environ.get("ASAN_OPTIONS") == "detect_leaks=0:halt_on_error=1", "explicit retained ASan options required")
++        require(os.environ.get("ASAN_OPTIONS") in (
++            "detect_leaks=0:halt_on_error=1",
++            "detect_leaks=0:halt_on_error=1:abort_on_error=1"),
++            "explicit retained fatal ASan options required")
+     (ROOT / "build").mkdir(exist_ok=True)
+     directory = args.artifacts.resolve() if args.artifacts else Path(tempfile.mkdtemp(prefix="xfs-geometry-", dir=ROOT / "build"))
+     if args.artifacts:

@@ -1,0 +1,1 @@
+export module lib.api;import lib.value;export class Api{public:Api(){}auto consume(Value v)const->i64{return 42;}};

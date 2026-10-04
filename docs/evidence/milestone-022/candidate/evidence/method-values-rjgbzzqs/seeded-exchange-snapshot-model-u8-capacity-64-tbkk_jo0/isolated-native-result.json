@@ -1,0 +1,6 @@
+{
+  "expected": 42,
+  "stdout_hex": "2a00000000000000",
+  "exit_code": 0,
+  "terminal_signal": null
+}

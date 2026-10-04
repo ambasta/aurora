@@ -1,0 +1,98 @@
+{
+  "compiler": "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/aurorac",
+  "sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+  "source_sha256": {
+    "compiler/x86.hpp": "34848df27082f37b4c10c01140326367b8a69f3d27647b931b222a7a3a2bea24",
+    "compiler/parser.hpp": "7734b18afde18556be2eb5ef04a35b5575375c292ef12f9ba3d7a3fe52acee75",
+    "compiler/host_sources.hpp": "ca6f557288b94db0bcd431efb086bba185390b9831543436d184c76263a06794",
+    "compiler/templates.hpp": "0014d0c3f7941dcd7350888c1b5fd86655cc14568b2f86d3e92c2ed825ab7d22",
+    "compiler/modules.hpp": "24744e994750734430668532fd4c9bfe4ae6450c4912d78d2c7a3edae5de124c",
+    "compiler/ir.hpp": "dfda7f20fe723b118bce761780183feba7196f0008e21f8792b0afed7e764981",
+    "compiler/lexer.hpp": "c33b789738e3fd625f5f1b786cfaad22e90db9bed8e757aa4ad8af726f62c7b6",
+    "compiler/initialization_facts.hpp": "d36bd9d835def4b679001facbb7f68627296df8ab4c0c90119e506275b4e6d80",
+    "compiler/types.hpp": "1c45f5f8470791383bf57e57e08c83cde8e86de446d7a8b8fe0a577f3c100ee4",
+    "compiler/ir_verify.hpp": "45df6eb91ddccc50eec2ccfcccd410b3a3203880d43caf3d59297a80116fb87b",
+    "compiler/semantics.hpp": "7c9b03a0e858d929c7b6cceaa83a35310e47cb2fcb373c52886f5593539c5750",
+    "compiler/ir_layout.hpp": "23ee596d7ae009345c39fd0d847a91c85d648a665cd95a623457da2a5110f88d",
+    "compiler/syntax.hpp": "d9366cded2829d362e0950638d74f38dbecc508ff00b4ec6a7f1de75f8c75d55",
+    "compiler/main.cpp": "9a8bc5fefaf16c75cba0aec254a3d54420ae04a3b7eac9da0fe30f95a7b8a431",
+    "library/std/array.au": "187c0b583cdf9e3786680181039f3b832a54f7cdc84de4894981460908957b1a"
+  },
+  "tests": [
+    {
+      "name": "nested-odd-stack-six-positions",
+      "result": "pass",
+      "rejection": false
+    },
+    {
+      "name": "receiver-array-store-nested-packed-call",
+      "result": "pass",
+      "rejection": false
+    },
+    {
+      "name": "implicit-forwarded-classargs-and-result-after-nested-call",
+      "result": "pass",
+      "rejection": false
+    },
+    {
+      "name": "implicit-argument-mutation-precedes-reborrow",
+      "result": "pass",
+      "rejection": false
+    },
+    {
+      "name": "copied-method-param-returned-after-nested-empty-return",
+      "result": "pass",
+      "rejection": false
+    },
+    {
+      "name": "caller-private-type-generic-method-copy",
+      "result": "pass",
+      "rejection": false
+    },
+    {
+      "name": "caller-private-generic-method-no-private-field-authority",
+      "result": "pass",
+      "rejection": true
+    },
+    {
+      "name": "caller-private-generic-method-no-private-method-authority",
+      "result": "pass",
+      "rejection": true
+    },
+    {
+      "name": "public-method-param-private-type-leak",
+      "result": "pass",
+      "rejection": true
+    },
+    {
+      "name": "public-method-signature-transitive-visibility-reject",
+      "result": "pass",
+      "rejection": true
+    },
+    {
+      "name": "public-method-signature-direct-import-accept",
+      "result": "pass",
+      "rejection": false
+    },
+    {
+      "name": "ordinary-helper-receiver-cycle-reject",
+      "result": "pass",
+      "rejection": true
+    },
+    {
+      "name": "readonly-param-no-receiver-mutation",
+      "result": "pass",
+      "rejection": true
+    },
+    {
+      "name": "class-field-argument-requires-projection",
+      "result": "pass",
+      "rejection": true
+    },
+    {
+      "name": "nominal-template-mismatch",
+      "result": "pass",
+      "rejection": true
+    }
+  ]
+}

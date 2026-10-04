@@ -362,8 +362,12 @@ def rejection_cases(suite):
         ("constructor", f"{bb} wrong={bb}(inner,0u8);return 42;", ""),
     ):
         suite.reject("equal-byte reordered nested nominal " + label, p(prefix + body, helpers=helpers))
-    suite.reject("nested class method parameters remain unsupported", p("return 42;",
-        "class Bad{public:Bad(){}auto consume(std::pair<std::array<u8,3>,u8> value)->i64{return 42;}};"))
+    suite.check("nested class method parameters make independent snapshots", p(
+        "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(2,40u8);"
+        "std::pair<std::array<u8,3>,u8> source=std::pair<std::array<u8,3>,u8>(bytes,2u8);"
+        "Receiver receiver=Receiver();return receiver.consume(source);",
+        "class Receiver{public:Receiver(){}auto consume(std::pair<std::array<u8,3>,u8> value)const->i64{"
+        "const std::array<u8,3> bytes=value.first;return i64(bytes.at(2))+i64(value.second);}};"))
     suite.reject("direct nested projection result remains unsupported", p(valid +
         "const std::array<u8,3> result=extract(value);return 42;", helpers=
         "auto extract(std::pair<std::array<u8,3>,u8> value)->std::array<u8,3>{return value.first;}"))

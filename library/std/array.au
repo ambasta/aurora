@@ -19,5 +19,16 @@ export namespace std {
             elements[index] = value;
             return value;
         }
+
+        auto exchange(std::array replacement) -> std::array {
+            std::array previous = std::array();
+            i64 index = 0;
+            while (index < N) {
+                previous.set(index, elements[index]);
+                elements[index] = replacement.at(index);
+                index = index + 1;
+            }
+            return previous;
+        }
     };
 }

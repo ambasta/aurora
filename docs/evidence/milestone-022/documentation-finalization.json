@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "functional_gates_precede_documentation": true,
+  "edited_existing_documents": [
+    {
+      "path": "README.md",
+      "before_sha256": "dcc9fe448f3f1f84e4f24958b96aa99cb7cd4fe7a573e5ca1f1d854f18018986",
+      "after_sha256": "454bb5aa3232a4d5692e4992f02208d82bcf4f8dfaef9bb09b1c5c11e4689e31"
+    },
+    {
+      "path": "compiler/METHOD-VALUES.md",
+      "before_sha256": "f9901ff755dc9d56a592de09006e03147b2e7410bb667fa97a1810f24ae751c5",
+      "after_sha256": "3ed1c5c6572d643ed20602f1df9b15194f21f996cea1969c302c36a81bb997d1"
+    },
+    {
+      "path": "compiler/README.md",
+      "before_sha256": "5c798133513f190335badc7873bfd7ef1d55f1549fc11d55c8c11417ea604036",
+      "after_sha256": "cfe70abfc03b1392e5ec21ade3e2c5d95ef26973b5075f6c72755eac5b60b8e0"
+    },
+    {
+      "path": "compiler/CLASSES.md",
+      "before_sha256": "90ad30eb3e1ff96ede8e4c8546a9453809bb3c3d65c17f99de0331275bca81ed",
+      "after_sha256": "5dbcc746962ab0f04a0fac0a5cb8fdf17a0c1bbf540804e9f32f274c4634eb56"
+    },
+    {
+      "path": "compiler/ENUM-RESULTS.md",
+      "before_sha256": "d5bd7ebc7f373b1ee6808a17015efe78e867789a179489d4b50502b53677f2ef",
+      "after_sha256": "e20f1a61bef6cc1368d0a887de973ed795aabdcd2edcf4768f0c37f4eb921ffe"
+    },
+    {
+      "path": "library/README.md",
+      "before_sha256": "f9c318be04400b47aa6204144ed10c697257c01103fdcdab031f012330688938",
+      "after_sha256": "96a51a6177ec7fbfd0067a33a8149847e0786106f7f5fa64d175443271a568e6"
+    },
+    {
+      "path": "docs/language.md",
+      "before_sha256": "12dc28a5163210be96884da1c045c3293d2e47d9364c33a3591bfa89313bcf07",
+      "after_sha256": "e4c29b3060cfa8feee22075c8ddd46741df28c4b31fcb8896bc34c98dd279a44"
+    },
+    {
+      "path": "docs/roadmap.md",
+      "before_sha256": "ae974b2ecfda3c1fc229ce4ad1cfb794b2e4cecc357cf714ed4f8336217a49b6",
+      "after_sha256": "c2912b7ed4f303924b32afea78b787060dd65127309fd53be044fb880674bb68"
+    },
+    {
+      "path": "docs/completeness-matrix.md",
+      "before_sha256": "587f1bad2a2c39e682b2b8f28b8dec070944f53d418bcf59aa2969d5754877ad",
+      "after_sha256": "725f63e1b69a55d9981ba9f370d969507b0524258021e2e48476002ff2cdbf4e"
+    },
+    {
+      "path": "docs/verification.md",
+      "before_sha256": "3634570ed8b7d4592dbacb54c81bde9df6db350de78ed7b136ca97d68af36994",
+      "after_sha256": "0751c4709a5515d6175f8d6d244e1e8ba16e5394340ee329f981143759b72828"
+    }
+  ],
+  "parent_captured_inputs": 368,
+  "parent_input_documentation_changes": [
+    {
+      "path": "README.md",
+      "parent_tested_sha256": "dcc9fe448f3f1f84e4f24958b96aa99cb7cd4fe7a573e5ca1f1d854f18018986",
+      "final_sha256": "454bb5aa3232a4d5692e4992f02208d82bcf4f8dfaef9bb09b1c5c11e4689e31"
+    },
+    {
+      "path": "compiler/README.md",
+      "parent_tested_sha256": "5c798133513f190335badc7873bfd7ef1d55f1549fc11d55c8c11417ea604036",
+      "final_sha256": "cfe70abfc03b1392e5ec21ade3e2c5d95ef26973b5075f6c72755eac5b60b8e0"
+    },
+    {
+      "path": "compiler/CLASSES.md",
+      "parent_tested_sha256": "90ad30eb3e1ff96ede8e4c8546a9453809bb3c3d65c17f99de0331275bca81ed",
+      "final_sha256": "5dbcc746962ab0f04a0fac0a5cb8fdf17a0c1bbf540804e9f32f274c4634eb56"
+    },
+    {
+      "path": "compiler/METHOD-VALUES.md",
+      "parent_tested_sha256": "f9901ff755dc9d56a592de09006e03147b2e7410bb667fa97a1810f24ae751c5",
+      "final_sha256": "3ed1c5c6572d643ed20602f1df9b15194f21f996cea1969c302c36a81bb997d1"
+    },
+    {
+      "path": "compiler/ENUM-RESULTS.md",
+      "parent_tested_sha256": "d5bd7ebc7f373b1ee6808a17015efe78e867789a179489d4b50502b53677f2ef",
+      "final_sha256": "e20f1a61bef6cc1368d0a887de973ed795aabdcd2edcf4768f0c37f4eb921ffe"
+    },
+    {
+      "path": "library/README.md",
+      "parent_tested_sha256": "f9c318be04400b47aa6204144ed10c697257c01103fdcdab031f012330688938",
+      "final_sha256": "96a51a6177ec7fbfd0067a33a8149847e0786106f7f5fa64d175443271a568e6"
+    },
+    {
+      "path": "docs/language.md",
+      "parent_tested_sha256": "12dc28a5163210be96884da1c045c3293d2e47d9364c33a3591bfa89313bcf07",
+      "final_sha256": "e4c29b3060cfa8feee22075c8ddd46741df28c4b31fcb8896bc34c98dd279a44"
+    },
+    {
+      "path": "docs/completeness-matrix.md",
+      "parent_tested_sha256": "587f1bad2a2c39e682b2b8f28b8dec070944f53d418bcf59aa2969d5754877ad",
+      "final_sha256": "725f63e1b69a55d9981ba9f370d969507b0524258021e2e48476002ff2cdbf4e"
+    },
+    {
+      "path": "docs/roadmap.md",
+      "parent_tested_sha256": "ae974b2ecfda3c1fc229ce4ad1cfb794b2e4cecc357cf714ed4f8336217a49b6",
+      "final_sha256": "c2912b7ed4f303924b32afea78b787060dd65127309fd53be044fb880674bb68"
+    },
+    {
+      "path": "docs/verification.md",
+      "parent_tested_sha256": "3634570ed8b7d4592dbacb54c81bde9df6db350de78ed7b136ca97d68af36994",
+      "final_sha256": "0751c4709a5515d6175f8d6d244e1e8ba16e5394340ee329f981143759b72828"
+    }
+  ],
+  "implementation_test_fixture_changes": 0,
+  "new_evidence_tree": "docs/evidence/milestone-022",
+  "original_receipts_preserved_byte_for_byte": true
+}

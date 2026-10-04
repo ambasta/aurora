@@ -1,0 +1,33 @@
+M022 INTEGRATION INDEPENDENT REVIEW: PASS
+
+Scope: Read-only review of the copied M022 integration runner, original validation contracts, retained emulator receipts, final live image identities, and before/after source/external identity. No build, emulator execution, source/image/runtime edit, installation, network action, or archive was performed by this reviewer. The only validator executions reread retained actual-emulator receipts.
+
+Verified results
+- Exactly 166 distinct core family/mode pairs, identical and identically ordered to M019: 37 BIOS, 111 direct UEFI, 7 BAR, 11 IVRS.
+- Two further normal BIOS/UEFI restoration executions are separate from the 166 distinct modes, making 168 total observed executions.
+- All original kernel, scripts and kernel-validator bytes match M019; original assertions were not relaxed.
+- All 168 original validator receipt replays passed. All wrapper statuses are zero, with actual recorded QEMU statuses 33 or 35 as required by mode semantics. The 168-run raw status histogram is 53 status-33 and 115 status-35 outcomes.
+- All 935 SHA256-sealed receipt entries, 920 per-mode file metadata records, and the separate permission manifest were independently verified with exact file-set checks.
+- All 368 parent source/document entries and all 236 external input records match before, after, and live inspection, including bytes, permissions, and recorded symlink identity. The accepted compiler remains SHA256 e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e with mode 0555.
+- Final live restored image hashes and file modes match the normal-restoration record. Final UEFI payload contains no AURORA_TABLE marker or DormantTables, DormantTableTestAccess, or table_readback symbols. Both actual normal boot restoration receipts validate.
+- All 182 inherited external pins, excluding the intentionally replaced historical compiler binding, match. Existing BAR/IVRS control validators independently pass. Their AMD-Vi result still explicitly has whole_run_zero_interrupt_activity=false and valid_write_named_event=false; only its reviewed bounded stopped-CPU CTRL witness supports coverage.
+- No runtime/finalization error was recorded. Final disk space inspected was 2,317,791,232 bytes, above the 1 GiB floor; every logged gate had its required reserve.
+
+Verified identities
+Runner SHA256: cd43c439e1f813f8149497bb751ad6acd3c3e35f686ce3479a2935a837eb9dea
+Receipt SHA256.json SHA256: 513237c77a1765398e61fa3bf74ccbb9322ec5f24a39f45c5818cd81c6af8a67
+Receipt results.json SHA256: 4f33b9e490f43342ba55f8b65c48df5fb47745db4d8e87688bd225e4194b0050
+Receipt artifact-modes.json SHA256: cf99dcb8d4d49b9488212806fbc2e959f382ae22450a165a8413df23904e1d3a
+
+Non-blocking runner robustness finding
+The launched runner's finalization block contains unguarded source/external reads, nm, payload reads, and file recording. A missing required file after a failed build could abort finalization, leaving RUNNING/unsealed summary files while raw logs remain retained. This was reported to the owner after launch. The owner kept the pinned runner unchanged and committed to preserving incomplete artifacts plus a separate exact failure report if triggered. The concern did not trigger: this run completed, restored both images, wrote errors.json=[] and sealed all receipts. It does not invalidate this successful run. A future runner should guard its failure-sealing path.
+
+Preparation history and limits
+One preparatory preflight failed on inventory scope only (384 versus 368 entries; 16 historical storage-evidence files were extra). The owner documented the failure and corrected the inventory scope before any emulator gate. No source or control assertion was changed for that correction.
+
+This is local emulator integration regression evidence only. It adds no active DMA, physical-hardware, complete language, whole-system safety proof, or remote publication claim. Hashes establish artifact identity, not signed execution attestation. Parent aggregate/compiler ABI acceptance is a separate stage and was not rerun by this reviewer.
+
+Detailed reports
+initial-review.json: pre-execution runner/source/pin audit and independent existing-control validation.
+final-receipt-verification.json: final artifact/source/external/live-image audit and raw process-status records.
+validator-replay.json: exact commands, statuses, and outputs for all 168 read-only validator replays.

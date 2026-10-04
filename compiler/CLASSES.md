@@ -2,7 +2,8 @@
 
 This extension adds constructors and statically dispatched methods to Aurora's
 safe C++ subset. It does not add inheritance, virtual dispatch, overloads,
-general generics, destructors, object/reference parameters or object results on methods.
+general generics, destructors or reference parameters. Later copied method
+parameters/results follow [METHOD-VALUES.md](METHOD-VALUES.md).
 Ordinary functions separately support bounded by-value classes under [VALUE-CALLS.md](VALUE-CALLS.md). Classes
 remain inline values with scalar `i64`/`u64`/`bool` fields and independent copies.
 The later [fixed-container extension](FIXED-CONTAINERS.md) also permits private
@@ -55,7 +56,8 @@ auto answer() -> i64 {
 ## Receiver and calls
 
 - Methods use `auto name(parameters) const -> Scalar` for readonly access and omit
-  `const` for mutation. Their explicit parameters and results must be scalar;
+  `const` for mutation. The original explicit parameters/results were scalar; subsequent copied class
+  boundaries follow [METHOD-VALUES.md](METHOD-VALUES.md);
   at most six explicit parameters are supported. Method names cannot overload or
   collide with fields. A method must return on every continuing path.
 - Source code has no `this` pointer, object-reference conversion, pointer arithmetic
@@ -107,10 +109,10 @@ by-value class parameters and exact nominal class-field copies. Composed classes
 are acyclic, at most four class levels and 64 scalar leaves. Public class fields
 (and private fields inside their declaring class) project into fresh independent
 locals. Class-field reassignment and chained mutation remain rejected. Empty
-nested fields require logical initialization even without payload leaves. Ordinary
-methods retain scalar signatures. This extension is awaiting final validation.
+nested fields require logical initialization even without payload leaves. Ordinary method copied class boundaries are specified separately in
+[METHOD-VALUES.md](METHOD-VALUES.md).
 
 Milestone012's [enum/result candidate](ENUM-RESULTS.md) admits closed enum leaves
 and copied class-valued method results, including the composed descendants above.
-Class method arguments remain unsupported; complete constructor class snapshots
-are preserved.
+The later [verified M022 method-value contract](METHOD-VALUES.md) admits copied class-valued
+ordinary method arguments and preserves complete constructor snapshots.

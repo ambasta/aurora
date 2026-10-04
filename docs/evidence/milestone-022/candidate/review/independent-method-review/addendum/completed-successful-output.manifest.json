@@ -1,0 +1,487 @@
+{
+  "time_utc": "2026-10-04T03:30:27.348245+00:00",
+  "archive": "completed-successful-output.tar.gz",
+  "archive_sha256": "acfdc72bb39a3e0896b19d6c38165e579e52e578ae856047f50380312c27375e",
+  "archive_bytes": 715976,
+  "selected_trees": [
+    "sanitized-native-abi"
+  ],
+  "verified_members": 86,
+  "uncompressed_file_bytes": 5588127,
+  "manifest": {
+    "sanitized-native-abi": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/00-incoming-six-mixed-scalar-nested": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/00-incoming-six-mixed-scalar-nested/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51608,
+      "sha256": "b1cfaa6c13eb39c315ada47875290cd7a335cf04250123d95b56605c85c3cae6"
+    },
+    "sanitized-native-abi/00-incoming-six-mixed-scalar-nested/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 46120,
+      "sha256": "36df7165c369d1429a8854dec6ddd71c95e70c58a04f5c1b993dda559ade9dd5"
+    },
+    "sanitized-native-abi/00-incoming-six-mixed-scalar-nested/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 162843,
+      "sha256": "43e77aec977225a1432afaa81b804e6f2c3d7e70af6440b1c9a7de8e050ce8b0"
+    },
+    "sanitized-native-abi/01-incoming-six-mixed-class-nested": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/01-incoming-six-mixed-class-nested/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51672,
+      "sha256": "0712aeb7f28bd3b02c22210934c53aa9e193d73b1837d1aba81b9282620aa86c"
+    },
+    "sanitized-native-abi/01-incoming-six-mixed-class-nested/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 46320,
+      "sha256": "c83244dd763da2556bc9dc94a26fc8ba95870b6a6a5a389e06d201a20f8d8e27"
+    },
+    "sanitized-native-abi/01-incoming-six-mixed-class-nested/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 163191,
+      "sha256": "2e1fe637e96246b80759bf880e20c2aafa365611912591ec51a7e9a93e982b7f"
+    },
+    "sanitized-native-abi/02-outgoing-six-mixed-scalar-odd-stack": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/02-outgoing-six-mixed-scalar-odd-stack/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51608,
+      "sha256": "0d17cf00057cc5576360e31682d82f7625fe7e24831f6b7a507b6886132a00d0"
+    },
+    "sanitized-native-abi/02-outgoing-six-mixed-scalar-odd-stack/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 44848,
+      "sha256": "04e28f31d90c6f5c49ff6e34506795de5439b92dd306f50c121e3725b89a45aa"
+    },
+    "sanitized-native-abi/02-outgoing-six-mixed-scalar-odd-stack/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 159284,
+      "sha256": "a5ee793666ea04470a2a886c2fb920baebba897706d91352601617c814769d49"
+    },
+    "sanitized-native-abi/03-outgoing-six-mixed-class-odd-stack": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/03-outgoing-six-mixed-class-odd-stack/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51608,
+      "sha256": "63dd69ff925091b21ba409fb1a47507dade73869e8f406168633c305df386096"
+    },
+    "sanitized-native-abi/03-outgoing-six-mixed-class-odd-stack/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 44816,
+      "sha256": "c752d4a635bfaf5ecfa580276195d5cfa9152f2ff00bf11cfc899e4eff19b3cc"
+    },
+    "sanitized-native-abi/03-outgoing-six-mixed-class-odd-stack/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 159073,
+      "sha256": "1e942481f50a2816ce9e1cdf874398163ff37243b22e1cbba434d5b263734f2b"
+    },
+    "sanitized-native-abi/04-control-detects-wrong-packed-scalar": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/04-control-detects-wrong-packed-scalar/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51720,
+      "sha256": "75ec48baa92af8045054a7d24238bc8106bec73be0d6d76176292acb7cff5c4b"
+    },
+    "sanitized-native-abi/04-control-detects-wrong-packed-scalar/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 44960,
+      "sha256": "6bad40f508538245ee334525668d4ea9d3d8061313b0efac0be78cb5c12715fa"
+    },
+    "sanitized-native-abi/04-control-detects-wrong-packed-scalar/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 159467,
+      "sha256": "81b1a51a8b8d66f4ba56b14ba1d7896618119c085a593fc4fb51922eeb1a1623"
+    },
+    "sanitized-native-abi/05-incoming-composed-enum-empty-child": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/05-incoming-composed-enum-empty-child/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51640,
+      "sha256": "d99b28060c93c08ae81b3c30d5c7d3cf2f97dde27c67e87df5bae17bafc77b41"
+    },
+    "sanitized-native-abi/05-incoming-composed-enum-empty-child/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45744,
+      "sha256": "df7919ca5724da3a464bd5207c9a23cb6429821682b7db2f44b3c4774cb7e573"
+    },
+    "sanitized-native-abi/05-incoming-composed-enum-empty-child/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 162585,
+      "sha256": "9db1e79ab7322ff2f790a3c5a068f1143010d5d5c184654cc4888cffae224781"
+    },
+    "sanitized-native-abi/06-outgoing-forwarded-composed-shape": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/06-outgoing-forwarded-composed-shape/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51640,
+      "sha256": "99d795059768e0b39c304d062f09114554819ba62a3a0bbef96ac3f07965bdd4"
+    },
+    "sanitized-native-abi/06-outgoing-forwarded-composed-shape/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45744,
+      "sha256": "a2c1ea9397fc16ab08bac62eba0377ca4b14068940747f53af8dd1b1902ee5f1"
+    },
+    "sanitized-native-abi/06-outgoing-forwarded-composed-shape/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 162357,
+      "sha256": "801a965be9b9c39669e92e13440c10f63fc8316516123cae563f6e4a52e42594"
+    },
+    "sanitized-native-abi/07-incoming-empty-result-no-payload-store": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/07-incoming-empty-result-no-payload-store/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51624,
+      "sha256": "0ba9b2df0b93bd1d5343f8bf67e6a34517c1802f24a7c185c9c8c679b46cfcd2"
+    },
+    "sanitized-native-abi/07-incoming-empty-result-no-payload-store/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45728,
+      "sha256": "ff53ef9e5ca2e5e0ba06da53681275da0ce13b13ccc7f4dea82b26ad39e33c35"
+    },
+    "sanitized-native-abi/07-incoming-empty-result-no-payload-store/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 162564,
+      "sha256": "f53a318142bbcedb30bfc20e17dcd4bfa20846873dc0560ec6326b712cc43a6c"
+    },
+    "sanitized-native-abi/08-outgoing-empty-record-rounded-padding": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/08-outgoing-empty-record-rounded-padding/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51624,
+      "sha256": "af98a52b8a3abc5bdbcaaa3cc7926f7f95fd3c0b69c4a406a2fa5f1d6c7b4748"
+    },
+    "sanitized-native-abi/08-outgoing-empty-record-rounded-padding/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45792,
+      "sha256": "652ad11bd4c6a11942e78a53013b502cb278dc4672baefa3ed4115bd72f13884"
+    },
+    "sanitized-native-abi/08-outgoing-empty-record-rounded-padding/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 162714,
+      "sha256": "64c069678f6c90a83c39934191e38bc477ccb058cf5d236bdbfd6e70fce71623"
+    },
+    "sanitized-native-abi/09-incoming-maximum-3072-byte-scalar": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/09-incoming-maximum-3072-byte-scalar/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 54616,
+      "sha256": "2ff087a5ab34988d9b7767e667095874c5ffc7cf5c53104923c5948035b7810b"
+    },
+    "sanitized-native-abi/09-incoming-maximum-3072-byte-scalar/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 48632,
+      "sha256": "57ace9b0ee2bd5b1669074f26ee9e5a1e4efb79faba9b00baf5a64d5828261b6"
+    },
+    "sanitized-native-abi/09-incoming-maximum-3072-byte-scalar/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 168924,
+      "sha256": "bf565d703e71fc4fb705c248ddec72eae7c2fbdb0360ed021505e699c4b9d22a"
+    },
+    "sanitized-native-abi/10-incoming-maximum-3072-byte-class": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/10-incoming-maximum-3072-byte-class/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 55656,
+      "sha256": "9ee75c5c817a861bb771d5289097ff86cc6f5916ea20a5954789e461ab004faf"
+    },
+    "sanitized-native-abi/10-incoming-maximum-3072-byte-class/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 49760,
+      "sha256": "3fe114341bc2deaec8ee2d6e5b5f794d6daa3720265242bd2be5bbe131d3b29a"
+    },
+    "sanitized-native-abi/10-incoming-maximum-3072-byte-class/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 170259,
+      "sha256": "8d673bbbf4bcadc1cfe38ba72df123b2b2ee818f48cc13693323b2e660471dc3"
+    },
+    "sanitized-native-abi/11-outgoing-maximum-3072-byte-scalar": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/11-outgoing-maximum-3072-byte-scalar/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 50624,
+      "sha256": "ef0fc4f7c61a8a79f37644778491aa889052ef6c2976c4a5901be435209a5ecf"
+    },
+    "sanitized-native-abi/11-outgoing-maximum-3072-byte-scalar/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 42936,
+      "sha256": "1d86b619cefaa739f0777bca861997400bcd6868b1cafa0f864071333da9848e"
+    },
+    "sanitized-native-abi/11-outgoing-maximum-3072-byte-scalar/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 147272,
+      "sha256": "06570fd1c7b0b0b84169514d5341299ce35b154fc0c6dad4892925aed56f823e"
+    },
+    "sanitized-native-abi/12-outgoing-maximum-3072-byte-class": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/12-outgoing-maximum-3072-byte-class/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 47080,
+      "sha256": "ad82eeffddb28317c5c316e372dd78dfbb730c194c49b51de329e26f01215135"
+    },
+    "sanitized-native-abi/12-outgoing-maximum-3072-byte-class/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 42952,
+      "sha256": "9e43f5c00b5ba98b1cd3ddec035b96db1fa86aa092e5851ecad8ca8937893448"
+    },
+    "sanitized-native-abi/12-outgoing-maximum-3072-byte-class/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 146774,
+      "sha256": "889076efb0592ea31b15771b95f3c5cc87203f24fda754b8155238725b39a895"
+    },
+    "sanitized-native-abi/13-incoming-control-ordinary": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/13-incoming-control-ordinary/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51640,
+      "sha256": "0a9581e076b7461dfe27a9988776e662710a308075577b1b1acfeac114c25296"
+    },
+    "sanitized-native-abi/13-incoming-control-ordinary/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45744,
+      "sha256": "213cfd280b12bff698daba367c5fccaef026dd4824a981855fb724d7d86225d6"
+    },
+    "sanitized-native-abi/13-incoming-control-ordinary/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 162597,
+      "sha256": "a1182a4ebe8f73efbffb583084bd41bb54a7487e23fe0ae9ad0b61dd0f0ccbba"
+    },
+    "sanitized-native-abi/14-incoming-control-old_result": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/14-incoming-control-old_result/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51624,
+      "sha256": "850bb52c492c216f86122049ccc62797606dbcaf8cc8c6c4de4f6aa5fc48518a"
+    },
+    "sanitized-native-abi/14-incoming-control-old_result/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45736,
+      "sha256": "4713ae519310536771990061c4ccec7827c0c56dcbdd62052e04e11735396867"
+    },
+    "sanitized-native-abi/14-incoming-control-old_result/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 162586,
+      "sha256": "08e82e1b4e1c612427fd8b42d328e192c11fce9383971bdf1da3bd93dba943ec"
+    },
+    "sanitized-native-abi/15-incoming-control-constructor": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/15-incoming-control-constructor/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51640,
+      "sha256": "2331f251607f406e3ca970ef5e215cf742589be3e5825adda364ccd9756fe859"
+    },
+    "sanitized-native-abi/15-incoming-control-constructor/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45744,
+      "sha256": "dd42ab4ba44c402b490c1dae405561eb44c3e1285fbdf5034e33cd81c06ac27e"
+    },
+    "sanitized-native-abi/15-incoming-control-constructor/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 162606,
+      "sha256": "32a5f49af6bd1c4c7be6384219637de074f7b13f752c63adee8a06ff4ebaf0ec"
+    },
+    "sanitized-native-abi/16-incoming-control-scalar-method": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/16-incoming-control-scalar-method/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51608,
+      "sha256": "0a2f644281e90991742f37e397b4dd0045cc12fcdf5a1847fbc00e9d5f9f1ecd"
+    },
+    "sanitized-native-abi/16-incoming-control-scalar-method/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45600,
+      "sha256": "c104e8494778a22f8c2f6951bbabc341b95a45cbfd0da51fadf547f84279b2d0"
+    },
+    "sanitized-native-abi/16-incoming-control-scalar-method/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 162366,
+      "sha256": "47bf70745500f42ad1e96ae995992ee521ea1af1f2aee3e0d77bcdfa7d1cdb97"
+    },
+    "sanitized-native-abi/17-outgoing-control-ordinary": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/17-outgoing-control-ordinary/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51608,
+      "sha256": "c5d4e1e433fba66ef36c8a58c3b33b6bf047e0fdc158c6ddb45b7b94ee0ec5bf"
+    },
+    "sanitized-native-abi/17-outgoing-control-ordinary/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45256,
+      "sha256": "4a4cbe778cd391be3f5ebe08e1ea8bf25b5867a1bcb4a78daafbfbba278261e4"
+    },
+    "sanitized-native-abi/17-outgoing-control-ordinary/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 161507,
+      "sha256": "408e605b0b8f09d0fc2542936859c6c63dea240d951e37a30cd7acab68ceacd9"
+    },
+    "sanitized-native-abi/18-outgoing-control-result_method": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/18-outgoing-control-result_method/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51608,
+      "sha256": "470a1880d158234d54723c6207272a80c092be4d81375bfad88b57f2d124b20c"
+    },
+    "sanitized-native-abi/18-outgoing-control-result_method/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45192,
+      "sha256": "1fd3b28a50d29bcb2f93bdf0690115f85a0cf03cdf64859b65737a1d3c2a0f9d"
+    },
+    "sanitized-native-abi/18-outgoing-control-result_method/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 161387,
+      "sha256": "27d860410c15bb011571ef4a42de7fc3d21dd6b1a40d5017cef4bcc6c867ceb4"
+    },
+    "sanitized-native-abi/19-outgoing-control-constructor": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/19-outgoing-control-constructor/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51608,
+      "sha256": "a55818c51b4c63e764dd1c166e7c43afda8d53b7d00c740fbdd206a8161fd788"
+    },
+    "sanitized-native-abi/19-outgoing-control-constructor/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45240,
+      "sha256": "9c80b3f6c7bb0ee4290f9423713e2672445f4144bcfdaa1c588554a128fa1617"
+    },
+    "sanitized-native-abi/19-outgoing-control-constructor/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 161465,
+      "sha256": "a6410396315d1c372a9fe5c4c39792c0ce7fa9d3de3443c4b4a105bed7d2d2ab"
+    },
+    "sanitized-native-abi/20-outgoing-control-scalar_method": {
+      "type": "directory",
+      "mode": 493
+    },
+    "sanitized-native-abi/20-outgoing-control-scalar_method/program": {
+      "type": "file",
+      "mode": 493,
+      "size": 51608,
+      "sha256": "95267579948fdc1d8731feadf48ce540235fd8ce04e6bc0fb1af03f84650d962"
+    },
+    "sanitized-native-abi/20-outgoing-control-scalar_method/program.o": {
+      "type": "file",
+      "mode": 420,
+      "size": 45264,
+      "sha256": "1210c6bb6f9cff30e2eec3a5c7fa702fd63c36663cbf90badad5da7d9cb8b6e6"
+    },
+    "sanitized-native-abi/20-outgoing-control-scalar_method/program.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 161675,
+      "sha256": "551209ebfcd079da2b633efa068c99cb8c8fa816df4442e99f9c862fc758e9d9"
+    },
+    "sanitized-native-abi/fixture.s": {
+      "type": "file",
+      "mode": 420,
+      "size": 160839,
+      "sha256": "abc370bce14129f9f3196362f5fe699f942d0065272d33add2fe20a5f100184a"
+    }
+  },
+  "verified_before_removal": true,
+  "expanded_duplicates_removed": true
+}

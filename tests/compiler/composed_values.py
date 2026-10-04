@@ -575,7 +575,6 @@ def rejection_cases(suite):
         ("class field scalar initializer", "class Bad{Leaf item;public:Bad():item(42){} };"),
         ("class field no complete constructor", "class Bad{public:Leaf item;};"),
         ("mutable constructor class parameter", "class Bad{i64 value;Leaf item;public:Bad(Leaf source):value(source.add(1)),item(source){} };"),
-        ("method class parameter remains unsupported", "class Bad{public:Bad(){}auto take(Leaf input)->i64{return 42;}};"),
         ("direct inline self cycle", "class Bad{Bad item;public:Bad(Bad source):item(source){} };"),
         ("indirect inline cycle", "class Bad{Other item;public:Bad(Other source):item(source){} };class Other{Bad item;public:Other(Bad source):item(source){} };"),
         ("owning field remains unsupported", "class Bad{own<i64> item;public:Bad():item(42){} };"),
@@ -583,6 +582,9 @@ def rejection_cases(suite):
     ):
         suite.check(name, program("return 42;", LEAF + definition,
                                 "auto make()->Leaf{Leaf source=Leaf(42);return source;}"), error=True)
+    suite.check("method class parameter snapshot is independent", program(
+        "Leaf source=Leaf(42);Factory factory=Factory();Leaf result=factory.take(source);source.add(1);return result.get();", LEAF +
+        "class Factory{public:Factory(){}auto take(Leaf input)const->Leaf{return input;}};"))
     suite.check("method class result copies into typed local", program(
         "Factory factory=Factory();Leaf result=factory.get();return result.get();", LEAF +
         "class Factory{public:Factory(){}auto get()->Leaf{Leaf value=Leaf(42);return value;}};"))

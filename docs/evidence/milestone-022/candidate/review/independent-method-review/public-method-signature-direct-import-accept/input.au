@@ -1,0 +1,1 @@
+module review;import lib.api;import lib.value;auto answer()->i64{Api a=Api();Value v=Value();return a.consume(v);}

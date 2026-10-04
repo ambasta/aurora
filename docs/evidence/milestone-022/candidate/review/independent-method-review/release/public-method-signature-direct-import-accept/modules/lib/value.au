@@ -1,0 +1,1 @@
+export module lib.value;export class Value{public:Value(){}};

@@ -1,0 +1,13 @@
+module app;class Counter{
+    i64 value;
+public:
+    Counter(i64 n):value(n){}
+    auto get()const->i64{return value;}
+    auto set(i64 n)->i64{value=n;return value;}
+    auto add(i64 n)->i64{value=value+n;return value;}
+    auto read(Counter source)const->i64{return source.get();}
+    auto copy(Counter source)const->Counter{return source;}
+    auto replace(Counter source)->Counter{
+        const Counter old=Counter(value);value=source.get();return old;
+    }
+auto order(Counter before,i64 first,Counter between,i64 second,Counter after,bool yes)->i64{if(before.get()!=1){return 1;}if(first!=2){return 2;}if(between.get()!=2){return 3;}if(second!=3){return 4;}if(after.get()!=3){return 5;}if(!yes){return 6;}if(value!=3){return 7;}value=99;if(before.get()!=1){return 8;}if(after.get()!=3){return 9;}return 42;}};auto test()->i64{Counter source=Counter(1);return source.order(source,source.add(1),source,source.add(1),source,true);}

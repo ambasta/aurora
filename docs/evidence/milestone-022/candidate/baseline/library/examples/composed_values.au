@@ -1,0 +1,24 @@
+module composed_values;
+import std.numeric;
+import std.utility;
+
+auto preserve(std::pair<std::MinMax, std::Accumulator> input)
+    -> std::pair<std::MinMax, std::Accumulator> {
+    return input;
+}
+
+auto test() -> i64 {
+    const std::MinMax bounds = std::minmax(10, 32);
+    const std::Accumulator initial = std::Accumulator(10);
+    const std::pair<std::MinMax, std::Accumulator> values =
+        std::pair<std::MinMax, std::Accumulator>(bounds, initial);
+    const std::pair<std::MinMax, std::Accumulator> copied = preserve(values);
+    const std::MinMax limits = copied.first;
+    std::Accumulator accumulator = copied.second;
+    const i64 changed = accumulator.add(limits.max());
+    const std::Accumulator original = values.second;
+    if (original.value() == 10) {
+        return changed;
+    }
+    return 0;
+}

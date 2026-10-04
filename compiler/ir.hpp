@@ -213,7 +213,7 @@ class MethodCall {
   public:
     std::string callee;
     int receiverOffset;                    // zero forwards this; positive names an ObjectSlot base
-    std::vector<int> objectArguments = {}; // constructor snapshots; scalar entries are zero
+    std::vector<int> objectArguments = {}; // readonly copied snapshots; scalar entries are zero
     int resultOffset = 0; // pristine class result destination; zero for scalar results
 };
 class MetadataQuery {

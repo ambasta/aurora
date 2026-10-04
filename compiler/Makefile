@@ -21,6 +21,7 @@ test: $(OUT)
 	python3 -O ../tests/compiler/nested_values.py $(abspath $(OUT))
 	python3 ../tests/compiler/decimal_values.py $(abspath $(OUT))
 	python3 ../tests/compiler/enum_composition.py $(abspath $(OUT))
+	python3 -O ../tests/compiler/method_values.py $(abspath $(OUT))
 	python3 ../tests/compiler/integers.py $(abspath $(OUT))
 	python3 ../tests/compiler/unsigned.py $(abspath $(OUT))
 	python3 ../tests/compiler/u8_numeric.py $(abspath $(OUT))
@@ -39,6 +40,9 @@ test: $(OUT)
 	$(IR_TEST_BUILD_PREFIX) $(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/ir_tests.cpp -o $(dir $(OUT))ir-tests
 	$(dir $(OUT))ir-tests
 	CXX="$(CXX)" python3 ../tests/compiler/ir_exhaustive.py $(abspath $(dir $(OUT))ir-tests)
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_values_ir.cpp -o $(dir $(OUT))method-values-ir-tests
+	$(dir $(OUT))method-values-ir-tests
+	python3 -O ../tests/compiler/method_values_abi.py $(abspath $(dir $(OUT))method-values-ir-tests)
 	python3 ../tests/modules/run.py $(abspath $(OUT))
 	python3 ../tests/modules/robustness.py $(abspath $(OUT))
 	$(CXX) $(CXXFLAGS) -pthread -I. ../tests/modules/host_sources_tests.cpp -o $(dir $(OUT))host-source-tests

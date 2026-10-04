@@ -1,0 +1,589 @@
+{
+  "cases": 37,
+  "accepted": 37,
+  "rejected": 0,
+  "all_match": true,
+  "old_library_unchanged": true,
+  "old_library_inputs": {
+    "README.md": "2ab66f3da86383422760bdd43dad9d655c903ab860a4159f705b97f71271bc3f",
+    "fs/xfs_geometry.au": "c67c03928e0d4cf5896178906bd447523ec15b57cc95c4ade8b8330305a77864",
+    "fs/xfs_probe.au": "9474dceea9c3dda66d5566396480e88979c6ea28c8d857b944f24e2e70603284",
+    "std/utf8.au": "a9448bed52974ca1e690b9a10e86a5f879c5b24f475a12ab1ec079e4e97bc646",
+    "std/bytes.au": "0f27c470ddbef94d722937937c42bd5b244692e236c15e5c39af368a147335dc",
+    "std/array.au": "4075cece31d008b9ed7f08326e84f755ef6f5cca56238c1fe861dec4bb4a590d",
+    "std/core.au": "76997141f312c76bc45ef37a09c1366e8bdb5a62ca9535d94bb2090dbe23d19e",
+    "std/decimal.au": "d584466845aed22a4b5b8f0d9c85bfa0ff2492e4f6270285de56927c2615df24",
+    "std/utility.au": "d34866f59a974f2fc840aa3ed748adb7cddb36f560400bbba0fcaf5b73223191",
+    "std/integer.au": "b08857ab2d164c1b78be50b05fcc4277ef84ae736e1bc0f09668082433fd5a54",
+    "std/bit.au": "a782f1ddee3b09239e5c5f9e8aa639189fc780d7f9412eb98095aad96987e2e2",
+    "std/checksum.au": "e8981b0fdb938771d67d2a70dced260489537b83368e92c0bc63d01989be5a30",
+    "std/numeric.au": "411f86f101dc5d61323dc875705cd554fbeba392a44a31bbae2af6addf14bc42",
+    "std/binary.au": "550d1109ef763bb5fe27b63033cf06dc7acf02d0dbab46c2459497f9bc4d8cc0",
+    "examples/byte_codec.au": "4be9bfbd47d81d960826513d10bfa0f3988b6f42247374fd751110d83cef59be",
+    "examples/xfs_geometry.au": "25fc9364d2e9bb686a46c64ed92c6af480f6a5a21aa7f0b378ce1b55c7f5b7de",
+    "examples/utf8_scalars.au": "fae18647e76acff29504fec0fb80dcc419e732952f9ef04b426c783b8eb93fed",
+    "examples/binary_reader.au": "4dbfbb6e29ef29eaf603258c4f34d951069494859c7d922a12549835f14a79ab",
+    "examples/composed_values.au": "1b813e4b1971f95e9e1ea6b4634cf3bab77b8d08b0a9e4b1c079bddcc53ce29b",
+    "examples/decimal_result.au": "7ff08b69f8844eff141ff4f640fc6faccc49d1366bf1179ca68cf6b9ec07290e",
+    "examples/storage_fields.au": "0507cb7f05545edc3e839b9fc97db6eaa6ff415749d98f9b9778779c96faf7ea",
+    "examples/enum_composition.au": "152217a36467c6b7d8fe4da6504931d89d6abdcb5e1904f65b141fe096bbc351",
+    "examples/utf8_owned_scalar.au": "fb98c6136fcfe11a8932e68c970f33f14f0969194ff49d5bdb4101a0ac24a57c"
+  },
+  "rows": [
+    {
+      "path": "examples/class_values.au",
+      "source_sha256": "131137766de0a889b928821803b273f0c7fdffeb047b306214b803d5d8c7ad04",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "5df6d0ae34538210e20bd7e10704a49e21dd83dde9549687fa30c162e40946f9"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "5df6d0ae34538210e20bd7e10704a49e21dd83dde9549687fa30c162e40946f9"
+      },
+      "match": true
+    },
+    {
+      "path": "examples/core_math.au",
+      "source_sha256": "003c480f9c5d591e73c103f15e40a4a6bdfd9c728d7e920f6314d169c3e0772b",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "219af847a6e761c211f6f19ee763bdff8d063e25e94fedaaff97c65e637ab4b9"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "219af847a6e761c211f6f19ee763bdff8d063e25e94fedaaff97c65e637ab4b9"
+      },
+      "match": true
+    },
+    {
+      "path": "examples/function_token_values.au",
+      "source_sha256": "d7a31445feb4c3ce09623b1a2dae8e3c45b66fffe657c8fe820161d112edf5d4",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "831d01b80ee20396aff8d9231b41cfb229ada30f3fb8396d21c6c1416a389e79"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "831d01b80ee20396aff8d9231b41cfb229ada30f3fb8396d21c6c1416a389e79"
+      },
+      "match": true
+    },
+    {
+      "path": "examples/kernel.au",
+      "source_sha256": "b57b463742426452535956425dcb8d1d5bebc8ed46abe0158fedd3410a0c84ca",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "ecf0dfe2b17257a91ac779637f285c2efff54c2378b335fa178a79765e2e8411"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "ecf0dfe2b17257a91ac779637f285c2efff54c2378b335fa178a79765e2e8411"
+      },
+      "match": true
+    },
+    {
+      "path": "examples/loops_arrays.au",
+      "source_sha256": "55bc0e544d3b41d8ff0bb77d3167225c53241db07bd8ed892988a0fdf77d9080",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "9799732b56b0cb6598d9b41e315ad78e76690a925b82af36a439e5bf39ddf490"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "9799732b56b0cb6598d9b41e315ad78e76690a925b82af36a439e5bf39ddf490"
+      },
+      "match": true
+    },
+    {
+      "path": "examples/nested_token_values.au",
+      "source_sha256": "6bc300f429ce77fd3fada0e361f47baf213d082353f4850d94ab128064140f20",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "4dce852294071d66c21d2c375a91f12f28a224ca852286fb7877753a0c82e84d"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "4dce852294071d66c21d2c375a91f12f28a224ca852286fb7877753a0c82e84d"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/bounds.au",
+      "source_sha256": "01e16cd91ba91c62739ffaa20ea7e4e527aee401eb9ee1e44ed4acc82a4daa2c",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "44fbe16d0ff9c67e3e55cbb77d9e85debeb5bd4846165cecc9d9a106dba44948"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "44fbe16d0ff9c67e3e55cbb77d9e85debeb5bd4846165cecc9d9a106dba44948"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/budget-service.au",
+      "source_sha256": "d0adda773c264d8ba165a34d110129e79563db2afa8c9cb046ad091f2e22b1ae",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "c1dcaee879dae855399d0efc3068ac9ca45b1a7f17b5dcf57ea01c6553539732"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "c1dcaee879dae855399d0efc3068ac9ca45b1a7f17b5dcf57ea01c6553539732"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/clean.au",
+      "source_sha256": "b8412e43beabf1f3bd1634bc9b6a1c19a061487e886b9321a0eefd9fe2a446f0",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "a8e16fe59e3f89bfe7240d3c023916fc64d82019bd69086de50a564d2b670586"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "a8e16fe59e3f89bfe7240d3c023916fc64d82019bd69086de50a564d2b670586"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/dispatch-client-a.au",
+      "source_sha256": "6843eaa8f1ab62d90f624bcc9a3fed52c77cd42c2de2e4d03d4956e1906f0acb",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "4d1bf6d2e59dfdad79369a0aadcde807e7571f9ce2f2240a7bd41710bbbf01fa"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "4d1bf6d2e59dfdad79369a0aadcde807e7571f9ce2f2240a7bd41710bbbf01fa"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/dispatch-client-b.au",
+      "source_sha256": "0aedfb3a5b95c3839b3bd81542a5a8ba95747bc18a1a81aa831b3fa203ab447f",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "64583e8ec536554dbe729893045a81bc9cd68316906b220a53ec9120674c0b2a"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "64583e8ec536554dbe729893045a81bc9cd68316906b220a53ec9120674c0b2a"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/dispatch-service.au",
+      "source_sha256": "51fc48bf9760d314f31ae4b66a5beeca84ce763f1a20f8c2a48a643303dac763",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "e98b2c8168f6b9cb9d680576e51e8ba9356e33a4942e14adcdeca23d1652279c"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "e98b2c8168f6b9cb9d680576e51e8ba9356e33a4942e14adcdeca23d1652279c"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/division-overflow.au",
+      "source_sha256": "fb0a0da340f905ec2fa3162f4e8bec54c9b56df0383196db549f517c9df5e8f3",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "31385d7a1297d55d81e72e476fe532f5022217e6e1a14d392986f38e1f93a6e4"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "31385d7a1297d55d81e72e476fe532f5022217e6e1a14d392986f38e1f93a6e4"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/division-remainder-min.au",
+      "source_sha256": "9db6d94b07598e2e332a1c9a650b03821528bd4ddbf6f9a909b6e38fc99ce431",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "039c94bfa96a1e0ab099dcdfb14d05575b5f6d11b4ca43d502620fad9eb840f5"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "039c94bfa96a1e0ab099dcdfb14d05575b5f6d11b4ca43d502620fad9eb840f5"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/division-remainder-zero.au",
+      "source_sha256": "a21e7552b3f61b4ac8dcaa96f246195d8dbb365fdddce71cd83a805565b84c1f",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "9f942454dceb693952c8b2ada6ca15399eb8544db9b68143fece633911bced79"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "9f942454dceb693952c8b2ada6ca15399eb8544db9b68143fece633911bced79"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/division-zero.au",
+      "source_sha256": "0fd4c7ac6b76e995c25f49784dff66bf437c84958166df3cb9b722d5930afa45",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "60b9cc3393c3532f3fbca4582a1058505ab71a75ad334d4177ff0257d04fbd89"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "60b9cc3393c3532f3fbca4582a1058505ab71a75ad334d4177ff0257d04fbd89"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/ipc-client.au",
+      "source_sha256": "76b58bb445711900aea00170bbc5836fcf405f5624b7746c536dc4c1efe3b097",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "8b701db2eba1c9c2e53966a624d2a5155e5bf973b4de3a121109e9febca226aa"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "8b701db2eba1c9c2e53966a624d2a5155e5bf973b4de3a121109e9febca226aa"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/ipc-service.au",
+      "source_sha256": "d32049044e3c599ced72fc0625118dcf726381b4e62d0bd17bdb1221b9c71822",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "9d3187bd2ee1dcb84e5e6619d24affdd32106ec68c986fe351b7e1f4d63bd213"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "9d3187bd2ee1dcb84e5e6619d24affdd32106ec68c986fe351b7e1f4d63bd213"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/overflow.au",
+      "source_sha256": "ea1ff639ab79783f4f8663a63a5099bf0d216364eb60ae541136d1c19c07119b",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "86f5bdc7a64d514f7152eaad0bfc2428ac13934bb426f9e74b3832cdc67042b7"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "86f5bdc7a64d514f7152eaad0bfc2428ac13934bb426f9e74b3832cdc67042b7"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/scheduled-clean.au",
+      "source_sha256": "760da4f63ff056261572529765467325bffee983738bb607fb8b6413bf7bcf85",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "5b317c7e1cc27001b2838e19d3d983d7590a90eab1273df94875106105c307b6"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "5b317c7e1cc27001b2838e19d3d983d7590a90eab1273df94875106105c307b6"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/scheduled-spin.au",
+      "source_sha256": "afe87f431d3d7fb95dfc22bb9c3a92bdd196527e49d18c0448415c9c0accf544",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "478221dd9fcc413fd24e383931fe5c6017663572453c1ac6e110981a089f35a5"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "478221dd9fcc413fd24e383931fe5c6017663572453c1ac6e110981a089f35a5"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/span-clean.au",
+      "source_sha256": "996d5c4b4af37c6cd3350aa2ae99426036cde2464ed2001507abfd7d12011f9f",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "116774f155cc25075113105aaa87c90c428b3c6e0720dbafd05e09853d643980"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "116774f155cc25075113105aaa87c90c428b3c6e0720dbafd05e09853d643980"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/unsigned-conversion-overflow.au",
+      "source_sha256": "cc9047f5ef55eccbcc7149683b0bd62a61e677f4b23c65446b9edd70d510f710",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "24b6dbf68079ba88f003ab3f64a2bffeb6e28911a04b3e0ed77b681fd9f7d48b"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "24b6dbf68079ba88f003ab3f64a2bffeb6e28911a04b3e0ed77b681fd9f7d48b"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/unsigned-shift-count.au",
+      "source_sha256": "f19af764d6369a0898dc171ea46b234b4db3837de700b2f5ed9ce4ec84be7957",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "8c0f63841bb2fb7e0f57702cc8e51792686bdfb0a948c012b51fcae25254454c"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "8c0f63841bb2fb7e0f57702cc8e51792686bdfb0a948c012b51fcae25254454c"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/unsigned-shift-wide.au",
+      "source_sha256": "7cf5c120ca001b537e4d76acebf3f7bc9f599647a95230de1333335a5b46e89f",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "f677bdd12f82ed53fb4f9c5e7311adc2cb5ec3557e4d3eaeb4f758683f531085"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "f677bdd12f82ed53fb4f9c5e7311adc2cb5ec3557e4d3eaeb4f758683f531085"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/unsigned-valid.au",
+      "source_sha256": "2a262727e5d8ff23a0dfa514dc606145441b76df0774dd015caea21d03373c10",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "4ead5e9228cd8fea0c5964443c4afe6a0933873d66041f9dfe0a2d9c1f1c5385"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "4ead5e9228cd8fea0c5964443c4afe6a0933873d66041f9dfe0a2d9c1f1c5385"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/user-budget-client-a.au",
+      "source_sha256": "685162d9b4a6d0e447608b0a58bc4820e030393e69942fd9963306c17cfe7fe2",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "83e619fc41228f6d835764bc898e33f68a3ab04b3f9f553f162f323b826f3a4a"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "83e619fc41228f6d835764bc898e33f68a3ab04b3f9f553f162f323b826f3a4a"
+      },
+      "match": true
+    },
+    {
+      "path": "tests/kernel-programs/user-budget-client-b.au",
+      "source_sha256": "00924dd4cdc3212d1ea7571e2be1d26401418332cbc1a0696a1d0d0b0b795cb2",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "c8737b88cd64de38ca10e8919c3be16a744f2c8c13dccf85e856075292170ec4"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "c8737b88cd64de38ca10e8919c3be16a744f2c8c13dccf85e856075292170ec4"
+      },
+      "match": true
+    },
+    {
+      "path": "library/examples/binary_reader.au",
+      "source_sha256": "4dbfbb6e29ef29eaf603258c4f34d951069494859c7d922a12549835f14a79ab",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "ccd21a93eec6a344636aecab8fb0d6705fdd570818fd8b3165b35330b8e143c7"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "ccd21a93eec6a344636aecab8fb0d6705fdd570818fd8b3165b35330b8e143c7"
+      },
+      "match": true
+    },
+    {
+      "path": "library/examples/byte_codec.au",
+      "source_sha256": "4be9bfbd47d81d960826513d10bfa0f3988b6f42247374fd751110d83cef59be",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "891ddebc7045db7ab1fd7db239ebcdf317c9f4166293495c8a9d087d2ada9d44"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "891ddebc7045db7ab1fd7db239ebcdf317c9f4166293495c8a9d087d2ada9d44"
+      },
+      "match": true
+    },
+    {
+      "path": "library/examples/composed_values.au",
+      "source_sha256": "1b813e4b1971f95e9e1ea6b4634cf3bab77b8d08b0a9e4b1c079bddcc53ce29b",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "50f8a5613f1c9e834b0405cf346899ccb613854f1b30451c040420619dc2e5e6"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "50f8a5613f1c9e834b0405cf346899ccb613854f1b30451c040420619dc2e5e6"
+      },
+      "match": true
+    },
+    {
+      "path": "library/examples/decimal_result.au",
+      "source_sha256": "7ff08b69f8844eff141ff4f640fc6faccc49d1366bf1179ca68cf6b9ec07290e",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "3d5f7a2f81bc88d71e8c5d5bdbc7800f709bc07e3a027fc9e9a6147143365077"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "3d5f7a2f81bc88d71e8c5d5bdbc7800f709bc07e3a027fc9e9a6147143365077"
+      },
+      "match": true
+    },
+    {
+      "path": "library/examples/enum_composition.au",
+      "source_sha256": "152217a36467c6b7d8fe4da6504931d89d6abdcb5e1904f65b141fe096bbc351",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "37adc4c9bb1e3cbd680f535dbb8bd7b36c50edf65d2745a435653e700e85b0b3"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "37adc4c9bb1e3cbd680f535dbb8bd7b36c50edf65d2745a435653e700e85b0b3"
+      },
+      "match": true
+    },
+    {
+      "path": "library/examples/storage_fields.au",
+      "source_sha256": "0507cb7f05545edc3e839b9fc97db6eaa6ff415749d98f9b9778779c96faf7ea",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "d5492e41fc594b9895b56a81fe868f666742d1256ef73c1013a669dba7b1bd1a"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "d5492e41fc594b9895b56a81fe868f666742d1256ef73c1013a669dba7b1bd1a"
+      },
+      "match": true
+    },
+    {
+      "path": "library/examples/utf8_owned_scalar.au",
+      "source_sha256": "fb98c6136fcfe11a8932e68c970f33f14f0969194ff49d5bdb4101a0ac24a57c",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "01fbe425ee6a0a44cb012b7248c1aaa2ce03bda0dbb347cf28d44bdf438fae59"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "01fbe425ee6a0a44cb012b7248c1aaa2ce03bda0dbb347cf28d44bdf438fae59"
+      },
+      "match": true
+    },
+    {
+      "path": "library/examples/utf8_scalars.au",
+      "source_sha256": "fae18647e76acff29504fec0fb80dcc419e732952f9ef04b426c783b8eb93fed",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "78d62b171d73f20ed9042a055051a8e5d71fec9501a227b3343c7360cc01c12d"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "78d62b171d73f20ed9042a055051a8e5d71fec9501a227b3343c7360cc01c12d"
+      },
+      "match": true
+    },
+    {
+      "path": "library/examples/xfs_geometry.au",
+      "source_sha256": "25fc9364d2e9bb686a46c64ed92c6af480f6a5a21aa7f0b378ce1b55c7f5b7de",
+      "baseline": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "2c269f230b8beca640a5a8334abdfe0f943b1c9cdccbee4c5c62e71b3f6c2581"
+      },
+      "candidate": {
+        "status": 0,
+        "stderr": "",
+        "assembly_sha256": "2c269f230b8beca640a5a8334abdfe0f943b1c9cdccbee4c5c62e71b3f6c2581"
+      },
+      "match": true
+    }
+  ]
+}

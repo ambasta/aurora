@@ -1,0 +1,65 @@
+export module std.checksum;
+
+export namespace std {
+    enum class ChecksumStatus { success, out_of_range, invalid_previous };
+
+    class ChecksumResult {
+        ChecksumStatus outcome;
+        u64 value;
+    public:
+        ChecksumResult(ChecksumStatus status, u64 number) : outcome(status), value(number) {}
+        auto status() const -> ChecksumStatus { return outcome; }
+        auto value_or(u64 fallback) const -> u64 {
+            if (outcome == ChecksumStatus::success) { return value; }
+            return fallback;
+        }
+    };
+
+    auto crc32c_extend(u64 previous_finalized, builtin::span<const u8> bytes,
+                       i64 offset, i64 count) -> ChecksumResult {
+        if (previous_finalized > 4294967295u64) {
+            const ChecksumResult failure = ChecksumResult(ChecksumStatus::invalid_previous, 0u64);
+            return failure;
+        }
+        if (offset < 0) {
+            const ChecksumResult failure = ChecksumResult(ChecksumStatus::out_of_range, 0u64);
+            return failure;
+        }
+        if (count < 0) {
+            const ChecksumResult failure = ChecksumResult(ChecksumStatus::out_of_range, 0u64);
+            return failure;
+        }
+        if (offset > bytes.size()) {
+            const ChecksumResult failure = ChecksumResult(ChecksumStatus::out_of_range, 0u64);
+            return failure;
+        }
+        if (count > bytes.size() - offset) {
+            const ChecksumResult failure = ChecksumResult(ChecksumStatus::out_of_range, 0u64);
+            return failure;
+        }
+
+        u64 remainder = previous_finalized ^ 4294967295u64;
+        i64 consumed = 0;
+        while (consumed < count) {
+            remainder = remainder ^ u64(bytes.at(offset + consumed));
+            i64 bit = 0;
+            while (bit < 8) {
+                if ((remainder & 1u64) != 0u64) {
+                    remainder = (remainder >> 1) ^ 2197175160u64;
+                } else {
+                    remainder = remainder >> 1;
+                }
+                bit = bit + 1;
+            }
+            consumed = consumed + 1;
+        }
+        const ChecksumResult result = ChecksumResult(
+            ChecksumStatus::success, remainder ^ 4294967295u64);
+        return result;
+    }
+
+    auto crc32c(builtin::span<const u8> bytes, i64 offset, i64 count) -> ChecksumResult {
+        const ChecksumResult result = crc32c_extend(0u64, bytes, offset, count);
+        return result;
+    }
+}

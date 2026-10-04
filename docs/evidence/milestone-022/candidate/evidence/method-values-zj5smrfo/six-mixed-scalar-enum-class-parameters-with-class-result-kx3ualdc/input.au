@@ -1,0 +1,13 @@
+module app;enum class Status{ready,failed};enum class Other{ready,failed};class Counter{
+    i64 value;
+public:
+    Counter(i64 n):value(n){}
+    auto get()const->i64{return value;}
+    auto set(i64 n)->i64{value=n;return value;}
+    auto add(i64 n)->i64{value=value+n;return value;}
+    auto read(Counter source)const->i64{return source.get();}
+    auto copy(Counter source)const->Counter{return source;}
+    auto replace(Counter source)->Counter{
+        const Counter old=Counter(value);value=source.get();return old;
+    }
+};class Six{ i64 value; public:Six(i64 n):value(n){}auto mix(Counter a,i64 n,Counter b,Status state,u64 big,u8 byte)->Counter{if(n!=7){const Counter failed=Counter(1);return failed;}if(state!=Status::ready){const Counter failed=Counter(2);return failed;}if(big!=18446744073709551615u64){const Counter failed=Counter(3);return failed;}if(byte!=255u8){const Counter failed=Counter(4);return failed;}value=value+1;const Counter answer=Counter(a.get()+b.get()+value);return answer;}auto check(bool yes,Counter a,u8 byte,Counter b,u64 big,Status state)const->bool{if(!yes){return false;}if(byte!=255u8){return false;}if(big!=18446744073709551615u64){return false;}if(state!=Status::ready){return false;}return a.get()+b.get()==41;} };auto test()->i64{Six receiver=Six(0);Counter a=Counter(20);Counter b=Counter(21);Counter result=receiver.mix(a,7,b,Status::ready,18446744073709551615u64,255u8);if(!receiver.check(true,a,255u8,b,18446744073709551615u64,Status::ready)){return 9;}return result.get();}

@@ -1,0 +1,11 @@
+PASS method IR copied class params and class result
+PASS method IR copied class params and scalar result
+PASS method IR mutable receiver with readonly snapshots
+PASS method IR short argument vector
+PASS method IR long argument vector
+PASS method IR scalar position names object
+PASS method IR class position zero
+PASS method IR class position interior
+PASS method IR mutable snapshot
+PASS method IR incomplete snapshot
+FAIL method IR: inactive snapshot: wrong diagnostic: invalid typed IR: copy object outside active lifetime

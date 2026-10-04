@@ -1,0 +1,1051 @@
+{
+  "reviewed_utc": "2026-10-04T04:04:16.790946+00:00",
+  "state": "PASS",
+  "problems": [],
+  "core_distinct_modes": 166,
+  "family_counts": {
+    "bios": 37,
+    "uefi": 111,
+    "bar": 7,
+    "ivrs": 11
+  },
+  "total_executions_including_restoration": 168,
+  "qemu_status_histogram": {
+    "35": 115,
+    "33": 53
+  },
+  "receipt_manifest_entries": 935,
+  "receipt_manifest_sha256": "513237c77a1765398e61fa3bf74ccbb9322ec5f24a39f45c5818cd81c6af8a67",
+  "results_sha256": "4f33b9e490f43342ba55f8b65c48df5fb47745db4d8e87688bd225e4194b0050",
+  "permission_manifest_sha256": "cf99dcb8d4d49b9488212806fbc2e959f382ae22450a165a8413df23904e1d3a",
+  "verified_mode_file_records": 920,
+  "source_records": 368,
+  "external_records": 236,
+  "source_and_external_before_after_and_live_equal": true,
+  "live_restored_images_verified": true,
+  "live_table_marker_and_symbol_absence": true,
+  "frozen_compiler_record": {
+    "sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+    "size": 1133984,
+    "mode": "0o555",
+    "kind": "file"
+  },
+  "runner_sha256": "cd43c439e1f813f8149497bb751ad6acd3c3e35f686ce3479a2935a837eb9dea",
+  "failure_finalization_caveat_triggered": false,
+  "current_disk_free_bytes": 2317791232,
+  "raw_status_records": [
+    {
+      "family": "bios",
+      "mode": "--division-kernel-trap",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--division-overflow",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--division-remainder-min",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--division-remainder-zero",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--division-zero",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--domain-code",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--domain-root-mismatch",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--domain-stack",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--fault",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--no-nx",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--nx",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--page-fault",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--program-bad-return",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--program-kernel-trap",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--program-unknown-trap",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-context",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-forged",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-fpu",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-mmio",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-no-apic",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-root",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-smp",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--schedule-softint",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--stack",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--unsigned-conversion-overflow",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--unsigned-kernel-trap",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--unsigned-shift-count",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--unsigned-valid",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--user-cli",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--user-code-write",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--user-io",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--user-nx",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--user-read",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--user-write",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "--wp",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "normal",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "normal",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "stale",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "stale-exhausted",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "bad-handoff",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "bad-map",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "bad-table",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "wp",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "nx",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-two",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-disabled",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-checksum",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-bad-entry",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-duplicate",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-bad-source",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-changed-header",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-duplicate-root",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-write",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "acpi-revoked",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-devices",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-bridge",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-checksum",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-reserved",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-overlap",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-range",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-cycle",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-write",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "pci-revoked",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-code",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-stack",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-kernel",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-window",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-root",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-kernel-trap",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-entry-stack",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-write",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-nx",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-return",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-unknown",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-syscall",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-sysenter",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-fault",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-cancel",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-owner",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-stale",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-version",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-phase",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-transaction",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-site",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-unknown",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-root",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-kernel-trap",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-duplicate",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-late",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "ipc-exhausted",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-fault",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-context",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-pending",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-noapic",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-smp",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-discovery",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-cache",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-alias",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-forged",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-root",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-mmio",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-softint",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-fpu",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "budget-epoch",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-budget",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-fault",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-mixed",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-pending",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-cross-reply",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-client-owner",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-stale",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-duplicate",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-full",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-root",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "dispatch-peer-code",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-phases",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-context",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-retire-pending",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-request-budget",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-completion-budget",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-request-bounds",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-completion-bounds",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-request-overflow",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-completion-overflow",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-pending",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-role",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-phase",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-transaction",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-epoch",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-root",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-unknown",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "user-stale-grant",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-span",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bar",
+      "mode": "bar-state",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bar",
+      "mode": "bar-capture",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bar",
+      "mode": "bar-inherited",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bar",
+      "mode": "bar-read",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bar",
+      "mode": "bar-write",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bar",
+      "mode": "bar-revoked",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "bar",
+      "mode": "bar-alias",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-default",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-read",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-write",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-revoked",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-pair",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-alias",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-reserved",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-scope",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-capability",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-range",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "ivrs",
+      "mode": "ivrs-missing",
+      "qemu_status": 35,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-pin-cancel",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-pin-fault",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-pin-stale",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-pin-exhaust",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-table-readback",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-table-reject",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-table-exhaust",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "uefi",
+      "mode": "runtime-table-quarantine",
+      "qemu_status": 33,
+      "restoration": false
+    },
+    {
+      "family": "bios",
+      "mode": "normal",
+      "qemu_status": 33,
+      "restoration": true
+    },
+    {
+      "family": "uefi",
+      "mode": "normal",
+      "qemu_status": 33,
+      "restoration": true
+    }
+  ],
+  "limits": [
+    "Integration emulator regression only; no hardware or DMA-isolation qualification.",
+    "Raw process receipts and SHA256 identities are observed artifacts, not cryptographically signed execution attestation.",
+    "Original finalization robustness caveat did not occur in the completed sealed run."
+  ]
+}

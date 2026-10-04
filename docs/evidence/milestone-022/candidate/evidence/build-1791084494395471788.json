@@ -1,0 +1,34 @@
+{
+  "command": [
+    "g++",
+    "-std=c++23",
+    "-O1",
+    "-g",
+    "-fsanitize=address,undefined",
+    "-fno-sanitize-recover=all",
+    "-fno-omit-frame-pointer",
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-Werror",
+    "-pthread",
+    "-I.",
+    "../tests/modules/host_sources_tests.cpp",
+    "-o",
+    "../build/san/host-source-tests"
+  ],
+  "returncode": 0,
+  "wall_timeout": false,
+  "elapsed_seconds": 2.4306696860003285,
+  "peak_rss_kib": 271832,
+  "address_space_bytes": 2147483648,
+  "cpu_seconds": [
+    120,
+    130
+  ],
+  "wall_seconds": 180,
+  "regular_file_bytes": 536870912,
+  "candidate_bytes_before": 227365527,
+  "candidate_bytes_after": 228384455,
+  "free_bytes_after": 2834743296
+}

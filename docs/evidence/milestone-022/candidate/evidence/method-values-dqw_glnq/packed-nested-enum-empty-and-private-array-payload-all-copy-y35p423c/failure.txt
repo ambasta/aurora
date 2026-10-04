@@ -1,0 +1,2 @@
+packed nested enum empty and private array payload all copy: packed nested enum empty and private array payload all copy: compiler exit 1: b"aurorac: module std.array: line 23: expected '<' (found 'replacement')\n"
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-dqw_glnq/packed-nested-enum-empty-and-private-array-payload-all-copy-y35p423c

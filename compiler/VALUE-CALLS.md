@@ -5,8 +5,8 @@ The original scalar-field boundary now also transports private scalar-array fiel
 and bounded composed values, copying all leaves independently. The developing
 [composition contract](COMPOSED-VALUES.md) extends constructors with readonly class
 parameters and nominal nested-field initialization. Aggregate references, resource
-ownership transfer, class method signatures and a stable external ABI remain
-unsupported. The scalar entrypoint contract remains unchanged.
+ownership transfer and a stable external ABI remain unsupported. Copied method
+signatures have their separate [M022 contract](METHOD-VALUES.md). The scalar entrypoint contract remains unchanged.
 
 ```cpp
 module example;

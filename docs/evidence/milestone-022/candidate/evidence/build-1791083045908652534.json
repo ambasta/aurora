@@ -1,0 +1,32 @@
+{
+  "command": [
+    "g++",
+    "-std=c++23",
+    "-O1",
+    "-g",
+    "-fsanitize=address,undefined",
+    "-fno-sanitize-recover=all",
+    "-fno-omit-frame-pointer",
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-Werror",
+    "main.cpp",
+    "-o",
+    "../build/san/aurorac"
+  ],
+  "returncode": 0,
+  "wall_timeout": false,
+  "elapsed_seconds": 46.96553916999255,
+  "peak_rss_kib": 1442348,
+  "address_space_bytes": 2147483648,
+  "cpu_seconds": [
+    120,
+    130
+  ],
+  "wall_seconds": 180,
+  "regular_file_bytes": 536870912,
+  "candidate_bytes_before": 15249931,
+  "candidate_bytes_after": 47467785,
+  "free_bytes_after": 3017936896
+}

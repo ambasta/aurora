@@ -1389,3 +1389,117 @@ No binary product, reference extract, secret or carrier helper is added to sourc
 M019/M020 archives remain immutable. Raw-source archive/canonical Git audit is a
 separate bounded tree-only gate; no large JSON export, publication, hardware,
 active DMA, filesystem mount or native self-hosting claim follows.
+
+
+## Milestone022: copied method values and complete emulator regression
+
+Verified 2026-10-04. The new [method-value contract](../compiler/METHOD-VALUES.md)
+permits immutable copied class parameters on ordinary methods, alongside scalar/
+enum values, and adds the real std::array exchange member. A NEW private combined
+receiver/argument-record/result ABI reuses existing typed IR instructions while
+keeping each authority separate. Six explicit parameters, 64 leaves per class
+boundary, four-level class/template limits, existing graph budgets and the source
+frame cap remain independently checked. This is not a foreign ABI or source pointer.
+
+### Exact compiler and source identity
+
+- Release compiler: e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e.
+- Fatal host ASan/UBSan compiler: d3033d68ad6308030a057c9eaf2b2e258b15e245ca84a22cc2fce1873847adcd.
+- Immutable old-input M021 compiler: d866abc707349ca8652a966800d38bd920bd41345997f08e4b849c9bfc3b7b64.
+- Candidate final manifest: 552a679b7ba80caf98c0d98d37ec212fad95f830b1c14677b184f3bc89ec8d5c.
+- Integration source manifest: 6f82683653b92910965b1343cac8b63ea355c67f125067ebc7f9018e0b9213c0.
+- Kernel results: 4f33b9e490f43342ba55f8b65c48df5fb47745db4d8e87688bd225e4194b0050.
+- Kernel receipt manifest: 513237c77a1765398e61fa3bf74ccbb9322ec5f24a39f45c5818cd81c6af8a67.
+
+Parent adopted exactly 28 sealed source/document paths and rebuilt the reviewed
+release binary. Original candidate documents remain snapshots of the earlier
+pending integration state. Functional-source/test/library/fixture bytes stayed
+unchanged through the later documentation-only finalization identified separately.
+
+### Finite compiler coverage and limits
+
+The focused source suite has 152 fixtures/219 executions, including 72 full-width
+native returns, 13 exact-site traps, and 67 rejections with absent/preexisting
+output controls. New direct IR has 51 cases (5 accepted, 46 malformed rejected).
+New native ABI has 21 cases with independently handwritten assembly on one side
+of each boundary, both directions, 3,072-byte maximum records, alignment/slot/
+clobber controls and eight legacy modes. The historical IR target retains 964
+cases with five explicitly recorded source-contract/diagnostic migrations.
+
+Independent review adds 17 source probes, 15 qualified-self controls and all 256
+capacity/type array models per compiler pin. Exact isolated 48-step stress passes
+28 native models per pin. Old-library differential checks 227 contract fixtures
+(217 source hashes; 105 accepted/122 rejected) and 37 unchanged example/kernel/
+library-example inputs using frozen old library bytes on BOTH compilers. Default
+scalar semantics uses 630 cases per release/fatal pin; release stress uses 1,526.
+These corpora and repeat runs overlap and must not be summed as unique coverage.
+
+Complete frozen release and fatal host sanitizer targets exit zero with before/
+after source identities unchanged. C++ builds alone are serialized with a 2 GiB
+address-space cap. Only the large historical IR sanitizer binary uses -g1 debug
+metadata; address/undefined instrumentation, no-recovery and fatal halt/abort
+remain enabled. LeakSanitizer alone remains disabled as in prior milestones.
+Sanitizer runtime has no address-space cap. Instrumenting the host compiler does
+not instrument emitted Aurora programs or prove whole-language memory safety.
+
+### Preserved failures and review qualifications
+
+The initial bare injected array spelling failed. A temporary parser exception
+was abandoned after independent review demonstrated the existing qualified
+std::array self spelling; parser.hpp is byte-identical to M021. Original failed
+source/diagnostics, temporary build receipts and corrected frozen outputs remain.
+
+The first concurrent sanitized model stress process was SIGKILLed without a
+diagnostic. OOM is plausible but unproven. The exact isolated input then compiled
+and returned 42 in 3.505 seconds with 1,217,592 KiB peak RSS; complete isolated
+28/28 stress passed. Both attempts are preserved. No universal resource bound is
+claimed. Independent addenda close two test-quality gaps: the original mut<i64>
+fixture tested an invalid spelling, and the original extraction fixture named an
+absent method. Separate real mutref<i64> and declared-inspect extraction controls
+reject on both pins with output preservation; an inspect call returns 42. Only
+the addendum is credited for those two exact semantic controls.
+
+### Fresh complete integration and independent receipt replay
+
+From 03:44:26.818302 to 04:01:54.208614 UTC on 2026-10-04, all 166 original modes
+passed: 37 BIOS, 111 direct UEFI, 7 BAR and 11 IVRS. Two further normal BIOS/UEFI
+boots restored the images, making 168 observed executions rather than 168 unique
+modes. Wrapper statuses are zero; QEMU statuses 33/35 retain their expected mode
+semantics. All 368 source and 236 external input records stayed unchanged before/
+after. The separate fresh parent make test also passed.
+
+Independent review verified 935 receipt hashes, 920 per-mode file records, the
+permission manifest, live restored image identities and absence of dormant table
+test markers/symbols. Every original retained validator replay passed (166 modes
+plus two restorations), including unchanged BAR/IVRS trace/provenance checks.
+All project kernel/scripts/validators match the historical M019 bytes. The
+existing AMD-Vi broader whole-run zero-interrupt and named-write-event criteria
+remain false; only the reviewed bounded stopped-CPU CTRL witness gives coverage.
+No new device authority or hardware qualification follows.
+
+A preparatory inventory mismatch (384 entries instead of 368, from 16 historical
+storage-evidence files) failed before any emulator mode and was corrected without
+changing source or test assertions. The reviewed runner has an unguarded failure-
+finalization path that could leave unsealed summaries after a missing input;
+it did not trigger. The completed run restored images, recorded errors=[] and
+sealed its receipts. This successful run is valid; future failure-sealing should
+be guarded. Hashes provide artifact identity, not signed execution attestation.
+
+### Curated evidence and distribution boundary
+
+[M022 evidence](evidence/milestone-022/README.md) maps each copied receipt to its
+original bytes/hash, retains every eligible trace and every failure, and inventories
+omitted generated assembly/binaries/archives/sentinel outputs retained externally.
+Build logs are mapped to build-receipts so the source archive's build exclusion
+cannot silently omit them. Frozen old-library files are intentional differential
+inputs. No downloaded specification/reference extracts, secrets or rejected carrier
+helpers are added. Earlier evidence and M019/M020/M021 archives remain unchanged.
+
+Raw/canonical source and actual Git validation use the independently reviewed
+M020/M021 tree-only path with unchanged 1 GiB payload, 16 MiB member and 512 MiB
+address-space limits; no full JSON export or payload spool is generated. The
+existing 0700 negative-control script retains live/raw mode; only canonical Git
+representation is 0755, explicitly documented by the new M022 archive note.
+Archive/review receipts remain outside the source tree to avoid recursive hashes.
+No network, authentication, remote publication, active DMA, filesystem mount,
+physical-device, native self-hosting or equivalent-performance claim is made.

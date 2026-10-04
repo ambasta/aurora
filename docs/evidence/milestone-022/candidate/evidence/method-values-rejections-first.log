@@ -1,0 +1,109 @@
+INFO method values compiler=/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/aurorac sha256=26a8e8cee4eff3220f90bde9b343227679fa1e4f64108b4805b83a2fc1c59bce
+INFO method values tests/compiler/method_values.py sha256=896e83b8b0c3cad50a23dd1aa9c85b4359de43732fbaf0a5dfe82e9b03851e30
+INFO method values library/std/array.au sha256=187c0b583cdf9e3786680181039f3b832a54f7cdc84de4894981460908957b1a
+PASS composed values observer: exact native UD2 and invalid-result rejection
+PASS method values constructor temporary class argument: absent output
+PASS method values constructor temporary class argument: saved output
+PASS method values function result temporary class argument: absent output
+PASS method values function result temporary class argument: saved output
+PASS method values method result temporary class argument: absent output
+PASS method values method result temporary class argument: saved output
+FAIL method values parenthesized class argument is not named local: absent output: parenthesized class argument is not named local: absent output: expected compiler exit 1, got 0: b''
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-ylk1ebp3/parenthesized-class-argument-is-not-named-local-absent-output-quwuuov6
+FAIL method values parenthesized class argument is not named local: saved output: parenthesized class argument is not named local: saved output: expected compiler exit 1, got 0: b''
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-ylk1ebp3/parenthesized-class-argument-is-not-named-local-saved-output-2ytf45nj
+PASS method values scalar literal cannot be copied class argument: absent output
+PASS method values scalar literal cannot be copied class argument: saved output
+PASS method values scalar local cannot be copied class argument: absent output
+PASS method values scalar local cannot be copied class argument: saved output
+PASS method values class argument cannot enter scalar slot: absent output
+PASS method values class argument cannot enter scalar slot: saved output
+PASS method values missing class argument: absent output
+PASS method values missing class argument: saved output
+PASS method values extra class argument: absent output
+PASS method values extra class argument: saved output
+PASS method values result discarded: absent output
+PASS method values result discarded: saved output
+PASS method values result reassigned into existing class: absent output
+PASS method values result reassigned into existing class: saved output
+PASS method values result cannot initialize scalar: absent output
+PASS method values result cannot initialize scalar: saved output
+PASS method values result cannot initialize inferred binding: absent output
+PASS method values result cannot initialize inferred binding: saved output
+PASS method values direct return class result: absent output
+PASS method values direct return class result: saved output
+PASS method values temporary receiver remains unsupported: absent output
+PASS method values temporary receiver remains unsupported: saved output
+PASS method values class argument outside lexical lifetime: absent output
+PASS method values class argument outside lexical lifetime: saved output
+PASS method values new result binding not visible in own argument: absent output
+PASS method values new result binding not visible in own argument: saved output
+PASS method values method extraction remains unsupported: absent output
+PASS method values method extraction remains unsupported: saved output
+PASS method values equal-layout nominal mismatch remains rejected: absent output
+PASS method values equal-layout nominal mismatch remains rejected: saved output
+PASS method values wrong nominal class result destination: absent output
+PASS method values wrong nominal class result destination: saved output
+PASS method values nested field argument requires projected named local: absent output
+PASS method values nested field argument requires projected named local: saved output
+PASS method values private field remains inaccessible through copied parameter: absent output
+PASS method values private field remains inaccessible through copied parameter: saved output
+PASS method values mutable method on readonly class parameter: absent output
+PASS method values mutable method on readonly class parameter: saved output
+PASS method values parameter rebinding: absent output
+PASS method values parameter rebinding: saved output
+PASS method values parameter scalar field write: absent output
+PASS method values parameter scalar field write: saved output
+PASS method values parameter array mutation: absent output
+PASS method values parameter array mutation: saved output
+PASS method values mutable receiver method rejects const receiver with copied arg: absent output
+PASS method values mutable receiver method rejects const receiver with copied arg: saved output
+PASS method values const sibling cannot forward to mutable sibling: absent output
+PASS method values const sibling cannot forward to mutable sibling: saved output
+PASS method values unsupported ordinary method parameter owned<i64>: absent output
+PASS method values unsupported ordinary method parameter owned<i64>: saved output
+PASS method values unsupported ordinary method parameter ref<i64>: absent output
+PASS method values unsupported ordinary method parameter ref<i64>: saved output
+PASS method values unsupported ordinary method parameter mut<i64>: absent output
+PASS method values unsupported ordinary method parameter mut<i64>: saved output
+PASS method values unsupported ordinary method parameter builtin::array<u8,1>: absent output
+PASS method values unsupported ordinary method parameter builtin::array<u8,1>: saved output
+PASS method values unsupported ordinary method parameter builtin::span<const u8>: absent output
+PASS method values unsupported ordinary method parameter builtin::span<const u8>: saved output
+PASS method values generic methods remain unsupported: absent output
+PASS method values generic methods remain unsupported: saved output
+PASS method values class field reassignment remains unsupported: absent output
+PASS method values class field reassignment remains unsupported: saved output
+PASS method values direct receiver class field return remains unsupported: absent output
+PASS method values direct receiver class field return remains unsupported: saved output
+PASS method values direct receiver cycle: absent output
+PASS method values direct receiver cycle: saved output
+PASS method values mutual receiver cycle: absent output
+PASS method values mutual receiver cycle: saved output
+PASS method values ordinary helper receiver cycle: absent output
+PASS method values ordinary helper receiver cycle: saved output
+PASS method values self containment still rejected: absent output
+PASS method values self containment still rejected: saved output
+PASS method values enum method argument retains exact nominal type: absent output
+PASS method values enum method argument retains exact nominal type: saved output
+PASS method values array exchange const receiver: absent output
+PASS method values array exchange const receiver: saved output
+PASS method values array exchange capacity mismatch: absent output
+PASS method values array exchange capacity mismatch: saved output
+PASS method values array exchange scalar type mismatch: absent output
+PASS method values array exchange scalar type mismatch: saved output
+PASS method values array exchange temporary replacement: absent output
+PASS method values array exchange temporary replacement: saved output
+PASS method values array exchange private storage stays private: absent output
+PASS method values array exchange private storage stays private: saved output
+INFO method values section=rejections fixtures=46 executions=90 traps=0 rejection-runs=90
+INFO method values: 46 selected fixtures; 90 passed executions; 0 native returns; 0 exact-site traps; 45 rejection fixtures / 90 rejection runs; 2 failed executions; section=rejections; seed=22022; steps=12; elapsed=0.35s
+INFO method values retained artifacts: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-ylk1ebp3
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 611, in <module>
+    main()
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 600, in main
+    require(not suite.failures,f"{len(suite.failures)} failed executions; artifacts: {directory}")
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/integer_oracle.py", line 74, in require
+    raise AssertionError(message)
+AssertionError: 2 failed executions; artifacts: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-ylk1ebp3

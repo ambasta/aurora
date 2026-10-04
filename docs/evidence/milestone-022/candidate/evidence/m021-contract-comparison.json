@@ -1,0 +1,3189 @@
+{
+  "cases": 227,
+  "source_hashes": 217,
+  "accepted": 105,
+  "rejected": 122,
+  "all_match": true,
+  "library": "pinned baseline/library for BOTH compilers",
+  "intentional_omissions": [],
+  "rows": [
+    {
+      "name": "make_pair all ordered scalar tuples i64/i64",
+      "source_sha256": "c014420bf02afb646d0a8228e98a5710a0b63de9781e02b1a306dc097ee787a9",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "89e11c7a33d704e86620f512177ba27f74a488b07aebd0bed12fd237126c2fe1"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "89e11c7a33d704e86620f512177ba27f74a488b07aebd0bed12fd237126c2fe1"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples i64/u64",
+      "source_sha256": "c7394d224e8d42b2e655abdc44c354b0001787e100288d00c6870c071fd737c4",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "9cc16714727c58897f9bbfef775cffb8787f90d427e788972487e04aeec025b4"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "9cc16714727c58897f9bbfef775cffb8787f90d427e788972487e04aeec025b4"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples i64/u8",
+      "source_sha256": "c002136f5c96247f38a5b2b8c69151f7c1999c408a7191a3f62309f788eead7b",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "92eb003a0b576f7bd98cc37f6d48ec050a10df1f440b0170177819376103ae98"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "92eb003a0b576f7bd98cc37f6d48ec050a10df1f440b0170177819376103ae98"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples i64/bool",
+      "source_sha256": "213c4aaa77e7a973d21382e008f15614fc9c4b3f2152324b450b7863fc82b415",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "985eccaca47c7b979e97c221b85afa4563f51ed9f4e9b425caa3c2d1db9e6e42"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "985eccaca47c7b979e97c221b85afa4563f51ed9f4e9b425caa3c2d1db9e6e42"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples u64/i64",
+      "source_sha256": "cb5de9b4b34de1e54cc8bb9e96624531a715b9b7c5212a8d388c6069f9e6eeaa",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "58d102146ffb0dd7eff6892d68e3c93a495acfbd6dde4a4452b1112a070c7938"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "58d102146ffb0dd7eff6892d68e3c93a495acfbd6dde4a4452b1112a070c7938"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples u64/u64",
+      "source_sha256": "a2b0a6e0cc9145dbc602a17844133c298be6426816a5bb1be16a76b2a23642dc",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "edbd6f9dc8135d6d97d8f77b2a4f4d1236251eb628b6d2eece6eb7f2f8637211"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "edbd6f9dc8135d6d97d8f77b2a4f4d1236251eb628b6d2eece6eb7f2f8637211"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples u64/u8",
+      "source_sha256": "34403ccb7f7b90d7465175a983accc4a455b34a06981a3f82b6f2f402b99bd5f",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "13d32dfafc74ff157b6937878a12921790ab2e479725d4f5247112642bd0c91a"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "13d32dfafc74ff157b6937878a12921790ab2e479725d4f5247112642bd0c91a"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples u64/bool",
+      "source_sha256": "22240d84d3cad192338d91c3b1ce89b1ea8b11fdb3d43c4b3f19a58db55f6e6b",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "0ae7d649e5035e599d6ac157842a1bf60792bc0de97f12e420ab992d40102ec2"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "0ae7d649e5035e599d6ac157842a1bf60792bc0de97f12e420ab992d40102ec2"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples u8/i64",
+      "source_sha256": "3bead12aebd3b46f1015d5a50a15adb514e3d20c4c8d6b7e71012d08904976c9",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "63d7ebe060501cda510b2239cbaf3e21cb4f6984f09ccd4000d6cee28288a066"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "63d7ebe060501cda510b2239cbaf3e21cb4f6984f09ccd4000d6cee28288a066"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples u8/u64",
+      "source_sha256": "45fe4d83ae3040aedb98379f313784d863a3af420341e006d59cc67d35481a90",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "93d82f73e9d882d7fdba7eb29a541276c691285ac705e500a140ae6a5c6ad1c5"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "93d82f73e9d882d7fdba7eb29a541276c691285ac705e500a140ae6a5c6ad1c5"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples u8/u8",
+      "source_sha256": "0651f2038a17f02815476e5c65362448900701355162551f043b55e4d587d77f",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "92daf42d532fe9b6d5c67c86b08be7e80ad2f81ccced84c14eecc276822208f8"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "92daf42d532fe9b6d5c67c86b08be7e80ad2f81ccced84c14eecc276822208f8"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples u8/bool",
+      "source_sha256": "dcb2000c4a0b3f8f524145d398200a4f54f2e0365e0909815355ed539a3cbacd",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "da13a0f91763c1ae352e302b4a4e870f8d97173af7e0635fdab62fed6fc03b4e"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "da13a0f91763c1ae352e302b4a4e870f8d97173af7e0635fdab62fed6fc03b4e"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples bool/i64",
+      "source_sha256": "15d48a13c8bdebd5d09da45e4f4dba3a1b270cc30bc4549e1adeac7cd12fbcab",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "1b96ed06f8f2b40f944623829895cf22134eceeca581f0b458db4e910bc1cd72"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "1b96ed06f8f2b40f944623829895cf22134eceeca581f0b458db4e910bc1cd72"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples bool/u64",
+      "source_sha256": "a18a84fa64d12c6051e0c12db9d33b77b27626768f2536e1231c9f35ea9879b6",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "b9d25b7cfcedf2e163d58afc28bb6f78a29370ea28b04f42c6c1d55cf89d1095"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "b9d25b7cfcedf2e163d58afc28bb6f78a29370ea28b04f42c6c1d55cf89d1095"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples bool/u8",
+      "source_sha256": "9eff80a36153b4946d1355b7291d5b265c05577f490fb87c7c0c034ae07c303c",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "cf05a229c0364e2fa620b789db8f78e6c509cfd624552506d15bcc98804480af"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "cf05a229c0364e2fa620b789db8f78e6c509cfd624552506d15bcc98804480af"
+      },
+      "match": true
+    },
+    {
+      "name": "make_pair all ordered scalar tuples bool/bool",
+      "source_sha256": "23f39e4c8f3f2f8fdb62e2192c6099bb27d0b8b2a0a04894962f7d2e270466a7",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "61b8bccb6b098013fb7c77b2ceed34c8a38e463914dc6a0f3c634880aedb6b42"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "61b8bccb6b098013fb7c77b2ceed34c8a38e463914dc6a0f3c634880aedb6b42"
+      },
+      "match": true
+    },
+    {
+      "name": "Scalar identity full-width native result i64",
+      "source_sha256": "9764c3aa629e3d70ea164706fad37d157c891de81126314c9af0a50d834efac3",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "08bbe96aa675195b4b5eb74618d89e8932c7f6182cc9553b8a3a6dd343cfbd34"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "08bbe96aa675195b4b5eb74618d89e8932c7f6182cc9553b8a3a6dd343cfbd34"
+      },
+      "match": true
+    },
+    {
+      "name": "Value identity full-width native result i64",
+      "source_sha256": "e8431edab90faa25acfbcfc59496b541d4bec4cb1f9c097cc9901b9c90310f31",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "f026dd1bce6e349a838ccab0d2f0d1772bc785c3f10a52d7c4fd3152eb63217f"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "f026dd1bce6e349a838ccab0d2f0d1772bc785c3f10a52d7c4fd3152eb63217f"
+      },
+      "match": true
+    },
+    {
+      "name": "Scalar identity full-width native result u64",
+      "source_sha256": "9f3c16b1ebb7c9a5f83ee44e08aaa52bb8c823c36f79ea8fb179f007712b85ca",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "491d1d47e85f099092906d323d382e3dc98c84525912f8959c3c9715fe25dae2"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "491d1d47e85f099092906d323d382e3dc98c84525912f8959c3c9715fe25dae2"
+      },
+      "match": true
+    },
+    {
+      "name": "Value identity full-width native result u64",
+      "source_sha256": "5a25e3e30bc235bc7e015d8c2c2af6f2c6dedd0900af7fd64431bc83a7692eef",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "a7b4554a8679013f67e30c1100b1b15d715ca6003de25a00ab441d70d68f7a74"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "a7b4554a8679013f67e30c1100b1b15d715ca6003de25a00ab441d70d68f7a74"
+      },
+      "match": true
+    },
+    {
+      "name": "Scalar identity full-width native result u8",
+      "source_sha256": "13f37f7b6062ac175b7b7d60cb2b8d9ef507b16900737a03c944c8b58da7fec7",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "a645d29272f9e9ead8548627a0332204f631906dda882fd25dbb7e5b8aebaf76"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "a645d29272f9e9ead8548627a0332204f631906dda882fd25dbb7e5b8aebaf76"
+      },
+      "match": true
+    },
+    {
+      "name": "Value identity full-width native result u8",
+      "source_sha256": "9f323adebc2df393f69314e6f5671248885e71ebc23abd809562f9c733d531d9",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "cb7fe0b9cc81092c67f5ef4b55f8e4158ca5365aa2908c54e64fbb75a1f638ad"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "cb7fe0b9cc81092c67f5ef4b55f8e4158ca5365aa2908c54e64fbb75a1f638ad"
+      },
+      "match": true
+    },
+    {
+      "name": "Scalar identity full-width native result bool",
+      "source_sha256": "55f2ff02b09dc46fef88fcebc80be09c05c46d7731bc99ae05ddc9c9c48f0900",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "6c23e8a584df8e18e8ac419feb2547f97e4369f24959d85907fd9cd6cb06e738"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "6c23e8a584df8e18e8ac419feb2547f97e4369f24959d85907fd9cd6cb06e738"
+      },
+      "match": true
+    },
+    {
+      "name": "Value identity full-width native result bool",
+      "source_sha256": "0fc2c78f4b9b22f78e9a4ff2501f534773dfb0e10f81aaae0e1b2c3ce20b8ff5",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "3581c2cd76fdf2c34d6b5ea70caef923043516ed903e12f4afc38afe635175cd"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "3581c2cd76fdf2c34d6b5ea70caef923043516ed903e12f4afc38afe635175cd"
+      },
+      "match": true
+    },
+    {
+      "name": "mixed Scalar Value constraints and namespace-qualified explicit call",
+      "source_sha256": "b59d0e875e3e86087f4c91f5d38224aa9485129ccb2376fb424df8c2550692ff",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "eea0c918d63555e0c83d9d5cbdbebe1ddc62c7c7217652682dbe7b40415f9424"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "eea0c918d63555e0c83d9d5cbdbebe1ddc62c7c7217652682dbe7b40415f9424"
+      },
+      "match": true
+    },
+    {
+      "name": "explicit calls in ordinary constructor initializer and method",
+      "source_sha256": "0280a9db68284deb4062271c55620b67de6ee72bf1a97023e2ee5c9e496e7c07",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "7641f7567776a003bfa858829cac36e9c107fb5310ed87c58a63ccd5a3fe3eab"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "7641f7567776a003bfa858829cac36e9c107fb5310ed87c58a63ccd5a3fe3eab"
+      },
+      "match": true
+    },
+    {
+      "name": "class-template receiver method shadows local function-template name",
+      "source_sha256": "1e1768205be0e471fc1236ab367dd631d880647cb4c38c2bde6f82621842a475",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "a7fade58cef7a3310e847f77a3846dbeeb6d7e95fa79394b18184df6f41867c5"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "a7fade58cef7a3310e847f77a3846dbeeb6d7e95fa79394b18184df6f41867c5"
+      },
+      "match": true
+    },
+    {
+      "name": "class-template receiver method shadows imported function-template name",
+      "source_sha256": "903f8ef8bbc5fd8991580dfce41fb2218ba93b010074d7f8f6be013b44ebda83",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "9959fcb8bd0ded8a0fd9f8c740be8b79533ea2c1b4515ac7dd6c6d05d0f21697"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "9959fcb8bd0ded8a0fd9f8c740be8b79533ea2c1b4515ac7dd6c6d05d0f21697"
+      },
+      "match": true
+    },
+    {
+      "name": "same template many scalar specializations have independent substituted ASTs",
+      "source_sha256": "667bd5f991cf21d111989d683fdb6ed6d169b2314ff47d33e0be0f3607a1d413",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "46ba500867f436e21ef7312c11c218c8ce2026f4dcd2c3b8d9b4d6d1d14b154f"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "46ba500867f436e21ef7312c11c218c8ce2026f4dcd2c3b8d9b4d6d1d14b154f"
+      },
+      "match": true
+    },
+    {
+      "name": "Value closed nominal enum copies and pair fields",
+      "source_sha256": "0158f3d8041528f2d32efd9176fcc6a3d7eec711c0db7cba6cdda6bc34fedb60",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "8cef0f9f5ab0391dfe2578af86e69b9a6244651c7b2b16cb8d75b881d28ed7c4"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "8cef0f9f5ab0391dfe2578af86e69b9a6244651c7b2b16cb8d75b881d28ed7c4"
+      },
+      "match": true
+    },
+    {
+      "name": "Value named private class snapshots and independent returned copy",
+      "source_sha256": "f75e8c8fc95f86f514757ee47501f4219ef8607d32ece9da08c10a9d9e25177c",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "87ade76d14c9a3dc3cb2d7f037a05a62fb25102e7700b1aaf1d4f2ef8ccd8c07"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "87ade76d14c9a3dc3cb2d7f037a05a62fb25102e7700b1aaf1d4f2ef8ccd8c07"
+      },
+      "match": true
+    },
+    {
+      "name": "Value empty class result retains initialization and const methods",
+      "source_sha256": "5d3d31cb59b1345e16b0c3bb0ad7f82b8f88aefc745893d15ba210ab8e6dfa4a",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "b5407af86816d9485b026d4611a6c3d0da3fa984c6b6778eaa8f62adda2346a0"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "b5407af86816d9485b026d4611a6c3d0da3fa984c6b6778eaa8f62adda2346a0"
+      },
+      "match": true
+    },
+    {
+      "name": "bare dependent class-template arguments in result local and constructor",
+      "source_sha256": "294b46a53e177553eeba46138aff6e5ea1d1fc1a0cf3de65841b1dfacb34e779",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "89fe3b6cf4636351f8aa67cc104a3c45ba9c9e8cddbfd226fa7769509bb5dc40"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "89fe3b6cf4636351f8aa67cc104a3c45ba9c9e8cddbfd226fa7769509bb5dc40"
+      },
+      "match": true
+    },
+    {
+      "name": "fully concrete nested class argument inside function template",
+      "source_sha256": "63a2f04e49d9a28d95908a4fb74fbc1f4a53580f0a9f65d8cd5dc2d326638e43",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "0af235c21434a9e49eadd99f45c90c2c6f3f314b41812dfd9b6f7c3801a4c307"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "0af235c21434a9e49eadd99f45c90c2c6f3f314b41812dfd9b6f7c3801a4c307"
+      },
+      "match": true
+    },
+    {
+      "name": "function argument syntax supports adjacent and spaced nested closers",
+      "source_sha256": "ae3df80d1dfa0f806cbd31166313f7f0c80cd13917239710ace137b3eb8fd9ab",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "0e6ab99fcc4f2aa4e88b1c3a1e4f95e6134deaaeb2c9b591168ecde56eaad481"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "0e6ab99fcc4f2aa4e88b1c3a1e4f95e6134deaaeb2c9b591168ecde56eaad481"
+      },
+      "match": true
+    },
+    {
+      "name": "left-to-right scalar argument side effects",
+      "source_sha256": "81e6eb0b0e22da50dd728e6abdbc3e8f08ab678cd1c863984bf5a973b6cd73b5",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "dfcb3f745e25f64bda71ef2aca68b9e2a50bc7d9ab043f26347476662a64c3fd"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "dfcb3f745e25f64bda71ef2aca68b9e2a50bc7d9ab043f26347476662a64c3fd"
+      },
+      "match": true
+    },
+    {
+      "name": "left-to-right class snapshot precedes later argument mutation",
+      "source_sha256": "4a1f03ae5628d3b0fd0c7719ba643d4e66eb1a6af06af1b9949a22ff81adee15",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "fe9e78f660606274c20ca3deb792d10c0470384c685e3c55e5cad6a3ca14ab59"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "fe9e78f660606274c20ca3deb792d10c0470384c685e3c55e5cad6a3ca14ab59"
+      },
+      "match": true
+    },
+    {
+      "name": "left-to-right array snapshot precedes later argument mutation",
+      "source_sha256": "1ee65166283ce54a4cc45766babe3147e40d963f645f7660027b21fc5e1f18f6",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "21f97e15c4d3c4180371edff46e892acc7164e3aa537d4483e2dc7c267ad1980"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "21f97e15c4d3c4180371edff46e892acc7164e3aa537d4483e2dc7c267ad1980"
+      },
+      "match": true
+    },
+    {
+      "name": "repeated class source arguments become independent snapshots",
+      "source_sha256": "94cb7a1a93ecf6699737e04751eb52b82b6c2e04cf41ca87a611429e79e6301f",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "1fce0f134f86bdd3dc62f206325202885cde4265645a8a03db95028850c2a109"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "1fce0f134f86bdd3dc62f206325202885cde4265645a8a03db95028850c2a109"
+      },
+      "match": true
+    },
+    {
+      "name": "function result binding observes outer same-name source",
+      "source_sha256": "2b0cb1b7151a40c081a39b2aee5d99043b476b151f431ea80813babde6866408",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "c9b6c897dba7af57369ad38df58070dc961c601426e46675cec61bc58a9f6058"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "c9b6c897dba7af57369ad38df58070dc961c601426e46675cec61bc58a9f6058"
+      },
+      "match": true
+    },
+    {
+      "name": "returned class survives template frame and repeated loop calls",
+      "source_sha256": "2e857fd25ceb49f6ac50d00d607cdaa8117590cd2ef00a30bc80ffa1a2089210",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "4ec0476eaecd3763d230b2be6d831c47f6a85fee473538ab830a913efc21434e"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "4ec0476eaecd3763d230b2be6d831c47f6a85fee473538ab830a913efc21434e"
+      },
+      "match": true
+    },
+    {
+      "name": "bounded token source-range make_pair owns independent sixteen bytes",
+      "source_sha256": "381e536dde6fecdc93ffd082d6b8dd730471ca42bee4f7733955093ba3d7d65c",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "06e1da26412d1af4e7c4a10aa3d153d041f197589bb712bbf50b5be02336c27c"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "06e1da26412d1af4e7c4a10aa3d153d041f197589bb712bbf50b5be02336c27c"
+      },
+      "match": true
+    },
+    {
+      "name": "seeded independent generic byte-copy model capacity 1",
+      "source_sha256": "2a4076f1e35bb5d97f13a574f4ce8eaf7bbff19e59562c015953ecffd04088d4",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "cbcace462de18b31d7ec440b2ce7015f319ccd9c11f955e2fb0045d62b7de55f"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "cbcace462de18b31d7ec440b2ce7015f319ccd9c11f955e2fb0045d62b7de55f"
+      },
+      "match": true
+    },
+    {
+      "name": "seeded independent generic byte-copy model capacity 3",
+      "source_sha256": "998bfc0a667db4ccc7c2a0d4dd3abddc158a89cebc833c3e1f5844d677501330",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "637be39868970b2dfd048336f4c21d1b2ddae7f772d00b6c5b351fac868b3168"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "637be39868970b2dfd048336f4c21d1b2ddae7f772d00b6c5b351fac868b3168"
+      },
+      "match": true
+    },
+    {
+      "name": "seeded independent generic byte-copy model capacity 16",
+      "source_sha256": "cb01af1913b53b22c845d8710af9be0540eb84a50cf3a79ace198fb3ab4cace6",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "05a089785892688552b3bccce80c46fd023fed858522e96dc6418398cd14acbe"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "05a089785892688552b3bccce80c46fd023fed858522e96dc6418398cd14acbe"
+      },
+      "match": true
+    },
+    {
+      "name": "seeded independent generic byte-copy model capacity 63",
+      "source_sha256": "8ee274b5bc6e6b92c4f29a993c40edfad85084606ac4641ad4f3e4fc38cdd00d",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "015678c4e9e0e96c3cec068232f8ed59703957b118e0a081a25ab0f8f1290afa"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "015678c4e9e0e96c3cec068232f8ed59703957b118e0a081a25ab0f8f1290afa"
+      },
+      "match": true
+    },
+    {
+      "name": "seeded independent generic byte-copy model capacity 64",
+      "source_sha256": "f0250b46d3d99dba7ad33d54f52a6f9240f5c18c78ba0a45cd8b258ea7a9cf64",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "9d80866021c50861144c3124a4abbd1343a5a13b9b9ab307a20d6309e4da147d"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "9d80866021c50861144c3124a4abbd1343a5a13b9b9ab307a20d6309e4da147d"
+      },
+      "match": true
+    },
+    {
+      "name": "function template parameter count 1",
+      "source_sha256": "e01c879503b3d970c5a862f924523e95a5bf723cb916298f26beb923c2ef9231",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "55e4ab63ac84e496987332b3583d53d7507bd63b5ab4135acaafd534bc699e5c"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "55e4ab63ac84e496987332b3583d53d7507bd63b5ab4135acaafd534bc699e5c"
+      },
+      "match": true
+    },
+    {
+      "name": "function template parameter count 2",
+      "source_sha256": "9d58478766af3ec7fac5e8acf4eab9b35491f1c049e3441346c0d6cc59372a2c",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "309639664faa4ad8a5e9b9244d161bf9b74d14f483c8bfa0dedeae049eceba84"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "309639664faa4ad8a5e9b9244d161bf9b74d14f483c8bfa0dedeae049eceba84"
+      },
+      "match": true
+    },
+    {
+      "name": "function explicit argument list does not consume nominal depth 3",
+      "source_sha256": "2d7af3d23dbac5792243fe1a04011c4dbd6408b9eac4671fc021f49dc75a2a15",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "d35ffa758b17ac160bf6d7d9d7942246303ca79a1895aeca135d2888db3a3737"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "d35ffa758b17ac160bf6d7d9d7942246303ca79a1895aeca135d2888db3a3737"
+      },
+      "match": true
+    },
+    {
+      "name": "function explicit argument list does not consume nominal depth 4",
+      "source_sha256": "fcd13b51718ca10374e32f94deca529ea8940611f74a18db88a26fcb7485a05c",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "1e640beba11e4d3294dc47a617b4bd878cc9885c32987fd198d803ae96056e43"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "1e640beba11e4d3294dc47a617b4bd878cc9885c32987fd198d803ae96056e43"
+      },
+      "match": true
+    },
+    {
+      "name": "function argument nominal template depth five rejected",
+      "source_sha256": "599eaef71dc74fd1ebf1fb4a2c900c857619ce8609793e15bd3517c942fb3ecf",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "substitution produces exactly four nominal template levels",
+      "source_sha256": "3efa236f9a9a3df35376bc02649b5bdbc2562ef8fbe96ccf1a7977aaf5f82bff",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "497242b8bfe0116c54df7bb137b42ee570b718387819c2e563b0ca0951ea6c29"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "497242b8bfe0116c54df7bb137b42ee570b718387819c2e563b0ca0951ea6c29"
+      },
+      "match": true
+    },
+    {
+      "name": "substitution cannot conceal fifth nominal template level",
+      "source_sha256": "c812036e4d6b6d8985a708277e5bf6c01a1078c1bf3fbc4fc1b2e46eff4858fa",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "generic copy at exactly four independent containment levels",
+      "source_sha256": "1f7612e247b5e85b25d9debdc166f094fcf0799997579d132b6ec7111a9b8449",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "79b08d8f1da612540493558f3d0c43b9af25c7deacacc69fa4d4a028fa6dcdfb"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "79b08d8f1da612540493558f3d0c43b9af25c7deacacc69fa4d4a028fa6dcdfb"
+      },
+      "match": true
+    },
+    {
+      "name": "four nominal template levels cannot bypass containment five",
+      "source_sha256": "29c06bd4b07d6acfe5dcdf001fc02df120059fb68a2b4105661c8f2d4ac66ab5",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "function-template class result flattened leaves 63",
+      "source_sha256": "a71eeda4471daf7735bb2200cf4f191f20dac64c96b959527dd7eb91e284e93b",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "051e191557bc8c1720aa6fca5a3e35a7eaa8b5f26607d442e8ea6ad1b52d8ee1"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "051e191557bc8c1720aa6fca5a3e35a7eaa8b5f26607d442e8ea6ad1b52d8ee1"
+      },
+      "match": true
+    },
+    {
+      "name": "function-template class result flattened leaves 64",
+      "source_sha256": "ab0942e7d53959e90434203fd5c7e580efa17ef1fdda42e4fac3e2d2978b089d",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "16623a950bbb122b4f59b0db7b5a9d50d51e983b5ea25f9b2987783bfd787c21"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "16623a950bbb122b4f59b0db7b5a9d50d51e983b5ea25f9b2987783bfd787c21"
+      },
+      "match": true
+    },
+    {
+      "name": "function-template class result flattened leaves 65",
+      "source_sha256": "0f854084b04dd236ffab619514734f520682d11086f182da5269634539e6f735",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "instantiated function exactly six ordinary scalar parameters",
+      "source_sha256": "ef87499e2fb5da87975a0a1f7fb98e259a4ad296987467d97db33f7819569edd",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "965644f4f92f4fcc356c1fb70c24738da58b24e9e8fec33ff9c2558f6982e6a9"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "965644f4f92f4fcc356c1fb70c24738da58b24e9e8fec33ff9c2558f6982e6a9"
+      },
+      "match": true
+    },
+    {
+      "name": "instantiated function seven ordinary parameters",
+      "source_sha256": "e4e9e56402d66ad33994dc34d3741df55d6c6f7eaa41b542b4e4ec7cb646d36b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "instantiated function exactly six independent class parameters",
+      "source_sha256": "c28458d6f035bed8033484c75849e342b98317ee215cb2618464a156d3fa7f6e",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "863b890547086de086e8cfeef601c0caa4042782fd2188e6c4c23a13ebfe73ec"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "863b890547086de086e8cfeef601c0caa4042782fd2188e6c4c23a13ebfe73ec"
+      },
+      "match": true
+    },
+    {
+      "name": "instantiated function frame exactly 65536 bytes",
+      "source_sha256": "1bbc9d6bbdb05855dc51ffb3b8f02ecd1502a8ead42fecf7f9a2d18d259cc35e",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "1684fa8af90dd9bfb2f8f26afe3e20b08e2bcb35b04d9725f7b49fc92bfb9eb9"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "1684fa8af90dd9bfb2f8f26afe3e20b08e2bcb35b04d9725f7b49fc92bfb9eb9"
+      },
+      "match": true
+    },
+    {
+      "name": "instantiated function frame 65544 rejects beyond 65536",
+      "source_sha256": "cfd4e306e1d9a29c2bc80e3400f35c432bb49162ace8f06161492155c8080f37",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "combined class plus function definitions exactly 64",
+      "source_sha256": "6e892e6b0c32b80e4c7a9ea48ade61011ea6ab060daa419446f952110bd67e27",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "7b20afaed321ddbf51b6ded87bf972983ea147e1517182b9080baaeca5431a8f"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "7b20afaed321ddbf51b6ded87bf972983ea147e1517182b9080baaeca5431a8f"
+      },
+      "match": true
+    },
+    {
+      "name": "combined 64 definitions counted across module graph",
+      "source_sha256": "39ee89dc657fd361c4366a8181435ac4037ddfe51c3bc8e944ecb729e4ca4d41",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "e78f3daabf4a4f33d7e92db39f943fa44dd47c9da654b55643d71ff033f3c731"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "e78f3daabf4a4f33d7e92db39f943fa44dd47c9da654b55643d71ff033f3c731"
+      },
+      "match": true
+    },
+    {
+      "name": "combined class plus function definitions 65",
+      "source_sha256": "957e82a7231381b7af8b6bc33cb884258b2d210480361d9cd5b58ba2a9a927b3",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "combined 65 definitions rejected across module graph",
+      "source_sha256": "39ee89dc657fd361c4366a8181435ac4037ddfe51c3bc8e944ecb729e4ca4d41",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "combined 128 class plus 128 function specializations exactly 256",
+      "source_sha256": "38ed7176bb1f1f5574d1b8267bd9229969cbe5549afbe7882cefb5c7c524efaf",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "3fe9b182f5ffd8c06d5573bea63a727c906997ecce5f06203637af83199c8e12"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "3fe9b182f5ffd8c06d5573bea63a727c906997ecce5f06203637af83199c8e12"
+      },
+      "match": true
+    },
+    {
+      "name": "combined instance 257 one extra function specialization",
+      "source_sha256": "ad306beca62e857a04158e9f952101d207b62ad52700f08b922356833611243f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "combined instance 257 one extra class specialization",
+      "source_sha256": "2429e3759ccae4b0f1bdbb0a8cf98c2bc09eeabf938acaa972869354b0b7accd",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "canonical repeated requests share exact combined 256 instance budget",
+      "source_sha256": "079de03d8a8e2be098ae8b83bf34abe2695065a15e56993ce5cf8f9ce0fd7bb5",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "566c083d76dab7938689823fb4e243bbe179f0931df495636142c3eb50e8de6e"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "566c083d76dab7938689823fb4e243bbe179f0931df495636142c3eb50e8de6e"
+      },
+      "match": true
+    },
+    {
+      "name": "combined 256 specializations counted across modules",
+      "source_sha256": "26210fe4389e96364123b63f4381f9201dc53ebb6a26a70d64e3b71b27f13585",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "7f8ed010cebe5da4789ef4dea58ffe4a01ebf633b49ff039536f083e0585dd19"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "7f8ed010cebe5da4789ef4dea58ffe4a01ebf633b49ff039536f083e0585dd19"
+      },
+      "match": true
+    },
+    {
+      "name": "combined 257 specializations rejected across modules",
+      "source_sha256": "26210fe4389e96364123b63f4381f9201dc53ebb6a26a70d64e3b71b27f13585",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration empty parameter list",
+      "source_sha256": "04e699716b2939b497ec164daf49e650d61b0aa25516db7f846b52331ce42bb2",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration third type parameter",
+      "source_sha256": "ce0e6d595e42ca6bec03da3ac336c93634a8932902ea31e4e6d97def38d9a9f5",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration capacity function parameter",
+      "source_sha256": "a40544f1df6a1cd990b453935c8fc9a1d0e910e6b0d2589a46bf86061fb67c3a",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration class keyword constraint",
+      "source_sha256": "a13fe4252d80e88ed767a66f566736b6ffb14bbfdf578593471b9490dae43c63",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration typename keyword constraint",
+      "source_sha256": "bae78da893af1fabdff94eb855ced02cdfe95e281e913168d4c215e464e047db",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration duplicate parameter name",
+      "source_sha256": "1adb9fbf109e731b82c2e3819b2e95c1357e1701604ee5fd547ff04b773e635c",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration default type argument",
+      "source_sha256": "8a605112f8c732ffb75641f089a5c679e6c464400f5fdc1139e92b6b87ecb24d",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration variadic type arguments",
+      "source_sha256": "633e687ecf2a7db4875482899c28057a20771db36d574f52172c32ad67dfe20d",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration function explicit specialization",
+      "source_sha256": "4e1ea68e770b235a225ec055f60f783f8eaf5e98153283b9f5c8090c2f54ebe3",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration function partial specialization",
+      "source_sha256": "391d98c933dc074b4d447cdf5fb1166cd8377faa284eafc6d451e7f3645e02fb",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration overloaded function template",
+      "source_sha256": "8d9d63c9b5dea155f843885d27e3cfac644e6fb5228255a48ed4f41a8c5b7d45",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration ordinary function same name",
+      "source_sha256": "a565cdce433916f4245e1a160288090b380a8717b7ad70e51f0d980cdff65cc2",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration generic method",
+      "source_sha256": "2c33ffedf88bcb99bfd1e2eae37a252364478f02080eb6bc20743a991561f99c",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration local function template",
+      "source_sha256": "ad81ebeb55837f4b167f036e97ae9cbc88eef708b9da8c71978551a1d2ce3565",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration type constructor T value",
+      "source_sha256": "125541f57e8ff3e24bb8158efbaa5a1d21f473a6a00350f65f5fa7ff0110e1a1",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unsupported declaration dependent scoped member",
+      "source_sha256": "6eb5d33c182a8027fc5ab6298e9a7c4d6add916a73c5aee617e04a5dccd1e9d4",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy(42)",
+      "source_sha256": "14799583db8304906921e8f45e1924aa30c468fa911ad2263d8600caa91cdae9",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<>(42)",
+      "source_sha256": "60e628ea39d0ad95490cb1b909799703053ad67d58a0e71cda96c120708b1181",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<i64,u8>(42)",
+      "source_sha256": "85b5e41e8196fe084bc5a04781249a456f0d6e381ee10bd3e3e7ffa7be6babd1",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<i64,u8,bool>(42)",
+      "source_sha256": "34e49cfa33bdf4680f841692b3249da256552f4ac882a7b0c63e2c7fb785759b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<i64>()",
+      "source_sha256": "a481df69fdbe8d3447fa47c0a1bdcd2b425de00c4c9930283a80530e944e2316",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<i64>(42,1)",
+      "source_sha256": "aad64dbeab1f2067286bc9b07ec355803af9a648c5806d19bd885e22d531c71f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<u8>(42)",
+      "source_sha256": "1ba22d32bb47e21d7bcdf71e8dcefcf3e1fe72be93bb752d20e65351c09be241",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<Unknown>(42)",
+      "source_sha256": "75afd5c9768ecc8697b76885ed866d6f0988e4a2bf09452c2249eee43b4d07be",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<42>(42)",
+      "source_sha256": "2f7d82149bc44a78827eb3294374ddb5732709840f6bda9d73db5322399ec9cb",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<own<i64>>(42)",
+      "source_sha256": "a06e3f6fae402e581ef8b55cdfbd14d903d0b3217cff5b34ef77ec84502d4e4f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<ref<i64>>(42)",
+      "source_sha256": "39248a73a08463c02a4cddba38618f2c5ee06a8e0c8ddbec67abeb60f380fc83",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<span<u8>>(42)",
+      "source_sha256": "d9e5fd169d8f13df0f83786c4ca249c7e5f8006b52b6c7db07d874cf47bdece7",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<array<u8,3>>(42)",
+      "source_sha256": "e59a6669b9134d84fc6ccf54b06038068a4aef96b8dd2e23f8ff45b5eb0a0177",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<builtin::array<u8,3>>(42)",
+      "source_sha256": "182004fce2e2a56f09cc35de78b31749a30dcc41edd80c50d751582dcd892306",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<std::array<u8,0>>(42)",
+      "source_sha256": "31f30ed6e031270890791940c04db8f846aa9929429202ab9688c98ccb267767",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<std::array<u8,65>>(42)",
+      "source_sha256": "e333d61e476206e35005ad4de010ce95db4f3178e9842d68aa9238340feddfe3",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<i64,>(42)",
+      "source_sha256": "758229df7a06a1bcf4b6ae0a43819b6fb2e1221892996df2b9c1997a2ad79024",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<i64>>(42)",
+      "source_sha256": "7056ce19376b0af46ae2edc4ca451f64f960b1d259ead6cc6deb4f9e141e4776",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function call rejected copy<i64(42)",
+      "source_sha256": "767ea587b03949c6f2c329d5d3b5f048ec27e37d1c6e126e0b477b2ec2c6d701",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "Scalar function constraint excludes Leaf",
+      "source_sha256": "0fd9ff8736944591f89a8f92b56986f8434588cd9f96b81c8f06dcebe3faa67f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "Scalar function constraint excludes Empty",
+      "source_sha256": "a3ea62c2873074ae1d3022b08760d5b64ba624baa4ddd888de4a1f598ef60bb2",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "Scalar function constraint excludes Status",
+      "source_sha256": "dba17a747de811ca4c2383c877c61cf4e57065c6adb8778f2870f3e5d45a6f91",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "Scalar function constraint excludes std::array<u8,3>",
+      "source_sha256": "5a81069666cd3b623493712e2eda68b5a0ac291b70dfb583c07a58595f28322e",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function structurally rejects nested dependent result",
+      "source_sha256": "bd8622c2dbd715608c51b9e323a7482402ff89b2ba9a90d15d5e7d3352235673",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function structurally rejects nested dependent parameter",
+      "source_sha256": "50cae4000918782cf2a133f5d74b02422b1b67d2ce1e778530747d76ff23937f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function structurally rejects nested dependent local",
+      "source_sha256": "51e132256c8e1223aa560dc4353f0303711112bf2c733539c533ccd17156161d",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function structurally rejects nested dependent constructor",
+      "source_sha256": "293992a754e7dc676d550c1b04230355820248223420115b5c9c8bc34f28e809",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function structurally rejects nested dependent query",
+      "source_sha256": "f6582bb206b1a4a2d6f6cf33d742b5eb3a49265d3b0c11e0be613c6568478149",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function structurally rejects dependent capacity tree",
+      "source_sha256": "90834e78aa207da3c6b9b67fdc21ca5b2611316962d9b2bb757c2ec889141a38",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument local unused",
+      "source_sha256": "ebc9c8efe80553a72fdb4d091d576997a2cbda897a3b66e5645ad7b774de9dc4",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument local requested",
+      "source_sha256": "1690c67af52c9d9317efa91ed9d1e6729730f335a4ec9d59e7390ce4b0981e51",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument nested local unused",
+      "source_sha256": "1800046630ebb79869f37aeb544526f0099853eb0a29e6c2aa122a7c0f6cedf8",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument nested local requested",
+      "source_sha256": "a161791c8553125cea4b9d29572b9370542c8b203465a4f1885c35d169919133",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument constructor expression unused",
+      "source_sha256": "0d1f43242c00521db854633d953884d3f0a3fb401c006ac61038682c4c2fc5ee",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument constructor expression requested",
+      "source_sha256": "1e9af1648a3c2af4070b78434f802761714d201abaa58e77aa722011a8349eaa",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument parameter signature unused",
+      "source_sha256": "44545e0b60fe815c49d1fc537231c9ef96456e4bf7e97d15994515d5e63cf273",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument parameter signature requested",
+      "source_sha256": "10c489ff7205a10bbf6cf8dc74451dda57a7c9b97a16de87d27833dcd850a535",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument result signature unused",
+      "source_sha256": "7a366cb43f0794c5f1a3398318ec1af46bf6aced7b52bc16577d9d4133f2e6ff",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument result signature requested",
+      "source_sha256": "3ac5674917278260e8de3f3d7f3e100a270e0ff7426effc608adbd5e8b2ec128",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument reflected type size_of unused",
+      "source_sha256": "fc8af23fbab26bc21eb2b05bf828d06cea5bb20836f19d4a5236778b129d8360",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument reflected type size_of requested",
+      "source_sha256": "156c25f21a5bfd6d75a18c6de538673bee3b4a5afb91099a937b5a5860a285b6",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument reflected type type_id unused",
+      "source_sha256": "4cea5e1935f11b915e8656fade53bc422382373572829d5b023be8dc1568227e",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument reflected type type_id requested",
+      "source_sha256": "9c01bdeda90e9dc74b9889bb6da26d0a9fd674767a0de2ab17a1ac732bb0bc48",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument reflected type field_count unused",
+      "source_sha256": "6745be1633f322b20fb4a9015bf5253d88ddbd1fecdb5ddd3d919e783da68578",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified template argument reflected type field_count requested",
+      "source_sha256": "84a672ae5063b77d787d90067178e83c2ecd160ee8b4e626ffa252bedc12e721",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified argument cannot bind same-name namespace unused",
+      "source_sha256": "42af6aa1e8de5e991ca0ae25995c77b353a4344f1209de8ede96ae112f02a1a9",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "dependent qualified argument cannot bind same-name namespace requested",
+      "source_sha256": "653a5fec8e4c8c23a3eb93548c178f65f6a7f36ffc56950e88b0882a4279fe03",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function template forbids function-template call in return",
+      "source_sha256": "779839f89ffd1c3c74a32c5e1581a17d76a7d166870e1b6eb026e4b4a19de37d",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function template forbids function-template call in local initializer",
+      "source_sha256": "56d600961005339c21fff3275de83b79ce35145e3ea67fb5d59f9165e888a411",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function template forbids function-template call in dead branch",
+      "source_sha256": "d015f5d968473a1996b71faea234a1613e64a97b16b70a975f41c8b4c6e14a40",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function template forbids function-template call in dead loop",
+      "source_sha256": "38f57134f63780b94cdffb9636bbe848e5b2a53c9f65ed1231495c3c4b46b98d",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function template forbids function-template call in static assertion",
+      "source_sha256": "8ecdfeece5840e36e8e81c859db1dcfe8af9ab15e334db9cb38850b012d5669d",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function template forbids function-template call in nested ordinary call",
+      "source_sha256": "413d07676b0939e29c5c9f11fbef40b2abba1587523b9b451c5042958476212f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function template forbids function-template call in dependent call",
+      "source_sha256": "b385dc11af76a19c688913daafbdfc657ca3d0acfc61d28a8ec4df5502d33832",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function template forbids function-template call in self recursion",
+      "source_sha256": "ce4877ccd12ca09d8e400dddcc4bf593011541acf85fefdb7d80336ce2646a91",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused function template forbids function-template call in qualified library call",
+      "source_sha256": "4572d0ca9db77154753f492e6f8e91c806f8c143a723c38d3d306636ae53a3b2",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused class template forbids function-template call in return",
+      "source_sha256": "f284f1c5b3c25e4316a3a4ac1566a970281f8a17e7005951315b35c46868431f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused class template forbids function-template call in dead branch",
+      "source_sha256": "046688b76b83ce43e9ab67b280fe104f3e2cf89e236f3c739bcf0c82e76c22bb",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused class template forbids function-template call in local initializer",
+      "source_sha256": "0a83c76941965d2b5697798aa1def9bfb285c38889de10c1cdb5b49ede19ae6e",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused class template forbids function-template call in static assertion",
+      "source_sha256": "f9720cbb4b8d4e6b0eeffd258b0d40919af491ab7cbf4783356acd5266f806ed",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "receiver method cannot conceal explicit unqualified function-template call unused",
+      "source_sha256": "dbc6e46b8366ad21ab2161b3ad631f176de486d5107101da35cf4a23cb3400a7",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "receiver method cannot conceal explicit unqualified function-template call requested",
+      "source_sha256": "1d88fa4dbf352eca40d08dbd15b015eab108dccc3f05f922e1d2e68f3f3de90e",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "receiver method cannot conceal explicit qualified function-template call unused",
+      "source_sha256": "c7a11491612bfcc44d6468349a5b9e26db0d4980fc2f2e195ae53455f8aba81f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "receiver method cannot conceal explicit qualified function-template call requested",
+      "source_sha256": "48d90379cbf877ad79a10e9f6c7aa10d5c114e82fb7c8bcf1c633334098fc8f9",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "unused class constructor forbids function-template initializer call",
+      "source_sha256": "c158471c2fbfbe520ebb00d1fca681b6ada9626e2c58f803196277249c287cab",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "nonempty template constructor body remains unsupported",
+      "source_sha256": "a0e811bc32c3bc59356723366e03b8af7d79f02119f105f3efd3ecfb6761267b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved mutable parameter field",
+      "source_sha256": "1d8f80ba5e896529595e85632d3b798453b210ce998e0e96bef51511231bebc1",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved mutable parameter method",
+      "source_sha256": "f214e0caff72acded57b4c854b5f8db573d432b3bfafcd100479e0f0668f63e0",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved private field access",
+      "source_sha256": "13f98805f61f44ae46684123914c7736cf7e3278a91fe813e2ccb2ac0156d383",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved class argument temporary",
+      "source_sha256": "980b73c6f1f78b95a9b271e799d60b6d2d2439110a58c3fe9091cbc0781174e7",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved class nested result argument",
+      "source_sha256": "04d302f811c929e9d145692581f45bd01763df30eb3b5277a5b8617fbb6f4b64",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved class direct result return",
+      "source_sha256": "139ae1ae6f3771ae6fabacd5c28f6abe8d17e93cd6dfe689f4a46b1bad3316a6",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved class return constructor",
+      "source_sha256": "5f92fcebd43516aa2324a9369115df2ac8fa0464e6bcb41ec128dac3c012f78b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved wrong nominal argument",
+      "source_sha256": "b3755e665247b67022fad8bb3b84d1918180d16c656d07179df7c26787014c1a",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved wrong nominal result",
+      "source_sha256": "c586047a78c599056716d5b2a24de91ed65909d034b0ffe5df35764ecd39f682",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary value restrictions preserved resource result",
+      "source_sha256": "f9662a447ee09e64f24c48dcdb867c0a6ae93c3ea689c70293ab251bb72a272e",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "class parameter publicly writable field is still readonly",
+      "source_sha256": "f2feedae049318c05822dddda9c4c2a89da7460a0bdd7d31d94cb2c120746eae",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "private method stays private after type substitution",
+      "source_sha256": "72dbe2f1941d0a52879043ff6d0634f4b61572e155c91b07f172ed562061d179",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "equal-layout reordered nominal function arguments stay distinct",
+      "source_sha256": "14a03bade9a1a17202bba4ffbfb131ffe01b8332619c641e6f5c8cc4c948762f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "function template is not a class reflection type",
+      "source_sha256": "f7c2e6a00c6a1a16777c33ed28f01746450b055e64502542c136b9cfbe017613",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "function template cannot become a value pointer",
+      "source_sha256": "f0e77d24bc95bbeaf075cc9f6f300e9c540ad3404682f3d6f800bedfc59ab782",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "exported template accepts caller-private nominal class without member access",
+      "source_sha256": "166c97dc548a0067df8ad94f44cf9bf61cf9fd0feabac72921e676c9311248ce",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "cbb96febbb0ab42e24ce77a63e7ab2393e1d8cb2818a7286d3c10c8eb19343d9"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "cbb96febbb0ab42e24ce77a63e7ab2393e1d8cb2818a7286d3c10c8eb19343d9"
+      },
+      "match": true
+    },
+    {
+      "name": "exported template accepts caller-private nominal enum",
+      "source_sha256": "dc7bc46790006883d665df39c28dc686655df5864d440d577d4cc14c717d3cd1",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "3350e7a89391ef5dae233d7966502e54460153d41720d2b875b0504d89602b53"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "3350e7a89391ef5dae233d7966502e54460153d41720d2b875b0504d89602b53"
+      },
+      "match": true
+    },
+    {
+      "name": "exported template accepts caller-private class inside concrete tree",
+      "source_sha256": "0fe9982fc0d6dd9b3f7600b942e214914fb4a18726039be3d99d50b46d3a9c4a",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "2bf037779b884091bcca8b5465a1f20cd2ec6365c99e7be856173494cf42a76a"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "2bf037779b884091bcca8b5465a1f20cd2ec6365c99e7be856173494cf42a76a"
+      },
+      "match": true
+    },
+    {
+      "name": "fixed helper binds defining module rather than caller shadow",
+      "source_sha256": "d2908965e9fc85f43b2220e8b25ee6122447c39d9c36e0d4c0ee55714b0e96d5",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "6bc4fccc63b682e275904e5861cb5281ec669aecd857c30338c26e3ec8a3a6a1"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "6bc4fccc63b682e275904e5861cb5281ec669aecd857c30338c26e3ec8a3a6a1"
+      },
+      "match": true
+    },
+    {
+      "name": "fixed helper binds template defining namespace",
+      "source_sha256": "b8b4221030e51424b23ed0b31d28b894a10457e7676a8a8738e304d6d3a6f49a",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "668cce1a6470e447b9638a642172a5f8f58883facdf941378d80b09f1794d08e"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "668cce1a6470e447b9638a642172a5f8f58883facdf941378d80b09f1794d08e"
+      },
+      "match": true
+    },
+    {
+      "name": "private template is callable by ordinary defining-module helper",
+      "source_sha256": "f4642a5a6849f44b8b3b08912c1674e6acdf7d5a52551ae785a374cac02ecf00",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "3563f12bf806b0a0f7e46f01f3f9dc83ebf8148efacb9d4d905f59f175d53e7a"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "3563f12bf806b0a0f7e46f01f3f9dc83ebf8148efacb9d4d905f59f175d53e7a"
+      },
+      "match": true
+    },
+    {
+      "name": "private function template cannot be named outside defining module",
+      "source_sha256": "46a473d4004fb412ad2f9e054c5ec5ec3590c42ab506f79f24e3d215bef593ce",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "ordinary wrapper may use directly imported function template",
+      "source_sha256": "b104427621300e3ac6f41d81b15ea1c4369eb9994adf70520d998505ba3e63f8",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "9da68936d1f966bc2db625b3ceff4ca8bd31f8a22c1d0f7db8ceee34d2b7191c"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "9da68936d1f966bc2db625b3ceff4ca8bd31f8a22c1d0f7db8ceee34d2b7191c"
+      },
+      "match": true
+    },
+    {
+      "name": "transitive import cannot name function template",
+      "source_sha256": "512990b9508839fcf98dc074634817629c60cfb8e8f8c45e2e9c12b9503d065f",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "direct import restores function-template visibility",
+      "source_sha256": "96c8b6162b0c2a7c6e963c63baa189647274bc1ff91a931d5735659c92ecc077",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "2bae73e572a783609724d0f40cee6708e61e4e4f57ae1ab436c017fb312e7132"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "2bae73e572a783609724d0f40cee6708e61e4e4f57ae1ab436c017fb312e7132"
+      },
+      "match": true
+    },
+    {
+      "name": "exported function template cannot launder private class in fixed parameter",
+      "source_sha256": "81e8fec0a77d5e99f2114f3c5dc017e8319ad1fb91c2857159d558f67847239b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "exported function template cannot launder private class in fixed result",
+      "source_sha256": "81e8fec0a77d5e99f2114f3c5dc017e8319ad1fb91c2857159d558f67847239b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "exported function template cannot launder private class in nested fixed parameter",
+      "source_sha256": "81e8fec0a77d5e99f2114f3c5dc017e8319ad1fb91c2857159d558f67847239b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "exported function template cannot launder private class in nested fixed result",
+      "source_sha256": "81e8fec0a77d5e99f2114f3c5dc017e8319ad1fb91c2857159d558f67847239b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "exported function template cannot launder private enum in fixed parameter",
+      "source_sha256": "81e8fec0a77d5e99f2114f3c5dc017e8319ad1fb91c2857159d558f67847239b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "exported function template cannot launder private enum in fixed result",
+      "source_sha256": "81e8fec0a77d5e99f2114f3c5dc017e8319ad1fb91c2857159d558f67847239b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "exported function template cannot launder private enum in nested fixed parameter",
+      "source_sha256": "81e8fec0a77d5e99f2114f3c5dc017e8319ad1fb91c2857159d558f67847239b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "exported function template cannot launder private enum in nested fixed result",
+      "source_sha256": "81e8fec0a77d5e99f2114f3c5dc017e8319ad1fb91c2857159d558f67847239b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "exported template signature cannot launder private template declaration",
+      "source_sha256": "81e8fec0a77d5e99f2114f3c5dc017e8319ad1fb91c2857159d558f67847239b",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "fixed signature type works with explicit direct type import",
+      "source_sha256": "2d97b4f2e3babd668263f1b1eb260621ec188c482dbd730e4166a67911cec6b8",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "0db149d75469cb9cc45e3c18507b5fdf9bd57792333b8e3cde5dfbbfeb8c7721"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "0db149d75469cb9cc45e3c18507b5fdf9bd57792333b8e3cde5dfbbfeb8c7721"
+      },
+      "match": true
+    },
+    {
+      "name": "fixed signature type cannot be obtained through transitive import",
+      "source_sha256": "0f4d908dbf403d0ba956f6808527a09633e9dc74403e81cfe30cb03337afb5cb",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "runtime reflection hides transitive specialization declaration",
+      "source_sha256": "ffca5a1e9e30596d2a3bb2927667e3ddd25e6c1cf3fd955f0318200c42e21429",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "350da0d6eb7092b12d018352cbb47e27a3b925d8df83f0511c631f56346c724e"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "350da0d6eb7092b12d018352cbb47e27a3b925d8df83f0511c631f56346c724e"
+      },
+      "match": true
+    },
+    {
+      "name": "directly imported specialization metadata matches instantiated class",
+      "source_sha256": "82d03a8e3060630eb7d0d9c5afc8b9805263cf4cc321cff21bb01e3a6d6dae34",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "efdaeb9fa85544ce12ece82d9fb48f305adde1d1b9136de936b8a9e479fb76eb"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "efdaeb9fa85544ce12ece82d9fb48f305adde1d1b9136de936b8a9e479fb76eb"
+      },
+      "match": true
+    },
+    {
+      "name": "same-spelling caller-private class arguments use distinct module identities",
+      "source_sha256": "8c42cec2e65032f495c4fdc3d166c3a32c0fcf54215b8faa1e840113f15f5aca",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "ce8890acdf4fcf55bc2eddd03680c863eb10fed554de73a9f294e0c24d484d70"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "ce8890acdf4fcf55bc2eddd03680c863eb10fed554de73a9f294e0c24d484d70"
+      },
+      "match": true
+    },
+    {
+      "name": "runtime reflection stays closed over private function specialization arguments",
+      "source_sha256": "de0f58068ece1b10ece8131926487ac3d9b1cc961aa8f415ca0fdd8cc147df54",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "ff3243cf231aa922b51de565cbce20c563ea9260452b7cdd24bd350af2c8b348"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "ff3243cf231aa922b51de565cbce20c563ea9260452b7cdd24bd350af2c8b348"
+      },
+      "match": true
+    },
+    {
+      "name": "imported generic copy confers no private member access",
+      "source_sha256": "51ac69ca48a523e701928e03171c79d1ac4159f9e489a4c807da2383a11ec7c8",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "imported template cannot inspect private caller class field",
+      "source_sha256": "081ad25d2ce4b37741bb5e03c94cc5b05776605bf2e2ae68d3a42d03e5ff4f9a",
+      "expected_rejection": true,
+      "baseline": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "status": 1,
+        "assembly_sha256": null
+      },
+      "match": true
+    },
+    {
+      "name": "generic checked addition exact overflow trap i64",
+      "source_sha256": "f040d5c74d4e5c73f7538bedd8e36b12ed584ca26d20c722857c611da68ec496",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "16c9cd1ba343efd5e129a57cb0c71f42d9c43a6a7a9f28c2c453657933479ccc"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "16c9cd1ba343efd5e129a57cb0c71f42d9c43a6a7a9f28c2c453657933479ccc"
+      },
+      "match": true
+    },
+    {
+      "name": "generic checked addition exact overflow trap u64",
+      "source_sha256": "513b57580066c9fd117078ba18a3ab02a9f22dcbd00ccf4973a5bbb4d6b542ee",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "a56432586a215a53b9b89de99b86295ed4327a062f2b30f7e559ffd86b72636e"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "a56432586a215a53b9b89de99b86295ed4327a062f2b30f7e559ffd86b72636e"
+      },
+      "match": true
+    },
+    {
+      "name": "generic checked addition exact overflow trap u8",
+      "source_sha256": "52e6a545bed6ad4f57a9cc03883add5098888c8dbfd566b51b6948c633bd805f",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "70c60b2e904b129ceb685909a1666903a087af0f6f54b20f9251a07631d778f2"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "70c60b2e904b129ceb685909a1666903a087af0f6f54b20f9251a07631d778f2"
+      },
+      "match": true
+    },
+    {
+      "name": "generic checked division exact zero trap i64",
+      "source_sha256": "c8fbf03fca51acd74e8fc2da3993f07d98d106d881c510cc66a61e6b7df0a37e",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "ba6d106d34bc9bb9b731fe061268672dbecfe937537ffa285437ed8c18d91054"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "ba6d106d34bc9bb9b731fe061268672dbecfe937537ffa285437ed8c18d91054"
+      },
+      "match": true
+    },
+    {
+      "name": "generic checked division exact zero trap u64",
+      "source_sha256": "29e3cb8d3a629c14d0379983e2e78829b799f55595951b6cd0f5f12f1355630d",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "20ce5e91c81110868a383a0d5efb062d0c0e6618b0206c4e2cc09eab990efe8e"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "20ce5e91c81110868a383a0d5efb062d0c0e6618b0206c4e2cc09eab990efe8e"
+      },
+      "match": true
+    },
+    {
+      "name": "generic checked division exact zero trap u8",
+      "source_sha256": "acfdd944e036863992872236383d04e97072eb1b859f86a770b90bd3117a8e70",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "d399dbf0a89d7eacb683ee06d3bf60a1854c6b6d8a9bf516c4390e306ff2a988"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "d399dbf0a89d7eacb683ee06d3bf60a1854c6b6d8a9bf516c4390e306ff2a988"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap at/1/-1",
+      "source_sha256": "8486c6e0bfd271fcafaf617a359dd8d57adcc317121c9683d2e199f54f84247a",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "76e5e3f938c2ee202936f31896278ed2d219636c77f4ef971a14441e04d74f91"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "76e5e3f938c2ee202936f31896278ed2d219636c77f4ef971a14441e04d74f91"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap set/1/-1",
+      "source_sha256": "e909a4d1be66212aac70196bf513644940dce04399d9869fd6bd3443f074bd91",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "f7212331f5521d2194488c5d4d49ea922228e2e6a5c8792e92a53f85c6d443e6"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "f7212331f5521d2194488c5d4d49ea922228e2e6a5c8792e92a53f85c6d443e6"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap at/1/1",
+      "source_sha256": "3cf7cf3962a6113b43035367a6e5f6203cc556f2ee4f990b91bd531ac952b6a5",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "f8f01e3cffa62ef708d9341bea68f575e1f458cd8c29c1a9456f57799624fd6f"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "f8f01e3cffa62ef708d9341bea68f575e1f458cd8c29c1a9456f57799624fd6f"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap set/1/1",
+      "source_sha256": "a80142a68b4c531537027b5b021d9f619eb6fbcee80749ef8a9837fd1570c600",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "655d2c36cb5a972dde1946c1453cca3315c2bd2212efd4eb01f5cf6f89256333"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "655d2c36cb5a972dde1946c1453cca3315c2bd2212efd4eb01f5cf6f89256333"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap at/1/9223372036854775807",
+      "source_sha256": "c44c1201a46426ba6279f4be57c80958be7ff9c166a38d3b7b13f98b32da121e",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "09870d820933c012dfabe0403882b3f6f08ac6dd4a7dd85701920eacd7afc04b"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "09870d820933c012dfabe0403882b3f6f08ac6dd4a7dd85701920eacd7afc04b"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap set/1/9223372036854775807",
+      "source_sha256": "25a9a1c139388542befafb1ef4686861f554203150e481de68a5049a28733088",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "5d196cc7401b306745eeca958c21e71e4ed088fac666ecf982d76e1d9762ba70"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "5d196cc7401b306745eeca958c21e71e4ed088fac666ecf982d76e1d9762ba70"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap at/16/-1",
+      "source_sha256": "feb865c140b098c990d680acd60ca406f4deff5b902a361ef014b973e07b6deb",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "431e5a2e76a0b67f314b83186b8b0e1a245f6fd05865e2b5ce8570ab15c46946"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "431e5a2e76a0b67f314b83186b8b0e1a245f6fd05865e2b5ce8570ab15c46946"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap set/16/-1",
+      "source_sha256": "06a87aaeec753f072181896638eaebcf26cc0347456d7b7c6648f650f639d193",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "35933bef3fe0f38041f166bc342af235ffb0975c478940fd952f4a22521cd5a9"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "35933bef3fe0f38041f166bc342af235ffb0975c478940fd952f4a22521cd5a9"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap at/16/16",
+      "source_sha256": "657645105aebda16b4c99245a38bf4f812ff250b3e774611d116ba813772c822",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "6db9094e660871ff84a357eee2eaf5bdeaf701ba478af4ce962549059b1d811a"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "6db9094e660871ff84a357eee2eaf5bdeaf701ba478af4ce962549059b1d811a"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap set/16/16",
+      "source_sha256": "68c69cc871408b7ad784501912de27b87ed3197489b1005ab34dd0d5d2fab2e8",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "675f3538a1e70efe2df775d20464bbfd7aaf9534ca2ca7dfcf06b44cd9451f27"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "675f3538a1e70efe2df775d20464bbfd7aaf9534ca2ca7dfcf06b44cd9451f27"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap at/16/9223372036854775807",
+      "source_sha256": "fdb4ad7106d8bc324e7919ce7165f370d6ed2addb1aeba77fc8902b212698b9d",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "a5439f166ea351044b8aa74287f58c4c18a43a8a167a7cf5514d302938b6ec9b"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "a5439f166ea351044b8aa74287f58c4c18a43a8a167a7cf5514d302938b6ec9b"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap set/16/9223372036854775807",
+      "source_sha256": "ec5535057501db442f28af2471e67e17c6f493d0e63c697ffb051572dfbdd3a0",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "3f2adf31a139ed7e48e5e0a890adbd550eb285ffa0c46af7c12d0455a1b91a9c"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "3f2adf31a139ed7e48e5e0a890adbd550eb285ffa0c46af7c12d0455a1b91a9c"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap at/64/-1",
+      "source_sha256": "165bb8f89607be561a77a0fb736997777d5953027da9bac66a6572a23170fa2e",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "1b92415abb780b5ee0836be8e7b9cece359824ac1d5e4cef226b5b809f630721"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "1b92415abb780b5ee0836be8e7b9cece359824ac1d5e4cef226b5b809f630721"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap set/64/-1",
+      "source_sha256": "0ba5bc56374f174ca3c77b85153376c57cb63e2b804abc41b4976578333176cd",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "ddb6092dac04b755763cf0e4fd82866188578c86cbac73232de09c248cb1d473"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "ddb6092dac04b755763cf0e4fd82866188578c86cbac73232de09c248cb1d473"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap at/64/64",
+      "source_sha256": "51f24ff98ab5ae31dfc2e3ffe2eb654c48142805072617feb1e3d02285ca7da0",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "445d89c8a1303bb4e341b065136b75f375c30018f845ef59ebc5ffd9bc965722"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "445d89c8a1303bb4e341b065136b75f375c30018f845ef59ebc5ffd9bc965722"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap set/64/64",
+      "source_sha256": "9c9025dec6039b1601acae11ce9265e727fa5afda9af956744908ec402c0800e",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "67a4974192d97f500d61b98ef694c44e218339734a27b0f09640c4ffc027a173"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "67a4974192d97f500d61b98ef694c44e218339734a27b0f09640c4ffc027a173"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap at/64/9223372036854775807",
+      "source_sha256": "33bdfb95dc10480a8b85d5bc7f28e5d6ad4edc5f0c8a1a7da7382b522cde8e1d",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "3010a6df4e25c564ed584342ff4681ceb6fb1ad36a962960dd6e8de9af2627b1"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "3010a6df4e25c564ed584342ff4681ceb6fb1ad36a962960dd6e8de9af2627b1"
+      },
+      "match": true
+    },
+    {
+      "name": "generic array result exact bounds trap set/64/9223372036854775807",
+      "source_sha256": "57a48176e80d7fc71bb4f7222e455abcb72836be20a1d5165279be67f7a7b2e0",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "0c5658851e1a2321f6c759f469e09212e3c461628c3f970bb067a4915a0e18e4"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "0c5658851e1a2321f6c759f469e09212e3c461628c3f970bb067a4915a0e18e4"
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function type closers preserve ordinary right shift u64/1",
+      "source_sha256": "a9a6151e3f8a7e44bac90529689286739c1c22186d4afe60710e6939af9aac29",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "4f5ce99079698f418262f69a3df53844c853f93f38f6e419afb6ae488077780d"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "4f5ce99079698f418262f69a3df53844c853f93f38f6e419afb6ae488077780d"
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function type closers preserve ordinary right shift u8/1",
+      "source_sha256": "2c3ce1417aa99c64e16dd4f72a7e337c388f406f937ef5c8804684c89f0b76fa",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "c119ec3bcc5a3c19a4fc0a4601c0061c9d305545188af0b40a92972ff37c69bc"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "c119ec3bcc5a3c19a4fc0a4601c0061c9d305545188af0b40a92972ff37c69bc"
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function type closers preserve ordinary right shift u64/63",
+      "source_sha256": "5482451633e7d5a365ed67067211c55140258fcf6975047ada6fbe797c89c153",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "a80ba1d312f1f13efcb45a0f67f9479138b247b1ce4693f9f76f3ee4977a698d"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "a80ba1d312f1f13efcb45a0f67f9479138b247b1ce4693f9f76f3ee4977a698d"
+      },
+      "match": true
+    },
+    {
+      "name": "explicit function type closers preserve ordinary right shift u8/7",
+      "source_sha256": "59157316082591fbdb69bd9b05927e35bb2bb43b632e6f4a0ebc2c6840b6d7de",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "009fcd1c13107be964404fe32d19dd02f22877f2793f92b8f275a1fbcbd19291"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "009fcd1c13107be964404fe32d19dd02f22877f2793f92b8f275a1fbcbd19291"
+      },
+      "match": true
+    },
+    {
+      "name": "explicit type argument parsing preserves ordinary comparisons",
+      "source_sha256": "f929ff95af0e353b67430eb8a71f9f14ba6835c9d8ab98170bbd6ad04f372174",
+      "expected_rejection": false,
+      "baseline": {
+        "status": 0,
+        "assembly_sha256": "66d4723ee0560f077b86907d36e59c110df07eedb05ba0851766720561b59c0a"
+      },
+      "candidate": {
+        "status": 0,
+        "assembly_sha256": "66d4723ee0560f077b86907d36e59c110df07eedb05ba0851766720561b59c0a"
+      },
+      "match": true
+    }
+  ]
+}

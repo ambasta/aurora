@@ -1,0 +1,18 @@
+export module std.utility;
+
+export namespace std {
+    template <Value T, Value U>
+    class pair {
+    public:
+        T first;
+        U second;
+
+        pair(T first_value, U second_value)
+            : first(first_value), second(second_value) {}
+    };
+    template <Value T, Value U>
+    auto make_pair(T first, U second) -> pair<T,U> {
+        const pair<T,U> result = pair<T,U>(first, second);
+        return result;
+    }
+}

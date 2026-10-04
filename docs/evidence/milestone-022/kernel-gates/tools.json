@@ -1,0 +1,22 @@
+{
+  "versions": {
+    "g++": "g++ (Debian 14.2.0-19) 14.2.0",
+    "as": "GNU assembler (GNU Binutils for Debian) 2.44",
+    "ld": "GNU ld (GNU Binutils for Debian) 2.44",
+    "python": "Python 3.12.14",
+    "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)"
+  },
+  "environment": {
+    "AURORAC": "/workspace/scratch/48c5de6446f8/aurora-m022-kernel-compiler-frozen",
+    "QEMU": "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64",
+    "QEMU_DATA": "/tmp/aurora-qemu/firmware",
+    "LD_LIBRARY_PATH": "/tmp/aurora-qemu/root/usr/lib/x86_64-linux-gnu",
+    "OVMF": "/tmp/aurora-ovmf/root/usr/share/ovmf/OVMF.fd",
+    "AURORA_BAR_FIRMWARE": "/tmp/aurora-clean-ovmf",
+    "AURORA_BAR_COVERAGE": "/tmp/aurora-m014-bar-coverage.json",
+    "AURORA_IVRS_FIRMWARE": "/tmp/aurora-clean-ovmf",
+    "AURORA_IVRS_COVERAGE": "/tmp/aurora-m015-coverage.json",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "inherited_environment_note": "No inherited AURORA, UEFI, KERNEL, CXX, CC, SANITIZE, QEMU, OVMF or LD override was present during preparation."
+}

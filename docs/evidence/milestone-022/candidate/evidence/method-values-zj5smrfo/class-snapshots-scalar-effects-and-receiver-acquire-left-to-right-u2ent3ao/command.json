@@ -1,0 +1,8 @@
+[
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/aurorac",
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/class-snapshots-scalar-effects-and-receiver-acquire-left-to-right-u2ent3ao/input.au",
+  "-o",
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/class-snapshots-scalar-effects-and-receiver-acquire-left-to-right-u2ent3ao/compiled.s",
+  "--module-root",
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/library"
+]

@@ -1,0 +1,18 @@
+INFO method values compiler=/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/aurorac sha256=26a8e8cee4eff3220f90bde9b343227679fa1e4f64108b4805b83a2fc1c59bce
+INFO method values tests/compiler/method_values.py sha256=896e83b8b0c3cad50a23dd1aa9c85b4359de43732fbaf0a5dfe82e9b03851e30
+INFO method values library/std/array.au sha256=187c0b583cdf9e3786680181039f3b832a54f7cdc84de4894981460908957b1a
+PASS composed values observer: exact native UD2 and invalid-result rejection
+PASS method values six copied arguments each with 1 scalar leaves
+PASS method values six copied arguments each with 63 scalar leaves
+PASS method values six copied arguments each with 64 scalar leaves
+PASS method values method parameter rejects 65 scalar leaves: absent output
+PASS method values method parameter rejects 65 scalar leaves: saved output
+PASS method values six maximum-width class args plus receiver and class result
+PASS method values seventh explicit class method parameter exceeds limit: absent output
+PASS method values seventh explicit class method parameter exceeds limit: saved output
+PASS method values copied method parameter containment depth four
+PASS method values copied method parameter containment depth five rejected: absent output
+PASS method values copied method parameter containment depth five rejected: saved output
+INFO method values section=boundaries fixtures=8 executions=11 traps=0 rejection-runs=6
+INFO method values: 8 selected fixtures; 11 passed executions; 5 native returns; 0 exact-site traps; 3 rejection fixtures / 6 rejection runs; 0 failed executions; section=boundaries; seed=22022; steps=12; elapsed=0.18s
+PASS method values complete

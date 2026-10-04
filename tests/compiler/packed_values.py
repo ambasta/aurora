@@ -436,10 +436,12 @@ def rejection_cases(suite):
          "enum class State{ok,error};template<Scalar T>class Box{T value;public:Box(T n):value(n){} };", ""),
         ("enum is not a builtin scalar-array element", "array<State,1> a={State::ok};return 42u64;",
          "enum class State{ok,error};", ""),
-        ("class method aggregate parameters remain unsupported", "return 42u64;",
-         CELL + "class Bad{public:Bad(){}auto take(Cell a)->u64{return u64(a.get());}};", ""),
     ):
         suite.reject(name, body, definitions, helpers)
+    suite.check("packed class method parameter copies independent result",
+                "Cell source=Cell(42u8);Receiver receiver=Receiver();Cell result=receiver.take(source);"
+                "source.set(0u8);return u64(result.get());",
+                definitions=CELL + "class Receiver{public:Receiver(){}auto take(Cell a)const->Cell{return a;}};")
     for capacity in (0, 65):
         suite.reject(f"packed array capacity {capacity} remains unsupported", "return 42u64;",
                      byte_storage("Bad", capacity))

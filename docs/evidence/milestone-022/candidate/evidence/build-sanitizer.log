@@ -1,0 +1,4 @@
+make: Entering directory '/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/compiler'
+mkdir -p ../build/san/
+python3 /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/cxx-cap.py g++ -std=c++23 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -Wall -Wextra -Wpedantic -Werror main.cpp -o ../build/san/aurorac
+make: Leaving directory '/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/compiler'

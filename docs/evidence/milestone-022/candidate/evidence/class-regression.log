@@ -1,0 +1,75 @@
+PASS classes constructor and private mutation
+PASS classes const accessor
+PASS classes argument before exclusive call
+PASS classes readonly sibling reborrow
+PASS classes complete private copies independent
+PASS classes mutable copy of const scalar-field value
+PASS classes receiver preserved across ordinary call
+PASS classes receiver method branches loops
+PASS classes local shadows receiver field
+PASS classes constructor parameter shadows field
+PASS classes construction overflow traps
+PASS classes method overflow traps
+PASS classes public aggregate method
+PASS classes empty constructor class
+PASS classes bool receiver field canonical
+PASS classes six scalar method arguments
+PASS classes nested argument snapshots
+PASS classes private public reflection count
+PASS classes global name cannot hijack private helper
+PASS classes const receiver mutation
+PASS classes private field read
+PASS classes private field write
+PASS classes private method call
+PASS classes constructor designated bypass
+PASS classes constructor wrong argument
+PASS classes constructor wrong count
+PASS classes method wrong argument
+PASS classes method wrong count
+PASS classes temporary receiver denied
+PASS classes receiver does not escape
+PASS classes constructor missing field
+PASS classes constructor duplicate field
+PASS classes constructor unknown field
+PASS classes constructor self field forbidden
+PASS classes constructor self method forbidden
+PASS classes constructor nonempty body
+PASS classes const method write
+PASS classes const method exclusive reborrow
+PASS classes private constructor denied
+PASS classes duplicate methods rejected
+PASS classes method field collision
+PASS classes method ownership parameter rejected
+PASS classes method aggregate result requires typed initializer
+PASS classes method direct recursion rejected
+PASS classes method mutual recursion rejected
+PASS classes imported encapsulated class
+PASS classes imported private method denied
+PASS classes imported private constructor denied
+PASS classes imported helper lexical identity
+PASS classes namespace class identity
+PASS classes library method cannot call root helper
+PASS classes freestanding accumulator library
+PASS classes accumulator private state
+PASS classes accumulator checked overflow
+PASS classes loop-local receiver lifetimes
+PASS classes loop-local const aggregate lifetimes
+PASS classes branch constructor lifetimes
+PASS classes early return ends receiver lifetime
+PASS classes method shadow not callable
+PASS classes field name prevents global hijack
+PASS classes six argument nested receiver calls
+PASS classes constructor multiple declaration-order fields
+PASS classes method caller owner lifetime preserved
+PASS classes method private fields of independent same-class local
+PASS classes const method cannot mutate const local
+PASS classes scalar intermediary method cycle denied
+PASS classes pure scalar recursion preserved
+PASS classes constructor argument local shadowing uses prior object
+PASS classes initializer calls follow declaration order
+PASS classes method postfix depth bounded
+PASS classes constructor nesting depth bounded
+PASS classes constructor return type rejected
+PASS classes long acyclic receiver call graph
+PASS classes long receiver cycle graph rejected
+74 class constructor and method checks passed

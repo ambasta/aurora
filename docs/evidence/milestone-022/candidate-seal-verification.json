@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "candidate_seal_sha256": "e96c4eaa98e46ca8a4974b48cb842a64a7e5472c6dde3a096107d340e92bb040",
+  "sealed_artifacts_verified": 16,
+  "adoption_paths_checked_before_documentation": 28,
+  "parent_source_inputs_checked_before_documentation": 368,
+  "compiler_sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+  "kernel_receipt_hashes_verified": 935,
+  "kernel_result_sha256": "4f33b9e490f43342ba55f8b65c48df5fb47745db4d8e87688bd225e4194b0050",
+  "kernel_review_and_validator_replay": "PASS"
+}

@@ -32,7 +32,7 @@ The milestone006 compiler adds immutable by-value class parameters and complete 
 
 The reviewed milestone009 compiler establishes reusable value definitions through explicit one/two-parameter Scalar-constrained class templates and a real `std.utility` pair. Instances preserve defining-module lexical binding, nominal ordered-tuple identity, private access, complete initialization and independent value boundaries. The graph is capped at 64 templates and 256 concrete specializations. Its 117 template cases and 393 direct IR cases pass with existing suites, ten exhaustive-dispatch checks and sanitizers; final integrated verification passed. See [TEMPLATES.md](../compiler/TEMPLATES.md). General concepts, deduction and recursive instantiation remain deferred. Milestone020 subsequently adds bounded fully concrete nested arguments; milestone021 adds explicit copied-value function templates with narrow bare-parameter class-template substitution. Nested dependent expansion remains excluded. Milestone010 now implements that bounded collection: compiled `std::array<T,N>` with scalar T, literal N from 1..64, complete zero initialization, private fixed-array fields, checked copied access and mutable set. Canonical `builtin::array` and its fixed bare `array` alias are distinct from the explicitly qualified wrapper; the builtin namespace is reserved. Logical field metadata and flat leaf layout remain separate, and ordinary value boundaries copy at most 64 leaves per class. The checkpoint passes 216 container cases, 463 direct IR cases, ten exhaustive-dispatch controls, 18 native receiver-array IR checks and existing suites/sanitizers. Independent compiler review passed; final milestone010 integration verification passed. See [FIXED-CONTAINERS.md](../compiler/FIXED-CONTAINERS.md). Milestone011 subsequently established bounded Value composition; the reviewed milestone012 candidate adds closed enums and copied method results for recoverable numeric reports.
 
-General constructor bodies, overloads, inheritance/interfaces, resource fields, heap storage, source-visible aggregate borrowing and class-valued method parameters remain deferred. Bounded nested class fields and constructor class snapshots are implemented; copied class-valued method results are reviewed in milestone012. Constructor/method call cycles are conservatively rejected; ordinary scalar recursion still permits stack exhaustion. This partial stage does not waive the scalar semantic evidence gate or satisfy the general lifetime gate below.
+General constructor bodies, overloads, inheritance/interfaces, resource fields, heap storage and source-visible aggregate borrowing remain deferred. Verified M022 adds bounded immutable copied class-valued ordinary method parameters and std::array exchange under [METHOD-VALUES.md](../compiler/METHOD-VALUES.md). Bounded nested class fields and constructor class snapshots are implemented; copied class-valued method results are reviewed in milestone012. Constructor/method call cycles are conservatively rejected; ordinary scalar recursion still permits stack exhaustion. This partial stage does not waive the scalar semantic evidence gate or satisfy the general lifetime gate below.
 
 Implement inline value classes, Java-inspired encapsulation/interfaces, explicit reference ownership and dispatch, fields, construction, deterministic destruction, borrowing across function calls, and constrained generics. Do not make interfaces or identity force heap allocation, garbage collection, or boxing. Define lifetimes, aliasing, pointer provenance, synchronization, and trusted intrinsics in a formal core calculus before claiming soundness. Classify which language features the model actually covers.
 
@@ -230,7 +230,7 @@ and gates. The isolated mutable-byte candidate remains unaccepted. DMA and XFS
 next steps retain the independent contracts and qualification gates above.
 
 
-## Current verified checkpoint: milestone021
+## Verified checkpoint: milestone021
 
 Bounded explicit function templates and the real std::make_pair value factory
 passed complete release/fatal host ASan/UBSan compiler targets, independent review
@@ -249,3 +249,21 @@ M021 is not a lexer/parser, owned-string layer, native toolchain or general-purp
 standard library. Deduction, overloads, generic methods and recursive/dependent
 generic expansion need separate contracts. Mutable-byte, DMA and XFS work retain
 their independent acceptance gates; no active DMA or mountability is implied.
+
+
+## Current verified checkpoint: milestone022
+
+Copied ordinary method class parameters and std::array exchange pass complete
+release/fatal host ASan/UBSan compiler targets, independent source/IR/native ABI
+review, fresh parent aggregate and all 166 existing emulator modes. Both normal
+images are restored. The new private combined receiver/record/result convention
+has independent handwritten native boundary controls; it is not a stable foreign
+ABI. Parser grammar remains byte-identical to M021, using existing qualified self.
+
+The next self-hosting dependency remains a separately specified bounded token/text
+consumer with meaningful native behavior and independent positive, negative,
+adversarial, resource and sanitizer gates. Value transport is not a lexer/parser,
+owned-string layer or native toolchain. Generic methods, references/resources,
+whole-program resource guarantees, active DMA, XFS mountability and physical
+hardware retain their separate contracts. The isolated mutable-byte candidate
+remains unaccepted. See [M022 evidence](evidence/milestone-022/README.md).

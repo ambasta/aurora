@@ -1,0 +1,13 @@
+module app;class Counter{
+    i64 value;
+public:
+    Counter(i64 n):value(n){}
+    auto get()const->i64{return value;}
+    auto set(i64 n)->i64{value=n;return value;}
+    auto add(i64 n)->i64{value=value+n;return value;}
+    auto read(Counter source)const->i64{return source.get();}
+    auto copy(Counter source)const->Counter{return source;}
+    auto replace(Counter source)->Counter{
+        const Counter old=Counter(value);value=source.get();return old;
+    }
+};class Forward{i64 value;public:Forward(i64 n):value(n){}auto take(Counter source)const->Counter{Counter result=identity(source);result.add(value);return result;}};auto identity(Counter source)->Counter{return source;}auto test()->i64{Counter source=Counter(20);Forward receiver=Forward(22);Counter result=receiver.take(source);return result.get();}

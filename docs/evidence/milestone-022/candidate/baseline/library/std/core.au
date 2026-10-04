@@ -1,0 +1,30 @@
+export module std.core;
+
+namespace std::detail {
+    auto select_min(i64 left, i64 right) -> i64 {
+        if (left < right) {
+            return left;
+        }
+        return right;
+    }
+}
+
+export namespace std {
+    auto min(i64 left, i64 right) -> i64 {
+        return detail::select_min(left, right);
+    }
+
+    auto max(i64 left, i64 right) -> i64 {
+        if (left > right) {
+            return left;
+        }
+        return right;
+    }
+
+    auto abs(i64 value) -> i64 {
+        if (value < 0) {
+            return -value;
+        }
+        return value;
+    }
+}
