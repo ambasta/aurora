@@ -1,0 +1,34 @@
+{
+  "command": [
+    "g++",
+    "-std=c++23",
+    "-O2",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-c",
+    "-ffreestanding",
+    "-fno-stack-protector",
+    "-fno-exceptions",
+    "-fno-rtti",
+    "-fno-asynchronous-unwind-tables",
+    "-fno-pie",
+    "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/integer_signal.cpp",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tmp/aurora-ir-packed-method-native-8aap_uak/integer_signal.o"
+  ],
+  "returncode": 0,
+  "wall_timeout": false,
+  "elapsed_seconds": 0.07463762599218171,
+  "peak_rss_kib": 17792,
+  "address_space_bytes": 2147483648,
+  "cpu_seconds": [
+    120,
+    130
+  ],
+  "wall_seconds": 180,
+  "regular_file_bytes": 536870912,
+  "candidate_bytes_before": 194479845,
+  "candidate_bytes_after": 194481349,
+  "free_bytes_after": 2868817920
+}

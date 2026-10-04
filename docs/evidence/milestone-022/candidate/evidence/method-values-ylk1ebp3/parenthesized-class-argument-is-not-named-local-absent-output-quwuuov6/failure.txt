@@ -1,0 +1,2 @@
+parenthesized class argument is not named local: absent output: parenthesized class argument is not named local: absent output: expected compiler exit 1, got 0: b''
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-ylk1ebp3/parenthesized-class-argument-is-not-named-local-absent-output-quwuuov6

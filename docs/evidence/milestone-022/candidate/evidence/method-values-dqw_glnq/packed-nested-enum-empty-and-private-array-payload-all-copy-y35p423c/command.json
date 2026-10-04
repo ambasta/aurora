@@ -1,0 +1,8 @@
+[
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/aurorac",
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-dqw_glnq/packed-nested-enum-empty-and-private-array-payload-all-copy-y35p423c/input.au",
+  "-o",
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-dqw_glnq/packed-nested-enum-empty-and-private-array-payload-all-copy-y35p423c/compiled.s",
+  "--module-root",
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/library"
+]

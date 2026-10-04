@@ -1,0 +1,9 @@
+module example.byte_codec;
+import std.bytes;
+
+auto main() -> i64 {
+    const std::Encode32Result encoded = std::encode_le32(42u64);
+    if (encoded.status() != std::ByteCodecStatus::success) { return 1; }
+    const std::Bytes4 bytes = encoded.bytes_or_zero();
+    return i64(std::decode_le32(bytes));
+}

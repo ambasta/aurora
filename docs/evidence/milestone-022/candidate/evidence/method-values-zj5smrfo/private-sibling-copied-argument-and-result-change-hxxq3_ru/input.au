@@ -1,0 +1,13 @@
+module app;class Counter{
+    i64 value;
+public:
+    Counter(i64 n):value(n){}
+    auto get()const->i64{return value;}
+    auto set(i64 n)->i64{value=n;return value;}
+    auto add(i64 n)->i64{value=value+n;return value;}
+    auto read(Counter source)const->i64{return source.get();}
+    auto copy(Counter source)const->Counter{return source;}
+    auto replace(Counter source)->Counter{
+        const Counter old=Counter(value);value=source.get();return old;
+    }
+};class Sibling{i64 value;auto take(Counter source,i64 extra)const->Counter{const Counter result=Counter(source.get()+extra+value);return result;}auto advance(Counter source)->Counter{value=value+1;const Counter result=take(source,1);return result;}public:Sibling(i64 n):value(n){}auto get(Counter source)const->Counter{const Counter result=take(source,2);return result;}auto change(Counter source)->Counter{const Counter result=advance(source);return result;}};auto test()->i64{Counter source=Counter(20);Sibling receiver=Sibling(20);Counter result=receiver.change(source);source.set(99);return result.get();}

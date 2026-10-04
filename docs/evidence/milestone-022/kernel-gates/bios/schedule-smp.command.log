@@ -1,0 +1,46 @@
++ set -euo pipefail
+++ dirname ./scripts/kernel-smoke.sh
++ cd ./scripts/..
++ mode=--schedule-smp
++ build_environment=()
++ cpu=qemu64
++ cpus=1
++ case "$mode" in
++ build_environment+=(KERNEL_TEST_SCHEDULE=1)
++ cpus=2
++ [[ --schedule-smp == normal ]]
++ log=build/kernel-schedule-smp.log
++ trap './scripts/kernel-build.sh >/dev/null' EXIT
++ env KERNEL_TEST_SCHEDULE=1 ./scripts/kernel-build.sh
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 84 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 37616-byte payload, 1 MiB image; 14 negative controls; RX/R/RW segments and bounded BIOS packet
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
++ metadata=build/kernel-schedule-smp.metadata.json
++ cp build/user-metadata.json build/kernel-schedule-smp.metadata.json
++ qemu=/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64
++ command -v /tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64
++ args=()
++ [[ -n /tmp/aurora-qemu/firmware ]]
++ args+=(-L "$QEMU_DATA")
++ set +e
++ timeout 15 /tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64 -L /tmp/aurora-qemu/firmware -machine pc -accel tcg -cpu qemu64 -smp 2 -m 32M -drive file=build/aurora.img,format=raw,if=ide -boot c -nic none -display none -serial stdio -monitor none -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
++ status=35
++ set -e
++ cat build/kernel-schedule-smp.log
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 0
+AURORA_USER_OK: ring3, own stack, TSS entry, controlled return
+AURORA_APIC_UNSUPPORTED
+Scheduling test failed
+AURORA_BOOT_FAIL
++ [[ --schedule-smp == --division-* ]]
++ [[ --schedule-smp == --unsigned-* ]]
++ [[ --schedule-smp == --schedule* ]]
++ python3 tests/kernel-schedule-smoke.py 35 build/kernel-schedule-smp.log --schedule-smp build/kernel-schedule-smp.metadata.json
++ echo 'PASS: kernel emulator verification (--schedule-smp)'
+PASS: kernel emulator verification (--schedule-smp)
++ ./scripts/kernel-build.sh

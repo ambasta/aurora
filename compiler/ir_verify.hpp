@@ -123,9 +123,8 @@ inline void verifyFunction(Function &function,
                     "readonly span is only an ordinary function parameter");
             return;
         }
-        require(!function.receiver ||
-                    (parameter ? function.receiver->constructor : !function.receiver->constructor),
-                "receiver signatures must remain scalar");
+        require(!function.receiver || parameter || !function.receiver->constructor,
+                "constructor result must remain scalar");
         require(type.isClass() && type == Type(type.className), "invalid value boundary type");
         require(classLayouts.contains(type.className), "unknown value boundary class");
         require(classLayouts.at(type.className).size() <= 64,
@@ -1043,10 +1042,9 @@ inline void verifyFunction(Function &function,
                                     std::all_of(target.parameters.begin(), target.parameters.end(),
                                                 [&](const Type &type) {
                                                     return scalarValueType(type, enumCases) ||
-                                                           (target.receiver->constructor &&
-                                                            type.isClass());
+                                                           type.isClass();
                                                 }),
-                                "receiver signatures must remain scalar");
+                                "receiver signature requires scalar, enum or class values");
                         const auto &receiver = *target.receiver;
                         const bool aggregate =
                             std::any_of(target.parameters.begin(), target.parameters.end(),
@@ -1054,25 +1052,37 @@ inline void verifyFunction(Function &function,
                         require(aggregate
                                     ? operation.objectArguments.size() == target.parameters.size()
                                     : operation.objectArguments.empty(),
-                                "constructor object argument vector size mismatch");
+                                (receiver.constructor
+                                     ? "constructor object argument vector size mismatch"
+                                     : "receiver object argument vector size mismatch"));
                         std::set<int> argumentStorage;
                         for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
                             const auto &type = target.parameters[arg - 1];
                             if (scalarValueType(type, enumCases)) {
                                 require(!aggregate || operation.objectArguments[arg - 1] == 0,
-                                        "scalar constructor argument cannot name object storage");
+                                        (receiver.constructor
+                                     ? "scalar constructor argument cannot name object storage"
+                                     : "scalar receiver argument cannot name object storage"));
                                 require(pop().type == type, "method argument type mismatch");
                             } else {
                                 const int base = operation.objectArguments[arg - 1];
                                 require(base != operation.receiverOffset,
-                                        "constructor receiver aliases argument snapshot");
+                                        (receiver.constructor
+                                     ? "constructor receiver aliases argument snapshot"
+                                     : "receiver aliases argument snapshot"));
                                 require(argumentStorage.insert(base).second,
-                                        "constructor argument snapshots must be distinct");
+                                        (receiver.constructor
+                                     ? "constructor argument snapshots must be distinct"
+                                     : "receiver argument snapshots must be distinct"));
                                 const auto &object = completeObject(base);
                                 require(object.className == type.className,
-                                        "constructor argument nominal class mismatch");
+                                        (receiver.constructor
+                                     ? "constructor argument nominal class mismatch"
+                                     : "receiver argument nominal class mismatch"));
                                 require(!object.mutableValue,
-                                        "constructor argument snapshot must be readonly");
+                                        (receiver.constructor
+                                     ? "constructor argument snapshot must be readonly"
+                                     : "receiver argument snapshot must be readonly"));
                             }
                         }
                         require(operation.receiverOffset >= 0, "invalid method receiver offset");
@@ -1117,6 +1127,8 @@ inline void verifyFunction(Function &function,
                             const int base = operation.resultOffset;
                             require(base != operation.receiverOffset,
                                     "method result aliases receiver");
+                            require(!argumentStorage.contains(base),
+                                    "method result aliases argument snapshot");
                             require(function.objectSlots.contains(base),
                                     "method result requires exact object slot");
                             const auto &object = function.objectSlots.at(base);

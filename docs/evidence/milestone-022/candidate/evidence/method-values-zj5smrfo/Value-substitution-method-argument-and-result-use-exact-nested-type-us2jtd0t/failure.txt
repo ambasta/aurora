@@ -1,0 +1,2 @@
+Value substitution method argument and result use exact nested type: Value substitution method argument and result use exact nested type: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/Value-substitution-method-argument-and-result-use-exact-nested-type-us2jtd0t

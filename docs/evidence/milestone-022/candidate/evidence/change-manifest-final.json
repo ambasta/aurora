@@ -1,0 +1,142 @@
+[
+  {
+    "path": "README.md",
+    "sha256": "dcc9fe448f3f1f84e4f24958b96aa99cb7cd4fe7a573e5ca1f1d854f18018986",
+    "baseline_sha256": "bc7bac0a5f2b0bb7ace71a991681dce98c49733b4eb8727063053b7de0080a4c"
+  },
+  {
+    "path": "compiler/CLASSES.md",
+    "sha256": "90ad30eb3e1ff96ede8e4c8546a9453809bb3c3d65c17f99de0331275bca81ed",
+    "baseline_sha256": "816548babe24956b9e83fd687bd6a91161c3cf21f6e1f4d830c56de6939fc4f3"
+  },
+  {
+    "path": "compiler/COMPOSED-VALUES.md",
+    "sha256": "3a6c1720e2039e7768d0577cffcc5b83bb0133886b04683e4f0029c482974219",
+    "baseline_sha256": "65ca2a8734d3e1237ef56767e00862bf2a414d4aa7fd5b65b1020be051e1c1b1"
+  },
+  {
+    "path": "compiler/ENUM-RESULTS.md",
+    "sha256": "d5bd7ebc7f373b1ee6808a17015efe78e867789a179489d4b50502b53677f2ef",
+    "baseline_sha256": "b7b2545509e2f458df28c3ae23b38242b98df4b02882a8017a09a39450c27409"
+  },
+  {
+    "path": "compiler/METHOD-VALUES.md",
+    "sha256": "f9901ff755dc9d56a592de09006e03147b2e7410bb667fa97a1810f24ae751c5",
+    "baseline_sha256": null
+  },
+  {
+    "path": "compiler/Makefile",
+    "sha256": "a296b2de8b2964612d679056f200496c744a308adf59afb35f672b791d601b3e",
+    "baseline_sha256": "0bc6df7c50c75be73672f58fa8261ae4499703e1600efdff93661ade51812500"
+  },
+  {
+    "path": "compiler/README.md",
+    "sha256": "5c798133513f190335badc7873bfd7ef1d55f1549fc11d55c8c11417ea604036",
+    "baseline_sha256": "33f1a3f8b9833a309a84a4d51ffe62331cb5bdb13e40be79236f59fcb65bd773"
+  },
+  {
+    "path": "compiler/VALUE-CALLS.md",
+    "sha256": "d6e1b7f2117a14b4239271c628c2c345e6cd1c3f2df28ecf8c479c9f058feb4f",
+    "baseline_sha256": "823fb1fb06fb47975e31eb01b2727f889af531637be68e10ad795a477cf6a7e5"
+  },
+  {
+    "path": "compiler/ir.hpp",
+    "sha256": "dfda7f20fe723b118bce761780183feba7196f0008e21f8792b0afed7e764981",
+    "baseline_sha256": "1670554cfb3dcfeb248997bae47e747d49b03aca90a316061e290380bd1fb601"
+  },
+  {
+    "path": "compiler/ir_verify.hpp",
+    "sha256": "45df6eb91ddccc50eec2ccfcccd410b3a3203880d43caf3d59297a80116fb87b",
+    "baseline_sha256": "ded7d28ba24104c82a69fd9922c13caf972ac910df66c129c2e3fa031d05e32b"
+  },
+  {
+    "path": "compiler/modules.hpp",
+    "sha256": "24744e994750734430668532fd4c9bfe4ae6450c4912d78d2c7a3edae5de124c",
+    "baseline_sha256": "82e558df03f2363cc6d4406971938d7c86641bbc8021b23c51b3779213cf82ad"
+  },
+  {
+    "path": "compiler/semantics.hpp",
+    "sha256": "7c9b03a0e858d929c7b6cceaa83a35310e47cb2fcb373c52886f5593539c5750",
+    "baseline_sha256": "20a7e2232485278e7e5521b57b566e5a61483493dce8b54448917e49e7b64905"
+  },
+  {
+    "path": "compiler/x86.hpp",
+    "sha256": "34848df27082f37b4c10c01140326367b8a69f3d27647b931b222a7a3a2bea24",
+    "baseline_sha256": "818d9a5a3476d46e65c3bcd06d26f4b9d5fa5e8c7c39b10dfd5bbccff27525f4"
+  },
+  {
+    "path": "docs/completeness-matrix.md",
+    "sha256": "587f1bad2a2c39e682b2b8f28b8dec070944f53d418bcf59aa2969d5754877ad",
+    "baseline_sha256": "fdfdf73fb120e97f3b05aca2b249932c3dc80d60c7d8f7cc8b1d6433ff058ac5"
+  },
+  {
+    "path": "examples/method_value_exchange.au",
+    "sha256": "78a7c48661b77e237645cb27b1f4e6386ca0a9f58f6871cbc27db29c9e052ab1",
+    "baseline_sha256": null
+  },
+  {
+    "path": "library/README.md",
+    "sha256": "f9c318be04400b47aa6204144ed10c697257c01103fdcdab031f012330688938",
+    "baseline_sha256": "2ab66f3da86383422760bdd43dad9d655c903ab860a4159f705b97f71271bc3f"
+  },
+  {
+    "path": "library/std/array.au",
+    "sha256": "22bdc89a253e471f170b0d03fe2ad1290036b9d4fc06b55399f375329b344c51",
+    "baseline_sha256": "4075cece31d008b9ed7f08326e84f755ef6f5cca56238c1fe861dec4bb4a590d"
+  },
+  {
+    "path": "tests/compiler/composed_values.py",
+    "sha256": "8fa45cb558b3ab763d59fcddea6aa26981101a887a4186b197e41698778708af",
+    "baseline_sha256": "24bdd85c44f474a1ccca5a8a9fc2f574f6611cd1ce286be2f69d51d1d77847c0"
+  },
+  {
+    "path": "tests/compiler/decimal_values.py",
+    "sha256": "0c1ebbf6f4f8bb0e251fd4fb06591cf91a89f4677f034d41bca08e281a27238d",
+    "baseline_sha256": "f2dc97b27aa0d399a614e25c8de4cfc8afbb68aa873d6c10a47ff6ad365434a9"
+  },
+  {
+    "path": "tests/compiler/enum_composition.py",
+    "sha256": "7bdeb4b74041f5df91cbb30373a8484b4e9cc8150747b5710a64f1f9c15c7838",
+    "baseline_sha256": "277ce3c23431c552780d3e890813547dfa426b56e9f221131a8ccd3743a67cf7"
+  },
+  {
+    "path": "tests/compiler/ir_tests.cpp",
+    "sha256": "4bb8a64cf4fc693af05359429bc13fab219fe4e1e64cc9949b5b00b78d9babb1",
+    "baseline_sha256": "979655c571db3139aa15a1cfc4116afc3936935dc9f858f0dfaaf970f3810547"
+  },
+  {
+    "path": "tests/compiler/method_values.py",
+    "sha256": "453a9b2999e564ae46db598304d99a7a282847cd5e69c69f8ada0df8e9860299",
+    "baseline_sha256": null
+  },
+  {
+    "path": "tests/compiler/method_values_abi.py",
+    "sha256": "f123e3aadf2ff09aa9e22bad8931e020593c647ed90000356f0a32716b8fdc84",
+    "baseline_sha256": null
+  },
+  {
+    "path": "tests/compiler/method_values_ir.cpp",
+    "sha256": "42dcee51b564efc2b4ea61350357b3dfd9e47b6c8a68f235c9c4fd019e699a4e",
+    "baseline_sha256": null
+  },
+  {
+    "path": "tests/compiler/nested_values.py",
+    "sha256": "352ebd325f4d5c8f02bf1d0667962929210bcf348f88e8f8e3a60cfb6bf9dd1b",
+    "baseline_sha256": "c1a05b2596885dd44f494da579491743178a218d5778f9e5f60d26cbe9b0e90e"
+  },
+  {
+    "path": "tests/compiler/packed_values.py",
+    "sha256": "0805d263e4594314d268ffa5b1a523d7b9ba694a2f4783dd9b40aae4ce6fe7b1",
+    "baseline_sha256": "6c6c036db33832f47e62b58e5942e1dc41920f88470afffbbd43a1aa2689baef"
+  },
+  {
+    "path": "tests/compiler/value_calls.py",
+    "sha256": "dabb7b0f282170f620cbb32c5701cd5831c8dbf543f3ab0a610e7e3c36bc06fe",
+    "baseline_sha256": "16b87edb086d38074b14db2d1bfbabde3d5e07dbeebb489e9a6efb7ed9179675"
+  },
+  {
+    "path": "tests/compiler/xfs_geometry.py",
+    "sha256": "961ea8584e1a9392e060b4aebaaf567dfa5914f99eedd265bdcbc76ecb58ea71",
+    "baseline_sha256": "fe375d75a7726a538f404f5d2b3f4240065f7d41c3334c104b535b5db2e1c95c"
+  }
+]

@@ -797,13 +797,12 @@ class ModuleResolver {
                         publicTypes[definition.name].push_back(method.result);
                     for (auto &parameter : method.params) {
                         resolve(parameter.type);
-                        if (!scalarValue(parameter.type) &&
-                            !(method.constructor && parameter.type.isClass()))
+                        if (!scalarValue(parameter.type) && !parameter.type.isClass())
                             throw Error(
                                 method.constructor
                                     ? "only scalar, enum or class constructor parameters "
                                       "are supported"
-                                    : "only scalar or enum method parameters are supported");
+                                    : "only scalar, enum or class method parameters are supported");
                         if (method.publicAccess)
                             publicTypes[definition.name].push_back(parameter.type);
                     }

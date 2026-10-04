@@ -918,7 +918,10 @@ def main():
                 "compiler SHA256 must be64 lowercase hex digits")
         require(expected_pin == args.compiler_sha256, "explicit compiler identity mismatch")
     if args.sanitized_compiler:
-        require(os.environ.get("ASAN_OPTIONS") == "detect_leaks=0:halt_on_error=1", "explicit retained ASan options required")
+        require(os.environ.get("ASAN_OPTIONS") in (
+            "detect_leaks=0:halt_on_error=1",
+            "detect_leaks=0:halt_on_error=1:abort_on_error=1"),
+            "explicit retained fatal ASan options required")
     (ROOT / "build").mkdir(exist_ok=True)
     directory = args.artifacts.resolve() if args.artifacts else Path(tempfile.mkdtemp(prefix="xfs-geometry-", dir=ROOT / "build"))
     if args.artifacts:

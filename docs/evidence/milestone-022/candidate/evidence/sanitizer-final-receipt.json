@@ -1,0 +1,392 @@
+{
+  "command": [
+    "make",
+    "-C",
+    "compiler",
+    "-j1",
+    "test",
+    "CXX=python3 /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/cxx-cap.py g++",
+    "OUT=../build/san/aurorac",
+    "CXXFLAGS=-std=c++23 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -Wall -Wextra -Wpedantic -Werror",
+    "IR_TEST_CXXFLAGS=-std=c++23 -O1 -g1 -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -Wall -Wextra -Wpedantic -Werror",
+    "UTF8_TEST_FLAGS=--sanitized-compiler",
+    "XFS_GEOMETRY_TEST_FLAGS=--sanitized-compiler"
+  ],
+  "status": 0,
+  "elapsed_seconds": 376.9864769519918,
+  "source_inputs_unchanged": true,
+  "resource_observations": [
+    {
+      "candidate_bytes": 139087084,
+      "free_bytes": 2928631808
+    },
+    {
+      "candidate_bytes": 139129296,
+      "free_bytes": 2928398336
+    },
+    {
+      "candidate_bytes": 139140595,
+      "free_bytes": 2928386048
+    },
+    {
+      "candidate_bytes": 139167089,
+      "free_bytes": 2928197632
+    },
+    {
+      "candidate_bytes": 139183356,
+      "free_bytes": 2928168960
+    },
+    {
+      "candidate_bytes": 139237162,
+      "free_bytes": 2928123904
+    },
+    {
+      "candidate_bytes": 140059065,
+      "free_bytes": 2927177728
+    },
+    {
+      "candidate_bytes": 139260111,
+      "free_bytes": 2927951872
+    },
+    {
+      "candidate_bytes": 139274725,
+      "free_bytes": 2927816704
+    },
+    {
+      "candidate_bytes": 141229457,
+      "free_bytes": 2925850624
+    },
+    {
+      "candidate_bytes": 139232476,
+      "free_bytes": 2927882240
+    },
+    {
+      "candidate_bytes": 139285222,
+      "free_bytes": 2927689728
+    },
+    {
+      "candidate_bytes": 139255276,
+      "free_bytes": 2927697920
+    },
+    {
+      "candidate_bytes": 139379817,
+      "free_bytes": 2927427584
+    },
+    {
+      "candidate_bytes": 139370941,
+      "free_bytes": 2927435776
+    },
+    {
+      "candidate_bytes": 139274489,
+      "free_bytes": 2927529984
+    },
+    {
+      "candidate_bytes": 139270771,
+      "free_bytes": 2927423488
+    },
+    {
+      "candidate_bytes": 139328274,
+      "free_bytes": 2927329280
+    },
+    {
+      "candidate_bytes": 139338561,
+      "free_bytes": 2927181824
+    },
+    {
+      "candidate_bytes": 139305904,
+      "free_bytes": 2927218688
+    },
+    {
+      "candidate_bytes": 139795957,
+      "free_bytes": 2926735360
+    },
+    {
+      "candidate_bytes": 139297925,
+      "free_bytes": 2927128576
+    },
+    {
+      "candidate_bytes": 140240022,
+      "free_bytes": 2926157824
+    },
+    {
+      "candidate_bytes": 139372488,
+      "free_bytes": 2926886912
+    },
+    {
+      "candidate_bytes": 139348921,
+      "free_bytes": 2926886912
+    },
+    {
+      "candidate_bytes": 139538981,
+      "free_bytes": 2926718976
+    },
+    {
+      "candidate_bytes": 140137980,
+      "free_bytes": 2925928448
+    },
+    {
+      "candidate_bytes": 149236886,
+      "free_bytes": 2916454400
+    },
+    {
+      "candidate_bytes": 158230180,
+      "free_bytes": 2906955776
+    },
+    {
+      "candidate_bytes": 167231376,
+      "free_bytes": 2897592320
+    },
+    {
+      "candidate_bytes": 176233635,
+      "free_bytes": 2888224768
+    },
+    {
+      "candidate_bytes": 184238427,
+      "free_bytes": 2879762432
+    },
+    {
+      "candidate_bytes": 193253364,
+      "free_bytes": 2870366208
+    },
+    {
+      "candidate_bytes": 201268297,
+      "free_bytes": 2861875200
+    },
+    {
+      "candidate_bytes": 210266425,
+      "free_bytes": 2852499456
+    },
+    {
+      "candidate_bytes": 218906669,
+      "free_bytes": 2843512832
+    },
+    {
+      "candidate_bytes": 228240125,
+      "free_bytes": 2833645568
+    },
+    {
+      "candidate_bytes": 237232795,
+      "free_bytes": 2824273920
+    },
+    {
+      "candidate_bytes": 246256982,
+      "free_bytes": 2814726144
+    },
+    {
+      "candidate_bytes": 255281514,
+      "free_bytes": 2805325824
+    },
+    {
+      "candidate_bytes": 263952040,
+      "free_bytes": 2796175360
+    },
+    {
+      "candidate_bytes": 273327731,
+      "free_bytes": 2786390016
+    },
+    {
+      "candidate_bytes": 281977609,
+      "free_bytes": 2777370624
+    },
+    {
+      "candidate_bytes": 289472736,
+      "free_bytes": 2769240064
+    },
+    {
+      "candidate_bytes": 294891282,
+      "free_bytes": 2763059200
+    },
+    {
+      "candidate_bytes": 303192970,
+      "free_bytes": 2753843200
+    },
+    {
+      "candidate_bytes": 311499503,
+      "free_bytes": 2744463360
+    },
+    {
+      "candidate_bytes": 173217950,
+      "free_bytes": 2888429568
+    },
+    {
+      "candidate_bytes": 161412303,
+      "free_bytes": 2903322624
+    },
+    {
+      "candidate_bytes": 161384019,
+      "free_bytes": 2903199744
+    },
+    {
+      "candidate_bytes": 161384109,
+      "free_bytes": 2903199744
+    },
+    {
+      "candidate_bytes": 161392948,
+      "free_bytes": 2903191552
+    },
+    {
+      "candidate_bytes": 161399691,
+      "free_bytes": 2903048192
+    },
+    {
+      "candidate_bytes": 161399628,
+      "free_bytes": 2903048192
+    },
+    {
+      "candidate_bytes": 163080940,
+      "free_bytes": 2901250048
+    },
+    {
+      "candidate_bytes": 163037359,
+      "free_bytes": 2901286912
+    },
+    {
+      "candidate_bytes": 163037359,
+      "free_bytes": 2901286912
+    },
+    {
+      "candidate_bytes": 163037359,
+      "free_bytes": 2901143552
+    },
+    {
+      "candidate_bytes": 163037359,
+      "free_bytes": 2901143552
+    },
+    {
+      "candidate_bytes": 163037359,
+      "free_bytes": 2901004288
+    },
+    {
+      "candidate_bytes": 163754159,
+      "free_bytes": 2900279296
+    },
+    {
+      "candidate_bytes": 169353391,
+      "free_bytes": 2894671872
+    },
+    {
+      "candidate_bytes": 175317167,
+      "free_bytes": 2888568832
+    },
+    {
+      "candidate_bytes": 179060911,
+      "free_bytes": 2884853760
+    },
+    {
+      "candidate_bytes": 183865519,
+      "free_bytes": 2879909888
+    },
+    {
+      "candidate_bytes": 188895407,
+      "free_bytes": 2874880000
+    },
+    {
+      "candidate_bytes": 193331375,
+      "free_bytes": 2870427648
+    },
+    {
+      "candidate_bytes": 195989679,
+      "free_bytes": 2867650560
+    },
+    {
+      "candidate_bytes": 199594159,
+      "free_bytes": 2864046080
+    },
+    {
+      "candidate_bytes": 202891439,
+      "free_bytes": 2860613632
+    },
+    {
+      "candidate_bytes": 213078191,
+      "free_bytes": 2850426880
+    },
+    {
+      "candidate_bytes": 194456557,
+      "free_bytes": 2869043200
+    },
+    {
+      "candidate_bytes": 194626920,
+      "free_bytes": 2868703232
+    },
+    {
+      "candidate_bytes": 194628974,
+      "free_bytes": 2868690944
+    },
+    {
+      "candidate_bytes": 194630325,
+      "free_bytes": 2868682752
+    },
+    {
+      "candidate_bytes": 194631676,
+      "free_bytes": 2868674560
+    },
+    {
+      "candidate_bytes": 194512003,
+      "free_bytes": 2868772864
+    },
+    {
+      "candidate_bytes": 194483565,
+      "free_bytes": 2868817920
+    },
+    {
+      "candidate_bytes": 194483565,
+      "free_bytes": 2868817920
+    },
+    {
+      "candidate_bytes": 194483565,
+      "free_bytes": 2868805632
+    },
+    {
+      "candidate_bytes": 196289901,
+      "free_bytes": 2866999296
+    },
+    {
+      "candidate_bytes": 204698989,
+      "free_bytes": 2858573824
+    },
+    {
+      "candidate_bytes": 210761069,
+      "free_bytes": 2852528128
+    },
+    {
+      "candidate_bytes": 216548717,
+      "free_bytes": 2846740480
+    },
+    {
+      "candidate_bytes": 220333421,
+      "free_bytes": 2842800128
+    },
+    {
+      "candidate_bytes": 220538221,
+      "free_bytes": 2842419200
+    },
+    {
+      "candidate_bytes": 231548269,
+      "free_bytes": 2831585280
+    },
+    {
+      "candidate_bytes": 341009411,
+      "free_bytes": 2722123776
+    },
+    {
+      "candidate_bytes": 227365527,
+      "free_bytes": 2835763200
+    },
+    {
+      "candidate_bytes": 228918638,
+      "free_bytes": 2834202624
+    },
+    {
+      "candidate_bytes": 229887166,
+      "free_bytes": 2830848000
+    },
+    {
+      "candidate_bytes": 229887166,
+      "free_bytes": 2830848000
+    }
+  ],
+  "ASAN_OPTIONS": "detect_leaks=0:halt_on_error=1:abort_on_error=1",
+  "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1",
+  "runtime_address_space_cap": null,
+  "CXX_build_address_space_bytes": 2147483648
+}

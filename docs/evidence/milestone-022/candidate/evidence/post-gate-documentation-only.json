@@ -1,0 +1,18 @@
+{
+  "README.md": {
+    "final_sha256": "dcc9fe448f3f1f84e4f24958b96aa99cb7cd4fe7a573e5ca1f1d854f18018986",
+    "gate_sha256": "c3edf7c836e8832cb71b0c6e76d454066cc03bc13ee98b6fbaf2ee13f39eae13"
+  },
+  "compiler/METHOD-VALUES.md": {
+    "final_sha256": "f9901ff755dc9d56a592de09006e03147b2e7410bb667fa97a1810f24ae751c5",
+    "gate_sha256": "82d294ba489ba334fd567a31adafd96085edeb2167d005716ef06c144d86040b"
+  },
+  "docs/completeness-matrix.md": {
+    "final_sha256": "587f1bad2a2c39e682b2b8f28b8dec070944f53d418bcf59aa2969d5754877ad",
+    "gate_sha256": "1332187a97946723841d07370a8a65c375717aaf9fa186bf359b1fe020a5bb7d"
+  },
+  "library/README.md": {
+    "final_sha256": "f9c318be04400b47aa6204144ed10c697257c01103fdcdab031f012330688938",
+    "gate_sha256": "5e7cc84cd34a71b417e637e042d10385fdbbb839a9b88ae466593ed390276130"
+  }
+}

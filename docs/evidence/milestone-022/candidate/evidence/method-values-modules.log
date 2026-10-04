@@ -1,0 +1,22 @@
+INFO method values compiler=/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/aurorac sha256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
+INFO method values tests/compiler/method_values.py sha256=896e83b8b0c3cad50a23dd1aa9c85b4359de43732fbaf0a5dfe82e9b03851e30
+INFO method values library/std/array.au sha256=187c0b583cdf9e3786680181039f3b832a54f7cdc84de4894981460908957b1a
+PASS composed values observer: exact native UD2 and invalid-result rejection
+PASS method values direct imports preserve private payload through copied method signature
+PASS method values transitive method signature type requires direct visible import: absent output
+PASS method values transitive method signature type requires direct visible import: saved output
+PASS method values exported public method cannot expose private type parameter: absent output
+PASS method values exported public method cannot expose private type parameter: saved output
+PASS method values exported public method cannot expose private type result: absent output
+PASS method values exported public method cannot expose private type result: saved output
+PASS method values private copied method may use defining-module private type
+PASS method values private copied method inaccessible to importing caller: absent output
+PASS method values private copied method inaccessible to importing caller: saved output
+PASS method values namespace private sibling binding cannot be hijacked by caller helper
+PASS method values same layout same basename across modules remains nominal: absent output
+PASS method values same layout same basename across modules remains nominal: saved output
+PASS method values imported class-template injected self parameter and result
+PASS method values module class result and caller mutable copies preserve privacy
+INFO method values section=modules fixtures=10 executions=15 traps=0 rejection-runs=10
+INFO method values: 10 selected fixtures; 15 passed executions; 5 native returns; 0 exact-site traps; 5 rejection fixtures / 10 rejection runs; 0 failed executions; section=modules; seed=22022; steps=12; elapsed=0.17s
+PASS method values complete

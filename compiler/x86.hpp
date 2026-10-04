@@ -96,6 +96,10 @@ class X86Emitter {
                 return true;
         return false;
     }
+    bool classParameters(const ir::Function &function) const {
+        return std::any_of(function.parameters.begin(), function.parameters.end(),
+                           [](const Type &type) { return type.isClass(); });
+    }
     int argumentBytes(const Type &type) const {
         return type.isClass()  ? classStorage->at(type.className).reservedBytes
                : type.isSpan() ? 16
@@ -487,8 +491,7 @@ class X86Emitter {
                             ")");
                 } else if constexpr (std::is_same_v<Op, ir::MethodCall>) {
                     const auto &target = *functions.at(operation.callee);
-                    const bool aggregate =
-                        target.receiver->constructor && aggregateSignature(target);
+                    const bool aggregate = classParameters(target);
                     const int recordBytes =
                         aggregate ? packArguments(target, operation.objectArguments) : 0;
                     if (!aggregate)
@@ -500,7 +503,8 @@ class X86Emitter {
                     else
                         line("leaq " + address(operation.receiverOffset) + ", %r10");
                     if (target.result.isClass())
-                        line("leaq " + address(operation.resultOffset) + ", %r11");
+                        line("leaq " + address(operation.resultOffset) +
+                             (aggregate ? ", %rax" : ", %r11"));
                     call(operation.callee);
                     if (recordBytes)
                         line("addq $" + std::to_string(recordBytes) + ", %rsp");
@@ -595,18 +599,27 @@ class X86Emitter {
             line("movq %rsp, %rbp");
             receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
             const bool packedArguments =
-                aggregate && (!function.receiver || function.receiver->constructor);
+                function.receiver ? classParameters(function) : aggregate;
+            const bool combinedMethod =
+                function.receiver && packedArguments && function.result.isClass();
             callRecordSaveOffset =
                 packedArguments ? function.frameBytes + (function.receiver ? 16 : 8) : 0;
-            resultSaveOffset = function.result.isClass() ? function.frameBytes + 16 : 0;
-            const int frameBytes = function.frameBytes + (function.receiver || aggregate ? 16 : 0);
+            resultSaveOffset = function.result.isClass()
+                                   ? function.frameBytes + (combinedMethod ? 24 : 16)
+                                   : 0;
+            // Hidden capabilities never occupy source-addressable slots. The
+            // new combined mode needs three distinct saves, rounded to 16-byte
+            // alignment; every historical mode retains its original layout.
+            const int frameBytes = function.frameBytes +
+                                   (combinedMethod ? 32 : function.receiver || aggregate ? 16 : 0);
             line("subq $" + std::to_string(frameBytes) + ", %rsp");
             if (function.receiver)
                 line("movq %r10, " + address(receiverSaveOffset));
             if (packedArguments)
                 line("movq %r11, " + address(callRecordSaveOffset));
             if (function.result.isClass())
-                line(std::string("movq ") + (function.receiver ? "%r11" : "%r10") + ", " +
+                line(std::string("movq ") +
+                     (combinedMethod ? "%rax" : function.receiver ? "%r11" : "%r10") + ", " +
                      address(resultSaveOffset));
             for (const auto &operation : function.code)
                 instruction(operation);

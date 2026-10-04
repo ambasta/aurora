@@ -1626,13 +1626,16 @@ void composedTests() {
         [](Module &m) { m.functions[1].objectSlots[24].mutableValue = true; },
         "object parameter must be readonly");
     rejectComposed(
-        "ordinary method class parameter rejected",
-        [](Module &m) { m.functions[1].receiver->constructor = false; },
-        "receiver signatures must remain scalar");
+        "ordinary method copied arguments require complete receiver",
+        [](Module &m) {
+            m.functions[1].receiver->constructor = false;
+            m.functions[1].receiver->mutableValue = false;
+        },
+        "method receiver object not fully initialized");
     rejectComposed(
         "constructor class result rejected",
         [](Module &m) { m.functions[1].result = Type("Outer"); },
-        "receiver signatures must remain scalar");
+        "receiver signature requires scalar, enum or class values");
     rejectComposed(
         "nested metadata wrong flattened length",
         [](Module &m) { m.classFields["Outer"][1].length = 1; },
@@ -2487,15 +2490,15 @@ void enumAndMethodResultTests() {
         [=](Module &m) { m.functions[0].code[2] = EnumConstant{other, 1}; },
         "method argument type mismatch");
     rejectResult(
-        "method class arguments remain forbidden",
+        "method class argument requires snapshot vector",
         [](Module &m) { namedFunction(m, "snapshot_outer").parameters[1] = Type("Empty"); },
-        "receiver signatures must remain scalar");
+        "object argument vector size mismatch");
     rejectResult(
         "method object-argument vector not repurposed as result",
         [](Module &m) {
             namedMethodCall(m.functions[0], "snapshot_outer").objectArguments = {152};
         },
-        "constructor object argument vector size mismatch");
+        "receiver object argument vector size mismatch");
     rejectResult(
         "method result cannot expose scalar current value",
         [](Module &m) { m.functions[0].code.insert(m.functions[0].code.begin() + 36, Push{}); },
@@ -4500,12 +4503,12 @@ int main(int argc, char **argv) {
                                                     Load{16, Type::I64}, Return{}};
         accept("receiver may call acyclic ordinary value helper", receiverValueCycle);
         rejectModule(
-            "receiver aggregate parameter denied", receiverValueCycle,
+            "receiver aggregate parameter requires explicit snapshot vector", receiverValueCycle,
             [](Module &m) {
                 m.functions.back().receiver = Receiver{"Pair", false, false};
                 m.functions[2].code[5] = MethodCall{"value_bridge", 16};
             },
-            "receiver signatures must remain scalar");
+            "receiver object argument vector size mismatch");
         const auto valueAssembly = X86Emitter{}.emit(validate(valueBaseline()));
         for (const auto &fragment :
              {".local copy_pair", "movq %r11, -72(%rbp)", "movq %r10, -80(%rbp)", "movq %rsp, %r11",

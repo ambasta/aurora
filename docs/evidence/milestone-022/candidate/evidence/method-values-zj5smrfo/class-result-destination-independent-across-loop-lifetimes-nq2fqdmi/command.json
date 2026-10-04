@@ -1,0 +1,8 @@
+[
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/aurorac",
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/class-result-destination-independent-across-loop-lifetimes-nq2fqdmi/input.au",
+  "-o",
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/class-result-destination-independent-across-loop-lifetimes-nq2fqdmi/compiled.s",
+  "--module-root",
+  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/library"
+]

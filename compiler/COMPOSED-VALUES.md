@@ -50,10 +50,11 @@ the extracted copy cannot change the containing object. Ordinary by-value
 function arguments and results also copy all scalar leaves of composed values.
 
 Chained field mutation, whole nested-field assignment after initialization,
-escaping subobject references, nested receiver calls, class-valued method parameters,
+escaping subobject references, nested receiver calls,
 resource fields, heap storage and inheritance remain unsupported. Constructors
-accept class arguments. Methods accept scalar/enum parameters and may return a
-complete copied class into a fresh typed local under the enum/result contract.
+accept class arguments. Methods accept scalar/enum and copied class parameters
+and may return a complete copied class into a fresh typed local under the
+[method-value contract](METHOD-VALUES.md).
 
 Reflection retains logical public field counts, including a class field as one
 field even when it contains many leaves or none. Sizes include flattened payload

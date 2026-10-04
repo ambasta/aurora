@@ -1,0 +1,72 @@
+INFO method values compiler=/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/aurorac sha256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
+INFO method values tests/compiler/method_values.py sha256=aed34bf8fc61081f7abb9c173dc694b5706f2433de26173d6266820b26d571e9
+INFO method values library/std/array.au sha256=187c0b583cdf9e3786680181039f3b832a54f7cdc84de4894981460908957b1a
+PASS composed values observer: exact native UD2 and invalid-result rejection
+FAIL method values readonly copy receiver=False argument=False result=False: readonly copy receiver=False argument=False result=False: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/readonly-copy-receiver-False-argument-False-result-False-r27nnwvb
+FAIL method values readonly copy receiver=False argument=False result=True: readonly copy receiver=False argument=False result=True: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/readonly-copy-receiver-False-argument-False-result-True-gt41xl46
+FAIL method values readonly copy receiver=False argument=True result=False: readonly copy receiver=False argument=True result=False: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/readonly-copy-receiver-False-argument-True-result-False-qsbytqtz
+FAIL method values readonly copy receiver=False argument=True result=True: readonly copy receiver=False argument=True result=True: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/readonly-copy-receiver-False-argument-True-result-True-idbvatub
+FAIL method values readonly copy receiver=True argument=False result=False: readonly copy receiver=True argument=False result=False: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/readonly-copy-receiver-True-argument-False-result-False-etm79ugh
+FAIL method values readonly copy receiver=True argument=False result=True: readonly copy receiver=True argument=False result=True: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/readonly-copy-receiver-True-argument-False-result-True-2x1z8s84
+FAIL method values readonly copy receiver=True argument=True result=False: readonly copy receiver=True argument=True result=False: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/readonly-copy-receiver-True-argument-True-result-False-ncie6who
+FAIL method values readonly copy receiver=True argument=True result=True: readonly copy receiver=True argument=True result=True: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/readonly-copy-receiver-True-argument-True-result-True-2awksjjv
+FAIL method values mutable receiver and returned parameter are independent: mutable receiver and returned parameter are independent: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/mutable-receiver-and-returned-parameter-are-independent-m_monlwm
+FAIL method values mutable self argument copied before receiver acquisition: mutable self argument copied before receiver acquisition: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/mutable-self-argument-copied-before-receiver-acquisition-7lm9fieg
+FAIL method values readonly self argument and class result are distinct: readonly self argument and class result are distinct: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/readonly-self-argument-and-class-result-are-distinct-q9_7xbcu
+FAIL method values six mixed scalar enum class parameters with class result: six mixed scalar enum class parameters with class result: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/six-mixed-scalar-enum-class-parameters-with-class-result-kx3ualdc
+FAIL method values class snapshots scalar effects and receiver acquire left to right: class snapshots scalar effects and receiver acquire left to right: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/class-snapshots-scalar-effects-and-receiver-acquire-left-to-right-u2ent3ao
+FAIL method values scalar side effect before first class argument is visible: scalar side effect before first class argument is visible: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/scalar-side-effect-before-first-class-argument-is-visible-hkqtb69c
+FAIL method values repeated class snapshots independently copied into mutable locals: repeated class snapshots independently copied into mutable locals: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/repeated-class-snapshots-independently-copied-into-mutable-locals-lofk_buz
+FAIL method values inner result binding reads outer same-name argument and receiver: inner result binding reads outer same-name argument and receiver: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/inner-result-binding-reads-outer-same-name-argument-and-receiver-k5yl2am_
+FAIL method values class parameter shadows receiver scalar field: class parameter shadows receiver scalar field: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/class-parameter-shadows-receiver-scalar-field-eykx5lp4
+FAIL method values local class shadows readonly method parameter in inner scope: local class shadows readonly method parameter in inner scope: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/local-class-shadows-readonly-method-parameter-in-inner-scope-1_kp8w45
+FAIL method values private sibling copied argument and result get: private sibling copied argument and result get: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/private-sibling-copied-argument-and-result-get-6jl4qub_
+FAIL method values private sibling copied argument and result change: private sibling copied argument and result change: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/private-sibling-copied-argument-and-result-change-hxxq3_ru
+FAIL method values method parameter forwarded through ordinary function and receiver restored: method parameter forwarded through ordinary function and receiver restored: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/method-parameter-forwarded-through-ordinary-function-and-receiver-restored-lmnudsp2
+FAIL method values class-result destination independent across loop lifetimes: class-result destination independent across loop lifetimes: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/class-result-destination-independent-across-loop-lifetimes-nq2fqdmi
+PASS method values full-width copied method parameter i64
+PASS method values full-width copied method parameter u64
+PASS method values full-width copied method parameter u8
+PASS method values full-width copied method parameter bool
+PASS method values nominal enum result with copied class parameter
+PASS method values empty parameter and result preserve nominal completeness
+FAIL method values packed nested enum empty and private array payload all copy: packed nested enum empty and private array payload all copy: compiler exit 1: b"aurorac: module std.array: line 23: expected '<' (found 'replacement')\n"
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/packed-nested-enum-empty-and-private-array-payload-all-copy-7abnyg6y
+PASS method values class template injected self supports ordinary copied parameter
+FAIL method values Value substitution method argument and result use exact nested type: Value substitution method argument and result use exact nested type: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/Value-substitution-method-argument-and-result-use-exact-nested-type-us2jtd0t
+FAIL method values nested class template argument copied through ordinary method: nested class template argument copied through ordinary method: compiler exit 1: b"aurorac: module std.array: line 23: expected '<' (found 'replacement')\n"
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/nested-class-template-argument-copied-through-ordinary-method-fpevkp0q
+INFO method values section=native fixtures=32 executions=7 traps=0 rejection-runs=0
+INFO method values: 32 selected fixtures; 7 passed executions; 7 native returns; 0 exact-site traps; 0 rejection fixtures / 0 rejection runs; 25 failed executions; section=native; seed=22022; steps=12; elapsed=0.28s
+INFO method values retained artifacts: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 611, in <module>
+    main()
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 600, in main
+    require(not suite.failures,f"{len(suite.failures)} failed executions; artifacts: {directory}")
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/integer_oracle.py", line 74, in require
+    raise AssertionError(message)
+AssertionError: 25 failed executions; artifacts: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo

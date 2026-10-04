@@ -1,0 +1,2 @@
+six mixed scalar enum class parameters with class result: six mixed scalar enum class parameters with class result: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/six-mixed-scalar-enum-class-parameters-with-class-result-kx3ualdc

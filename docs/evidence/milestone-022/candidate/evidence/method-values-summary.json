@@ -1,0 +1,97 @@
+{
+  "scope": "Copied ordinary method parameter source, regression and independent array exchange model tests only; candidate checkout only",
+  "files_sha256": {
+    "tests/compiler/method_values.py": "453a9b2999e564ae46db598304d99a7a282847cd5e69c69f8ada0df8e9860299",
+    "tests/compiler/value_calls.py": "dabb7b0f282170f620cbb32c5701cd5831c8dbf543f3ab0a610e7e3c36bc06fe",
+    "tests/compiler/composed_values.py": "8fa45cb558b3ab763d59fcddea6aa26981101a887a4186b197e41698778708af",
+    "tests/compiler/nested_values.py": "352ebd325f4d5c8f02bf1d0667962929210bcf348f88e8f8e3a60cfb6bf9dd1b",
+    "tests/compiler/enum_composition.py": "7bdeb4b74041f5df91cbb30373a8484b4e9cc8150747b5710a64f1f9c15c7838",
+    "tests/compiler/decimal_values.py": "0c1ebbf6f4f8bb0e251fd4fb06591cf91a89f4677f034d41bca08e281a27238d",
+    "tests/compiler/packed_values.py": "0805d263e4594314d268ffa5b1a523d7b9ba694a2f4783dd9b40aae4ce6fe7b1",
+    "library/std/array.au": "22bdc89a253e471f170b0d03fe2ad1290036b9d4fc06b55399f375329b344c51",
+    "build/aurorac": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+    "build/san/aurorac": "d3033d68ad6308030a057c9eaf2b2e258b15e245ca84a22cc2fce1873847adcd"
+  },
+  "logs_sha256": {
+    "evidence/method-values-release-frozen.log": "b5f3b14ab72ea869cedeca7d4e7e13a7781ab42005221b6540515e3d4ffe05c8",
+    "evidence/method-values-sanitized-frozen.log": "8e76b7a94e4ee7e8d9dfe2d1c686a9c2b47209e469118eb146d31ca49ff70b1f",
+    "evidence/method-values-release-frozen-model-stress.log": "e0e5345b356ccc7c0b9bcda88aeb1bc1514404b799df89835ad6c11690eb1b09",
+    "evidence/method-values-sanitized-model-stress-isolated.log": "53f0a314701ee89d36be153c6b25bc2b6e79d00f2f1db4f4f322affd49ae6040"
+  },
+  "focused_release_and_fatal_sanitized": {
+    "status": "passed",
+    "fixtures": 152,
+    "executions": 219,
+    "native_returns": 72,
+    "exact_site_traps": 13,
+    "negative_fixtures": 67,
+    "negative_executions": 134,
+    "seed": 22022,
+    "steps": 12
+  },
+  "alternate_model_release_and_isolated_fatal_sanitized": {
+    "status": "passed",
+    "native_cases": 28,
+    "seed": 983822,
+    "steps": 48,
+    "scalar_types": [
+      "i64",
+      "u64",
+      "u8",
+      "bool"
+    ],
+    "capacities": [
+      1,
+      2,
+      3,
+      16,
+      63,
+      64
+    ],
+    "independent_model": "Python lists; every operation validates old result and both live arrays after guaranteed-changing result and replacement mutations; every third exchange is self-exchange",
+    "coverage_relation": "overlaps default model coverage; not additional disjoint fixture count"
+  },
+  "sanitizer_environment": {
+    "ASAN_OPTIONS": "detect_leaks=0:halt_on_error=1:abort_on_error=1",
+    "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1",
+    "compiler_RLIMIT_AS": "not set; inherited native observer/toolchain limits unchanged",
+    "leak_detection": "disabled per existing project exception"
+  },
+  "first_stress_failure": {
+    "status": "preserved and isolated replay passed",
+    "description": "Compiler exited -9 with empty stderr during concurrent heavy sanitizer/build work. SIGKILL cause remains unclassified; no OOM assertion. It did not occur with isolated exact source or isolated full same-seed stress.",
+    "path": "evidence/method-values-rjgbzzqs/seeded-exchange-snapshot-model-u8-capacity-64-tbkk_jo0",
+    "source_sha256": "de8b82f7bbebc7f9a73c0843faaa07777b514f7612479da2ef22cfc4f432d7a0",
+    "isolated_retry": {
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/san/aurorac",
+        "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-rjgbzzqs/seeded-exchange-snapshot-model-u8-capacity-64-tbkk_jo0/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-rjgbzzqs/seeded-exchange-snapshot-model-u8-capacity-64-tbkk_jo0/isolated-retry.s",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/library"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 3.5046931200049585,
+      "maximum_child_rss_kib": 1217592,
+      "ASAN_OPTIONS": "detect_leaks=0:halt_on_error=1:abort_on_error=1",
+      "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1",
+      "compiler_address_space_limit": "none",
+      "isolated_from_known_sanitizer_and_cxx_build_workers": true
+    },
+    "native_retry": {
+      "expected": 42,
+      "stdout_hex": "2a00000000000000",
+      "exit_code": 0,
+      "terminal_signal": null
+    }
+  },
+  "initial_development_failures": "Reserved method identifier read was corrected to inspect; injected bare array signature was resolved by parent to existing qualified std::array self syntax; parenthesized named-local argument is an accepted equivalent and now has a positive test. First failure logs and inputs remain preserved.",
+  "limits": [
+    "Finite source/model evidence, not a safety proof or performance claim.",
+    "No compiler implementation, Makefile, library or main checkout modifications by this test worker.",
+    "No network, installs, authentication, uploads, kernel images or historical cleanup.",
+    "Copied method signature/call rejection diagnostics are accepted only with normal compiler exit 1 and absent/byte-exact prior-output preservation.",
+    "No external proof of whole-program stack or compiler work bounds."
+  ]
+}

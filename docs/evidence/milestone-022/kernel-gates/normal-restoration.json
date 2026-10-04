@@ -1,0 +1,131 @@
+{
+  "normal_images_restored": true,
+  "table_test_symbols_absent": true,
+  "table_markers_absent": true,
+  "executions": [
+    {
+      "family": "bios",
+      "mode": "normal",
+      "started_utc": "2026-10-04T04:01:48.477578+00:00",
+      "completed_utc": "2026-10-04T04:01:50.568457+00:00",
+      "command": [
+        "bash",
+        "-x",
+        "./scripts/kernel-smoke.sh",
+        "normal"
+      ],
+      "exit_code": 0,
+      "qemu_exit_code": 33,
+      "result": "PASS",
+      "files": {
+        "bios/normal.command.log": {
+          "sha256": "f0e538c92318a1efb8893e55e0933e37f5829c50f04e1bae82abdf508f6d6d67",
+          "size": 3583,
+          "mode": "0o644",
+          "kind": "file"
+        },
+        "bios/normal.command.status": {
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "size": 2,
+          "mode": "0o644",
+          "kind": "file"
+        },
+        "bios/normal.log": {
+          "sha256": "801f096508d53e381fc4c101196db0ccb8a4915d6c0bce3620269eda70304806",
+          "size": 2079,
+          "mode": "0o644",
+          "kind": "file"
+        },
+        "bios/normal.metadata.json": {
+          "sha256": "f16af464a3e61da09b92f70047aff4a8d8a108e9bc1f4d00db213fec27509d27",
+          "size": 730,
+          "mode": "0o644",
+          "kind": "file"
+        }
+      },
+      "disk": {
+        "free_bytes": 2318229504,
+        "floor_bytes": 1073741824,
+        "reserved_growth_bytes": 134217728
+      }
+    },
+    {
+      "family": "uefi",
+      "mode": "normal",
+      "started_utc": "2026-10-04T04:01:50.569474+00:00",
+      "completed_utc": "2026-10-04T04:01:53.780452+00:00",
+      "command": [
+        "bash",
+        "-x",
+        "./scripts/kernel-uefi-smoke.sh",
+        "normal"
+      ],
+      "exit_code": 0,
+      "qemu_exit_code": 33,
+      "result": "PASS",
+      "files": {
+        "uefi/normal.command.log": {
+          "sha256": "0e99c43354febaca8004798ccac185711194cab00b24e8779344df8c470b3f84",
+          "size": 2163,
+          "mode": "0o644",
+          "kind": "file"
+        },
+        "uefi/normal.command.status": {
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "size": 2,
+          "mode": "0o644",
+          "kind": "file"
+        },
+        "uefi/normal.log": {
+          "sha256": "1e685f1cfd14f102b5ae935cd8cf2a9d8a0a8d5ed6e0b42d7a30266d76f10254",
+          "size": 566,
+          "mode": "0o644",
+          "kind": "file"
+        }
+      },
+      "disk": {
+        "free_bytes": 2318204928,
+        "floor_bytes": 1073741824,
+        "reserved_growth_bytes": 134217728
+      }
+    }
+  ],
+  "files": {
+    "/workspace/scratch/48c5de6446f8/aurora/build/aurora.img": {
+      "sha256": "1746090177a1505804e56c22e2f441a6b2e2015c3464e7af61219ccfe8220439",
+      "size": 1048576,
+      "mode": "0o644",
+      "kind": "file"
+    },
+    "/workspace/scratch/48c5de6446f8/aurora/build/kernel.elf": {
+      "sha256": "1a7359c0089ab1df149826a1440a842b4ac29f7f561d29d301ea3e8a0c11147f",
+      "size": 59208,
+      "mode": "0o755",
+      "kind": "file"
+    },
+    "/workspace/scratch/48c5de6446f8/aurora/build/kernel.bin": {
+      "sha256": "d4972a1546a6d00a4317cb403cce6daf4d23720b95f465ab3509fe0e82977b17",
+      "size": 45808,
+      "mode": "0o755",
+      "kind": "file"
+    },
+    "/workspace/scratch/48c5de6446f8/aurora/build/uefi/payload.bin": {
+      "sha256": "1efd83fe4487f86d52755ce16b9fff8e7e607095c2892da3a253a7241da3d75a",
+      "size": 17188,
+      "mode": "0o755",
+      "kind": "file"
+    },
+    "/workspace/scratch/48c5de6446f8/aurora/build/uefi/payload.elf": {
+      "sha256": "20ee28e746d04f23cf364273b757bd226d29c0c79f1756756fc6a61de3526cb8",
+      "size": 24176,
+      "mode": "0o755",
+      "kind": "file"
+    },
+    "/workspace/scratch/48c5de6446f8/aurora/build/uefi/esp/EFI/BOOT/BOOTX64.EFI": {
+      "sha256": "4dd16765fae1bf2f5cb78cf20d2e6d5b493cbd390dfc704b6bb3320eadb5c2fb",
+      "size": 30824,
+      "mode": "0o755",
+      "kind": "file"
+    }
+  }
+}

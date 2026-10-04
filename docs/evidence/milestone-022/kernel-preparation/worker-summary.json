@@ -1,0 +1,19 @@
+{
+  "scope": "M022 existing emulator integration; separate parent aggregate and independent review",
+  "run_exit_code": 0,
+  "distinct_modes": 166,
+  "source_inputs": 368,
+  "external_inputs": 236,
+  "normal_images_restored": true,
+  "raw_receipt_total_bytes": 222677669,
+  "disk_at_completion": {
+    "free_bytes": 2318057472,
+    "floor_bytes": 1073741824
+  },
+  "notes": [
+    "No emulator gate failed.",
+    "A preparatory source-inventory scope mismatch was corrected and recorded separately.",
+    "No test semantics, project files, historical receipts, firmware, or controls changed.",
+    "Parent and reviewer were notified to inspect restored images before any new build."
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "command": [
+    "g++",
+    "-std=c++23",
+    "-Werror=switch",
+    "-fsyntax-only",
+    "-I",
+    "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tmp/aurora-ir-exhaustive-xsdc8nf1",
+    "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tmp/aurora-ir-exhaustive-xsdc8nf1/probe.cpp"
+  ],
+  "returncode": 0,
+  "wall_timeout": false,
+  "elapsed_seconds": 2.1309388800000306,
+  "peak_rss_kib": 310708,
+  "address_space_bytes": 2147483648,
+  "cpu_seconds": [
+    120,
+    130
+  ],
+  "wall_seconds": 180,
+  "regular_file_bytes": 536870912,
+  "candidate_bytes_before": 137958263,
+  "candidate_bytes_after": 137958263,
+  "free_bytes_after": 2925531136
+}

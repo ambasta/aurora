@@ -1,0 +1,47 @@
+INFO method values compiler=/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/san/aurorac sha256=d3033d68ad6308030a057c9eaf2b2e258b15e245ca84a22cc2fce1873847adcd
+INFO method values tests/compiler/method_values.py sha256=453a9b2999e564ae46db598304d99a7a282847cd5e69c69f8ada0df8e9860299
+INFO method values library/std/array.au sha256=22bdc89a253e471f170b0d03fe2ad1290036b9d4fc06b55399f375329b344c51
+PASS composed values observer: exact native UD2 and invalid-result rejection
+PASS method values seeded exchange snapshot model i64 capacity 1
+PASS method values seeded exchange snapshot model i64 capacity 2
+PASS method values seeded exchange snapshot model i64 capacity 3
+PASS method values seeded exchange snapshot model i64 capacity 16
+PASS method values seeded exchange snapshot model i64 capacity 63
+PASS method values seeded exchange snapshot model i64 capacity 64
+PASS method values seeded exchange snapshot model u64 capacity 1
+PASS method values seeded exchange snapshot model u64 capacity 2
+PASS method values seeded exchange snapshot model u64 capacity 3
+PASS method values seeded exchange snapshot model u64 capacity 16
+PASS method values seeded exchange snapshot model u64 capacity 63
+PASS method values seeded exchange snapshot model u64 capacity 64
+PASS method values seeded exchange snapshot model u8 capacity 1
+PASS method values seeded exchange snapshot model u8 capacity 2
+PASS method values seeded exchange snapshot model u8 capacity 3
+PASS method values seeded exchange snapshot model u8 capacity 16
+PASS method values seeded exchange snapshot model u8 capacity 63
+FAIL method values seeded exchange snapshot model u8 capacity 64: seeded exchange snapshot model u8 capacity 64: compiler exit -9: b''
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-rjgbzzqs/seeded-exchange-snapshot-model-u8-capacity-64-tbkk_jo0
+INFO method values retained artifacts: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-rjgbzzqs
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 134, in check
+    require(compiled.returncode == 0,
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/integer_oracle.py", line 74, in require
+    raise AssertionError(message)
+AssertionError: seeded exchange snapshot model u8 capacity 64: compiler exit -9: b''
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 650, in <module>
+    main()
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 627, in main
+    run()
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 621, in <lambda>
+    sections={"native":lambda:native_cases(suite),"models":lambda:model_cases(suite,args.seed,args.steps),
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 347, in model_cases
+    suite.check(f"seeded exchange snapshot model {scalar} capacity {capacity}", p(
+  File "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/tests/compiler/method_values.py", line 151, in check
+    raise AssertionError(details) from failure
+AssertionError: seeded exchange snapshot model u8 capacity 64: seeded exchange snapshot model u8 capacity 64: compiler exit -9: b''
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-rjgbzzqs/seeded-exchange-snapshot-model-u8-capacity-64-tbkk_jo0

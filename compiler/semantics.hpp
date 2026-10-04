@@ -429,17 +429,36 @@ class SemanticAnalyzer {
         const std::size_t first = implicit ? 0 : 1;
         if (value->args.size() - first != callee.params.size())
             fail(value->token, "wrong argument count for method");
-        // Evaluate scalar arguments before acquiring the synchronous receiver
-        // capability.
+        // Resolve receiver identity first, then snapshot each argument at its
+        // left-to-right position before acquiring synchronous receiver authority.
+        std::vector<int> arguments(callee.params.size(), 0), snapshots;
+        bool packed = false;
         for (std::size_t index = 0; index < callee.params.size(); ++index) {
-            match(expression(value->args[index + first]), callee.params[index].type, value->token);
-            push();
+            const auto &parameterType = callee.params[index].type;
+            const auto &argument = value->args[index + first];
+            if (parameterType.isClass()) {
+                packed = true;
+                if (argument->op != "name")
+                    fail(argument->token, "class argument requires a complete local name");
+                const int original = source(argument);
+                match(locals[original].type, parameterType, argument->token);
+                const int snapshot = add("", parameterType, false, argument->token, false);
+                copyClass(original, snapshot, classDefinition(parameterType, argument->token));
+                arguments[index] = offset(snapshot);
+                snapshots.push_back(offset(snapshot));
+            } else {
+                match(expression(argument), parameterType, argument->token);
+                push();
+            }
         }
         int destination = 0;
         if (resultBinding)
             destination = offset(add(resultBinding->name, resultBinding->type,
                                      resultBinding->mutableValue, resultBinding->token));
-        emit(ir::MethodCall{callee.name, implicit ? 0 : offset(receiver), {}, destination});
+        emit(ir::MethodCall{callee.name, implicit ? 0 : offset(receiver),
+                            packed ? arguments : std::vector<int>{}, destination});
+        for (int snapshot : snapshots)
+            emit(ir::EndObject{snapshot});
         return callee.result;
     }
     Type callFunction(ExpressionPtr expression, const Function &callee,
@@ -1207,9 +1226,9 @@ class SemanticAnalyzer {
                     fail(sourceFunctions[i].token, "methods require scalar, enum or class results");
                 if (!sourceFunctions[i].constructor)
                     for (const auto &parameter : sourceFunctions[i].params)
-                        if (!scalarValue(parameter.type))
+                        if (!scalarValue(parameter.type) && !parameter.type.isClass())
                             fail(sourceFunctions[i].token,
-                                 "methods require scalar or enum parameters");
+                                 "methods require scalar, enum or class parameters");
             }
             auto checkBoundaryType = [&](const Type &type) {
                 if (type.isClass() &&

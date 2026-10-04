@@ -1,0 +1,34 @@
+export module std.array;
+
+export namespace std {
+    template <Scalar T, i64 N>
+    class array {
+        builtin::array<T, N> elements;
+    public:
+        array() : elements{} {}
+
+        auto size() const -> i64 {
+            return N;
+        }
+
+        auto at(i64 index) const -> T {
+            return elements[index];
+        }
+
+        auto set(i64 index, T value) -> T {
+            elements[index] = value;
+            return value;
+        }
+
+        auto exchange(std::array replacement) -> std::array {
+            std::array previous = std::array();
+            i64 index = 0;
+            while (index < N) {
+                previous.set(index, elements[index]);
+                elements[index] = replacement.at(index);
+                index = index + 1;
+            }
+            return previous;
+        }
+    };
+}

@@ -1,0 +1,1 @@
+module review;template<Scalar T>class Box{T value;public:Box(T n):value(n){}auto inspect(Box v)const->i64{return 42;}};auto answer()->i64{Box<i64> a=Box<i64>(42);Box<u64> b=Box<u64>(42u64);return a.inspect(b);}

@@ -1,0 +1,1 @@
+export module lib.box;export template<Value T>class Boxer{public:Boxer(){}auto copy(T source)const->T{return source;}};

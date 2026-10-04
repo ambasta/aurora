@@ -31,23 +31,23 @@ Do not write it to a physical disk or replace a host bootloader.
 See [kernel instructions](kernel/README.md) and [verification](docs/verification.md)
 for tools, exact commands, evidence and limitations.
 
-## Verified milestone021: explicit copied-value function templates
+## Verified milestone022: copied ordinary method values
 
-Bounded namespace-level function templates now accept one/two explicit Scalar/Value
-arguments. The real `std::make_pair<T,U>` factory and executable
-`examples/function_token_values.au` use complete independent copied values.
-Class/function definitions share the 64-definition and 256-instance graph limits.
-See [the function-template contract](compiler/FUNCTION-TEMPLATES.md).
+Ordinary methods now accept immutable copied class parameters. The real
+`std::array<T,N>::exchange(replacement)` returns independent old contents and
+replaces its receiver from a snapshot. The new combined private ABI keeps
+receiver, argument record and result authority separate; it adds no source pointer
+or foreign ABI. See [the method-value contract](compiler/METHOD-VALUES.md).
 
-Complete release and fatal host ASan/UBSan compiler targets, independent review
-and sanitizer replay, a fresh parent `make test`, and three actual UEFI profiles
-(`runtime-span`, `runtime-pin-fault`, `normal`) passed. The normal image was restored.
-M019 remains the historical full 166-mode result; M021 did not rerun the full suite
-or add kernel/physical-device support. No deduction, overloads, recursive generic
-expansion, generic methods, new IR/ABI or general heap/reference API is added.
-[M021 evidence](docs/evidence/milestone-021/README.md) preserves exact receipts,
-corrected defects, finite coverage and resource exceptions. Local verification
-does not imply remote publication.
+Complete release/fatal host ASan/UBSan compiler gates, independent source/IR/native
+ABI review, a fresh parent `make test`, and all **166 actual emulator modes**
+(37 BIOS, 129 UEFI-family) passed on the rebuilt reviewed compiler. Two additional
+normal BIOS/UEFI boots restored both images. All 368 source and 236 external inputs
+stayed unchanged through integration. [M022 evidence](docs/evidence/milestone-022/README.md)
+preserves the exact receipts, original failures, isolated stress replay and limits.
+There is no new kernel functionality, physical-device qualification, heap/reference
+API, generic method, whole-program resource proof or equivalent-C performance claim.
+Local verification does not imply remote publication.
 
 ## Current language subset
 
@@ -457,3 +457,22 @@ instantiation, deduction, new IR/ABI or physical-device support is added.
 See [M020 evidence](docs/evidence/milestone-020/README.md) for exact pins, finite
 coverage, preserved failures and generated-product omissions. Local functional
 verification does not imply remote publication.
+
+## Verified milestone021: explicit copied-value function templates
+
+Bounded namespace-level function templates now accept one/two explicit Scalar/Value
+arguments. The real `std::make_pair<T,U>` factory and executable
+`examples/function_token_values.au` use complete independent copied values.
+Class/function definitions share the 64-definition and 256-instance graph limits.
+See [the function-template contract](compiler/FUNCTION-TEMPLATES.md).
+
+Complete release and fatal host ASan/UBSan compiler targets, independent review
+and sanitizer replay, a fresh parent `make test`, and three actual UEFI profiles
+(`runtime-span`, `runtime-pin-fault`, `normal`) passed. The normal image was restored.
+M019 remains the historical full 166-mode result; M021 did not rerun the full suite
+or add kernel/physical-device support. No deduction, overloads, recursive generic
+expansion, generic methods, new IR/ABI or general heap/reference API is added.
+[M021 evidence](docs/evidence/milestone-021/README.md) preserves exact receipts,
+corrected defects, finite coverage and resource exceptions. Local verification
+does not imply remote publication.
+

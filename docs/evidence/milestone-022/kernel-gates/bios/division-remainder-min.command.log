@@ -1,0 +1,80 @@
++ set -euo pipefail
+++ dirname ./scripts/kernel-smoke.sh
++ cd ./scripts/..
++ mode=--division-remainder-min
++ build_environment=()
++ cpu=qemu64
++ cpus=1
++ case "$mode" in
++ build_environment+=(KERNEL_TEST_DIVISION=remainder-min)
++ [[ --division-remainder-min == normal ]]
++ log=build/kernel-division-remainder-min.log
++ trap './scripts/kernel-build.sh >/dev/null' EXIT
++ env KERNEL_TEST_DIVISION=remainder-min ./scripts/kernel-build.sh
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 84 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 41712-byte payload, 1 MiB image; 14 negative controls; RX/R/RW segments and bounded BIOS packet
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
++ metadata=build/kernel-division-remainder-min.metadata.json
++ cp build/user-metadata.json build/kernel-division-remainder-min.metadata.json
++ qemu=/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64
++ command -v /tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64
++ args=()
++ [[ -n /tmp/aurora-qemu/firmware ]]
++ args+=(-L "$QEMU_DATA")
++ set +e
++ timeout 15 /tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64 -L /tmp/aurora-qemu/firmware -machine pc -accel tcg -cpu qemu64 -smp 1 -m 32M -drive file=build/aurora.img,format=raw,if=ide -boot c -nic none -display none -serial stdio -monitor none -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
++ status=33
++ set -e
++ cat build/kernel-division-remainder-min.log
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_USER_ENTER: 0
+AURORA_USER_OK: ring3, own stack, TSS entry, controlled return
+AURORA_DIVISION_FIXTURE: remainder-min
+AURORA_DOMAINS_READY: kernel=204800 root0=131072 frame0=1048576 root1=151552 frame1=1064960 root2=172032 frame2=1081344
+AURORA_DOMAIN_ENTER: image=0 root=131072
+AURORA_PROGRAM_ENTER: image=0
+AURORA_DOMAIN_EVENT: image=0 root=131072
+AURORA_DOMAIN_RESTORED: root=204800
+AURORA_PROGRAM_RETURN: image=0 value=42
+AURORA_DOMAIN_ENTER: image=1 root=151552
+AURORA_PROGRAM_ENTER: image=1
+AURORA_DOMAIN_EVENT: image=1 root=151552
+AURORA_PROGRAM_FAULT: image=1 kind=bounds vector=6 rip=1773965 cpl=3 frame=548688
+AURORA_DOMAIN_RESTORED: root=204800
+AURORA_PROGRAM_CONTAINED: image=1 kind=bounds
+AURORA_DOMAIN_ENTER: image=0 root=131072
+AURORA_PROGRAM_ENTER: image=0
+AURORA_DOMAIN_EVENT: image=0 root=131072
+AURORA_DOMAIN_RESTORED: root=204800
+AURORA_PROGRAM_RETURN: image=0 value=42
+AURORA_DOMAIN_ENTER: image=2 root=172032
+AURORA_PROGRAM_ENTER: image=2
+AURORA_DOMAIN_EVENT: image=2 root=172032
+AURORA_PROGRAM_FAULT: image=2 kind=overflow vector=6 rip=1777984 cpl=3 frame=548688
+AURORA_DOMAIN_RESTORED: root=204800
+AURORA_PROGRAM_CONTAINED: image=2 kind=overflow
+AURORA_DOMAIN_ENTER: image=0 root=131072
+AURORA_PROGRAM_ENTER: image=0
+AURORA_DOMAIN_EVENT: image=0 root=131072
+AURORA_DOMAIN_RESTORED: root=204800
+AURORA_PROGRAM_RETURN: image=0 value=42
+AURORA_DOMAIN_REUSE_OK: stale denied, released bytes zero, partial rollback, same frames
+AURORA_DOMAIN_ENTER: image=0 root=131072
+AURORA_PROGRAM_ENTER: image=0
+AURORA_DOMAIN_EVENT: image=0 root=131072
+AURORA_DOMAIN_RESTORED: root=204800
+AURORA_PROGRAM_RETURN: image=0 value=42
+AURORA_DOMAINS_OK: private CR3, private stacks, zero reuse, clean teardown
+AURORA_COMPILED_USER_OK: arrays, loop, bounds, overflow, clean restart
+AURORA_DIVISION_OK: exact typed trap, clean restart, private teardown
+Aurora language result: 42
+AURORA_BOOT_OK
++ [[ --division-remainder-min == --division-* ]]
++ python3 tests/kernel-division-smoke.py 33 build/kernel-division-remainder-min.log --division-remainder-min build/kernel-division-remainder-min.metadata.json
++ echo 'PASS: kernel emulator verification (--division-remainder-min)'
+PASS: kernel emulator verification (--division-remainder-min)
++ ./scripts/kernel-build.sh

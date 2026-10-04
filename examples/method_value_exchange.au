@@ -1,0 +1,22 @@
+module method_value_exchange;
+import std.array;
+
+// All three arrays own independent inline storage after exchange.
+auto answer() -> i64 {
+    std::array<u8, 4> active = std::array<u8, 4>();
+    active.set(0, 21u8);
+    active.set(1, 7u8);
+    std::array<u8, 4> replacement = std::array<u8, 4>();
+    replacement.set(0, 42u8);
+    replacement.set(1, 9u8);
+
+    const std::array<u8, 4> previous = active.exchange(replacement);
+    replacement.set(0, 99u8);
+    if (previous.at(0) != 21u8) { return 0; }
+    if (previous.at(1) != 7u8) { return 0; }
+    if (active.at(1) != 9u8) { return 0; }
+
+    const std::array<u8, 4> self_snapshot = active.exchange(active);
+    active.set(0, 0u8);
+    return i64(self_snapshot.at(0));
+}

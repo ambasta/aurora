@@ -50,7 +50,8 @@ other. Const receivers may return copies that the caller binds mutably.
 All milestone011 construction rules remain: exact nominal class-field copies,
 complete logical initialization including empty children, left-to-right readonly
 constructor snapshots, acyclic containment, four class levels and 64 flattened
-leaves for composed values. Class-valued method arguments remain unsupported.
+leaves for composed values. The later [verified M022 contract](METHOD-VALUES.md) admits
+copied class-valued ordinary method arguments.
 Constructors still return the internal i64 status and have empty bodies; their
 explicit class arguments remain supported.
 
@@ -66,7 +67,9 @@ MethodCall retains its objectArguments vector and adds a trailing resultOffset.
 Constructor calls with class parameters use a receiver in R10 and packed argument
 record in R11. Class-returning methods use a receiver in R10 and fresh result
 destination in R11; their explicit arguments are scalar or enum register values.
-These modes are mutually exclusive. The receiver and record/result are saved in
+These modes were mutually exclusive at milestone012. The later
+[M022 method-value contract](METHOD-VALUES.md) adds an explicit combined mode
+with RAX result destination and three independent saved capabilities. The receiver and record/result are saved in
 separate private frame slots before evaluating the body. Ordinary aggregate
 functions retain their previous convention.
 

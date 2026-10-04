@@ -1,0 +1,18 @@
+module decimal_result;
+import std.decimal;
+
+auto test() -> i64 {
+    std::DecimalAccumulator input = std::DecimalAccumulator();
+    input.push_digit(4u64);
+    input.push_digit(2u64);
+    const std::DecimalResult answer = input.finish();
+    input.push_digit(12u64);
+    const std::DecimalResult rejected = input.finish();
+    if (rejected.status() != std::DecimalStatus::invalid_digit) {
+        return 0;
+    }
+    if (rejected.position() != 2) {
+        return 0;
+    }
+    return i64(answer.value_or(0u64));
+}

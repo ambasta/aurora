@@ -405,9 +405,10 @@ def method_result_cases(suite):
             helpers += "auto forward(Counter c)->Report{return c.snapshot();}"
         suite.check(name, program(body, REPORT + "class Other{public:u64 value;};", helpers),
                     reject=True)
-    suite.check("explicit method class parameter remains unsupported", program(
-        "return 42;", REPORT.replace("auto forwarded()", "auto take(Report r)"
-        "const->Report{return r;}auto forwarded()")), reject=True)
+    suite.check("explicit method class parameter copies independent result", program(
+        "Counter receiver=Counter(0u64);Report source=Report(42u64);Report result=receiver.take(source);"
+        "source.set(0u64);return i64(result.get());", REPORT.replace("auto forwarded()", "auto take(Report r)"
+        "const->Report{return r;}auto forwarded()")))
     suite.check("class method result requires complete named return", program(
         "return 42;", REPORT.replace("return result;", "return Report(value);", 1)),
         reject=True)

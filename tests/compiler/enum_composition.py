@@ -659,18 +659,25 @@ def rejection_cases(suite):
     ):
         suite.check(label, program(body, BASE, helpers), reject=True)
     for label, declaration in (
-        ("class method parameter", "auto take(Leaf value)const->Leaf{return value;}"),
-        ("nested class method parameter", "auto take(Packet value)const->Packet{return value;}"),
         ("direct class construction return", "auto make()const->Leaf{return Leaf(Status::ok,42u64);}"),
         ("wrong nominal class return", "auto make()const->Packet{Leaf value=Leaf(Status::ok,42u64);return value;}"),
         ("wrong nominal enum return", "auto status()const->Status{return Other::ok;}"),
     ):
         suite.check(label + " remains rejected", program("return 42;", BASE +
                     "class Invalid{public:Invalid(){}" + declaration + "};"), reject=True)
-    suite.check("Value substitution does not authorize class method parameter", program(
-        "Leaf leaf=Leaf(Status::ok,42u64);Box<Leaf> box=Box<Leaf>(leaf);return 42;", ENUMS + LEAF +
+    suite.check("copied class method parameter preserves enum payload", program(
+        "Leaf source=Leaf(Status::ok,42u64);Receiver receiver=Receiver();Leaf result=receiver.take(source);"
+        "source.change(Status::error);if(result.status()!=Status::ok){return 1;}return i64(result.get());", BASE +
+        "class Receiver{public:Receiver(){}auto take(Leaf value)const->Leaf{return value;}};"))
+    suite.check("nested class method parameter preserves copied result", program(
+        "Factory factory=Factory(Status::ok,42u64);Packet source=factory.snapshot();Receiver receiver=Receiver();"
+        "Packet result=receiver.take(source);const Leaf item=result.item;return i64(item.get());", BASE +
+        "class Receiver{public:Receiver(){}auto take(Packet value)const->Packet{return value;}};"))
+    suite.check("Value substitution authorizes copied class method parameter", program(
+        "Leaf leaf=Leaf(Status::ok,42u64);Box<Leaf> box=Box<Leaf>(leaf);Leaf result=box.take(leaf);"
+        "leaf.change(Status::error);if(result.status()!=Status::ok){return 1;}return i64(result.get());", ENUMS + LEAF +
         "template<Value T>class Box{T item;public:Box(T source):item(source){}"
-        "auto take(T source)const->T{return source;}};"), reject=True)
+        "auto take(T source)const->T{return source;}};"))
     suite.check("Value enum substitution does not authorize builtin enum arrays", program(
         "Box<Status> box=Box<Status>();return 42;", ENUMS +
         "template<Value T>class Box{builtin::array<T,2> data;public:Box():data{}{} };"), reject=True)

@@ -1,0 +1,1 @@
+export module lib.box;export template<Value T>class Boxer{public:Boxer(){}auto inspect(T source)const->i64{return source.hidden;}};
