@@ -1503,3 +1503,41 @@ representation is 0755, explicitly documented by the new M022 archive note.
 Archive/review receipts remain outside the source tree to avoid recursive hashes.
 No network, authentication, remote publication, active DMA, filesystem mount,
 physical-device, native self-hosting or equivalent-performance claim is made.
+
+## XFS-only M022 integration checkpoint — 2026-10-04
+
+Baseline: accepted commit `53cb2fe5d9222bce5a51a2d176edf8f8321960c7`.
+This checkout materializes only the384 exact product files listed in the
+[baseline subset receipt](evidence/xfs-root-m022-20261004/baseline-subset.json).
+Earlier docs/evidence remain on the remote baseline and are intentionally omitted
+from this local source subset. An incremental publication must preserve them.
+No compiler implementation, kernel code, device profile or emulator script changed.
+The copied M022 compiler is checked against SHA-256
+`e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e`.
+
+Prior fresh XFS standalone203/2,233 and API77/12 gates, copied-report boundary review,
+and portable Make review establish the input delta. They are not substitutes for
+this checkout's fresh top-level `make test` and independent delta review.
+The ordinary `compiler test` target now invokes the full XFS gate using the actual
+compiler pin and explicit source/fixture/artifact roots. A fixed preflight rejects
+symlink/missing/nondirectory roots before creating any output. No new QEMU run or
+166/170-mode milestone is claimed by this filesystem-only checkpoint.
+
+
+The fresh parent `make test` completed with exit0 on the unchanged M022 binary;
+all396 non-build input files and45 captured external tool/helper/runtime files
+stayed unchanged across the successful rerun. The tool inventory was first taken
+during an earlier attempt and then fully rechecked before and after this rerun.
+The aggregate ran the complete compiler, image, hosted-kernel/validator, storage
+model and630-case semantics gate (including128 generated inputs), with full
+XFS203/2,233 and API77/12 checks.
+No new emulator mode was run for this checkpoint. Prior M022 emulator evidence
+remains historical and is not relabeled as current XFS-only execution.
+
+The first attempt was incomplete: its host disk-accounting supervisor raced a
+removed temporary semantics output, so final make exit was not captured. It is
+retained as a failure, not counted as a pass. The supervisor now tolerates only
+disappeared files/directories during accounting and terminates/waits an owned
+child on failure; four deterministic controls pass. A complete fresh aggregate
+rerun supplies the successful receipt. No Aurora implementation change was needed.
+See [curated receipts and limitations](evidence/xfs-root-m022-20261004/README.md).

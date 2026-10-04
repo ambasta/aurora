@@ -1,0 +1,282 @@
+{
+  "status": "passed",
+  "controls": 13,
+  "compiler_sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+  "makefile_sha256": "fb62f07365763fb6a9ea94d242e1bc290cf0977158b3c098164451f025507f77",
+  "results": [
+    {
+      "label": "XFS_ROOT_REPO direct symlink",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/XFS_ROOT_REPO link",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/fixtures/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/outputs",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "fa37baf908e16b89f05cd0b7e08714fbaa5a9828a6b24576177314ce4576bbf2",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_REPO ancestor symlink",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/XFS_ROOT_REPO ancestor/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/fixtures/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/outputs",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "0323d66ef880fa835a0d642d906c6d80e58ce4f7a9e9fe5cdefba900ceb5263a",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_REPO missing",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/missing",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/fixtures/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/outputs",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "f5796f613fab50f8f6a5cb36b2cc17edc2d68eac1cb48f9c1cef33c4199ff4e3",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_REPO nondirectory",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/not a directory",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/fixtures/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/outputs",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "7b8821c024d199cb6959d1b004e8af5839e67c3767db09c558bf9da74d20a290",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_FIXTURES direct symlink",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/XFS_ROOT_FIXTURES link",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/outputs",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "7b9ef249d4730e936d831ebd3993f69fd2ff84035500e4a20b05a39057e1bfe9",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_FIXTURES ancestor symlink",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/XFS_ROOT_FIXTURES ancestor/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/outputs",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "2946081d0e7fbe12255c31e5c31ebab46101318a624d0394c6fe20dc5c72d9b0",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_FIXTURES missing",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/missing",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/outputs",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "f5796f613fab50f8f6a5cb36b2cc17edc2d68eac1cb48f9c1cef33c4199ff4e3",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_FIXTURES nondirectory",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/not a directory",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/outputs",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "7b8821c024d199cb6959d1b004e8af5839e67c3767db09c558bf9da74d20a290",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_ARTIFACT_PARENT direct symlink",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/fixtures/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/XFS_ROOT_ARTIFACT_PARENT link",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "fd6ca315fd77951f0236f663869bfe666a53bb45484a12747b7e83d5d8b01620",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_ARTIFACT_PARENT ancestor symlink",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/fixtures/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/XFS_ROOT_ARTIFACT_PARENT ancestor/outputs",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "bb75d5554c25e8c6415ac71f43bc445404b5e51a0e898d562b6a95f6f6a430b2",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_ARTIFACT_PARENT missing",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/fixtures/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/missing",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "f5796f613fab50f8f6a5cb36b2cc17edc2d68eac1cb48f9c1cef33c4199ff4e3",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "XFS_ROOT_ARTIFACT_PARENT nondirectory",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/fixtures/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/not a directory",
+        "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "7b8821c024d199cb6959d1b004e8af5839e67c3767db09c558bf9da74d20a290",
+      "output_contents_before": [],
+      "output_contents_after": []
+    },
+    {
+      "label": "wrong explicit compiler SHA256",
+      "argv": [
+        "make",
+        "-C",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/compiler",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "test-xfs-root",
+        "OUT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/build/aurorac",
+        "XFS_ROOT_REPO=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004",
+        "XFS_ROOT_FIXTURES=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-integration-20261004/fixtures/xfs-root",
+        "XFS_ROOT_ARTIFACT_PARENT=/workspace/scratch/48c5de6446f8/aurora-xfs-m022-review-20261004/recipe controls/outputs",
+        "XFS_ROOT_COMPILER_SHA256=0000000000000000000000000000000000000000000000000000000000000000"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "15cdb5bbcab7a62da8e844124ce75a252a70801e03310e748ce3edded92737f9",
+      "stderr_sha256": "193b4ad6e0be925a9f43bce1f2fc12c8d35eb72a469aba37bdf111e1b924e419",
+      "output_contents_before": [],
+      "output_contents_after": []
+    }
+  ],
+  "note": "Actual adopted Make recipe rejection controls, supplied compiler marked old; no compiler/native invocation reached."
+}

@@ -4,13 +4,19 @@ IR_TEST_CXXFLAGS ?= $(CXXFLAGS)
 IR_TEST_BUILD_PREFIX ?=
 UTF8_TEST_FLAGS ?=
 XFS_GEOMETRY_TEST_FLAGS ?=
+XFS_ROOT_TEST_FLAGS ?=
+XFS_ROOT_API_TEST_FLAGS ?=
+XFS_ROOT_REPO ?= ..
+XFS_ROOT_FIXTURES ?=
+XFS_ROOT_ARTIFACT_PARENT ?=
+XFS_ROOT_COMPILER_SHA256 ?=
 OUT ?= ../build/aurorac
 .PHONY: all test
 all: $(OUT)
 $(OUT): main.cpp $(wildcard *.hpp)
 	mkdir -p $(dir $(OUT))
 	$(CXX) $(CXXFLAGS) $< -o $@
-test: $(OUT)
+test: $(OUT) test-xfs-root
 	python3 ../tests/compiler/run.py $(abspath $(OUT))
 	python3 ../tests/compiler/classes.py $(abspath $(OUT))
 	python3 ../tests/compiler/value_calls.py $(abspath $(OUT))
@@ -80,3 +86,22 @@ test-utf8-encoding: $(OUT)
 .PHONY: test-xfs-geometry
 test-xfs-geometry: $(OUT)
 	python3 -O ../tests/compiler/xfs_geometry.py $(abspath $(OUT)) --mutation-controls $(XFS_GEOMETRY_TEST_FLAGS)
+
+.PHONY: test-xfs-root
+test-xfs-root: $(OUT)
+	@set -eu; \
+	compiler="$$(realpath -- "$(OUT)")"; \
+	repo="$(XFS_ROOT_REPO)"; \
+	fixtures="$(XFS_ROOT_FIXTURES)"; \
+	if [ -z "$$fixtures" ]; then fixtures="$$repo/fixtures/xfs-root"; fi; \
+	parent="$(XFS_ROOT_ARTIFACT_PARENT)"; \
+	if [ -z "$$parent" ]; then parent="$$(dirname -- "$$compiler")"; fi; \
+	python3 -B -c 'import pathlib,sys; roots=[pathlib.Path(s).absolute() for s in sys.argv[1:]]; bad=[p for p in roots if not p.is_dir() or any(x.is_symlink() for x in [p,*p.parents])]; sys.exit("invalid XFS root(s): "+", ".join(map(str,bad)) if bad else 0)' "$$repo" "$$fixtures" "$$parent"; \
+	pin="$$(sha256sum -- "$$compiler" | cut -d ' ' -f 1)"; \
+	if [ -n "$(XFS_ROOT_COMPILER_SHA256)" ]; then test "$$pin" = "$(XFS_ROOT_COMPILER_SHA256)"; fi; \
+	work="$$(mktemp -d "$$parent/xfs-root.XXXXXXXX")"; \
+	printf '%s\n' "$$pin" > "$$work/compiler.sha256"; \
+	python3 -B -O "$$repo/tests/compiler/xfs_root.py" --repo-root "$$repo" --fixture-root "$$fixtures" --artifact-root "$$work/lookup" --compiler "$$compiler" --compiler-sha256 "$$pin" $(XFS_ROOT_TEST_FLAGS); \
+	python3 -B -O "$$repo/tests/compiler/xfs_root_api.py" --repo-root "$$repo" --fixture-root "$$fixtures" --artifact-root "$$work/api" --compiler "$$compiler" --compiler-sha256 "$$pin" $(XFS_ROOT_API_TEST_FLAGS); \
+	test "$$(sha256sum -- "$$compiler" | cut -d ' ' -f 1)" = "$$pin"; \
+	printf 'PASS XFS root Make recipe: %s\n' "$$work"

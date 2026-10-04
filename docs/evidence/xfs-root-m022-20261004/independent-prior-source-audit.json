@@ -1,0 +1,118 @@
+{
+  "status": "passed",
+  "sources_and_patches": [
+    {
+      "target": "library/fs/xfs_root.au",
+      "sha256": "8f669775ea7a5e850a314e50c37d90a5ba1ef30b1d60f6c8a54be5a6faef9e4f",
+      "expected": "8f669775ea7a5e850a314e50c37d90a5ba1ef30b1d60f6c8a54be5a6faef9e4f",
+      "matches": true
+    },
+    {
+      "target": "tests/compiler/xfs_root.py",
+      "sha256": "36e617b36b8b3f6a81dfc546540df8af02107a5fbb061d89b20bd36659c8b731",
+      "expected": "36e617b36b8b3f6a81dfc546540df8af02107a5fbb061d89b20bd36659c8b731",
+      "matches": true
+    },
+    {
+      "target": "tests/compiler/xfs_root_api.py",
+      "sha256": "0f7b8a36f9f42e39673bb1fe086635397b345b540f7f475943bba7bb4b0047c8",
+      "expected": "0f7b8a36f9f42e39673bb1fe086635397b345b540f7f475943bba7bb4b0047c8",
+      "matches": true
+    },
+    {
+      "target": "docs/xfs-root-contract.md",
+      "sha256": "0318237baa99af57fb1742c6d0bb39ea763202d7a60fecb6474b5e61fa5f5ea9",
+      "expected": "0318237baa99af57fb1742c6d0bb39ea763202d7a60fecb6474b5e61fa5f5ea9",
+      "matches": true
+    },
+    {
+      "target": "fixtures/xfs-root/named-superblock.hex",
+      "sha256": "567a7fbc83cc47c228f55e5628a785378a8fda990bebfd267ceec74b1d141cf0",
+      "expected": "567a7fbc83cc47c228f55e5628a785378a8fda990bebfd267ceec74b1d141cf0",
+      "matches": true
+    },
+    {
+      "target": "fixtures/xfs-root/empty-superblock.hex",
+      "sha256": "8bb52b4dc1185e5ea2dbfe3eedc091af758662152858e3752accc2a09aec356d",
+      "expected": "8bb52b4dc1185e5ea2dbfe3eedc091af758662152858e3752accc2a09aec356d",
+      "matches": true
+    },
+    {
+      "target": "fixtures/xfs-root/named-root.hex",
+      "sha256": "39da3748e0a602270b36ae30e932f9eb82ddb1982aa5b9c24a56c164b4688ccd",
+      "expected": "39da3748e0a602270b36ae30e932f9eb82ddb1982aa5b9c24a56c164b4688ccd",
+      "matches": true
+    },
+    {
+      "target": "fixtures/xfs-root/empty-root.hex",
+      "sha256": "e8fda748240ce4a8903e43513f056eb6768edfebeb1509360950220061a6e2f9",
+      "expected": "e8fda748240ce4a8903e43513f056eb6768edfebeb1509360950220061a6e2f9",
+      "matches": true
+    },
+    {
+      "target": "m022/compiler/Makefile/base",
+      "sha256": "a296b2de8b2964612d679056f200496c744a308adf59afb35f672b791d601b3e",
+      "expected": "a296b2de8b2964612d679056f200496c744a308adf59afb35f672b791d601b3e",
+      "matches": true
+    },
+    {
+      "target": "m022/compiler/Makefile/overlay",
+      "sha256": "fb62f07365763fb6a9ea94d242e1bc290cf0977158b3c098164451f025507f77",
+      "expected": "fb62f07365763fb6a9ea94d242e1bc290cf0977158b3c098164451f025507f77",
+      "matches": true
+    },
+    {
+      "target": "m022/compiler/Makefile/patch",
+      "sha256": "b98b5abfe87b4145a946c2b8b9ef768c5081fc0b8612158b084d4eeead8a21f7",
+      "expected": "b98b5abfe87b4145a946c2b8b9ef768c5081fc0b8612158b084d4eeead8a21f7",
+      "matches": true
+    },
+    {
+      "target": "m022/library/README.md/base",
+      "sha256": "96a51a6177ec7fbfd0067a33a8149847e0786106f7f5fa64d175443271a568e6",
+      "expected": "96a51a6177ec7fbfd0067a33a8149847e0786106f7f5fa64d175443271a568e6",
+      "matches": true
+    },
+    {
+      "target": "m022/library/README.md/overlay",
+      "sha256": "9f9655cd2b2c7d28987d504c4d3dc93ea24a2aa9c55a362a165f54b8032afee8",
+      "expected": "9f9655cd2b2c7d28987d504c4d3dc93ea24a2aa9c55a362a165f54b8032afee8",
+      "matches": true
+    },
+    {
+      "target": "m022/library/README.md/patch",
+      "sha256": "1b2ce8c266a3ade539fbfc25bbd96880855880a5dea0f9d84af715ccbb9e1f77",
+      "expected": "1b2ce8c266a3ade539fbfc25bbd96880855880a5dea0f9d84af715ccbb9e1f77",
+      "matches": true
+    }
+  ],
+  "fixtures": [
+    {
+      "name": "empty-superblock.hex",
+      "decoded_bytes": 512,
+      "sha256": "55ad821909c312048d9936a74c8904cd25f97aa190b48ae0004b03eaffdc6586",
+      "matches": true
+    },
+    {
+      "name": "empty-root.hex",
+      "decoded_bytes": 512,
+      "sha256": "963d4d1ae9f5821528cdeaac5dbc65abc0a4146a737dab84ade621a12d2c326e",
+      "matches": true
+    },
+    {
+      "name": "named-superblock.hex",
+      "decoded_bytes": 512,
+      "sha256": "9fd8b9f7bfa7d12c99ae6e7b3a7633cc3ab48c45ff5facde79c36ad69503edb7",
+      "matches": true
+    },
+    {
+      "name": "named-root.hex",
+      "decoded_bytes": 512,
+      "sha256": "283d31448057d3a9b1406cf655274b799e0636abb32e466b40c15bf3df9d265b",
+      "matches": true
+    }
+  ],
+  "module_sha256": "8f669775ea7a5e850a314e50c37d90a5ba1ef30b1d60f6c8a54be5a6faef9e4f",
+  "harness_ast_parses": 2,
+  "note": "Read-only exact source/patch/fixture identity audit. This is not fresh native execution."
+}

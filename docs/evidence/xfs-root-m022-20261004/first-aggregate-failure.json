@@ -1,0 +1,10 @@
+{
+  "status": "failed/incomplete aggregate; not a product assertion failure",
+  "cause": "Supervisor lstat raced deletion of final-phase temporary output, so final make exit not captured. Old receipt kept original running status plus error; this envelope states failure unambiguously.",
+  "first_receipt_sha256": "bf2880086fe97891be32188f029d75157d74c64444784b8c5769163b5c4f4f8d",
+  "first_wrapper_sha256": "07f06688046951be3c5838dc251e232c44b3d9f9b3a0e9a495ce67a78df5c5e1",
+  "fixed_wrapper_sha256": "03b5bcde477d493e0ef3a591372328ad893a5e226a6e207cdd0a2ab535da1f6c",
+  "fix": "Ignore only disappeared files during allocation scan. Always terminate/wait owned live process group on supervisor failure; status explicitly failed.",
+  "after_failure_process_check": "No matching make test or candidate semantics processes remained when inspected.",
+  "product_changes": "none; candidate non-build inputs unchanged"
+}

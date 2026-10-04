@@ -1,0 +1,21 @@
+{
+  "method": "Reconstruction from exact prior raw/xfs_db observations and timestamps; full known SHA gates publication as historical slice. Full images and old receipts remain unavailable.",
+  "results": [
+    {
+      "name": "empty",
+      "expected_historical_sha256": "963d4d1ae9f5821528cdeaac5dbc65abc0a4146a737dab84ade621a12d2c326e",
+      "observed_sha256": "963d4d1ae9f5821528cdeaac5dbc65abc0a4146a737dab84ade621a12d2c326e",
+      "bytes": 512,
+      "exact_historical_slice_recovered": true,
+      "canonical_hex_sha256": "e8fda748240ce4a8903e43513f056eb6768edfebeb1509360950220061a6e2f9"
+    },
+    {
+      "name": "named",
+      "expected_historical_sha256": "283d31448057d3a9b1406cf655274b799e0636abb32e466b40c15bf3df9d265b",
+      "observed_sha256": "283d31448057d3a9b1406cf655274b799e0636abb32e466b40c15bf3df9d265b",
+      "bytes": 512,
+      "exact_historical_slice_recovered": true,
+      "canonical_hex_sha256": "39da3748e0a602270b36ae30e932f9eb82ddb1982aa5b9c24a56c164b4688ccd"
+    }
+  ]
+}

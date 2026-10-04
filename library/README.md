@@ -199,3 +199,37 @@ source/native ABI review, fresh parent aggregate and all 166 existing emulator
 modes passed, followed by both normal-image restoration boots. See
 [method values](../compiler/METHOD-VALUES.md) and [M022 evidence](../docs/evidence/milestone-022/README.md)
 for exact source and binary pins, preserved failures and bounded coverage.
+
+## Read-only XFS local root lookup
+
+`import fs.xfs_root;` adds `fs::lookup_xfs_v5_512_root(superblock, inode, name)`
+for checked readonly byte spans. It returns copied `XfsRootReport`, `XfsRootFacts`
+and `XfsRootMatch` class values. This bounded offline parser accepts a CRC-valid
+v5 512-byte local root inode with 32-bit shortform entries, at most 16 entries,
+and the supported geometry/profile in [the contract](../docs/xfs-root-contract.md).
+It validates the entire directory before returning found/not_found. Error facts
+and non-found matches are zero, including fabricated public reports. Names are
+raw bytes; inode addresses establish geometry only. It does not mount, replay,
+read file data, establish inode allocation/existence, or access devices.
+
+`make -C compiler test-xfs-root OUT=/absolute/path/to/aurorac` runs 203 lookup
+cases with 2,233 full u64 observations and 77 API observations plus 12 rejection
+controls. The aggregate compiler `test` depends on this gate. The recipe hashes
+its actual compiler and passes the same explicit pin to both bytecode-disabled
+Python runners; `XFS_ROOT_COMPILER_SHA256` optionally checks a caller-supplied
+accepted pin before creating artifacts. `XFS_ROOT_REPO`, `XFS_ROOT_FIXTURES`, and
+`XFS_ROOT_ARTIFACT_PARENT` select existing explicit roots; fixtures default to
+`REPO/fixtures/xfs-root`, artifacts to the compiler directory. Each run creates
+fresh lookup/API leaves under an owned mktemp directory. Roots can contain
+spaces; GNU Make's existing `OUT` target syntax still requires a whitespace-free
+OUT setting. The owned-output budget is 128 MiB, with a 1 GiB free floor and
+24 MiB reserved before each output-producing command. Run serially when sharing
+a tighter task-level budget.
+
+`XFS_ROOT_TEST_FLAGS=--representative` selects the labeled 56-case/616-observation
+subset. For a fatal host-instrumented compiler set `ASAN_OPTIONS=detect_leaks=0:halt_on_error=1`,
+`UBSAN_OPTIONS=halt_on_error=1`, and `--sanitized-compiler` in both
+`XFS_ROOT_TEST_FLAGS` and `XFS_ROOT_API_TEST_FLAGS`. This exempts only the compiler's
+address-space cap for sanitizer shadow memory; generated target code is not
+instrumented. Fixture slices were exactly hash-recovered after a workspace reset;
+the original full images and pre-reset receipts remain unavailable.

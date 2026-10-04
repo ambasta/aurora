@@ -476,3 +476,13 @@ expansion, generic methods, new IR/ABI or general heap/reference API is added.
 corrected defects, finite coverage and resource exceptions. Local verification
 does not imply remote publication.
 
+
+## XFS-only local-root lookup checkpoint on milestone022
+
+This isolated delta adds the bounded executable `fs.xfs_root` offline local-root
+lookup and its full compiler test target. It keeps the accepted milestone022
+compiler and kernel sources unchanged. See [the byte/API contract](docs/xfs-root-contract.md)
+and [fixture provenance](fixtures/xfs-root/README.md). Fresh standalone and portable
+M022 gates and this checkout's full parent `make test` passed. Exact receipts and
+independent review are recorded in [the checkpoint evidence](docs/evidence/xfs-root-m022-20261004/README.md). No optional compiler/kernel feature, new emulator qualification,
+mount, replay, file-data read, or physical-device support is included.

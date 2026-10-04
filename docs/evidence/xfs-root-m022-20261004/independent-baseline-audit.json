@@ -1,0 +1,11 @@
+{
+  "status": "passed",
+  "baseline_commit": "53cb2fe5d9222bce5a51a2d176edf8f8321960c7",
+  "baseline_tree": "61fb4071050450de758d5c90291ca34d3dc73fb7",
+  "files": 384,
+  "payload_bytes": 3824151,
+  "errors": [],
+  "manifest_sha256": "5d8f5aee6f93b314635e5787f5953ac4369a9eeb39a8cbf1a897d81c05bce4ef",
+  "historical_evidence_complete": false,
+  "scope": "Independently hashed only the recovered product subset, not remote baseline or full historical evidence."
+}
