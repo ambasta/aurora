@@ -263,3 +263,14 @@ filesystem operation, source integrity mechanism or dependency policy. See the
 [exact contract and gate](../docs/package-identity-contract.md) and
 [runnable example](examples/package_identity.au). Independent oracle/source review and the full focused Make recipe passed; parent
 aggregate acceptance remains pending.
+
+## Read-only UTF-8 line-scanning checkpoint
+
+`std.utf8_lines` observes the first LF/CRLF-terminated or unterminated final line
+of a readonly byte window. Strict UTF-8 validation covers consumed bytes including
+the terminator; later lines are checked on later calls. Copied masked counts
+support progress through empty lines without retained views or mutable storage.
+This explicitly differs from whole-window `utf8_subrange` validation. Independent
+native review and a fresh full top-level aggregate passed on the frozen source.
+Compiler/kernel, old APIs, terminal behavior and hardware qualification are unchanged. See [the exact
+contract](../docs/utf8-lines-contract.md).

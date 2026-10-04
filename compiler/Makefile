@@ -3,6 +3,9 @@ CXXFLAGS ?= -std=c++23 -O2 -Wall -Wextra -Wpedantic -Werror
 IR_TEST_CXXFLAGS ?= $(CXXFLAGS)
 IR_TEST_BUILD_PREFIX ?=
 UTF8_TEST_FLAGS ?=
+UTF8_LINES_TEST_FLAGS ?=
+UTF8_LINES_COMPILER_SHA256 ?= e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
+UTF8_LINES_ARTIFACT_PARENT ?= $(dir $(abspath $(OUT)))
 UTF8_RANGE_TEST_FLAGS ?=
 UTF8_RANGE_COMPILER_SHA256 ?= e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
 UTF8_RANGE_ARTIFACT_PARENT ?= $(dir $(abspath $(OUT)))
@@ -19,7 +22,7 @@ all: $(OUT)
 $(OUT): main.cpp $(wildcard *.hpp)
 	mkdir -p $(dir $(OUT))
 	$(CXX) $(CXXFLAGS) $< -o $@
-test: $(OUT) test-xfs-root test-utf8-range
+test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 ../tests/compiler/run.py $(abspath $(OUT))
 	python3 ../tests/compiler/classes.py $(abspath $(OUT))
 	python3 ../tests/compiler/value_calls.py $(abspath $(OUT))
@@ -117,3 +120,12 @@ test-utf8-range: $(OUT)
 	work="$$(mktemp -d "$$parent/utf8-range.XXXXXXXX")"; \
 	python3 -B -O ../tests/compiler/utf8_range.py --compiler "$(abspath $(OUT))" --compiler-sha256 "$(UTF8_RANGE_COMPILER_SHA256)" --artifacts "$$work/native" $(UTF8_RANGE_TEST_FLAGS); \
 	printf 'PASS UTF-8 range Make recipe: %s\n' "$$work"
+
+.PHONY: test-utf8-lines
+test-utf8-lines: $(OUT)
+	@set -eu; \
+	parent="$(UTF8_LINES_ARTIFACT_PARENT)"; \
+	test -d "$$parent"; \
+	work="$$(mktemp -d "$$parent/utf8-lines.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/utf8_lines.py --compiler "$(abspath $(OUT))" --compiler-sha256 "$(UTF8_LINES_COMPILER_SHA256)" --artifacts "$$work/native" $(UTF8_LINES_TEST_FLAGS); \
+	printf 'PASS UTF-8 lines Make recipe: %s\n' "$$work"

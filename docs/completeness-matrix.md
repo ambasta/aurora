@@ -321,3 +321,14 @@ The example executes without target libc using the unchanged accepted M022
 compiler. Independent adversarial/oracle review and the full focused Make recipe passed;
 parent aggregate remains pending. It does not advance compiler, kernel, self-hosting, package authenticity
 or physical-device qualification claims.
+
+## Read-only UTF-8 line-scanning checkpoint
+
+`std.utf8_lines` observes the first LF/CRLF-terminated or unterminated final line
+of a readonly byte window. Strict UTF-8 validation covers consumed bytes including
+the terminator; later lines are checked on later calls. Copied masked counts
+support progress through empty lines without retained views or mutable storage.
+This explicitly differs from whole-window `utf8_subrange` validation. Independent
+native review and a fresh full top-level aggregate passed on the frozen source.
+Compiler/kernel, old APIs, terminal behavior and hardware qualification are unchanged. See [the exact
+contract](utf8-lines-contract.md).
