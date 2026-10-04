@@ -1,0 +1,148 @@
+[
+  {
+    "name": "lines-first",
+    "archive": "/workspace/scratch/48c5de6446f8/aurora-utf8-lines-pr17-20261004/work/lines-first-passed-batches.tar.gz",
+    "archive_sha256": "3c0a01c71ddb6e3b57a5caf6c7d12ec9c2de39dd30dbc1e49a8772da20a031b2",
+    "files": 2530,
+    "status": "passed",
+    "retained_manifests": []
+  },
+  {
+    "name": "lines-corrected",
+    "archive": "/workspace/scratch/48c5de6446f8/aurora-utf8-lines-pr17-20261004/work/lines-corrected-passed-batches.tar.gz",
+    "archive_sha256": "e69cbe95403a689cbd30ea3cde02f20cbee1c159e5410cbe2e9611c8ebd5f82e",
+    "files": 2530,
+    "status": "passed",
+    "retained_manifests": []
+  },
+  {
+    "name": "previous-utf8",
+    "archive": "/workspace/scratch/48c5de6446f8/aurora-utf8-lines-pr17-20261004/work/previous-utf8-completed.tar.gz",
+    "archive_sha256": "e050513d70104dc29662214e5a011191c596c85ee0f38e0409d6fda121deaf84",
+    "files": 4945,
+    "status": "passed",
+    "retained_manifests": [
+      {
+        "path": "build/utf8-encoding-native-wsmdga6a/manifest.json",
+        "sha256": "7a32ee3b61bca153f8482234a678ad56ef577494cb592f4d4b0ece02b424cb23",
+        "data": {
+          "compiler_sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+          "utf8_sha256": "a9448bed52974ca1e690b9a10e86a5f879c5b24f475a12ab1ec079e4e97bc646",
+          "array_sha256": "22bdc89a253e471f170b0d03fe2ad1290036b9d4fc06b55399f375329b344c51",
+          "test_sha256": "e35b66182a56c8f7e87622d6ab65b74fa3e4a0199eb1c56f165a838c808ae1f5",
+          "runner_sha256": "c30c913e6f5a81b724002a112acfdf7dc98b7c4dc4b9165f0a0999f005e9df84",
+          "observation_sha256": "4baf61a087646ecec9d788c322871fe76fcbd1a9266c508bdfccaf3e987210fc",
+          "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+          "optimized_python": true,
+          "native_wall_seconds": 15,
+          "tool_wall_seconds": 30,
+          "cpu_soft_hard_seconds": [
+            10,
+            11
+          ],
+          "core_bytes": 0,
+          "compiler_address_space_bytes": 536870912,
+          "other_address_space_bytes": 134217728,
+          "regular_file_bytes": 8388608,
+          "max_source_bytes": 65536,
+          "max_cases_per_batch": 12,
+          "unicode_format": "17.0.0 section 3.9 D92 Tables 3-6/3-7",
+          "oracle_comparisons": [
+            "Every native scalar byte/width/tail compared with independent arithmetic model",
+            "Arithmetic model compared byte-for-byte with Python strict encoder for every scalar",
+            "Ordered native/Python per-plane fingerprints compared; not a direct native/Python byte comparison",
+            "Both Aurora decoder modes roundtrip every scalar as additional evidence"
+          ],
+          "layout_scope": "static/runtime sizes and alignment-sensitive wrapper sizes; no raw object padding observation",
+          "scope": "ordinary functional Linux/x86-64 execution; no safety/performance proof",
+          "status": "passed",
+          "python_strict_plane_fingerprints": [
+            908635636,
+            425261571,
+            762292715,
+            99323852,
+            1793139,
+            338824283,
+            675855427,
+            12886564,
+            915355858,
+            252386995,
+            589418139,
+            926449283,
+            828918570,
+            165949707,
+            502980851,
+            840011995,
+            742481282
+          ],
+          "native_checks": 186,
+          "native_batches": 35,
+          "rejection_compilations": 24,
+          "scalar_values": 1112064,
+          "surrogate_values": 2048,
+          "shortest_width_counts": [
+            128,
+            1920,
+            61440,
+            1048576
+          ],
+          "decoder_modes_per_scalar": 2,
+          "completed_native_checks": 186,
+          "native_batches_attempted": 35,
+          "completed_rejection_compilations": 24
+        }
+      },
+      {
+        "path": "build/utf8-native-ergv4hpf/manifest.json",
+        "sha256": "9f1317abffd21bf9d3a1ef8a315bdeb8babcc2b2e1ef05253ec4cb0349f172e7",
+        "data": {
+          "compiler_sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+          "utf8_sha256": "a9448bed52974ca1e690b9a10e86a5f879c5b24f475a12ab1ec079e4e97bc646",
+          "test_sha256": "c30c913e6f5a81b724002a112acfdf7dc98b7c4dc4b9165f0a0999f005e9df84",
+          "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+          "optimized_python": true,
+          "native_wall_seconds": 15,
+          "tool_wall_seconds": 30,
+          "cpu_soft_hard_seconds": [
+            10,
+            11
+          ],
+          "compiler_address_space_bytes": 536870912,
+          "other_address_space_bytes": 134217728,
+          "regular_file_bytes": 8388608,
+          "max_source_bytes": 65536,
+          "max_cases_per_batch": 12,
+          "unicode_format": "17.0.0 section 3.9 Table 3-7",
+          "scope": "ordinary functional Linux/x86-64 execution; no safety/performance proof",
+          "status": "passed",
+          "native_checks": 406,
+          "native_batches": 39,
+          "scalar_values": 1112064,
+          "one_byte_inputs": 256,
+          "two_byte_inputs": 65536,
+          "longer_boundary_inputs": 24200,
+          "final_modes_per_input": 2,
+          "completed_native_checks": 406,
+          "native_batches_attempted": 39
+        }
+      },
+      {
+        "path": "build/utf8-range.3MgjsEI2/native/manifest.json",
+        "sha256": "1e80ed1b66f69f14bf53852b3fcf52d8d748c0048987e31a6749379c91a14901",
+        "data": {
+          "compiler_sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+          "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+          "optimized": true,
+          "status": "passed",
+          "cases": 2250,
+          "full_i64_observations": 6750,
+          "batches": 143,
+          "rejections": 6,
+          "completed_cases": 2250,
+          "completed_rejections": 6,
+          "allocated_bytes": 46927872
+        }
+      }
+    ]
+  }
+]

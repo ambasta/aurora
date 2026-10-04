@@ -1,0 +1,23 @@
+module utf8_lines_example;
+import std.utf8_lines;
+
+auto test() -> i64 {
+    // A CRLF line, an empty LF line, and an unterminated EURO SIGN line.
+    const array<u8,7> text = {65u8, 13u8, 10u8, 10u8, 226u8, 130u8, 172u8};
+    i64 offset = 0;
+    i64 lines = 0;
+    i64 content = 0;
+    while (offset < len(text)) {
+        const std::Utf8LineResult line = std::read_utf8_line(borrow_bytes(text), offset, len(text) - offset);
+        if (line.status() != std::Utf8LineStatus::success) { return 1; }
+        if (line.consumed_bytes() <= 0) { return 2; }
+        content = content + line.content_bytes();
+        offset = offset + line.consumed_bytes();
+        lines = lines + 1;
+    }
+    const std::Utf8LineResult end = std::read_utf8_line(borrow_bytes(text), offset, 0);
+    if (end.status() != std::Utf8LineStatus::end_of_input) { return 3; }
+    if (lines != 3) { return 4; }
+    if (content != 4) { return 5; }
+    return 42;
+}

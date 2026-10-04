@@ -1,0 +1,31 @@
+{
+  "status": "passed",
+  "command": [
+    "make",
+    "test",
+    "XFS_ROOT_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+    "UTF8_RANGE_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+    "UTF8_LINES_COMPILER_SHA256=e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+  ],
+  "cwd": "/workspace/scratch/48c5de6446f8/aurora-utf8-lines-pr17-20261004",
+  "compiler_sha256": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e",
+  "supervisor_sha256": "a19bb84225a7beb22ed690b8601b529238747317926066e014c5ae4d4004ce41",
+  "source_freeze_sha256": "a50baa8175acae6b308d1ab3212ff796c6298139b76f91d2fec8062b93549c8f",
+  "source_input_count": 477,
+  "budget_bytes": 536870912,
+  "reserved_growth_bytes": 436207616,
+  "allocated_before": 24653824,
+  "free_before": 29253505024,
+  "environment": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "TMPDIR": "/workspace/scratch/48c5de6446f8/aurora-utf8-lines-pr17-20261004/.tmp"
+  },
+  "start": 1791130332.3226752,
+  "pid": 5,
+  "exit_code": 0,
+  "end": 1791131027.2624197,
+  "allocated_after": 330555392,
+  "peak_allocated": 411308032,
+  "free_after": 28961579008,
+  "compiler_after": "e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e"
+}
