@@ -61,3 +61,13 @@ The Linux ecosystem is an evolving, externally maintained collection, not a fixe
 ## Evidence history
 
 Keep the milestone001 source manifest as a historical record of that exact checkpoint. Later desktop, porting or kernel work gets its own source identity, test evidence and release manifest; do not rewrite the earlier manifest to imply it contained later features. Report passed and missing gates rather than speculative completion percentages.
+
+## Independent package metadata prerequisite candidate
+
+The library-only [package identity token](package-identity-contract.md) candidate
+implements bounded canonical name/version reading and comparisons in Aurora.
+It deliberately grants no authority and handles no complete manifests, sources,
+dependency constraints, build execution, installation, authentication or updates.
+Its freestanding example and full independent oracle/focused Make gates pass with
+the accepted M022 compiler; parent aggregate is required before acceptance. The native
+source-package release row above remains a requirement.

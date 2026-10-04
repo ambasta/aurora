@@ -245,3 +245,21 @@ the frozen implementation. No string container, grapheme/normalization/display-w
 support, returned view,
 new emulator qualification, or performance guarantee is claimed. See [the exact
 contract](../docs/utf8-range-contract.md).
+
+## Bounded package identity candidate
+
+`import package.identity; import std.array;` provides a real freestanding
+`package::parse_identity(bytes,offset,count)` over a readonly byte span. It owns
+and validates a canonical 1..24-byte ASCII package name and three 0..4294967295
+numeric version components from `name@major.minor.patch`, exposing recoverable
+errors, independent copied names, exact identity equality and version ordering.
+The explicit `std.array` import is required by the current compiler's direct
+visibility rule for composed class values. No input view escapes.
+
+This restricted grammar is not full SemVer or a complete manifest format. Public
+reports are forgeable data, never parsing certificates or trust/install authority.
+The candidate has no allocation, network, source resolver, build recipe, installer,
+filesystem operation, source integrity mechanism or dependency policy. See the
+[exact contract and gate](../docs/package-identity-contract.md) and
+[runnable example](examples/package_identity.au). Independent oracle/source review and the full focused Make recipe passed; parent
+aggregate acceptance remains pending.
