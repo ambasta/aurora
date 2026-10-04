@@ -292,3 +292,22 @@ oracle, distinct review and full aggregate recorded in its evidence index.
 The eight-entry limit is a supported profile bound. Exact version pins are not
 version ranges; this metadata parser supplies no resolver, build scripts, source
 retrieval, installation, authentication, network, process or filesystem authority.
+
+
+## Bounded exact-manifest graph candidate
+
+`package.graph` validates a caller-supplied catalog of zero to eight existing
+manifests using readonly byte windows and copied offset/length arrays. It rejects
+missing packages, mismatched exact versions, duplicate canonical root names and
+transitive cycles before exposing an order. Dependencies precede dependents;
+lexicographically smallest ready names make the identity order independent of
+catalog/dependency-line ordering. Copied order indices and selected identities
+retain no input view. Empty catalogs have a successful empty order.
+
+See the [exact API and precedence](../docs/package-graph-contract.md) and
+[native example](examples/package_graph.au). Full independent native oracle and
+corrected actual Make gates pass 5,548 cases/333,671 complete u64 observations plus
+60 rejection runs; separate focused source/native review also passes. Fresh
+aggregate and final integration seal remain required before acceptance.
+The entire supplied catalog is checked; the module performs no source retrieval,
+version-range solving, recipe execution, installation, trust or filesystem operation.
