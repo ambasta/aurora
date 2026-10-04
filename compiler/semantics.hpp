@@ -509,6 +509,83 @@ class SemanticAnalyzer {
             releaseSpan(*it, true);
         return callee.result;
     }
+    Type callOverloadedFunction(ExpressionPtr value,
+                                const StatementPtr &resultBinding = nullptr) {
+        // Resolve arity before touching arguments. Candidates are already restricted
+        // to one defining declaration set and the caller's export visibility.
+        std::vector<const Function *> candidates;
+        for (const auto &name : value->overloadCandidates) {
+            const auto found = functions.find(name);
+            if (found == functions.end())
+                fail(value->token, "unknown ordinary overload candidate");
+            const auto &candidate = sourceFunctions[found->second];
+            if (candidate.params.size() == value->args.size())
+                candidates.push_back(&candidate);
+        }
+        if (candidates.empty())
+            fail(value->token, "wrong argument count for " + value->token.text);
+        std::vector<Type> types;
+        std::vector<int> arguments(value->args.size(), 0), spanArguments(value->args.size(), 0);
+        std::vector<int> snapshots, spanBorrows;
+        bool aggregate = false;
+        for (std::size_t index = 0; index < value->args.size(); ++index) {
+            const auto &argument = value->args[index];
+            const int local = argument->op == "name" ? lookupLocal(argument->token) : -1;
+            const bool span = (local >= 0 && locals[local].type.isSpan()) ||
+                              (argument->op == "call" && argument->token.text == "borrow_bytes");
+            if (span) {
+                aggregate = true;
+                const int borrowed = acquireSpan(argument);
+                types.push_back(Type::ByteSpan);
+                spanArguments[index] = offset(borrowed);
+                spanBorrows.push_back(borrowed);
+            } else if (local >= 0 && locals[local].type.isClass()) {
+                aggregate = true;
+                const int original = source(argument);
+                const Type type = locals[original].type;
+                types.push_back(type);
+                const int snapshot = add("", type, false, argument->token, false);
+                copyClass(original, snapshot, classDefinition(type, argument->token));
+                arguments[index] = offset(snapshot);
+                snapshots.push_back(offset(snapshot));
+            } else {
+                types.push_back(expression(argument));
+                push();
+            }
+        }
+        const Function *selected = nullptr;
+        for (const auto *candidate : candidates) {
+            bool exact = true;
+            for (std::size_t index = 0; index < types.size(); ++index)
+                exact = exact && types[index] == candidate->params[index].type;
+            if (!exact)
+                continue;
+            if (selected)
+                fail(value->token, "ambiguous exact ordinary overload");
+            selected = candidate;
+        }
+        if (!selected)
+            fail(value->token, "no exact ordinary overload for " + value->token.text);
+        if (value->inaccessibleOverloads.contains(selected->name))
+            fail(value->token, "function signature type requires a direct visible import");
+        if (selected->result.isClass() && !resultBinding)
+            fail(value->token, "class-returning call requires a typed local initializer");
+        if (resultBinding)
+            match(selected->result, resultBinding->type, value->token);
+        int destination = 0;
+        if (resultBinding)
+            destination = offset(add(resultBinding->name, resultBinding->type,
+                                     resultBinding->mutableValue, resultBinding->token));
+        if (aggregate || selected->result.isClass())
+            emit(ir::AggregateCall{selected->name, arguments, destination, spanArguments});
+        else
+            emit(ir::Call{selected->name});
+        for (int snapshot : snapshots)
+            emit(ir::EndObject{snapshot});
+        for (auto it = spanBorrows.rbegin(); it != spanBorrows.rend(); ++it)
+            releaseSpan(*it, true);
+        return selected->result;
+    }
     ir::Constant literal(const Token &token) {
         const bool byteValue = token.text.ends_with("u8");
         const bool unsignedValue = byteValue || token.text.ends_with("u64");
@@ -737,6 +814,8 @@ class SemanticAnalyzer {
         if (n == "own" || n == "move" || n == "borrow" || n == "borrow_mut")
             fail(e->token, "ownership constructors are only supported in typed local "
                            "initializers");
+        if (!e->overloadCandidates.empty())
+            return callOverloadedFunction(e);
         auto f = functions.find(n);
         if (f == functions.end())
             fail(e->token, "unknown function '" + n + "'");
@@ -858,6 +937,10 @@ class SemanticAnalyzer {
             return;
         }
         if (expression->op == "call") {
+            if (!expression->overloadCandidates.empty()) {
+                callOverloadedFunction(expression, statement);
+                return;
+            }
             const auto found = functions.find(expression->resolvedName);
             if (found == functions.end())
                 fail(expression->token, "class initializer requires a class-returning function");

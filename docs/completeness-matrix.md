@@ -359,3 +359,49 @@ for limits. Independent oracle, corrected full focused Make and separate native
 review passed; fresh full aggregate/final seal remain required. Source retrieval,
 recipe execution, installation, general dependency
 solving and provenance authority remain absent.
+
+## Unaccepted exact ordinary-function overload candidate
+
+The isolated candidate implements same-defining-module ordinary overloads by
+exact arity and nominal argument tuple, with a 32-declaration cap. Return type
+never discriminates; no implicit conversion, template/method overload, generic
+method or cross-module overload merging is admitted. Existing copied-class and
+readonly-span boundaries stage arguments once left to right. Single-declaration
+bootstrap symbols remain unchanged and overloaded root answer rejects. Complete
+isolated release/fatal host sanitizer compiler gates and independent source/IR/native
+review passed. Parent integration remains required before acceptance. See the
+[contract](../compiler/FUNCTION-OVERLOADS.md). This adds no new IR instruction,
+ABI, kernel mechanism, heap/reference API or optional feature.
+
+
+## Replacement emulator fixture qualification (2026-10-04)
+
+The historical custom BAR/IVRS firmware CODE image with SHA256
+`82c1ea28dc532053bfbe5c0b7a8013f3eef5742534e3358264a220b70ec24d49`
+remains unrecovered. Rebuilding the historical pinned input closure produced
+`24b30416142749dd60ac241fe755df6232fc5b10663a8b799501659b796d0268`;
+this is a separately qualified replacement, not a bit-reproducible recovery.
+The pristine VARS SHA256 remains
+`5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e`.
+
+Using the accepted M022 compiler, the replacement passed seven BAR profiles,
+eleven IVRS profiles, and two actual normal BIOS/UEFI restoration boots. Three
+BAR refusal profiles intentionally use stock firmware; fifteen profiles use the
+replacement. Independent receipt/source/tool review passed before adoption. The
+only validator change is `PINS['clean_code']` in
+`tests/kernel-uefi-bar-provenance.py`; IVRS imports that same pin. Historical
+receipts retain their original fixture identity. This acceptance is limited to
+the tested emulator BAR/IVRS contract and makes no physical-hardware, firmware
+security, whole-run zero-interrupt, or new compiler integration claim.
+
+
+## Verified ordinary-overload integration (2026-10-04)
+
+The exact ordinary-function overload candidate above has now completed fresh
+combined native testing, all 166 existing emulator modes and two separately
+rebuilt actual normal BIOS/UEFI boots, with independent final review. No executable
+source or validator changed after the tested freeze. Native test success is
+qualified by an exact supplemental review while the original empty-tmp bookkeeping
+failure remains preserved. The qualified replacement firmware and all physical
+hardware/security limitations remain explicit in the
+[integration results](function-overloads-integration-results.md).

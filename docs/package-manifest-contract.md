@@ -171,3 +171,15 @@ The source-local [evidence index](../evidence/package-manifest/README.md) record
 completed checks, failures and exact checkpoint status without relabeling earlier
 source or aggregate receipts. No new emulator gate is claimed for this library-only
 change; the inherited aggregate still exercises compiler and hosted kernel tests.
+
+## Explicit compiler-integration pin
+
+The runner now accepts --compiler-sha256 as an explicit expected 64-character
+lowercase hexadecimal digest. Its default remains the historical accepted M022
+pin. The binary must match before the designated artifact directory is created
+or any native test output is produced. PACKAGE_MANIFEST_COMPILER_SHA256 passes
+that expected digest through the Make target; it does not bypass verification.
+A new compiler integration must record and review its expected pin independently,
+then deliberately supply it. Wrong/malformed pins and baseline-default behavior
+have independent rejection/compatibility checks. The format/oracle and frozen
+pre-implementation contract are unchanged.

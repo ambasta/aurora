@@ -122,7 +122,7 @@ These temporary register choices are implementation machinery, not a source-leve
 
 Tests execute assembled/linked machine code without libc, check compiler rejection diagnostics, and distinguish bounds/overflow SIGILL from crashes or timeouts. Tests are evidence for this constrained implementation, not a soundness proof or a claim of complete Rust-equivalent safety.
 
-Self-hosting, complete modern C++ expressiveness, constructor bodies, overloads, inheritance, destructors, unrestricted nested values, general ownership, general generics, heap storage, concurrency, typed compile-time generation, separate binary compilation and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
+Self-hosting, complete modern C++ expressiveness, constructor bodies, method/template overloads, inheritance, destructors, unrestricted nested values, general ownership, general generics, heap storage, concurrency, typed compile-time generation, separate binary compilation and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
 
 ## Native library and host I/O
 
@@ -168,3 +168,12 @@ reflection/conversion access to capability storage. See [SPANS.md](SPANS.md).
 The real std.binary module reads four-byte endian values from a borrowed input
 and returns an independent recoverable ByteReadResult. Complete author release/sanitizer and independent compiler checks pass on the
 corrected static-site candidate; final parent/kernel integration remains pending.
+
+## Unaccepted ordinary overload candidate
+
+[FUNCTION-OVERLOADS.md](FUNCTION-OVERLOADS.md) specifies same-module ordinary
+overloads selected by exact arity and nominal argument types. Arguments retain
+one left-to-right evaluation and snapshot sequence. Return type and implicit
+conversions never select a candidate; template names and cross-module collisions
+remain restricted. Complete isolated release/fatal sanitizer gates and independent review passed;
+parent integration and milestone acceptance are still pending.

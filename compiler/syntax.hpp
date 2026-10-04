@@ -9,6 +9,10 @@ class Expression {
   public:
     std::string op;
     std::string resolvedName;
+    // Resolver-owned visible ordinary overloads; unavailable signature authority
+    // is recorded per candidate and checked only after exact argument selection.
+    std::vector<std::string> overloadCandidates;
+    std::set<std::string> inaccessibleOverloads;
     int depth = 1;
     Token token;
     std::vector<std::shared_ptr<Expression>> args;

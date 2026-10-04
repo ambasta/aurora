@@ -592,7 +592,8 @@ class X86Emitter {
             const bool aggregate = aggregateSignature(function);
             // Receiver and aggregate entry points use a private compiler ABI and cannot be
             // exposed as ordinary scalar-callable external symbols.
-            output << (function.receiver || aggregate ? ".local " : ".globl ") << function.name
+            output << (function.receiver || aggregate || function.name.starts_with("__au_o_")
+                           ? ".local " : ".globl ") << function.name
                    << "\n.type " << function.name << ", @function\n"
                    << function.name << ":\n";
             line("pushq %rbp");
