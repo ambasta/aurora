@@ -194,3 +194,15 @@ test-package-manifest:
 	python3 -B -O tests/compiler/package_manifest.py $(abspath $(PACKAGE_MANIFEST_COMPILER)) --candidate-cap-mib $(PACKAGE_MANIFEST_CAP_MIB) $(PACKAGE_MANIFEST_TEST_FLAGS)
 
 test: test-package-manifest
+
+# Bounded exact-manifest consistency and dependency-first ordering; metadata only.
+PACKAGE_GRAPH_COMPILER ?= build/aurorac
+PACKAGE_GRAPH_COMPILER_SHA256 ?= e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
+PACKAGE_GRAPH_TEST_FLAGS ?=
+PACKAGE_GRAPH_CAP_MIB ?= 256
+test: PACKAGE_GRAPH_CAP_MIB = 512
+.PHONY: test-package-graph
+test-package-graph:
+	python3 -B -O tests/compiler/package_graph.py $(abspath $(PACKAGE_GRAPH_COMPILER)) --compiler-sha256 $(PACKAGE_GRAPH_COMPILER_SHA256) --candidate-cap-mib $(PACKAGE_GRAPH_CAP_MIB) $(PACKAGE_GRAPH_TEST_FLAGS)
+
+test: test-package-graph

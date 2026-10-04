@@ -345,3 +345,17 @@ limits. [The contract and gate](package-manifest-contract.md) describe independe
 native oracle, failure/ownership/privacy tests, separate review and fresh full
 aggregate required before acceptance. No compiler, kernel, resolver, build execution,
 installation or trust/cryptography capability is added.
+
+
+## Bounded package graph candidate
+
+`package.graph` adds actual whole-catalog validation and deterministic dependency-
+first ordering for zero to eight caller-supplied exact manifests. Its supported
+profile rejects duplicate canonical roots, missing names, exact-version conflicts
+and cycles, with whole-set error precedence and no partial successful facts.
+Copied order/identity observations survive input-owner changes. The existing
+compiler and package parsers are unchanged. See [the contract](package-graph-contract.md)
+for limits. Independent oracle, corrected full focused Make and separate native
+review passed; fresh full aggregate/final seal remain required. Source retrieval,
+recipe execution, installation, general dependency
+solving and provenance authority remain absent.

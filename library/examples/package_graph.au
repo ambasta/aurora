@@ -1,0 +1,29 @@
+module package_graph_example;
+import package.graph;
+import package.manifest;
+import package.identity;
+import std.array;
+
+auto answer() -> u64 {
+    builtin::array<u8,213> bytes = {97u8,117u8,114u8,111u8,114u8,97u8,45u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,49u8,10u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,97u8,112u8,112u8,64u8,49u8,46u8,48u8,46u8,48u8,10u8,100u8,101u8,112u8,101u8,110u8,100u8,115u8,32u8,108u8,105u8,98u8,64u8,49u8,46u8,48u8,46u8,48u8,10u8,100u8,101u8,112u8,101u8,110u8,100u8,115u8,32u8,99u8,111u8,114u8,101u8,64u8,49u8,46u8,48u8,46u8,48u8,10u8,101u8,110u8,100u8,10u8,97u8,117u8,114u8,111u8,114u8,97u8,45u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,49u8,10u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,108u8,105u8,98u8,64u8,49u8,46u8,48u8,46u8,48u8,10u8,100u8,101u8,112u8,101u8,110u8,100u8,115u8,32u8,99u8,111u8,114u8,101u8,64u8,49u8,46u8,48u8,46u8,48u8,10u8,101u8,110u8,100u8,10u8,97u8,117u8,114u8,111u8,114u8,97u8,45u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,49u8,10u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,99u8,111u8,114u8,101u8,64u8,49u8,46u8,48u8,46u8,48u8,10u8,101u8,110u8,100u8,10u8,97u8,117u8,114u8,111u8,114u8,97u8,45u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,49u8,10u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,97u8,117u8,120u8,64u8,49u8,46u8,48u8,46u8,48u8,10u8,101u8,110u8,100u8,10u8};
+    std::array<i64,8> offsets = std::array<i64,8>();
+    std::array<i64,8> lengths = std::array<i64,8>();
+    offsets.set(0,0); lengths.set(0,76);
+    offsets.set(1,76); lengths.set(1,58);
+    offsets.set(2,134); lengths.set(2,40);
+    offsets.set(3,174); lengths.set(3,39);
+    const package::GraphOrderResult order = package::order_manifests(borrow_bytes(bytes),offsets,lengths,4);
+    const package::GraphEntryResult entry = package::ordered_manifest(borrow_bytes(bytes),offsets,lengths,4,3);
+    const package::GraphOrderResult copied = order;
+    bytes[0] = 0u8;
+    offsets.set(0,-1); lengths.set(0,-1);
+    if (order.status() != package::GraphStatus::success) { return 1u64; }
+    if (entry.status() != package::GraphStatus::success) { return 2u64; }
+    if (copied.catalog_index_or(0,-1) != 3) { return 3u64; }
+    if (copied.catalog_index_or(1,-1) != 2) { return 4u64; }
+    if (copied.catalog_index_or(2,-1) != 1) { return 5u64; }
+    if (copied.catalog_index_or(3,-1) != 0) { return 6u64; }
+    const package::IdentityResult identity = entry.identity_or_error();
+    if (identity.name_byte_or(0,0u8) != 97u8) { return 7u64; }
+    return 34u64 + u64(order.package_count_or(0)) + u64(entry.rank_or(0)) + identity.major_or(0u64);
+}

@@ -84,3 +84,17 @@ recipe format or a package manager. Source retrieval/integrity, version ranges,
 features, transitive resolution, build isolation, reproducibility, installation and
 updates remain the release requirements above. Candidate acceptance requires the
 independent native oracle, separate review and full unchanged-input aggregate.
+
+
+## Exact-manifest bootstrap-order candidate
+
+The library-only [package graph](package-graph-contract.md) candidate validates
+whole supplied catalogs and computes deterministic dependency-first ordering for
+up to eight exact-version manifests. Missing packages, incompatible exact pins,
+duplicate root names and transitive cycles have explicit recoverable outcomes.
+All facts are copied and masked on errors. This supplies a running prerequisite
+for the source-package row's bootstrap ordering/cycle/conflict gate; it does not
+satisfy source retrieval, general resolution, ranges/features, integrity, isolated
+builds, reproducibility, installation or recovery. Full independent oracle and
+corrected focused Make gates passed with separate source/native review; a fresh
+unchanged-input aggregate and final integration seal remain required.
