@@ -1,0 +1,17 @@
+module utf8_subrange_example;
+import std.utf8_range;
+import std.utf8;
+
+auto test() -> i64 {
+    // The window is A, EURO SIGN, GRINNING FACE, Z, inside invalid sentinels.
+    const array<u8,11> bytes = {255u8, 65u8, 226u8, 130u8, 172u8,
+                                240u8, 159u8, 152u8, 128u8, 90u8, 255u8};
+    const std::Utf8RangeResult selected = std::utf8_subrange(borrow_bytes(bytes), 1, 9, 1, 2);
+    if (selected.status() != std::Utf8RangeStatus::success) { return 1; }
+    if (selected.byte_offset() != 1) { return 2; }
+    if (selected.byte_count() != 7) { return 3; }
+    const std::Utf8DecodeResult first = std::decode_utf8(
+        borrow_bytes(bytes), 1 + selected.byte_offset(), selected.byte_count(), true);
+    if (first.scalar_or(0u64) != 8364u64) { return 4; }
+    return 42;
+}

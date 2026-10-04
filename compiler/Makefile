@@ -3,6 +3,9 @@ CXXFLAGS ?= -std=c++23 -O2 -Wall -Wextra -Wpedantic -Werror
 IR_TEST_CXXFLAGS ?= $(CXXFLAGS)
 IR_TEST_BUILD_PREFIX ?=
 UTF8_TEST_FLAGS ?=
+UTF8_RANGE_TEST_FLAGS ?=
+UTF8_RANGE_COMPILER_SHA256 ?= e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
+UTF8_RANGE_ARTIFACT_PARENT ?= $(dir $(abspath $(OUT)))
 XFS_GEOMETRY_TEST_FLAGS ?=
 XFS_ROOT_TEST_FLAGS ?=
 XFS_ROOT_API_TEST_FLAGS ?=
@@ -16,7 +19,7 @@ all: $(OUT)
 $(OUT): main.cpp $(wildcard *.hpp)
 	mkdir -p $(dir $(OUT))
 	$(CXX) $(CXXFLAGS) $< -o $@
-test: $(OUT) test-xfs-root
+test: $(OUT) test-xfs-root test-utf8-range
 	python3 ../tests/compiler/run.py $(abspath $(OUT))
 	python3 ../tests/compiler/classes.py $(abspath $(OUT))
 	python3 ../tests/compiler/value_calls.py $(abspath $(OUT))
@@ -105,3 +108,12 @@ test-xfs-root: $(OUT)
 	python3 -B -O "$$repo/tests/compiler/xfs_root_api.py" --repo-root "$$repo" --fixture-root "$$fixtures" --artifact-root "$$work/api" --compiler "$$compiler" --compiler-sha256 "$$pin" $(XFS_ROOT_API_TEST_FLAGS); \
 	test "$$(sha256sum -- "$$compiler" | cut -d ' ' -f 1)" = "$$pin"; \
 	printf 'PASS XFS root Make recipe: %s\n' "$$work"
+
+.PHONY: test-utf8-range
+test-utf8-range: $(OUT)
+	@set -eu; \
+	parent="$(UTF8_RANGE_ARTIFACT_PARENT)"; \
+	test -d "$$parent"; \
+	work="$$(mktemp -d "$$parent/utf8-range.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/utf8_range.py --compiler "$(abspath $(OUT))" --compiler-sha256 "$(UTF8_RANGE_COMPILER_SHA256)" --artifacts "$$work/native" $(UTF8_RANGE_TEST_FLAGS); \
+	printf 'PASS UTF-8 range Make recipe: %s\n' "$$work"
