@@ -169,3 +169,17 @@ test-uefi-tables:
 
 smoke-uefi-tables:
 	./scripts/kernel-uefi-tables-all.sh
+
+# Bounded native source-package metadata primitive. Tests pin the accepted M022
+# compiler bytes independently; this adds no compiler feature or target runtime.
+PACKAGE_IDENTITY_COMPILER ?= build/aurorac
+PACKAGE_IDENTITY_TEST_FLAGS ?=
+PACKAGE_IDENTITY_CAP_MIB ?= 128
+# The inherited full regression build retains more than 128 MiB. Keep the
+# focused gate small while giving the aggregate an explicit bounded ceiling.
+test: PACKAGE_IDENTITY_CAP_MIB = 512
+.PHONY: test-package-identity
+test-package-identity:
+	python3 -B -O tests/compiler/package_identity.py $(abspath $(PACKAGE_IDENTITY_COMPILER)) --candidate-cap-mib $(PACKAGE_IDENTITY_CAP_MIB) $(PACKAGE_IDENTITY_TEST_FLAGS)
+
+test: test-package-identity

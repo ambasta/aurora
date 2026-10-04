@@ -309,3 +309,15 @@ the frozen implementation. No string container, grapheme/normalization/display-w
 support, returned view,
 new emulator qualification, or performance guarantee is claimed. See [the exact
 contract](utf8-range-contract.md).
+
+## Independent package identity candidate
+
+A library-only candidate adds `package.identity`: bounded canonical package-name
+and numeric version-triple parsing from readonly input, owned copied facts,
+recoverable errors, exact identity equality and numeric version ordering. Its
+[restricted format and acceptance gate](package-identity-contract.md) are explicit;
+this is neither full SemVer nor a manifest/dependency/build/install implementation.
+The example executes without target libc using the unchanged accepted M022
+compiler. Independent adversarial/oracle review and the full focused Make recipe passed;
+parent aggregate remains pending. It does not advance compiler, kernel, self-hosting, package authenticity
+or physical-device qualification claims.
