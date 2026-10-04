@@ -1,0 +1,1 @@
+module review;class Cell{public:u8 value;Cell(u8 x):value(x){}auto set(u8 x)->u8{value=x;return value;}};template<Value T>auto keep(T a,u8 ignored,T b)->T{return a;}auto test()->i64{Cell a=Cell(42u8);Cell z=keep<Cell>(a,a.set(7u8),a);return i64(z.value);}

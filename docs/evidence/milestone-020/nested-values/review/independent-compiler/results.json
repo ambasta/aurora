@@ -1,0 +1,1749 @@
+{
+  "compiler": "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+  "pin": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+  "results": [
+    {
+      "name": "deep_values",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/deep_values",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/deep_values/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/deep_values/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/deep_values/input.au": "ec693a4025a626f92165352fad32854240309d319d3ab3252696eb988b61ddca"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "full_binary_tree",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/full_binary_tree",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/full_binary_tree/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/full_binary_tree/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/full_binary_tree/input.au": "69748d7667b90c72ba990c09da027c91e7306dcf1360fff9fa52e2b05b502502"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "canonical_capacity",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/canonical_capacity",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/canonical_capacity/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/canonical_capacity/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/canonical_capacity/input.au": "a0bd4f10d2b4be8c9aa43204023f3052b36f9486ec2f9dacef1d35f28b98a5d1"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "empty_inner",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/empty_inner",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/empty_inner/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/empty_inner/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/empty_inner/input.au": "73a343c71e0795d407e509af31da28d4a3eeac7083bd641527e2aeeb05d9f217"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "phantom_depth_4",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/phantom_depth_4",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/phantom_depth_4/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/phantom_depth_4/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/phantom_depth_4/input.au": "bfc60514723f2ea49a33ad592fce54d4e5fdfddd33d8c03af55df6b9ba0d7325"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "phantom_depth_5",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/phantom_depth_5",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/phantom_depth_5/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/phantom_depth_5/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: template-id nesting exceeds 4\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/phantom_depth_5/input.au": "0a985f3ee6e646c56d228adfca1f327409ca203ed0edcecc3bb258d19364290a"
+      },
+      "passed": true
+    },
+    {
+      "name": "containment_depth5",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/containment_depth5",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/containment_depth5/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/containment_depth5/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 1: composed class exceeds depth four or 64 scalar leaves\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/containment_depth5/input.au": "589fef40dbaa98782ed29b58157e94f03b4569c098a117d96c33bbecdfe53e34"
+      },
+      "passed": true
+    },
+    {
+      "name": "leaf_array_1",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_1",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_1/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_1/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_1/input.au": "1665c1ddd63ea9874cbb17d010f11d451c3c13f9c78a1c6e92ae18fac41f15b1"
+      },
+      "native_status": 0,
+      "expected": 2,
+      "actual": 2,
+      "passed": true
+    },
+    {
+      "name": "leaf_array_32",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_32",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_32/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_32/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_32/input.au": "ebccc54bda94f973805afce6df70d2d10f4cce066217ea765acff5d5db27f5c8"
+      },
+      "native_status": 0,
+      "expected": 64,
+      "actual": 64,
+      "passed": true
+    },
+    {
+      "name": "leaf_array_64",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_64",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_64/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_64/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 5: composed classes are limited to 64 scalar leaves\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_64/input.au": "a5a35ca7d546d5aba645255c4bcac20de325a242867240cd95b126d57c755521"
+      },
+      "passed": true
+    },
+    {
+      "name": "leaf_array_65",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_65",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_65/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_65/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 1: capacity template arguments must be decimal literals from 1 to 64 (found '>')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_65/input.au": "d81d36faa3eaf7297fc1dc8200b6897b94c989749de3a1cd259daca41d15be03"
+      },
+      "passed": true
+    },
+    {
+      "name": "leaf_array_0",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_0",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_0/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_0/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 1: capacity template arguments must be decimal literals from 1 to 64 (found '>')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/leaf_array_0/input.au": "97936001c2de32ab9f5e3a131f3d41e71307888e0628d9032b5ca048fafd7739"
+      },
+      "passed": true
+    },
+    {
+      "name": "body_specialization_12",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_12",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_12/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_12/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: template-id references inside template definitions are not supported (found '<')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_12/input.au": "f98d08d55002b2107a1fe7fcb17f1f2936dd26b8012573ca113ccb2b135eb763"
+      },
+      "passed": true
+    },
+    {
+      "name": "body_specialization_13",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_13",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_13/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_13/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: template-id references inside template definitions are not supported (found '<')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_13/input.au": "ed0b45039079055ad04b93c5eb6156e0e50e48a21afaf4d599dd2620a1e504b3"
+      },
+      "passed": true
+    },
+    {
+      "name": "body_specialization_14",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_14",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_14/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_14/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: template-id references inside template definitions are not supported (found '<')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_14/input.au": "54b603c530190a26c929de50de5d220e562a03660c4d8e1096fd7e04a87937e3"
+      },
+      "passed": true
+    },
+    {
+      "name": "body_specialization_15",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_15",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_15/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_15/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: template-id references inside template definitions are not supported (found '<')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/body_specialization_15/input.au": "7e8f251825a6fc3a0dcccdb25558aef1e39186427e246464c71d11767c977c41"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_16",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_16",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_16/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_16/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'own')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_16/input.au": "a33b102eaf606fa306276a4e71a0c815d9a275b449e47be8dc0d35d416f461aa"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_17",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_17",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_17/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_17/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'ref')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_17/input.au": "eb20a4dbc5f747b6a9865a149608b0e17bbcf8693762760b60e882304dec3833"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_18",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_18",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_18/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_18/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'mutref')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_18/input.au": "0d3ab0b962942a134962774c5432e3724fb26d07ac440839213a254778321beb"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_19",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_19",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_19/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_19/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'array')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_19/input.au": "09c70fd6af4b3dd9d4c9938a9a33763155e2bcacae63ad0b4aef53c8e69e2a68"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_20",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_20",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_20/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_20/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'builtin')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_20/input.au": "6ed2a4064b926dd3600e24d17417b72cdf1d1c38ace8510e1d5394226a8edf27"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_21",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_21",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_21/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_21/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'builtin')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_21/input.au": "ddcfd66e99153487418e7c363a54bc4efbcd21e64ef5a202242cba4ba4853608"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_22",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_22",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_22/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_22/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: unknown named class or enum template argument: Unknown\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_22/input.au": "4ca7f50dc99f38e83ef18129a25066732dcba4ff56b815ddbae3faaf23e4e772"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_23",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_23",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_23/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_23/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: template argument requires a named concrete class or enum: Box\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_23/input.au": "3f5e49391fab5dcbef126901c16fefd31681b8045376e945e2e2bf88f1a6ff56"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_24",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_24",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_24/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_24/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: expected identifier (found '>>')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_24/input.au": "088580554fab1c32387811408a41a822aad99425f39a48cb64a2c86ea47af9d2"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_25",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_25",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_25/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_25/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: wrong number of class template arguments for Box\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_25/input.au": "56424eb1b978b7bd9507eaace9072e4a6d5607804fc3306825032a5cb54964cf"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_26",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_26",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_26/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_26/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: capacity template arguments must be decimal literals from 1 to 64 (found '>>')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_26/input.au": "fc0625c2d37e773ff053e9adc94b776cadcce1cc8a83eaa0c6c0820525f3243d"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_27",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_27",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_27/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_27/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: capacity template arguments must be decimal literals from 1 to 64 (found '>>')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_27/input.au": "d6ce8175b88b2468fc571915fd37705cec4f2450cbb41729d60a3dc226bec860"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_28",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_28",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_28/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_28/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'true')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_28/input.au": "ef91d0000444cff675b42951adc1e0ae8c8ba2245f5f6fa6d94c8eb62cd92153"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_29",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_29",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_29/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_29/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: expected ')' (found '>')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_29/input.au": "dc3c36d2e41f9b4a91d4859469b338c3211ddaca3252d82c223be1a863e1e5b0"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_30",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_30",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_30/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_30/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: expected '>' (found ')')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_30/input.au": "a8c8966f23251cec6043db12e787be933aac5ed185738f9c81ba3ae85d3b99f2"
+      },
+      "passed": true
+    },
+    {
+      "name": "bad_arg_31",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_31",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_31/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_31/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 3: expected ')' (found '>>')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/bad_arg_31/input.au": "9c92de3b80e6cbe48272a59fd7465d8c0f649dfc2cce437785158da172f14eed"
+      },
+      "passed": true
+    },
+    {
+      "name": "scalar_rejects_class",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/scalar_rejects_class",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/scalar_rejects_class/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/scalar_rejects_class/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: class template Scalar argument requires i64, u64, u8 or bool\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/scalar_rejects_class/input.au": "2ba03232c64b711cad1e84cdeb977521c7838ab499b93cbc4c32375cfedc94e5"
+      },
+      "passed": true
+    },
+    {
+      "name": "scalar_rejects_enum",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/scalar_rejects_enum",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/scalar_rejects_enum/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/scalar_rejects_enum/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: class template Scalar argument requires i64, u64, u8 or bool\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/scalar_rejects_enum/input.au": "3840d1755e92e2437bfdad8d191b7f903b903e00ab52d0922dd8c4f8fd842096"
+      },
+      "passed": true
+    },
+    {
+      "name": "nominal_inner_order",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nominal_inner_order",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nominal_inner_order/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nominal_inner_order/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: expected Box<std::pair<u64,i64>>, got Box<std::pair<i64,u64>>\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nominal_inner_order/input.au": "7e455a2c8af408ade8b60ea22178ad820a420e716f119b3224ed0bf065edcb64"
+      },
+      "passed": true
+    },
+    {
+      "name": "ordinary_cycle_nested",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/ordinary_cycle_nested",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/ordinary_cycle_nested/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/ordinary_cycle_nested/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: recursive class containment is unsupported\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/ordinary_cycle_nested/input.au": "4aa8a4bbeaf28bb861caf582578052ab91b4b43292b8024179d1f401f18b1a04"
+      },
+      "passed": true
+    },
+    {
+      "name": "nested_enum_native",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_enum_native",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_enum_native/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_enum_native/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_enum_native/input.au": "812459c63c7b6ea1f13dd7d1958390ff3749760289c00a4a03619ce800a0476c"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "visibility_private_inner",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_inner",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_inner/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_inner/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: exported function signature exposes private type: Box<Box<Private>>\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_inner/input.au": "060ce68eb310047b21486f65022878c43396e17931209a3bde43481d10db4e80",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_inner/api.au": "27b2bad13a276eceb4ee6dc922df7e6063f78d0a242fc179ec115d7d0ed3410b"
+      },
+      "passed": true
+    },
+    {
+      "name": "visibility_private_phantom",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_phantom",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_phantom/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_phantom/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: exported function signature exposes private type: Phantom<Phantom<Private>>\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_phantom/input.au": "060ce68eb310047b21486f65022878c43396e17931209a3bde43481d10db4e80",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_private_phantom/api.au": "d5903e727399a9597d494905244cd311465628daf351ab954ed41d332d0ae343"
+      },
+      "passed": true
+    },
+    {
+      "name": "visibility_transitive_inner",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_transitive_inner",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_transitive_inner/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_transitive_inner/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: unknown named class or enum template argument: Secret\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_transitive_inner/input.au": "2ff9d0fee520a636ace6af85ee5c782d69c6214d6d44bc5d537d53c5b5b89b7d",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_transitive_inner/hidden.au": "f97a77febdc45b0fdb20b9394d6b1de76681a6db3e9d1015eb0a5e76ff33b8d2",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_transitive_inner/gen.au": "732903048aac395e2790d123b7ac83cba60fc9c00cede0f500aa8726de5ab0ab",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_transitive_inner/api.au": "42a9c6c669da4932881a149486e880a50e17f8e88e4929da08da33534507ef99"
+      },
+      "passed": true
+    },
+    {
+      "name": "visibility_direct_inner",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_direct_inner",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_direct_inner/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_direct_inner/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_direct_inner/input.au": "78aa5fd7db6fd7abaeb24938dce44bf916cba66d4e14a656ce09015705eefcf5",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_direct_inner/hidden.au": "f97a77febdc45b0fdb20b9394d6b1de76681a6db3e9d1015eb0a5e76ff33b8d2",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_direct_inner/gen.au": "732903048aac395e2790d123b7ac83cba60fc9c00cede0f500aa8726de5ab0ab",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/visibility_direct_inner/api.au": "42a9c6c669da4932881a149486e880a50e17f8e88e4929da08da33534507ef99"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "defining_helper",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/defining_helper",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/defining_helper/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/defining_helper/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/defining_helper/input.au": "7a7e276e0054382bff184fb84a53d3b831e8e32fb2652ddb2af72e60c227cc87",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/defining_helper/gen.au": "4df41392429ec4112c215ba027ca166eb2e68ff14f7178a1dc2c8b03d4de62dc"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "requesting_lexical_scope",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/requesting_lexical_scope",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/requesting_lexical_scope/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/requesting_lexical_scope/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/requesting_lexical_scope/input.au": "660f9e2d2ee7aa1c4690de29ad294904f129d0066d24bf708ac5c61c2fe5a984",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/requesting_lexical_scope/gen.au": "c9f423fdb34b68702f570319486400a17e2fe9e3bd546397a7b69bdd7f1cc687"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "reflection_visibility",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/reflection_visibility",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/reflection_visibility/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/reflection_visibility/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/reflection_visibility/input.au": "0a5edafc3dadb3d5c788bae829bffa9d31187afdadb50e7080729a42678d0aef",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/reflection_visibility/gen.au": "6761ce3049090f625a6c0ab28c71999567c9eb542b54092c90441baaa78a85e4"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "instance_cap256",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/instance_cap256",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/instance_cap256/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/instance_cap256/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/instance_cap256/input.au": "b2b443572bb03a904e2ab55952f35aaa2bfe504b013de69718002a3fe4bfe856"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "instance_cap258",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/instance_cap258",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/instance_cap258/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/instance_cap258/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: module graph exceeds 256 class template instantiations\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/instance_cap258/input.au": "684f9a6ff8436d99d3668b92b79cccfa821d09820e5dbe7aeaa2a8290695f1e8"
+      },
+      "passed": true
+    },
+    {
+      "name": "template_cap64",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/template_cap64",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/template_cap64/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/template_cap64/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/template_cap64/input.au": "905b4ea5bebee2335031c0279d89ced62b32e4e854f5e6a13a59a77fd7a09544"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "template_cap65",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/template_cap65",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/template_cap65/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/template_cap65/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: module graph exceeds 64 class templates\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/template_cap65/input.au": "2a058679aa791aed455206f6ce1bc73a5acc2e96468dc0e5c3bc3ed2aa447470"
+      },
+      "passed": true
+    },
+    {
+      "name": "shifts_after_nested",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/shifts_after_nested",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/shifts_after_nested/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/shifts_after_nested/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/shifts_after_nested/input.au": "74d7d4eb0d374d0bdb5717a0a2f6f21d0d313f042cd095405cc587500a099d97"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "shifts_and_comparisons",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/shifts_and_comparisons",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/shifts_and_comparisons/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/shifts_and_comparisons/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/shifts_and_comparisons/input.au": "94bbd63896196481527e9bc2826b76c0bdb7489036dd7b8a7c73b5e08d6b7cf2"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "exact_65_leaves",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/exact_65_leaves",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/exact_65_leaves/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/exact_65_leaves/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 5: composed classes are limited to 64 scalar leaves\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/exact_65_leaves/input.au": "f786efadb0cea42e1df1906cc5c9833d91a40c5fae03226e6ce31e03aa720c89"
+      },
+      "passed": true
+    },
+    {
+      "name": "exact_257_instances",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/exact_257_instances",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/exact_257_instances/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/exact_257_instances/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: module graph exceeds 256 class template instantiations\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/exact_257_instances/input.au": "49f96b44abd42c496b2d2524ee6ab3a9f33829035c43359bbc40ea543d3ae35e"
+      },
+      "passed": true
+    },
+    {
+      "name": "nested_temporary_argument",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_temporary_argument",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_temporary_argument/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_temporary_argument/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: ownership operation requires a local name\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_temporary_argument/input.au": "ebf2bb308200be9913e88a3c5c6d177aa56b382a12c12bcdc3da766e7585e2fd"
+      },
+      "passed": true
+    },
+    {
+      "name": "nested_return_temporary",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_return_temporary",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_return_temporary/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_return_temporary/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: class return requires a complete local name\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_return_temporary/input.au": "bf0ccdbb082280acfa7af0b1d00585b733a4d69d189304a1ee1060240b6a9650"
+      },
+      "passed": true
+    },
+    {
+      "name": "nested_field_assignment",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_field_assignment",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_field_assignment/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_field_assignment/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: whole aggregate field assignment is unsupported\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_field_assignment/input.au": "2003f5d1fd41ba1e8bedd3e8688aea2861af6d898b6c7bb0821013aa227fe58f"
+      },
+      "passed": true
+    },
+    {
+      "name": "nested_chained_receiver",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_chained_receiver",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_chained_receiver/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_chained_receiver/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: method receiver requires a class local\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_chained_receiver/input.au": "ded2ab70d3984e0d24958a972d8ee204ad402840680e064a7191151a03803ea8"
+      },
+      "passed": true
+    },
+    {
+      "name": "nested_class_method_parameter",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_class_method_parameter",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_class_method_parameter/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_class_method_parameter/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: only scalar or enum method parameters are supported\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_class_method_parameter/input.au": "951104694003acc90b10c39738c979d99f492a4e633ed0d6b6318187fefcf22d"
+      },
+      "passed": true
+    },
+    {
+      "name": "nested_private_storage",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_private_storage",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_private_storage/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_private_storage/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: indexing requires an array local or implicit private receiver field\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/nested_private_storage/input.au": "69e2f150cadb5146709a4c3a5378aad097914cade7f1e5e11ba86d67eaeb7ef7"
+      },
+      "passed": true
+    },
+    {
+      "name": "public_inner_signature_privacy",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/public_inner_signature_privacy",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/public_inner_signature_privacy/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/public_inner_signature_privacy/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: template argument type requires a direct visible import: Box<i64>\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/public_inner_signature_privacy/input.au": "fa9e4aa9e0b5a67e0e45bd1e0daf4f1905d709b441c833eeae802a1981bf83d7",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/public_inner_signature_privacy/gen.au": "5be4f603f9f69a597a74f69d83ae4a1ac59319b472cd64ebd176b43d00a456e9"
+      },
+      "passed": true
+    },
+    {
+      "name": "same_layout_nominal_inner",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/same_layout_nominal_inner",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/same_layout_nominal_inner/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/same_layout_nominal_inner/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: expected Box<Box<F>>, got Box<Box<E>>\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/same_layout_nominal_inner/input.au": "c68d3d269604d7cf66f72eb0c687fd3fb83aa3d940f41eff848b9553c030c7a2"
+      },
+      "passed": true
+    },
+    {
+      "name": "snapshot_before_later_mutation",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/snapshot_before_later_mutation",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/snapshot_before_later_mutation/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/snapshot_before_later_mutation/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/snapshot_before_later_mutation/input.au": "99bb379ab2fd17bb61200a18a29c696e410bc5cdcdc3bad8d8824775e318a0e9"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "inner_id_precedes_outer",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/inner_id_precedes_outer",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/inner_id_precedes_outer/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/inner_id_precedes_outer/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/inner_id_precedes_outer/input.au": "ffe978be6f8e9f1e36dafbf0989181900ed1201887d125c1feead5871081507c"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "long_qualified_nested_tree",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_qualified_nested_tree",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_qualified_nested_tree/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_qualified_nested_tree/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_qualified_nested_tree/input.au": "48d4e4c0adc894013eb98fae75b8eb2fcc0dcb8a9c710756aa327481497c063d"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_1_63",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_63",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_63/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_63/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_63/input.au": "47dec42e403ab1b1acc31968148155655947319f8a6978f1506409208c074de9"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_1_64",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_64",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_64/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_64/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_64/input.au": "47dec42e403ab1b1acc31968148155655947319f8a6978f1506409208c074de9"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_1_65",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_65",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_65/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_65/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_1_65/input.au": "47dec42e403ab1b1acc31968148155655947319f8a6978f1506409208c074de9"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_2_66",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_66",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_66/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_66/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_66/input.au": "5b6f17fac4a7ca83a74da19e02d4e23a4ea690582a921856f362432fea6320f8"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_2_67",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_67",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_67/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_67/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_67/input.au": "3e470d1350884f6cb1f58af66927e251264838d86bedb21f598773b960e966ee"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_2_68",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_68",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_68/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_68/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_2_68/input.au": "b932bb2eee2eefbd84c6a3cea2b6c102090bba113844a744cd705374efbf9fb0"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_3_69",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_69",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_69/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_69/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_69/input.au": "ae449d2ad5b99066c559ec7580dfd5bc99f3ae6bcf5ea9e48402568ed3b3bfed"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_3_70",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_70",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_70/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_70/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_70/input.au": "2ea47871cd14db1dbb77c105bfe2d4c86a0b280970dfec875de4887e8e33bf6e"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_3_71",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_71",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_71/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_71/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_3_71/input.au": "4804b458207161765e6c0c2b729a6a7ab11249ab844ad325fae822ca6d2b0ed5"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_4_72",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_72",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_72/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_72/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_72/input.au": "6444ddb30d1215a7cddcf21b768b06ee9fbd54f5c1d6fae691b7838044ce9329"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_4_73",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_73",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_73/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_73/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_73/input.au": "a08079bd354d8e6fda58c3ff455dde0dd73c9332c16836ca43a68fd66d55736c"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "closer_spacing_4_74",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_74",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_74/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_74/output.s"
+      ],
+      "status": 0,
+      "stderr": "",
+      "expected_reject": false,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/closer_spacing_4_74/input.au": "ab54a15776dc3e7892dc839a1a5df7d8799b56a5ddb5bcb228710dcc82e373e6"
+      },
+      "native_status": 0,
+      "expected": 42,
+      "actual": 42,
+      "passed": true
+    },
+    {
+      "name": "long_opens",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_opens",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_opens/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_opens/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: template-id nesting exceeds 4\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_opens/input.au": "0d3c2c8ab448bb849801ff46cb783a9b875edc2fde2b23ef15eafb8a9940007b"
+      },
+      "passed": true
+    },
+    {
+      "name": "long_closers",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_closers",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_closers/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_closers/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: expected ')' (found '>')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/long_closers/input.au": "1553d9f59e3110b3ea4c5216ca821c61e5e92624d829168f3906ff914a4e4d7a"
+      },
+      "passed": true
+    },
+    {
+      "name": "wide_arguments",
+      "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+      "command": [
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/wide_arguments",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/wide_arguments/input.au",
+        "-o",
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/wide_arguments/output.s"
+      ],
+      "status": 1,
+      "stderr": "aurorac: line 2: template arguments are limited to one or two types or capacity literals (found 'i64')\n",
+      "expected_reject": true,
+      "input_sha256": {
+        "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/independent-compiler/wide_arguments/input.au": "013725bc328987582a77fa16c5b1c3b70da552c82271ec065bae34bf7b7c74c0"
+      },
+      "passed": true
+    }
+  ]
+}

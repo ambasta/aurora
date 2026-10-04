@@ -59,3 +59,17 @@ Keep host build/test dependencies explicitly separate from target dependencies. 
 Native source ports may need language conversion, new backends, capability-based OS adaptation or safe rewrites. Existing binary ports are not promised: neither C ABI nor Linux/POSIX behavior follows from a familiar API. Do not add a compatibility shim without resolving its conflict with the clean-break requirement.
 
 Before reusing upstream implementation code, algorithms expressed as code, tests or data, identify source versions and review applicable licenses, attribution and redistribution obligations. A familiar project name does not authorize copying. Prefer a traceable native design; any reuse needs a recorded decision and a maintenance/security owner. Historical milestone manifests remain immutable evidence for their original source snapshots.
+
+
+## Verified milestone021 core slice
+
+The freestanding std.utility module now includes explicit std::make_pair<T,U>
+using the bounded Scalar/Value function-template contract. It returns a complete
+independent inline pair; class arguments use readonly left-to-right snapshots.
+The token/source-range example combines fixed byte storage with copied value
+projections. Release/fatal host ASan/UBSan targets, independent review/replay and
+parent aggregate/selected UEFI integration passed; see
+[function-template contract](../compiler/FUNCTION-TEMPLATES.md) and
+[M021 evidence](evidence/milestone-021/README.md). This advances reusable core value
+operations only. Heap ownership, returned references, generic recursion, complete
+text/collections, native runtime and self-hosting still need the gates above.

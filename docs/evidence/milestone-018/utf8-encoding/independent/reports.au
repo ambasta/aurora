@@ -1,0 +1,58 @@
+module report_independent_review;
+import std.utf8;
+import std.array;
+class Holder {
+    u8 before;
+    std::Utf8EncodeResult report;
+    u64 after;
+public:
+    Holder(u8 a, std::Utf8EncodeResult b, u64 c) : before(a), report(b), after(c) {}
+    auto get() const -> std::Utf8EncodeResult { const std::Utf8EncodeResult result = report; return result; }
+    auto first() const -> u8 { return before; }
+    auto last() const -> u64 { return after; }
+};
+auto choose(std::Utf8EncodeResult a, std::Utf8EncodeResult b, std::Utf8EncodeResult c,
+            std::Utf8EncodeResult d, std::Utf8EncodeResult e, std::Utf8EncodeResult f)
+    -> std::Utf8EncodeResult { return f; }
+auto wrap(Holder source) -> Holder { return source; }
+auto report_observe(u64 packed, i64 width, bool good, i64 index) -> u64 {
+    static_assert(size_of(std::Utf8EncodeResult) == 24);
+    static_assert(size_of(std::array<u8,4>) == 4);
+    static_assert(size_of(Holder) == 40);
+    static_assert(field_count(std::Utf8EncodeResult) == 0);
+    if (reflect_size(type_id(std::Utf8EncodeResult)) != 24) { return 9223372036854775809u64; }
+    if (reflect_field_count(type_id(std::Utf8EncodeResult)) != 0) { return 9223372036854775810u64; }
+    std::array<u8,4> input = std::array<u8,4>();
+    i64 n = 0;
+    while (n < 4) { input.set(n, u8((packed >> (n*8)) & 255u64)); n = n+1; }
+    std::Utf8EncodeStatus status = std::Utf8EncodeStatus::invalid_scalar;
+    if (good) { status = std::Utf8EncodeStatus::success; }
+    const std::Utf8EncodeResult constructed = std::Utf8EncodeResult(status,input,width);
+    n = 0;
+    while (n < 4) { input.set(n, 255u8-input.at(n)); n = n+1; }
+    const std::Utf8EncodeResult copied = constructed;
+    const std::Utf8EncodeResult unrelated = std::encode_utf8(65u64);
+    const std::Utf8EncodeResult transported = choose(unrelated,copied,unrelated,copied,unrelated,copied);
+    const Holder enclosing = Holder(143u8, transported, 18446744073709551615u64);
+    const Holder enclosing_copy = wrap(enclosing);
+    if (enclosing_copy.first() != 143u8) { return 9223372036854775811u64; }
+    if (enclosing_copy.last() != 18446744073709551615u64) { return 9223372036854775812u64; }
+    const std::Utf8EncodeResult result = enclosing_copy.get();
+    std::array<u8,4> changed = result.bytes_or_zero();
+    n = 0;
+    while (n < 4) { changed.set(n, 255u8-changed.at(n)); n = n+1; }
+    const std::array<u8,4> bytes = result.bytes_or_zero();
+    const std::array<u8,4> original = constructed.bytes_or_zero();
+    n = 0;
+    while (n < 4) {
+        if (bytes.at(n) != original.at(n)) { return 9223372036854775813u64; }
+        if (changed.at(n) == bytes.at(n)) { return 9223372036854775814u64; }
+        n = n+1;
+    }
+    u64 state = 0u64;
+    if (result.status() != std::Utf8EncodeStatus::success) { state = 1u64; }
+    const u8 fallback = u8((packed >> 32) & 255u64);
+    return u64(bytes.at(0)) + u64(bytes.at(1))*256u64 + u64(bytes.at(2))*65536u64
+       + u64(bytes.at(3))*16777216u64 + u64(result.size())*4294967296u64
+       + state*1099511627776u64 + u64(result.byte_or(index,fallback))*281474976710656u64;
+}

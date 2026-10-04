@@ -1,0 +1,134 @@
+[
+  {
+    "probe": "qualified-local",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-local.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-local.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_changed": true
+  },
+  {
+    "probe": "qualified-local-deep",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-local-deep.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-local-deep.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_changed": true
+  },
+  {
+    "probe": "qualified-constructor",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-constructor.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-constructor.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_changed": true
+  },
+  {
+    "probe": "qualified-reflection",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-reflection.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-reflection.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_changed": true
+  },
+  {
+    "probe": "qualified-signature",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-signature.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-signature.s"
+    ],
+    "returncode": 1,
+    "diagnostic": "aurorac: unknown fixed type in function template signature: T::Hidden\n",
+    "output_changed": false
+  },
+  {
+    "probe": "unknown-local",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/unknown-local.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/unknown-local.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_changed": true
+  },
+  {
+    "probe": "wrong-kind-nested",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/wrong-kind-nested.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/wrong-kind-nested.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_changed": true
+  },
+  {
+    "probe": "wrong-arity-fixed-signature",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/wrong-arity-fixed-signature.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/wrong-arity-fixed-signature.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_changed": true
+  },
+  {
+    "probe": "wrong-arity-fixed-local",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/wrong-arity-fixed-local.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/wrong-arity-fixed-local.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_changed": true
+  },
+  {
+    "probe": "function-tree-nested",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/function-tree-nested.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/function-tree-nested.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_changed": true
+  },
+  {
+    "probe": "qualified-bare-local",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-bare-local.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/structural/qualified-bare-local.s"
+    ],
+    "returncode": 1,
+    "diagnostic": "aurorac: line 1: expected identifier (found '::')\n",
+    "output_changed": false
+  }
+]

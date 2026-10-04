@@ -1,0 +1,342 @@
+PLAN function templates make_pair all ordered scalar tuples i64/i64
+PLAN function templates make_pair all ordered scalar tuples i64/u64
+PLAN function templates make_pair all ordered scalar tuples i64/u8
+PLAN function templates make_pair all ordered scalar tuples i64/bool
+PLAN function templates make_pair all ordered scalar tuples u64/i64
+PLAN function templates make_pair all ordered scalar tuples u64/u64
+PLAN function templates make_pair all ordered scalar tuples u64/u8
+PLAN function templates make_pair all ordered scalar tuples u64/bool
+PLAN function templates make_pair all ordered scalar tuples u8/i64
+PLAN function templates make_pair all ordered scalar tuples u8/u64
+PLAN function templates make_pair all ordered scalar tuples u8/u8
+PLAN function templates make_pair all ordered scalar tuples u8/bool
+PLAN function templates make_pair all ordered scalar tuples bool/i64
+PLAN function templates make_pair all ordered scalar tuples bool/u64
+PLAN function templates make_pair all ordered scalar tuples bool/u8
+PLAN function templates make_pair all ordered scalar tuples bool/bool
+PLAN function templates Scalar identity full-width native result i64
+PLAN function templates Value identity full-width native result i64
+PLAN function templates Scalar identity full-width native result u64
+PLAN function templates Value identity full-width native result u64
+PLAN function templates Scalar identity full-width native result u8
+PLAN function templates Value identity full-width native result u8
+PLAN function templates Scalar identity full-width native result bool
+PLAN function templates Value identity full-width native result bool
+PLAN function templates mixed Scalar Value constraints and namespace-qualified explicit call
+PLAN function templates explicit calls in ordinary constructor initializer and method
+PLAN function templates same template many scalar specializations have independent substituted ASTs
+PLAN function templates Value closed nominal enum copies and pair fields
+PLAN function templates Value named private class snapshots and independent returned copy
+PLAN function templates Value empty class result retains initialization and const methods
+PLAN function templates bare dependent class-template arguments in result local and constructor
+PLAN function templates fully concrete nested class argument inside function template
+PLAN function templates function argument syntax supports adjacent and spaced nested closers
+PLAN function templates left-to-right scalar argument side effects
+PLAN function templates left-to-right class snapshot precedes later argument mutation
+PLAN function templates left-to-right array snapshot precedes later argument mutation
+PLAN function templates repeated class source arguments become independent snapshots
+PLAN function templates function result binding observes outer same-name source
+PLAN function templates returned class survives template frame and repeated loop calls
+PLAN function templates bounded token source-range make_pair owns independent sixteen bytes
+PLAN function templates seeded independent generic byte-copy model capacity 1
+PLAN function templates seeded independent generic byte-copy model capacity 3
+PLAN function templates seeded independent generic byte-copy model capacity 16
+PLAN function templates seeded independent generic byte-copy model capacity 63
+PLAN function templates seeded independent generic byte-copy model capacity 64
+INFO function templates section=native fixtures=45 executions=45 traps=0 rejection-runs=0
+PLAN function templates function template parameter count 1
+PLAN function templates function template parameter count 2
+PLAN function templates function explicit argument list does not consume nominal depth 3
+PLAN function templates function explicit argument list does not consume nominal depth 4
+PLAN function templates function argument nominal template depth five rejected: absent output
+PLAN function templates function argument nominal template depth five rejected: saved output
+PLAN function templates substitution produces exactly four nominal template levels
+PLAN function templates substitution cannot conceal fifth nominal template level: absent output
+PLAN function templates substitution cannot conceal fifth nominal template level: saved output
+PLAN function templates generic copy at exactly four independent containment levels
+PLAN function templates four nominal template levels cannot bypass containment five: absent output
+PLAN function templates four nominal template levels cannot bypass containment five: saved output
+PLAN function templates function-template class result flattened leaves 63
+PLAN function templates function-template class result flattened leaves 64
+PLAN function templates function-template class result flattened leaves 65: absent output
+PLAN function templates function-template class result flattened leaves 65: saved output
+PLAN function templates instantiated function exactly six ordinary scalar parameters
+PLAN function templates instantiated function seven ordinary parameters: absent output
+PLAN function templates instantiated function seven ordinary parameters: saved output
+PLAN function templates instantiated function exactly six independent class parameters
+PLAN function templates instantiated function frame exactly 65536 bytes
+PLAN function templates instantiated function frame 65544 rejects beyond 65536: absent output
+PLAN function templates instantiated function frame 65544 rejects beyond 65536: saved output
+PLAN function templates combined class plus function definitions exactly 64
+PLAN function templates combined 64 definitions counted across module graph
+PLAN function templates combined class plus function definitions 65: absent output
+PLAN function templates combined class plus function definitions 65: saved output
+PLAN function templates combined 65 definitions rejected across module graph: absent output
+PLAN function templates combined 65 definitions rejected across module graph: saved output
+PLAN function templates combined 128 class plus 128 function specializations exactly 256
+PLAN function templates combined instance 257 one extra function specialization: absent output
+PLAN function templates combined instance 257 one extra function specialization: saved output
+PLAN function templates combined instance 257 one extra class specialization: absent output
+PLAN function templates combined instance 257 one extra class specialization: saved output
+PLAN function templates canonical repeated requests share exact combined 256 instance budget
+PLAN function templates combined 256 specializations counted across modules
+PLAN function templates combined 257 specializations rejected across modules: absent output
+PLAN function templates combined 257 specializations rejected across modules: saved output
+INFO function templates section=boundaries fixtures=27 executions=38 traps=0 rejection-runs=22
+PLAN function templates unsupported declaration empty parameter list: absent output
+PLAN function templates unsupported declaration empty parameter list: saved output
+PLAN function templates unsupported declaration third type parameter: absent output
+PLAN function templates unsupported declaration third type parameter: saved output
+PLAN function templates unsupported declaration capacity function parameter: absent output
+PLAN function templates unsupported declaration capacity function parameter: saved output
+PLAN function templates unsupported declaration class keyword constraint: absent output
+PLAN function templates unsupported declaration class keyword constraint: saved output
+PLAN function templates unsupported declaration typename keyword constraint: absent output
+PLAN function templates unsupported declaration typename keyword constraint: saved output
+PLAN function templates unsupported declaration duplicate parameter name: absent output
+PLAN function templates unsupported declaration duplicate parameter name: saved output
+PLAN function templates unsupported declaration default type argument: absent output
+PLAN function templates unsupported declaration default type argument: saved output
+PLAN function templates unsupported declaration variadic type arguments: absent output
+PLAN function templates unsupported declaration variadic type arguments: saved output
+PLAN function templates unsupported declaration function explicit specialization: absent output
+PLAN function templates unsupported declaration function explicit specialization: saved output
+PLAN function templates unsupported declaration function partial specialization: absent output
+PLAN function templates unsupported declaration function partial specialization: saved output
+PLAN function templates unsupported declaration overloaded function template: absent output
+PLAN function templates unsupported declaration overloaded function template: saved output
+PLAN function templates unsupported declaration ordinary function same name: absent output
+PLAN function templates unsupported declaration ordinary function same name: saved output
+PLAN function templates unsupported declaration generic method: absent output
+PLAN function templates unsupported declaration generic method: saved output
+PLAN function templates unsupported declaration local function template: absent output
+PLAN function templates unsupported declaration local function template: saved output
+PLAN function templates unsupported declaration type constructor T value: absent output
+PLAN function templates unsupported declaration type constructor T value: saved output
+PLAN function templates unsupported declaration dependent scoped member: absent output
+PLAN function templates unsupported declaration dependent scoped member: saved output
+PLAN function templates explicit function call rejected copy(42): absent output
+PLAN function templates explicit function call rejected copy(42): saved output
+PLAN function templates explicit function call rejected copy<>(42): absent output
+PLAN function templates explicit function call rejected copy<>(42): saved output
+PLAN function templates explicit function call rejected copy<i64,u8>(42): absent output
+PLAN function templates explicit function call rejected copy<i64,u8>(42): saved output
+PLAN function templates explicit function call rejected copy<i64,u8,bool>(42): absent output
+PLAN function templates explicit function call rejected copy<i64,u8,bool>(42): saved output
+PLAN function templates explicit function call rejected copy<i64>(): absent output
+PLAN function templates explicit function call rejected copy<i64>(): saved output
+PLAN function templates explicit function call rejected copy<i64>(42,1): absent output
+PLAN function templates explicit function call rejected copy<i64>(42,1): saved output
+PLAN function templates explicit function call rejected copy<u8>(42): absent output
+PLAN function templates explicit function call rejected copy<u8>(42): saved output
+PLAN function templates explicit function call rejected copy<Unknown>(42): absent output
+PLAN function templates explicit function call rejected copy<Unknown>(42): saved output
+PLAN function templates explicit function call rejected copy<42>(42): absent output
+PLAN function templates explicit function call rejected copy<42>(42): saved output
+PLAN function templates explicit function call rejected copy<own<i64>>(42): absent output
+PLAN function templates explicit function call rejected copy<own<i64>>(42): saved output
+PLAN function templates explicit function call rejected copy<ref<i64>>(42): absent output
+PLAN function templates explicit function call rejected copy<ref<i64>>(42): saved output
+PLAN function templates explicit function call rejected copy<span<u8>>(42): absent output
+PLAN function templates explicit function call rejected copy<span<u8>>(42): saved output
+PLAN function templates explicit function call rejected copy<array<u8,3>>(42): absent output
+PLAN function templates explicit function call rejected copy<array<u8,3>>(42): saved output
+PLAN function templates explicit function call rejected copy<builtin::array<u8,3>>(42): absent output
+PLAN function templates explicit function call rejected copy<builtin::array<u8,3>>(42): saved output
+PLAN function templates explicit function call rejected copy<std::array<u8,0>>(42): absent output
+PLAN function templates explicit function call rejected copy<std::array<u8,0>>(42): saved output
+PLAN function templates explicit function call rejected copy<std::array<u8,65>>(42): absent output
+PLAN function templates explicit function call rejected copy<std::array<u8,65>>(42): saved output
+PLAN function templates explicit function call rejected copy<i64,>(42): absent output
+PLAN function templates explicit function call rejected copy<i64,>(42): saved output
+PLAN function templates explicit function call rejected copy<i64>>(42): absent output
+PLAN function templates explicit function call rejected copy<i64>>(42): saved output
+PLAN function templates explicit function call rejected copy<i64(42): absent output
+PLAN function templates explicit function call rejected copy<i64(42): saved output
+PLAN function templates Scalar function constraint excludes Leaf: absent output
+PLAN function templates Scalar function constraint excludes Leaf: saved output
+PLAN function templates Scalar function constraint excludes Empty: absent output
+PLAN function templates Scalar function constraint excludes Empty: saved output
+PLAN function templates Scalar function constraint excludes Status: absent output
+PLAN function templates Scalar function constraint excludes Status: saved output
+PLAN function templates Scalar function constraint excludes std::array<u8,3>: absent output
+PLAN function templates Scalar function constraint excludes std::array<u8,3>: saved output
+PLAN function templates unused function structurally rejects nested dependent result: absent output
+PLAN function templates unused function structurally rejects nested dependent result: saved output
+PLAN function templates unused function structurally rejects nested dependent parameter: absent output
+PLAN function templates unused function structurally rejects nested dependent parameter: saved output
+PLAN function templates unused function structurally rejects nested dependent local: absent output
+PLAN function templates unused function structurally rejects nested dependent local: saved output
+PLAN function templates unused function structurally rejects nested dependent constructor: absent output
+PLAN function templates unused function structurally rejects nested dependent constructor: saved output
+PLAN function templates unused function structurally rejects nested dependent query: absent output
+PLAN function templates unused function structurally rejects nested dependent query: saved output
+PLAN function templates unused function structurally rejects dependent capacity tree: absent output
+PLAN function templates unused function structurally rejects dependent capacity tree: saved output
+PLAN function templates dependent qualified template argument local unused: absent output
+PLAN function templates dependent qualified template argument local unused: saved output
+PLAN function templates dependent qualified template argument local requested: absent output
+PLAN function templates dependent qualified template argument local requested: saved output
+PLAN function templates dependent qualified template argument nested local unused: absent output
+PLAN function templates dependent qualified template argument nested local unused: saved output
+PLAN function templates dependent qualified template argument nested local requested: absent output
+PLAN function templates dependent qualified template argument nested local requested: saved output
+PLAN function templates dependent qualified template argument constructor expression unused: absent output
+PLAN function templates dependent qualified template argument constructor expression unused: saved output
+PLAN function templates dependent qualified template argument constructor expression requested: absent output
+PLAN function templates dependent qualified template argument constructor expression requested: saved output
+PLAN function templates dependent qualified template argument parameter signature unused: absent output
+PLAN function templates dependent qualified template argument parameter signature unused: saved output
+PLAN function templates dependent qualified template argument parameter signature requested: absent output
+PLAN function templates dependent qualified template argument parameter signature requested: saved output
+PLAN function templates dependent qualified template argument result signature unused: absent output
+PLAN function templates dependent qualified template argument result signature unused: saved output
+PLAN function templates dependent qualified template argument result signature requested: absent output
+PLAN function templates dependent qualified template argument result signature requested: saved output
+PLAN function templates dependent qualified template argument reflected type size_of unused: absent output
+PLAN function templates dependent qualified template argument reflected type size_of unused: saved output
+PLAN function templates dependent qualified template argument reflected type size_of requested: absent output
+PLAN function templates dependent qualified template argument reflected type size_of requested: saved output
+PLAN function templates dependent qualified template argument reflected type type_id unused: absent output
+PLAN function templates dependent qualified template argument reflected type type_id unused: saved output
+PLAN function templates dependent qualified template argument reflected type type_id requested: absent output
+PLAN function templates dependent qualified template argument reflected type type_id requested: saved output
+PLAN function templates dependent qualified template argument reflected type field_count unused: absent output
+PLAN function templates dependent qualified template argument reflected type field_count unused: saved output
+PLAN function templates dependent qualified template argument reflected type field_count requested: absent output
+PLAN function templates dependent qualified template argument reflected type field_count requested: saved output
+PLAN function templates unused function template forbids function-template call in return: absent output
+PLAN function templates unused function template forbids function-template call in return: saved output
+PLAN function templates unused function template forbids function-template call in local initializer: absent output
+PLAN function templates unused function template forbids function-template call in local initializer: saved output
+PLAN function templates unused function template forbids function-template call in dead branch: absent output
+PLAN function templates unused function template forbids function-template call in dead branch: saved output
+PLAN function templates unused function template forbids function-template call in dead loop: absent output
+PLAN function templates unused function template forbids function-template call in dead loop: saved output
+PLAN function templates unused function template forbids function-template call in static assertion: absent output
+PLAN function templates unused function template forbids function-template call in static assertion: saved output
+PLAN function templates unused function template forbids function-template call in nested ordinary call: absent output
+PLAN function templates unused function template forbids function-template call in nested ordinary call: saved output
+PLAN function templates unused function template forbids function-template call in dependent call: absent output
+PLAN function templates unused function template forbids function-template call in dependent call: saved output
+PLAN function templates unused function template forbids function-template call in self recursion: absent output
+PLAN function templates unused function template forbids function-template call in self recursion: saved output
+PLAN function templates unused function template forbids function-template call in qualified library call: absent output
+PLAN function templates unused function template forbids function-template call in qualified library call: saved output
+PLAN function templates unused class template forbids function-template call in return: absent output
+PLAN function templates unused class template forbids function-template call in return: saved output
+PLAN function templates unused class template forbids function-template call in dead branch: absent output
+PLAN function templates unused class template forbids function-template call in dead branch: saved output
+PLAN function templates unused class template forbids function-template call in local initializer: absent output
+PLAN function templates unused class template forbids function-template call in local initializer: saved output
+PLAN function templates unused class template forbids function-template call in static assertion: absent output
+PLAN function templates unused class template forbids function-template call in static assertion: saved output
+PLAN function templates unused class constructor forbids function-template initializer call: absent output
+PLAN function templates unused class constructor forbids function-template initializer call: saved output
+PLAN function templates nonempty template constructor body remains unsupported: absent output
+PLAN function templates nonempty template constructor body remains unsupported: saved output
+PLAN function templates ordinary value restrictions preserved mutable parameter field: absent output
+PLAN function templates ordinary value restrictions preserved mutable parameter field: saved output
+PLAN function templates ordinary value restrictions preserved mutable parameter method: absent output
+PLAN function templates ordinary value restrictions preserved mutable parameter method: saved output
+PLAN function templates ordinary value restrictions preserved private field access: absent output
+PLAN function templates ordinary value restrictions preserved private field access: saved output
+PLAN function templates ordinary value restrictions preserved class argument temporary: absent output
+PLAN function templates ordinary value restrictions preserved class argument temporary: saved output
+PLAN function templates ordinary value restrictions preserved class nested result argument: absent output
+PLAN function templates ordinary value restrictions preserved class nested result argument: saved output
+PLAN function templates ordinary value restrictions preserved class direct result return: absent output
+PLAN function templates ordinary value restrictions preserved class direct result return: saved output
+PLAN function templates ordinary value restrictions preserved class return constructor: absent output
+PLAN function templates ordinary value restrictions preserved class return constructor: saved output
+PLAN function templates ordinary value restrictions preserved wrong nominal argument: absent output
+PLAN function templates ordinary value restrictions preserved wrong nominal argument: saved output
+PLAN function templates ordinary value restrictions preserved wrong nominal result: absent output
+PLAN function templates ordinary value restrictions preserved wrong nominal result: saved output
+PLAN function templates ordinary value restrictions preserved resource result: absent output
+PLAN function templates ordinary value restrictions preserved resource result: saved output
+PLAN function templates class parameter publicly writable field is still readonly: absent output
+PLAN function templates class parameter publicly writable field is still readonly: saved output
+PLAN function templates private method stays private after type substitution: absent output
+PLAN function templates private method stays private after type substitution: saved output
+PLAN function templates equal-layout reordered nominal function arguments stay distinct: absent output
+PLAN function templates equal-layout reordered nominal function arguments stay distinct: saved output
+PLAN function templates function template is not a class reflection type: absent output
+PLAN function templates function template is not a class reflection type: saved output
+PLAN function templates function template cannot become a value pointer: absent output
+PLAN function templates function template cannot become a value pointer: saved output
+INFO function templates section=rejections fixtures=91 executions=182 traps=0 rejection-runs=182
+PLAN function templates exported template accepts caller-private nominal class without member access
+PLAN function templates exported template accepts caller-private nominal enum
+PLAN function templates exported template accepts caller-private class inside concrete tree
+PLAN function templates fixed helper binds defining module rather than caller shadow
+PLAN function templates fixed helper binds template defining namespace
+PLAN function templates private template is callable by ordinary defining-module helper
+PLAN function templates private function template cannot be named outside defining module: absent output
+PLAN function templates private function template cannot be named outside defining module: saved output
+PLAN function templates ordinary wrapper may use directly imported function template
+PLAN function templates transitive import cannot name function template: absent output
+PLAN function templates transitive import cannot name function template: saved output
+PLAN function templates direct import restores function-template visibility
+PLAN function templates exported function template cannot launder private class in fixed parameter: absent output
+PLAN function templates exported function template cannot launder private class in fixed parameter: saved output
+PLAN function templates exported function template cannot launder private class in fixed result: absent output
+PLAN function templates exported function template cannot launder private class in fixed result: saved output
+PLAN function templates exported function template cannot launder private class in nested fixed parameter: absent output
+PLAN function templates exported function template cannot launder private class in nested fixed parameter: saved output
+PLAN function templates exported function template cannot launder private class in nested fixed result: absent output
+PLAN function templates exported function template cannot launder private class in nested fixed result: saved output
+PLAN function templates exported function template cannot launder private enum in fixed parameter: absent output
+PLAN function templates exported function template cannot launder private enum in fixed parameter: saved output
+PLAN function templates exported function template cannot launder private enum in fixed result: absent output
+PLAN function templates exported function template cannot launder private enum in fixed result: saved output
+PLAN function templates exported function template cannot launder private enum in nested fixed parameter: absent output
+PLAN function templates exported function template cannot launder private enum in nested fixed parameter: saved output
+PLAN function templates exported function template cannot launder private enum in nested fixed result: absent output
+PLAN function templates exported function template cannot launder private enum in nested fixed result: saved output
+PLAN function templates exported template signature cannot launder private template declaration: absent output
+PLAN function templates exported template signature cannot launder private template declaration: saved output
+PLAN function templates fixed signature type works with explicit direct type import
+PLAN function templates fixed signature type cannot be obtained through transitive import: absent output
+PLAN function templates fixed signature type cannot be obtained through transitive import: saved output
+PLAN function templates runtime reflection hides transitive specialization declaration
+PLAN function templates directly imported specialization metadata matches instantiated class
+PLAN function templates same-spelling caller-private class arguments use distinct module identities
+PLAN function templates runtime reflection stays closed over private function specialization arguments
+PLAN function templates imported generic copy confers no private member access: absent output
+PLAN function templates imported generic copy confers no private member access: saved output
+PLAN function templates imported template cannot inspect private caller class field: absent output
+PLAN function templates imported template cannot inspect private caller class field: saved output
+INFO function templates section=modules fixtures=27 executions=41 traps=0 rejection-runs=28
+PLAN function templates generic checked addition exact overflow trap i64
+PLAN function templates generic checked addition exact overflow trap u64
+PLAN function templates generic checked addition exact overflow trap u8
+PLAN function templates generic checked division exact zero trap i64
+PLAN function templates generic checked division exact zero trap u64
+PLAN function templates generic checked division exact zero trap u8
+PLAN function templates generic array result exact bounds trap at/1/-1
+PLAN function templates generic array result exact bounds trap set/1/-1
+PLAN function templates generic array result exact bounds trap at/1/1
+PLAN function templates generic array result exact bounds trap set/1/1
+PLAN function templates generic array result exact bounds trap at/1/9223372036854775807
+PLAN function templates generic array result exact bounds trap set/1/9223372036854775807
+PLAN function templates generic array result exact bounds trap at/16/-1
+PLAN function templates generic array result exact bounds trap set/16/-1
+PLAN function templates generic array result exact bounds trap at/16/16
+PLAN function templates generic array result exact bounds trap set/16/16
+PLAN function templates generic array result exact bounds trap at/16/9223372036854775807
+PLAN function templates generic array result exact bounds trap set/16/9223372036854775807
+PLAN function templates generic array result exact bounds trap at/64/-1
+PLAN function templates generic array result exact bounds trap set/64/-1
+PLAN function templates generic array result exact bounds trap at/64/64
+PLAN function templates generic array result exact bounds trap set/64/64
+PLAN function templates generic array result exact bounds trap at/64/9223372036854775807
+PLAN function templates generic array result exact bounds trap set/64/9223372036854775807
+PLAN function templates explicit function type closers preserve ordinary right shift u64/1
+PLAN function templates explicit function type closers preserve ordinary right shift u8/1
+PLAN function templates explicit function type closers preserve ordinary right shift u64/63
+PLAN function templates explicit function type closers preserve ordinary right shift u8/7
+PLAN function templates explicit type argument parsing preserves ordinary comparisons
+INFO function templates section=traps fixtures=29 executions=29 traps=24 rejection-runs=0
+INFO function templates: 219 selected fixtures; 335 planned executions; 79 native returns; 24 exact-site traps; 116 rejection fixtures / 232 rejection runs; 0 failed executions; section=all; seed=21021; steps=24; elapsed=0.00s
+PLAN function templates complete (not executed)

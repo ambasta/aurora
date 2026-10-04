@@ -1,0 +1,15 @@
+{
+  "msix_control": {
+    "table_write": [
+      3221233676,
+      1,
+      4
+    ],
+    "cpu_stopped": true
+  },
+  "stock_controller_writes": 3089,
+  "reads": [],
+  "command": 2,
+  "transient_bme_probe": true,
+  "dma_evidence": "reset plus no initialization/queue/doorbell activity; not a universal DMA trace"
+}

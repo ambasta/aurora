@@ -1,0 +1,66 @@
+{
+  "scope": "Readonly source only; no mutable borrowing prerequisite",
+  "compiler_sha256": {
+    "baseline": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+    "candidate": "d22a87e4d3bac34db5025ba813f9275244336880b297a5ae0bcbc19206454ddf"
+  },
+  "driver_sha256": "d9218c4934bfe290951b581eee1cbd2d5bf0e25b971d3345c59895c7bb90e6e9",
+  "limits": {
+    "address_space_mib": 256,
+    "cpu_seconds": [
+      4,
+      5
+    ],
+    "wall_seconds": 10,
+    "regular_file_mib": 8,
+    "core_bytes": 0
+  },
+  "results": [
+    {
+      "name": "array64-blocks16",
+      "source_bytes": 3358,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-facts-independent-review/bin/baseline",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-facts-independent-review/evidence/final-driver-controls/always-fail/array64-blocks16.au",
+          "-o",
+          "/tmp/aurora-facts-independent-review/evidence/final-driver-controls/always-fail/array64-blocks16-baseline.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.010630965000018477,
+        "max_rss_kib": 11244,
+        "user_seconds": 0.0072369999999999995,
+        "system_seconds": 0.002876,
+        "harness_deadline_kill": false,
+        "tool_sha256": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "source_sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+        "assembly_sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb"
+      },
+      "candidate": {
+        "command": [
+          "/usr/bin/false",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-facts-independent-review/evidence/final-driver-controls/always-fail/array64-blocks16.au",
+          "-o",
+          "/tmp/aurora-facts-independent-review/evidence/final-driver-controls/always-fail/array64-blocks16-candidate.s"
+        ],
+        "exit_code": 1,
+        "wall_seconds": 0.010476716000994202,
+        "max_rss_kib": 12168,
+        "user_seconds": 0.0,
+        "system_seconds": 0.002376,
+        "harness_deadline_kill": false,
+        "tool_sha256": "d22a87e4d3bac34db5025ba813f9275244336880b297a5ae0bcbc19206454ddf",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "source_sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+        "assembly_sha256": null
+      }
+    }
+  ]
+}

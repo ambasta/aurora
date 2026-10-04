@@ -1,0 +1,14 @@
+/tmp/aurora-amd310-review/privacy-corrected-1/access-groups_.cpp: In function 'auto expose()':
+/tmp/aurora-amd310-review/privacy-corrected-1/access-groups_.cpp:2:56: error: 'std::array<std::optional<aurora::memory::PinHandle>, 3> aurora::memory::DormantTables::groups_' is private within this context
+    2 | auto expose() { return &aurora::memory::DormantTables::groups_; }
+      |                                                        ^~~~~~~
+In file included from /tmp/aurora-amd310-review/privacy-corrected-1/access-groups_.cpp:1:
+/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include/dormant-tables.hpp:29:44: note: declared private here
+   29 |     std::array<std::optional<PinHandle>,3> groups_{};
+      |                                            ^~~~~~~
+/tmp/aurora-amd310-review/privacy-corrected-1/access-groups_.cpp:2:56: error: 'std::array<std::optional<aurora::memory::PinHandle>, 3> aurora::memory::DormantTables::groups_' is private within this context
+    2 | auto expose() { return &aurora::memory::DormantTables::groups_; }
+      |                                                        ^~~~~~~
+/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include/dormant-tables.hpp:29:44: note: declared private here
+   29 |     std::array<std::optional<PinHandle>,3> groups_{};
+      |                                            ^~~~~~~

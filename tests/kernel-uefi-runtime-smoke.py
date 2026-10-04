@@ -4,12 +4,15 @@ import importlib.util,json,re,sys,copy
 spec=importlib.util.spec_from_file_location('pci',Path(__file__).with_name('kernel-pci-smoke.py'))
 pci=importlib.util.module_from_spec(spec);spec.loader.exec_module(pci)
 need=pci.need
-MODES=('runtime','runtime-code','runtime-stack','runtime-kernel','runtime-window','runtime-root','runtime-kernel-trap','runtime-entry-stack','runtime-write','runtime-nx','runtime-return','runtime-unknown','runtime-syscall','runtime-sysenter')
+SUCCESS_MODES=('runtime','runtime-span')
+MODES=SUCCESS_MODES+('runtime-code','runtime-stack','runtime-kernel','runtime-window','runtime-root','runtime-kernel-trap','runtime-entry-stack','runtime-write','runtime-nx','runtime-return','runtime-unknown','runtime-syscall','runtime-sysenter')
 BASE=0x10000000000
 STACK=0x10000200000
 SUFFIX='AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n'
 
-def validate(status,text,mode,metadata):
+def validate(status,text,mode,metadata,*,retained=0,final_slot=0):
+    need(type(retained) is int and retained in (0,2), "Invalid retained pin count")
+    need(type(final_slot) is int and final_slot in (0,1) and (final_slot==0 or retained==2), "Invalid final slot")
     need(mode in MODES,'Unknown runtime mode')
     keys={'entry','size','return_pc','bounds_pc','overflow_pc','division_zero_pc','shift_count_pc','probe_offset','probe_pc'}
     need(type(metadata) is dict and set(metadata)=={'clean','bounds'},'Malformed metadata set')
@@ -30,7 +33,7 @@ def validate(status,text,mode,metadata):
     patterns=(r'AURORA_UEFI_DOMAIN_ENTER: slot=\d+ root=\d+ entry=\d+ stack=\d+',
         r'AURORA_UEFI_DOMAIN_EVENT: vector=\d+ error=\d+ pc=\d+ cpl=\d+ root=\d+ frame=\d+ cr2=\d+',
         r'AURORA_UEFI_DOMAIN_RESTORE: slot=\d+ root=\d+ stack=\d+ event=(returned|bounds) value=\d+',
-        r'AURORA_UEFI_DOMAIN_REUSE_OK: frame=\d+',r'AURORA_UEFI_DOMAIN_CLEANUP_OK: used=0',
+        r'AURORA_UEFI_DOMAIN_REUSE_OK: frame=\d+',rf'AURORA_UEFI_DOMAIN_CLEANUP_OK: used={retained}',
         r'AURORA_UEFI_RUNTIME_ROOT_PROBE: root=\d+',r'AURORA_UEFI_RUNTIME_IST_OK',r'AURORA_UEFI_RUNTIME_OK',
         r'AURORA_UEFI_RUNTIME_FAIL: (exception root authority|exception origin/stack|exception site authority|double fault)')
     for line in text.splitlines():
@@ -47,13 +50,13 @@ def validate(status,text,mode,metadata):
     enter=list(re.finditer(r'AURORA_UEFI_DOMAIN_ENTER: slot=(\d+) root=(\d+) entry=(\d+) stack=(\d+)',text))
     events=list(re.finditer(r'AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)',text))
     restores=list(re.finditer(r'AURORA_UEFI_DOMAIN_RESTORE: slot=(\d+) root=(\d+) stack=(\d+) event=(returned|bounds) value=(\d+)',text))
-    count=4 if mode=='runtime' else 1
-    need(len(enter)==len(events)==count and len(restores)==(4 if mode=='runtime' else 0),'Run/event/restoration count')
+    count=4 if mode in SUCCESS_MODES else 1
+    need(len(enter)==len(events)==count and len(restores)==(4 if mode in SUCCESS_MODES else 0),'Run/event/restoration count')
     for prefix,records in [('AURORA_UEFI_DOMAIN_ENTER:',enter),('AURORA_UEFI_DOMAIN_EVENT:',events),('AURORA_UEFI_DOMAIN_RESTORE:',restores)]:
         need(text.count(prefix)==len(records),'Malformed/duplicate runtime record')
     for index,(entry,event) in enumerate(zip(enter,events)):
-        slot,root,pc,sp=map(int,entry.groups());wanted_slot=1 if index==1 else 0
-        need(slot==wanted_slot and root==arena+0x90000+slot*0x10000 and pc==BASE+slot*4096 and sp==STACK+slot*0x200000+0x4000,'Wrong private entry layout')
+        slot,root,pc,sp=map(int,entry.groups());wanted_slot=1 if index==1 else final_slot if index==3 else 0
+        need(slot==wanted_slot and root==arena+0x90000+slot*0x10000 and pc==BASE+(1 if index==1 else 0)*4096 and sp==STACK+slot*0x200000+0x4000,'Wrong private entry layout')
         need(entry.start()<event.start(),'Event before entry')
         vector,error,rip,cpl,actual,frame,cr2=map(int,event.groups())
         need(actual==root,'Event under foreign root')
@@ -64,9 +67,9 @@ def validate(status,text,mode,metadata):
         elif mode=='runtime-kernel-trap':
             need(arena+0x44000<=frame<arena+0x48000 and frame%8==0,'Wrong kernel trap stack')
         else: need(arena+0x84000<=frame<=arena+0x88000-176 and frame%8==0,'Wrong RSP0 frame')
-        image=metadata['bounds' if slot else 'clean']
+        image=metadata['bounds' if index==1 else 'clean']
         need(image['entry']==pc and 4<=image['size']<=4096,'Fixture metadata entry')
-        if mode=='runtime':
+        if mode in SUCCESS_MODES:
             kind='bounds' if index==1 else 'returned';target=image['bounds_pc'] if index==1 else image['return_pc']
             need((vector,error,rip)==(6 if index==1 else 129,0,target),'Wrong exact contained site')
             restored=restores[index];rslot,rroot,rsp,rkind,value=restored.groups()
@@ -84,13 +87,13 @@ def validate(status,text,mode,metadata):
             elif mode=='runtime-return': need((vector,error,rip)==(129,0,image['probe_pc']) and rip!=image['return_pc'],'Wrong forged return site')
             elif mode in ('runtime-syscall','runtime-sysenter'): need((vector,error,rip)==(6 if mode=='runtime-syscall' else 13,0,image['probe_pc']),'Inherited alternate privilege entry')
             elif mode=='runtime-unknown': need((vector,error,rip)==(6,0,image['probe_pc']) and rip not in [image[k] for k in ('bounds_pc','overflow_pc','division_zero_pc','shift_count_pc')],'Unknown UD2 accepted as known')
-    if mode=='runtime':
+    if mode in SUCCESS_MODES:
         pci.validate(status,text,'pci')
         need('AURORA_UEFI_RUNTIME_FAIL:' not in text,'Runtime failure hidden by success')
         reuse=re.findall(r'AURORA_UEFI_DOMAIN_REUSE_OK: frame=(\d+)',text)
         need(len(reuse)==1 and int(reuse[0])==arena+0xc0000,'Wrong reused frame')
         need(restores[2].start()<text.index('AURORA_UEFI_DOMAIN_REUSE_OK:')<enter[3].start(),'Reuse before retirement')
-        for marker in ('AURORA_UEFI_DOMAIN_CLEANUP_OK: used=0','AURORA_UEFI_RUNTIME_OK'):
+        for marker in (f'AURORA_UEFI_DOMAIN_CLEANUP_OK: used={retained}','AURORA_UEFI_RUNTIME_OK'):
             need(text.count(marker)==1,'Missing unique cleanup/runtime completion')
         need(restores[3].start()<text.index('AURORA_UEFI_DOMAIN_CLEANUP_OK:')<text.index('AURORA_UEFI_RUNTIME_OK')<text.index('AURORA_UEFI_LANGUAGE_OK:'),'Final cleanup order')
         need('AURORA_UEFI_RUNTIME_ROOT_PROBE:' not in text and 'AURORA_UEFI_RUNTIME_IST_OK' not in text,'Unexpected failure probe')
@@ -117,7 +120,7 @@ def self_test():
     cases={}
     for mode in MODES:
         text=prefix
-        for i in range(4 if mode=='runtime' else 1):
+        for i in range(4 if mode in SUCCESS_MODES else 1):
             slot=1 if i==1 else 0; root=arena+0x90000+slot*0x10000;sp=STACK+slot*0x200000+0x4000;image=metadata['bounds' if slot else 'clean']
             if i==3: text+=f'AURORA_UEFI_DOMAIN_REUSE_OK: frame={arena+0xc0000}\n'
             text+=f'AURORA_UEFI_DOMAIN_ENTER: slot={slot} root={root} entry={image["entry"]} stack={sp}\n'
@@ -132,8 +135,8 @@ def self_test():
             elif mode=='runtime-unknown': vector=6;pc=image['probe_pc']
             elif mode in ('runtime-syscall','runtime-sysenter'): vector=6 if mode=='runtime-syscall' else 13;pc=image['probe_pc']
             text+=f'AURORA_UEFI_DOMAIN_EVENT: vector={vector} error={error} pc={pc} cpl={cpl} root={root} frame={frame} cr2={cr2}\n'
-            if mode=='runtime': text+=f'AURORA_UEFI_DOMAIN_RESTORE: slot={slot} root={kernel} stack={arena+0x47c00} event={"bounds" if i==1 else "returned"} value={0 if i==1 else 42}\n'
-        if mode=='runtime': text+='AURORA_UEFI_DOMAIN_CLEANUP_OK: used=0\nAURORA_UEFI_RUNTIME_OK\n'+SUFFIX
+            if mode in SUCCESS_MODES: text+=f'AURORA_UEFI_DOMAIN_RESTORE: slot={slot} root={kernel} stack={arena+0x47c00} event={"bounds" if i==1 else "returned"} value={0 if i==1 else 42}\n'
+        if mode in SUCCESS_MODES: text+='AURORA_UEFI_DOMAIN_CLEANUP_OK: used=0\nAURORA_UEFI_RUNTIME_OK\n'+SUFFIX
         else:
             reason='exception site authority'
             if mode=='runtime-root': text+=f'AURORA_UEFI_RUNTIME_ROOT_PROBE: root={kernel}\n';reason='exception root authority'
@@ -144,7 +147,7 @@ def self_test():
         case_metadata['bounds']['probe_pc']=0
         if mode not in ('runtime-stack','runtime-kernel','runtime-window','runtime-write','runtime-return','runtime-unknown','runtime-syscall','runtime-sysenter'): case_metadata['clean']['probe_pc']=0
         case_metadata['clean']['probe_offset']=88 if mode=='runtime-kernel' else 0
-        cases[mode]=(33 if mode=='runtime' else 35,text,case_metadata)
+        cases[mode]=(33 if mode in SUCCESS_MODES else 35,text,case_metadata)
     rejected=0
     for mode,(status,text,metadata) in cases.items():
         validate(status,text,mode,metadata)
@@ -153,7 +156,7 @@ def self_test():
         if mode!='runtime-entry-stack': invalid.append((status,text+'AURORA_UEFI_RUNTIME_IST_OK\n'))
         for line in text.splitlines():
             invalid.extend([(status,text.replace(line+'\n','',1)),(status,text.replace(line+'\n',(line+'\n')*2,1))])
-        if mode=='runtime':
+        if mode in SUCCESS_MODES:
             invalid.append((status,text+'AURORA_UEFI_RUNTIME_FAIL: unexpected\n'))
             last=[line for line in text.splitlines() if line.startswith('AURORA_UEFI_DOMAIN_RESTORE:')][-1]+'\n'
             invalid.append((status,text.replace(last,'',1)+last))

@@ -1,0 +1,3 @@
+Parent review reproduction before correction: record(1,same-digest,None), then record(1,same-digest,99) -> {1: ('same-digest', 99)}
+Expected: terminal result never changes, or null outcome rejected.
+Impact: host retry helper only; no target filesystem exists.

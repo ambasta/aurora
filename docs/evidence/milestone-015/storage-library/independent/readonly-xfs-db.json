@@ -1,0 +1,18 @@
+{
+  "argv": [
+    "/tmp/aurora-xfs-offline-tools/root/usr/sbin/xfs_db",
+    "-r",
+    "-f",
+    "-c",
+    "sb 0",
+    "-c",
+    "p magicnum versionnum sectsize sectlog crc features_compat features_ro_compat features_incompat features_log_incompat",
+    "-c",
+    "version",
+    "/tmp/aurora-xfs-offline-disk.img"
+  ],
+  "exit_code": 0,
+  "stdout": "magicnum = 0x58465342\nversionnum = 0xb4a5\nsectsize = 512\nsectlog = 9\ncrc = 0xc71371b6 (correct)\nfeatures_compat = 0\nfeatures_ro_compat = 0xf\nfeatures_incompat = 0x2b\nfeatures_log_incompat = 0\nversionnum [0xb4a5+0x18a] = V5,NLINK,DIRV2,ALIGN,LOGV2,EXTFLG,MOREBITS,ATTR2,LAZYSBCOUNT,PROJID32BIT,CRC,FTYPE,FINOBT,SPARSE_INODES,RMAPBT,REFLINK,INOBTCNT,BIGTIME,NREXT64\n",
+  "stderr": "",
+  "image_sha256": "28fb4dc1d02717c836624d2d368f71b554f03e5b7c4d56affef2d2246faa5a3e"
+}

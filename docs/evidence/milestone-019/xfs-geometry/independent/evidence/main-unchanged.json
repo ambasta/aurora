@@ -1,0 +1,12 @@
+{
+  "main_source_files": 4954,
+  "changes": {
+    "new": [],
+    "deleted": [],
+    "modified": []
+  },
+  "excludes": [
+    "build directory",
+    ".git"
+  ]
+}

@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 139 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` runs all 166 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -30,6 +30,24 @@ Do not write it to a physical disk or replace a host bootloader.
 
 See [kernel instructions](kernel/README.md) and [verification](docs/verification.md)
 for tools, exact commands, evidence and limitations.
+
+## Verified milestone021: explicit copied-value function templates
+
+Bounded namespace-level function templates now accept one/two explicit Scalar/Value
+arguments. The real `std::make_pair<T,U>` factory and executable
+`examples/function_token_values.au` use complete independent copied values.
+Class/function definitions share the 64-definition and 256-instance graph limits.
+See [the function-template contract](compiler/FUNCTION-TEMPLATES.md).
+
+Complete release and fatal host ASan/UBSan compiler targets, independent review
+and sanitizer replay, a fresh parent `make test`, and three actual UEFI profiles
+(`runtime-span`, `runtime-pin-fault`, `normal`) passed. The normal image was restored.
+M019 remains the historical full 166-mode result; M021 did not rerun the full suite
+or add kernel/physical-device support. No deduction, overloads, recursive generic
+expansion, generic methods, new IR/ABI or general heap/reference API is added.
+[M021 evidence](docs/evidence/milestone-021/README.md) preserves exact receipts,
+corrected defects, finite coverage and resource exceptions. Local verification
+does not imply remote publication.
 
 ## Current language subset
 
@@ -134,8 +152,9 @@ One or two type arguments must each be i64, u64 or bool. Instances are distinct
 nominal classes identified by defining module, template and ordered argument tuple;
 repeated uses share one specialization. Ordinary initialization, privacy, constness
 and independent class-copy rules apply after substitution. Graph limits are 64
-templates and 256 specializations; deduction, function templates, nested arguments,
-recursive instantiation and general concepts remain deferred.
+templates and 256 specializations. At that checkpoint, deduction, function templates,
+nested arguments, recursive instantiation and general concepts were deferred;
+M020/M021 subsequently add the bounded nested-argument and explicit-function subsets.
 The checkpoint passes 117 template checks and 393 direct IR cases, alongside the
 existing suites, ten exhaustive-dispatch checks and sanitizer gates. Independent
 compiler review passed; final milestone009 integration verification passed.
@@ -207,7 +226,7 @@ and [roadmap](docs/roadmap.md).
 ## Important limits
 
 There is no production safety proof, optimizing compiler, general heap ownership,
-general interprocedural borrowing, function templates, generic methods, inheritance, concurrency model, scheduler, SMP,
+general interprocedural borrowing, template deduction or recursive generic expansion, generic methods, inheritance, concurrency model, scheduler, SMP,
 full virtual-memory manager, general runtime/standard library, driver stack,
 desktop, native package system or
 self-hosting compiler yet. C-level performance has not been established by an
@@ -312,3 +331,129 @@ reuse. Unknown fault origins remain fail-stop. All 139 emulator gates pass on th
 packed-byte compiler; final parent evidence is in [verification](docs/verification.md).
 This remains a bounded single-CPU integer-only mechanism, not general process
 recovery, calibrated deadlines, SMP or physical Framework qualification.
+
+
+## Native filesystem and XFS target
+
+The supplied NVMe-native object/extent requirements are adapted in
+[storage/design/requirements.md](storage/design/requirements.md), with all 56
+sections traced and XFS on-disk support added separately. The implementation
+[roadmap](storage/design/roadmap.md) preserves eventual read-write XFS while
+staging clean read-only access and recovery first. No C ABI or Linux filesystem
+implementation is imported.
+
+A reviewed finite host crash model now checks dependency-before-commit persistence,
+acknowledgement loss and bounded retry results, including deliberately broken
+protocols. `make test-storage-model` runs it and mutation-tested document checks.
+This is executable design evidence, not a working filesystem, XFS mount, NVMe DMA
+transport or hardware qualification. See [storage status](storage/README.md).
+
+
+## Readonly byte views and read-only device resources
+
+Milestone014 adds [readonly whole-array byte spans](compiler/SPANS.md) with
+synchronous forwarding, checked access and lexical/call-bounded shared borrowing.
+Owner mutation and capability escape are rejected; this is not a general async
+borrow or heap-resource system. Real std.binary reads operate on borrowed bytes.
+A separate 449-byte protected program executes the span ABI in Aurora; the older
+clean program and its 4 KiB limit remain unchanged.
+
+The [BAR resource contract](kernel/uefi/BAR-RESOURCE-CONTRACT.md) validates one
+explicit emulated NVMe resource profile, permits seven bounded read-only register
+observations and revokes its supervisor UC/R/NX window. Stock firmware's inherited
+bus-master state is rejected. A separately pinned, narrowly modified EDK2 fixture
+provides an inactive controller with memory decoding enabled and bus mastering
+clear. Positive trace controls and cold-reset traces constrain that claim; PCI
+attribute probing did transiently set BME before restoration. This is not a driver,
+IOMMU isolation, DMA activation or physical Framework support.
+
+Independent review and final 147 emulator modes passed, alongside the parent
+aggregate, sanitizers and selected emulator reruns. Exact source identities,
+firmware profiles, failed development attempts and distribution limits are in
+[verification](docs/verification.md). Native filesystem/XFS work remains staged
+as described above; the host crash model is included in make test.
+
+## Verified milestone015
+
+Checked endian readers and CRC32C now support a restricted XFS v5 512-byte
+header-integrity probe, including a real offline fixture. Read-only AMD-Vi/IVRS
+observation passes its explicit QEMU profile, architectural-default refusal and
+write/revocation tests. All158 emulator modes, independent11 new modes, and parent
+aggregate checks passed. No IOMMU activation, DMA isolation, NVMe queue transport,
+filesystem mount/replay/write or physical AMD qualification is claimed. See the
+[verification record](docs/verification.md) for exact inputs and failed historical
+controls. Further mutable-byte development is isolated and is not part of this
+verified checkpoint.
+
+## Verified milestone016
+
+The compiler retains initialization facts in bounded-index bitsets, preserving
+reviewed language decisions and generated code in differential comparisons.
+Dense workloads use less memory; measured sparse workloads can use more.
+A fixed-capacity kernel page-pin ledger now consumes real move-only leases,
+scrubs clean cancellation, and retains quarantined pages across a same-slot
+service restart. All162 emulator modes and parent aggregate checks passed.
+This is page ownership, not active DMA isolation. See the verification record
+for the sparse-memory tradeoff, exact tests and sanitizer-build accommodation.
+
+## Verified milestone017
+
+The native std.utf8 library strictly decodes and validates Unicode17 UTF-8 using
+readonly byte spans and recoverable errors. All Unicode scalar values and bounded
+malformed/truncated/range fixtures passed independent native checks. Parent
+aggregate and three existing emulator smoke profiles passed on unchanged compiler
+and kernel implementation. No fresh full162 run or terminal/string completeness
+is claimed for this library-only checkpoint. See docs/utf8-contract.md.
+
+## Verified milestone018
+
+UTF-8 scalar encoding now returns an owned fixed-capacity value with checked
+access and zeroed unused bytes. Valid scalars use shortest encodings; invalid
+scalars fail recoverably. Independent native comparisons cover every scalar,
+report/copy semantics and access boundaries. Parent aggregate and three unchanged
+kernel smoke profiles passed. Compiler/kernel implementation and the decoder
+remain unchanged; this is not a complete string or terminal library.
+
+
+## Verified milestone019: dormant table bytes and XFS header geometry
+
+The integrated checkpoint passed all **166 actual emulator modes** (37 BIOS,
+129 UEFI-family), independent review of all four new modes, a fresh coordinating
+`make test`, and fresh readback/quarantine/normal UEFI smoke profiles. The latter
+three are selected repetitions, not a second full suite. Normal images restored.
+
+- The bootstrap kernel constructs bounded AMD3.10-format dormant tables in real
+  leased guest RAM, checks every DTE/leaf through a software model, rejects
+  corruption, tests exhaustion, and scrubs or quarantines pages across restart.
+  No IOMMU register programming, device publication, DMA or interrupt isolation
+  is implemented. Each mode retains the 16 KiB stack and existing page budgets;
+  the measured bound is 13,136 bytes including a 1,024-byte fault reserve.
+- Native `fs.xfs_geometry` adds recoverable facts for a deliberately narrow XFS
+  v5/512-byte header profile, overflow-safe geometry and explicit feature masks.
+  Independent tests exercise 2,016 identical byte-distinct headers under each
+  compiler pin, all 42 scalar result leaves, failure zeroing and input stability.
+  Success is copied data, not authority or evidence of mountability. No XFS
+  mount/replay/write path, storage transport or physical-device qualification.
+
+See [verification](docs/verification.md) for hashes, failures, test limits and
+archival evidence. General heap safety, active DMA, SMP, native toolchain,
+filesystem service, graphics and the complete desktop remain future work.
+
+## Verified milestone020: bounded nested generic values
+
+Fully concrete nested template-id arguments such as
+`std::pair<std::array<u8,16>,SourceRange>` now use the existing inline construction,
+copied projections and value-call mechanisms. The executable token/source-range
+example returns 42. Template-id nesting is capped at four independently of class
+depth four; the existing 64-leaf, 64-definition, 256-instance and 1..64-capacity
+limits remain. See [NESTED-VALUES.md](compiler/NESTED-VALUES.md).
+
+Complete release and fatal ASan/UBSan compiler targets, independent adversarial
+review, a fresh parent `make test` and three fresh UEFI profiles (`runtime-span`,
+`runtime-pin-fault`, `normal`) passed. The normal image was restored. M019 remains
+the historical full 166-mode checkpoint; these three spots are not a fresh full
+suite. No new kernel functionality, dependent template-body expansion, recursive
+instantiation, deduction, new IR/ABI or physical-device support is added.
+See [M020 evidence](docs/evidence/milestone-020/README.md) for exact pins, finite
+coverage, preserved failures and generated-product omissions. Local functional
+verification does not imply remote publication.

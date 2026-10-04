@@ -1,0 +1,1 @@
+export module generic;template<Value T>class Tag{public:Tag(){} };export template<Value T>auto factory()->i64{return type_id(Tag<T>);}

@@ -1,0 +1,327 @@
+{
+  "mode_count": 11,
+  "maximum_peak": 12776,
+  "minimum_unused": 3608,
+  "modes": [
+    {
+      "mode": "ivrs-alias",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4112,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2784,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8080,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9792
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-capability",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4096,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2784,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8064,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9792
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-default",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4096,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2784,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8064,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9792
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-missing",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4096,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2784,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8064,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9792
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-pair",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4096,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2784,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8064,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9792
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-range",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4096,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2816,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8064,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9824
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-read",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4096,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2784,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8064,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9792
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-reserved",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4080,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2784,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8048,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9792
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-revoked",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4096,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2784,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8064,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9792
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-scope",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4096,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2784,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8064,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9792
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    },
+    {
+      "mode": "ivrs-write",
+      "frames": {
+        "payload": 224,
+        "wrapper": 48,
+        "prepare": 4096,
+        "topology": 3184,
+        "ivrs_parse": 1184,
+        "pci": 5552,
+        "scan_helper": 32,
+        "scan": 5664,
+        "ecam": 232,
+        "capability": 152,
+        "bar": 2272,
+        "observe": 2800,
+        "walk": 208,
+        "resources": 640,
+        "reservations": 112
+      },
+      "paths": {
+        "prepare_with_topology": 8064,
+        "scan": 12264,
+        "bar": 9120,
+        "observe": 9808
+      },
+      "peak_with_fault_reserve": 12776,
+      "stack_bytes": 16384,
+      "minimum_unused": 3608
+    }
+  ],
+  "scope": "Reviewed call paths and bounded descendants, not a whole-program stack proof"
+}

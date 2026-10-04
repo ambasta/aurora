@@ -1,0 +1,9 @@
+module utf8_encoding_test;import std.utf8;import std.array;
+auto both(bool a,bool b)->bool{if(a){return b;}return false;}
+auto either(bool a,bool b)->bool{if(a){return true;}return b;}
+class ArrayLayoutProbe{u8 head;std::array<u8,4> owned;u8 tail;};
+auto utf8_encoding_case_0()->u64{
+        static_assert(size_of(ArrayLayoutProbe)==6);
+        if(reflect_size(type_id(ArrayLayoutProbe))!=6){return 1u64;}
+        return 11914855783004569770u64;
+    }

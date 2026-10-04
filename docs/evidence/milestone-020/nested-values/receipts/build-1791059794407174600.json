@@ -1,0 +1,32 @@
+{
+  "command": [
+    "g++",
+    "-std=c++23",
+    "-O2",
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-Werror",
+    "-I.",
+    "../tests/modules/host_output_tests.cpp",
+    "-o",
+    "../build/host-output-tests"
+  ],
+  "returncode": 0,
+  "wait_status": 0,
+  "wall_timeout": false,
+  "elapsed_seconds": 2.105571806008811,
+  "peak_rss_kib": 212508,
+  "cpu_user_seconds": 1.9747279999999998,
+  "cpu_system_seconds": 0.11808099999999999,
+  "address_space_bytes": 2147483648,
+  "cpu_seconds": [
+    120,
+    130
+  ],
+  "wall_seconds": 180,
+  "regular_file_bytes": 536870912,
+  "candidate_bytes_before": 222899140,
+  "candidate_bytes_after": 30701381,
+  "free_bytes_after": 2361282560
+}

@@ -1,0 +1,265 @@
+[
+  {
+    "name": "compiler-version",
+    "argv": [
+      "g++",
+      "--version"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045606405943755,
+    "end_ns": 1791045606407545686
+  },
+  {
+    "name": "public-control-pages_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-review/privacy-corrected-1/public-control",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-pages_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-pages_.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045606408010286,
+    "end_ns": 1791045606616224739
+  },
+  {
+    "name": "private-pages_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-pages_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-pages_.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045606616585956,
+    "end_ns": 1791045606808069333
+  },
+  {
+    "name": "public-control-arena_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-review/privacy-corrected-1/public-control",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-arena_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-arena_.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045606808468376,
+    "end_ns": 1791045607035028716
+  },
+  {
+    "name": "private-arena_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-arena_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-arena_.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045607035386958,
+    "end_ns": 1791045607229720030
+  },
+  {
+    "name": "public-control-groups_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-review/privacy-corrected-1/public-control",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-groups_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-groups_.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045607229895010,
+    "end_ns": 1791045607442325004
+  },
+  {
+    "name": "private-groups_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-groups_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-groups_.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045607442847371,
+    "end_ns": 1791045607637208595
+  },
+  {
+    "name": "public-control-dte_word",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-review/privacy-corrected-1/public-control",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-dte_word.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-dte_word.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045607637454140,
+    "end_ns": 1791045607851464297
+  },
+  {
+    "name": "private-dte_word",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-dte_word.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-dte_word.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045607851852024,
+    "end_ns": 1791045608041012603
+  },
+  {
+    "name": "public-control-page",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-review/privacy-corrected-1/public-control",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-page.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-page.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045608041218529,
+    "end_ns": 1791045608273184713
+  },
+  {
+    "name": "private-page",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-page.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-page.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045608273421495,
+    "end_ns": 1791045608473509876
+  },
+  {
+    "name": "public-control-put",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-review/privacy-corrected-1/public-control",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-put.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-put.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045608473930341,
+    "end_ns": 1791045608694214548
+  },
+  {
+    "name": "private-put",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-put.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-review/privacy-corrected-1/access-put.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045608694461525,
+    "end_ns": 1791045608885817493
+  }
+]

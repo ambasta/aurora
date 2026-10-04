@@ -149,7 +149,8 @@ class ModuleLoader {
 };
 
 class ModuleResolver {
-    enum class Kind { Function, Class, Template, Enum, Any };
+    enum class Kind { Function, Class, Template, FunctionTemplate, Enum, Any };
+    Function *activeFunction = nullptr;
     const ClassDefinition *activeClass = nullptr;
     bool initializingReceiver = false, classTypesResolved = false;
     class Declaration {
@@ -160,6 +161,7 @@ class ModuleResolver {
         bool exported;
         std::string module;
         const ClassDefinition *templateDefinition = nullptr;
+        const Function *functionTemplateDefinition = nullptr;
         const EnumDefinition *enumDefinition = nullptr;
     };
     ModuleLoader::Graph graph;
@@ -169,6 +171,8 @@ class ModuleResolver {
     std::map<std::string, std::vector<TemplateArgument>> instanceArguments;
     std::map<std::string, std::vector<Type>> publicTypes;
     std::vector<std::pair<std::string, Type>> argumentVisibilityChecks;
+    std::size_t instanceCount = 0;
+    std::map<std::string, int> instanceNesting;
     std::map<std::string, std::string> instanceDisplayNames;
     const std::set<std::string> builtins = {"i64",
                                             "u64",
@@ -177,6 +181,7 @@ class ModuleResolver {
                                             "move",
                                             "borrow",
                                             "borrow_mut",
+                                            "borrow_bytes",
                                             "read",
                                             "write",
                                             "size_of",
@@ -271,7 +276,8 @@ class ModuleResolver {
                     kind == Kind::Function && unit.root && scope.empty() && !valueBoundary
                         ? leaf
                         : mangle(kind == Kind::Function ? (valueBoundary ? 'v' : 'f')
-                                                        : (kind == Kind::Template ? 't'
+                                                        : (kind == Kind::FunctionTemplate ? 'g'
+                                                           : kind == Kind::Template ? 't'
                                                            : kind == Kind::Enum   ? 'e'
                                                                                   : 'c'),
                                  name, scope, leaf);
@@ -308,18 +314,29 @@ class ModuleResolver {
             }
             for (auto &definition : unit.program.templates) {
                 if (++templateCount > 64)
-                    throw Error("module graph exceeds 64 class templates");
+                    throw Error("module graph exceeds 64 class templates and function templates combined");
                 ClassTemplateExpansion::validate(definition);
                 definition.name = add(Kind::Template, definition.scope, definition.token.text,
                                       definition.exported);
                 table.at(qualify(definition.scope, definition.token.text)).templateDefinition =
                     &definition;
             }
+            for (auto &function : unit.program.functionTemplates) {
+                if (++templateCount > 64)
+                    throw Error("module graph exceeds 64 class templates and function templates combined");
+                FunctionTemplateExpansion::validate(function);
+                function.name = add(Kind::FunctionTemplate, function.scope, function.token.text,
+                                    function.exported);
+                table.at(qualify(function.scope, function.token.text)).functionTemplateDefinition =
+                    &function;
+            }
             for (auto &function : unit.program.functions) {
                 const bool valueBoundary =
                     function.result.isClass() ||
                     std::any_of(function.params.begin(), function.params.end(),
-                                [](const Param &parameter) { return parameter.type.isClass(); });
+                                [](const Param &parameter) {
+                                    return parameter.type.isClass() || parameter.type.isSpan();
+                                });
                 function.name = add(Kind::Function, function.scope, function.token.text,
                                     function.exported, valueBoundary);
             }
@@ -373,24 +390,29 @@ class ModuleResolver {
     }
     std::vector<TemplateArgument> resolveArguments(const std::vector<TemplateArgument> &arguments,
                                                    const ModuleLoader::Unit &unit,
-                                                   const std::string &scope) {
+                                                   const std::string &scope,
+                                                   bool expand = false, int depth = 1) {
         auto result = arguments;
         for (auto &argument : result) {
             if (argument.kind != TemplateArgumentKind::Type || argument.type != TypeKind::Class)
                 continue;
-            const auto *declaration = lookup(unit, scope, argument.className, Kind::Any);
+            const auto *declaration =
+                argument.resolvedClass
+                    ? classDeclaration(ClassTemplateExpansion::argumentType(argument))
+                    : argument.templateArguments.empty()
+                    ? lookup(unit, scope, argument.className, Kind::Any)
+                    : specialization(unit, scope, argument.className, argument.templateArguments,
+                                     expand, depth + 1);
             if (!declaration)
                 throw Error("unknown named class or enum template argument: " + argument.className);
             if (declaration->kind != Kind::Class && declaration->kind != Kind::Enum)
                 throw Error("template argument requires a named concrete class or enum: " +
                             argument.className);
-            // A source argument must name an ordinary concrete class or enum, never an
-            // implicit or nested specialization. Its defining module is identity.
-            if (instanceArguments.contains(declaration->native))
-                throw Error("template arguments require named concrete classes");
             argument.type = declaration->kind == Kind::Enum ? TypeKind::Enum : TypeKind::Class;
             argument.className = declaration->native;
-            argument.displayName = declaration->qualified;
+            argument.displayName = displayName(*declaration);
+            argument.templateArguments.clear();
+            argument.resolvedClass = true;
         }
         return result;
     }
@@ -402,6 +424,7 @@ class ModuleResolver {
       public:
         std::string module, scope, name;
         std::vector<TemplateArgument> arguments;
+        bool expression = false;
     };
     void collectTemplateType(const Type &type, const ModuleLoader::Unit &unit,
                              const std::string &scope, std::vector<TemplateRequest> &requests) {
@@ -421,7 +444,7 @@ class ModuleResolver {
         collectTemplateType(value->reflectedType, unit, scope, requests);
         if (!value->templateArguments.empty())
             requests.push_back(
-                {unit.program.moduleName, scope, value->token.text, value->templateArguments});
+                {unit.program.moduleName, scope, value->token.text, value->templateArguments, true});
         for (const auto &argument : value->args)
             collectTemplateExpression(argument, unit, scope, requests);
     }
@@ -447,6 +470,70 @@ class ModuleResolver {
         }
         collectTemplateStatements(function.body, unit, function.scope, requests);
     }
+    void validateTemplateType(const Type &type, const ModuleLoader::Unit &unit,
+                              const std::string &scope) {
+        if (!type.templateArguments.empty()) {
+            const auto *target = lookup(unit, scope, type.className, Kind::Template);
+            if (!target)
+                throw Error("function template requires a statically named class template: " + type.className);
+        }
+    }
+    void validateTemplateExpression(const ExpressionPtr &value, const ModuleLoader::Unit &unit,
+                                    const std::string &scope) {
+        if (!value)
+            return;
+        validateTemplateType(value->reflectedType, unit, scope);
+        if (value->op == "call" || value->op == "construct") {
+            const bool receiverMember = activeClass && value->op == "call" &&
+                (std::any_of(activeClass->methods.begin(), activeClass->methods.end(),
+                             [&](const auto &method) { return method.token.text == value->token.text; }) ||
+                 std::any_of(activeClass->fields.begin(), activeClass->fields.end(),
+                             [&](const auto &field) { return field.token.text == value->token.text; }));
+            // Match concrete binding: an implicit receiver member takes
+            // precedence over unrelated namespace-level template declarations.
+            const auto *target = builtins.contains(value->token.text) || receiverMember ? nullptr :
+                                 lookup(unit, scope, value->token.text, Kind::Any);
+            if (target && target->kind == Kind::FunctionTemplate)
+                throw Error("function template calls inside template bodies are unsupported");
+            if (!value->templateArguments.empty() && (!target || target->kind != Kind::Template))
+                throw Error("template body requires a statically named class template");
+        }
+        for (const auto &argument : value->args)
+            validateTemplateExpression(argument, unit, scope);
+    }
+    void validateTemplateStatements(const std::vector<StatementPtr> &body,
+                                    const ModuleLoader::Unit &unit, const std::string &scope) {
+        for (const auto &statement : body) {
+            validateTemplateType(statement->type, unit, scope);
+            validateTemplateExpression(statement->expr, unit, scope);
+            validateTemplateExpression(statement->target, unit, scope);
+            validateTemplateStatements(statement->body, unit, scope);
+            validateTemplateStatements(statement->other, unit, scope);
+        }
+    }
+    void validateTemplateDefinitions() {
+        for (const auto &name : graph.order) {
+            const auto &unit = *graph.units.at(name);
+            auto validate = [&](const Function &function) {
+                validateTemplateType(function.result, unit, function.scope);
+                for (const auto &parameter : function.params)
+                    validateTemplateType(parameter.type, unit, function.scope);
+                for (const auto &[field, expression] : function.initializers) {
+                    (void)field;
+                    validateTemplateExpression(expression, unit, function.scope);
+                }
+                validateTemplateStatements(function.body, unit, function.scope);
+            };
+            for (const auto &function : unit.program.functionTemplates)
+                validate(function);
+            for (const auto &definition : unit.program.templates) {
+                activeClass = &definition;
+                for (const auto &method : definition.methods)
+                    validate(method);
+                activeClass = nullptr;
+            }
+        }
+    }
     void expandTemplates() {
         // Collect before appending classes, so no traversal keeps a pointer into
         // a class vector while concrete definitions are being added to it.
@@ -462,63 +549,118 @@ class ModuleResolver {
                     collectTemplateFunction(method, unit, requests);
             }
         }
-        std::size_t instanceCount = 0;
         for (const auto &request : requests) {
-            const auto &usingUnit = *graph.units.at(request.module);
-            const auto *declaration =
-                lookup(usingUnit, request.scope, request.name, Kind::Template);
-            if (!declaration)
-                throw Error(
-                    "unsupported type or unknown class template; expected a declared template: " +
-                    request.name);
-            const auto &source = *declaration->templateDefinition;
-            if (request.arguments.size() != source.templateParameters.size())
-                throw Error("wrong number of class template arguments for " + request.name);
-            const auto arguments = resolveArguments(request.arguments, usingUnit, request.scope);
-            for (const auto &argument : arguments)
-                if (argument.kind == TemplateArgumentKind::Type &&
-                    (argument.type == TypeKind::Class || argument.type == TypeKind::Enum))
-                    argumentVisibilityChecks.emplace_back(
-                        request.module, ClassTemplateExpansion::argumentType(argument));
-            const auto suffix = ClassTemplateExpansion::argumentSuffix(arguments);
-            const auto qualified = declaration->qualified + suffix;
-            auto &table = declarations.at(declaration->module);
-            if (table.contains(qualified))
-                continue;
-            if (++instanceCount > 256)
-                throw Error("module graph exceeds 256 class template instantiations");
-            auto definition = ClassTemplateExpansion::instantiate(source, arguments);
-            definition.name =
-                mangle('c', declaration->module, definition.scope, definition.token.text) +
-                ClassTemplateExpansion::nativeSuffix(arguments);
-            auto &definingUnit = *graph.units.at(declaration->module);
-            registerMembers(definition, definingUnit);
-            instanceArguments.emplace(definition.name, arguments);
-            instanceDisplayNames.emplace(
-                definition.name,
-                declaration->qualified + ClassTemplateExpansion::argumentSuffix(arguments, true));
-            table.emplace(qualified, Declaration{Kind::Class, qualified, definition.name,
-                                                 declaration->exported, declaration->module});
-            nativeClasses.emplace(definition.name, &table.at(qualified));
-            definingUnit.program.classes.push_back(std::move(definition));
+            const auto &unit = *graph.units.at(request.module);
+            const auto *target = lookup(unit, request.scope, request.name, Kind::Any);
+            if (request.expression && target && target->kind == Kind::FunctionTemplate)
+                (void)functionSpecialization(unit, request.scope, request.name, request.arguments, true);
+            else
+                (void)specialization(unit, request.scope, request.name, request.arguments, true);
         }
+        // The preceding pass only appends immutable function copies. No traversal
+        // can be invalidated, and these copies can request only class instances.
+        std::vector<TemplateRequest> generated;
+        for (const auto &name : graph.order) {
+            const auto &unit = *graph.units.at(name);
+            for (const auto &function : unit.program.functions)
+                if (!function.templateArguments.empty())
+                    collectTemplateFunction(function, unit, generated);
+        }
+        for (const auto &request : generated)
+            (void)specialization(*graph.units.at(request.module), request.scope, request.name,
+                                 request.arguments, true);
+    }
+    const Declaration *functionSpecialization(
+        const ModuleLoader::Unit &unit, const std::string &scope, const std::string &name,
+        const std::vector<TemplateArgument> &requested, bool expand = false) {
+        const auto *declaration = lookup(unit, scope, name, Kind::FunctionTemplate);
+        if (!declaration)
+            throw Error("unknown function template: " + name);
+        const auto &source = *declaration->functionTemplateDefinition;
+        if (requested.size() != source.templateParameters.size())
+            throw Error("wrong number of function template arguments for " + name);
+        // A function call's outer list does not consume a class-template level.
+        const auto arguments = resolveArguments(requested, unit, scope, expand, 0);
+        if (expand)
+            for (const auto &argument : arguments)
+                if (argument.kind == TemplateArgumentKind::Type)
+                    argumentVisibilityChecks.emplace_back(
+                        unit.program.moduleName, ClassTemplateExpansion::argumentType(argument));
+        const auto qualified = declaration->qualified + ClassTemplateExpansion::argumentSuffix(arguments);
+        auto &table = declarations.at(declaration->module);
+        if (const auto found = table.find(qualified); found != table.end())
+            return &found->second;
+        if (!expand)
+            throw Error("unexpanded function template specialization: " + qualified);
+        if (++instanceCount > 256)
+            throw Error("module graph exceeds 256 class template instantiations and function instances combined");
+        auto function = FunctionTemplateExpansion::instantiate(source, arguments);
+        function.name = mangle('g', declaration->module, source.scope, source.token.text) +
+                        ClassTemplateExpansion::nativeSuffix(arguments);
+        const auto inserted = table.emplace(qualified, Declaration{
+            Kind::Function, qualified, function.name, false, declaration->module});
+        graph.units.at(declaration->module)->program.functions.push_back(std::move(function));
+        return &inserted.first->second;
     }
     const Declaration *specialization(const ModuleLoader::Unit &unit, const std::string &scope,
                                       const std::string &name,
-                                      const std::vector<TemplateArgument> &arguments) {
+                                      const std::vector<TemplateArgument> &requestedArguments,
+                                      bool expand = false, int depth = 1) {
+        if (depth > maximumTemplateNesting)
+            throw Error("template-id nesting exceeds " + std::to_string(maximumTemplateNesting));
         const auto *declaration = lookup(unit, scope, name, Kind::Template);
         if (!declaration)
             throw Error(
                 "unsupported type or unknown class template; expected a declared template: " +
                 name);
+        const auto &source = *declaration->templateDefinition;
+        if (requestedArguments.size() != source.templateParameters.size())
+            throw Error("wrong number of class template arguments for " + name);
+        // No template body can request an instance. This recursion follows only
+        // the bounded, fully concrete source tree; children are interned first.
+        const auto arguments = resolveArguments(requestedArguments, unit, scope, expand, depth);
+        int nominalDepth = 1;
+        for (std::size_t index = 0; index < arguments.size(); ++index) {
+            const auto &argument = arguments[index];
+            if (argument.type == TypeKind::Class) {
+                if (const auto child = instanceNesting.find(argument.className);
+                    child != instanceNesting.end())
+                    nominalDepth = std::max(nominalDepth, child->second + 1);
+            }
+            if (expand && !requestedArguments[index].resolvedClass &&
+                argument.kind == TemplateArgumentKind::Type &&
+                (argument.type == TypeKind::Class || argument.type == TypeKind::Enum))
+                argumentVisibilityChecks.emplace_back(
+                    unit.program.moduleName, ClassTemplateExpansion::argumentType(argument));
+        }
+        if (nominalDepth > maximumTemplateNesting)
+            throw Error("template-id nesting exceeds 4 after substitution");
         const auto qualified =
-            declaration->qualified +
-            ClassTemplateExpansion::argumentSuffix(resolveArguments(arguments, unit, scope));
-        const auto &table = declarations.at(declaration->module);
-        const auto found = table.find(qualified);
-        if (found == table.end())
+            declaration->qualified + ClassTemplateExpansion::argumentSuffix(arguments);
+        auto &table = declarations.at(declaration->module);
+        if (const auto found = table.find(qualified); found != table.end())
+            return &found->second;
+        if (!expand)
             throw Error("unexpanded class template specialization: " + qualified);
-        return &found->second;
+        if (++instanceCount > 256)
+            throw Error("module graph exceeds 256 class template instantiations and function instances combined");
+        auto definition = ClassTemplateExpansion::instantiate(source, arguments);
+        definition.name =
+            mangle('c', declaration->module, definition.scope, definition.token.text) +
+            ClassTemplateExpansion::nativeSuffix(arguments);
+        auto &definingUnit = *graph.units.at(declaration->module);
+        registerMembers(definition, definingUnit);
+        instanceArguments.emplace(definition.name, arguments);
+        instanceNesting.emplace(definition.name, nominalDepth);
+        instanceDisplayNames.emplace(
+            definition.name,
+            declaration->qualified + ClassTemplateExpansion::argumentSuffix(arguments, true));
+        const auto inserted = table.emplace(
+            qualified, Declaration{Kind::Class, qualified, definition.name,
+                                   declaration->exported, declaration->module});
+        nativeClasses.emplace(definition.name, &inserted.first->second);
+        definingUnit.program.classes.push_back(std::move(definition));
+        return &inserted.first->second;
     }
     void resolveType(Type &type, const ModuleLoader::Unit &unit, const std::string &scope) {
         if (type.kind == TypeKind::Parameter)
@@ -530,6 +672,9 @@ class ModuleResolver {
         if (type.resolvedClass) {
             if (!classDeclaration(type))
                 throw Error("unknown resolved class identity: " + type.className);
+            if (classTypesResolved && !bodyTypeVisible(type, unit))
+                throw Error("resolved class type requires a direct visible import: " + typeName(type));
+            recordAuthority(type, unit);
             return;
         }
         if (type.className == "array" || type.className == "builtin::array")
@@ -557,15 +702,17 @@ class ModuleResolver {
             type.displayName = displayName(*declaration);
             type.resolvedClass = true;
             type.templateArguments.clear();
-            if (classTypesResolved && !typeVisible(type, unit))
+            if (classTypesResolved && !bodyTypeVisible(type, unit))
                 throw Error("class type requires a direct visible import: " + typeName(type));
+            recordAuthority(type, unit);
         }
     }
     const Declaration *classDeclaration(const Type &type) const {
         const auto found = nativeClasses.find(type.className);
         return found == nativeClasses.end() ? nullptr : found->second;
     }
-    bool typeAccessible(const Type &type, const ModuleLoader::Unit *unit) const {
+    bool typeAccessible(const Type &type, const ModuleLoader::Unit *unit,
+                        const Function *authority = nullptr) const {
         std::vector<Type> pending{type};
         std::set<std::string> visited;
         while (!pending.empty()) {
@@ -573,6 +720,14 @@ class ModuleResolver {
             pending.pop_back();
             if ((!current.isClass() && !current.isEnum()) ||
                 !visited.insert(current.className).second)
+                continue;
+            // Authority is limited to exact arguments already checked in the
+            // requesting caller. It grants no lookup or private-member access.
+            if (authority && std::any_of(authority->templateArguments.begin(),
+                                        authority->templateArguments.end(), [&](const auto &argument) {
+                    return argument.kind == TemplateArgumentKind::Type &&
+                           argument.type == current.kind && argument.className == current.className;
+                }))
                 continue;
             const auto *declaration = classDeclaration(current);
             if (!declaration)
@@ -603,6 +758,22 @@ class ModuleResolver {
     }
     bool typeVisible(const Type &type, const ModuleLoader::Unit &unit) const {
         return typeAccessible(type, &unit);
+    }
+    bool bodyTypeVisible(const Type &type, const ModuleLoader::Unit &unit) const {
+        if (activeClass && !activeClass->templateArguments.empty()) {
+            if (type.isClass() && type.className == activeClass->name)
+                return true;
+            for (const auto &argument : activeClass->templateArguments)
+                if (argument.kind == TemplateArgumentKind::Type && argument.type == type.kind &&
+                    argument.className == type.className)
+                    return true;
+        }
+        return typeAccessible(type, &unit, activeFunction);
+    }
+    void recordAuthority(const Type &type, const ModuleLoader::Unit &unit) {
+        if (activeFunction && !activeFunction->templateArguments.empty() &&
+            (type.isClass() || type.isEnum()) && bodyTypeVisible(type, unit))
+            activeFunction->templateTypeAuthority.insert(type.className);
     }
     bool typeExported(const Type &type) const { return typeAccessible(type, nullptr); }
     void resolveClassTypes() {
@@ -678,10 +849,56 @@ class ModuleResolver {
                 throw Error("template argument type requires a direct visible import: " +
                             typeName(type));
     }
+    void validateFunctionTemplateSignatureType(const Type &type,
+                                               const ModuleLoader::Unit &unit,
+                                               const Function &function) {
+        if (!type.isClass() && !type.isEnum())
+            return;
+        const auto *target = lookup(unit, function.scope, type.className, Kind::Any);
+        if (!target)
+            throw Error("unknown fixed type in function template signature: " + typeName(type));
+        if (!type.templateArguments.empty()) {
+            if (target->kind != Kind::Template)
+                throw Error("function template signature requires a class template");
+            if (function.exported && !target->exported)
+                throw Error("exported function template signature exposes private template: " + typeName(type));
+            for (const auto &argument : type.templateArguments) {
+                if (argument.kind != TemplateArgumentKind::Type || argument.type == TypeKind::Parameter)
+                    continue;
+                Type child(argument.type);
+                child.className = argument.className;
+                child.templateArguments = argument.templateArguments;
+                validateFunctionTemplateSignatureType(child, unit, function);
+            }
+        } else {
+            if (target->kind != Kind::Class && target->kind != Kind::Enum)
+                throw Error("function template signature requires a concrete fixed type");
+            Type fixed(target->native);
+            if (target->kind == Kind::Enum)
+                fixed.kind = TypeKind::Enum;
+            if (!typeVisible(fixed, unit))
+                throw Error("function template signature type requires a direct visible import: " + typeName(type));
+            if (function.exported && !typeExported(fixed))
+                throw Error("exported function template signature exposes private type: " + typeName(type));
+        }
+    }
+    void validateFunctionTemplateSignatures() {
+        // Fixed signature privacy is a declaration invariant, including unused
+        // exported definitions. Dependent tuples remain checked per request.
+        for (const auto &name : graph.order) {
+            const auto &unit = *graph.units.at(name);
+            for (const auto &function : unit.program.functionTemplates) {
+                validateFunctionTemplateSignatureType(function.result, unit, function);
+                for (const auto &parameter : function.params)
+                    validateFunctionTemplateSignatureType(parameter.type, unit, function);
+            }
+        }
+    }
     void resolveSignatures() {
         for (const auto &name : graph.order) {
             auto &unit = *graph.units.at(name);
             for (auto &function : unit.program.functions) {
+                activeFunction = &function;
                 auto resolve = [&](Type &type) {
                     resolveType(type, unit, function.scope);
                     if (type.isClass() || type.isEnum()) {
@@ -689,7 +906,7 @@ class ModuleResolver {
                         if (!declaration)
                             throw Error("unknown class type in function signature: " +
                                         typeName(type));
-                        if (!typeVisible(type, unit))
+                        if (!bodyTypeVisible(type, unit))
                             throw Error(
                                 "function signature type requires a direct visible import: " +
                                 typeName(type));
@@ -702,6 +919,7 @@ class ModuleResolver {
                 resolve(function.result);
                 for (auto &parameter : function.params)
                     resolve(parameter.type);
+                activeFunction = nullptr;
             }
         }
     }
@@ -715,15 +933,36 @@ class ModuleResolver {
         if (!value->templateArguments.empty()) {
             if (value->op != "call" && value->op != "construct")
                 throw Error("template arguments require a class construction");
+            const auto *target = lookup(unit, scope, value->token.text, Kind::Any);
+            if (target && target->kind == Kind::FunctionTemplate) {
+                if (activeClass || (activeFunction && !activeFunction->templateArguments.empty())) {
+                    if ((activeClass && !activeClass->templateArguments.empty()) ||
+                        (activeFunction && !activeFunction->templateArguments.empty()))
+                        throw Error("function template calls inside template bodies are unsupported");
+                }
+                if (value->op != "call")
+                    throw Error("function template arguments require a call");
+                const auto *declaration = functionSpecialization(
+                    unit, scope, value->token.text, value->templateArguments);
+                for (const auto &type : signatures.at(declaration->native))
+                    if (!bodyTypeVisible(type, unit))
+                        throw Error("function signature type requires a direct visible import: " + typeName(type));
+                value->resolvedName = declaration->native;
+                value->templateArguments.clear();
+                for (const auto &argument : value->args)
+                    expression(argument, unit, scope);
+                return;
+            }
             const auto *declaration =
                 specialization(unit, scope, value->token.text, value->templateArguments);
             value->resolvedName = declaration->native;
             value->reflectedType = Type(declaration->native);
             value->reflectedType.displayName = displayName(*declaration);
             value->reflectedType.resolvedClass = true;
-            if (!typeVisible(value->reflectedType, unit))
+            if (!bodyTypeVisible(value->reflectedType, unit))
                 throw Error("class construction type requires a direct visible import: " +
                             typeName(value->reflectedType));
+            recordAuthority(value->reflectedType, unit);
             if (value->op == "call")
                 value->op = "constructor_call";
             value->templateArguments.clear();
@@ -767,15 +1006,17 @@ class ModuleResolver {
                     throw Error("line " + std::to_string(value->token.line) +
                                 ": unknown function '" + value->token.text +
                                 "' in defining module " + unit.program.moduleName);
-                if (declaration->kind == Kind::Template)
-                    throw Error("class template requires explicit type arguments: " +
+                if (declaration->kind == Kind::Template || declaration->kind == Kind::FunctionTemplate)
+                    throw Error(std::string(declaration->kind == Kind::Template ?
+                                            "class template requires explicit type arguments: " :
+                                            "function template requires explicit type arguments: ") +
                                 value->token.text);
                 if (declaration->kind == Kind::Enum)
                     throw Error("enum values require a named case: " + value->token.text);
                 value->resolvedName = declaration->native;
                 if (declaration->kind == Kind::Function) {
                     for (const auto &type : signatures.at(declaration->native))
-                        if (!typeVisible(type, unit))
+                        if (!bodyTypeVisible(type, unit))
                             throw Error(
                                 "function signature type requires a direct visible import: " +
                                 typeName(type));
@@ -788,7 +1029,7 @@ class ModuleResolver {
                     const bool generatedSelf = activeClass &&
                                                !activeClass->templateArguments.empty() &&
                                                declaration->native == activeClass->name;
-                    if (!generatedSelf && !typeVisible(value->reflectedType, unit))
+                    if (!generatedSelf && !bodyTypeVisible(value->reflectedType, unit))
                         throw Error("class construction type requires a direct visible import: " +
                                     typeName(value->reflectedType));
                 }
@@ -842,8 +1083,10 @@ class ModuleResolver {
     explicit ModuleResolver(ModuleLoader::Graph value) : graph(std::move(value)) {}
     Program resolve() {
         registerDeclarations();
+        validateTemplateDefinitions();
         expandTemplates();
         resolveClassTypes();
+        validateFunctionTemplateSignatures();
         resolveSignatures();
         Program result;
         result.moduleName = graph.root;
@@ -875,7 +1118,9 @@ class ModuleResolver {
             }
             for (auto &function : unit.program.functions) {
                 function.moduleScope = unit.scope;
+                activeFunction = &function;
                 statements(function.body, unit, function.scope);
+                activeFunction = nullptr;
                 result.functions.push_back(std::move(function));
             }
             for (auto &definition : unit.program.classes) {

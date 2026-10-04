@@ -1,0 +1,15 @@
+{
+  "make_test_exit": 0,
+  "actual_spots": {
+    "runtime-pin-cancel": 0,
+    "runtime-pin-fault": 0,
+    "normal": 0
+  },
+  "semantic_stress_cases": 1526,
+  "semantic_stress_exit": 0,
+  "full_actual_modes": 162,
+  "independent_new_modes": 4,
+  "frozen_project_inputs": 266,
+  "live_input_mismatches": [],
+  "scope": "Parent aggregate plus selected actual spots, not a second full162 run; no hardware DMA support."
+}

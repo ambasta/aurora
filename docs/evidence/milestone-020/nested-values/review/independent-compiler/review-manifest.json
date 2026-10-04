@@ -1,0 +1,13 @@
+{
+  "compiler_manifest_verified": true,
+  "files": {
+    "review/independent-compiler/REPORT.md": "14a4778616e5a66391dfb957d01ce339d1cca21de7b88773ca99a1d13fcfcfe1",
+    "review/independent-compiler/arithmetic-differential.json": "5ace49d1e19701b51511b447579e1fb0eda354e8f78d8bd621dc4deb5428caa1",
+    "review/independent-compiler/differential.py": "83bf20250645dd72beb405ae0e017dec2f20a3ca8203909c5f681c1bbc3a6d35",
+    "review/independent-compiler/probe.py": "5037b981c71aee15f14a6ec948628134c0890f58106ad141f6c45c2e221751b1",
+    "review/independent-compiler/release.log": "a06a77fc31866736b5d9cb6aa74bfc71e3ae4749797df5d30f26e2386b0002cf",
+    "review/independent-compiler/results-sanitized.json": "d8c078682bce36bf6475b089dc5dbee7785180269b7177a921748529d3bd6251",
+    "review/independent-compiler/results.json": "f7b4b4c4fb0916edbd224984cd0cd6a6a8589790c6a64cbec9dbb9feacd35c9b",
+    "review/independent-compiler/sanitized.log": "a06a77fc31866736b5d9cb6aa74bfc71e3ae4749797df5d30f26e2386b0002cf"
+  }
+}

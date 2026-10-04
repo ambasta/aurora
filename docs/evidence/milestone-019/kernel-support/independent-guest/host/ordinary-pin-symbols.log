@@ -1,0 +1,118 @@
+0000000000000000 r .LC0
+0000000000000019 r .LC1
+0000000000000075 r .LC10
+0000000000000085 r .LC11
+0000000000000097 r .LC12
+0000000000000000 r .LC13
+00000000000000a7 r .LC14
+00000000000000af r .LC15
+00000000000000b7 r .LC16
+00000000000000d0 r .LC17
+00000000000000e5 r .LC18
+00000000000000ff r .LC19
+0000000000000020 r .LC2
+0000000000000020 r .LC20
+000000000000010c r .LC21
+0000000000000114 r .LC22
+0000000000000048 r .LC23
+000000000000011c r .LC24
+0000000000000124 r .LC25
+0000000000000129 r .LC26
+000000000000012f r .LC27
+0000000000000137 r .LC28
+000000000000013d r .LC29
+0000000000000029 r .LC3
+000000000000015a r .LC30
+0000000000000175 r .LC31
+0000000000000182 r .LC32
+000000000000019b r .LC33
+00000000000001b2 r .LC34
+00000000000001cb r .LC35
+00000000000001e3 r .LC37
+0000000000000000 r .LC38
+00000000000001ee r .LC39
+0000000000000036 r .LC4
+0000000000000205 r .LC40
+000000000000021d r .LC41
+0000000000000236 r .LC42
+0000000000000248 r .LC44
+000000000000025e r .LC45
+0000000000000264 r .LC46
+000000000000026f r .LC47
+0000000000000274 r .LC48
+0000000000000287 r .LC49
+0000000000000040 r .LC5
+000000000000029b r .LC50
+00000000000002b5 r .LC51
+00000000000002c9 r .LC52
+00000000000002d3 r .LC53
+00000000000002ef r .LC54
+0000000000000303 r .LC55
+0000000000000312 r .LC56
+0000000000000329 r .LC57
+0000000000000070 r .LC58
+0000000000000335 r .LC59
+0000000000000047 r .LC6
+000000000000034b r .LC60
+000000000000035c r .LC61
+0000000000000371 r .LC62
+000000000000038b r .LC63
+000000000000039f r .LC64
+0000000000000098 r .LC65
+00000000000003b6 r .LC66
+00000000000003bc r .LC67
+00000000000000c0 r .LC68
+00000000000003cc r .LC69
+0000000000000062 r .LC7
+00000000000003e7 r .LC70
+00000000000003ee r .LC71
+0000000000000065 r .LC8
+000000000000006e r .LC9
+0000000000000000 b .bss
+0000000000000000 d .data
+0000000000000000 r .rodata
+0000000000000000 r C.117.0
+0000000000000010 r C.130.1
+0000000000000000 r C.207.3
+0000000000000000 r C.311.4
+0000000000000000 r C.320.5
+0000000000000000 b aurora::uefi::(anonymous namespace)::pin_ledger
+00000000000003f0 t aurora::uefi::(anonymous namespace)::pin_record(std::basic_string_view<char, std::char_traits<char> >)
+0000000000000238 b aurora::uefi::(anonymous namespace)::kernel_root
+0000000000001a60 t aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)
+0000000000000240 b aurora::uefi::(anonymous namespace)::arena
+0000000000000000 d aurora::uefi::(anonymous namespace)::active
+0000000000001150 t aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]
+0000000000000340 b aurora::uefi::(anonymous namespace)::frames
+00000000000000a0 t aurora::uefi::(anonymous namespace)::retire(unsigned int)
+0000000000000e50 t aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)
+00000000000007e0 b aurora::uefi::(anonymous namespace)::domains
+0000000000001ab0 t aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)
+0000000000000220 b aurora::uefi::(anonymous namespace)::handoff
+0000000000000260 b aurora::uefi::(anonymous namespace)::program
+0000000000000ae0 t aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)
+0000000000000300 b aurora::uefi::(anonymous namespace)::registry
+0000000000000000 t aurora::uefi::(anonymous namespace)::pin_scrub(void*, unsigned long, unsigned long)
+0000000000000000 W aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)
+0000000000003270 T aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)
+0000000000000000 W aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)
+0000000000000000 u aurora::uefi::RuntimeLayoutProfile<2ul>::table_offsets
+0000000000000000 W aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)
+0000000000000000 u aurora::user::DomainRegistry::next_stamp_
+0000000000000000 W aurora::user::DomainRegistry::destroy(aurora::user::DomainHandle)
+0000000000000000 W aurora::user::DomainRegistry::activate(aurora::user::DomainHandle)
+0000000000000000 u aurora::memory::PhysicalPages::next_epoch_
+0000000000000000 u aurora::memory::PinLedger::next_epoch_
+0000000000000000 W aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)
+0000000000000000 W aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)
+0000000000000000 W aurora::uefi::RuntimeTables::entry(unsigned long) const
+0000000000000000 W aurora::user::DomainRegistry::ready(aurora::user::DomainHandle) const
+0000000000000000 W aurora::user::ProgramContract::valid() const
+0000000000000000 W bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const
+0000000000000c30 t bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .constprop.0]
+0000000000000000 t bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]
+0000000000002640 T aurora_exception_dispatch
+0000000000000000 a runtime.cpp
+                 U uefi_runtime_enter
+                 U uefi_runtime_handler
+                 U uefi_runtime_saved_rsp

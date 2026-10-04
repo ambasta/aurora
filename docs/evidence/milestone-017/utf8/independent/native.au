@@ -1,0 +1,42 @@
+module independent_utf8_review;
+import std.utf8;
+auto status_code(std::Utf8Status s)->u64 {
+ if(s==std::Utf8Status::success){return 0u64;}
+ if(s==std::Utf8Status::end_of_input){return 1u64;}
+ if(s==std::Utf8Status::out_of_range){return 2u64;}
+ if(s==std::Utf8Status::invalid_sequence){return 3u64;}
+ if(s==std::Utf8Status::truncated){return 4u64;}
+ if(s==std::Utf8Status::need_more){return 5u64;}
+ return 7u64;
+}
+auto review(u64 packed,i64 offset,i64 count,bool final_input)->u64 {
+ builtin::array<u8,8> owner={0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8};
+ i64 i=0;
+ while(i<8){owner[i]=u8((packed>>(i*8))&255u64);i=i+1;}
+ const builtin::array<u8,8> original=owner;
+ u64 result=0u64;
+ {
+ const builtin::span<const u8> data=borrow_bytes(owner);
+ const std::Utf8DecodeResult d=std::decode_utf8(data,offset,count,final_input);
+ const std::Utf8ValidationResult v=std::validate_utf8(data,offset,count,final_input);
+ const std::Utf8DecodeResult d2=std::decode_utf8(data,offset,count,final_input);
+ const std::Utf8ValidationResult v2=std::validate_utf8(data,offset,count,final_input);
+ if(d.status()!=d2.status()){return 18446744073709551615u64;}
+ if(d.width()!=d2.width()){return 18446744073709551615u64;}
+ if(d.scalar_or(2097151u64)!=d2.scalar_or(2097151u64)){return 18446744073709551615u64;}
+ if(v.status()!=v2.status()){return 18446744073709551615u64;}
+ if(v.prefix_bytes()!=v2.prefix_bytes()){return 18446744073709551615u64;}
+ if(v.scalar_count()!=v2.scalar_count()){return 18446744073709551615u64;}
+ i64 j=0;while(j<8){if(data.at(j)!=original[j]){return 18446744073709551615u64;}j=j+1;}
+ if(d.width()<0){return 18446744073709551615u64;}
+ if(d.width()>4){return 18446744073709551615u64;}
+ if(v.prefix_bytes()<0){return 18446744073709551615u64;}
+ if(v.prefix_bytes()>8){return 18446744073709551615u64;}
+ if(v.scalar_count()<0){return 18446744073709551615u64;}
+ if(v.scalar_count()>8){return 18446744073709551615u64;}
+ result=status_code(d.status()) | (u64(d.width())<<3) | (d.scalar_or(2097151u64)<<6) | (status_code(v.status())<<27) | (u64(v.prefix_bytes())<<30) | (u64(v.scalar_count())<<34);
+ }
+ owner[0]=42u8;
+ if(owner[0]!=42u8){return 18446744073709551615u64;}
+ return result;
+}

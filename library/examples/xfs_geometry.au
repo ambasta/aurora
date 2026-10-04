@@ -1,0 +1,53 @@
+module xfs_geometry_example;
+import fs.xfs_geometry;
+import fs.xfs_probe;
+
+// Preserved real primary header expanded from the canonical ASCII hex fixture.
+// Raw SHA256: 55ad821909c312048d9936a74c8904cd25f97aa190b48ae0004b03eaffdc6586.
+// This example inspects only these bytes; it does not open or mount an image.
+auto test() -> i64 {
+    const array<u8,512> header = {
+        88u8, 70u8, 83u8, 66u8, 0u8, 0u8, 16u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 2u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        92u8, 223u8, 213u8, 167u8, 17u8, 14u8, 76u8, 215u8, 142u8, 49u8, 252u8, 54u8, 183u8, 76u8, 38u8, 95u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8, 7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 128u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 129u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 130u8,
+        0u8, 0u8, 0u8, 1u8, 0u8, 0u8, 128u8, 0u8, 0u8, 0u8, 0u8, 4u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 64u8, 0u8, 180u8, 165u8, 2u8, 0u8, 2u8, 0u8, 0u8, 8u8, 65u8, 85u8, 82u8, 79u8,
+        82u8, 65u8, 95u8, 88u8, 48u8, 0u8, 0u8, 0u8, 12u8, 9u8, 9u8, 3u8, 15u8, 0u8, 0u8, 25u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 64u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 61u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 191u8, 220u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 8u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8, 0u8, 1u8, 138u8, 0u8, 0u8, 1u8, 138u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 15u8, 0u8, 0u8, 0u8, 43u8, 0u8, 0u8, 0u8, 0u8,
+        199u8, 19u8, 113u8, 182u8, 0u8, 0u8, 0u8, 4u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+        0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8
+    };
+    const fs::XfsGeometryReport report =
+        fs::inspect_xfs_v5_512_geometry(borrow_bytes(header));
+    if (report.status() != fs::XfsGeometryStatus::header_geometry_consistent) { return 1; }
+    const fs::XfsGeometryFacts facts = report.facts();
+    const fs::XfsDataFacts data = facts.data();
+    const fs::XfsLogFacts log = facts.log();
+    if (data.claimed_data_bytes() != 536870912u64) { return 2; }
+    if (log.log_ag() != 2u64) { return 3; }
+    if (log.log_start_bytes() != 268464128u64) { return 4; }
+    return 42;
+}

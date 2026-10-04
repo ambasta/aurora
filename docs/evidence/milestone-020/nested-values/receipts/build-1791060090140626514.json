@@ -1,0 +1,36 @@
+{
+  "command": [
+    "g++",
+    "-std=c++23",
+    "-O1",
+    "-g",
+    "-fsanitize=address,undefined",
+    "-fno-sanitize-recover=all",
+    "-fno-omit-frame-pointer",
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-Werror",
+    "-I.",
+    "../tests/compiler/initialization_facts.cpp",
+    "-o",
+    "../build/san/initialization-facts-tests"
+  ],
+  "returncode": 0,
+  "wait_status": 0,
+  "wall_timeout": false,
+  "elapsed_seconds": 3.906788168998901,
+  "peak_rss_kib": 328140,
+  "cpu_user_seconds": 3.753819,
+  "cpu_system_seconds": 0.128166,
+  "address_space_bytes": 2147483648,
+  "cpu_seconds": [
+    120,
+    130
+  ],
+  "wall_seconds": 180,
+  "regular_file_bytes": 536870912,
+  "candidate_bytes_before": 84932893,
+  "candidate_bytes_after": 86600221,
+  "free_bytes_after": 2317758464
+}

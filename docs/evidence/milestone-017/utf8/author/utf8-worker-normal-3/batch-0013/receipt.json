@@ -1,0 +1,28 @@
+{
+  "cases": [
+    "scalar U+FDD0 window prefix 0, final=True",
+    "scalar U+FDD0 window prefix 1, final=True",
+    "scalar U+FDD0 window prefix 2, final=True",
+    "scalar U+FDD0 window prefix 3, final=True",
+    "scalar U+FDEF window prefix 0, final=False",
+    "scalar U+FDEF window prefix 1, final=False",
+    "scalar U+FDEF window prefix 2, final=False",
+    "scalar U+FDEF window prefix 3, final=False",
+    "scalar U+FDEF window prefix 0, final=True",
+    "scalar U+FDEF window prefix 1, final=True",
+    "scalar U+FDEF window prefix 2, final=True",
+    "scalar U+FDEF window prefix 3, final=True"
+  ],
+  "source_bytes": 7351,
+  "source_sha256": "6ab3f383c708be7f02df2381c1c5c87387f8fe21cbd5ad202048f9defb4bde3e",
+  "status": "passed",
+  "observation": {
+    "exit_code": 0,
+    "terminal_signal": null,
+    "delivery_signal": null,
+    "pc": null,
+    "instruction": null,
+    "signal_code": null
+  },
+  "seconds": 0.027126
+}

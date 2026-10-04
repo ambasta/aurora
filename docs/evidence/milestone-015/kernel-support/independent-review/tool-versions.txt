@@ -1,0 +1,3 @@
+g++ (Debian 14.2.0-19) 14.2.0
+GNU ld (GNU Binutils for Debian) 2.44
+Python 3.12.14

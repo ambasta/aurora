@@ -1,0 +1,29 @@
+{
+  "command": [
+    "g++",
+    "-std=c++23",
+    "-O2",
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-Werror",
+    "-Icompiler",
+    "tests/compiler/ir_tests.cpp",
+    "-o",
+    "build/ir-tests"
+  ],
+  "returncode": 0,
+  "wall_timeout": false,
+  "elapsed_seconds": 34.43714979899232,
+  "peak_rss_kib": 1035508,
+  "address_space_bytes": 2147483648,
+  "cpu_seconds": [
+    120,
+    130
+  ],
+  "wall_seconds": 180,
+  "regular_file_bytes": 536870912,
+  "candidate_bytes_before": 68373448,
+  "candidate_bytes_after": 79338638,
+  "free_bytes_after": 1833132032
+}

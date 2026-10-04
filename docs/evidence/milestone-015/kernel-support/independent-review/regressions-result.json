@@ -1,0 +1,283 @@
+{
+  "real_control_positive": true,
+  "synthetic_mode_positives": 11,
+  "independent_counterexamples_rejected": 69,
+  "cases": [
+    {
+      "case": "bad protocol timestamp 'corrupted'",
+      "rejection": "Malformed/backwards control protocol timestamp"
+    },
+    {
+      "case": "bad protocol timestamp 0",
+      "rejection": "Malformed/backwards control protocol timestamp"
+    },
+    {
+      "case": "malformed native timestamp",
+      "rejection": "Malformed native qtest timestamp/record"
+    },
+    {
+      "case": "ivrs-default 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-default 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-default 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-default 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-default 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-default 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-read 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-read 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-read 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-read 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-read 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-read 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-write 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-write 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-write 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-write 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-write 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-write 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-revoked 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-revoked 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-revoked 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-revoked 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-revoked 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-revoked 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-pair 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-pair 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-pair 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-pair 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-pair 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-pair 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-alias 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-alias 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-alias 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-alias 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-alias 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-alias 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-reserved 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-reserved 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-reserved 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-reserved 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-reserved 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-reserved 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-scope 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-scope 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-scope 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-scope 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-scope 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-scope 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-capability 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-capability 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-capability 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-capability 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-capability 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-capability 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-range 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-range 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-range 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-range 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-range 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-range 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    },
+    {
+      "case": "ivrs-missing 0xfee00300 apic-msi",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-missing 0xfec00010 ioapic",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-missing 0xfed00010 hpet",
+      "rejection": "Aurora wrote APIC/IOAPIC/HPET interrupt registers after firmware exit"
+    },
+    {
+      "case": "ivrs-missing 0xfed7ffff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-missing 0xfed83fff foreign",
+      "rejection": "Write overlaps IOMMU aperture"
+    },
+    {
+      "case": "ivrs-missing 0xffffffffffffffff foreign",
+      "rejection": "Invalid write CPU/address/width/value"
+    }
+  ]
+}

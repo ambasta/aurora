@@ -1,0 +1,8 @@
+make: Entering directory '/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/compiler'
+mkdir -p ../build/
+g++ -std=c++23 -O2 -Wall -Wextra -Wpedantic -Werror main.cpp -o ../build/aurorac
+make: Leaving directory '/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/compiler'
+
+real	0m19.928s
+user	0m19.389s
+sys	0m0.518s

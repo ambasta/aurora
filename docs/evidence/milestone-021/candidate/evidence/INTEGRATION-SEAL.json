@@ -1,0 +1,27 @@
+{
+  "baseline_compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+  "release_compiler_sha256": "d866abc707349ca8652a966800d38bd920bd41345997f08e4b849c9bfc3b7b64",
+  "sanitizer_compiler_sha256": "423db8bcf0642263e445582107c73f967decdc13132f2bd98a973fce2db03d0f",
+  "compiler_source_manifest_sha256": "7d073cd0ec17d7da500baea3b66e6cf810fe21af235d6e99cc5ea4924df4d65e",
+  "changed_path_count": 18,
+  "sealed_receipts": {
+    "evidence/change-manifest-final.json": "6e0dbfb3c5d9a15755d741b7a8c78f1ef48578a08c99136c3c3c6e9e1fb4c48b",
+    "evidence/compiler-source.sha256": "7d073cd0ec17d7da500baea3b66e6cf810fe21af235d6e99cc5ea4924df4d65e",
+    "evidence/frozen-final-inputs.json": "851d34d25e4aaf90e25ef7776edacf179e11f01dc44f3217e6eac8582e4b92bb",
+    "evidence/source-only-change.patch": "9db68ad990d4b07bc9b61959a98e869671c10113ff0479814d8cd3358da7f550",
+    "evidence/source-only-patch-dry-run.log": "f164feee7d8b8704d8854c0f9a7c819226c313bfa7319c840aeee8206b1c297f",
+    "evidence/VERIFICATION.md": "7c9760ec073ce80be6cb420e40c7202d75e958af29c6bac7175d2e4463ff4d21",
+    "evidence/resource-summary.json": "bc1f78f900339e2e3d10103a14bb9ab5016044bf0c13206b29bc450eb9fe8b42",
+    "evidence/release-all-verified.log": "daec18f10a07a7c69981a21c8740bc799c46ca184d74a4ab51627ef6fb548a3e",
+    "evidence/release-all-verified.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "evidence/sanitizer-all.log": "4f5ad143f650fb7e118f1a44162b03a0d97b2e44e9d41a7a7212829bd01d7c1e",
+    "evidence/sanitizer-all.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "evidence/sanitizer-focused-abort.log": "3e757027f9cec7a2c9a9782b66b42f29f5e3b321f2fd4d35c37e19fcc78d934d",
+    "evidence/review/REVIEW.md": "23a335761d69c1a09d652f676058b0fae9cf060a9e69994e5df9e652470b56a3",
+    "evidence/review/SANITIZER-ADDENDUM.md": "76c53eda49a83bc786760189c4c8a13123723a809fa92792a79aa3b84d75fecb",
+    "evidence/review/final-implementation.sha256": "7798e5f81ab4b9ab7de780e473299c2723a6219f833d3d4fb3644fad3af91f46",
+    "evidence/m020-contract-comparison-final.json": "45bd4552ebc935a60a14255a60d65dbe222186551274530eb7a6e1835bc8f4f2",
+    "evidence/baseline-comparison.json": "7b744d33426434b10cc1fb186502a68e62e626cef2b57c403f89db702286ad1e",
+    "evidence/INTEGRATION-HANDOVER.md": "8d4eba3b0f2ff7ce9b3e4c02c51bc2a8dc5800df79d70dbfea0481dce61fc6c2"
+  }
+}

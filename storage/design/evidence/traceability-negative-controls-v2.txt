@@ -1,0 +1,14 @@
+HOST-ONLY document checker mutation controls; disposable copies only
+test_duplicate_roadmap_stage_fails_both_modes (__main__.TraceabilityTests.test_duplicate_roadmap_stage_fails_both_modes) ... ok
+test_duplicated_trace_row_fails_both_modes (__main__.TraceabilityTests.test_duplicated_trace_row_fails_both_modes) ... ok
+test_missing_trace_row_fails_both_modes (__main__.TraceabilityTests.test_missing_trace_row_fails_both_modes) ... ok
+test_mutated_original_same_length_fails_both_modes (__main__.TraceabilityTests.test_mutated_original_same_length_fails_both_modes) ... ok
+test_unchanged_package_passes_both_modes (__main__.TraceabilityTests.test_unchanged_package_passes_both_modes) ... ok
+test_unknown_adapted_section_fails_both_modes (__main__.TraceabilityTests.test_unknown_adapted_section_fails_both_modes) ... ok
+test_unknown_gate_reference_fails_both_modes (__main__.TraceabilityTests.test_unknown_gate_reference_fails_both_modes) ... ok
+test_unknown_roadmap_stage_fails_both_modes (__main__.TraceabilityTests.test_unknown_roadmap_stage_fails_both_modes) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 1.230s
+
+OK

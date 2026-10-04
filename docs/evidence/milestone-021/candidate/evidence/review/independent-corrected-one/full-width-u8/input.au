@@ -1,0 +1,1 @@
+module review;template<Value T>auto copy(T x)->T{const T result=x;return result;}auto test()->u8{return copy<u8>(255u8);}

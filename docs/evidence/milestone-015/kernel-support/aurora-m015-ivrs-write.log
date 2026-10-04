@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora/scripts/kernel-uefi-ivrs-run.py", line 62, in <module>
+    try:run(a.mode,Path(a.output))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/48c5de6446f8/aurora/scripts/kernel-uefi-ivrs-run.py", line 19, in run
+    coverage=module('ivrs-trace').load_coverage(coverage_path)
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/48c5de6446f8/aurora/scripts/kernel-uefi-ivrs-run.py", line 9, in module
+    result=importlib.util.module_from_spec(spec);spec.loader.exec_module(result);return result
+                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1132, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1190, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/scratch/48c5de6446f8/aurora/tests/kernel-uefi-ivrs-trace.py'

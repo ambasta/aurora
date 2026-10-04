@@ -1,0 +1,155 @@
+{
+  "limits": {
+    "address_space_mib": 512,
+    "cpu_seconds": [
+      4,
+      5
+    ],
+    "wall_seconds": 10,
+    "regular_file_mib": 8,
+    "core_bytes": 0
+  },
+  "results": [
+    {
+      "arrays": 1,
+      "declared_u8_slots": 4096,
+      "branch_diamonds": 512,
+      "source_bytes": 24651,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-facts-independent-review/bin/baseline",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-1.au",
+          "-o",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-1-baseline.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.05175634600163903,
+        "max_rss_kib": 48836,
+        "user_seconds": 0.024689,
+        "system_seconds": 0.015985,
+        "harness_deadline_kill": false,
+        "source_sha256": "ea5d3706b4a86496a7c844ad989e5eeddd280958a692be2fe0bbeab938318211",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "ced59f143542a73777961bf23a5089e8fd924fb76c6fa332b8e63c29dad0cbef"
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-facts-independent-review/bin/candidate",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-1.au",
+          "-o",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-1-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.051165618999220897,
+        "max_rss_kib": 49512,
+        "user_seconds": 0.037376,
+        "system_seconds": 0.0041979999999999995,
+        "harness_deadline_kill": false,
+        "source_sha256": "ea5d3706b4a86496a7c844ad989e5eeddd280958a692be2fe0bbeab938318211",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "ced59f143542a73777961bf23a5089e8fd924fb76c6fa332b8e63c29dad0cbef"
+      },
+      "assembly_identical": true
+    },
+    {
+      "arrays": 4,
+      "declared_u8_slots": 16384,
+      "branch_diamonds": 512,
+      "source_bytes": 73881,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-facts-independent-review/bin/baseline",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-4.au",
+          "-o",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-4-baseline.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.1526049489984871,
+        "max_rss_kib": 175464,
+        "user_seconds": 0.08823399999999999,
+        "system_seconds": 0.060763,
+        "harness_deadline_kill": false,
+        "source_sha256": "a83820b3a296d65eebcb7e7f98bfdad260a1c88ad7a04c33e044115f44ca877e",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "2412b0ca9a094e47a436dd1bc8b88d2895d4d4632a88f5b238440682f3810f5f"
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-facts-independent-review/bin/candidate",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-4.au",
+          "-o",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-4-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.13217125400115037,
+        "max_rss_kib": 180048,
+        "user_seconds": 0.081133,
+        "system_seconds": 0.044449999999999996,
+        "harness_deadline_kill": false,
+        "source_sha256": "a83820b3a296d65eebcb7e7f98bfdad260a1c88ad7a04c33e044115f44ca877e",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "2412b0ca9a094e47a436dd1bc8b88d2895d4d4632a88f5b238440682f3810f5f"
+      },
+      "assembly_identical": true
+    },
+    {
+      "arrays": 16,
+      "declared_u8_slots": 65536,
+      "branch_diamonds": 512,
+      "source_bytes": 270807,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-facts-independent-review/bin/baseline",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-16.au",
+          "-o",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-16-baseline.s"
+        ],
+        "exit_code": 1,
+        "wall_seconds": 0.39627712500077905,
+        "max_rss_kib": 425464,
+        "user_seconds": 0.24672899999999998,
+        "system_seconds": 0.14624199999999998,
+        "harness_deadline_kill": false,
+        "source_sha256": "cd7c225f968d751c49a5109993de40c4c2391926f7546d6206bd8f8e7b04ea12",
+        "stdout_hex": "",
+        "stderr_hex": "6175726f7261633a207374643a3a6261645f616c6c6f630a",
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-facts-independent-review/bin/candidate",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-16.au",
+          "-o",
+          "/tmp/aurora-facts-independent-review/evidence/source-sparse/sparse-prefix-16-candidate.s"
+        ],
+        "exit_code": 1,
+        "wall_seconds": 0.336129149000044,
+        "max_rss_kib": 426968,
+        "user_seconds": 0.203067,
+        "system_seconds": 0.127363,
+        "harness_deadline_kill": false,
+        "source_sha256": "cd7c225f968d751c49a5109993de40c4c2391926f7546d6206bd8f8e7b04ea12",
+        "stdout_hex": "",
+        "stderr_hex": "6175726f7261633a207374643a3a6261645f616c6c6f630a",
+        "assembly_sha256": null
+      },
+      "assembly_identical": null
+    }
+  ]
+}

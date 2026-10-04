@@ -1,0 +1,25 @@
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/compiler/equivalence.py', '/tmp/aurora-m014-compiler-corrected', '/tmp/aurora-resource-release/aurorac']
+64 baseline/candidate equivalence cases passed
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/test_runner.py']
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.007s
+
+OK
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/run.py', '/tmp/aurora-resource-release/aurorac']
+seed=20261002 generated=128 compiler_sha256=14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980
+compiler_as_limit=512MiB native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
+PASS 630 cases {"bounds": 50, "overflow": 96, "rejected": 199, "value": 285}
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/run.py', '/tmp/aurora-resource-release/aurorac', '--seed', '404', '--cases', '1024']
+seed=404 generated=1024 compiler_sha256=14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980
+compiler_as_limit=512MiB native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
+PASS 1526 cases {"bounds": 229, "overflow": 205, "rejected": 199, "value": 893}
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/run.py', '/tmp/aurora-resource-sanitizer/aurorac', '--sanitized-compiler']
+seed=20261002 generated=128 compiler_sha256=805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf
+compiler_as_limit=inherited (sanitizer mode) native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
+PASS 630 cases {"bounds": 50, "overflow": 96, "rejected": 199, "value": 285}
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/run.py', '/tmp/aurora-resource-sanitizer/aurorac', '--seed', '404', '--cases', '1024', '--sanitized-compiler']
+seed=404 generated=1024 compiler_sha256=805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf
+compiler_as_limit=inherited (sanitizer mode) native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
+PASS 1526 cases {"bounds": 229, "overflow": 205, "rejected": 199, "value": 893}
+PASS64 baseline differential, scalar harness and630/1526 semantic cases on both pins

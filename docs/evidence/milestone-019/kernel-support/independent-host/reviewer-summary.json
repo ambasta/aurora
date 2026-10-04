@@ -1,0 +1,9 @@
+{
+  "scope": "independent CPU-only construction review",
+  "commands": 14,
+  "all_expected_statuses": true,
+  "main_files_unchanged": 13302,
+  "frozen_candidate_unchanged": true,
+  "reviewer_assertions_per_run": 2178006,
+  "new_finding": "Original page and dte_word compile negatives fail even when methods public; corrected valid calls discriminate."
+}

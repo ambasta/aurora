@@ -1,0 +1,46 @@
+{
+  "checks": 16166,
+  "exploration": [
+    {
+      "generation_limit": 1,
+      "states": 10,
+      "edges": 120
+    },
+    {
+      "generation_limit": 2,
+      "states": 23,
+      "edges": 276
+    },
+    {
+      "generation_limit": 3,
+      "states": 41,
+      "edges": 492
+    },
+    {
+      "generation_limit": 4,
+      "states": 63,
+      "edges": 756
+    },
+    {
+      "generation_limit": 5,
+      "states": 90,
+      "edges": 1080
+    },
+    {
+      "generation_limit": 6,
+      "states": 121,
+      "edges": 1452
+    },
+    {
+      "generation_limit": 7,
+      "states": 157,
+      "edges": 1884
+    },
+    {
+      "generation_limit": 8,
+      "states": 197,
+      "edges": 2364
+    }
+  ],
+  "scope": "pure host model; no hardware evidence"
+}

@@ -1,0 +1,7 @@
+PASS {"name": "strict_signed_ranges", "cases": 242, "seconds": 0.002, "decode_validation_status_histogram": {"2/2": 180, "1/0": 14, "0/0": 8, "0/5": 8, "0/4": 8, "5/5": 3, "4/4": 3, "3/3": 18}}
+PASS {"name": "all_0_1_2_byte_sequences", "cases": 131586, "seconds": 0.427, "decode_validation_status_histogram": {"1/0": 2, "0/0": 36864, "3/3": 59418, "5/5": 1267, "4/4": 1267, "0/3": 19712, "0/5": 6528, "0/4": 6528}}
+PASS {"name": "all_unicode_scalar_values", "cases": 1112064, "seconds": 4.804, "decode_validation_status_histogram": {"0/0": 1112064}}
+PASS {"name": "longer_boundary_classes", "cases": 66240, "seconds": 0.286, "decode_validation_status_histogram": {"3/3": 48224, "0/0": 7984, "0/3": 7104, "5/5": 1464, "4/4": 1464}}
+PASS {"name": "stateless_replay_and_windows", "cases": 6928, "seconds": 0.03, "decode_validation_status_histogram": {"1/0": 260, "0/0": 5004, "0/3": 832, "5/5": 52, "3/3": 416, "4/4": 52, "0/5": 156, "0/4": 156}}
+PASS {"name": "random_windows", "cases": 50000, "seconds": 0.293, "decode_validation_status_histogram": {"0/0": 7127, "1/0": 15608, "0/3": 3973, "3/3": 16295, "0/4": 2145, "4/4": 2520, "5/5": 1271, "0/5": 1061}}
+PASS TOTAL 1367060 SECONDS 5.842 CORPUS f4cbbd7c74413e144cd0388929bb6e7caaba7362940a0ac77bb7ff02a1c24b66

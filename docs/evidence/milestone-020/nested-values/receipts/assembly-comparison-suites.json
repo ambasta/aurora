@@ -1,0 +1,34 @@
+[
+  {
+    "suite": "run",
+    "returncode": 0
+  },
+  {
+    "suite": "classes",
+    "returncode": 0
+  },
+  {
+    "suite": "value_calls",
+    "returncode": 0
+  },
+  {
+    "suite": "templates",
+    "returncode": 0
+  },
+  {
+    "suite": "fixed_containers",
+    "returncode": 0
+  },
+  {
+    "suite": "integers",
+    "returncode": 0
+  },
+  {
+    "suite": "unsigned",
+    "returncode": 0
+  },
+  {
+    "suite": "u8_numeric",
+    "returncode": 1
+  }
+]

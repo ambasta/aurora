@@ -1,0 +1,591 @@
+[
+  {
+    "name": "compiler-version",
+    "argv": [
+      "g++",
+      "--version"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045809600463055,
+    "end_ns": 1791045809602214868
+  },
+  {
+    "name": "ownership-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "ownership-tests.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/ownership"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045809602362417,
+    "end_ns": 1791045811489389994
+  },
+  {
+    "name": "ownership-execute",
+    "argv": [
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/ownership"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045811489536782,
+    "end_ns": 1791045811500057638
+  },
+  {
+    "name": "ownership-sanitized-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsanitize=address,undefined",
+      "-fno-sanitize-recover=all",
+      "ownership-tests.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/ownership-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045811500192278,
+    "end_ns": 1791045814894051196
+  },
+  {
+    "name": "ownership-sanitized-execute",
+    "argv": [
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/ownership-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045814894194620,
+    "end_ns": 1791045818425549339
+  },
+  {
+    "name": "independent-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "independent-decoder-tests.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/independent"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045818425718901,
+    "end_ns": 1791045818850028074
+  },
+  {
+    "name": "independent-execute",
+    "argv": [
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/independent"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045818850190225,
+    "end_ns": 1791045819173345086
+  },
+  {
+    "name": "independent-sanitized-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsanitize=address,undefined",
+      "-fno-sanitize-recover=all",
+      "independent-decoder-tests.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/independent-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045819173639013,
+    "end_ns": 1791045819807093440
+  },
+  {
+    "name": "independent-sanitized-execute",
+    "argv": [
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/independent-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045819807310973,
+    "end_ns": 1791045825179387809
+  },
+  {
+    "name": "generation-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_PIN_LEDGER_TESTING=1",
+      "-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=3",
+      "generation-tests.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/generation"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045825179575498,
+    "end_ns": 1791045825859997925
+  },
+  {
+    "name": "generation-execute",
+    "argv": [
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/generation"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045825860192605,
+    "end_ns": 1791045825862759135
+  },
+  {
+    "name": "generation-sanitized-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsanitize=address,undefined",
+      "-fno-sanitize-recover=all",
+      "-DAURORA_PIN_LEDGER_TESTING=1",
+      "-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=3",
+      "generation-tests.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/generation-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045825863043768,
+    "end_ns": 1791045826982163159
+  },
+  {
+    "name": "generation-sanitized-execute",
+    "argv": [
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/generation-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045826982396425,
+    "end_ns": 1791045826986619232
+  },
+  {
+    "name": "production-api-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "production-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/production-api"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045826986852548,
+    "end_ns": 1791045827284765424
+  },
+  {
+    "name": "production-api-execute",
+    "argv": [
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/production-api"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045827284972271,
+    "end_ns": 1791045827286146707
+  },
+  {
+    "name": "production-api-sanitized-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsanitize=address,undefined",
+      "-fno-sanitize-recover=all",
+      "production-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/production-api-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045827286342177,
+    "end_ns": 1791045827670951123
+  },
+  {
+    "name": "production-api-sanitized-execute",
+    "argv": [
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/production-api-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045827671283407,
+    "end_ns": 1791045827676062840
+  },
+  {
+    "name": "test-zero",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_DORMANT_TABLE_TESTING=0",
+      "production-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/test-zero"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045827676393612,
+    "end_ns": 1791045827889609279
+  },
+  {
+    "name": "small-production-generation",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=3",
+      "production-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/small-production-generation"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045827889854183,
+    "end_ns": 1791045828090049376
+  },
+  {
+    "name": "zero-generation",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_PIN_LEDGER_TESTING=1",
+      "-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=0",
+      "production-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/zero-generation"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045828090336933,
+    "end_ns": 1791045828282102519
+  },
+  {
+    "name": "negative-generation",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_PIN_LEDGER_TESTING=1",
+      "-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=-1",
+      "production-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/negative-generation"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045828282420641,
+    "end_ns": 1791045828514862097
+  },
+  {
+    "name": "public-control-pages_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-independent-review/host-corrected-1/public-control",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-pages_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-pages_.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045828515655756,
+    "end_ns": 1791045828752865961
+  },
+  {
+    "name": "private-pages_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-pages_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-pages_.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045828753147579,
+    "end_ns": 1791045828989378178
+  },
+  {
+    "name": "public-control-arena_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-independent-review/host-corrected-1/public-control",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-arena_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-arena_.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045828991027069,
+    "end_ns": 1791045829234599870
+  },
+  {
+    "name": "private-arena_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-arena_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-arena_.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045829234924102,
+    "end_ns": 1791045829455182591
+  },
+  {
+    "name": "public-control-groups_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-independent-review/host-corrected-1/public-control",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-groups_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-groups_.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045829455560903,
+    "end_ns": 1791045829733986357
+  },
+  {
+    "name": "private-groups_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-groups_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-groups_.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045829734311880,
+    "end_ns": 1791045829966640359
+  },
+  {
+    "name": "public-control-dte_word",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-independent-review/host-corrected-1/public-control",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-dte_word.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-dte_word.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045829966998221,
+    "end_ns": 1791045830215030546
+  },
+  {
+    "name": "private-dte_word",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-dte_word.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-dte_word.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045830215382559,
+    "end_ns": 1791045830407110162
+  },
+  {
+    "name": "public-control-page",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-independent-review/host-corrected-1/public-control",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-page.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-page.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045830407604757,
+    "end_ns": 1791045830644966137
+  },
+  {
+    "name": "private-page",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-page.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-page.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045830645424198,
+    "end_ns": 1791045830854461118
+  },
+  {
+    "name": "public-control-put",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-independent-review/host-corrected-1/public-control",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-put.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-put.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791045830854873871,
+    "end_ns": 1791045831080492347
+  },
+  {
+    "name": "private-put",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-put.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-independent-review/host-corrected-1/access-put.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791045831080828076,
+    "end_ns": 1791045831278714538
+  }
+]

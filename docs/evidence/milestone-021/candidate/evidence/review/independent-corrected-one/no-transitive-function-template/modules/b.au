@@ -1,0 +1,1 @@
+export module b;import a;export auto ordinary()->i64{return copy<i64>(42);}

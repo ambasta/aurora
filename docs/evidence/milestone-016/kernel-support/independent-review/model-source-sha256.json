@@ -1,0 +1,9 @@
+{
+  "README.md": "0caeb9a0d0e7f5ce0aff9cbaf6759c06a5a60cc20bf81eb70f1d135374b63053",
+  "baseline.json": "9b223094d7ddc857ae9516b587f88ec35d9e541d19629c644ead0404bce011a1",
+  "observations.json": "92ad54cc6d112fe9bbee004c5f1f21f8606c8050378a918bd7d865db20497621",
+  "lifecycle.py": "7fa4fa0ae34882afc2633bff41dcba8587ef1cfa63bad71432068f73bf7c5a24",
+  "test_lifecycle.py": "85f5b38c3182b9fe60b229fb379998b336cdca99145fb57282b6491049ce027e",
+  "test_mutations.py": "4a003b78e2353c5f481476e26fd1917bfab85287474afb76f3df85a49283697d",
+  "independent_oracle.py": "58a5dd47b85d15b1ce56f20a7fc4de499fbe2087dad4c77839726d8242291abd"
+}

@@ -1,0 +1,3 @@
+seed=404 generated=1024 compiler_sha256=ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa
+compiler_as_limit=inherited (sanitizer mode) native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
+PASS 1526 cases {"bounds": 229, "overflow": 205, "rejected": 199, "value": 893}

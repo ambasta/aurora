@@ -1,0 +1,2 @@
+explicit calls in ordinary constructor initializer body and method: explicit calls in ordinary constructor initializer body and method: compiler exit 1: b"aurorac: line 1: expected '}' (found 'copy')\n"
+Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/tmp/function-templates-64qqaxcn/explicit-calls-in-ordinary-constructor-initializer-body-and-method-ol3vhzzm

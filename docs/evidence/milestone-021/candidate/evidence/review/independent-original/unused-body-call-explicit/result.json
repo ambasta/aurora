@@ -1,0 +1,21 @@
+{
+  "name": "unused-body-call-explicit",
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-original",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/compiled.s"
+  ],
+  "returncode": 1,
+  "stderr": "aurorac: function template calls inside template bodies are unsupported\n",
+  "negative": true,
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/input.au": "cce0b0d3f60bed8b47fe57e5f64cba1bfcd18cba94b3ee97050252150be75652"
+  },
+  "inputs_unchanged": true,
+  "pass": true
+}

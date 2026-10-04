@@ -1,0 +1,80 @@
+[
+  {
+    "pin": "original",
+    "probe": "qualified-shadow",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-original",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/qualified-shadow.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/qualified-shadow-original-reproduction.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_preserved": false
+  },
+  {
+    "pin": "original",
+    "probe": "member-shadow",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-original",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/member-shadow.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/member-shadow-original-reproduction.s"
+    ],
+    "returncode": 1,
+    "diagnostic": "aurorac: function template calls inside template bodies are unsupported\n",
+    "output_preserved": true
+  },
+  {
+    "pin": "corrected",
+    "probe": "qualified-shadow",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-corrected",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/qualified-shadow.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/qualified-shadow-corrected-reproduction.s"
+    ],
+    "returncode": 1,
+    "diagnostic": "aurorac: dependent qualified names are not supported: T::Hidden\n",
+    "output_preserved": true
+  },
+  {
+    "pin": "corrected",
+    "probe": "member-shadow",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-corrected",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/member-shadow.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/member-shadow-corrected-reproduction.s"
+    ],
+    "returncode": 1,
+    "diagnostic": "aurorac: function template calls inside template bodies are unsupported\n",
+    "output_preserved": true
+  },
+  {
+    "pin": "final",
+    "probe": "qualified-shadow",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-final",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/qualified-shadow.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/qualified-shadow-final-reproduction.s"
+    ],
+    "returncode": 1,
+    "diagnostic": "aurorac: dependent qualified names are not supported: T::Hidden\n",
+    "output_preserved": true
+  },
+  {
+    "pin": "final",
+    "probe": "member-shadow",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-final",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/member-shadow.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/member-shadow-final-reproduction.s"
+    ],
+    "returncode": 0,
+    "diagnostic": "",
+    "output_preserved": false
+  }
+]

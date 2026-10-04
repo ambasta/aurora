@@ -1,0 +1,22 @@
+{
+  "name": "caller-unrelated-type-not-found",
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-original",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-unrelated-type-not-found/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-unrelated-type-not-found/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-unrelated-type-not-found/compiled.s"
+  ],
+  "returncode": 1,
+  "stderr": "aurorac: line 1: unknown class type 'Unrelated'\n",
+  "negative": true,
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-unrelated-type-not-found/input.au": "e60aba84d2edec979ad57e72aae568d85743ad1cc0760ca1cff379c44f82901b",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-unrelated-type-not-found/modules/generic.au": "fc4487ac8f0dd73dd2999b315605e2b45eba22fd70549fca98695baed774cd9f"
+  },
+  "inputs_unchanged": true,
+  "pass": true
+}

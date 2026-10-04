@@ -1,0 +1,10 @@
+PASS 498 original local receipt hashes
+PASS 225 pre/post/live executable/build/test inputs
+PASS 147 successful unique mode records and exact compiler hash
+PASS no third-party firmware binaries in kernel-gates
+PASS no third-party firmware binaries in supporting
+PASS 36 compiler review receipt hashes
+PASS worker distribution retained492entries minus21 explicitly preserved generated artifacts, zero hash mismatches; supporting81 hashes match
+Parent source distribution retains raw/local and worker manifests plus explicit omissions; new SHA256.json hashes retained files only
+PASS all225 executable/build/test inputs unchanged after parent aggregate and selected emulator runs
+PASS standalone publication serializer17 tests normally and optimized; added host-only helper is outside kernel execution inputs

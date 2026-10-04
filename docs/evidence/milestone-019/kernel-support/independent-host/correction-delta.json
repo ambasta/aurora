@@ -1,0 +1,14 @@
+{
+  "frozen-source-sha256.json": {
+    "old": "ffe9a71ca7404f267c95bf3bd40e425421019bef071b6e83992cd205035513b0",
+    "new": "b9e27e11c8a5443a78b1dea0b5895106b92823c4e6364d795a2f992825635a2c"
+  },
+  "run-tests.py": {
+    "old": "1da4446e22527790edb2b07450498ce1aadf66ac83c025efb7c462744dc89534",
+    "new": "46fad4c5b2586f94396651c73ec245db56a7f936331b114f4f1c9742acc8ebd1"
+  },
+  "README.md": {
+    "old": "f71d338a0ed63e284e85d80b6865b99372393496cdc7f2c7e859e8baf15eb527",
+    "new": "3a47effaa6307c5c28560805600ba8ec59a7376616a0b06243e8bccb9b30d104"
+  }
+}

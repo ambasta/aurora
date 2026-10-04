@@ -41,7 +41,8 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 5. Review changes independently before considering a milestone verified. Record
    reproduced defects and fixes, commands, source revision, tool versions and limits.
 6. Update implementation docs and the completeness matrix in the same change.
-7. Keep changes reviewable and use draft pull requests for subsequent milestones.
+7. Keep changes reviewable. Verified functional checkpoints may use ready-for-review
+   pull requests; unfinished milestones remain draft, per the user's latest approval.
    Never force-push, merge, or publish a release without the applicable authorization.
 
 ## Validation

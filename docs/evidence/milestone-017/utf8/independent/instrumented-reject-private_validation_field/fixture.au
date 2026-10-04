@@ -1,0 +1,1 @@
+module independent_rejection;import std.utf8;auto review()->u64{builtin::array<u8,4> a={65u8,66u8,67u8,68u8};const builtin::span<const u8> v=borrow_bytes(a);const std::Utf8ValidationResult r=std::validate_utf8(v,0,4,true);return u64(r.complete_bytes);}

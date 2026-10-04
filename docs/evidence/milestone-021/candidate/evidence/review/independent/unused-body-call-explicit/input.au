@@ -1,0 +1,1 @@
+module review;template<Value T>auto other(T x)->T{const T result=x;return result;}template<Value T>auto never()->i64{return other<i64>(42);}auto test()->i64{return 42;}

@@ -1,0 +1,1 @@
+module review;import std.array;template<Value T>auto copy(T x)->T{const T result=x;return result;}auto test()->i64{std::array<u8,64> a=std::array<u8,64>();a.set(63,42u8);const std::array<u8,64> b=copy<std::array<u8,64>>(a);a.set(63,1u8);return i64(b.at(63));}

@@ -1,0 +1,97 @@
+INFO packed values compiler=/tmp/aurora-facts-independent-review/differential-compiler.py sha256=01e4314f0a23c1b5754f2bf07cec5fea8701456cc3a357afb1df15d085088810
+PASS packed harness: full-width results and exact bounds trap attribution
+PASS packed values raw byte array 1: exact size and independent adjacent bytes
+PASS packed values byte class 1: complete init, method result, six copied arguments
+PASS packed values byte class 1: reused storage reinitializes every byte
+PASS packed values byte class 1: all six distinct argument snapshots are observed
+PASS packed values raw byte array 3: exact size and independent adjacent bytes
+PASS packed values byte class 3: complete init, method result, six copied arguments
+PASS packed values byte class 3: reused storage reinitializes every byte
+PASS packed values byte class 3: all six distinct argument snapshots are observed
+PASS packed values raw byte array 4: exact size and independent adjacent bytes
+PASS packed values byte class 4: complete init, method result, six copied arguments
+PASS packed values byte class 4: reused storage reinitializes every byte
+PASS packed values byte class 4: all six distinct argument snapshots are observed
+PASS packed values raw byte array 7: exact size and independent adjacent bytes
+PASS packed values byte class 7: complete init, method result, six copied arguments
+PASS packed values byte class 7: reused storage reinitializes every byte
+PASS packed values byte class 7: all six distinct argument snapshots are observed
+PASS packed values raw byte array 8: exact size and independent adjacent bytes
+PASS packed values byte class 8: complete init, method result, six copied arguments
+PASS packed values byte class 8: reused storage reinitializes every byte
+PASS packed values byte class 8: all six distinct argument snapshots are observed
+PASS packed values raw byte array 9: exact size and independent adjacent bytes
+PASS packed values byte class 9: complete init, method result, six copied arguments
+PASS packed values byte class 9: reused storage reinitializes every byte
+PASS packed values byte class 9: all six distinct argument snapshots are observed
+PASS packed values raw byte array 64: exact size and independent adjacent bytes
+PASS packed values byte class 64: complete init, method result, six copied arguments
+PASS packed values byte class 64: reused storage reinitializes every byte
+PASS packed values byte class 64: all six distinct argument snapshots are observed
+PASS packed values old i64 storage width and complete result bits
+PASS packed values old u64 storage width and complete result bits
+PASS packed values old bool storage width and complete result bits
+PASS packed values u8 uses one byte while bool and enum retain eight-byte storage
+PASS packed values nested mixed-width values use field alignment and tail rounding
+PASS packed values four byte payload and enum report keep independent compact results
+PASS packed values Scalar template instantiates compact u8 storage
+PASS packed values Value template instantiates compact u8 storage
+PASS packed values one-byte call result cannot overlap caller or argument snapshots
+PASS packed values one-byte constructor snapshot survives later returned temporary
+PASS packed values one-byte returned locals remain independent across nested scopes and loops
+PASS packed values constructor byte snapshots follow expression order
+PASS packed values six mixed arguments preserve every leaf of a 64-leaf packed class
+PASS packed rejection 65 scalar leaves cannot cross a value-call boundary
+PASS packed values empty descendants reserve standalone storage but no embedded payload
+PASS packed values empty siblings preserve old word layouts beside byte layouts
+PASS packed values independent byte snapshot list model capacity=3, seed=13013, steps=24
+PASS packed values independent byte snapshot list model capacity=9, seed=13013, steps=24
+PASS packed values byte class 1 read bounds -1
+PASS packed values byte class 1 write bounds -1
+PASS packed values byte class 1 read bounds 1
+PASS packed values byte class 1 write bounds 1
+PASS packed values byte class 3 read bounds -1
+PASS packed values byte class 3 write bounds -1
+PASS packed values byte class 3 read bounds 3
+PASS packed values byte class 3 write bounds 3
+PASS packed values byte class 4 read bounds -1
+PASS packed values byte class 4 write bounds -1
+PASS packed values byte class 4 read bounds 4
+PASS packed values byte class 4 write bounds 4
+PASS packed values byte class 7 read bounds -1
+PASS packed values byte class 7 write bounds -1
+PASS packed values byte class 7 read bounds 7
+PASS packed values byte class 7 write bounds 7
+PASS packed values byte class 8 read bounds -1
+PASS packed values byte class 8 write bounds -1
+PASS packed values byte class 8 read bounds 8
+PASS packed values byte class 8 write bounds 8
+PASS packed values byte class 9 read bounds -1
+PASS packed values byte class 9 write bounds -1
+PASS packed values byte class 9 read bounds 9
+PASS packed values byte class 9 write bounds 9
+PASS packed values byte class 64 read bounds -1
+PASS packed values byte class 64 write bounds -1
+PASS packed values byte class 64 read bounds 64
+PASS packed values byte class 64 write bounds 64
+PASS packed values byte array extreme signed bounds -9223372036854775808
+PASS packed values byte array extreme signed bounds 9223372036854775807
+PASS packed rejection private byte remains inaccessible
+PASS packed rejection const byte receiver cannot mutate
+PASS packed rejection byte argument snapshot is readonly
+PASS packed rejection private packed array remains inaccessible
+PASS packed rejection packed array element type stays exact
+PASS packed rejection const packed array cannot mutate
+PASS packed rejection packed value copy remains nominal
+PASS packed rejection byte constructor requires complete fields
+PASS packed rejection byte constructor rejects repeated initialization
+PASS packed rejection packed array requires initialization
+PASS packed rejection zero-size embedded class still requires initialization
+PASS packed rejection zero-size embedded class requires nominal source
+PASS packed rejection missing designated byte remains incomplete
+PASS packed rejection enum stays outside Scalar constraint
+PASS packed rejection enum is not a builtin scalar-array element
+PASS packed rejection class method aggregate parameters remain unsupported
+PASS packed rejection packed array capacity 0 remains unsupported
+PASS packed rejection packed array capacity 65 remains unsupported
+PASS packed values: 75 native cases including 30 exact traps; 19 rejection cases, each with absent and existing output; 6.81s

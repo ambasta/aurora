@@ -31,6 +31,11 @@ public:
             || handle.stamp_ == 0 || stamps_[handle.slot_] != handle.stamp_) return std::nullopt;
         return handle.slot_;
     }
+    // Diagnostic identity only: a scalar stamp cannot construct a DomainHandle.
+    [[nodiscard]] auto incarnation(DomainHandle handle) const -> std::optional<std::uint64_t> {
+        const auto slot = index(handle);
+        return slot ? std::optional<std::uint64_t>{stamps_[*slot]} : std::nullopt;
+    }
     [[nodiscard]] auto create() -> std::optional<DomainHandle> {
         if (active_ || next_stamp_ == UINT64_MAX) return std::nullopt;
         for (std::size_t slot = 0; slot < capacity; ++slot) {

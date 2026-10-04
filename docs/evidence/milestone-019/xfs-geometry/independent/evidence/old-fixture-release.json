@@ -1,0 +1,144 @@
+{
+  "fixture_sha256": "55ad821909c312048d9936a74c8904cd25f97aa190b48ae0004b03eaffdc6586",
+  "fixture_transport_sha256": "d1d3fbc3f8b693d1c0ddf395e92b136a81b2a5d30b9e3cdec36addd580d42986",
+  "fixture_transport": "canonical 32-row ASCII hex; decoded raw512 SHA independently checked",
+  "compiler_path": "/tmp/aurora-resource-main-compiler-frozen",
+  "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "oracle": "Python unbounded-integer GF(2) division, normal polynomial 0x11edc6f41",
+  "source_sha256": {
+    "library/fs/xfs_probe.au": "9474dceea9c3dda66d5566396480e88979c6ea28c8d857b944f24e2e70603284",
+    "library/std/checksum.au": "e8981b0fdb938771d67d2a70dced260489537b83368e92c0bc63d01989be5a30",
+    "library/std/binary.au": "550d1109ef763bb5fe27b63033cf06dc7acf02d0dbab46c2459497f9bc4d8cc0",
+    "tests/compiler/unsigned_oracle.py": "4baf61a087646ecec9d788c322871fe76fcbd1a9266c508bdfccaf3e987210fc",
+    "tests/compiler/integer_signal.cpp": "e7e6ccc5b4c38ceaf46ac6e764f88e7d824d4a78d2c9180bec1d4a2d823a0316",
+    "fixtures/xfs-offline/verify_native.py": "f5a1d552b56f92c9e974b0e09e485613483a05a192e694ce2841f9f439547069"
+  },
+  "raw_fields": {
+    "magic_be32": 1481003842,
+    "version_be16": 46245,
+    "version_low4": 5,
+    "sectsize_be16": 512,
+    "sectlog_u8": 9,
+    "features_compat": 0,
+    "features_ro_compat": 15,
+    "features_incompat": 43,
+    "features_log_incompat": 0,
+    "crc_bytes_hex": "c71371b6",
+    "crc_le32": 3060863943,
+    "crc_gf2": 3060863943,
+    "xfs_db_crc_display": "0xc71371b6 (correct)"
+  },
+  "native_exit_code": 0,
+  "native_terminal_signal": null,
+  "native_output_hex": "010000000000000000000000000000000f000000000000002b0000000000000000000000000000004253465800000000a5b400000000000005000000000000000002000000000000c71371b6000000000100000000000000c71371b600000000010000000000000001000000000000000100000000000000",
+  "native_cases_passed": 15,
+  "native_cases": [
+    {
+      "name": "real_header_integrity_valid",
+      "expected": 1,
+      "observed": 1,
+      "result_type": "bool",
+      "passed": true
+    },
+    {
+      "name": "features_compat",
+      "expected": 0,
+      "observed": 0,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "features_ro_compat",
+      "expected": 15,
+      "observed": 15,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "features_incompat",
+      "expected": 43,
+      "observed": 43,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "features_log_incompat",
+      "expected": 0,
+      "observed": 0,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "magic_be32",
+      "expected": 1481003842,
+      "observed": 1481003842,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "version_be16",
+      "expected": 46245,
+      "observed": 46245,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "version_low4",
+      "expected": 5,
+      "observed": 5,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "sectsize_be16",
+      "expected": 512,
+      "observed": 512,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "crc_le32",
+      "expected": 3060863943,
+      "observed": 3060863943,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "sectlog_u8",
+      "expected": 1,
+      "observed": 1,
+      "result_type": "bool",
+      "passed": true
+    },
+    {
+      "name": "crc_zeroed_whole_sector",
+      "expected": 3060863943,
+      "observed": 3060863943,
+      "result_type": "u64",
+      "passed": true
+    },
+    {
+      "name": "probe_preserves_all_512_bytes",
+      "expected": 1,
+      "observed": 1,
+      "result_type": "bool",
+      "passed": true
+    },
+    {
+      "name": "changed_padding_rejected",
+      "expected": 1,
+      "observed": 1,
+      "result_type": "bool",
+      "passed": true
+    },
+    {
+      "name": "changed_crc_rejected",
+      "expected": 1,
+      "observed": 1,
+      "result_type": "bool",
+      "passed": true
+    }
+  ],
+  "generated_source_sha256": "f5b7423107e22b933f5e40e38188f746bb9b835b255648ffb03c76bef1c17bff",
+  "generated_assembly_sha256": "58e90f587a405b1882474cb4cd142a8b7532832cefadac4e5e89fad729cacfa1"
+}

@@ -1,0 +1,164 @@
+{
+  "changes": {
+    "tests/kernel-uefi-ivrs-stack.py": {
+      "before": "2429de52be491a450c2732890c5845133a01f41ff082d48e17b17b512a445bef",
+      "after": "22f7ed6c7c2c4569e03ef82ae93f14d794309b41b569418a1bd7cdd67acc32c7"
+    }
+  },
+  "independent_confirmed_modes": [
+    {
+      "mode": "ivrs-alias",
+      "corrected": {
+        "paths": {
+          "prepare": 8080,
+          "scan": 12264,
+          "observe": 9792,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-capability",
+      "corrected": {
+        "paths": {
+          "prepare": 8064,
+          "scan": 12264,
+          "observe": 9792,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-default",
+      "corrected": {
+        "paths": {
+          "prepare": 8064,
+          "scan": 12264,
+          "observe": 9792,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-missing",
+      "corrected": {
+        "paths": {
+          "prepare": 8064,
+          "scan": 12264,
+          "observe": 9792,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-pair",
+      "corrected": {
+        "paths": {
+          "prepare": 8064,
+          "scan": 12264,
+          "observe": 9792,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-range",
+      "corrected": {
+        "paths": {
+          "prepare": 8064,
+          "scan": 12264,
+          "observe": 9824,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-read",
+      "corrected": {
+        "paths": {
+          "prepare": 8064,
+          "scan": 12264,
+          "observe": 9792,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-reserved",
+      "corrected": {
+        "paths": {
+          "prepare": 8048,
+          "scan": 12264,
+          "observe": 9792,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-revoked",
+      "corrected": {
+        "paths": {
+          "prepare": 8064,
+          "scan": 12264,
+          "observe": 9792,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-scope",
+      "corrected": {
+        "paths": {
+          "prepare": 8064,
+          "scan": 12264,
+          "observe": 9792,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    },
+    {
+      "mode": "ivrs-write",
+      "corrected": {
+        "paths": {
+          "prepare": 8064,
+          "scan": 12264,
+          "observe": 9808,
+          "bar": 9120
+        },
+        "peak_with_fault_reserve": 12776,
+        "stack_bytes": 16384,
+        "minimum_unused": 3608
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "cases": [
+    "scalar U+0378 window prefix 2, final=False",
+    "scalar U+0378 window prefix 0, final=True",
+    "scalar U+0378 window prefix 1, final=True",
+    "scalar U+0378 window prefix 2, final=True",
+    "range offset=-9223372036854775808 count=-9223372036854775808 final=False",
+    "range offset=-9223372036854775808 count=-9223372036854775808 final=True",
+    "range offset=-9223372036854775808 count=-1 final=False",
+    "range offset=-9223372036854775808 count=-1 final=True",
+    "range offset=-9223372036854775808 count=0 final=False",
+    "range offset=-9223372036854775808 count=0 final=True",
+    "range offset=-9223372036854775808 count=1 final=False",
+    "range offset=-9223372036854775808 count=1 final=True"
+  ],
+  "source_bytes": 7726,
+  "source_sha256": "00b23cd504a473363e4debe3ccf4c6d1ba311e575a80eae3703e7f8213da11b6",
+  "status": "passed",
+  "observation": {
+    "exit_code": 0,
+    "terminal_signal": null,
+    "delivery_signal": null,
+    "pc": null,
+    "instruction": null,
+    "signal_code": null
+  },
+  "seconds": 0.027714
+}

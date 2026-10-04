@@ -1,0 +1,23 @@
+{
+  "compiler/Makefile": "1021254a100948be2f0396ddd5f0d8146787c20d69564f85ae76034237aa55ea",
+  "compiler/host_sources.hpp": "ca6f557288b94db0bcd431efb086bba185390b9831543436d184c76263a06794",
+  "compiler/initialization_facts.hpp": "d36bd9d835def4b679001facbb7f68627296df8ab4c0c90119e506275b4e6d80",
+  "compiler/ir.hpp": "1670554cfb3dcfeb248997bae47e747d49b03aca90a316061e290380bd1fb601",
+  "compiler/ir_layout.hpp": "23ee596d7ae009345c39fd0d847a91c85d648a665cd95a623457da2a5110f88d",
+  "compiler/ir_verify.hpp": "ded7d28ba24104c82a69fd9922c13caf972ac910df66c129c2e3fa031d05e32b",
+  "compiler/lexer.hpp": "c33b789738e3fd625f5f1b786cfaad22e90db9bed8e757aa4ad8af726f62c7b6",
+  "compiler/main.cpp": "9a8bc5fefaf16c75cba0aec254a3d54420ae04a3b7eac9da0fe30f95a7b8a431",
+  "compiler/modules.hpp": "46788d754f39d8d73732fd837d375a5919a0f8a691a4613bf7aed4b7d1a9dfd2",
+  "compiler/parser.hpp": "0377cf477abfe3f8119437244c627ab43e4b61a139de76c5917adb83c2958ebf",
+  "compiler/semantics.hpp": "6374e36c471c046c45c97c247cd9cce5410fd36826fe91d9a52996cc91ec0c3d",
+  "compiler/syntax.hpp": "9a2cb78053770303994be3faccd90135a7490ad55401fb0f28a8b3d6822b5c99",
+  "compiler/templates.hpp": "9558565e74e6828102d8b99ce5f36ee8ae9f0fecc21ab7666cedd3a77c03e554",
+  "compiler/types.hpp": "0597921203f55e07f923c8b65079f21b4d2797decfbe7fab64aa4a3cf73a2149",
+  "compiler/x86.hpp": "818d9a5a3476d46e65c3bcd06d26f4b9d5fa5e8c7c39b10dfd5bbccff27525f4",
+  "diagnostics/bounded_ir_build.py": "f007f27f4721158be103fc6f4b6b5c0aabcded6c71eb4584b07b957fab96a073",
+  "diagnostics/compare_readonly_resources.py": "d9218c4934bfe290951b581eee1cbd2d5bf0e25b971d3345c59895c7bb90e6e9",
+  "diagnostics/test_resource_driver.py": "cb24c3129d6286a30295617af5173241a5d684f1dffb80a07afe4347b0b3ecee",
+  "tests/compiler/initialization_facts.cpp": "e1f678d18beb4a3b36df3ec615b2a4a8117db0ccba27a04a6f0a4a522497aa9b",
+  "tests/compiler/ir_exhaustive.py": "70f7add0d6910e978b58e1c34ab9092eaa7add407fe39b2c73adb28d1d1781b8",
+  "tests/compiler/ir_tests.cpp": "c7fccfb057b6570086216b356a32f885a3e6ca23347c8eb3f377cae4f8a4f6ce"
+}

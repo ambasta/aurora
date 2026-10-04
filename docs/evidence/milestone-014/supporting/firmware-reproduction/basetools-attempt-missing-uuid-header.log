@@ -1,0 +1,68 @@
+make: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools'
+make -C Source/C
+make -C Source/Python
+make[1]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C'
+Attempting to detect HOST_ARCH from 'uname -m': x86_64
+make[1]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/Python'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/Python'
+Detected HOST_ARCH of X64 using uname.
+mkdir -p .
+make -C Common
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/Common'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/Common'
+make -C BrotliCompress
+make -C VfrCompile
+make -C EfiRom
+make -C GenFfs
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/BrotliCompress'
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/VfrCompile'
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/EfiRom'
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenFfs'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/EfiRom'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenFfs'
+make -C GenFv
+make -C GenFw
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenFv'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/VfrCompile'
+make -C GenSec
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenFw'
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenSec'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/BrotliCompress'
+make -C GenCrc32
+gcc  -c  -I .. -I ../Include/Common -I ../Include/ -I ../Include/IndustryStandard -I ../Common/ -I .. -I . -I ../../../../MdePkg/Include/X64/ -I ../../../../MdePkg/Include -MD -fshort-wchar -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks -Wall -Werror -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict -Wno-unused-result -nostdlib -g -O2  GenFvInternalLib.c -o GenFvInternalLib.o
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenCrc32'
+gcc -o ../bin/GenFw  GenFw.o ElfConvert.o Elf32Convert.o Elf64Convert.o -L../libs -lCommon -luuid
+gcc -o ../bin/GenSec  GenSec.o -L../libs -lCommon -luuid
+GenFvInternalLib.c:21:10: fatal error: uuid/uuid.h: No such file or directory
+   21 | #include <uuid/uuid.h>
+      |          ^~~~~~~~~~~~~
+compilation terminated.
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenCrc32'
+make -C LzmaCompress
+make[2]: *** [../Makefiles/footer.makefile:21: GenFvInternalLib.o] Error 1
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenFv'
+make[1]: *** [GNUmakefile:79: GenFv] Error 2
+make[1]: *** Waiting for unfinished jobs....
+make[2]: Entering directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/LzmaCompress'
+gcc  -c  -I .. -I ../Include/Common -I ../Include/ -I ../Include/IndustryStandard -I ../Common/ -I .. -I . -I ../../../../MdePkg/Include/X64/ -I ../../../../MdePkg/Include -MD -fshort-wchar -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks -Wall -Werror -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict -Wno-unused-result -nostdlib -g -O2  -D_7ZIP_ST LzmaCompress.c -o LzmaCompress.o
+gcc  -c  -I .. -I ../Include/Common -I ../Include/ -I ../Include/IndustryStandard -I ../Common/ -I .. -I . -I ../../../../MdePkg/Include/X64/ -I ../../../../MdePkg/Include -MD -fshort-wchar -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks -Wall -Werror -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict -Wno-unused-result -nostdlib -g -O2  -D_7ZIP_ST Sdk/C/Alloc.c -o Sdk/C/Alloc.o
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenFw'
+gcc  -c  -I .. -I ../Include/Common -I ../Include/ -I ../Include/IndustryStandard -I ../Common/ -I .. -I . -I ../../../../MdePkg/Include/X64/ -I ../../../../MdePkg/Include -MD -fshort-wchar -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks -Wall -Werror -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict -Wno-unused-result -nostdlib -g -O2  -D_7ZIP_ST Sdk/C/LzFind.c -o Sdk/C/LzFind.o
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/GenSec'
+gcc  -c  -I .. -I ../Include/Common -I ../Include/ -I ../Include/IndustryStandard -I ../Common/ -I .. -I . -I ../../../../MdePkg/Include/X64/ -I ../../../../MdePkg/Include -MD -fshort-wchar -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks -Wall -Werror -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict -Wno-unused-result -nostdlib -g -O2  -D_7ZIP_ST Sdk/C/LzmaDec.c -o Sdk/C/LzmaDec.o
+gcc  -c  -I .. -I ../Include/Common -I ../Include/ -I ../Include/IndustryStandard -I ../Common/ -I .. -I . -I ../../../../MdePkg/Include/X64/ -I ../../../../MdePkg/Include -MD -fshort-wchar -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks -Wall -Werror -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict -Wno-unused-result -nostdlib -g -O2  -D_7ZIP_ST Sdk/C/LzmaEnc.c -o Sdk/C/LzmaEnc.o
+gcc  -c  -I .. -I ../Include/Common -I ../Include/ -I ../Include/IndustryStandard -I ../Common/ -I .. -I . -I ../../../../MdePkg/Include/X64/ -I ../../../../MdePkg/Include -MD -fshort-wchar -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks -Wall -Werror -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict -Wno-unused-result -nostdlib -g -O2  -D_7ZIP_ST Sdk/C/7zFile.c -o Sdk/C/7zFile.o
+gcc  -c  -I .. -I ../Include/Common -I ../Include/ -I ../Include/IndustryStandard -I ../Common/ -I .. -I . -I ../../../../MdePkg/Include/X64/ -I ../../../../MdePkg/Include -MD -fshort-wchar -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks -Wall -Werror -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict -Wno-unused-result -nostdlib -g -O2  -D_7ZIP_ST Sdk/C/7zStream.c -o Sdk/C/7zStream.o
+gcc  -c  -I .. -I ../Include/Common -I ../Include/ -I ../Include/IndustryStandard -I ../Common/ -I .. -I . -I ../../../../MdePkg/Include/X64/ -I ../../../../MdePkg/Include -MD -fshort-wchar -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks -Wall -Werror -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict -Wno-unused-result -nostdlib -g -O2  -D_7ZIP_ST Sdk/C/Bra86.c -o Sdk/C/Bra86.o
+gcc -o ../bin/LzmaCompress  LzmaCompress.o Sdk/C/Alloc.o Sdk/C/LzFind.o Sdk/C/LzmaDec.o Sdk/C/LzmaEnc.o Sdk/C/7zFile.o Sdk/C/7zStream.o Sdk/C/Bra86.o -L../libs -lCommon
+make[2]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C/LzmaCompress'
+make[1]: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools/Source/C'
+make: *** [GNUmakefile:19: Source/C] Error 2
+make: Leaving directory '/tmp/aurora-clean-ovmf/edk2/BaseTools'

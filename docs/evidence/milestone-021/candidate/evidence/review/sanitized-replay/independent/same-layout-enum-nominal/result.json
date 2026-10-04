@@ -1,0 +1,40 @@
+{
+  "name": "same-layout-enum-nominal",
+  "source_group": "independent",
+  "negative": true,
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/san/aurorac",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/same-layout-enum-nominal/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/same-layout-enum-nominal/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/sanitized-replay/independent/same-layout-enum-nominal/compiled.s"
+  ],
+  "compiler_status": 1,
+  "compiler_stderr": "aurorac: line 1: expected B, got A\n",
+  "seconds": 0.010559797286987305,
+  "release_evidence": "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/same-layout-enum-nominal/result.json",
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/same-layout-enum-nominal/input.au": "7e695f2a85a2c66db8e25cf3cb2929ced89782484c45084db40389a560d5abf6"
+  },
+  "pass": true,
+  "existing_output_preserved": true,
+  "absent_replay": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/san/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/same-layout-enum-nominal/modules",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/same-layout-enum-nominal/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/sanitized-replay/independent/same-layout-enum-nominal/absent.s"
+    ],
+    "status": 1,
+    "diagnostic": "aurorac: line 1: expected B, got A\n",
+    "absent": true
+  },
+  "inputs_unchanged": true
+}

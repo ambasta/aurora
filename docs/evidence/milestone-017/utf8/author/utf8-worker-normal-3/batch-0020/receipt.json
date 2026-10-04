@@ -1,0 +1,28 @@
+{
+  "cases": [
+    "range offset=3 count=-9223372036854775808 final=False",
+    "range offset=3 count=-9223372036854775808 final=True",
+    "range offset=3 count=-1 final=False",
+    "range offset=3 count=-1 final=True",
+    "range offset=3 count=0 final=False",
+    "range offset=3 count=0 final=True",
+    "range offset=3 count=1 final=False",
+    "range offset=3 count=1 final=True",
+    "range offset=3 count=2 final=False",
+    "range offset=3 count=2 final=True",
+    "range offset=3 count=4 final=False",
+    "range offset=3 count=4 final=True"
+  ],
+  "source_bytes": 7495,
+  "source_sha256": "e3a0e3052d91a75c3fbf592b53ebe46fb94dc6f7e85659dd1ead38b4a2657f4e",
+  "status": "passed",
+  "observation": {
+    "exit_code": 0,
+    "terminal_signal": null,
+    "delivery_signal": null,
+    "pc": null,
+    "instruction": null,
+    "signal_code": null
+  },
+  "seconds": 0.02826
+}

@@ -1,0 +1,10 @@
+{
+  "cases": [
+    "all 256 inputs of length 1, final and chunk"
+  ],
+  "source_bytes": 4144,
+  "source_sha256": "a2e9c741110f4bc8806ef606983b0394eb89028c3840b57a0a756bfa6d6898b4",
+  "status": "failed",
+  "error": "compiler: expected exit 0, got 1: aurorac: line 58: array initializer length does not match its declared type\n",
+  "seconds": 0.008765
+}

@@ -1,0 +1,10 @@
+PASS test-utf8-encoding-release
+PASS test-utf8-release
+PASS example-compile-release
+PASS test-utf8-encoding-sanitized
+PASS test-utf8-sanitized
+PASS example-compile-sanitized
+PASS assemble-library
+PASS assemble-entry
+PASS link-example
+PASS native-example-42

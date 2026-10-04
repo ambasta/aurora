@@ -1,0 +1,1 @@
+PASS 90 independent GF(2) versus SSE4.2 CRC32C cases, lengths0..4096 and arbitrary finalized prior values

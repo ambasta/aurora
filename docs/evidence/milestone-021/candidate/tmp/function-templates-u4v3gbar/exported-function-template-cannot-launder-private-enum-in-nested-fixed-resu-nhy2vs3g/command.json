@@ -1,0 +1,10 @@
+[
+  "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+  "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/tmp/function-templates-u4v3gbar/exported-function-template-cannot-launder-private-enum-in-nested-fixed-resu-nhy2vs3g/input.au",
+  "-o",
+  "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/tmp/function-templates-u4v3gbar/exported-function-template-cannot-launder-private-enum-in-nested-fixed-resu-nhy2vs3g/compiled.s",
+  "--module-root",
+  "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/tmp/function-templates-u4v3gbar/exported-function-template-cannot-launder-private-enum-in-nested-fixed-resu-nhy2vs3g/modules",
+  "--module-root",
+  "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library"
+]

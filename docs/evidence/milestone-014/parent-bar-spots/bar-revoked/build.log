@@ -1,0 +1,5 @@
+make: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+make: Nothing to be done for 'all'.
+make: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+Built UEFI PE32+ loader and independent payload
+PASS: PE32+ EFI relocation/RX policy, exact PIC payload; 14 negative images

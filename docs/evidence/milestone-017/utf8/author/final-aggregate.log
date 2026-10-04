@@ -1,0 +1,8 @@
+PASS selftests-normal 0.06
+PASS selftests-optimized 0.27
+PASS utf8-release 4.99
+PASS readonly-release 2.82
+PASS storage-release 7.19
+PASS utf8-sanitized 7.5
+PASS readonly-sanitized 8.01
+PASS storage-sanitized 19.52

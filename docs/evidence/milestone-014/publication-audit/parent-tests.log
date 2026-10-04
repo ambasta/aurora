@@ -1,0 +1,44 @@
+test_delta_add_change_mode_delete_reconstructs_target (test_snapshot_bytes.SnapshotTests.test_delta_add_change_mode_delete_reconstructs_target) ... ok
+test_delta_rejects_wrong_base_and_duplicate_deletion (test_snapshot_bytes.SnapshotTests.test_delta_rejects_wrong_base_and_duplicate_deletion) ... ok
+test_git_known_empty_object_ids (test_snapshot_bytes.SnapshotTests.test_git_known_empty_object_ids) ... ok
+test_ignores_explicit_empty_directories (test_snapshot_bytes.SnapshotTests.test_ignores_explicit_empty_directories) ... ok
+test_output_refuses_overwrite (test_snapshot_bytes.SnapshotTests.test_output_refuses_overwrite) ... ok
+test_preserves_regular_and_executable_modes (test_snapshot_bytes.SnapshotTests.test_preserves_regular_and_executable_modes) ... ok
+test_preserves_symlink_target_without_dereferencing (test_snapshot_bytes.SnapshotTests.test_preserves_symlink_target_without_dereferencing) ... ok
+test_rejects_duplicate_paths (test_snapshot_bytes.SnapshotTests.test_rejects_duplicate_paths) ... ok
+test_rejects_file_directory_collision (test_snapshot_bytes.SnapshotTests.test_rejects_file_directory_collision) ... ok
+test_rejects_hardlinks_and_special_files (test_snapshot_bytes.SnapshotTests.test_rejects_hardlinks_and_special_files) ... ok
+test_rejects_non_git_permissions (test_snapshot_bytes.SnapshotTests.test_rejects_non_git_permissions) ... ok
+test_rejects_non_utf8_without_replacement (test_snapshot_bytes.SnapshotTests.test_rejects_non_utf8_without_replacement) ... ok
+test_rejects_unsafe_paths_and_prefix_mismatch (test_snapshot_bytes.SnapshotTests.test_rejects_unsafe_paths_and_prefix_mismatch) ... ok
+test_reproduces_old_read_text_newline_loss (test_snapshot_bytes.SnapshotTests.test_reproduces_old_read_text_newline_loss) ... ok
+test_supports_legacy_dot_prefix (test_snapshot_bytes.SnapshotTests.test_supports_legacy_dot_prefix) ... ok
+test_text_roundtrip_crlf_lf_unicode_empty_lone_cr_nul_no_final_newline (test_snapshot_bytes.SnapshotTests.test_text_roundtrip_crlf_lf_unicode_empty_lone_cr_nul_no_final_newline) ... ok
+test_tree_hash_matches_git_for_ordering_unicode_modes_and_symlink (test_snapshot_bytes.SnapshotTests.test_tree_hash_matches_git_for_ordering_unicode_modes_and_symlink) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.023s
+
+OK
+test_delta_add_change_mode_delete_reconstructs_target (test_snapshot_bytes.SnapshotTests.test_delta_add_change_mode_delete_reconstructs_target) ... ok
+test_delta_rejects_wrong_base_and_duplicate_deletion (test_snapshot_bytes.SnapshotTests.test_delta_rejects_wrong_base_and_duplicate_deletion) ... ok
+test_git_known_empty_object_ids (test_snapshot_bytes.SnapshotTests.test_git_known_empty_object_ids) ... ok
+test_ignores_explicit_empty_directories (test_snapshot_bytes.SnapshotTests.test_ignores_explicit_empty_directories) ... ok
+test_output_refuses_overwrite (test_snapshot_bytes.SnapshotTests.test_output_refuses_overwrite) ... ok
+test_preserves_regular_and_executable_modes (test_snapshot_bytes.SnapshotTests.test_preserves_regular_and_executable_modes) ... ok
+test_preserves_symlink_target_without_dereferencing (test_snapshot_bytes.SnapshotTests.test_preserves_symlink_target_without_dereferencing) ... ok
+test_rejects_duplicate_paths (test_snapshot_bytes.SnapshotTests.test_rejects_duplicate_paths) ... ok
+test_rejects_file_directory_collision (test_snapshot_bytes.SnapshotTests.test_rejects_file_directory_collision) ... ok
+test_rejects_hardlinks_and_special_files (test_snapshot_bytes.SnapshotTests.test_rejects_hardlinks_and_special_files) ... ok
+test_rejects_non_git_permissions (test_snapshot_bytes.SnapshotTests.test_rejects_non_git_permissions) ... ok
+test_rejects_non_utf8_without_replacement (test_snapshot_bytes.SnapshotTests.test_rejects_non_utf8_without_replacement) ... ok
+test_rejects_unsafe_paths_and_prefix_mismatch (test_snapshot_bytes.SnapshotTests.test_rejects_unsafe_paths_and_prefix_mismatch) ... ok
+test_reproduces_old_read_text_newline_loss (test_snapshot_bytes.SnapshotTests.test_reproduces_old_read_text_newline_loss) ... ok
+test_supports_legacy_dot_prefix (test_snapshot_bytes.SnapshotTests.test_supports_legacy_dot_prefix) ... ok
+test_text_roundtrip_crlf_lf_unicode_empty_lone_cr_nul_no_final_newline (test_snapshot_bytes.SnapshotTests.test_text_roundtrip_crlf_lf_unicode_empty_lone_cr_nul_no_final_newline) ... ok
+test_tree_hash_matches_git_for_ordering_unicode_modes_and_symlink (test_snapshot_bytes.SnapshotTests.test_tree_hash_matches_git_for_ordering_unicode_modes_and_symlink) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.028s
+
+OK

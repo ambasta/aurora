@@ -107,10 +107,49 @@ class AggregateCall {
     std::string callee;
     std::vector<int> objectArguments;
     int resultOffset; // zero for scalar results, exact pristine object base otherwise
+    std::vector<int> spanArguments = {}; // zero except readonly capability positions
 };
 class Call {
   public:
     std::string callee;
+};
+// Readonly byte spans have typed, non-scalar spills. Only an active fully
+// initialized local byte array or an existing readonly capability can mint one.
+// The base addresses pointer storage; the next word holds the bounded length.
+class BeginArray {
+  public:
+    int offset;
+};
+class EndArray {
+  public:
+    int offset;
+};
+class BorrowSpan {
+  public:
+    int arrayOffset;
+    int resultOffset;
+};
+class ReborrowSpan {
+  public:
+    int sourceOffset;
+    int resultOffset;
+};
+class EndSpan {
+  public:
+    int offset;
+};
+class SpanLength {
+  public:
+    int offset;
+};
+class SpanLoad {
+  public:
+    int offset;
+};
+class BindSpanParameter {
+  public:
+    int index;
+    int offset;
 };
 // Receiver capabilities are deliberately not scalar Values. Only these operations
 // can address the hidden receiver, and a call consumes a synchronous reborrow.
@@ -223,7 +262,9 @@ using Instruction =
                  BeginObject, EndObject, CopyObject, ObjectFieldCopy, InitializeObjectField,
                  ReceiverLoad, ReceiverStore, ReceiverArrayZero, ReceiverBoundsGuard,
                  ReceiverIndexLoad, ReceiverIndexStore, MethodCall, MetadataQuery, Label, Jump,
-                 BranchFalse, Return, ReturnObject, BindParameter, BindObjectParameter>;
+                 BranchFalse, Return, ReturnObject, BindParameter, BindObjectParameter, BeginArray,
+                 EndArray, BorrowSpan, ReborrowSpan, EndSpan, SpanLength, SpanLoad,
+                 BindSpanParameter>;
 class ObjectSlot {
   public:
     std::string className;
@@ -245,6 +286,10 @@ class Function {
     // Scalar leaves live at base minus their canonical byte offset and have
     // matching typed slots. Empty classes reserve a word but expose no payload.
     std::map<int, ObjectSlot> objectSlots;
+    // Local u8 arrays declare exact byte extents, with one matching scalar slot
+    // per element. Capability spills reserve 16 disjoint bytes and no scalar slot.
+    std::map<int, int> arraySlots;
+    std::set<int> spanSlots;
     std::optional<Receiver> receiver;
     int frameBytes = 0;
     std::vector<Instruction> code;

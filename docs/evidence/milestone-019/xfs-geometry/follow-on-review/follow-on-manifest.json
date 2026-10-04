@@ -1,0 +1,23 @@
+{
+  "final-audit.json": "f8aedd42fcf2d8c770f1fdf4a55c63396e6bb4e20e83070d2dbb6ce6ebd859b1",
+  "initial-manifest-audit.json": "4d2a05bfa74996cbc61c6a145a097db97146ed5ef591f23c370decbf7434382d",
+  "wrong-pin.log": "e8e08f6043a8a0814b85a24e554698df43eb980460569a704da24d1cf0abe3bb",
+  "make-recipe.log": "9b321ede2cdc0baf904782590f79e7013d1133c79f2eb2807bc4688ee97c0c6c",
+  "make-wrong-pin.log": "d3a3ed9bf0da40f2073ce046e382b80b3ec2ccbea8b1e798b21506df0d57162e",
+  "ADDENDUM.md": "a55408d1ab48ad1e8253c98eb5721f135cb54f36c8b9466aa7a373a2604aa52b",
+  "make-recipe.status": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+  "wrong-pin.status": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+  "positive-sanitized-pin.status": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+  "positive-sanitized-pin.log": "9c4cbc1ff4e59ee116f62cc681af6424b9cd461c95dc28228c07219872ae1bf5",
+  "aggregate-dry-run.log": "ab137f7df92386ed6cc8cbe4606bd7f71c81dad339223016c27af5253bcc1915",
+  "optional-pin.log": "af415c0e182ed31fb0cb36be1e68d610509e6ff3c79a03834f43144e14cdd8d0",
+  "positive-pin.log": "4cdf897457cef04410f12990f00276eef4e75434c54fbf9b2dfe602b88c88a50",
+  "optional-pin.status": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+  "make-wrong-pin.status": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+  "positive-pin.status": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+  "aggregate-dry-run.status": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+  "optional-pin/manifest.json": "5516d288b4dc61bcf887ef6bde0800f46a30a98a31d30090b075cd78f9e6789d",
+  "positive-pin/manifest.json": "ae5b0d70ae4aec183fbd2b05713258e164ce7a647638067d038a7a645ef5f018",
+  "make-recipe/manifest.json": "970c776e49beb94c39d7b2ea6bd388ef8e63997642cd96e122b12de0353359bb",
+  "positive-sanitized-pin/manifest.json": "7b9cd9dc1466ec1753b4ac3fd58969894b22082cb12ed2927e5f680084c53485"
+}

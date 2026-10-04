@@ -1,0 +1,16 @@
+{
+  "baseline/domain-policy.hpp": "396968cabb276213ef06cbe16793d23fac4766384bc6d0c7883cf55093f0d326",
+  "baseline/pages.hpp": "efaa33c4dc700f7c013917aaf1cc5d9aa34feddff03f0ab6716d475f77ebc0e6",
+  "baseline/pin-ledger.hpp": "5cf4585f517cafb5466c3624ae0c7ec6c000291eb6cf81e0e9999274932e1249",
+  "generation-tests.cpp": "d6fb421dfd8c155afd9ca26e0c0593aff4b626cd0ac01a0b09b42b51d2e2b730",
+  "include/domain-policy.hpp": "396968cabb276213ef06cbe16793d23fac4766384bc6d0c7883cf55093f0d326",
+  "include/dormant-tables.hpp": "26a24e0bece02830c796dc107d5ade6be13eb955cd152526ba97422a580742e5",
+  "include/pages.hpp": "efaa33c4dc700f7c013917aaf1cc5d9aa34feddff03f0ab6716d475f77ebc0e6",
+  "include/pin-ledger.hpp": "ddd49d5ebe1c9781d99b104d66dbbee87cbb50807a6c4df58d5f2600bdbb8174",
+  "independent-decoder-tests.cpp": "8003625c852559d829d3e277008095d17b96d9803502bbdcf6846c5a0309eb41",
+  "independent-decoder.hpp": "1685d114a06496733bc571b0a2c982b54cfb21dbe7d5815618e037c18cf21a91",
+  "ownership-tests.cpp": "aecfe85788bcded2b2a5a049cdd720096b3ccaab100f9ec9ee6861c82da34bf2",
+  "pin-ledger-integration.patch": "895b2ede91b59226918502167f14f41ba253b152ca47da23561a2fb674af4aab",
+  "production-api.cpp": "d7e91ed3a151df216053f39a3be2f3815bb9d7b32d52071b9a027362d84892b0",
+  "run-tests.py": "46fad4c5b2586f94396651c73ec245db56a7f936331b114f4f1c9742acc8ebd1"
+}

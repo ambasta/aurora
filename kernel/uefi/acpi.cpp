@@ -1,6 +1,9 @@
 #include "acpi.hpp"
 #include "acpi-policy.hpp"
 #include "tables.hpp"
+#ifdef AURORA_UEFI_IVRS
+#include "ivrs-policy.hpp"
+#endif
 #ifdef AURORA_UEFI_PCI
 #include "pci.hpp"
 #endif
@@ -84,7 +87,13 @@ public:
     table[9]=std::byte(0U-sum);
 }
 }
+#if defined(AURORA_UEFI_TABLES)
+[[gnu::noinline]] auto prepare_table_acpi(U64 arena,const Bytes& handoff,unsigned& copied_bits,std::size_t& copied_mcfg_size) -> bool {
+#elif defined(AURORA_UEFI_IVRS)
+[[gnu::noinline]] auto prepare_ivrs_acpi(U64 arena,const Bytes& handoff,unsigned& copied_bits,std::size_t& copied_mcfg_size) -> bool {
+#else
 auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
+#endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
     copied_topology.reset();
 #endif
@@ -128,6 +137,9 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
     auto xsdt=window.table(*xsdt_address,bytes(arena+0x60000,Acpi::maximum_table),"XSDT");
     if (!xsdt || !Acpi::xsdt(*xsdt,*xsdt_address)) return false;
     U64 madt_address=0;
+#ifdef AURORA_UEFI_IVRS
+    U64 ivrs_address=0;
+#endif
 #ifdef AURORA_UEFI_PCI
     U64 mcfg_address=0;
 #endif
@@ -142,6 +154,12 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
         if (Acpi::signature(header,"MCFG")) {
             if (mcfg_address) return false;
             mcfg_address=candidate;
+        }
+#endif
+#ifdef AURORA_UEFI_IVRS
+        if (Acpi::signature(header,"IVRS")) {
+            if (ivrs_address) return false;
+            ivrs_address=candidate;
         }
 #endif
         if (!Acpi::signature(header,"APIC")) continue;
@@ -182,6 +200,9 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
 #endif
     const auto topology=Topology::parse(*madt,physical_bits);
     if (!topology || !window.closed() || !tables.verify(arena,handoff)) return false;
+#ifdef AURORA_UEFI_IVRS
+    if (topology->apic()!=0xfee00000) return false; // Explicit q35 profile; no unverified APIC alias.
+#endif
     unsigned enabled=0,capable=0;
     for (const auto& cpu:topology->processors()) {
         enabled+=cpu.enabled; capable+=cpu.online_capable;
@@ -196,9 +217,58 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
     auto mcfg=window.table(mcfg_address,bytes(arena+0x70000,Acpi::maximum_table),"MCFG");
     if (!mcfg || !window.closed() || !tables.verify(arena,handoff)) return false;
 #endif
+#ifdef AURORA_UEFI_IVRS
+    if (!ivrs_address) { Serial::text("AURORA_IVRS_REJECTED: reason=missing-table\r\n"); return false; }
+    auto ivrs=window.table(ivrs_address,bytes(arena+0x60000,Acpi::maximum_table),"IVRS");
+    if (!ivrs || !window.closed() || !tables.verify(arena,handoff)) return false;
+#if defined(AURORA_IVRS_PAIR) || defined(AURORA_IVRS_ALIAS) || defined(AURORA_IVRS_RESERVED) || defined(AURORA_IVRS_SCOPE)
+    auto altered_ivrs=bytes(arena+0x60000,ivrs->size());
+#ifdef AURORA_IVRS_PAIR
+    const auto companion=48+Bytes{altered_ivrs}.get(50,2);
+    put(altered_ivrs,companion+8,Bytes{altered_ivrs}.get(companion+8)+4096);
+#endif
+#ifdef AURORA_IVRS_ALIAS
+    altered_ivrs[48+24]=std::byte{0x42};
+#endif
+#ifdef AURORA_IVRS_RESERVED
+    const auto old_size=altered_ivrs.size();
+    if (old_size>Acpi::maximum_table-32) return false;
+    altered_ivrs=bytes(arena+0x60000,old_size+32);
+    for (std::size_t index=old_size;index<altered_ivrs.size();++index) altered_ivrs[index]=std::byte{0};
+    put(altered_ivrs,old_size,0x20,1); put(altered_ivrs,old_size+2,32,2);
+    put(altered_ivrs,old_size+16,0x100000); put(altered_ivrs,old_size+24,4096);
+    put(altered_ivrs,4,altered_ivrs.size(),4); ivrs=std::span<const std::byte>{altered_ivrs};
+#endif
+#ifdef AURORA_IVRS_SCOPE
+    for (std::size_t at=48;at<altered_ivrs.size();) {
+        const auto kind=Bytes{altered_ivrs}.get(at,1),length=Bytes{altered_ivrs}.get(at+2,2);
+        if ((kind!=0x10 && kind!=0x11) || length<24 || length>altered_ivrs.size()-at) return false;
+        for (std::size_t entry=at+(kind==0x10 ? 24 : 40);entry<at+length;entry+=4)
+            if (Bytes{altered_ivrs}.get(entry+1,2)==16) put(altered_ivrs,entry+1,17,2);
+        at+=length;
+    }
+#endif
+    fix_checksum(altered_ivrs);
+#endif
+    Serial::text("AURORA_IVRS_RAW: bytes="); Serial::number(ivrs->size()); Serial::text(" data=");
+    constexpr std::string_view digits="0123456789abcdef";
+    for (auto value:*ivrs) {
+        const auto byte=std::to_integer<unsigned>(value);
+        Serial::put(digits[byte>>4]); Serial::put(digits[byte&15]);
+    }
+    Serial::text("\r\n");
+    const auto facts=Ivrs::parse_qemu_10_0_13(*ivrs,physical_bits);
+    if (!facts) { Serial::text("AURORA_IVRS_REJECTED: reason=table-profile\r\n"); return false; }
+    Serial::text("AURORA_IVRS_TABLE: units=1 records=2 requesters=");Serial::number(facts->requesters().size());
+    Serial::text(" base=");Serial::number(facts->unit().base());Serial::text(" bytes=16384\r\n");
+#endif
     Serial::text("AURORA_ACPI_WINDOW_CLOSED: copies="); Serial::number(window.copies()); Serial::text("\r\n");
 #ifdef AURORA_UEFI_PCI
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_TABLES)
+    copied_bits=physical_bits; copied_mcfg_size=mcfg->size();
+#else
     if (!discover_pci(arena,handoff,*mcfg,physical_bits)) return false;
+#endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
     copied_topology.emplace(*topology);
 #endif
@@ -207,4 +277,17 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
     return true;
 #endif
 }
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_TABLES)
+auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
+    unsigned physical_bits=0; std::size_t mcfg_size=0;
+#ifdef AURORA_UEFI_TABLES
+    if (!prepare_table_acpi(arena,handoff,physical_bits,mcfg_size)) return false;
+#else
+    if (!prepare_ivrs_acpi(arena,handoff,physical_bits,mcfg_size)) return false;
+#endif
+    // ACPI parsing/Topology temporaries have ended before PCI scan construction.
+    return discover_pci(arena,handoff,bytes(arena+0x70000,mcfg_size),physical_bits);
+}
+#endif
+
 }

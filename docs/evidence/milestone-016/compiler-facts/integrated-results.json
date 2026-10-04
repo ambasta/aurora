@@ -1,0 +1,10 @@
+{
+  "main_release_target_exit": 0,
+  "integrated_affected_sanitizer_replay_exit": 0,
+  "isolated_complete_sanitizer_target_exit": 0,
+  "all21_source_test_inputs_match_reviewed_manifest": true,
+  "release_compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "instrumented_compiler_sha256": "805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf",
+  "sanitizer_accommodation": "Only IR test binary uses -g1; compiler, standalone fact model and host I/O tests retain -g. All keep -O1, fatal ASan/UBSan and frame pointers.",
+  "scope": "Compiler gates passed; combined milestone/kernel acceptance remains parent-owned. No mutable-byte-view changes included."
+}

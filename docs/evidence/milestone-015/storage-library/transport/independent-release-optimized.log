@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+    "-B",
+    "-O",
+    "/workspace/scratch/48c5de6446f8/aurora/fixtures/xfs-offline/verify_native.py",
+    "--compiler",
+    "/tmp/aurora-m014-compiler-corrected",
+    "--compiler-sha256",
+    "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+    "--receipt",
+    "/workspace/scratch/48c5de6446f8/aurora/docs/evidence/milestone-015/storage-library/transport/independent-release-optimized.json"
+  ],
+  "extra_environment": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "exit_code": 0,
+  "duration_seconds": 0.436,
+  "stdout": "PASS 17 hex transport rejection controls and exact raw/transport hashes\nPASS 15 native observations against real mkfs.xfs fixture\nCRC bytes=c7 13 71 b6 LE/GF(2)/native=0xb67113c7\nRaw feature masks: features_compat=0x0, features_ro_compat=0xf, features_incompat=0x2b, features_log_incompat=0x0\n",
+  "stderr": ""
+}

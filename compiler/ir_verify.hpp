@@ -1,4 +1,5 @@
 #pragma once
+#include "initialization_facts.hpp"
 #include "ir_layout.hpp"
 #include <algorithm>
 #include <deque>
@@ -36,23 +37,42 @@ class Value {
     std::optional<BoundsEvidence> guard;
     bool operator==(const Value &) const = default;
 };
+// Static creation sites distinguish lifetimes restarted in the same storage on
+// different control-flow paths. They are not dynamic invocation generations:
+// a loop may reuse one creation site after ending every derived capability.
+// Origins name a local array or bound parameter, with its own creation site;
+// direct-parent storage and site preserve exact lexical reborrow authority.
+class SpanCapability {
+  public:
+    bool parameterOrigin;
+    int origin;
+    std::size_t originSite;
+    int parent;
+    std::size_t parentSite;
+    std::size_t site;
+    bool operator==(const SpanCapability &) const = default;
+};
 class State {
   public:
     std::optional<Value> current;
     std::vector<Value> stack;
-    std::set<int> initialized;
+    InitializationFacts initialized;
     // Must-initialized facts intersect at joins; may-written facts union. The
     // latter prevent an alternate path or backedge from hiding a second init.
-    std::set<int> maybeInitialized;
+    InitializationFacts maybeInitialized;
     std::set<int> receiverInitialized;
     std::set<int> receiverMaybeInitialized;
     std::set<int> maybeConstructedObjects;
     std::set<int> activeObjects;
+    std::map<int, std::size_t> activeArrays; // array base -> BeginArray site
+    std::map<int, SpanCapability> activeSpans;
     // Logical completion is independent of leaf initialization: empty embedded
     // values also require one complete, nominally checked initialization.
     std::set<std::pair<int, int>> objectClassesInitialized;
     std::set<int> receiverClassesInitialized;
     std::set<int> receiverClassesMaybeInitialized;
+    explicit State(const std::shared_ptr<const InitializationSlotUniverse> &universe)
+        : initialized(universe), maybeInitialized(universe) {}
     bool operator==(const State &) const = default;
 };
 inline void require(bool condition, const std::string &message) {
@@ -68,6 +88,9 @@ class Metrics {
     std::size_t snapshots = 0;
     std::size_t peakOperandDepth = 0;
     std::size_t peakRetainedValueFacts = 0;
+    // Both scalar initialization word payloads across retained block entries.
+    // Excludes shared universe, other facts, current/merge states and allocator overhead.
+    std::size_t peakRetainedInitializationPayloadBytes = 0;
 };
 inline void verifyFunction(Function &function,
                            const std::map<std::string, const Function *> &functions,
@@ -95,6 +118,11 @@ inline void verifyFunction(Function &function,
     auto boundaryType = [&](const Type &type, bool parameter) {
         if (scalarValueType(type, enumCases))
             return;
+        if (type.isSpan()) {
+            require(type == Type::ByteSpan && parameter && !function.receiver,
+                    "readonly span is only an ordinary function parameter");
+            return;
+        }
         require(!function.receiver ||
                     (parameter ? function.receiver->constructor : !function.receiver->constructor),
                 "receiver signatures must remain scalar");
@@ -170,12 +198,53 @@ inline void verifyFunction(Function &function,
         for (int byte = offset - storageWidth(type) + 1; byte <= offset; ++byte)
             require(!objectStorage.contains(byte) || objectFields.contains(offset),
                     "scalar slot overlaps empty object or padding");
+    // Array declarations are exact standalone u8 origins, not object projections
+    // or arbitrarily overlapping scalar reservations. Their scalar leaves are
+    // still addressed by ordinary typed loads/stores during initialization.
+    std::map<int, int> arrayBases;
+    std::set<int> arrayStorage;
+    for (const auto &[base, length] : function.arraySlots) {
+        require(length >= 1 && length <= 4096 && base >= length && base <= function.frameBytes,
+                "invalid byte array origin extent");
+        for (int element = 0; element < length; ++element) {
+            const int offset = base - element;
+            require(function.slots.contains(offset) && function.slots.at(offset) == Type::U8,
+                    "byte array origin requires exact u8 element slots");
+            require(!objectStorage.contains(offset), "byte array origin overlaps object storage");
+            require(arrayStorage.insert(offset).second, "overlapping byte array origins");
+            arrayBases.emplace(offset, base);
+        }
+    }
+    std::set<int> spanStorage;
+    for (int base : function.spanSlots) {
+        require(base >= 16 && base <= function.frameBytes && base % 8 == 0,
+                "invalid span spill extent or alignment");
+        for (int byte = base - 15; byte <= base; ++byte) {
+            require(!occupiedSlotBytes.contains(byte) && !objectStorage.contains(byte) &&
+                        !arrayStorage.contains(byte),
+                    "span spill overlaps scalar, object or array storage");
+            require(spanStorage.insert(byte).second, "overlapping span spills");
+        }
+    }
+    // Physical offset/layout validation above proves every slot belongs to the
+    // existing bounded frame. Share this immutable dense domain across snapshots.
+    std::vector<int> initializationOffsets;
+    initializationOffsets.reserve(function.slots.size());
+    for (const auto &[offset, type] : function.slots) {
+        (void)type;
+        initializationOffsets.push_back(offset);
+    }
+    const auto initializationUniverse = std::make_shared<const InitializationSlotUniverse>(
+        std::move(initializationOffsets), function.frameBytes);
     require(!function.code.empty(), "empty function body");
     std::set<int> scalarParameterSlots;
     std::set<int> objectParameterSlots;
+    std::set<int> spanParameterSlots;
+    std::map<int, int> spanParameterOrigins; // source position -> root spill
     for (std::size_t index = 0; index < function.code.size(); ++index) {
         const auto *binding = std::get_if<BindParameter>(&function.code[index]);
         const auto *objectBinding = std::get_if<BindObjectParameter>(&function.code[index]);
+        const auto *spanBinding = std::get_if<BindSpanParameter>(&function.code[index]);
         if (index < function.parameters.size()) {
             const auto &type = function.parameters[index];
             if (type.isClass()) {
@@ -183,6 +252,12 @@ inline void verifyFunction(Function &function,
                         "object parameter bindings must form the entry prefix");
                 require(objectParameterSlots.insert(objectBinding->offset).second,
                         "object parameter bindings overlap");
+            } else if (type.isSpan()) {
+                require(spanBinding && spanBinding->index == static_cast<int>(index),
+                        "span parameter bindings must form the entry prefix");
+                require(spanParameterSlots.insert(spanBinding->offset).second,
+                        "span parameter bindings overlap");
+                spanParameterOrigins.emplace(static_cast<int>(index), spanBinding->offset);
             } else {
                 require(binding && binding->index == static_cast<int>(index),
                         "parameter bindings must form the entry prefix");
@@ -190,7 +265,8 @@ inline void verifyFunction(Function &function,
                         "scalar parameter bindings overlap");
             }
         } else
-            require(!binding && !objectBinding, "parameter binding outside entry prefix");
+            require(!binding && !objectBinding && !spanBinding,
+                    "parameter binding outside entry prefix");
     }
     std::map<int, std::size_t> labels;
     for (std::size_t index = 0; index < function.code.size(); ++index) {
@@ -218,7 +294,7 @@ inline void verifyFunction(Function &function,
             blockEntry[index + 1] = true;
     }
     std::vector<std::optional<State>> states(function.code.size());
-    states[0] = State{};
+    states[0] = State{initializationUniverse};
     if (function.receiver && !function.receiver->constructor) {
         for (std::size_t field = 0; field < receiverLayout->size(); ++field) {
             states[0]->receiverInitialized.insert(static_cast<int>(field));
@@ -246,11 +322,18 @@ inline void verifyFunction(Function &function,
                state.receiverInitialized.size() + state.receiverMaybeInitialized.size() +
                state.maybeConstructedObjects.size() + state.activeObjects.size() +
                state.objectClassesInitialized.size() + state.receiverClassesInitialized.size() +
-               state.receiverClassesMaybeInitialized.size();
+               state.receiverClassesMaybeInitialized.size() + state.activeArrays.size() +
+               state.activeSpans.size();
     };
     retainedValueFacts = facts(*states[0]);
-    if (metrics)
+    auto initializationPayload = [](const State &state) {
+        return state.initialized.payloadBytes() + state.maybeInitialized.payloadBytes();
+    };
+    std::size_t retainedInitializationPayloadBytes = initializationPayload(*states[0]);
+    if (metrics) {
         metrics->peakRetainedValueFacts = retainedValueFacts;
+        metrics->peakRetainedInitializationPayloadBytes = retainedInitializationPayloadBytes;
+    }
     auto intersection = [](const auto &left, const auto &right) {
         std::decay_t<decltype(left)> result;
         std::set_intersection(left.begin(), left.end(), right.begin(), right.end(),
@@ -262,10 +345,14 @@ inline void verifyFunction(Function &function,
         require(blockEntry[index], "worklist target is not a basic-block entry");
         if (!states[index]) {
             retainedValueFacts += facts(state);
+            retainedInitializationPayloadBytes += initializationPayload(state);
             if (metrics) {
                 ++metrics->snapshots;
                 metrics->peakRetainedValueFacts =
                     std::max(metrics->peakRetainedValueFacts, retainedValueFacts);
+                metrics->peakRetainedInitializationPayloadBytes =
+                    std::max(metrics->peakRetainedInitializationPayloadBytes,
+                             retainedInitializationPayloadBytes);
             }
             states[index] = state;
             pending.push_back(index);
@@ -274,11 +361,15 @@ inline void verifyFunction(Function &function,
         State merged = *states[index];
         require(merged.activeObjects == state.activeObjects,
                 "incompatible active object lifetimes at control-flow join");
+        require(merged.activeArrays == state.activeArrays,
+                "incompatible active array lifetimes at control-flow join");
+        require(merged.activeSpans == state.activeSpans,
+                "incompatible active span capabilities at control-flow join");
         require(merged.stack == state.stack,
                 "incompatible value/guard stacks at control-flow join");
         if (merged.current != state.current)
             merged.current.reset();
-        merged.initialized = intersection(merged.initialized, state.initialized);
+        merged.initialized.intersectWith(state.initialized);
         merged.receiverInitialized =
             intersection(merged.receiverInitialized, state.receiverInitialized);
         merged.objectClassesInitialized =
@@ -287,8 +378,7 @@ inline void verifyFunction(Function &function,
             intersection(merged.receiverClassesInitialized, state.receiverClassesInitialized);
         merged.receiverClassesMaybeInitialized.insert(state.receiverClassesMaybeInitialized.begin(),
                                                       state.receiverClassesMaybeInitialized.end());
-        merged.maybeInitialized.insert(state.maybeInitialized.begin(),
-                                       state.maybeInitialized.end());
+        merged.maybeInitialized.unionWith(state.maybeInitialized);
         merged.receiverMaybeInitialized.insert(state.receiverMaybeInitialized.begin(),
                                                state.receiverMaybeInitialized.end());
         merged.maybeConstructedObjects.insert(state.maybeConstructedObjects.begin(),
@@ -326,9 +416,64 @@ inline void verifyFunction(Function &function,
                             state.activeObjects.contains(objectBases.at(offset)),
                         "object field access outside active lifetime");
             };
+            auto activeArrayElement = [&](int offset) {
+                require(!arrayBases.contains(offset) ||
+                            state.activeArrays.contains(arrayBases.at(offset)),
+                        "array element access outside active lifetime");
+            };
+            auto arrayWritable = [&](int offset) {
+                if (!arrayBases.contains(offset))
+                    return;
+                const int base = arrayBases.at(offset);
+                for (const auto &[unused, capability] : state.activeSpans) {
+                    (void)unused;
+                    require(capability.parameterOrigin || capability.origin != base,
+                            "write to byte array with live readonly span");
+                }
+            };
+            auto span = [&](int base) -> const SpanCapability & {
+                require(function.spanSlots.contains(base), "span requires exact typed spill");
+                require(state.activeSpans.contains(base), "span capability is not active");
+                const auto &capability = state.activeSpans.at(base);
+                if (capability.parameterOrigin) {
+                    require(spanParameterOrigins.contains(capability.origin),
+                            "span parameter origin does not exist");
+                    const auto root =
+                        state.activeSpans.find(spanParameterOrigins.at(capability.origin));
+                    require(root != state.activeSpans.end() &&
+                                root->second.site == capability.originSite &&
+                                root->second.parameterOrigin &&
+                                root->second.origin == capability.origin &&
+                                root->second.originSite == capability.originSite &&
+                                root->second.parent == 0,
+                            "span parameter origin lifetime is not active");
+                } else {
+                    require(state.activeArrays.contains(capability.origin) &&
+                                state.activeArrays.at(capability.origin) == capability.originSite,
+                            "span array origin lifetime is not active");
+                }
+                if (capability.parent != 0) {
+                    const auto parent = state.activeSpans.find(capability.parent);
+                    require(parent != state.activeSpans.end() &&
+                                parent->second.site == capability.parentSite,
+                            "span direct parent lifetime is not active");
+                    require(parent->second.parameterOrigin == capability.parameterOrigin &&
+                                parent->second.origin == capability.origin &&
+                                parent->second.originSite == capability.originSite,
+                            "span direct parent origin mismatch");
+                }
+                return capability;
+            };
+            auto spanTarget = [&](int base) {
+                require(function.spanSlots.contains(base), "span requires exact typed spill");
+                require(!spanParameterSlots.contains(base), "span parameter cannot be rebound");
+                require(!state.activeSpans.contains(base), "span spill is already active");
+            };
             auto store = [&](int offset, const Type &type) {
                 slot(offset, type);
                 activeObjectField(offset);
+                activeArrayElement(offset);
+                arrayWritable(offset);
                 require(!nestedObjectLeaves.contains(offset),
                         "scalar store cannot write nested class field");
                 require(!scalarParameterSlots.contains(offset) ||
@@ -384,6 +529,7 @@ inline void verifyFunction(Function &function,
                     const int elementOffset = offset - element * storageWidth(type);
                     slot(elementOffset, type);
                     activeObjectField(elementOffset);
+                    activeArrayElement(elementOffset);
                     require(state.initialized.contains(elementOffset),
                             "array element not initialized");
                 }
@@ -463,6 +609,7 @@ inline void verifyFunction(Function &function,
                     } else if constexpr (std::is_same_v<Op, Load>) {
                         slot(operation.offset, operation.type);
                         activeObjectField(operation.offset);
+                        activeArrayElement(operation.offset);
                         require(state.initialized.contains(operation.offset),
                                 "load before initialization");
                         state.current = Value{operation.type, {}};
@@ -585,6 +732,7 @@ inline void verifyFunction(Function &function,
                         for (int element = 0; element < operation.length; ++element) {
                             const int offset =
                                 operation.offset - element * storageWidth(operation.elementType);
+                            arrayWritable(offset);
                             require(!nestedObjectLeaves.contains(offset),
                                     "indexed store cannot write nested class field");
                             require(!scalarParameterSlots.contains(offset),
@@ -624,14 +772,32 @@ inline void verifyFunction(Function &function,
                         require(!target.receiver, "aggregate call cannot target receiver function");
                         require(target.result.isClass() ||
                                     std::any_of(target.parameters.begin(), target.parameters.end(),
-                                                [](const Type &type) { return type.isClass(); }),
+                                                [](const Type &type) {
+                                                    return type.isClass() || type.isSpan();
+                                                }),
                                 "aggregate call requires aggregate signature");
                         require(operation.objectArguments.size() == target.parameters.size(),
                                 "aggregate call argument vector size mismatch");
+                        const bool spanParameters =
+                            std::any_of(target.parameters.begin(), target.parameters.end(),
+                                        [](const Type &type) { return type.isSpan(); });
+                        require((!spanParameters && operation.spanArguments.empty()) ||
+                                    operation.spanArguments.size() == target.parameters.size(),
+                                "span call argument vector size mismatch");
                         std::set<int> argumentStorage;
                         for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
                             const auto &type = target.parameters[arg - 1];
                             const int base = operation.objectArguments[arg - 1];
+                            const int capability = operation.spanArguments.empty()
+                                                       ? 0
+                                                       : operation.spanArguments[arg - 1];
+                            if (type.isSpan()) {
+                                require(type == Type::ByteSpan && base == 0,
+                                        "span argument cannot name object storage");
+                                span(capability);
+                                continue;
+                            }
+                            require(capability == 0, "non-span argument cannot name span storage");
                             if (scalarValueType(type, enumCases)) {
                                 require(base == 0, "scalar argument cannot name object storage");
                                 require(pop().type == type,
@@ -683,6 +849,66 @@ inline void verifyFunction(Function &function,
                                     "scalar result cannot name object storage");
                             state.current = Value{target.result, {}};
                         }
+                    } else if constexpr (std::is_same_v<Op, BeginArray> ||
+                                         std::is_same_v<Op, EndArray>) {
+                        require(function.arraySlots.contains(operation.offset),
+                                "array lifetime requires exact byte array origin");
+                        if constexpr (std::is_same_v<Op, BeginArray>) {
+                            require(!state.activeArrays.contains(operation.offset),
+                                    "array lifetime already active");
+                            state.activeArrays.emplace(operation.offset, index);
+                        } else {
+                            require(state.activeArrays.contains(operation.offset),
+                                    "array lifetime is not active");
+                            for (const auto &[unused, capability] : state.activeSpans) {
+                                (void)unused;
+                                require(capability.parameterOrigin ||
+                                            capability.origin != operation.offset,
+                                        "array lifetime ends with live readonly span");
+                            }
+                            state.activeArrays.erase(operation.offset);
+                        }
+                        for (int element = 0; element < function.arraySlots.at(operation.offset);
+                             ++element) {
+                            state.initialized.erase(operation.offset - element);
+                            state.maybeInitialized.erase(operation.offset - element);
+                        }
+                    } else if constexpr (std::is_same_v<Op, BorrowSpan>) {
+                        require(function.arraySlots.contains(operation.arrayOffset),
+                                "span borrow requires exact local byte array origin");
+                        require(state.activeArrays.contains(operation.arrayOffset),
+                                "span borrow requires active byte array origin");
+                        array(operation.arrayOffset, function.arraySlots.at(operation.arrayOffset),
+                              Type::U8);
+                        spanTarget(operation.resultOffset);
+                        state.activeSpans.emplace(
+                            operation.resultOffset,
+                            SpanCapability{false, operation.arrayOffset,
+                                           state.activeArrays.at(operation.arrayOffset), 0, 0,
+                                           index});
+                    } else if constexpr (std::is_same_v<Op, ReborrowSpan>) {
+                        const auto capability = span(operation.sourceOffset);
+                        spanTarget(operation.resultOffset);
+                        state.activeSpans.emplace(
+                            operation.resultOffset,
+                            SpanCapability{capability.parameterOrigin, capability.origin,
+                                           capability.originSite, operation.sourceOffset,
+                                           capability.site, index});
+                    } else if constexpr (std::is_same_v<Op, EndSpan>) {
+                        span(operation.offset);
+                        for (const auto &[unused, capability] : state.activeSpans) {
+                            (void)unused;
+                            require(capability.parent != operation.offset,
+                                    "span lifetime ends with live child reborrow");
+                        }
+                        state.activeSpans.erase(operation.offset);
+                    } else if constexpr (std::is_same_v<Op, SpanLength>) {
+                        span(operation.offset);
+                        state.current = Value{Type::I64, {}};
+                    } else if constexpr (std::is_same_v<Op, SpanLoad>) {
+                        span(operation.offset);
+                        current(Type::I64);
+                        state.current = Value{Type::U8, {}};
                     } else if constexpr (std::is_same_v<Op, BeginObject> ||
                                          std::is_same_v<Op, EndObject>) {
                         require(function.objectSlots.contains(operation.offset),
@@ -934,6 +1160,8 @@ inline void verifyFunction(Function &function,
                                 "scalar return cannot return class value");
                         current(function.result);
                         require(state.stack.empty(), "unbalanced stack at return");
+                        require(state.activeSpans.empty() && state.activeArrays.empty(),
+                                "return with active span or byte array lifetime");
                         if (function.receiver && function.receiver->constructor) {
                             require(state.receiverInitialized.size() == receiverLayout->size(),
                                     "constructor returns before all fields initialized");
@@ -960,7 +1188,23 @@ inline void verifyFunction(Function &function,
                                     "returned object not fully initialized");
                         logicalComplete(operation.offset);
                         require(state.stack.empty(), "unbalanced stack at object return");
+                        require(state.activeSpans.empty() && state.activeArrays.empty(),
+                                "return with active span or byte array lifetime");
                         fallsThrough = false;
+                    } else if constexpr (std::is_same_v<Op, BindSpanParameter>) {
+                        require(operation.index >= 0 && static_cast<std::size_t>(operation.index) <
+                                                            function.parameters.size(),
+                                "invalid span parameter index");
+                        require(function.parameters[operation.index] == Type::ByteSpan &&
+                                    !function.receiver,
+                                "span parameter type mismatch");
+                        require(function.spanSlots.contains(operation.offset),
+                                "span parameter requires exact typed spill");
+                        require(!state.activeSpans.contains(operation.offset),
+                                "span parameter lifetime already active");
+                        state.activeSpans.emplace(
+                            operation.offset,
+                            SpanCapability{true, operation.index, index, 0, 0, index});
                     } else if constexpr (std::is_same_v<Op, BindObjectParameter>) {
                         require(operation.index >= 0 && static_cast<std::size_t>(operation.index) <
                                                             function.parameters.size(),
@@ -985,6 +1229,8 @@ inline void verifyFunction(Function &function,
                                 "parameter type mismatch");
                         require(!objectFields.contains(operation.offset),
                                 "parameter cannot bind object field storage");
+                        require(!arrayBases.contains(operation.offset),
+                                "parameter cannot bind byte array origin storage");
                         store(operation.offset, operation.type);
                     } else {
                         static_assert(!std::is_same_v<Op, Op>,

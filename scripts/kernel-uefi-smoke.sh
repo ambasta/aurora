@@ -15,6 +15,7 @@ if [[ "$mode" == acpi-two || "$mode" == budget-smp ]]; then cpus=2; fi
 args=()
 if [[ -n "${QEMU_DATA:-}" ]]; then args+=(-L "$QEMU_DATA"); fi
 case "$mode" in
+ bar-state) args+=(-device nvme,serial=AURORA_READ_ONLY) ;;
  pci-devices) args+=(-device nvme,serial=AURORA_READ_ONLY -device qemu-xhci -device e1000e,romfile=) ;;
  pci-bridge|pci-cycle) args+=(-device pcie-root-port,id=aurora_port,chassis=1,slot=2 -device nvme,bus=aurora_port,serial=AURORA_READ_ONLY) ;;
 esac
@@ -44,9 +45,17 @@ PYMETA
 elif [[ "$mode" == ipc* ]]; then
     cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
     python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
+elif [[ "$mode" == runtime-table-* ]]; then
+    cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
+    python3 tests/kernel-uefi-tables-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
+elif [[ "$mode" == runtime-pin-* ]]; then
+    cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
+    python3 tests/kernel-uefi-pin-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
 elif [[ "$mode" == runtime* ]]; then
     cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
     python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
+elif [[ "$mode" == bar-state ]]; then
+    python3 tests/kernel-uefi-bar-state.py "$status" "$log"
 elif [[ "$mode" == pci* ]]; then
     python3 tests/kernel-pci-smoke.py "$status" "$log" "$mode"
 elif [[ "$mode" == acpi* ]]; then

@@ -1,0 +1,10 @@
+{
+  "cases": [
+    "all 1112064 Unicode scalars in native runtime loop"
+  ],
+  "source_bytes": 2290,
+  "source_sha256": "bd0060f56e2674b352acefdaacbab90f9f09f73d4ed6af980ff4ffa5cefdc0aa",
+  "status": "failed",
+  "error": "command failed (1): [PosixPath('/tmp/aurora-resource-main-compiler-frozen'), '--module-root', PosixPath('/workspace/scratch/48c5de6446f8/aurora-utf8-next/library'), PosixPath('/workspace/scratch/48c5de6446f8/aurora-utf8-next/build/utf8-worker-normal-1/batch-0000/input.au'), '-o', PosixPath('/workspace/scratch/48c5de6446f8/aurora-utf8-next/build/utf8-worker-normal-1/batch-0000/compiled.s')]\naurorac: line 7: expected expression (found 'value')\n",
+  "seconds": 0.003032
+}

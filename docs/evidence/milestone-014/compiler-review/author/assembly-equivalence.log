@@ -1,0 +1,3 @@
+PASS binary_reader.au generated assembly is byte-identical before/after static-site verifier strengthening.
+sha256=783f4f1f1de4391d593d63e851c1ad31211ad5c961c76dad6f0a807117c523f7
+This single-example comparison is not a general equivalence or performance proof.

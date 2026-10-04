@@ -16,7 +16,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPILER = shlex.split(os.environ.get("CXX", "g++"))
-HEADERS = ("types.hpp", "ir.hpp", "ir_layout.hpp", "ir_verify.hpp", "x86.hpp")
+HEADERS = ("types.hpp", "ir.hpp", "ir_layout.hpp", "initialization_facts.hpp", "ir_verify.hpp", "x86.hpp")
 CONSUMERS = (("ir_verify.hpp", "unhandled typed IR verifier operation"),
              ("x86.hpp", "unhandled typed IR backend operation"))
 
@@ -242,3 +242,27 @@ if len(sys.argv) > 1:
         print(f"{len(names)} native packed-byte IR checks passed "
               "(mixed alignment, enum and empty descendants, receiver/result hidden registers, "
               "constructor snapshots, nested copies, compact aggregate records and padding isolation)")
+
+    with tempfile.TemporaryDirectory(prefix="aurora-ir-span-native-") as temporary:
+        directory = Path(temporary)
+        assembly = command([Path(sys.argv[1]).resolve(), "--emit-spans"]).stdout.decode()
+        runner = NativeRunner(directory, None, 5)
+        names = ["span_local", "span_length", "span_preserve_current", "span_mixed_sum",
+                 "span_mixed_first", "span_mixed_last", "span_mixed_saved_operand"]
+        observed, _ = runner.assemble(assembly, names)
+        validate_values(observed, [128, 3, 255, 299, 31, 77, 1299], names)
+        native_count = len(names)
+        trap_count = 0
+        for index in (0, 1, 2, -1, 3, -(1 << 63), (1 << 63) - 1):
+            wrapper = ("\n.text\n.globl ir_span_probe\nir_span_probe:\n"
+                       f"    movabsq ${index}, %rdi\n    jmp span_dynamic\n")
+            observed, symbols = runner.assemble(assembly + wrapper, ["ir_span_probe"])
+            if index in (0, 1, 2):
+                validate_values(observed, [(11, 128, 255)[index]], [f"span_dynamic({index})"])
+            else:
+                validate_trap(observed, ArrayTrap.BOUNDS, symbols, f"span_dynamic({index})")
+                trap_count += 1
+            native_count += 1
+        print(f"{native_count} native readonly-span IR checks passed "
+              f"({trap_count} exact-site traps; capability forwarding, six mixed scalar/class/span "
+              "positions, class returns, saved operands and bounds before payload access)")

@@ -1,0 +1,7 @@
+{
+  "offset": 139264,
+  "bytes": 36864,
+  "fault_offsets": {
+    "bar-write": 28217
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "AURORAC": "/tmp/aurora-resource-main-compiler-frozen",
+  "QEMU": "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64",
+  "QEMU_DATA": "/tmp/aurora-qemu/firmware",
+  "LD_LIBRARY_PATH": "/tmp/aurora-qemu/root/usr/lib/x86_64-linux-gnu",
+  "OVMF": "/tmp/aurora-ovmf/root/usr/share/ovmf/OVMF.fd",
+  "PYTHONDONTWRITEBYTECODE": "1"
+}

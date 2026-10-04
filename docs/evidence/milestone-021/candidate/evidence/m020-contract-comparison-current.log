@@ -1,0 +1,1 @@
+{"cases": 232, "source_hashes": 224, "accepted": 153, "rejected": 79, "all_match": true, "intentional_omission": "M020 blanket function-template rejection is now accepted; all other original sources unchanged"}

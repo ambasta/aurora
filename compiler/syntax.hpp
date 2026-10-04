@@ -46,6 +46,10 @@ class Function {
     std::string receiverClass;
     bool receiverConst = false, constructor = false, publicAccess = false;
     std::vector<std::pair<Token, ExpressionPtr>> initializers;
+    std::vector<TemplateParameter> templateParameters;
+    std::vector<TemplateArgument> templateArguments;
+    // Exact compile-time authority only. Runtime reflection keeps moduleScope.
+    std::set<std::string> templateTypeAuthority;
     std::vector<Param> params;
     std::vector<StatementPtr> body;
     explicit Function(Token t) : name(t.text), token(std::move(t)), result(Type::I64) {}
@@ -90,6 +94,7 @@ class Program {
     std::set<std::string> namespaces;
     std::map<int, std::set<std::string>> reflectionAccess;
     std::vector<Function> functions;
+    std::vector<Function> functionTemplates;
     std::vector<ClassDefinition> classes;
     std::vector<ClassDefinition> templates;
     std::vector<EnumDefinition> enums;

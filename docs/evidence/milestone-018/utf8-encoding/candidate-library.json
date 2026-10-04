@@ -1,0 +1,22 @@
+{
+  "baseline": "baseline-m017-candidate.json",
+  "decoder_preserved_except_new_import": true,
+  "files": [
+    {
+      "path": "library/std/utf8.au",
+      "baseline_sha256": "6ad8d1c11ce26197932e2118151a7761e518ea2db7dc64a1fd1a3e956761f31c",
+      "sha256": "a9448bed52974ca1e690b9a10e86a5f879c5b24f475a12ab1ec079e4e97bc646"
+    },
+    {
+      "path": "library/examples/utf8_owned_scalar.au",
+      "baseline_sha256": null,
+      "sha256": "fb98c6136fcfe11a8932e68c970f33f14f0969194ff49d5bdb4101a0ac24a57c"
+    },
+    {
+      "path": "docs/utf8-encoding-contract.md",
+      "baseline_sha256": null,
+      "sha256": "99a9f5a38d74557f3f442b769563e59a98079beb30edff05ccc09b2069e33509"
+    }
+  ],
+  "status": "current library/example/contract; initial review snapshot preserved in candidate-library-initial.json"
+}

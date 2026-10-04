@@ -1,0 +1,3870 @@
+{
+  "batch-0000/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0000/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0000/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0000/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0000/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0000/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0000/receipt.json": {
+    "cases": [
+      "all 1112064 Unicode scalars in native runtime loop"
+    ],
+    "source_bytes": 2429,
+    "source_sha256": "72db7bf6c6162efee84e09b251ad410ceb696c00647af9d18ec0e907de393a55",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.358896
+  },
+  "batch-0001/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0001/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0001/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0001/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0001/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0001/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0001/receipt.json": {
+    "cases": [
+      "all 256 inputs of length 1, final and chunk"
+    ],
+    "source_bytes": 4147,
+    "source_sha256": "0f3afd16856004e485e6871b74c32ac6d2bd9c3b38059479b3344efa431886f8",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.037479
+  },
+  "batch-0002/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0002/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0002/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0002/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0002/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0002/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0002/receipt.json": {
+    "cases": [
+      "all 65536 inputs of length 2, final and chunk"
+    ],
+    "source_bytes": 4181,
+    "source_sha256": "737debad393a58b59ae049199e425a21e20c248be279b6a24eeac187807fa3a7",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.064123
+  },
+  "batch-0003/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0003/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0003/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0003/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0003/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0003/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0003/receipt.json": {
+    "cases": [
+      "2200 length-3 boundary-class inputs, final and chunk"
+    ],
+    "source_bytes": 4610,
+    "source_sha256": "2280152afd9b3039e6718cb40880c4e563b5f5162a34b7302516d39d707d45a9",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.032372
+  },
+  "batch-0004/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0004/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0004/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0004/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0004/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0004/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0004/receipt.json": {
+    "cases": [
+      "22000 length-4 boundary-class inputs, final and chunk"
+    ],
+    "source_bytes": 4615,
+    "source_sha256": "883e3b73e9268cd6c89f104809d47e1ee8b068bed1691ff09d70ac2af5f538e1",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.045798
+  },
+  "batch-0005/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0005/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0005/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0005/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0005/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0005/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0005/receipt.json": {
+    "cases": [
+      "scalar U+0000 window prefix 0, final=False",
+      "scalar U+0000 window prefix 1, final=False",
+      "scalar U+0000 window prefix 0, final=True",
+      "scalar U+0000 window prefix 1, final=True",
+      "scalar U+0001 window prefix 0, final=False",
+      "scalar U+0001 window prefix 1, final=False",
+      "scalar U+0001 window prefix 0, final=True",
+      "scalar U+0001 window prefix 1, final=True",
+      "scalar U+007F window prefix 0, final=False",
+      "scalar U+007F window prefix 1, final=False",
+      "scalar U+007F window prefix 0, final=True",
+      "scalar U+007F window prefix 1, final=True"
+    ],
+    "source_bytes": 7121,
+    "source_sha256": "8f27071393ca21c80927109a23d3deef6568279820dee04fb52b063439b664de",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.028456
+  },
+  "batch-0006/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0006/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0006/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0006/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0006/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0006/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0006/receipt.json": {
+    "cases": [
+      "scalar U+0080 window prefix 0, final=False",
+      "scalar U+0080 window prefix 1, final=False",
+      "scalar U+0080 window prefix 2, final=False",
+      "scalar U+0080 window prefix 0, final=True",
+      "scalar U+0080 window prefix 1, final=True",
+      "scalar U+0080 window prefix 2, final=True",
+      "scalar U+07FF window prefix 0, final=False",
+      "scalar U+07FF window prefix 1, final=False",
+      "scalar U+07FF window prefix 2, final=False",
+      "scalar U+07FF window prefix 0, final=True",
+      "scalar U+07FF window prefix 1, final=True",
+      "scalar U+07FF window prefix 2, final=True"
+    ],
+    "source_bytes": 7259,
+    "source_sha256": "6ac545824cd31a318053f211fdc2a59920b70f90114bd54fc5a82664f05db949",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.04307
+  },
+  "batch-0007/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0007/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0007/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0007/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0007/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0007/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0007/receipt.json": {
+    "cases": [
+      "scalar U+0800 window prefix 0, final=False",
+      "scalar U+0800 window prefix 1, final=False",
+      "scalar U+0800 window prefix 2, final=False",
+      "scalar U+0800 window prefix 3, final=False",
+      "scalar U+0800 window prefix 0, final=True",
+      "scalar U+0800 window prefix 1, final=True",
+      "scalar U+0800 window prefix 2, final=True",
+      "scalar U+0800 window prefix 3, final=True",
+      "scalar U+D7FF window prefix 0, final=False",
+      "scalar U+D7FF window prefix 1, final=False",
+      "scalar U+D7FF window prefix 2, final=False",
+      "scalar U+D7FF window prefix 3, final=False"
+    ],
+    "source_bytes": 7357,
+    "source_sha256": "419c117793f80daafa7a472ef847c4b1a2d5fcd24b21514c4ecd85c06e33d443",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.031325
+  },
+  "batch-0008/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0008/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0008/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0008/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0008/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0008/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0008/receipt.json": {
+    "cases": [
+      "scalar U+D7FF window prefix 0, final=True",
+      "scalar U+D7FF window prefix 1, final=True",
+      "scalar U+D7FF window prefix 2, final=True",
+      "scalar U+D7FF window prefix 3, final=True",
+      "scalar U+E000 window prefix 0, final=False",
+      "scalar U+E000 window prefix 1, final=False",
+      "scalar U+E000 window prefix 2, final=False",
+      "scalar U+E000 window prefix 3, final=False",
+      "scalar U+E000 window prefix 0, final=True",
+      "scalar U+E000 window prefix 1, final=True",
+      "scalar U+E000 window prefix 2, final=True",
+      "scalar U+E000 window prefix 3, final=True"
+    ],
+    "source_bytes": 7351,
+    "source_sha256": "10f863b411e26e33c1689fe1e435ef5f8deb58ff7ade1daf4845484265735488",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.029993
+  },
+  "batch-0009/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0009/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0009/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0009/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0009/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0009/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0009/receipt.json": {
+    "cases": [
+      "scalar U+FFFF window prefix 0, final=False",
+      "scalar U+FFFF window prefix 1, final=False",
+      "scalar U+FFFF window prefix 2, final=False",
+      "scalar U+FFFF window prefix 3, final=False",
+      "scalar U+FFFF window prefix 0, final=True",
+      "scalar U+FFFF window prefix 1, final=True",
+      "scalar U+FFFF window prefix 2, final=True",
+      "scalar U+FFFF window prefix 3, final=True",
+      "scalar U+10000 window prefix 0, final=False",
+      "scalar U+10000 window prefix 1, final=False",
+      "scalar U+10000 window prefix 2, final=False",
+      "scalar U+10000 window prefix 3, final=False"
+    ],
+    "source_bytes": 7402,
+    "source_sha256": "0657b200e53fdfb2e39ea1d3b793d024f34f17ed85eb45a4a290edb87020ef46",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.03157
+  },
+  "batch-0010/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0010/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0010/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0010/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0010/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0010/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0010/receipt.json": {
+    "cases": [
+      "scalar U+10000 window prefix 4, final=False",
+      "scalar U+10000 window prefix 0, final=True",
+      "scalar U+10000 window prefix 1, final=True",
+      "scalar U+10000 window prefix 2, final=True",
+      "scalar U+10000 window prefix 3, final=True",
+      "scalar U+10000 window prefix 4, final=True",
+      "scalar U+10FFFF window prefix 0, final=False",
+      "scalar U+10FFFF window prefix 1, final=False",
+      "scalar U+10FFFF window prefix 2, final=False",
+      "scalar U+10FFFF window prefix 3, final=False",
+      "scalar U+10FFFF window prefix 4, final=False",
+      "scalar U+10FFFF window prefix 0, final=True"
+    ],
+    "source_bytes": 7429,
+    "source_sha256": "2c29d93e089fbd8120d9862a4e7e654ebdfed0a4c419595ee1b150deaefb909e",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.030314
+  },
+  "batch-0011/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0011/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0011/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0011/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0011/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0011/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0011/receipt.json": {
+    "cases": [
+      "scalar U+10FFFF window prefix 1, final=True",
+      "scalar U+10FFFF window prefix 2, final=True",
+      "scalar U+10FFFF window prefix 3, final=True",
+      "scalar U+10FFFF window prefix 4, final=True",
+      "scalar U+FEFF window prefix 0, final=False",
+      "scalar U+FEFF window prefix 1, final=False",
+      "scalar U+FEFF window prefix 2, final=False",
+      "scalar U+FEFF window prefix 3, final=False",
+      "scalar U+FEFF window prefix 0, final=True",
+      "scalar U+FEFF window prefix 1, final=True",
+      "scalar U+FEFF window prefix 2, final=True",
+      "scalar U+FEFF window prefix 3, final=True"
+    ],
+    "source_bytes": 7376,
+    "source_sha256": "050b835c65f246484fc5b5be8baa7cce2c449e32590da0ea2635089fac869a44",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.037779
+  },
+  "batch-0012/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0012/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0012/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0012/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0012/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0012/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0012/receipt.json": {
+    "cases": [
+      "scalar U+FFFD window prefix 0, final=False",
+      "scalar U+FFFD window prefix 1, final=False",
+      "scalar U+FFFD window prefix 2, final=False",
+      "scalar U+FFFD window prefix 3, final=False",
+      "scalar U+FFFD window prefix 0, final=True",
+      "scalar U+FFFD window prefix 1, final=True",
+      "scalar U+FFFD window prefix 2, final=True",
+      "scalar U+FFFD window prefix 3, final=True",
+      "scalar U+FDD0 window prefix 0, final=False",
+      "scalar U+FDD0 window prefix 1, final=False",
+      "scalar U+FDD0 window prefix 2, final=False",
+      "scalar U+FDD0 window prefix 3, final=False"
+    ],
+    "source_bytes": 7359,
+    "source_sha256": "47cd6aa570f488191dd727ab554b4893b0d15ebaee54e326d6fabdf7a008fbf4",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.031334
+  },
+  "batch-0013/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0013/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0013/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0013/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0013/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0013/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0013/receipt.json": {
+    "cases": [
+      "scalar U+FDD0 window prefix 0, final=True",
+      "scalar U+FDD0 window prefix 1, final=True",
+      "scalar U+FDD0 window prefix 2, final=True",
+      "scalar U+FDD0 window prefix 3, final=True",
+      "scalar U+FDEF window prefix 0, final=False",
+      "scalar U+FDEF window prefix 1, final=False",
+      "scalar U+FDEF window prefix 2, final=False",
+      "scalar U+FDEF window prefix 3, final=False",
+      "scalar U+FDEF window prefix 0, final=True",
+      "scalar U+FDEF window prefix 1, final=True",
+      "scalar U+FDEF window prefix 2, final=True",
+      "scalar U+FDEF window prefix 3, final=True"
+    ],
+    "source_bytes": 7351,
+    "source_sha256": "6ab3f383c708be7f02df2381c1c5c87387f8fe21cbd5ad202048f9defb4bde3e",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.030768
+  },
+  "batch-0014/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0014/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0014/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0014/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0014/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0014/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0014/receipt.json": {
+    "cases": [
+      "scalar U+1FFFE window prefix 0, final=False",
+      "scalar U+1FFFE window prefix 1, final=False",
+      "scalar U+1FFFE window prefix 2, final=False",
+      "scalar U+1FFFE window prefix 3, final=False",
+      "scalar U+1FFFE window prefix 4, final=False",
+      "scalar U+1FFFE window prefix 0, final=True",
+      "scalar U+1FFFE window prefix 1, final=True",
+      "scalar U+1FFFE window prefix 2, final=True",
+      "scalar U+1FFFE window prefix 3, final=True",
+      "scalar U+1FFFE window prefix 4, final=True",
+      "scalar U+0378 window prefix 0, final=False",
+      "scalar U+0378 window prefix 1, final=False"
+    ],
+    "source_bytes": 7426,
+    "source_sha256": "4f1e3397e569957b64c4091315462442ebc9e4e743dcdb76b324150b14bc236b",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.030674
+  },
+  "batch-0015/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0015/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0015/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0015/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0015/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0015/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0015/receipt.json": {
+    "cases": [
+      "scalar U+0378 window prefix 2, final=False",
+      "scalar U+0378 window prefix 0, final=True",
+      "scalar U+0378 window prefix 1, final=True",
+      "scalar U+0378 window prefix 2, final=True",
+      "range offset=-9223372036854775808 count=-9223372036854775808 final=False",
+      "range offset=-9223372036854775808 count=-9223372036854775808 final=True",
+      "range offset=-9223372036854775808 count=-1 final=False",
+      "range offset=-9223372036854775808 count=-1 final=True",
+      "range offset=-9223372036854775808 count=0 final=False",
+      "range offset=-9223372036854775808 count=0 final=True",
+      "range offset=-9223372036854775808 count=1 final=False",
+      "range offset=-9223372036854775808 count=1 final=True"
+    ],
+    "source_bytes": 7726,
+    "source_sha256": "00b23cd504a473363e4debe3ccf4c6d1ba311e575a80eae3703e7f8213da11b6",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.040335
+  },
+  "batch-0016/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0016/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0016/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0016/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0016/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0016/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0016/receipt.json": {
+    "cases": [
+      "range offset=-9223372036854775808 count=2 final=False",
+      "range offset=-9223372036854775808 count=2 final=True",
+      "range offset=-9223372036854775808 count=4 final=False",
+      "range offset=-9223372036854775808 count=4 final=True",
+      "range offset=-9223372036854775808 count=9223372036854775807 final=False",
+      "range offset=-9223372036854775808 count=9223372036854775807 final=True",
+      "range offset=-1 count=-9223372036854775808 final=False",
+      "range offset=-1 count=-9223372036854775808 final=True",
+      "range offset=-1 count=-1 final=False",
+      "range offset=-1 count=-1 final=True",
+      "range offset=-1 count=0 final=False",
+      "range offset=-1 count=0 final=True"
+    ],
+    "source_bytes": 7801,
+    "source_sha256": "3c188c16239866a8373939c9bfd418ea4e346df2bfe49ad825bf51e68e5da8ba",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.043368
+  },
+  "batch-0017/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0017/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0017/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0017/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0017/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0017/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0017/receipt.json": {
+    "cases": [
+      "range offset=-1 count=1 final=False",
+      "range offset=-1 count=1 final=True",
+      "range offset=-1 count=2 final=False",
+      "range offset=-1 count=2 final=True",
+      "range offset=-1 count=4 final=False",
+      "range offset=-1 count=4 final=True",
+      "range offset=-1 count=9223372036854775807 final=False",
+      "range offset=-1 count=9223372036854775807 final=True",
+      "range offset=0 count=-9223372036854775808 final=False",
+      "range offset=0 count=-9223372036854775808 final=True",
+      "range offset=0 count=-1 final=False",
+      "range offset=0 count=-1 final=True"
+    ],
+    "source_bytes": 7577,
+    "source_sha256": "869cb0e62d7a816c7ebb394b4d1fd1f9901fe140e744c63a0932d0a8dfef8cce",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.036199
+  },
+  "batch-0018/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0018/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0018/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0018/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0018/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0018/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0018/receipt.json": {
+    "cases": [
+      "range offset=0 count=0 final=False",
+      "range offset=0 count=0 final=True",
+      "range offset=0 count=1 final=False",
+      "range offset=0 count=1 final=True",
+      "range offset=0 count=2 final=False",
+      "range offset=0 count=2 final=True",
+      "range offset=0 count=4 final=False",
+      "range offset=0 count=4 final=True",
+      "range offset=0 count=9223372036854775807 final=False",
+      "range offset=0 count=9223372036854775807 final=True",
+      "range offset=1 count=-9223372036854775808 final=False",
+      "range offset=1 count=-9223372036854775808 final=True"
+    ],
+    "source_bytes": 7595,
+    "source_sha256": "5258d123cd2a3876ae0ea8fdd0905a00b300001910ced3bdae6d011ff8fd371e",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.042124
+  },
+  "batch-0019/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0019/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0019/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0019/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0019/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0019/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0019/receipt.json": {
+    "cases": [
+      "range offset=1 count=-1 final=False",
+      "range offset=1 count=-1 final=True",
+      "range offset=1 count=0 final=False",
+      "range offset=1 count=0 final=True",
+      "range offset=1 count=1 final=False",
+      "range offset=1 count=1 final=True",
+      "range offset=1 count=2 final=False",
+      "range offset=1 count=2 final=True",
+      "range offset=1 count=4 final=False",
+      "range offset=1 count=4 final=True",
+      "range offset=1 count=9223372036854775807 final=False",
+      "range offset=1 count=9223372036854775807 final=True"
+    ],
+    "source_bytes": 7409,
+    "source_sha256": "7e11916de830d6564796e9f14d51b7cd144c9ea4b66ca73b3ce46e3447944c91",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.030575
+  },
+  "batch-0020/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0020/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0020/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0020/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0020/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0020/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0020/receipt.json": {
+    "cases": [
+      "range offset=3 count=-9223372036854775808 final=False",
+      "range offset=3 count=-9223372036854775808 final=True",
+      "range offset=3 count=-1 final=False",
+      "range offset=3 count=-1 final=True",
+      "range offset=3 count=0 final=False",
+      "range offset=3 count=0 final=True",
+      "range offset=3 count=1 final=False",
+      "range offset=3 count=1 final=True",
+      "range offset=3 count=2 final=False",
+      "range offset=3 count=2 final=True",
+      "range offset=3 count=4 final=False",
+      "range offset=3 count=4 final=True"
+    ],
+    "source_bytes": 7495,
+    "source_sha256": "e3a0e3052d91a75c3fbf592b53ebe46fb94dc6f7e85659dd1ead38b4a2657f4e",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.02985
+  },
+  "batch-0021/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0021/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0021/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0021/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0021/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0021/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0021/receipt.json": {
+    "cases": [
+      "range offset=3 count=9223372036854775807 final=False",
+      "range offset=3 count=9223372036854775807 final=True",
+      "range offset=4 count=-9223372036854775808 final=False",
+      "range offset=4 count=-9223372036854775808 final=True",
+      "range offset=4 count=-1 final=False",
+      "range offset=4 count=-1 final=True",
+      "range offset=4 count=0 final=False",
+      "range offset=4 count=0 final=True",
+      "range offset=4 count=1 final=False",
+      "range offset=4 count=1 final=True",
+      "range offset=4 count=2 final=False",
+      "range offset=4 count=2 final=True"
+    ],
+    "source_bytes": 7551,
+    "source_sha256": "6d36ef2e08e0d6501b31871afd0821e8b49a94db6b7f09c35b03297aadd2a76a",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.029785
+  },
+  "batch-0022/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0022/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0022/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0022/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0022/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0022/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0022/receipt.json": {
+    "cases": [
+      "range offset=4 count=4 final=False",
+      "range offset=4 count=4 final=True",
+      "range offset=4 count=9223372036854775807 final=False",
+      "range offset=4 count=9223372036854775807 final=True",
+      "range offset=5 count=-9223372036854775808 final=False",
+      "range offset=5 count=-9223372036854775808 final=True",
+      "range offset=5 count=-1 final=False",
+      "range offset=5 count=-1 final=True",
+      "range offset=5 count=0 final=False",
+      "range offset=5 count=0 final=True",
+      "range offset=5 count=1 final=False",
+      "range offset=5 count=1 final=True"
+    ],
+    "source_bytes": 7561,
+    "source_sha256": "3ea8d475c306cc65d919382275aa3e9d19f966c47d92f08ba6ba52e607c1c01a",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.031388
+  },
+  "batch-0023/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0023/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0023/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0023/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0023/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0023/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0023/receipt.json": {
+    "cases": [
+      "range offset=5 count=2 final=False",
+      "range offset=5 count=2 final=True",
+      "range offset=5 count=4 final=False",
+      "range offset=5 count=4 final=True",
+      "range offset=5 count=9223372036854775807 final=False",
+      "range offset=5 count=9223372036854775807 final=True",
+      "range offset=9223372036854775807 count=-9223372036854775808 final=False",
+      "range offset=9223372036854775807 count=-9223372036854775808 final=True",
+      "range offset=9223372036854775807 count=-1 final=False",
+      "range offset=9223372036854775807 count=-1 final=True",
+      "range offset=9223372036854775807 count=0 final=False",
+      "range offset=9223372036854775807 count=0 final=True"
+    ],
+    "source_bytes": 7777,
+    "source_sha256": "c452fb08fc13e546fb048a86c47c20d76d97bcedb02884581d0ab4ccbdc7240c",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.029292
+  },
+  "batch-0024/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0024/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0024/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0024/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0024/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0024/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0024/receipt.json": {
+    "cases": [
+      "range offset=9223372036854775807 count=1 final=False",
+      "range offset=9223372036854775807 count=1 final=True",
+      "range offset=9223372036854775807 count=2 final=False",
+      "range offset=9223372036854775807 count=2 final=True",
+      "range offset=9223372036854775807 count=4 final=False",
+      "range offset=9223372036854775807 count=4 final=True",
+      "range offset=9223372036854775807 count=9223372036854775807 final=False",
+      "range offset=9223372036854775807 count=9223372036854775807 final=True",
+      "validated prefix before  final=False",
+      "validated prefix before  final=True",
+      "validated prefix before 80 final=False",
+      "validated prefix before 80 final=True"
+    ],
+    "source_bytes": 7839,
+    "source_sha256": "c58704769dcb84ac3a08881fe90199fdfc895e9bcc6db13cd113151edc3f742c",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.038012
+  },
+  "batch-0025/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0025/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0025/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0025/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0025/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0025/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0025/receipt.json": {
+    "cases": [
+      "validated prefix before c0 final=False",
+      "validated prefix before c0 final=True",
+      "validated prefix before c1bf final=False",
+      "validated prefix before c1bf final=True",
+      "validated prefix before c2 final=False",
+      "validated prefix before c2 final=True",
+      "validated prefix before e09f final=False",
+      "validated prefix before e09f final=True",
+      "validated prefix before eda0 final=False",
+      "validated prefix before eda0 final=True",
+      "validated prefix before edbfbf final=False",
+      "validated prefix before edbfbf final=True"
+    ],
+    "source_bytes": 7767,
+    "source_sha256": "b895b13b5a91b09be89d2bf640cdae1b1fe80dd0e30f1054850ee0afd79624b9",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.029147
+  },
+  "batch-0026/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0026/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0026/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0026/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0026/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0026/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0026/receipt.json": {
+    "cases": [
+      "validated prefix before f08f final=False",
+      "validated prefix before f08f final=True",
+      "validated prefix before f490 final=False",
+      "validated prefix before f490 final=True",
+      "validated prefix before f5 final=False",
+      "validated prefix before f5 final=True",
+      "validated prefix before ff final=False",
+      "validated prefix before ff final=True",
+      "validated prefix before e141 final=False",
+      "validated prefix before e141 final=True",
+      "validated prefix before f18041 final=False",
+      "validated prefix before f18041 final=True"
+    ],
+    "source_bytes": 7777,
+    "source_sha256": "f0a3963c68b6ef03a5f7177db0607b8fdcf38806fc0cdb89c8f2e23607991322",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.039258
+  },
+  "batch-0027/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0027/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0027/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0027/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0027/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0027/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0027/receipt.json": {
+    "cases": [
+      "validated prefix before e180 final=False",
+      "validated prefix before e180 final=True",
+      "validated prefix before f180 final=False",
+      "validated prefix before f180 final=True",
+      "validated prefix before f18080 final=False",
+      "validated prefix before f18080 final=True",
+      "validated prefix before f48fbf final=False",
+      "validated prefix before f48fbf final=True",
+      "validated prefix before ff41 final=False",
+      "validated prefix before ff41 final=True",
+      "public success report scalar 0",
+      "public success report scalar 55295"
+    ],
+    "source_bytes": 6823,
+    "source_sha256": "3204193527dfe5ccb50837bb4b71dffa3ebcb673453f94c923f8bc666ed0f12c",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.038532
+  },
+  "batch-0028/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0028/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0028/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0028/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0028/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0028/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0028/receipt.json": {
+    "cases": [
+      "public success report scalar 55296",
+      "public success report scalar 57343",
+      "public success report scalar 57344",
+      "public success report scalar 1114111",
+      "public success report scalar 1114112",
+      "public success report scalar 18446744073709551615",
+      "public success report width -9223372036854775808 is ordinary data",
+      "public success report width -1 is ordinary data",
+      "public success report width 0 is ordinary data",
+      "public success report width 1 is ordinary data",
+      "public success report width 4 is ordinary data",
+      "public success report width 9223372036854775807 is ordinary data"
+    ],
+    "source_bytes": 2078,
+    "source_sha256": "2fda35353a4049a2915caf7b79db57ba44d6527969f90578b5992cfcd57b97ed",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.030377
+  },
+  "batch-0029/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0029/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0029/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0029/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0029/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0029/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0029/receipt.json": {
+    "cases": [
+      "public end_of_input report scalar 0",
+      "public end_of_input report scalar 55295",
+      "public end_of_input report scalar 55296",
+      "public end_of_input report scalar 57343",
+      "public end_of_input report scalar 57344",
+      "public end_of_input report scalar 1114111",
+      "public end_of_input report scalar 1114112",
+      "public end_of_input report scalar 18446744073709551615",
+      "public end_of_input report width -9223372036854775808 is ordinary data",
+      "public end_of_input report width -1 is ordinary data",
+      "public end_of_input report width 0 is ordinary data",
+      "public end_of_input report width 1 is ordinary data"
+    ],
+    "source_bytes": 2176,
+    "source_sha256": "198923b7940f6638057d0a3248c5960f96ff677188b608088679b834d484f573",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.030288
+  },
+  "batch-0030/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0030/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0030/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0030/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0030/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0030/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0030/receipt.json": {
+    "cases": [
+      "public end_of_input report width 4 is ordinary data",
+      "public end_of_input report width 9223372036854775807 is ordinary data",
+      "public out_of_range report scalar 0",
+      "public out_of_range report scalar 55295",
+      "public out_of_range report scalar 55296",
+      "public out_of_range report scalar 57343",
+      "public out_of_range report scalar 57344",
+      "public out_of_range report scalar 1114111",
+      "public out_of_range report scalar 1114112",
+      "public out_of_range report scalar 18446744073709551615",
+      "public out_of_range report width -9223372036854775808 is ordinary data",
+      "public out_of_range report width -1 is ordinary data"
+    ],
+    "source_bytes": 2194,
+    "source_sha256": "ce55380d4848778601ff60694138b495292a7ba6b5d90afc17b2abbf1f323642",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.032058
+  },
+  "batch-0031/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0031/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0031/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0031/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0031/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0031/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0031/receipt.json": {
+    "cases": [
+      "public out_of_range report width 0 is ordinary data",
+      "public out_of_range report width 1 is ordinary data",
+      "public out_of_range report width 4 is ordinary data",
+      "public out_of_range report width 9223372036854775807 is ordinary data",
+      "public invalid_sequence report scalar 0",
+      "public invalid_sequence report scalar 55295",
+      "public invalid_sequence report scalar 55296",
+      "public invalid_sequence report scalar 57343",
+      "public invalid_sequence report scalar 57344",
+      "public invalid_sequence report scalar 1114111",
+      "public invalid_sequence report scalar 1114112",
+      "public invalid_sequence report scalar 18446744073709551615"
+    ],
+    "source_bytes": 2206,
+    "source_sha256": "7492705e8dd95e6a9ecbfdaa948a361fb2274d89d1dc3cbf1c8818d3f7c3f3ad",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.035074
+  },
+  "batch-0032/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0032/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0032/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0032/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0032/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0032/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0032/receipt.json": {
+    "cases": [
+      "public invalid_sequence report width -9223372036854775808 is ordinary data",
+      "public invalid_sequence report width -1 is ordinary data",
+      "public invalid_sequence report width 0 is ordinary data",
+      "public invalid_sequence report width 1 is ordinary data",
+      "public invalid_sequence report width 4 is ordinary data",
+      "public invalid_sequence report width 9223372036854775807 is ordinary data",
+      "public truncated report scalar 0",
+      "public truncated report scalar 55295",
+      "public truncated report scalar 55296",
+      "public truncated report scalar 57343",
+      "public truncated report scalar 57344",
+      "public truncated report scalar 1114111"
+    ],
+    "source_bytes": 2123,
+    "source_sha256": "879095e95c810271a59aaf1e9f73e3790912a4a24085ca9f19492ad7514afcbc",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.034579
+  },
+  "batch-0033/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0033/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0033/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0033/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0033/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0033/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0033/receipt.json": {
+    "cases": [
+      "public truncated report scalar 1114112",
+      "public truncated report scalar 18446744073709551615",
+      "public truncated report width -9223372036854775808 is ordinary data",
+      "public truncated report width -1 is ordinary data",
+      "public truncated report width 0 is ordinary data",
+      "public truncated report width 1 is ordinary data",
+      "public truncated report width 4 is ordinary data",
+      "public truncated report width 9223372036854775807 is ordinary data",
+      "public need_more report scalar 0",
+      "public need_more report scalar 55295",
+      "public need_more report scalar 55296",
+      "public need_more report scalar 57343"
+    ],
+    "source_bytes": 2096,
+    "source_sha256": "764a41427f59ede3cb1d3e69d40bea666d75705dddffb01d68bf83e34e22cce1",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.031189
+  },
+  "batch-0034/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0034/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0034/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0034/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0034/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0034/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0034/receipt.json": {
+    "cases": [
+      "public need_more report scalar 57344",
+      "public need_more report scalar 1114111",
+      "public need_more report scalar 1114112",
+      "public need_more report scalar 18446744073709551615",
+      "public need_more report width -9223372036854775808 is ordinary data",
+      "public need_more report width -1 is ordinary data",
+      "public need_more report width 0 is ordinary data",
+      "public need_more report width 1 is ordinary data",
+      "public need_more report width 4 is ordinary data",
+      "public need_more report width 9223372036854775807 is ordinary data",
+      "decode report copies and input owner stay independent",
+      "validation reports are independent ordinary signed-count values"
+    ],
+    "source_bytes": 3116,
+    "source_sha256": "b5b054a1caeb499423b66c7d699bbf13445a2d81290c1ac0180acd034d51123d",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.031467
+  },
+  "batch-0035/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0035/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0035/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0035/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0035/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0035/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0035/receipt.json": {
+    "cases": [
+      "full maximum-capacity 4096-byte span",
+      "four-byte scalar at maximum-capacity span tail",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=0",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=1",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=2",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=3",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=4",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=5",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=6",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=7",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=8",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=9"
+    ],
+    "source_bytes": 50382,
+    "source_sha256": "2987c108ba632865a65e9940b8d565fc7e0919ea1cfafdb2509ff9445e44c2f6",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.164148
+  },
+  "batch-0036/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0036/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0036/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0036/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0036/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0036/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0036/receipt.json": {
+    "cases": [
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=10",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=11",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=12",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=13",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=14",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=15",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=16",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=17",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=18",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=19",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=20",
+      "stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=21"
+    ],
+    "source_bytes": 9944,
+    "source_sha256": "6402da2276523765d8231458e495a317f80d8e9a7ff55c05f2bc7ad1bbf3becb",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.039198
+  },
+  "batch-0037/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0037/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0037/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0037/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0037/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0037/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0037/receipt.json": {
+    "cases": [
+      "one-byte chunk replay with at most three retained bytes 007fc280e0a080f0908080f48fbfbfefbbbfefb790",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=0",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=1",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=2",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=3",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=4",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=5",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=6",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=7",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=8",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=9",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=10"
+    ],
+    "source_bytes": 10120,
+    "source_sha256": "2cfe1d7825eb421c1caf64cf4c433759c20e403901120e2489386aeec26cf190",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.039133
+  },
+  "batch-0038/assemble.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/compiled.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0038/compiler.command.json": {
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/compiled.s"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 536870912,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0038/entry.command.json": {
+    "command": [
+      "as",
+      "--64",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/entry.s",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/entry.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0038/link.command.json": {
+    "command": [
+      "ld",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/program",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/entry.o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/program.o"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 30,
+    "returncode": 0
+  },
+  "batch-0038/native.command.json": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-encoding-next/build/utf8-native-41yqra0d/batch-0038/program"
+    ],
+    "cpu_soft_seconds": 10,
+    "cpu_hard_seconds": 11,
+    "address_space_bytes": 134217728,
+    "file_size_bytes": 8388608,
+    "wall_seconds": 15,
+    "returncode": 0
+  },
+  "batch-0038/receipt.json": {
+    "cases": [
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=11",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=12",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=13",
+      "stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=14",
+      "one-byte chunk replay with at most three retained bytes f09f998241ed9fbfee8080cdb800"
+    ],
+    "source_bytes": 4528,
+    "source_sha256": "297f1b4bb7f52a7e5d22faa4d1e5b3ae909d54023f050ebfaecd69650894dbab",
+    "status": "passed",
+    "observation": {
+      "exit_code": 0,
+      "terminal_signal": null,
+      "delivery_signal": null,
+      "pc": null,
+      "instruction": null,
+      "signal_code": null
+    },
+    "seconds": 0.036195
+  },
+  "manifest.json": {
+    "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+    "utf8_sha256": "a9448bed52974ca1e690b9a10e86a5f879c5b24f475a12ab1ec079e4e97bc646",
+    "test_sha256": "c30c913e6f5a81b724002a112acfdf7dc98b7c4dc4b9165f0a0999f005e9df84",
+    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+    "optimized_python": true,
+    "native_wall_seconds": 15,
+    "tool_wall_seconds": 30,
+    "cpu_soft_hard_seconds": [
+      10,
+      11
+    ],
+    "compiler_address_space_bytes": 536870912,
+    "other_address_space_bytes": 134217728,
+    "regular_file_bytes": 8388608,
+    "max_source_bytes": 65536,
+    "max_cases_per_batch": 12,
+    "unicode_format": "17.0.0 section 3.9 Table 3-7",
+    "scope": "ordinary functional Linux/x86-64 execution; no safety/performance proof",
+    "status": "passed",
+    "native_checks": 406,
+    "native_batches": 39,
+    "scalar_values": 1112064,
+    "one_byte_inputs": 256,
+    "two_byte_inputs": 65536,
+    "longer_boundary_inputs": 24200,
+    "final_modes_per_input": 2,
+    "completed_native_checks": 406,
+    "native_batches_attempted": 39
+  }
+}

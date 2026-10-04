@@ -1,0 +1,14 @@
+{
+  "receipt-hashes.json": {
+    "entries": 118,
+    "mismatches": []
+  },
+  "binary-hashes.json": {
+    "entries": 6,
+    "mismatches": []
+  },
+  "candidate-inputs.json": {
+    "entries": 21,
+    "mismatches": []
+  }
+}

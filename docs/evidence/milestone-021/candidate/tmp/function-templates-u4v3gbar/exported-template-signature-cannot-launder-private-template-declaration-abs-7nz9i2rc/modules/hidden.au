@@ -1,0 +1,1 @@
+export module hidden;template<Value T>class Box{public:T item;Box(T x):item(x){} };export template<Value T>auto bad(Box<T> x)->T{return missing;}

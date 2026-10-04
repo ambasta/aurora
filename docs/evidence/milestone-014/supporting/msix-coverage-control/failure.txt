@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/tmp/aurora-msix-trace-control/control.py", line 20, in <module>
+    qm=connect('qmp.sock');record('qmp-greeting',json.loads(qm.readline()))
+       ^^^^^^^^^^^^^^^^^^^
+  File "/tmp/aurora-msix-trace-control/control.py", line 17, in connect
+    s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.connect(str(r/name));s.settimeout(5);return s.makefile('rwb',buffering=0)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/socket.py", line 233, in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+PermissionError: [Errno 1] Operation not permitted

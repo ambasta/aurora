@@ -1,0 +1,1 @@
+export module hidden;import std.utility;enum class Hidden{ready};export template<Value T>auto bad(T x)->Hidden{const Hidden result=Hidden::ready;return result;}

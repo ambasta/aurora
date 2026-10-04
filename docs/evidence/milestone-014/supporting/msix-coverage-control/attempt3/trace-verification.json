@@ -1,0 +1,18 @@
+{
+  "pci_cfg_write nvme 00:02.0 @0x4 <- 0x2": [
+    "pci_cfg_write nvme 00:02.0 @0x4 <- 0x2"
+  ],
+  "name 'msix-table'": [
+    "memory_region_ops_write cpu -1 mr 0x556bd0b658b0 addr 0xc000200c value 0x1 size 4 name 'msix-table'"
+  ],
+  "pci_nvme_mmio_write": [],
+  "pci_nvme_mmio_start_success": [],
+  "pci_nvme_create_sq": [],
+  "pci_nvme_create_cq": [],
+  "pci_nvme_dma_read": [],
+  "all_nvme_config_writes": [
+    "pci_cfg_write nvme 00:02.0 @0x10 <- 0xc0000004",
+    "pci_cfg_write nvme 00:02.0 @0x14 <- 0x0",
+    "pci_cfg_write nvme 00:02.0 @0x4 <- 0x2"
+  ]
+}

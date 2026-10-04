@@ -1,0 +1,17 @@
+{
+  "main_inputs_verified_unchanged": 257,
+  "baseline_input_manifest_sha256": "9fd392b5682cee4639f90870922056ebd1c2361ec62250af2c4154953ff60b3b",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "commands": [
+    "python3 test_lifecycle.py",
+    "python3 -O test_lifecycle.py",
+    "python3 test_mutations.py",
+    "python3 -O test_mutations.py"
+  ],
+  "candidate_inputs": {
+    "README.md": "0caeb9a0d0e7f5ce0aff9cbaf6759c06a5a60cc20bf81eb70f1d135374b63053",
+    "lifecycle.py": "7fa4fa0ae34882afc2633bff41dcba8587ef1cfa63bad71432068f73bf7c5a24",
+    "test_lifecycle.py": "85f5b38c3182b9fe60b229fb379998b336cdca99145fb57282b6491049ce027e",
+    "test_mutations.py": "4a003b78e2353c5f481476e26fd1917bfab85287474afb76f3df85a49283697d"
+  }
+}

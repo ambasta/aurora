@@ -1,0 +1,12 @@
+{
+  "kernel/uefi/runtime.cpp": "7cf4266309ac9f3ff504b5dad9de3345e465bec0307459aa8cbf55123fcb451f",
+  "kernel/uefi/runtime-layout.hpp": "31b90091b2d4e1c4e0a959ed2191c108006cb09034a85e7506e188d5c11e40ad",
+  "kernel/uefi/handoff.hpp": "2293d38ab4ca058817d947ed61317744a97579eee1fc84649c3f3a1cc967d39f",
+  "kernel/uefi/tables.hpp": "ee864b0ba37632d9733ac4f14b8140e34c4e2096875e0609b7816a575ad85236",
+  "scripts/kernel-uefi-build.sh": "c3e70f4b63ed648015b494f5cd9e63f0c4ac24e4a5702249a4cc6676e6f6a333",
+  "scripts/kernel-uefi-smoke.sh": "d70e676947192117cb50cc060d1b66eb7dc86a9f55fed297418f313241116616",
+  "tests/kernel-uefi-runtime-smoke.py": "49a670835913d30c0b09ff9c13aaefb7d58e87da4539c27cd97420e163586813",
+  "tests/kernel-uefi-pin-smoke.py": "6608955d85117650790472be71143a86e33ba7b5bf377735f46665bf62e6dcc4",
+  "kernel/pin-ledger.hpp": "5cf4585f517cafb5466c3624ae0c7ec6c000291eb6cf81e0e9999274932e1249",
+  "Makefile": "bd8f804630dff7c3244f4e355df230cc29237acb0fe8c8ea95219559681059e5"
+}

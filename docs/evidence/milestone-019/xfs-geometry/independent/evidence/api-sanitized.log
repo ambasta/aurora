@@ -1,0 +1,19 @@
+{
+  "compiler": "/tmp/aurora-resource-sanitizer/aurorac",
+  "compiler_sha256": "805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf",
+  "module_sha256": "c67c03928e0d4cf5896178906bd447523ec15b57cc95c4ade8b8330305a77864",
+  "lifetime_native_outputs": 44,
+  "metadata_static_and_native_types": 10,
+  "rejection_fixtures": [
+    "private_builder",
+    "private_validator",
+    "private_zero_helper",
+    "private_report_field",
+    "private_fact_field",
+    "nested_probe_needs_direct_import",
+    "span_storage",
+    "span_escape"
+  ],
+  "rejection_artifact_modes": 2,
+  "failures": []
+}

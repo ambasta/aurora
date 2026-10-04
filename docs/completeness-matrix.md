@@ -1,6 +1,6 @@
 # Completeness and acceptance matrix
 
-This is a requirements map, not a completion percentage. Snapshot: 2026-10-03, verified milestone013. The compiler/kernel bootstrap passes the recorded aggregate and all 139 unique emulator gates, including bounded integer-only single-CPU preemption and a separate validated UEFI handoff. See the [verification record](verification.md) for exact source identity, commands and limits. No physical AMD platform is qualified; [Framework 13 / 7840U](framework-13-7840u.md) is the first complete-machine target.
+This is a requirements map, not a completion percentage. Snapshot: 2026-10-03, verified milestone021 functional checkpoint. Explicit copied-value function templates and std::make_pair passed complete release/fatal host ASan/UBSan compiler gates, independent review/replay, a fresh parent aggregate and three existing UEFI profiles. M019 remains the historical full 166-mode result (37 BIOS, 129 UEFI-family); M021 did not rerun that full suite or add kernel functionality. Bounded integer-only single-CPU preemption and a separate validated UEFI handoff remain the baseline. See the [verification record](verification.md) for exact source identity, commands and limits. No physical AMD platform is qualified; [Framework 13 / 7840U](framework-13-7840u.md) is the first complete-machine target.
 
 “C++-expressive” means comparable useful systems-programming capability under newly specified safety rules. It does **not** mean preserving arbitrary pointer manipulation, undefined behavior, C++ source compatibility, object layouts, or the C ABI. The confirmed identity is a recognizable modern C++ API with extreme safety, modern/elegant design and high performance. The target must specify safe replacements and any excluded features; unsafe features may be removed rather than preserved for compatibility. Neither the current compiler nor this matrix proves that every useful C++ pattern already has an equivalent.
 
@@ -12,18 +12,18 @@ This is a requirements map, not a completion percentage. Snapshot: 2026-10-03, v
 | Fixed arrays | Local scalar arrays, value copies and checked indexing; milestone010 adds reviewed private zero-initialized scalar-array fields and compiled std::array<T,N>, scalar T and literal N in 1..64, copied at()/mutable set(); canonical builtin::array plus fixed bare array alias; 216 container/463 IR cases, final integration passed | General ownership-safe collections and aggregate lifetime rules; boundary, overflow, initialization and aliasing tests |
 | Modules and source/artifact I/O | Explicit bounded import roots, exports/namespaces, defining-module lookup, scoped metadata views; descriptor-relative Linux source reads, atomic fail-latched output, depth caps; no separate binary-module ABI | Native module/package identities, lifecycle and resource contracts; independently tested visibility, import graphs, artifact failure behavior and later native-capability replacement of host adapter |
 | Safe type-level algebra | Not implemented | Key-set queries, mapped/conditional types, checked refinement and bounded evaluation; no unchecked top type/assertion loopholes; preserve privacy, nominal resource identity, lifetimes and effects |
-| Generics/compile-time programming | Restricted builtin/class size, type-ID, field-count facts and static assertions; milestone009 adds reviewed explicit one/two-parameter Scalar-constrained class templates, 64 definitions/256 specializations per graph; milestone010 adds Scalar-plus-i64 literal-capacity parameters restricted to 1..64, with canonical value identity and readonly substitution; milestone011 adds bounded Value class composition, and reviewed milestone012 extends Value to closed nominal enums while Scalar stays numeric/bool; no deduction, function templates, nested template-id arguments, recursive instantiation, general concepts or reflective code generation | Constrained generics and typed reflection/code generation; generated code obeys ordinary visibility, lifetime and effect checks; reproducibility/resource-limit tests |
-| Memory safety | Scoped local owned integers and lexical borrow rejection examples | Heap/arena ownership, interprocedural lifetimes, aliasing/provenance and trusted intrinsic rules; formal core model, negative tests, adversarial safe clients and compiler validation |
+| Generics/compile-time programming | Restricted builtin/class size, type-ID, field-count facts and static assertions; milestone009 adds reviewed explicit one/two-parameter Scalar-constrained class templates, 64 definitions/256 specializations per graph; milestone010 adds Scalar-plus-i64 literal-capacity parameters restricted to 1..64, with canonical value identity and readonly substitution; milestone011 adds bounded Value class composition, and reviewed milestone012 extends Value to closed nominal enums while Scalar stays numeric/bool; milestone020 adds fully concrete nested template-id arguments to depth four, independent of class depth four, with unchanged leaf/definition/instance/capacity bounds; milestone021 adds explicit one/two-parameter Scalar/Value namespace-level function templates and narrow bare-parameter class-template substitution, with combined 64-definition/256-instance budgets; no deduction, overloads, generic methods, nested dependent expansion, function-template calls in template bodies, recursive instantiation, general concepts or reflective code generation | Constrained generics and typed reflection/code generation; generated code obeys ordinary visibility, lifetime and effect checks; reproducibility/resource-limit tests |
+| Memory safety | Scoped local owned integers plus readonly whole-array u8 spans, synchronous capability-record parameters and conservative lexical/call lifetime rejection; no async/heap ownership implementation | Heap/arena ownership, interprocedural lifetimes, aliasing/provenance and trusted intrinsic rules; formal core model, negative tests, adversarial safe clients and compiler validation |
 | Runtime reflection | Runtime size/field-count lookup for builtin/class/mentioned-array IDs and reviewed nominal enum descriptors; class counts public fields only; no member traversal or invocation | Exported descriptors, checked invocation/mutation, ownership-preserving dynamic arguments, unload leases; stale/malformed metadata and privilege-bypass tests |
 | Concurrency/async | Not implemented | Defined atomics, data-race prevention, synchronization, cancellation and suspension lifetimes; model checking/stress/fault tests and soundness argument |
 | Freestanding core and platform/runtime | First Aurora-authored scalar std.core module implemented and cross-module execution tested; general platform/runtime services remain absent | Separate core/kernel/user profiles; Aurora-authored startup, capability-scoped allocation, threading, I/O, time/math and native OS boundary replacing libc responsibilities; no C API/ABI; dependency/failure gates in [library-stack.md](library-stack.md) |
-| Safe standard library | Tiny published std.core and std.numeric/Accumulator modules; milestone006 adds scalar-specialized std::minmax/MinMax and checked range_width using independent value boundaries; milestone007 verified scalar std.integer gcd/lcm/div/DivResult; milestone008 adds reviewed scalar std.bit popcount/bit_width/has_single_bit, final integration passed; milestone009 adds reviewed std.utility pair for all nine scalar tuples; milestone010 adds reviewed std.array with private fixed scalar storage and complete independent copies; milestone012 adds reviewed std.decimal recoverable numeric accumulation and copied DecimalResult reports; milestone013 adds recoverable std.bytes codecs and compact fixed storage; no strings, heap containers or general runtime package set | C++-recognizable strings/containers/algorithms/ranges/ownership/concurrency/reflection in Aurora; checked views/invalidation, Unicode/numerics and effects; no unsafe API loopholes or assumption of unchanged libc++ reuse |
+| Safe standard library | Tiny published std.core and std.numeric/Accumulator modules; milestone006 adds scalar-specialized std::minmax/MinMax and checked range_width using independent value boundaries; milestone007 verified scalar std.integer gcd/lcm/div/DivResult; milestone008 adds reviewed scalar std.bit popcount/bit_width/has_single_bit, final integration passed; milestone009 adds reviewed std.utility pair for all nine scalar tuples; milestone010 adds reviewed std.array with private fixed scalar storage and complete independent copies; milestone012 adds reviewed std.decimal recoverable numeric accumulation and copied DecimalResult reports; milestone013 adds recoverable std.bytes codecs and compact fixed storage; milestone021 adds real std::make_pair<T,U> using independent copied values; no strings, heap containers or general runtime package set | C++-recognizable strings/containers/algorithms/ranges/ownership/concurrency/reflection in Aurora; checked views/invalidation, Unicode/numerics and effects; no unsafe API loopholes or assumption of unchanged libc++ reuse |
 | Tooling/self-hosting | Host compiler/build/test harness; no native self-hosting | Native toolchain/packages/debugger/profiler; build compiler/system using the native core/runtime/library, inspect target dependencies and compare multi-stage outputs |
 | Boot/CPU | Separate OVMF-tested relocatable UEFI loader/payload with bounded final-map handoff, own stack/mappings and Aurora execution; Sequential protected user domains now run on UEFI; bounded UEFI run budgets and controlled client recovery are implemented. Emulator-only BIOS loader, explicit 4 KiB permissioned identity mappings, serial result, IDT/GDT/TSS/guarded IST, NXE/WP and fail-stop paths verified in QEMU | Native or UEFI boot contract; validated memory map, exception recovery, per-CPU state, feature detection, real-machine logs |
 | Memory/process isolation | Partial trusted C++ bootstrap: E820 usable-map validation and bounded 128-page arena, move-only generation/epoch tickets; controlled ring-3 probe plus new separately compiled user fixtures, bounded scalar return and validated compiler-fault containment in three owned CR3 domains with leased stacks, tested foreign-access denial, root restoration, scrubbed reuse and stale-handle checks; bounded integer-only BIOS preemption plus milestone009 sequential UEFI domains with explicit layout authority, private backing and guarded entry stacks; no general process model | Physical/virtual allocation, user isolation, capabilities, revocation and resource accounting; cross-domain access/forgery tests fail safely |
 | Scheduler/SMP/IPC | Bounded QEMU xAPIC single-CPU integer-context preemption, fixed tasks/slice budgets, pending-IRQ drain; staged copied-scalar request/reply IPC on UEFI with incarnation-bound grants and cancellation/restart; UEFI role/phase/transaction-bound client and service interrupt-count budgets with disposal, mapping retirement, scrub and rebinding; no SMP, arbitrary suspended IPC, calibrated time or general scheduler | Preemptive scheduling, multiprocessor synchronization, timers and bounded IPC; fairness, interrupt storms, starvation and restart tests |
-| Platform/power | Bounded post-firmware RSDP/XSDT/MADT discovery through a revocable R-NX window, tested in OVMF; read-only q35 MCFG/PCI function inventory through revocable UC mappings; no AML, device activation/IOMMU driver stack or physical-platform power support | Discovery, DMA isolation, interrupt routing, suspend/resume, shutdown and thermal policy; malformed tables, stale DMA and transition-failure tests |
-| Storage/network/input | Not implemented | Real drivers and services, persistence/recovery, networking and input; corruption, unplug, exhaustion and restart tests on named devices |
+| Platform/power | Bounded post-firmware RSDP/XSDT/MADT discovery through a revocable R-NX window, tested in OVMF; read-only q35 MCFG/PCI function inventory through revocable UC mappings; milestone014 adds explicit validated read-only BAR/profile authority with revoked-window tests and a pinned clean-firmware fixture; no AML, device activation/IOMMU driver stack or physical-platform power support | Discovery, DMA isolation, interrupt routing, suspend/resume, shutdown and thermal policy; malformed tables, stale DMA and transition-failure tests |
+| Storage/network/input | No target driver/filesystem/network/input implementation; native NVMe object/extent filesystem and XFS on-disk backend are specified in [storage requirements](../storage/design/requirements.md); host-only durability model and traceability tests pass, not mount support | Real drivers and services, persistence/recovery, networking and input; corruption, unplug, exhaustion and restart tests on named devices |
 | AMD display | Not implemented; no framebuffer acceptance result | Boot framebuffer then native display separately; modesetting, hotplug and resume tested on named GPU/connector tuples |
 | AMD acceleration | Not implemented | GPU memory isolation, submissions, shaders, fences, preemption and recovery; correctness plus adversarial multi-client and reset tests |
 | Performance qualification | No equivalent-C benchmark evidence | Reproducible equivalent-semantics C comparisons; layout/allocation/atomics/dispatch/check/reflection costs, latency/throughput/memory/code-size; no blanket zero-cost claim |
@@ -96,3 +96,160 @@ verified count exhaustion. Peer transaction authority survives offender disposal
 unknown-origin faults remain fatal. All 139 modes passed on the final compiler,
 with 202 build/test inputs captured before and unchanged after the complete run.
 See verification.md for parent checks and independent-review compiler identities.
+
+
+## Milestone014 scope
+
+Readonly byte spans, synchronous binary readers and a separate protected span
+program are verified. Static creation-site identity strengthens branch joins;
+this does not claim unique runtime generations or general borrowing. The narrow
+read-only PCI BAR/resource slice passed seven actual modes plus the span mode,
+with all 139 historical modes preserved. Stock controller state is rejected;
+the clean test firmware's exact configuration and provenance are mandatory.
+DMA, NVMe queues, IOMMU isolation, filesystem mounting and real hardware remain
+unimplemented. Storage S0 requirements and host crash/model checks are integrated.
+
+
+## Milestone015 scope
+
+The library adds checked LE/BE16/32/64 reads, incremental CRC32C and an exact512-byte
+XFS v5 header-integrity fact probe. Its reports do not establish log cleanliness,
+feature support or mountability. Independent native/oracle/fixture checks and
+complete release/sanitized compiler targets passed without compiler changes.
+
+Read-only AMD-Vi discovery reconciles paired IVHD10/11 requester facts with live
+PCI and full-aperture resource exclusions. Architectural-default admission refuses
+the observed disabled-enable-bit configuration; a separately selected, exact QEMU
+profile permits only three cold register reads. All158 actual modes passed,
+including independent11 new modes and four parent spots. Stack lifetimes were
+fixed without widening the16KiB stack; the reviewed maximum is12,776 bytes with
+fault reserve. This is not active translation or DMA isolation. Filesystem and
+physical-device goals remain open.
+
+## Reviewed compiler initialization-fact storage
+
+This reviewed implementation changes only the verifier's local must-initialized and
+may-initialized fact representation. It adds no language feature and includes no
+mutable-byte-view implementation. Dense facts use a checked immutable slot
+universe and two bitsets; logical dataflow decisions and generated assembly remain
+unchanged on the finite differential corpus.
+
+Release model/IR/full compiler gates pass. The complete instrumented target also passes, with minimal -g1 debug metadata
+only for the IR test binary and unchanged fatal ASan/UBSan instrumentation.
+Independent source/model/storage review passed with exact manifests and the
+sparse-memory tradeoff retained.
+
+The measured dense workloads improve, while a valid sparse-prefix source uses
+about10.7% more RSS. This is not a universal improvement or an overall compiler
+resource guarantee. [RESOURCE-NOTE.md](../compiler/RESOURCE-NOTE.md) records both
+counterexamples and improvements, precise logical-storage exclusions, limits and
+failed build receipts. Main combined milestone acceptance remains a separate decision.
+
+
+## Milestone016 scope
+
+Representation-only compiler initialization facts use checked dense bitsets with
+unchanged admission rules; sparse-memory regressions are documented alongside
+dense-case improvements. Complete release/instrumented and independent differential
+checks passed. Only the large IR sanitizer-test build used reduced debug metadata;
+runtime instrumentation and fatal checks remained enabled.
+
+Real kernel page leases are held in a persistent four-entry ledger. Clean,
+never-published cancellation scrubs before release; test-selected uncertain
+publication remains permanently quarantined through service slot1 death and
+incarnation2-to4 restart, stale-authority rejection and clean42 execution.
+All162 actual modes and parent checks passed. No device publication/completion
+API, IOMMU activation, DMA isolation or physical qualification is implemented.
+
+
+## Milestone017 scope
+
+Readonly std.utf8 decodes/validates Unicode17 UTF-8 with strict byte ranges,
+recoverable signed-range failures and stateless incomplete-prefix replay. Native
+independent tests cover every scalar and short/boundary inputs on release and
+instrumented compilers. Public report classes are data, not buffer certificates.
+Compiler implementation, kernel and prior fixtures remain unchanged. Parent
+aggregate plus runtime-span, pin-fault and normal UEFI profiles passed. The previous
+162-mode run belongs to M016 and was not rerun for this library-only delta.
+Encoding, owned strings, normalization, graphemes, fonts, paths and terminal
+semantics remain separate requirements.
+
+
+## Milestone018 scope
+
+Owned UTF-8 encoding extends std.utf8 using existing fixed-array/value-class APIs.
+All scalar encodings and invalid-scalar, zero-tail, copy, report and access cases
+passed independent native checks. Public report constructors can supply arbitrary
+data; accessor range/padding checks do not certify forged success bytes as UTF-8.
+Parent aggregate and three existing smoke profiles passed on unchanged compiler/
+kernel; no fresh full162 run. String allocation, normalization, graphemes, output
+services and terminal behavior remain separate.
+
+
+## Verified milestone019: dormant table bytes and XFS header geometry
+
+The integrated checkpoint passed all **166 actual emulator modes** (37 BIOS,
+129 UEFI-family), independent review of all four new modes, a fresh coordinating
+`make test`, and fresh readback/quarantine/normal UEFI smoke profiles. The latter
+three are selected repetitions, not a second full suite. Normal images restored.
+
+- The bootstrap kernel constructs bounded AMD3.10-format dormant tables in real
+  leased guest RAM, checks every DTE/leaf through a software model, rejects
+  corruption, tests exhaustion, and scrubs or quarantines pages across restart.
+  No IOMMU register programming, device publication, DMA or interrupt isolation
+  is implemented. Each mode retains the 16 KiB stack and existing page budgets;
+  the measured bound is 13,136 bytes including a 1,024-byte fault reserve.
+- Native `fs.xfs_geometry` adds recoverable facts for a deliberately narrow XFS
+  v5/512-byte header profile, overflow-safe geometry and explicit feature masks.
+  Independent tests exercise 2,016 identical byte-distinct headers under each
+  compiler pin, all 42 scalar result leaves, failure zeroing and input stability.
+  Success is copied data, not authority or evidence of mountability. No XFS
+  mount/replay/write path, storage transport or physical-device qualification.
+
+See [verification](verification.md) for hashes, failures, test limits and
+archival evidence. General heap safety, active DMA, SMP, native toolchain,
+filesystem service, graphics and the complete desktop remain future work.
+
+## Verified milestone020: bounded nested generic values
+
+The integrated compiler permits fully concrete nested Value template arguments,
+including private fixed byte-array wrappers and closed nominal enum descendants.
+The four-level template-id cap is independent of class-depth four; 64 leaves,
+64 template definitions, 256 interned instances including children, and literal
+capacities 1..64 remain unchanged. Child-first nominal resolution preserves
+transitive visibility, defining-module binding and copied value boundaries.
+See [NESTED-VALUES.md](../compiler/NESTED-VALUES.md).
+
+Independent source/adversarial review and complete release/fatal ASan/UBSan
+compiler targets passed. Parent adoption verified all 18 paths, rebuilt the release
+compiler to the reviewed pin, then passed a fresh `make test` and `runtime-span`,
+`runtime-pin-fault`, `normal` UEFI profiles. All 359 captured source inputs and
+183 external pins were unchanged during those gates; normal image restored.
+Documentation-only finalization is identified separately in M020 evidence.
+M019's full 166 modes remain historical, not a fresh M020 run. Dependent body
+expansion, recursion, deduction, ownership/references, new ABI/IR, full standard
+library capability and physical hardware support are not added.
+
+
+## Verified milestone021: explicit copied-value function templates
+
+Namespace-level function templates accept one/two explicit Scalar/Value type
+arguments and instantiate independently copied concrete functions. std::make_pair
+and the executable token/source-range example consume existing inline values.
+Class-template-id arguments may be bare function parameters or concrete M020 trees;
+nested dependent expressions and calls to function templates from any template
+body are rejected. Combined graph budgets are 64 definitions/256 instances.
+Nominal depth, class containment, leaves, array capacities and copied-value
+boundaries remain independently checked. Unrequested ordinary tuple validity is
+deferred; structural restrictions and fixed exported-signature visibility are eager.
+
+Complete release/fatal host ASan/UBSan compiler gates, independent release review
+and fatal replay passed. Parent adopted 18 pinned paths and rebuilt the identical
+release compiler, then passed fresh make test and runtime-span/runtime-pin-fault/
+normal UEFI profiles, restoring normal. All 363 source and 183 external inputs
+were unchanged through those gates. Final documentation-only changes are recorded
+separately. M019's full 166 modes remain historical. No new IR/ABI, deduction,
+overloads, generic methods, function capacity parameters, recursive expansion,
+heap/resource/reference generics, complete library, self-hosting or physical
+hardware support follows. See [contract](../compiler/FUNCTION-TEMPLATES.md) and
+[evidence](evidence/milestone-021/README.md).

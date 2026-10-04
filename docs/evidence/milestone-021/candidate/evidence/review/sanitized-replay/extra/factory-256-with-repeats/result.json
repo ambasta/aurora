@@ -1,0 +1,28 @@
+{
+  "name": "factory-256-with-repeats",
+  "source_group": "extra",
+  "negative": false,
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/san/aurorac",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/extra/factory-256-with-repeats/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/extra/factory-256-with-repeats/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/sanitized-replay/extra/factory-256-with-repeats/compiled.s"
+  ],
+  "compiler_status": 0,
+  "compiler_stderr": "",
+  "seconds": 0.061490774154663086,
+  "release_evidence": "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/extra/factory-256-with-repeats/result.json",
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/extra/factory-256-with-repeats/input.au": "e19aed1ced448367d7dfc20855c3137687c86ef41cccccf66296dd9030a2de5e"
+  },
+  "pass": true,
+  "observer_sha256": "13fbd908de3e5e40d92d5c4464c2afba8e848877fe61078c5fc31d3906dd1626",
+  "native_status": 0,
+  "native_hex": "2a00000000000000",
+  "expected": 42,
+  "inputs_unchanged": true
+}

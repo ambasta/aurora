@@ -1,0 +1,20 @@
+{
+  "/sys/fs/cgroup/memory.max": {
+    "unavailable": "[Errno 2] No such file or directory: '/sys/fs/cgroup/memory.max'"
+  },
+  "/sys/fs/cgroup/memory.current": {
+    "unavailable": "[Errno 2] No such file or directory: '/sys/fs/cgroup/memory.current'"
+  },
+  "/sys/fs/cgroup/memory.events": {
+    "unavailable": "[Errno 2] No such file or directory: '/sys/fs/cgroup/memory.events'"
+  },
+  "/sys/fs/cgroup/memory/memory.limit_in_bytes": {
+    "unavailable": "[Errno 2] No such file or directory: '/sys/fs/cgroup/memory/memory.limit_in_bytes'"
+  },
+  "/sys/fs/cgroup/memory/memory.usage_in_bytes": {
+    "unavailable": "[Errno 2] No such file or directory: '/sys/fs/cgroup/memory/memory.usage_in_bytes'"
+  },
+  "/proc/self/cgroup": "0::/\n",
+  "/proc/self/limits": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        0                    unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             39792                39792                processes \nMax open files            16384                16384                files     \nMax locked memory         8388608              8388608              bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       39792                39792                signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+  "/proc/meminfo": "MemTotal:       10206508 kB\nMemAvailable:    3482952 kB\nSwapTotal:             0 kB\nSwapFree:              0 kB"
+}

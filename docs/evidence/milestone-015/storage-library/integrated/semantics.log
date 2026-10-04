@@ -1,0 +1,23 @@
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/test_runner.py']
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.010s
+
+OK
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/run.py', '/tmp/aurora-m015-release/aurorac']
+seed=20261002 generated=128 compiler_sha256=2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8
+compiler_as_limit=512MiB native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
+PASS 630 cases {"bounds": 50, "overflow": 96, "rejected": 199, "value": 285}
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/run.py', '/tmp/aurora-m015-release/aurorac', '--seed', '404', '--cases', '1024']
+seed=404 generated=1024 compiler_sha256=2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8
+compiler_as_limit=512MiB native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
+PASS 1526 cases {"bounds": 229, "overflow": 205, "rejected": 199, "value": 893}
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/run.py', '/tmp/aurora-m015-sanitizer/aurorac', '--sanitized-compiler']
+seed=20261002 generated=128 compiler_sha256=ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa
+compiler_as_limit=inherited (sanitizer mode) native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
+PASS 630 cases {"bounds": 50, "overflow": 96, "rejected": 199, "value": 285}
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'tests/semantics/run.py', '/tmp/aurora-m015-sanitizer/aurorac', '--seed', '404', '--cases', '1024', '--sanitized-compiler']
+seed=404 generated=1024 compiler_sha256=ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa
+compiler_as_limit=inherited (sanitizer mode) native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
+PASS 1526 cases {"bounds": 229, "overflow": 205, "rejected": 199, "value": 893}
+PASS scalar semantic regressions: harness, default630/stress1526 on both compiler pins

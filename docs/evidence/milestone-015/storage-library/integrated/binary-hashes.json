@@ -1,0 +1,10 @@
+{
+  "/tmp/aurora-m015-release/aurorac": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+  "/tmp/aurora-m015-release/ir-tests": "318a17ac1c54d6e74b77c0dc02c78ca9973f74c0b19752cbfa99cd26590d5faf",
+  "/tmp/aurora-m015-release/host-source-tests": "4872d236ce85aeb266489c2ed041065e26d4f61ab3572e128ac3135ccee1f7ed",
+  "/tmp/aurora-m015-release/host-output-tests": "193e6e30f54e9dd474f66afabb82727eac3ff5cc6ec36572406718f06c703c41",
+  "/tmp/aurora-m015-sanitizer/aurorac": "ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa",
+  "/tmp/aurora-m015-sanitizer/ir-tests": "34181616b8dc98bb105e5437f2245d06c1c29ae40087f03db0a6e9d44c616310",
+  "/tmp/aurora-m015-sanitizer/host-source-tests": "4d84d62cf2267ff3807104ba4efade07ed02a8ba436f74780e07ff856a3c5607",
+  "/tmp/aurora-m015-sanitizer/host-output-tests": "09784a2d322f7d5c9cbbe440d4c4ca4b1c911b52388e6e9959ae19ece14cf4a7"
+}

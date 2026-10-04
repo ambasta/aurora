@@ -1,0 +1,13 @@
+{
+  "change": "Original binary preserved by same-filesystem rename outside versioned tree. Unchanged canonical hex is source transport; no new mkfs invocation.",
+  "original_repository_path": "fixtures/xfs-offline/superblock-v5-512.bin",
+  "preserved_original_path": "/workspace/scratch/48c5de6446f8/aurora-fixture-originals/m015/superblock-v5-512.bin",
+  "raw_size": 512,
+  "raw_sha256": "55ad821909c312048d9936a74c8904cd25f97aa190b48ae0004b03eaffdc6586",
+  "hex_transport_path": "fixtures/xfs-offline/superblock-v5-512.hex",
+  "hex_transport_size": 1728,
+  "hex_transport_sha256": "d1d3fbc3f8b693d1c0ddf395e92b136a81b2a5d30b9e3cdec36addd580d42986",
+  "recorded_utc": "2026-10-03T12:37:28.889731+00:00",
+  "historical_receipts": "Creation/read receipts unchanged; prior paths describe original runs.",
+  "initial_move_attempt": "Rename to /workspace/shared failed EXDEV without moving the file."
+}

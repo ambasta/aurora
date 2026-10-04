@@ -1,0 +1,18 @@
+{
+  "main_checked_files": 189,
+  "main_changed_files": [],
+  "implementation_frozen_unchanged": true,
+  "candidate_input_count": 194,
+  "candidate_manifest_sha256": "b98524824b78d2948d1e517d0874d5cd13c6d4d958a3c30fdbad3d9a3c001bfb",
+  "change_manifest_sha256": "671715cf96bb11596eb72bdf755e9baee18eb094d650b23157740a639e522b3d",
+  "patch_sha256": "2693af6f71bf7d7380cc6007f10c0b8c8043befe3fcffedafb0bb74cddfbf345",
+  "release_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+  "release_recheck_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+  "sanitizer_sha256": "78379d081bfae56608a6a60e72bc290e9abd68e88b1a9c3e96f93d25b007cfb5",
+  "baseline_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "release_gate_exit": 0,
+  "sanitizer_gate_exit": 0,
+  "candidate_file_bytes": 121588904,
+  "filesystem_free_bytes": 2268753920,
+  "integration_performed": false
+}

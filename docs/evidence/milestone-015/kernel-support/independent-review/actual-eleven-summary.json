@@ -1,0 +1,80 @@
+{
+  "count": 11,
+  "modes": [
+    {
+      "mode": "ivrs-alias",
+      "status": 35,
+      "receipt_sha256": "842e1b7e2ab0e6f3b2fae0c2868df621ed5d7cec0a8ec45e43b2c7ba4761d569",
+      "payload_sha256": "e558deec46320baaa5a40291ae17b61bb217dd71f1e60c60b90139e289986cfa"
+    },
+    {
+      "mode": "ivrs-capability",
+      "status": 35,
+      "receipt_sha256": "434c0a7bf1505d3fa0145c44c944d4ad00dd9db41a8aed0dede350a6cec552ff",
+      "payload_sha256": "fad3ee1ec2191a4a4c70e13b049e1ae96dc628a611ca4a88a215fc23978a00d3"
+    },
+    {
+      "mode": "ivrs-default",
+      "status": 35,
+      "receipt_sha256": "966812e948fd444740427f54a86e8a875961dbf3e78de2867981d388280b006e",
+      "payload_sha256": "cdf89a839934f601891fafd0528d3a874326a3a8c7f401f389a4decbea14dc77"
+    },
+    {
+      "mode": "ivrs-missing",
+      "status": 35,
+      "receipt_sha256": "65af3e01b1fb8e4c546a9e702315eacb4046e9a0e7d7e0503f82cc3ea6bea366",
+      "payload_sha256": "a56b5d3646d8a9116efd128c52e57b1ce570dfb21cc0e4afc1e91f507d902c80"
+    },
+    {
+      "mode": "ivrs-pair",
+      "status": 35,
+      "receipt_sha256": "52f98009e63abfa4b579c6fd008209026f5310af0d98b8a9f4aa9ea209b8fa09",
+      "payload_sha256": "9e9c8b33f08f40a3fbb95ee561efe79fafeb97192aa9dc8b3e398f0cdbe5d8a1"
+    },
+    {
+      "mode": "ivrs-range",
+      "status": 35,
+      "receipt_sha256": "fe4fe41f5105dc76436e183bbea48ca8a2371a8eae038d24b3a5668e01d8cd2d",
+      "payload_sha256": "547d67f5ebaa3d0e695f41dfc27cc88d5fa188fd86d037b0594bebecd407a848"
+    },
+    {
+      "mode": "ivrs-read",
+      "status": 33,
+      "receipt_sha256": "bcc4cc5a08fa9c88bbab8c2307f42515e073facdcbceac12264808730eb0a970",
+      "payload_sha256": "a56b5d3646d8a9116efd128c52e57b1ce570dfb21cc0e4afc1e91f507d902c80"
+    },
+    {
+      "mode": "ivrs-reserved",
+      "status": 35,
+      "receipt_sha256": "0ed2b2cd6a1ad55559da44dc04ac72b58485e8ecb19f79769a29f012362e52ff",
+      "payload_sha256": "482350046109bfb83bb6919cf584a1e4b514bbd8d8ae6ddb6ac3b6dfbdb0be94"
+    },
+    {
+      "mode": "ivrs-revoked",
+      "status": 35,
+      "receipt_sha256": "15a32d0078c9aad3872a24a7afaa24936118e60d2c4d156b78d4226531869111",
+      "payload_sha256": "1d2adb8474e9b3386d222d0262d39586854774c394fda0eedceee40031b62563"
+    },
+    {
+      "mode": "ivrs-scope",
+      "status": 35,
+      "receipt_sha256": "696d5fe6ed483738a49d852c6eed6aeda586903001e80b131bfd71ef8caf72da",
+      "payload_sha256": "ef601d2b219ddc0d0c105a67c761f3637e600f866213429aad2bb8e96670324a"
+    },
+    {
+      "mode": "ivrs-write",
+      "status": 35,
+      "receipt_sha256": "fb7e0dda6b09e2aa1bc52aa500cd29bbd743337b15d61f259707d677ed0f063e",
+      "payload_sha256": "6e14b2c60184138e640b5d469c8352eab45cb6a25e5c5e6e7185a304d3046bdb"
+    }
+  ],
+  "normal_restore": {
+    "payload_sha256": "1efd83fe4487f86d52755ce16b9fff8e7e607095c2892da3a253a7241da3d75a",
+    "loader_sha256": "4dd16765fae1bf2f5cb78cf20d2e6d5b493cbd390dfc704b6bb3320eadb5c2fb",
+    "metadata": {
+      "offset": 139264,
+      "bytes": 16384,
+      "fault_offsets": {}
+    }
+  }
+}

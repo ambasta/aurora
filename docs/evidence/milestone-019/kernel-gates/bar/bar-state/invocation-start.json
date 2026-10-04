@@ -1,0 +1,90 @@
+{
+  "schema": "aurora-bar-run-v1",
+  "mode": "bar-state",
+  "argv": [
+    "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64",
+    "-L",
+    "/tmp/aurora-qemu/firmware",
+    "-machine",
+    "q35",
+    "-accel",
+    "tcg",
+    "-cpu",
+    "qemu64",
+    "-smp",
+    "1",
+    "-m",
+    "128M",
+    "-bios",
+    "/tmp/aurora-ovmf/root/usr/share/ovmf/OVMF.fd",
+    "-drive",
+    "format=raw,file=fat:ro:/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/bar/bar-state/esp,snapshot=on",
+    "-device",
+    "nvme,serial=AURORA_READ_ONLY,bus=pcie.0,addr=02.0",
+    "-nic",
+    "none",
+    "-display",
+    "none",
+    "-serial",
+    "stdio",
+    "-monitor",
+    "none",
+    "-no-reboot",
+    "-trace",
+    "events=/tmp/aurora-clean-ovmf/provenance/trace-enable-events.txt,file=/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/bar/bar-state/trace.log",
+    "-chardev",
+    "file,id=firmware,path=/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/bar/bar-state/firmware.log",
+    "-device",
+    "isa-debugcon,iobase=0x402,chardev=firmware",
+    "-device",
+    "isa-debug-exit,iobase=0xf4,iosize=0x04"
+  ],
+  "cwd": "/workspace/scratch/48c5de6446f8/aurora",
+  "environment": {
+    "LD_LIBRARY_PATH": "/tmp/aurora-qemu/root/usr/lib/x86_64-linux-gnu"
+  },
+  "firmware_profile": "stock",
+  "boot_root": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/bar/bar-state/esp",
+  "stdio": {
+    "stdout": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/bar/bar-state/serial.log",
+    "stderr": "stdout"
+  },
+  "files": {
+    "qemu": {
+      "path": "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64",
+      "sha256": "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067"
+    },
+    "events": {
+      "path": "/tmp/aurora-clean-ovmf/provenance/trace-enable-events.txt",
+      "sha256": "9f115add677f04405f67f3570311e07b0f3d49b7533ab15ee87ec7ff37696a41"
+    },
+    "compiler": {
+      "path": "/tmp/aurora-resource-main-compiler-frozen",
+      "sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980"
+    },
+    "coverage": {
+      "path": "/tmp/aurora-m014-bar-coverage.json",
+      "sha256": "6b027ec9db05ece4c9d5fc3a53ae25961b38e0bf2c3b416273e73ae6163f3f22"
+    },
+    "payload": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/bar/bar-state/payload.bin",
+      "sha256": "de9cf3de46501939c0464fdce58022b0091d66e90a654f29a85082983c2a1b6c"
+    },
+    "payload_elf": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/bar/bar-state/payload.elf",
+      "sha256": "1e6b481af95c43a67799fa50c565698d9023b1576f02b637f437e24d66d7cacf"
+    },
+    "payload_metadata": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/bar/bar-state/bar-metadata.json",
+      "sha256": "7caaeaa45d8edf71c9e7d3e2f7feffc530dd61348170c1a5145ae8e19f299e7f"
+    },
+    "loader": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/bar/bar-state/esp/EFI/BOOT/BOOTX64.EFI",
+      "sha256": "d41fea1fca56a8dbff88c5c757395bfeaf02d055a1529ce6bd6b16f87435c991"
+    },
+    "firmware_code": {
+      "path": "/tmp/aurora-ovmf/root/usr/share/ovmf/OVMF.fd",
+      "sha256": "14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db"
+    }
+  }
+}

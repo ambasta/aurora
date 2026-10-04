@@ -619,7 +619,7 @@ def rejection_cases(suite):
         ("nested field method result chaining", init + "Leaf result=pair.second.snapshot();return 42;"),
         ("enum builtin array", "array<Status,2> values={Status::ok,Status::error};return 42;"),
         ("enum std array", "std::array<Status,2> values=std::array<Status,2>();return 42;"),
-        ("nested template id Value argument", "std::pair<Status,std::pair<Status,i64>> p="
+        ("nested template value requires exact class constructor argument", "std::pair<Status,std::pair<Status,i64>> p="
          "std::pair<Status,std::pair<Status,i64>>(Status::ok,42);return 42;"),
     ):
         suite.check(label, program(body, BASE, imports="import std.utility;import std.array;"), reject=True)

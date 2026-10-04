@@ -93,6 +93,8 @@ class ClassTemplateExpansion {
 
   public:
     static Type argumentType(const TemplateArgument &argument) {
+        if (!argument.templateArguments.empty())
+            throw Error("unresolved nested class template argument");
         Type result(argument.type);
         if (argument.type == TypeKind::Class || argument.type == TypeKind::Enum) {
             result.className = argument.className;
@@ -108,6 +110,8 @@ class ClassTemplateExpansion {
             if (index)
                 result += ",";
             const auto &argument = arguments[index];
+            if (!argument.templateArguments.empty())
+                throw Error("unresolved nested class template argument");
             if (argument.kind == TemplateArgumentKind::Value)
                 result += std::to_string(argument.value);
             else if (argument.type == TypeKind::Class || argument.type == TypeKind::Enum)
@@ -121,6 +125,8 @@ class ClassTemplateExpansion {
     static std::string nativeSuffix(const std::vector<TemplateArgument> &arguments) {
         std::string result = "_t" + std::to_string(arguments.size());
         for (const auto &argument : arguments) {
+            if (!argument.templateArguments.empty())
+                throw Error("unresolved nested class template argument");
             if (argument.kind == TemplateArgumentKind::Type) {
                 if (argument.type == TypeKind::Class && !argument.className.empty())
                     result += "_c" + std::to_string(argument.className.size()) + argument.className;
@@ -169,6 +175,8 @@ class ClassTemplateExpansion {
         for (std::size_t index = 0; index < arguments.size(); ++index) {
             const auto &parameter = definition.templateParameters[index];
             const auto &argument = arguments[index];
+            if (!argument.templateArguments.empty())
+                throw Error("unresolved nested class template argument");
             if (parameter.kind == TemplateParameterKind::Scalar) {
                 if (argument.kind != TemplateArgumentKind::Type || !scalar(Type(argument.type)))
                     throw Error("class template Scalar argument requires i64, u64, u8 or bool");
@@ -212,4 +220,144 @@ class ClassTemplateExpansion {
         return result;
     }
 };
+
+// This distinct expander intentionally does not relax class-template bodies.
+// Its only generated requests are statically named class specializations.
+class FunctionTemplateExpansion {
+    std::map<std::string, Type> substitutions;
+    std::vector<TemplateArgument> arguments(const std::vector<TemplateArgument> &source,
+                                          bool nested = false) const {
+        auto result = source;
+        for (auto &argument : result) {
+            name(argument.className);
+            if (argument.type == TypeKind::Parameter) {
+                if (nested || !argument.templateArguments.empty())
+                    throw Error("nested dependent template arguments are not supported");
+                const auto found = substitutions.find(argument.className);
+                if (found == substitutions.end())
+                    throw Error("unknown function template parameter: " + argument.className);
+                argument.type = found->second.kind;
+                argument.className = found->second.className;
+                argument.displayName = found->second.displayName;
+                argument.resolvedClass = found->second.resolvedClass;
+            } else
+                argument.templateArguments = arguments(argument.templateArguments, true);
+        }
+        return result;
+    }
+    Type type(Type value) const {
+        name(value.className);
+        if (value.kind == TypeKind::Parameter) {
+            const auto found = substitutions.find(value.className);
+            if (found == substitutions.end())
+                throw Error("unknown function template parameter: " + value.className);
+            return found->second;
+        }
+        value.templateArguments = arguments(value.templateArguments);
+        if (!value.elementParameter.empty()) {
+            const auto found = substitutions.find(value.elementParameter);
+            if (found == substitutions.end() || !scalar(found->second))
+                throw Error("function template array element requires a scalar type");
+            value.elementKind = found->second.kind;
+            value.elementParameter.clear();
+        }
+        if (!value.lengthParameter.empty())
+            throw Error("function templates do not have capacity parameters");
+        return value;
+    }
+    void name(const std::string &value) const {
+        for (const auto &[parameter, unused] : substitutions) {
+            (void)unused;
+            if (value.starts_with(parameter + "::"))
+                throw Error("dependent qualified names are not supported: " + value);
+        }
+    }
+    ExpressionPtr expression(const ExpressionPtr &source) const {
+        if (!source)
+            return nullptr;
+        name(source->token.text);
+        if ((source->op == "call" || source->op == "construct") &&
+            substitutions.contains(source->token.text))
+            throw Error("dependent construction or conversion is not supported: " +
+                        source->token.text);
+        auto result = std::make_shared<Expression>(*source);
+        result->templateArguments = arguments(source->templateArguments);
+        result->reflectedType = type(source->reflectedType);
+        result->args.clear();
+        for (const auto &argument : source->args)
+            result->args.push_back(expression(argument));
+        return result;
+    }
+    StatementPtr statement(const StatementPtr &source) const {
+        if (source->kind == "let" && substitutions.contains(source->name))
+            throw Error("local cannot shadow a function template parameter: " + source->name);
+        auto result = std::make_shared<Statement>(*source);
+        result->type = type(source->type);
+        result->expr = expression(source->expr);
+        result->target = expression(source->target);
+        result->body.clear();
+        result->other.clear();
+        for (const auto &child : source->body)
+            result->body.push_back(statement(child));
+        for (const auto &child : source->other)
+            result->other.push_back(statement(child));
+        return result;
+    }
+  public:
+    static Function instantiate(const Function &source,
+                                const std::vector<TemplateArgument> &arguments) {
+        if (arguments.size() != source.templateParameters.size())
+            throw Error("wrong number of function template arguments for " + source.token.text);
+        FunctionTemplateExpansion expansion;
+        for (std::size_t index = 0; index < arguments.size(); ++index) {
+            const auto &parameter = source.templateParameters[index];
+            const auto &argument = arguments[index];
+            const auto value = ClassTemplateExpansion::argumentType(argument);
+            if (argument.kind != TemplateArgumentKind::Type ||
+                (parameter.kind == TemplateParameterKind::Scalar && !scalar(value)) ||
+                (parameter.kind == TemplateParameterKind::Value && !scalarValue(value) &&
+                 !value.isClass()) || parameter.kind == TemplateParameterKind::Capacity)
+                throw Error("function template argument violates Scalar or Value constraint");
+            expansion.substitutions.emplace(parameter.name, value);
+        }
+        Function result = source;
+        result.templateParameters.clear();
+        result.templateArguments = arguments;
+        result.exported = false;
+        result.result = expansion.type(source.result);
+        for (auto &parameter : result.params) {
+            if (expansion.substitutions.contains(parameter.name))
+                throw Error("function parameter cannot shadow a template parameter: " + parameter.name);
+            parameter.type = expansion.type(parameter.type);
+        }
+        result.body.clear();
+        for (const auto &statement : source.body)
+            result.body.push_back(expansion.statement(statement));
+        return result;
+    }
+    static void validate(const Function &source) {
+        if (source.templateParameters.empty() || source.templateParameters.size() > 2 ||
+            !source.receiverClass.empty() || source.constructor)
+            throw Error("function templates require one or two namespace-level type parameters");
+        auto boundary = [](const Type &type) {
+            if (!scalarValue(type) && !type.isClass() && type.kind != TypeKind::Parameter)
+                throw Error("function template boundaries require copied Scalar or Value types");
+        };
+        boundary(source.result);
+        for (const auto &parameter : source.params)
+            boundary(parameter.type);
+        std::set<std::string> names;
+        std::vector<TemplateArgument> arguments;
+        for (const auto &parameter : source.templateParameters) {
+            if (parameter.kind == TemplateParameterKind::Capacity ||
+                !names.insert(parameter.name).second)
+                throw Error("function templates require distinct Scalar or Value parameters");
+            arguments.push_back(TypeKind::I64);
+        }
+        // Disposable scalar substitution checks structural restrictions even for
+        // unrequested definitions, without claiming universal body validity.
+        (void)instantiate(source, arguments);
+    }
+};
+
 } // namespace aurora

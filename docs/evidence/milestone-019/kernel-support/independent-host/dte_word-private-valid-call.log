@@ -1,0 +1,8 @@
+/tmp/aurora-amd310-independent-review/dte_word-private-valid-call.cpp: In function ‘auto leak(aurora::memory::DormantTables&)’:
+/tmp/aurora-amd310-independent-review/dte_word-private-valid-call.cpp:2:63: error: ‘uint64_t aurora::memory::DormantTables::dte_word(std::size_t, std::size_t) const’ is private within this context
+    2 | auto leak(aurora::memory::DormantTables& t) {return t.dte_word(0,0);}
+      |                                                     ~~~~~~~~~~^~~~~
+In file included from /tmp/aurora-amd310-independent-review/dte_word-private-valid-call.cpp:1:
+/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include/dormant-tables.hpp:82:24: note: declared private here
+   82 |     [[nodiscard]] auto dte_word(std::size_t rid,std::size_t word) const -> std::uint64_t {
+      |                        ^~~~~~~~
