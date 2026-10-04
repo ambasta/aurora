@@ -710,6 +710,7 @@ def main():
     parser.add_argument('--self-test-only',action='store_true')
     parser.add_argument('--freeze-reference',type=Path)
     parser.add_argument('--candidate-cap-mib',type=int,default=256,help='whole-candidate storage cap 256..512 MiB; default focused cap 256')
+    parser.add_argument('--compiler-sha256', default=COMPILER_SHA256, help='explicit expected compiler SHA256; default preserves accepted M022 pin')
     args=parser.parse_args()
     self_test();cap=candidate_cap(args.candidate_cap_mib)
     frozen=ROOT/'evidence/package-manifest/contract-before-implementation.md'
@@ -719,7 +720,8 @@ def main():
     if args.freeze_reference:
         freeze_corpus(artifact_path(args.freeze_reference));return
     compiler=args.compiler.resolve(strict=True)
-    require(sha(compiler)==COMPILER_SHA256,'exact accepted M022 compiler SHA256 required')
+    require(re.fullmatch(r'[0-9a-f]{64}', args.compiler_sha256) is not None, 'expected compiler SHA256 must be 64 lowercase hex characters')
+    require(sha(compiler)==args.compiler_sha256,'exact expected compiler SHA256 required')
     artifacts=artifact_path(args.artifact_root or ROOT/f'build/package-manifest-{os.getpid()}')
     require(artifacts.parent.is_dir() and not artifacts.exists(),'fresh artifact root with existing parent required')
     runner=Runner(compiler,artifacts,cap)

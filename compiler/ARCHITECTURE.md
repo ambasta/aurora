@@ -141,3 +141,18 @@ and typed byte load; no separated pointer or length can bypass it. The analyzer
 also enforces lexical scope and source-level restrictions described in SPANS.md.
 This remains a narrow synchronous static-borrow candidate, not general lifetime
 polymorphism or a runtime borrow checker.
+
+## Ordinary overload candidate boundary
+
+Module resolution retains one defining-module declaration group and per-member
+export visibility. It resolves nominal signatures, rejects repeated parameter
+tuples, then records visible native candidates and signature visibility on each
+call AST. Semantic lowering checks arity, stages each actual argument once using
+existing scalar/class/span operations, and selects exactly one nominal tuple.
+Result and selected signature authority are checked independently. Existing IR
+Call/AggregateCall instructions identify a single concrete validated function; no
+overload metadata reaches IR. Scalar overload entrypoints have local linkage.
+This remains an unaccepted candidate under FUNCTION-OVERLOADS.md.
+
+The isolated candidate passed complete release/fatal sanitizer compiler gates and
+independent source/IR/native review. Parent integration is still pending.

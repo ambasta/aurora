@@ -131,3 +131,15 @@ package prerequisite automatically. Standalone `make test-package-identity`
 keeps the 128 MiB default. This prevents the full default aggregate from inheriting
 a focused-only cap after other test products have accumulated. Both routes pass
 an explicit cap argument to the same harness and record it in their manifests.
+
+## Explicit compiler-integration pin
+
+The runner now accepts --compiler-sha256 as an explicit expected 64-character
+lowercase hexadecimal digest. Its default remains the historical accepted M022
+pin. The binary must match before the designated artifact directory is created
+or any native test output is produced. PACKAGE_IDENTITY_COMPILER_SHA256 passes
+that expected digest through the Make target; it does not bypass verification.
+A new compiler integration must record and review its expected pin independently,
+then deliberately supply it. Wrong/malformed pins and baseline-default behavior
+have independent rejection/compatibility checks. The format/oracle and frozen
+pre-implementation contract are unchanged.

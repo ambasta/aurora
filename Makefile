@@ -173,6 +173,7 @@ smoke-uefi-tables:
 # Bounded native source-package metadata primitive. Tests pin the accepted M022
 # compiler bytes independently; this adds no compiler feature or target runtime.
 PACKAGE_IDENTITY_COMPILER ?= build/aurorac
+PACKAGE_IDENTITY_COMPILER_SHA256 ?= e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
 PACKAGE_IDENTITY_TEST_FLAGS ?=
 PACKAGE_IDENTITY_CAP_MIB ?= 128
 # The inherited full regression build retains more than 128 MiB. Keep the
@@ -180,18 +181,19 @@ PACKAGE_IDENTITY_CAP_MIB ?= 128
 test: PACKAGE_IDENTITY_CAP_MIB = 512
 .PHONY: test-package-identity
 test-package-identity:
-	python3 -B -O tests/compiler/package_identity.py $(abspath $(PACKAGE_IDENTITY_COMPILER)) --candidate-cap-mib $(PACKAGE_IDENTITY_CAP_MIB) $(PACKAGE_IDENTITY_TEST_FLAGS)
+	python3 -B -O tests/compiler/package_identity.py $(abspath $(PACKAGE_IDENTITY_COMPILER)) --compiler-sha256 "$(PACKAGE_IDENTITY_COMPILER_SHA256)" --candidate-cap-mib $(PACKAGE_IDENTITY_CAP_MIB) $(PACKAGE_IDENTITY_TEST_FLAGS)
 
 test: test-package-identity
 
 # Versioned declarative metadata only; no resolver, installer or execution authority.
 PACKAGE_MANIFEST_COMPILER ?= build/aurorac
+PACKAGE_MANIFEST_COMPILER_SHA256 ?= e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
 PACKAGE_MANIFEST_TEST_FLAGS ?=
 PACKAGE_MANIFEST_CAP_MIB ?= 256
 test: PACKAGE_MANIFEST_CAP_MIB = 512
 .PHONY: test-package-manifest
 test-package-manifest:
-	python3 -B -O tests/compiler/package_manifest.py $(abspath $(PACKAGE_MANIFEST_COMPILER)) --candidate-cap-mib $(PACKAGE_MANIFEST_CAP_MIB) $(PACKAGE_MANIFEST_TEST_FLAGS)
+	python3 -B -O tests/compiler/package_manifest.py $(abspath $(PACKAGE_MANIFEST_COMPILER)) --compiler-sha256 "$(PACKAGE_MANIFEST_COMPILER_SHA256)" --candidate-cap-mib $(PACKAGE_MANIFEST_CAP_MIB) $(PACKAGE_MANIFEST_TEST_FLAGS)
 
 test: test-package-manifest
 

@@ -163,6 +163,7 @@ class ModuleResolver {
         const ClassDefinition *templateDefinition = nullptr;
         const Function *functionTemplateDefinition = nullptr;
         const EnumDefinition *enumDefinition = nullptr;
+        std::vector<std::pair<std::string, bool>> overloads{};
     };
     ModuleLoader::Graph graph;
     std::map<std::string, std::map<std::string, Declaration>> declarations;
@@ -281,7 +282,7 @@ class ModuleResolver {
                                                            : kind == Kind::Enum   ? 'e'
                                                                                   : 'c'),
                                  name, scope, leaf);
-                if (!table.emplace(qualified, Declaration{kind, qualified, native, exported, name})
+                if (!table.emplace(qualified, Declaration{kind, qualified, native, exported, name, nullptr, nullptr, nullptr, {}})
                          .second)
                     throw Error(std::string(kind != Kind::Function
                                                 ? "duplicate or reserved class name"
@@ -330,7 +331,29 @@ class ModuleResolver {
                 table.at(qualify(function.scope, function.token.text)).functionTemplateDefinition =
                     &function;
             }
+            std::map<std::string, std::size_t> functionCounts;
+            for (const auto &function : unit.program.functions)
+                ++functionCounts[qualify(function.scope, function.token.text)];
             for (auto &function : unit.program.functions) {
+                const auto qualified = qualify(function.scope, function.token.text);
+                const auto count = functionCounts.at(qualified);
+                if (count > 32)
+                    throw Error("ordinary overload set exceeds 32 declarations: " + qualified);
+                if (count > 1 && unit.root && function.scope.empty() &&
+                    function.token.text == "answer")
+                    throw Error("bootstrap answer entrypoint cannot be overloaded");
+                if (count > 1) {
+                    if (!table.contains(qualified))
+                        add(Kind::Function, function.scope, function.token.text, function.exported, true);
+                    auto &declaration = table.at(qualified);
+                    if (declaration.kind != Kind::Function)
+                        throw Error("duplicate or reserved function name: " + qualified);
+                    declaration.exported = declaration.exported || function.exported;
+                    function.name = mangle('o', name, function.scope, function.token.text) +
+                                    "_pending" + std::to_string(declaration.overloads.size());
+                    declaration.overloads.emplace_back(function.name, function.exported);
+                    continue;
+                }
                 const bool valueBoundary =
                     function.result.isClass() ||
                     std::any_of(function.params.begin(), function.params.end(),
@@ -913,11 +936,39 @@ class ModuleResolver {
                             throw Error("exported function signature exposes private type: " +
                                         typeName(type));
                     }
-                    signatures[function.name].push_back(type);
                 };
                 resolve(function.result);
                 for (auto &parameter : function.params)
                     resolve(parameter.type);
+                if (function.templateArguments.empty()) {
+                    auto &declaration = declarations.at(name).at(qualify(function.scope, function.token.text));
+                    if (!declaration.overloads.empty()) {
+                        const auto previous = function.name;
+                        std::string identity = mangle('o', name, function.scope, function.token.text) +
+                                               "_p" + std::to_string(function.params.size()) + "_";
+                        for (const auto &parameter : function.params) {
+                            const auto &type = parameter.type;
+                            if (!scalarValue(type) && !type.isClass() && !type.isSpan())
+                                throw Error("ordinary overload parameters require scalar, enum, class or readonly byte span types");
+                            const auto component = std::to_string(static_cast<int>(type.kind)) +
+                                                   "_" + type.className;
+                            identity += std::to_string(component.size()) + component;
+                        }
+                        if (signatures.contains(identity))
+                            throw Error("duplicate or reserved function name in module " + name +
+                                        ": " + declaration.qualified);
+                        function.name = identity;
+                        for (auto &[native, exported] : declaration.overloads) {
+                            (void)exported;
+                            if (native == previous)
+                                native = identity;
+                        }
+                    }
+                }
+                auto &signature = signatures[function.name];
+                signature.push_back(function.result);
+                for (const auto &parameter : function.params)
+                    signature.push_back(parameter.type);
                 activeFunction = nullptr;
             }
         }
@@ -1013,7 +1064,18 @@ class ModuleResolver {
                 if (declaration->kind == Kind::Enum)
                     throw Error("enum values require a named case: " + value->token.text);
                 value->resolvedName = declaration->native;
-                if (declaration->kind == Kind::Function) {
+                if (declaration->kind == Kind::Function && !declaration->overloads.empty()) {
+                    for (const auto &[native, exported] : declaration->overloads) {
+                        if (!exported && declaration->module != unit.program.moduleName)
+                            continue;
+                        value->overloadCandidates.push_back(native);
+                        for (const auto &type : signatures.at(native))
+                            if (!bodyTypeVisible(type, unit))
+                                value->inaccessibleOverloads.insert(native);
+                    }
+                    if (value->overloadCandidates.empty())
+                        throw Error("private function is not imported: " + declaration->qualified);
+                } else if (declaration->kind == Kind::Function) {
                     for (const auto &type : signatures.at(declaration->native))
                         if (!bodyTypeVisible(type, unit))
                             throw Error(

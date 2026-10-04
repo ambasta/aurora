@@ -28,6 +28,7 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 ../tests/compiler/value_calls.py $(abspath $(OUT))
 	python3 ../tests/compiler/templates.py $(abspath $(OUT))
 	python3 -O ../tests/compiler/function_templates.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/function_overloads.py $(abspath $(OUT))
 	python3 ../tests/compiler/fixed_containers.py $(abspath $(OUT))
 	python3 ../tests/compiler/composed_values.py $(abspath $(OUT))
 	python3 -O ../tests/compiler/nested_values.py $(abspath $(OUT))
@@ -129,3 +130,7 @@ test-utf8-lines: $(OUT)
 	work="$$(mktemp -d "$$parent/utf8-lines.XXXXXXXX")"; \
 	python3 -B -O ../tests/compiler/utf8_lines.py --compiler "$(abspath $(OUT))" --compiler-sha256 "$(UTF8_LINES_COMPILER_SHA256)" --artifacts "$$work/native" $(UTF8_LINES_TEST_FLAGS); \
 	printf 'PASS UTF-8 lines Make recipe: %s\n' "$$work"
+
+.PHONY: test-function-overloads
+test-function-overloads: $(OUT)
+	python3 -B -O ../tests/compiler/function_overloads.py $(abspath $(OUT))
