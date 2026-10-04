@@ -1,0 +1,8 @@
+PASS target-release
+PASS example-compile-release
+PASS target-sanitized
+PASS example-compile-sanitized
+PASS assemble-library
+PASS assemble-entry
+PASS link-example
+PASS native-example-42

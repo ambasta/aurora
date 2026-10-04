@@ -1,0 +1,63 @@
+{
+  "result": "PASS",
+  "scope": "Actual QEMU guest CPU_BYTES/SOFTWARE_MODEL only",
+  "modes": 4,
+  "source_files": 302,
+  "source_inputs_unchanged": true,
+  "external_files": 125,
+  "external_inputs_unchanged": true,
+  "normal_restored_after_each_mode": true,
+  "source_manifest_sha256": "07e5e9b59c8b39635f63809518cd4615cf63428f558bf0fddfe2c1adf16271f4",
+  "kernel_review_manifest_sha256": "e0de2883c7f0cd7f8df351bdc09207ba6017e4e6467f032cc30a51b1ddb23c55",
+  "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "results": [
+    {
+      "mode": "runtime-table-readback",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-table-readback"
+      ],
+      "started_utc": "2026-10-03T17:26:39.450324+00:00",
+      "completed_utc": "2026-10-03T17:26:47.390184+00:00",
+      "exit_code": 0,
+      "stack_peak_including_fault": 13136,
+      "stack_bytes": 16384
+    },
+    {
+      "mode": "runtime-table-reject",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-table-reject"
+      ],
+      "started_utc": "2026-10-03T17:26:47.392809+00:00",
+      "completed_utc": "2026-10-03T17:26:54.982390+00:00",
+      "exit_code": 0,
+      "stack_peak_including_fault": 13136,
+      "stack_bytes": 16384
+    },
+    {
+      "mode": "runtime-table-exhaust",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-table-exhaust"
+      ],
+      "started_utc": "2026-10-03T17:26:54.985201+00:00",
+      "completed_utc": "2026-10-03T17:27:02.522994+00:00",
+      "exit_code": 0,
+      "stack_peak_including_fault": 13136,
+      "stack_bytes": 16384
+    },
+    {
+      "mode": "runtime-table-quarantine",
+      "command": [
+        "./scripts/kernel-uefi-smoke.sh",
+        "runtime-table-quarantine"
+      ],
+      "started_utc": "2026-10-03T17:27:02.525678+00:00",
+      "completed_utc": "2026-10-03T17:27:10.068712+00:00",
+      "exit_code": 0,
+      "stack_peak_including_fault": 13136,
+      "stack_bytes": 16384
+    }
+  ]
+}

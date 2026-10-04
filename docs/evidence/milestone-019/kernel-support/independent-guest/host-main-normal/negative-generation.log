@@ -1,0 +1,5 @@
+In file included from tests/../kernel/dormant-tables.hpp:2,
+                 from tests/kernel-dormant-api.cpp:1:
+tests/../kernel/pin-ledger.hpp:81:47: error: static assertion failed: A generation limit must be a positive representable integer
+   81 |     static_assert(std::in_range<std::uint64_t>(test_generation_limit_) && test_generation_limit_ > 0,
+      |                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~

@@ -1,0 +1,136 @@
+diff --git a/OvmfPkg/Library/PlatformBootManagerLib/BdsPlatform.c b/OvmfPkg/Library/PlatformBootManagerLib/BdsPlatform.c
+index e666938..140ea64 100644
+--- a/OvmfPkg/Library/PlatformBootManagerLib/BdsPlatform.c
++++ b/OvmfPkg/Library/PlatformBootManagerLib/BdsPlatform.c
+@@ -1249,14 +1249,87 @@ DetectAndPreparePlatformPciDevicePath (
+   )
+ {
+   EFI_STATUS  Status;
++  UINTN       Segment;
++  UINTN       Bus;
++  UINTN       Device;
++  UINTN       Function;
++  UINT16      Command;
++  BOOLEAN     FixtureNvme;
++
++  // This fixture has one namespace-free QEMU NVMe endpoint at 0000:00:02.0.
++  // Generic PCI enumeration may previously have probed BME and restored it.
++  // Do not mask an active controller by clearing an already-set BME bit.
++  FixtureNvme = FALSE;
++  if ((Pci->Hdr.VendorId == 0x1b36) &&
++      (Pci->Hdr.DeviceId == 0x0010) &&
++      (Pci->Hdr.ClassCode[2] == 0x01) &&
++      (Pci->Hdr.ClassCode[1] == 0x08) &&
++      (Pci->Hdr.ClassCode[0] == 0x02) &&
++      (Pci->Hdr.HeaderType == 0x00))
++  {
++    Status = PciIo->GetLocation (PciIo, &Segment, &Bus, &Device, &Function);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "AURORA_FIXTURE_FAIL: NVMe location: %r\n", Status));
++      CpuDeadLoop ();
++      return Status;
++    }
+ 
+-  Status = PciIo->Attributes (
+-                    PciIo,
+-                    EfiPciIoAttributeOperationEnable,
+-                    EFI_PCI_DEVICE_ENABLE,
+-                    NULL
+-                    );
+-  ASSERT_EFI_ERROR (Status);
++    FixtureNvme = (Segment == 0) && (Bus == 0) && (Device == 2) && (Function == 0);
++  }
++
++  if (FixtureNvme) {
++    Status = PciIo->Pci.Read (
++                          PciIo,
++                          EfiPciIoWidthUint16,
++                          PCI_COMMAND_OFFSET,
++                          1,
++                          &Command
++                          );
++    if (EFI_ERROR (Status) || ((Command & EFI_PCI_COMMAND_BUS_MASTER) != 0)) {
++      DEBUG ((DEBUG_ERROR, "AURORA_FIXTURE_FAIL: initial command read/BME\n"));
++      CpuDeadLoop ();
++      return EFI_DEVICE_ERROR;
++    }
++
++    DEBUG ((DEBUG_ERROR, "AURORA_FIXTURE_NVME: initial command=0x%04x\n", Command));
++    Status = PciIo->Attributes (
++                      PciIo,
++                      EfiPciIoAttributeOperationEnable,
++                      EFI_PCI_IO_ATTRIBUTE_MEMORY,
++                      NULL
++                      );
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "AURORA_FIXTURE_FAIL: memory enable: %r\n", Status));
++      CpuDeadLoop ();
++      return Status;
++    }
++
++    Status = PciIo->Pci.Read (
++                          PciIo,
++                          EfiPciIoWidthUint16,
++                          PCI_COMMAND_OFFSET,
++                          1,
++                          &Command
++                          );
++    if (EFI_ERROR (Status) ||
++        ((Command & (EFI_PCI_COMMAND_MEMORY_SPACE | EFI_PCI_COMMAND_BUS_MASTER)) !=
++         EFI_PCI_COMMAND_MEMORY_SPACE))
++    {
++      DEBUG ((DEBUG_ERROR, "AURORA_FIXTURE_FAIL: final command read/MSE/BME\n"));
++      CpuDeadLoop ();
++      return EFI_DEVICE_ERROR;
++    }
++
++    DEBUG ((DEBUG_ERROR, "AURORA_FIXTURE_NVME: 0000:00:02.0 command=0x%04x MSE=1 BME=0\n", Command));
++  } else {
++    Status = PciIo->Attributes (
++                      PciIo,
++                      EfiPciIoAttributeOperationEnable,
++                      EFI_PCI_DEVICE_ENABLE,
++                      NULL
++                      );
++    ASSERT_EFI_ERROR (Status);
++  }
+ 
+   //
+   // Here we decide whether it is LPC Bridge
+diff --git a/OvmfPkg/OvmfPkgX64.dsc b/OvmfPkg/OvmfPkgX64.dsc
+index eb5df0d..612eee4 100644
+--- a/OvmfPkg/OvmfPkgX64.dsc
++++ b/OvmfPkg/OvmfPkgX64.dsc
+@@ -910,7 +910,6 @@
+   MdeModulePkg/Bus/Pci/SataControllerDxe/SataControllerDxe.inf
+   MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
+   MdeModulePkg/Bus/Ata/AtaBusDxe/AtaBusDxe.inf
+-  MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
+   MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
+   MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
+   MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
+diff --git a/OvmfPkg/OvmfPkgX64.fdf b/OvmfPkg/OvmfPkgX64.fdf
+index 2602c3d..039708e 100644
+--- a/OvmfPkg/OvmfPkgX64.fdf
++++ b/OvmfPkg/OvmfPkgX64.fdf
+@@ -304,7 +304,6 @@ INF  MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
+ INF  MdeModulePkg/Bus/Pci/SataControllerDxe/SataControllerDxe.inf
+ INF  MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
+ INF  MdeModulePkg/Bus/Ata/AtaBusDxe/AtaBusDxe.inf
+-INF  MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
+ INF  MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
+ INF  MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
+ INF  MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
+diff --git a/UnitTestFrameworkPkg/Library/GoogleTestLib/googletest b/UnitTestFrameworkPkg/Library/GoogleTestLib/googletest
+index 86add13..988ea2c 160000
+--- a/UnitTestFrameworkPkg/Library/GoogleTestLib/googletest
++++ b/UnitTestFrameworkPkg/Library/GoogleTestLib/googletest
+@@ -1 +1 @@
+-Subproject commit 86add13493e5c881d7e4ba77fb91c1f57752b3a4
++Subproject commit 988ea2c1798de7779f656df2281dd36d6039a17a-dirty
+diff --git a/UnitTestFrameworkPkg/Library/SubhookLib/subhook b/UnitTestFrameworkPkg/Library/SubhookLib/subhook
+--- a/UnitTestFrameworkPkg/Library/SubhookLib/subhook
++++ b/UnitTestFrameworkPkg/Library/SubhookLib/subhook
+@@ -1 +1 @@
+-Subproject commit 83d4e1ebef3588fae48b69a7352cc21801cb70bc
++Subproject commit 83d4e1ebef3588fae48b69a7352cc21801cb70bc-dirty

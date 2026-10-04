@@ -1,0 +1,473 @@
+[
+  {
+    "name": "compiler-version",
+    "argv": [
+      "g++",
+      "--version"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047254519112966,
+    "end_ns": 1791047254520761627
+  },
+  {
+    "name": "ownership-sanitized-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsanitize=address,undefined",
+      "-fno-sanitize-recover=all",
+      "tests/kernel-dormant-tables.cpp",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/ownership-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047254520856298,
+    "end_ns": 1791047257571540963
+  },
+  {
+    "name": "ownership-sanitized-execute",
+    "argv": [
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/ownership-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047257571699308,
+    "end_ns": 1791047260444158039
+  },
+  {
+    "name": "independent-sanitized-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsanitize=address,undefined",
+      "-fno-sanitize-recover=all",
+      "tests/kernel-dormant-decoder.cpp",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/independent-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047260444337536,
+    "end_ns": 1791047261036231803
+  },
+  {
+    "name": "independent-sanitized-execute",
+    "argv": [
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/independent-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047261036410578,
+    "end_ns": 1791047265922091079
+  },
+  {
+    "name": "generation-sanitized-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsanitize=address,undefined",
+      "-fno-sanitize-recover=all",
+      "-DAURORA_PIN_LEDGER_TESTING=1",
+      "-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=3",
+      "tests/kernel-dormant-generation.cpp",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/generation-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047265922283735,
+    "end_ns": 1791047266924214362
+  },
+  {
+    "name": "generation-sanitized-execute",
+    "argv": [
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/generation-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047266924423883,
+    "end_ns": 1791047266929054206
+  },
+  {
+    "name": "production-api-sanitized-compile",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsanitize=address,undefined",
+      "-fno-sanitize-recover=all",
+      "tests/kernel-dormant-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/production-api-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047266929201856,
+    "end_ns": 1791047267216430303
+  },
+  {
+    "name": "production-api-sanitized-execute",
+    "argv": [
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/production-api-sanitized"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047267216606775,
+    "end_ns": 1791047267224359764
+  },
+  {
+    "name": "test-zero",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_DORMANT_TABLE_TESTING=0",
+      "tests/kernel-dormant-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/test-zero"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047267224625649,
+    "end_ns": 1791047267431045709
+  },
+  {
+    "name": "small-production-generation",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=3",
+      "tests/kernel-dormant-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/small-production-generation"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047267431400445,
+    "end_ns": 1791047267629469994
+  },
+  {
+    "name": "zero-generation",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_PIN_LEDGER_TESTING=1",
+      "-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=0",
+      "tests/kernel-dormant-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/zero-generation"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047267629789328,
+    "end_ns": 1791047267829601120
+  },
+  {
+    "name": "negative-generation",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_PIN_LEDGER_TESTING=1",
+      "-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=-1",
+      "tests/kernel-dormant-api.cpp",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/negative-generation"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047267829809839,
+    "end_ns": 1791047268029448741
+  },
+  {
+    "name": "public-control-pages_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-guest-review/host-main-sanitized/public-control",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-pages_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-pages_.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047268029895024,
+    "end_ns": 1791047268272569983
+  },
+  {
+    "name": "private-pages_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora/kernel",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-pages_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-pages_.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047268272805913,
+    "end_ns": 1791047268494789005
+  },
+  {
+    "name": "public-control-arena_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-guest-review/host-main-sanitized/public-control",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-arena_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-arena_.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047268495053248,
+    "end_ns": 1791047268714157550
+  },
+  {
+    "name": "private-arena_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora/kernel",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-arena_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-arena_.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047268714427351,
+    "end_ns": 1791047268916123433
+  },
+  {
+    "name": "public-control-groups_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-guest-review/host-main-sanitized/public-control",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-groups_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-groups_.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047268916421285,
+    "end_ns": 1791047269133699245
+  },
+  {
+    "name": "private-groups_",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora/kernel",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-groups_.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-groups_.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047269133955466,
+    "end_ns": 1791047269321062098
+  },
+  {
+    "name": "public-control-dte_word",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-guest-review/host-main-sanitized/public-control",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-dte_word.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-dte_word.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047269321377026,
+    "end_ns": 1791047269539686763
+  },
+  {
+    "name": "private-dte_word",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora/kernel",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-dte_word.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-dte_word.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047269539955953,
+    "end_ns": 1791047269737681253
+  },
+  {
+    "name": "public-control-page",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-guest-review/host-main-sanitized/public-control",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-page.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-page.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047269737987067,
+    "end_ns": 1791047269974659056
+  },
+  {
+    "name": "private-page",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora/kernel",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-page.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-page.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047269974985331,
+    "end_ns": 1791047270188975474
+  },
+  {
+    "name": "public-control-put",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/tmp/aurora-amd310-guest-review/host-main-sanitized/public-control",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-put.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-put.o"
+    ],
+    "status": 0,
+    "expected": 0,
+    "start_ns": 1791047270189321598,
+    "end_ns": 1791047270423076323
+  },
+  {
+    "name": "private-put",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/workspace/scratch/48c5de6446f8/aurora/kernel",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-put.cpp",
+      "-c",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host-main-sanitized/access-put.o"
+    ],
+    "status": 1,
+    "expected": 1,
+    "start_ns": 1791047270423397480,
+    "end_ns": 1791047270621644176
+  }
+]

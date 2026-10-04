@@ -1,0 +1,1 @@
+export module generic;export template<Value T>auto copy(T x)->T{const T result=x;return result;}

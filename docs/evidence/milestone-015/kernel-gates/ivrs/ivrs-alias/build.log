@@ -1,0 +1,3 @@
+Built UEFI PE32+ loader and independent payload
+PASS: PE32+ EFI relocation/RX policy, exact PIC payload; 14 negative images
+PASS: bounded IVRS stack paths {"minimum_unused": 3608, "paths": {"bar": 9120, "observe": 9792, "prepare": 8080, "scan": 12264}, "peak_with_fault_reserve": 12776, "stack_bytes": 16384}

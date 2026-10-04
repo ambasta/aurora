@@ -1,0 +1,99 @@
+{
+  "purpose": "Reference provenance only; no implementation reuse, no mount or compatibility claim.",
+  "repository": "torvalds/linux",
+  "tag": "v6.16",
+  "tag_object": "8ec6d99a41e3d1dbdff2bdb3aa42951681e1e76c",
+  "commit": "038d61fd642278bab63ee8ef722c50d10ab01e8f",
+  "accessed": "2026-10-03",
+  "retrieval": "GitHub read-only fetch_file at exact commit; full file bodies retrieved, only hashes, URLs, line locations, identifiers and factual summaries recorded here.",
+  "files": [
+    {
+      "path": "fs/xfs/libxfs/xfs_cksum.h",
+      "ref": "038d61fd642278bab63ee8ef722c50d10ab01e8f",
+      "git_blob_sha": "999a290cfd722b306c9944a61b8eeb4516f31b86",
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_cksum.h",
+      "line_count": 83,
+      "line_locations": [
+        5,
+        14,
+        20,
+        41,
+        52,
+        54,
+        68,
+        77,
+        79
+      ],
+      "scope": "Pinned format/reference research; no upstream implementation code copied into target.",
+      "identifiers": "XFS_CRC_SEED; xfs_start_cksum_safe; xfs_end_cksum; xfs_verify_cksum",
+      "factual_summary": "CRC32C with all-ones32-bit seed, four checksum bytes treated as zero, complemented result stored little-endian."
+    },
+    {
+      "path": "fs/xfs/libxfs/xfs_format.h",
+      "ref": "038d61fd642278bab63ee8ef722c50d10ab01e8f",
+      "git_blob_sha": "9566a76233654004d54f47aac17ac60dd8a6629a",
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_format.h",
+      "line_count": 2025,
+      "line_locations": [
+        35,
+        64,
+        170,
+        193,
+        264,
+        287,
+        301,
+        763,
+        774
+      ],
+      "scope": "Pinned format/reference research; no upstream implementation code copied into target.",
+      "identifiers": "XFS_SB_VERSION_NUMBITS; xfs_dsb; XFS_SB_CRC_OFF",
+      "factual_summary": "Version mask0x000f and field-specific disk endianness, including a little-endian32-bit checksum."
+    },
+    {
+      "path": "fs/xfs/libxfs/xfs_sb.c",
+      "ref": "038d61fd642278bab63ee8ef722c50d10ab01e8f",
+      "git_blob_sha": "711e180f9ebb835296afda1949f320d3425ecca6",
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_sb.c",
+      "line_count": 1741,
+      "line_locations": [
+        1076,
+        1093,
+        1134,
+        1179
+      ],
+      "scope": "Pinned format/reference research; no upstream implementation code copied into target.",
+      "identifiers": "xfs_sb_read_verify",
+      "factual_summary": "Checksum verification precedes the full superblock field/geometry validation path."
+    },
+    {
+      "path": "fs/xfs/xfs_buf.h",
+      "ref": "038d61fd642278bab63ee8ef722c50d10ab01e8f",
+      "git_blob_sha": "b269e115d9ace0f3c08ed30952b1d039a4d8536f",
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/xfs_buf.h",
+      "line_count": 389,
+      "line_locations": [
+        354,
+        356
+      ],
+      "scope": "Pinned format/reference research; no upstream implementation code copied into target.",
+      "identifiers": "xfs_buf_verify_cksum",
+      "factual_summary": "Passes the complete buffer length in bytes to the checksum verifier."
+    },
+    {
+      "path": "fs/xfs/xfs_mount.c",
+      "ref": "038d61fd642278bab63ee8ef722c50d10ab01e8f",
+      "git_blob_sha": "0b690bc119d7caae1e33f03b7b0d038b2d856e6d",
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/xfs_mount.c",
+      "line_count": 1688,
+      "line_locations": [
+        154,
+        159,
+        186,
+        229
+      ],
+      "scope": "Pinned format/reference research; no upstream implementation code copied into target.",
+      "identifiers": "xfs_readsb",
+      "factual_summary": "Rereads the superblock using its declared sector size before invoking the verifier."
+    }
+  ]
+}

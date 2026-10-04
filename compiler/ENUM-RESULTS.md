@@ -22,7 +22,8 @@ milestone013 development candidate adds u8 to both domains while retaining
 enum exclusion from Scalar. Builtin arrays and
 std::array continue to reject enum elements. Named enum arguments retain their
 defining-module identity, so std::pair<Status,Report> is distinct from an otherwise
-equal-layout pair using another enum. Nested template-id arguments, deduction,
+equal-layout pair using another enum. Fully concrete nested arguments follow the
+bounded NESTED-VALUES.md contract; deduction,
 function templates and recursive template instantiation remain unsupported.
 
 Enum names and cases obey module visibility. Exported signatures, public member

@@ -1,0 +1,2 @@
+Built UEFI PE32+ loader and independent payload
+PASS: PE32+ EFI relocation/RX policy, exact PIC payload; 14 negative images

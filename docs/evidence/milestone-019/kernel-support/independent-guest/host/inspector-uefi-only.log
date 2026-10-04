@@ -1,0 +1,67 @@
+In file included from /tmp/aurora-amd310-guest-review/host/inspector-access.cpp:1:
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:3:2: error: #error "Dormant table inspector is restricted to explicit CPU-only test images"
+    3 | #error "Dormant table inspector is restricted to explicit CPU-only test images"
+      |  ^~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp: In static member function ‘static independent::Input aurora::memory::DormantTableTestAccess::snapshot(aurora::memory::DormantTables&)’:
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:13:26: error: ‘std::span<std::byte> aurora::memory::DormantTables::arena_’ is private within this context
+   13 |         result.dte=owner.arena_.subspan(owner.pages_[0]-owner.arena_base_,8192);
+      |                          ^~~~~~
+In file included from /workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:5:
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:27:26: note: declared private here
+   27 |     std::span<std::byte> arena_;
+      |                          ^~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:13:47: error: ‘std::array<long unsigned int, 5> aurora::memory::DormantTables::pages_’ is private within this context
+   13 |         result.dte=owner.arena_.subspan(owner.pages_[0]-owner.arena_base_,8192);
+      |                                               ^~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:30:33: note: declared private here
+   30 |     std::array<std::uint64_t,5> pages_{};
+      |                                 ^~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:13:63: error: ‘uint64_t aurora::memory::DormantTables::arena_base_’ is private within this context
+   13 |         result.dte=owner.arena_.subspan(owner.pages_[0]-owner.arena_base_,8192);
+      |                                                               ^~~~~~~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:28:19: note: declared private here
+   28 |     std::uint64_t arena_base_;
+      |                   ^~~~~~~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:14:31: error: ‘std::span<std::byte> aurora::memory::DormantTables::page(std::size_t) const’ is private within this context
+   14 |         result.root=owner.page(2);result.pages=owner.pages_;result.data_count=owner.data_count_;
+      |                     ~~~~~~~~~~^~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:52:24: note: declared private here
+   52 |     [[nodiscard]] auto page(std::size_t index) const -> std::span<std::byte> {
+      |                        ^~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:14:54: error: ‘std::array<long unsigned int, 5> aurora::memory::DormantTables::pages_’ is private within this context
+   14 |         result.root=owner.page(2);result.pages=owner.pages_;result.data_count=owner.data_count_;
+      |                                                      ^~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:30:33: note: declared private here
+   30 |     std::array<std::uint64_t,5> pages_{};
+      |                                 ^~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:14:85: error: ‘std::size_t aurora::memory::DormantTables::data_count_’ is private within this context
+   14 |         result.root=owner.page(2);result.pages=owner.pages_;result.data_count=owner.data_count_;
+      |                                                                                     ^~~~~~~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:34:17: note: declared private here
+   34 |     std::size_t data_count_{};
+      |                 ^~~~~~~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:15:36: error: ‘uint8_t aurora::memory::DormantTables::physical_bits_’ is private within this context
+   15 |         result.physical_bits=owner.physical_bits_;result.iovas=owner.iovas_;result.writable=owner.writable_;
+      |                                    ^~~~~~~~~~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:35:18: note: declared private here
+   35 |     std::uint8_t physical_bits_{};
+      |                  ^~~~~~~~~~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:15:70: error: ‘std::array<long unsigned int, 2> aurora::memory::DormantTables::iovas_’ is private within this context
+   15 |         result.physical_bits=owner.physical_bits_;result.iovas=owner.iovas_;result.writable=owner.writable_;
+      |                                                                      ^~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:31:33: note: declared private here
+   31 |     std::array<std::uint64_t,2> iovas_{};
+      |                                 ^~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:15:99: error: ‘std::array<bool, 2> aurora::memory::DormantTables::writable_’ is private within this context
+   15 |         result.physical_bits=owner.physical_bits_;result.iovas=owner.iovas_;result.writable=owner.writable_;
+      |                                                                                                   ^~~~~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:32:24: note: declared private here
+   32 |     std::array<bool,2> writable_{};
+      |                        ^~~~~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp: In static member function ‘static bool aurora::memory::DormantTableTestAccess::flip(aurora::memory::DormantTables&, std::size_t, std::size_t, unsigned int)’:
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:20:30: error: ‘std::span<std::byte> aurora::memory::DormantTables::page(std::size_t) const’ is private within this context
+   20 |         auto bytes=owner.page(role);if(bytes.size()!=4096)return false;
+      |                    ~~~~~~~~~~^~~~~~
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/../dormant-tables.hpp:52:24: note: declared private here
+   52 |     [[nodiscard]] auto page(std::size_t index) const -> std::span<std::byte> {
+      |                        ^~~~

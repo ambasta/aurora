@@ -1,0 +1,2 @@
+PASS: original 26,360 bytes/hash; source sections 1..56; adapted 1..57; 56 trace rows + XFS; A1..A8; S0..S11 and X0..X3 references
+This is structural/provenance validation, not semantic review or target filesystem evidence.

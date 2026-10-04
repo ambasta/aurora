@@ -1,0 +1,8 @@
+/tmp/aurora-amd310-guest-review/host-main-normal/access-put.cpp: In function 'auto expose()':
+/tmp/aurora-amd310-guest-review/host-main-normal/access-put.cpp:2:56: error: 'static void aurora::memory::DormantTables::put(std::span<std::byte>, std::size_t, uint64_t)' is private within this context
+    2 | auto expose() { return &aurora::memory::DormantTables::put; }
+      |                                                        ^~~
+In file included from /tmp/aurora-amd310-guest-review/host-main-normal/access-put.cpp:1:
+/workspace/scratch/48c5de6446f8/aurora/kernel/dormant-tables.hpp:74:17: note: declared private here
+   74 |     static auto put(std::span<std::byte> bytes,std::size_t offset,std::uint64_t word) -> void {
+      |                 ^~~

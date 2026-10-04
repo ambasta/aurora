@@ -1,0 +1,40 @@
+{
+  "name": "unused-body-call-explicit",
+  "source_group": "independent",
+  "negative": true,
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/san/aurorac",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/sanitized-replay/independent/unused-body-call-explicit/compiled.s"
+  ],
+  "compiler_status": 1,
+  "compiler_stderr": "aurorac: function template calls inside template bodies are unsupported\n",
+  "seconds": 0.008656978607177734,
+  "release_evidence": "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/result.json",
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/input.au": "cce0b0d3f60bed8b47fe57e5f64cba1bfcd18cba94b3ee97050252150be75652"
+  },
+  "pass": true,
+  "existing_output_preserved": true,
+  "absent_replay": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/san/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/modules",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-body-call-explicit/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/sanitized-replay/independent/unused-body-call-explicit/absent.s"
+    ],
+    "status": 1,
+    "diagnostic": "aurorac: function template calls inside template bodies are unsupported\n",
+    "absent": true
+  },
+  "inputs_unchanged": true
+}

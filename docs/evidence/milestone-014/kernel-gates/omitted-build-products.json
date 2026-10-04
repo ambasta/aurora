@@ -1,0 +1,86 @@
+{
+  "bar/bar-inherited/payload.elf": {
+    "sha256": "c5c3a50ef1908621a4b33f639aa32565931a7841578fa21841e563c1d99af9ab",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-inherited/payload.elf"
+  },
+  "bar/bar-inherited/payload.bin": {
+    "sha256": "7e4dafa0cd9da9ab5f6ad095098939acb265ef0ca39c53ff01a820b8e427fce3",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-inherited/payload.bin"
+  },
+  "bar/bar-write/payload.elf": {
+    "sha256": "257c03712b7f81c03d94e140c3f69ba3dca39f7069a6e2ae3bc9f885e70a53e7",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-write/payload.elf"
+  },
+  "bar/bar-write/payload.bin": {
+    "sha256": "5ea7fc5854a14f6cd94ab6ee2138aefc62a2e2c891c277d6eff4105d76a199e2",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-write/payload.bin"
+  },
+  "bar/bar-alias/payload.elf": {
+    "sha256": "8f53e8513a8412bf90a4000efae74cb9d4985643afa08f9497d57f4cd09917de",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-alias/payload.elf"
+  },
+  "bar/bar-alias/payload.bin": {
+    "sha256": "abf2fb3ce239f51b7e036de1496fc8bb7e2f8508ab6eb0d0374e996803c22987",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-alias/payload.bin"
+  },
+  "bar/bar-read/payload.elf": {
+    "sha256": "c5c3a50ef1908621a4b33f639aa32565931a7841578fa21841e563c1d99af9ab",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-read/payload.elf"
+  },
+  "bar/bar-read/payload.bin": {
+    "sha256": "7e4dafa0cd9da9ab5f6ad095098939acb265ef0ca39c53ff01a820b8e427fce3",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-read/payload.bin"
+  },
+  "bar/bar-state/payload.elf": {
+    "sha256": "1e6b481af95c43a67799fa50c565698d9023b1576f02b637f437e24d66d7cacf",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-state/payload.elf"
+  },
+  "bar/bar-state/payload.bin": {
+    "sha256": "de9cf3de46501939c0464fdce58022b0091d66e90a654f29a85082983c2a1b6c",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-state/payload.bin"
+  },
+  "bar/bar-revoked/payload.elf": {
+    "sha256": "ab1e6b63aa9ed29c23b53e594376dadb3ec63607886524ad1b6424ccf44cf74f",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-revoked/payload.elf"
+  },
+  "bar/bar-revoked/payload.bin": {
+    "sha256": "69029c2fdaaac403f6c6afb7413d9ae695964199563c759b87b5be8504ec8e61",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-revoked/payload.bin"
+  },
+  "bar/bar-capture/payload.elf": {
+    "sha256": "be7a117541307d656b2c75e955591e3a30afbdb20b75215d45f584fc1987287d",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-capture/payload.elf"
+  },
+  "bar/bar-capture/payload.bin": {
+    "sha256": "3253d96cbca649a2b7c08657dd11030453ffb0d27359dd1a6bbd4603fbf42e9b",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-capture/payload.bin"
+  },
+  "bar/bar-inherited/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "ba0f54f67452bf6659e1c858cd87bd58acb097692ce921190007221066171ef7",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-inherited/esp/EFI/BOOT/BOOTX64.EFI"
+  },
+  "bar/bar-write/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "582404158ee4f1017bb40d3453c12edeb6578d38731d26ad2cdfc31e4b96c2b1",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-write/esp/EFI/BOOT/BOOTX64.EFI"
+  },
+  "bar/bar-alias/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "f28e42698538cb9134621de07ade02fd0e580951dc6111e6fb257dee222a8090",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-alias/esp/EFI/BOOT/BOOTX64.EFI"
+  },
+  "bar/bar-read/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "ba0f54f67452bf6659e1c858cd87bd58acb097692ce921190007221066171ef7",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-read/esp/EFI/BOOT/BOOTX64.EFI"
+  },
+  "bar/bar-state/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "d41fea1fca56a8dbff88c5c757395bfeaf02d055a1529ce6bd6b16f87435c991",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-state/esp/EFI/BOOT/BOOTX64.EFI"
+  },
+  "bar/bar-revoked/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "5b249194c3391a9ff2bbf99a66b0d2a6ef47526e4ae98d985548733a8d7f6f0e",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-revoked/esp/EFI/BOOT/BOOTX64.EFI"
+  },
+  "bar/bar-capture/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "7b765341675a648d94d3c3ead2e374cd4a1995578fba411304741c768430d5ed",
+    "local_audit_path": "/workspace/shared/aurora-checkpoints/milestone-014-omitted-build-artifacts/bar/bar-capture/esp/EFI/BOOT/BOOTX64.EFI"
+  }
+}

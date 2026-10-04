@@ -1,0 +1,4 @@
+In file included from /tmp/aurora-amd310-guest-review/host/inspector-access.cpp:1:
+/workspace/scratch/48c5de6446f8/aurora/kernel/uefi/dormant-inspector.hpp:3:2: error: #error "Dormant table inspector is restricted to explicit CPU-only test images"
+    3 | #error "Dormant table inspector is restricted to explicit CPU-only test images"
+      |  ^~~~~

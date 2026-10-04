@@ -1,0 +1,450 @@
+[
+  {
+    "build": "release",
+    "name": "reports_are_plain_values",
+    "outcome": "pass",
+    "source_sha256": "54f1b0cfc9b20d7896ead8a95568a94d5151ed780ea1c3d6ce18f9bf2a35c159",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reports_are_plain_values/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reports_are_plain_values/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "capacity_1",
+    "outcome": "pass",
+    "source_sha256": "f4c37a2bd3b150aa163ed7128608429b1017e403383228cc4b8975699a7e0740",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_1/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_1/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "capacity_3",
+    "outcome": "pass",
+    "source_sha256": "861a8d8da23f35fa9311b2e2327e015d9d33e624c6909dc77c748f771b212430",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_3/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_3/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "capacity_4",
+    "outcome": "pass",
+    "source_sha256": "7e1f40507547d5de05cdce6cfab261b6c4d7062fdfe3e81b563bc6ce7fb4b9ff",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_4/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_4/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "capacity_8",
+    "outcome": "pass",
+    "source_sha256": "81eedd5688fc7ccfc7db691380247407166487367f745b8384ee564c0d60e0d8",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_8/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_8/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "capacity_64",
+    "outcome": "pass",
+    "source_sha256": "44c7571813053a489f207d02751d766ce9e62bf01279345f4093e60beabf09a4",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_64/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_64/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "capacity_4096",
+    "outcome": "pass",
+    "source_sha256": "b81134377fc525578f8a8b6ca6ca8cfda555a6ee672698073b2339d662ac5036",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_4096/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-capacity_4096/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "unsigned_offset",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: expected i64, got u64\n",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-unsigned_offset/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-unsigned_offset/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "unsigned_count",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: expected i64, got u64\n",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-unsigned_count/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-unsigned_count/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "numeric_final",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: expected bool, got i64\n",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-numeric_final/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-numeric_final/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "private_decode_field",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: private class field is inaccessible\n",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-private_decode_field/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-private_decode_field/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "private_validation_field",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: private class field is inaccessible\n",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-private_validation_field/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-private_validation_field/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "unexported_helper",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: private function is not imported: std::utf8_failure\n",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-unexported_helper/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-unexported_helper/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "owner_write_during_borrow",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: cannot mutate a byte array while a span is live\n",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-owner_write_during_borrow/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-owner_write_during_borrow/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "invalid_span_element",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: borrow_bytes requires a named local byte array\n",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-invalid_span_element/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-invalid_span_element/fixture.s"
+    ]
+  },
+  {
+    "build": "release",
+    "name": "missing_final",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: wrong argument count for std::decode_utf8\n",
+    "compile_command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-missing_final/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/release-reject-missing_final/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "reports_are_plain_values",
+    "outcome": "pass",
+    "source_sha256": "54f1b0cfc9b20d7896ead8a95568a94d5151ed780ea1c3d6ce18f9bf2a35c159",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reports_are_plain_values/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reports_are_plain_values/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "capacity_1",
+    "outcome": "pass",
+    "source_sha256": "f4c37a2bd3b150aa163ed7128608429b1017e403383228cc4b8975699a7e0740",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_1/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_1/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "capacity_3",
+    "outcome": "pass",
+    "source_sha256": "861a8d8da23f35fa9311b2e2327e015d9d33e624c6909dc77c748f771b212430",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_3/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_3/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "capacity_4",
+    "outcome": "pass",
+    "source_sha256": "7e1f40507547d5de05cdce6cfab261b6c4d7062fdfe3e81b563bc6ce7fb4b9ff",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_4/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_4/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "capacity_8",
+    "outcome": "pass",
+    "source_sha256": "81eedd5688fc7ccfc7db691380247407166487367f745b8384ee564c0d60e0d8",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_8/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_8/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "capacity_64",
+    "outcome": "pass",
+    "source_sha256": "44c7571813053a489f207d02751d766ce9e62bf01279345f4093e60beabf09a4",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_64/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_64/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "capacity_4096",
+    "outcome": "pass",
+    "source_sha256": "b81134377fc525578f8a8b6ca6ca8cfda555a6ee672698073b2339d662ac5036",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_4096/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-capacity_4096/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "unsigned_offset",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: expected i64, got u64\n",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-unsigned_offset/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-unsigned_offset/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "unsigned_count",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: expected i64, got u64\n",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-unsigned_count/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-unsigned_count/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "numeric_final",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: expected bool, got i64\n",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-numeric_final/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-numeric_final/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "private_decode_field",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: private class field is inaccessible\n",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-private_decode_field/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-private_decode_field/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "private_validation_field",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: private class field is inaccessible\n",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-private_validation_field/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-private_validation_field/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "unexported_helper",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: private function is not imported: std::utf8_failure\n",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-unexported_helper/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-unexported_helper/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "owner_write_during_borrow",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: cannot mutate a byte array while a span is live\n",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-owner_write_during_borrow/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-owner_write_during_borrow/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "invalid_span_element",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: borrow_bytes requires a named local byte array\n",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-invalid_span_element/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-invalid_span_element/fixture.s"
+    ]
+  },
+  {
+    "build": "instrumented",
+    "name": "missing_final",
+    "outcome": "rejected_preserved_absent_and_existing_output",
+    "diagnostic": "aurorac: line 1: wrong argument count for std::decode_utf8\n",
+    "compile_command": [
+      "/tmp/aurora-resource-sanitizer/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-missing_final/fixture.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-utf8-review/instrumented-reject-missing_final/fixture.s"
+    ]
+  }
+]

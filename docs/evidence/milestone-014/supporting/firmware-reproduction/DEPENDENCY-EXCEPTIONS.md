@@ -1,0 +1,11 @@
+# Unused optional submodule placeholders
+
+The authoritative intended policy patch is policy-three-file.patch (also firmware.patch), SHA256 2a6e8f018d16fc1b4c0304bf7d1f3b56ca4962ca8ec204a19ff94b0e4790ad1f. It edits exactly BdsPlatform.c, OvmfPkgX64.dsc, and OvmfPkgX64.fdf.
+
+The complete working-tree state is also separately recorded in complete-worktree-state.patch. This is not a fully initialized recursive checkout. During a broad pinned-submodule fetch, the proxy denied the CONNECT request to https://github.com/google/googletest.git/ with 403. The poll surfaced 'automatic approval review was cancelled.' No retry, alternate host, substitute revision, or workaround download was attempted.
+
+GoogleTest's empty clone metadata points to initial main commit 988ea2c1798de7779f656df2281dd36d6039a17a; superproject pin is 86add13493e5c881d7e4ba77fb91c1f57752b3a4, absent locally. Subhook clone metadata points to its correct pin 83d4e1ebef3588fae48b69a7352cc21801cb70bc but was not checked out. Both working directories contain only their .git pointer file, no source files. They remain untouched, as the parent explicitly directed. No move, deletion or quarantine was performed.
+
+Before continuing, conservative read-only closure analysis followed every !include plus INF/DEC path from X64 DSC/FDF across all conditional branches: 454 metadata files, zero unresolved paths, zero UnitTestFrameworkPkg / GoogleTest / Subhook references. See target-dependencies.json and check-target-dependencies.py. The parent permitted building that official target closure only and required stopping if either unavailable optional dependency were actually needed. Other successfully initialized dependencies match exact superproject pins and have no tracked source edits; individual commits, content hashes and missing nested submodules are recorded in submodule-reconciliation.json and submodules.txt.
+
+The first six-dependency policy diff was accidentally captured during parallel clone checkout, showing temporary gitlink differences. After those six checkouts completed, the three-file patch was regenerated and independently reviewed. Later optional-clone failure is a separate, explicitly recorded condition, not hidden by the policy-only patch.

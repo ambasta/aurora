@@ -1,0 +1,28 @@
+{
+  "cases": [
+    "range offset=0 count=0 final=False",
+    "range offset=0 count=0 final=True",
+    "range offset=0 count=1 final=False",
+    "range offset=0 count=1 final=True",
+    "range offset=0 count=2 final=False",
+    "range offset=0 count=2 final=True",
+    "range offset=0 count=4 final=False",
+    "range offset=0 count=4 final=True",
+    "range offset=0 count=9223372036854775807 final=False",
+    "range offset=0 count=9223372036854775807 final=True",
+    "range offset=1 count=-9223372036854775808 final=False",
+    "range offset=1 count=-9223372036854775808 final=True"
+  ],
+  "source_bytes": 7595,
+  "source_sha256": "5258d123cd2a3876ae0ea8fdd0905a00b300001910ced3bdae6d011ff8fd371e",
+  "status": "passed",
+  "observation": {
+    "exit_code": 0,
+    "terminal_signal": null,
+    "delivery_signal": null,
+    "pc": null,
+    "instruction": null,
+    "signal_code": null
+  },
+  "seconds": 0.02742
+}

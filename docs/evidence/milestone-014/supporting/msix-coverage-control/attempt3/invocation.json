@@ -1,0 +1,35 @@
+{
+  "argv": [
+    "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64",
+    "-L",
+    "/tmp/aurora-qemu/firmware",
+    "-machine",
+    "q35,accel=tcg",
+    "-m",
+    "128M",
+    "-nodefaults",
+    "-display",
+    "none",
+    "-serial",
+    "none",
+    "-monitor",
+    "none",
+    "-S",
+    "-no-reboot",
+    "-no-shutdown",
+    "-device",
+    "nvme,id=control_nvme,serial=AURORA-MSIX-TRACE-CONTROL,bus=pcie.0,addr=02.0,romfile=",
+    "-qtest",
+    "pipe:/tmp/aurora-msix-trace-control/attempt3/qtest",
+    "-qtest-log",
+    "/tmp/aurora-msix-trace-control/attempt3/qtest-native.log",
+    "-qmp",
+    "stdio",
+    "-trace",
+    "events=/tmp/aurora-clean-ovmf/provenance/trace-enable-events.txt,file=/tmp/aurora-msix-trace-control/attempt3/trace.log"
+  ],
+  "environment_override": {
+    "LD_LIBRARY_PATH": "/tmp/aurora-qemu/root/usr/lib/x86_64-linux-gnu"
+  },
+  "purpose": "Separate disposable MSI-X trace coverage control. CPUs stopped throughout; no disks or namespace; never an accepted clean-controller run."
+}

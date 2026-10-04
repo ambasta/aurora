@@ -1,0 +1,10 @@
+{
+  "author-baseline-release.log": "8e3bb9970b165e503ba91db1b5afa0edecc2e336d2ed21b1c6bf0678126de61e",
+  "author-baseline-sanitized.log": "a0e0b1250c39fd721d4dd820bb78985cf5d640b58d6f32ddacf50122cac613a2",
+  "author-commands.txt": "3491872db95ddb1fade4cb31546b821bbde067db980d24688b39e1d9ccddd949",
+  "author-example.json": "8dfbf1e65d4ca073601264652b38a2dcd40b168f148d0045119d42bd4a8e1458",
+  "author-first-span-regression.log": "813fa1e3f5d3743ef64e1db48ece31e76c3933522d27d4b26ca76b9371f62b20",
+  "author-storage-alternate.log": "f00b8f435063b0ce970be10c7f7fad1bfbce530402d796a8464dca5329ca55fc",
+  "author-storage-default.log": "a7405b4177f36f858aae527aa0cd8a86f74b3de42db34f50f7086be749fd53bf",
+  "author-storage-sanitized.log": "8d3a8f077153c404e0de7d0bee235c23ca0f5d03788e755038e2931ce01b876b"
+}

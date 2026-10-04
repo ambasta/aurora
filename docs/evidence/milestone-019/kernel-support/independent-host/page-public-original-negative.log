@@ -1,0 +1,4 @@
+/tmp/aurora-amd310-independent-review/page-public-original-negative.cpp: In function ‘auto leak(aurora::memory::DormantTables&)’:
+/tmp/aurora-amd310-independent-review/page-public-original-negative.cpp:2:55: error: cannot convert ‘aurora::memory::DormantTables::page’ from type ‘std::span<std::byte> (aurora::memory::DormantTables::)(std::size_t) const’ {aka ‘std::span<std::byte> (aurora::memory::DormantTables::)(long unsigned int) const’} to type ‘std::span<std::byte> (aurora::memory::DormantTables::*)(long unsigned int) const’
+    2 | auto leak(aurora::memory::DormantTables& t) {return t.page;}
+      |                                                       ^~~~

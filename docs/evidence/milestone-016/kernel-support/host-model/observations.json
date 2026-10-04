@@ -1,0 +1,10 @@
+{
+  "receipt": "/tmp/aurora-m015-independent-review/actual-eleven/ivrs-read/serial.log",
+  "sha256": "8fc5ca85ece4b968d5ec8aa2c6a8136436ad9453a45e7bf5af6fbbfadbfc5111",
+  "records": [
+    "AURORA_BAR_STATE: segment=0 bus=0 device=2 function=0 command=2 base=824633720832 length=16384 cap=18023332293183487 version=66560 cc=0 csts=0 aqa=0 asq=0 acq=0",
+    "AURORA_IVRS_PCI_RAW: header=2210191407001000000006080000000000000000000000000000000000000000000000000000000000000000f41a0011000000006000000000000000ff000000 cap=0f00031f0000d8fe00000000000000ff40281800000000000540000008580000055c8000000000000000000000000000",
+    "AURORA_IVRS_REGISTERS: control=0 efr=10707 status=0"
+  ],
+  "authority": "read-only observation; no DMA activation"
+}

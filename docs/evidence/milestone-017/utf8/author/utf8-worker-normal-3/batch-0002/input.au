@@ -1,0 +1,70 @@
+module utf8_test;import std.utf8;
+auto both(bool a,bool b)->bool{if(a){return b;}return false;}
+auto either(bool a,bool b)->bool{if(a){return true;}return b;}
+
+auto model_decode(builtin::span<const u8> bytes,i64 count,bool final_input)->std::Utf8DecodeResult{
+    if(count==0){const std::Utf8DecodeResult r=std::Utf8DecodeResult(std::Utf8Status::end_of_input,0u64,0);return r;}
+    const u64 first=u64(bytes.at(0));
+    if(first<128u64){const std::Utf8DecodeResult r=std::Utf8DecodeResult(std::Utf8Status::success,first,1);return r;}
+    i64 width=0;u64 value=0u64;u64 minimum=0u64;
+    if(both(first>=192u64,first<224u64)){width=2;value=first-192u64;minimum=128u64;}
+    if(both(first>=224u64,first<240u64)){width=3;value=first-224u64;minimum=2048u64;}
+    if(both(first>=240u64,first<248u64)){width=4;value=first-240u64;minimum=65536u64;}
+    if(width==0){const std::Utf8DecodeResult r=std::Utf8DecodeResult(std::Utf8Status::invalid_sequence,0u64,0);return r;}
+    i64 used=1;
+    while(used<=width){
+        u64 scale=1u64;i64 remaining=used;
+        while(remaining<width){scale=scale*64u64;remaining=remaining+1;}
+        u64 low=value*scale;u64 high=(value+1u64)*scale-1u64;
+        if(low<minimum){low=minimum;}if(high>1114111u64){high=1114111u64;}
+        if(either(low>high,both(low>=55296u64,high<=57343u64))){
+            const std::Utf8DecodeResult r=std::Utf8DecodeResult(std::Utf8Status::invalid_sequence,0u64,0);return r;
+        }
+        if(used==width){const std::Utf8DecodeResult r=std::Utf8DecodeResult(std::Utf8Status::success,value,width);return r;}
+        if(used==count){
+            if(final_input){const std::Utf8DecodeResult r=std::Utf8DecodeResult(std::Utf8Status::truncated,0u64,0);return r;}
+            const std::Utf8DecodeResult r=std::Utf8DecodeResult(std::Utf8Status::need_more,0u64,0);return r;
+        }
+        const u64 next=u64(bytes.at(used));
+        if(either(next<128u64,next>=192u64)){const std::Utf8DecodeResult r=std::Utf8DecodeResult(std::Utf8Status::invalid_sequence,0u64,0);return r;}
+        value=value*64u64+next-128u64;used=used+1;
+    }
+    const std::Utf8DecodeResult impossible=std::Utf8DecodeResult(std::Utf8Status::out_of_range,0u64,0);return impossible;
+}
+auto model_check(builtin::span<const u8> bytes,i64 count,bool final_input)->u64{
+    const std::Utf8DecodeResult expected=model_decode(bytes,count,final_input);
+    const std::Utf8DecodeResult actual=std::decode_utf8(bytes,0,count,final_input);
+    if(actual.status()!=expected.status()){return 1u64;}
+    if(actual.width()!=expected.width()){return 2u64;}
+    if(actual.scalar_or(18446744073709551615u64)!=expected.scalar_or(18446744073709551615u64)){return 3u64;}
+    const std::Utf8ValidationResult validation=std::validate_utf8(bytes,0,count,final_input);
+    i64 prefix=0;i64 scalars=0;
+    std::Utf8Status outcome=std::Utf8Status::success;
+    bool stopped=false;
+    while(both(prefix<count,!stopped)){
+        builtin::array<u8,4> tail={0u8,0u8,0u8,0u8};i64 j=0;
+        while(j<count-prefix){tail[j]=bytes.at(prefix+j);j=j+1;}
+        const std::Utf8DecodeResult part=model_decode(borrow_bytes(tail),count-prefix,final_input);
+        if(part.status()!=std::Utf8Status::success){outcome=part.status();stopped=true;}
+        else{prefix=prefix+part.width();scalars=scalars+1;}
+    }
+    if(validation.status()!=outcome){return 4u64;}
+    if(validation.prefix_bytes()!=prefix){return 5u64;}
+    if(validation.scalar_count()!=scalars){return 6u64;}
+    return 0u64;
+}
+
+auto utf8_case_0()->u64{
+        builtin::array<u8,2> bytes={0u8,0u8};i64 number=0;u64 visited=0u64;
+        while(number<65536){
+            bytes[0]=u8(number/256);bytes[1]=u8(number%256);
+            {const builtin::span<const u8> view=borrow_bytes(bytes);
+                const u64 final_failure=model_check(view,2,true);
+                if(final_failure!=0u64){return u64(number)*32u64+final_failure;}
+                const u64 chunk_failure=model_check(view,2,false);
+                if(chunk_failure!=0u64){return u64(number)*32u64+16u64+chunk_failure;}
+            }
+            visited=visited+1u64;number=number+1;
+        }
+        return 11914855783004569770u64+visited;
+    }

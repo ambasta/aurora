@@ -1,0 +1,10 @@
+PASS geometry-release
+PASS old-storage-release
+PASS example-compile-release
+PASS geometry-sanitized
+PASS old-storage-sanitized
+PASS example-compile-sanitized
+PASS assemble-example
+PASS assemble-entry
+PASS link-example
+PASS native-example-42

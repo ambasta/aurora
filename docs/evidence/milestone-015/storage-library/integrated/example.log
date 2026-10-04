@@ -1,0 +1,6 @@
+COMMAND ['/tmp/aurora-m015-release/aurorac', '--module-root', '/workspace/scratch/48c5de6446f8/aurora/library', '/workspace/scratch/48c5de6446f8/aurora/library/examples/storage_fields.au', '-o', '/tmp/aurora-m015-storage.s']
+COMMAND ['gcc', '-no-pie', '/tmp/aurora-m015-storage.s', '-o', '/tmp/aurora-m015-storage']
+PASS /tmp/aurora-m015-release/aurorac 2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8 native exit42
+COMMAND ['/tmp/aurora-m015-sanitizer/aurorac', '--module-root', '/workspace/scratch/48c5de6446f8/aurora/library', '/workspace/scratch/48c5de6446f8/aurora/library/examples/storage_fields.au', '-o', '/tmp/aurora-m015-storage.s']
+COMMAND ['gcc', '-no-pie', '/tmp/aurora-m015-storage.s', '-o', '/tmp/aurora-m015-storage']
+PASS /tmp/aurora-m015-sanitizer/aurorac ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa native exit42

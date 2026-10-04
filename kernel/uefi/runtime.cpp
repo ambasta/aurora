@@ -5,6 +5,12 @@
 #include "../user-program.hpp"
 #include "../domain-policy.hpp"
 #include "../pages.hpp"
+#ifdef AURORA_UEFI_PINS
+#include "../pin-ledger.hpp"
+#ifdef AURORA_UEFI_TABLES
+#include "dormant-inspector.hpp"
+#endif
+#endif
 #include "../console.hpp"
 #ifdef AURORA_UEFI_IPC
 #include "../ipc-policy.hpp"
@@ -211,6 +217,16 @@ auto install_architecture() -> void {
     const std::uint16_t null_selector=0; asm volatile("mov %0,%%fs; mov %0,%%gs"::"r"(null_selector):"memory");
     for (const std::uint32_t msr:{0xc0000100U,0xc0000101U,0xc0000102U}) asm volatile("wrmsr"::"c"(msr),"a"(0),"d"(0):"memory");
 }
+#ifdef AURORA_UEFI_PINS
+#ifdef AURORA_UEFI_TABLES
+#include "dormant-runtime.inc"
+#else
+#include "pin-runtime.inc"
+#endif
+#endif
+#ifndef AURORA_UEFI_PINS
+constexpr auto pin_retained() -> std::size_t { return 0; }
+#endif
 #ifndef AURORA_UEFI_IPC
 auto execute(unsigned index,ProgramEvent wanted) -> void {
     auto& domain=domains[index];
@@ -369,22 +385,60 @@ auto run_protected(U64 owned_arena,const Bytes& h) -> bool {
     const auto first=create(0),second=create(1);
     require(first && second && *first==0 && *second==1,"two owned domains");
     const auto original=*frames.address(*domains[0].stacks[0]);
-    execute(0,ProgramEvent::returned); execute(1,ProgramEvent::bounds); execute(0,ProgramEvent::returned);
+    execute(0,ProgramEvent::returned);
+#ifdef AURORA_UEFI_PINS
+    pin_request();
+#endif
+    execute(1,ProgramEvent::bounds);
+#ifdef AURORA_UEFI_PINS
+    pin_fault_returned();
+#endif
+    execute(0,ProgramEvent::returned);
     const auto stale=*domains[0].handle;
+#ifdef AURORA_PIN_FAULT
+    const auto old_service=*domains[1].handle;
+#endif
     for (auto& domain:domains) for (auto& lease:domain.stacks) fill(*frames.address(*lease),0xa5);
-    require(retire(0) && retire(1) && frames.used()==0 && !registry.index(stale) && !registry.activate(stale) && !registry.destroy(stale),"retire/stale authority");
-    const auto reused=create(0); require(reused && *reused==0 && *frames.address(*domains[0].stacks[0])==original,"frame reuse");
+    require(retire(0) && retire(1)
+#ifdef AURORA_UEFI_PINS
+        && pin_retired()
+#endif
+        && frames.used()==pin_retained() && !registry.index(stale) && !registry.activate(stale) && !registry.destroy(stale),"retire/stale authority");
+    const auto reused=create(
+#ifdef AURORA_PIN_FAULT
+        1
+#else
+        0
+#endif
+    ); require(reused && *reused==0 && *frames.address(*domains[0].stacks[0])==original,"frame reuse");
     for (const auto& lease:domains[0].stacks) require(zero(*frames.address(*lease)),"reused frame scrub");
     Serial::text("AURORA_UEFI_DOMAIN_REUSE_OK: frame="); Serial::number(original); Serial::text("\r\n");
-    execute(0,ProgramEvent::returned); require(retire(0) && frames.used()==0,"final retirement");
+#ifdef AURORA_PIN_FAULT
+    const auto restarted=create(0); require(restarted && *restarted==1,"same service slot restart");
+    execute(1,ProgramEvent::returned);
+    pin_reborn(old_service);
+    require(retire(1),"restarted service retirement");
+#else
+    execute(0,ProgramEvent::returned);
+#ifdef AURORA_UEFI_PINS
+    pin_reborn(stale);
+#endif
+#endif
+    require(retire(0) && frames.used()==pin_retained(),"final retirement");
     std::array<std::optional<memory::PageLease>,14> reserved{};
-    for (auto& lease:reserved) { auto acquired=frames.acquire(); require(acquired.has_value(),"rollback reservation"); lease.emplace(std::move(*acquired)); }
+    for (std::size_t i=0;i<14-pin_retained();++i) { auto acquired=frames.acquire(); require(acquired.has_value(),"rollback reservation"); reserved[i].emplace(std::move(*acquired)); }
     fill(arena+L::stack_frames_offset+14*4096,0xa5); fill(arena+L::stack_frames_offset+15*4096,0xa5);
     require(!create(0) && frames.used()==14 && zero(arena+L::stack_frames_offset+14*4096)
         && zero(arena+L::stack_frames_offset+15*4096),"partial creation rollback");
-    for (auto& lease:reserved) require(frames.release(*lease),"reservation release");
-    require(root()==kernel_root && frames.used()==0 && active==L::domain_count && !program.running(),"final root/lease state");
+    for (auto& lease:reserved) if (lease) require(frames.release(*lease),"reservation release");
+    require(root()==kernel_root && frames.used()==pin_retained() && active==L::domain_count && !program.running(),"final root/lease state");
+    #ifdef AURORA_UEFI_PINS
+    pin_final();
+    Serial::text("AURORA_UEFI_DOMAIN_CLEANUP_OK: used="); Serial::number(pin_retained());
+    Serial::text("\r\nAURORA_UEFI_RUNTIME_OK\r\n");
+#else
     Serial::text("AURORA_UEFI_DOMAIN_CLEANUP_OK: used=0\r\nAURORA_UEFI_RUNTIME_OK\r\n");
+#endif
     return true;
 #endif
 }

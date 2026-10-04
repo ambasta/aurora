@@ -1,0 +1,19 @@
+make: Entering directory '/workspace/scratch/48c5de6446f8/aurora-resource-next/compiler'
+mkdir -p /tmp/aurora-resource-sanitizer/
+g++ -std=c++23 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -Wall -Wextra -Wpedantic -Werror main.cpp -o /tmp/aurora-resource-sanitizer/aurorac
+python3 ../tests/compiler/run.py /tmp/aurora-resource-sanitizer/aurorac
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora-resource-next/compiler/../tests/compiler/run.py", line 65, in <module>
+    check("leading zero decimal", "return 010 + 032;")
+  File "/workspace/scratch/48c5de6446f8/aurora-resource-next/compiler/../tests/compiler/run.py", line 31, in check
+    result = command([COMPILER, source, "-o", assembly], good=error is None)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/48c5de6446f8/aurora-resource-next/compiler/../tests/compiler/run.py", line 21, in command
+    raise AssertionError(f"{args}: exit {result.returncode}\n{result.stdout}{result.stderr}")
+AssertionError: [PosixPath('/tmp/aurora-resource-sanitizer/aurorac'), PosixPath('/tmp/aurora-test-qwlhoh8m/input.au'), '-o', PosixPath('/tmp/aurora-test-qwlhoh8m/program.s')]: exit 1
+==14==LeakSanitizer has encountered a fatal error.
+==14==HINT: For debugging, try setting environment variable LSAN_OPTIONS=verbosity=1:log_threads=1
+==14==HINT: LeakSanitizer does not work under ptrace (strace, gdb, etc)
+
+make: *** [Makefile:10: test] Error 1
+make: Leaving directory '/workspace/scratch/48c5de6446f8/aurora-resource-next/compiler'

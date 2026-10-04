@@ -1,0 +1,378 @@
+{
+  "scope": "Readonly source only; no mutable borrowing prerequisite",
+  "compiler_sha256": {
+    "baseline": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+    "candidate": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980"
+  },
+  "driver_sha256": "2940f26a2b68751aee22828045c3a9438d905f9e95cb4abae457c0258ac32fcd",
+  "limits": {
+    "address_space_mib": 256,
+    "cpu_seconds": [
+      4,
+      5
+    ],
+    "wall_seconds": 10,
+    "regular_file_mib": 8,
+    "core_bytes": 0
+  },
+  "results": [
+    {
+      "name": "array64-blocks16",
+      "source_bytes": 3358,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-m014-compiler-corrected",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array64-blocks16.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array64-blocks16-baseline.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.010930290998658165,
+        "max_rss_kib": 7012,
+        "user_seconds": 0.008988,
+        "system_seconds": 0.0,
+        "harness_deadline_kill": false,
+        "source_sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb"
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-resource-release/aurorac",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array64-blocks16.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array64-blocks16-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.010549136000918224,
+        "max_rss_kib": 6868,
+        "user_seconds": 0.006796,
+        "system_seconds": 0.0,
+        "harness_deadline_kill": false,
+        "source_sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb"
+      },
+      "assembly_identical": true
+    },
+    {
+      "name": "array512-blocks16",
+      "source_bytes": 5168,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-m014-compiler-corrected",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array512-blocks16.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array512-blocks16-baseline.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.051169966005545575,
+        "max_rss_kib": 24256,
+        "user_seconds": 0.039857,
+        "system_seconds": 0.008621,
+        "harness_deadline_kill": false,
+        "source_sha256": "61b739da599b9cdb3725d8c9676f3b231adb31bb536e64fa45674c7ec153750a",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda"
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-resource-release/aurorac",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array512-blocks16.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array512-blocks16-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.0206569119982305,
+        "max_rss_kib": 10304,
+        "user_seconds": 0.015857,
+        "system_seconds": 0.003922999999999999,
+        "harness_deadline_kill": false,
+        "source_sha256": "61b739da599b9cdb3725d8c9676f3b231adb31bb536e64fa45674c7ec153750a",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda"
+      },
+      "assembly_identical": true
+    },
+    {
+      "name": "array4096-blocks0",
+      "source_bytes": 16562,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-m014-compiler-corrected",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks0.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks0-baseline.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.06219425099698128,
+        "max_rss_kib": 59292,
+        "user_seconds": 0.039091,
+        "system_seconds": 0.021262,
+        "harness_deadline_kill": false,
+        "source_sha256": "2b93dbe2a55ef1985b36073da246709d5021586617a5d0dfaa8d69fd9e76075f",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1"
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-resource-release/aurorac",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks0.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks0-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.061431013004039414,
+        "max_rss_kib": 56336,
+        "user_seconds": 0.031702,
+        "system_seconds": 0.029056,
+        "harness_deadline_kill": false,
+        "source_sha256": "2b93dbe2a55ef1985b36073da246709d5021586617a5d0dfaa8d69fd9e76075f",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1"
+      },
+      "assembly_identical": true
+    },
+    {
+      "name": "array4096-blocks4",
+      "source_bytes": 17302,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-m014-compiler-corrected",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks4.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks4-baseline.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.1423763909988338,
+        "max_rss_kib": 88044,
+        "user_seconds": 0.109847,
+        "system_seconds": 0.028457999999999997,
+        "harness_deadline_kill": false,
+        "source_sha256": "27636de6f9f0af96ff755fcc98de1d07763a356fa36e0ec54108c7f3d8c323ad",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6"
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-resource-release/aurorac",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks4.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks4-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.082532987005834,
+        "max_rss_kib": 56824,
+        "user_seconds": 0.053975999999999996,
+        "system_seconds": 0.024938,
+        "harness_deadline_kill": false,
+        "source_sha256": "27636de6f9f0af96ff755fcc98de1d07763a356fa36e0ec54108c7f3d8c323ad",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6"
+      },
+      "assembly_identical": true
+    },
+    {
+      "name": "array4096-blocks8",
+      "source_bytes": 18042,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-m014-compiler-corrected",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks8.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks8-baseline.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.22520690399687737,
+        "max_rss_kib": 116140,
+        "user_seconds": 0.17838199999999999,
+        "system_seconds": 0.039191,
+        "harness_deadline_kill": false,
+        "source_sha256": "431f00df9116bfde4045e7476d142fd7f9f3902aa049b40aa3080304ac0ba223",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95"
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-resource-release/aurorac",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks8.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks8-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.10175969100237126,
+        "max_rss_kib": 57220,
+        "user_seconds": 0.073562,
+        "system_seconds": 0.020624,
+        "harness_deadline_kill": false,
+        "source_sha256": "431f00df9116bfde4045e7476d142fd7f9f3902aa049b40aa3080304ac0ba223",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95"
+      },
+      "assembly_identical": true
+    },
+    {
+      "name": "array4096-blocks16",
+      "source_bytes": 19522,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-m014-compiler-corrected",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks16.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks16-baseline.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.38754942800005665,
+        "max_rss_kib": 172400,
+        "user_seconds": 0.343675,
+        "system_seconds": 0.037288999999999996,
+        "harness_deadline_kill": false,
+        "source_sha256": "eb93e6c9d09f69c9bacdbe3ec09a68f411c63c7f6728a4c40b87e528431ed289",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673"
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-resource-release/aurorac",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks16.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks16-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.14195032499992521,
+        "max_rss_kib": 58008,
+        "user_seconds": 0.119264,
+        "system_seconds": 0.019953,
+        "harness_deadline_kill": false,
+        "source_sha256": "eb93e6c9d09f69c9bacdbe3ec09a68f411c63c7f6728a4c40b87e528431ed289",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673"
+      },
+      "assembly_identical": true
+    },
+    {
+      "name": "array4096-blocks64",
+      "source_bytes": 28402,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-m014-compiler-corrected",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks64.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks64-baseline.s"
+        ],
+        "exit_code": 1,
+        "wall_seconds": 0.669408707995899,
+        "max_rss_kib": 255764,
+        "user_seconds": 0.575047,
+        "system_seconds": 0.090865,
+        "harness_deadline_kill": false,
+        "source_sha256": "d85644e37915c807cfa86536c739cf6d524e88cccc261fe12cb004b5e85be98a",
+        "stdout_hex": "",
+        "stderr_hex": "6175726f7261633a207374643a3a6261645f616c6c6f630a",
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-resource-release/aurorac",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks64.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks64-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.489961115999904,
+        "max_rss_kib": 62988,
+        "user_seconds": 0.450281,
+        "system_seconds": 0.031638,
+        "harness_deadline_kill": false,
+        "source_sha256": "d85644e37915c807cfa86536c739cf6d524e88cccc261fe12cb004b5e85be98a",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "350aa06d7e1b8150d826d1c56bfb278371b567f79bf450e160e303c62291afa4"
+      }
+    },
+    {
+      "name": "array4096-blocks96",
+      "source_bytes": 34322,
+      "baseline": {
+        "command": [
+          "/tmp/aurora-m014-compiler-corrected",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks96.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks96-baseline.s"
+        ],
+        "exit_code": 1,
+        "wall_seconds": 0.7003368400037289,
+        "max_rss_kib": 256332,
+        "user_seconds": 0.633045,
+        "system_seconds": 0.057273,
+        "harness_deadline_kill": false,
+        "source_sha256": "7d243cc0618b678997be8146ac28f5554588eed7a9fd375fa5851d88afdefe8d",
+        "stdout_hex": "",
+        "stderr_hex": "6175726f7261633a207374643a3a6261645f616c6c6f630a",
+        "assembly_sha256": null
+      },
+      "candidate": {
+        "command": [
+          "/tmp/aurora-resource-release/aurorac",
+          "--module-root",
+          "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+          "/tmp/aurora-resource-comparison/array4096-blocks96.au",
+          "-o",
+          "/tmp/aurora-resource-comparison/array4096-blocks96-candidate.s"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.6889013079999131,
+        "max_rss_kib": 66364,
+        "user_seconds": 0.6665329999999999,
+        "system_seconds": 0.020014,
+        "harness_deadline_kill": false,
+        "source_sha256": "7d243cc0618b678997be8146ac28f5554588eed7a9fd375fa5851d88afdefe8d",
+        "stdout_hex": "",
+        "stderr_hex": "",
+        "assembly_sha256": "07d76a84ebc7b008404617a15fc8007bcfe9781c079519d72dc4876b3fe8e5f5"
+      }
+    }
+  ]
+}

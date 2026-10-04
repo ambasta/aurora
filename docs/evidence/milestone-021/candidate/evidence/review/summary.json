@@ -1,0 +1,11 @@
+{
+  "final_compiler_sha256": "d866abc707349ca8652a966800d38bd920bd41345997f08e4b849c9bfc3b7b64",
+  "unique_fixture_count": 46,
+  "native_positive_count": 24,
+  "negative_count": 22,
+  "all_fixtures_pass": true,
+  "extra_negative_absent_executions": 22,
+  "all_absent_pass": true,
+  "baseline_cases": 5,
+  "all_baseline_byte_exact": true
+}

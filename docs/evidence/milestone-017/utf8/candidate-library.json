@@ -1,0 +1,17 @@
+{
+  "baseline": "baseline-m016.json",
+  "files": [
+    {
+      "path": "library/std/utf8.au",
+      "sha256": "6ad8d1c11ce26197932e2118151a7761e518ea2db7dc64a1fd1a3e956761f31c"
+    },
+    {
+      "path": "library/examples/utf8_scalars.au",
+      "sha256": "fae18647e76acff29504fec0fb80dcc419e732952f9ef04b426c783b8eb93fed"
+    },
+    {
+      "path": "docs/utf8-contract.md",
+      "sha256": "77207e9eba469db28a8943317c1e92ea93a516212b0342a901ed67311314d131"
+    }
+  ]
+}

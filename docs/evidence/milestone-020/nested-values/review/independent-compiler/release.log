@@ -1,0 +1,79 @@
+PASS deep_values 
+PASS full_binary_tree 
+PASS canonical_capacity 
+PASS empty_inner 
+PASS phantom_depth_4 
+PASS phantom_depth_5 aurorac: line 2: template-id nesting exceeds 4
+PASS containment_depth5 aurorac: line 1: composed class exceeds depth four or 64 scalar leaves
+PASS leaf_array_1 
+PASS leaf_array_32 
+PASS leaf_array_64 aurorac: line 5: composed classes are limited to 64 scalar leaves
+PASS leaf_array_65 aurorac: line 1: capacity template arguments must be decimal literals from 1 to 64 (found '>')
+PASS leaf_array_0 aurorac: line 1: capacity template arguments must be decimal literals from 1 to 64 (found '>')
+PASS body_specialization_12 aurorac: line 2: template-id references inside template definitions are not supported (found '<')
+PASS body_specialization_13 aurorac: line 2: template-id references inside template definitions are not supported (found '<')
+PASS body_specialization_14 aurorac: line 2: template-id references inside template definitions are not supported (found '<')
+PASS body_specialization_15 aurorac: line 2: template-id references inside template definitions are not supported (found '<')
+PASS bad_arg_16 aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'own')
+PASS bad_arg_17 aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'ref')
+PASS bad_arg_18 aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'mutref')
+PASS bad_arg_19 aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'array')
+PASS bad_arg_20 aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'builtin')
+PASS bad_arg_21 aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'builtin')
+PASS bad_arg_22 aurorac: unknown named class or enum template argument: Unknown
+PASS bad_arg_23 aurorac: template argument requires a named concrete class or enum: Box
+PASS bad_arg_24 aurorac: line 3: expected identifier (found '>>')
+PASS bad_arg_25 aurorac: wrong number of class template arguments for Box
+PASS bad_arg_26 aurorac: line 3: capacity template arguments must be decimal literals from 1 to 64 (found '>>')
+PASS bad_arg_27 aurorac: line 3: capacity template arguments must be decimal literals from 1 to 64 (found '>>')
+PASS bad_arg_28 aurorac: line 3: template arguments require scalar, named class or enum types, or capacities from 1 to 64 (found 'true')
+PASS bad_arg_29 aurorac: line 3: expected ')' (found '>')
+PASS bad_arg_30 aurorac: line 3: expected '>' (found ')')
+PASS bad_arg_31 aurorac: line 3: expected ')' (found '>>')
+PASS scalar_rejects_class aurorac: class template Scalar argument requires i64, u64, u8 or bool
+PASS scalar_rejects_enum aurorac: class template Scalar argument requires i64, u64, u8 or bool
+PASS nominal_inner_order aurorac: line 2: expected Box<std::pair<u64,i64>>, got Box<std::pair<i64,u64>>
+PASS ordinary_cycle_nested aurorac: line 2: recursive class containment is unsupported
+PASS nested_enum_native 
+PASS visibility_private_inner aurorac: exported function signature exposes private type: Box<Box<Private>>
+PASS visibility_private_phantom aurorac: exported function signature exposes private type: Phantom<Phantom<Private>>
+PASS visibility_transitive_inner aurorac: unknown named class or enum template argument: Secret
+PASS visibility_direct_inner 
+PASS defining_helper 
+PASS requesting_lexical_scope 
+PASS reflection_visibility 
+PASS instance_cap256 
+PASS instance_cap258 aurorac: module graph exceeds 256 class template instantiations
+PASS template_cap64 
+PASS template_cap65 aurorac: module graph exceeds 64 class templates
+PASS shifts_after_nested 
+PASS shifts_and_comparisons 
+PASS exact_65_leaves aurorac: line 5: composed classes are limited to 64 scalar leaves
+PASS exact_257_instances aurorac: module graph exceeds 256 class template instantiations
+PASS nested_temporary_argument aurorac: line 2: ownership operation requires a local name
+PASS nested_return_temporary aurorac: line 2: class return requires a complete local name
+PASS nested_field_assignment aurorac: line 2: whole aggregate field assignment is unsupported
+PASS nested_chained_receiver aurorac: line 2: method receiver requires a class local
+PASS nested_class_method_parameter aurorac: only scalar or enum method parameters are supported
+PASS nested_private_storage aurorac: line 2: indexing requires an array local or implicit private receiver field
+PASS public_inner_signature_privacy aurorac: template argument type requires a direct visible import: Box<i64>
+PASS same_layout_nominal_inner aurorac: line 2: expected Box<Box<F>>, got Box<Box<E>>
+PASS snapshot_before_later_mutation 
+PASS inner_id_precedes_outer 
+PASS long_qualified_nested_tree 
+PASS closer_spacing_1_63 
+PASS closer_spacing_1_64 
+PASS closer_spacing_1_65 
+PASS closer_spacing_2_66 
+PASS closer_spacing_2_67 
+PASS closer_spacing_2_68 
+PASS closer_spacing_3_69 
+PASS closer_spacing_3_70 
+PASS closer_spacing_3_71 
+PASS closer_spacing_4_72 
+PASS closer_spacing_4_73 
+PASS closer_spacing_4_74 
+PASS long_opens aurorac: line 2: template-id nesting exceeds 4
+PASS long_closers aurorac: line 2: expected ')' (found '>')
+PASS wide_arguments aurorac: line 2: template arguments are limited to one or two types or capacity literals (found 'i64')
+SUMMARY 78 cases; failures: []

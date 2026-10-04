@@ -1,0 +1,17 @@
+{
+  "cases": [
+    "all 1112064 Unicode scalars in native runtime loop"
+  ],
+  "source_bytes": 2429,
+  "source_sha256": "72db7bf6c6162efee84e09b251ad410ceb696c00647af9d18ec0e907de393a55",
+  "status": "passed",
+  "observation": {
+    "exit_code": 0,
+    "terminal_signal": null,
+    "delivery_signal": null,
+    "pc": null,
+    "instruction": null,
+    "signal_code": null
+  },
+  "seconds": 0.289593
+}

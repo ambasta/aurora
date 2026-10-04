@@ -1,0 +1,1 @@
+module review;import generic;class Cell{u8 secret;public:Cell(u8 x):secret(x){} };auto test()->i64{Cell a=Cell(42u8);return inspect<Cell>(a);}

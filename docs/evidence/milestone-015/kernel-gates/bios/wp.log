@@ -1,0 +1,9 @@
+Aurora bootstrap: x86-64 long mode
+AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards
+AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag
+AURORA_E820_OK
+AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free
+AURORA_EXCEPTION_FATAL: 14 error=3 rip=88926
+AURORA_EXCEPTION_CONTEXT: cpl=0 frame=589632 cr2=65536
+Exception halted safely
+AURORA_BOOT_FAIL

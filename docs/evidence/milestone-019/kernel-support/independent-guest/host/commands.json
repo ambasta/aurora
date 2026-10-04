@@ -1,0 +1,126 @@
+[
+  {
+    "name": "inspector-ordinary",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsyntax-only",
+      "/tmp/aurora-amd310-guest-review/host/inspector-access.cpp"
+    ],
+    "returncode": 1,
+    "expected": 1
+  },
+  {
+    "name": "inspector-uefi-only",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_UEFI_TABLES=1",
+      "-fsyntax-only",
+      "/tmp/aurora-amd310-guest-review/host/inspector-access.cpp"
+    ],
+    "returncode": 1,
+    "expected": 1
+  },
+  {
+    "name": "inspector-testing-only",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_DORMANT_TABLE_TESTING=1",
+      "-fsyntax-only",
+      "/tmp/aurora-amd310-guest-review/host/inspector-access.cpp"
+    ],
+    "returncode": 1,
+    "expected": 1
+  },
+  {
+    "name": "inspector-testing-zero",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_UEFI_TABLES=1",
+      "-DAURORA_DORMANT_TABLE_TESTING=0",
+      "-fsyntax-only",
+      "/tmp/aurora-amd310-guest-review/host/inspector-access.cpp"
+    ],
+    "returncode": 1,
+    "expected": 1
+  },
+  {
+    "name": "inspector-explicit",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DAURORA_UEFI_TABLES=1",
+      "-DAURORA_DORMANT_TABLE_TESTING=1",
+      "-fsyntax-only",
+      "/tmp/aurora-amd310-guest-review/host/inspector-access.cpp"
+    ],
+    "returncode": 0,
+    "expected": 0
+  },
+  {
+    "name": "ordinary-pin-object",
+    "argv": [
+      "g++",
+      "-std=c++23",
+      "-O2",
+      "-fstack-usage",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-ffreestanding",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-fno-stack-protector",
+      "-fno-asynchronous-unwind-tables",
+      "-fno-unwind-tables",
+      "-mno-red-zone",
+      "-mgeneral-regs-only",
+      "-fno-tree-loop-distribute-patterns",
+      "-fpie",
+      "-fvisibility=hidden",
+      "-DAURORA_UEFI_RUNTIME",
+      "-DAURORA_UEFI_PINS",
+      "-DAURORA_PIN_CANCEL",
+      "-c",
+      "kernel/uefi/runtime.cpp",
+      "-o",
+      "/tmp/aurora-amd310-guest-review/host/ordinary-pin-runtime.o"
+    ],
+    "returncode": 0,
+    "expected": 0
+  },
+  {
+    "name": "ownership",
+    "returncode": 0,
+    "argv": [
+      "/tmp/aurora-amd310-guest-review/host/ownership"
+    ],
+    "expected": 0
+  },
+  {
+    "name": "ownership-sanitized",
+    "returncode": 0,
+    "argv": [
+      "/tmp/aurora-amd310-guest-review/host/ownership-sanitized"
+    ],
+    "expected": 0
+  }
+]

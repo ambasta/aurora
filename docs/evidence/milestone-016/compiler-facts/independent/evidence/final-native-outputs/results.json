@@ -1,0 +1,631 @@
+{
+  "driver_sha256": "d9218c4934bfe290951b581eee1cbd2d5bf0e25b971d3345c59895c7bb90e6e9",
+  "limits": {
+    "address_space_mib": 256,
+    "cpu_seconds": [
+      4,
+      5
+    ],
+    "wall_seconds": 10,
+    "regular_file_mib": 8,
+    "core_bytes": 0
+  },
+  "results": [
+    {
+      "assembly": "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks0-candidate.s",
+      "assembly_sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1",
+      "native": [
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks0-candidate.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks0-candidate.code.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.02061513999797171,
+          "max_rss_kib": 7104,
+          "user_seconds": 0.008621,
+          "system_seconds": 0.004334,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks0-candidate.entry.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks0-candidate.entry.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010420803002489265,
+          "max_rss_kib": 7104,
+          "user_seconds": 0.0023899999999999998,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/ld",
+            "--build-id=none",
+            "-e",
+            "_start",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks0-candidate.entry.o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks0-candidate.code.o",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks0-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.01039172000309918,
+          "max_rss_kib": 7756,
+          "user_seconds": 0.0,
+          "system_seconds": 0.003178,
+          "harness_deadline_kill": false,
+          "tool_sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks0-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.011521865999384318,
+          "max_rss_kib": 7756,
+          "user_seconds": 0.00095,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "924048c7e0dbd714525814089752cd047bfff5dedd79d124ed036e0af3f808d9",
+          "stdout_hex": "2a00000000000000",
+          "stderr_hex": ""
+        }
+      ]
+    },
+    {
+      "assembly": "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks16-candidate.s",
+      "assembly_sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673",
+      "native": [
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks16-candidate.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks16-candidate.code.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.020530173998849932,
+          "max_rss_kib": 7768,
+          "user_seconds": 0.013467999999999999,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks16-candidate.entry.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks16-candidate.entry.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010411870003736112,
+          "max_rss_kib": 7768,
+          "user_seconds": 0.0,
+          "system_seconds": 0.002483,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/ld",
+            "--build-id=none",
+            "-e",
+            "_start",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks16-candidate.entry.o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks16-candidate.code.o",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks16-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010409456001070794,
+          "max_rss_kib": 7768,
+          "user_seconds": 0.0,
+          "system_seconds": 0.003443,
+          "harness_deadline_kill": false,
+          "tool_sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks16-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010386731999460608,
+          "max_rss_kib": 8808,
+          "user_seconds": 0.000634,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "c2f6a0bb33e86900c8c74244ed7d55321ebf8a24fce8f09861c62bed254e1f89",
+          "stdout_hex": "2a00000000000000",
+          "stderr_hex": ""
+        }
+      ]
+    },
+    {
+      "assembly": "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks4-candidate.s",
+      "assembly_sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6",
+      "native": [
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks4-candidate.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks4-candidate.code.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.02047766600298928,
+          "max_rss_kib": 8824,
+          "user_seconds": 0.013604999999999999,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks4-candidate.entry.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks4-candidate.entry.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010517946997424588,
+          "max_rss_kib": 8824,
+          "user_seconds": 0.0,
+          "system_seconds": 0.0023669999999999997,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/ld",
+            "--build-id=none",
+            "-e",
+            "_start",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks4-candidate.entry.o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks4-candidate.code.o",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks4-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010380783998698462,
+          "max_rss_kib": 8824,
+          "user_seconds": 0.0,
+          "system_seconds": 0.002714,
+          "harness_deadline_kill": false,
+          "tool_sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks4-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010471979003341403,
+          "max_rss_kib": 8824,
+          "user_seconds": 0.0,
+          "system_seconds": 0.0007199999999999999,
+          "harness_deadline_kill": false,
+          "tool_sha256": "b6f71a65d95dcc2d6f05656ae4cd2bd6cdd376ef6a621afe81e9a7e4a97b7251",
+          "stdout_hex": "2a00000000000000",
+          "stderr_hex": ""
+        }
+      ]
+    },
+    {
+      "assembly": "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks64-candidate.s",
+      "assembly_sha256": "350aa06d7e1b8150d826d1c56bfb278371b567f79bf450e160e303c62291afa4",
+      "native": [
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks64-candidate.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks64-candidate.code.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.020458436993067153,
+          "max_rss_kib": 8832,
+          "user_seconds": 0.012098999999999999,
+          "system_seconds": 0.004033,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks64-candidate.entry.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks64-candidate.entry.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010551561994361691,
+          "max_rss_kib": 8832,
+          "user_seconds": 0.002244,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/ld",
+            "--build-id=none",
+            "-e",
+            "_start",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks64-candidate.entry.o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks64-candidate.code.o",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks64-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010407929003122263,
+          "max_rss_kib": 8832,
+          "user_seconds": 0.003509,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks64-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010501543001737446,
+          "max_rss_kib": 8832,
+          "user_seconds": 0.0010559999999999999,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "b1c1dc590afc82829e16db14b55d47ad37603b4ce4f100294622c63f11071b8a",
+          "stdout_hex": "2a00000000000000",
+          "stderr_hex": ""
+        }
+      ]
+    },
+    {
+      "assembly": "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks8-candidate.s",
+      "assembly_sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95",
+      "native": [
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks8-candidate.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks8-candidate.code.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.020588590996339917,
+          "max_rss_kib": 8852,
+          "user_seconds": 0.013338,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks8-candidate.entry.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks8-candidate.entry.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.01063424000312807,
+          "max_rss_kib": 8852,
+          "user_seconds": 0.003392,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/ld",
+            "--build-id=none",
+            "-e",
+            "_start",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks8-candidate.entry.o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks8-candidate.code.o",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks8-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010533100001339335,
+          "max_rss_kib": 8852,
+          "user_seconds": 0.002803,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks8-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010448674001963809,
+          "max_rss_kib": 8852,
+          "user_seconds": 0.000663,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "a754c288cfd9eb3b84dc2856a77393157841765d12d2b1e94ce91c1864fc7210",
+          "stdout_hex": "2a00000000000000",
+          "stderr_hex": ""
+        }
+      ]
+    },
+    {
+      "assembly": "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks96-candidate.s",
+      "assembly_sha256": "07d76a84ebc7b008404617a15fc8007bcfe9781c079519d72dc4876b3fe8e5f5",
+      "native": [
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array4096-blocks96-candidate.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks96-candidate.code.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.020781305996933952,
+          "max_rss_kib": 8860,
+          "user_seconds": 0.017224,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks96-candidate.entry.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks96-candidate.entry.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.012800573000276927,
+          "max_rss_kib": 8860,
+          "user_seconds": 0.002672,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/ld",
+            "--build-id=none",
+            "-e",
+            "_start",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks96-candidate.entry.o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks96-candidate.code.o",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks96-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010752245005278382,
+          "max_rss_kib": 8860,
+          "user_seconds": 0.002803,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array4096-blocks96-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010556740002357401,
+          "max_rss_kib": 8860,
+          "user_seconds": 0.001924,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "ff92b744ad197447dc3a260460ed9eed659c2cf030e6dfc992672eb0fd54b665",
+          "stdout_hex": "2a00000000000000",
+          "stderr_hex": ""
+        }
+      ]
+    },
+    {
+      "assembly": "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array512-blocks16-candidate.s",
+      "assembly_sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda",
+      "native": [
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array512-blocks16-candidate.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array512-blocks16-candidate.code.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010497505994862877,
+          "max_rss_kib": 8872,
+          "user_seconds": 0.001524,
+          "system_seconds": 0.0039169999999999995,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array512-blocks16-candidate.entry.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array512-blocks16-candidate.entry.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010963368004013319,
+          "max_rss_kib": 8872,
+          "user_seconds": 0.0027129999999999997,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/ld",
+            "--build-id=none",
+            "-e",
+            "_start",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array512-blocks16-candidate.entry.o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array512-blocks16-candidate.code.o",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array512-blocks16-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010566378994553816,
+          "max_rss_kib": 8872,
+          "user_seconds": 0.005547,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array512-blocks16-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010443366001709364,
+          "max_rss_kib": 8872,
+          "user_seconds": 0.000629,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "8d10d553ee161e2c6504352de1d603e4b4fc868d9fc286fb938e8063c8c68ad2",
+          "stdout_hex": "2a00000000000000",
+          "stderr_hex": ""
+        }
+      ]
+    },
+    {
+      "assembly": "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array64-blocks16-candidate.s",
+      "assembly_sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "native": [
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/resources-final-driver/array64-blocks16-candidate.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array64-blocks16-candidate.code.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010481552002602257,
+          "max_rss_kib": 8884,
+          "user_seconds": 0.003395,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/as",
+            "--64",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array64-blocks16-candidate.entry.s",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array64-blocks16-candidate.entry.o"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010592418002488557,
+          "max_rss_kib": 8884,
+          "user_seconds": 0.004468,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/usr/bin/ld",
+            "--build-id=none",
+            "-e",
+            "_start",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array64-blocks16-candidate.entry.o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array64-blocks16-candidate.code.o",
+            "-o",
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array64-blocks16-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.010505427999305539,
+          "max_rss_kib": 8884,
+          "user_seconds": 0.0025269999999999997,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+          "stdout_hex": "",
+          "stderr_hex": ""
+        },
+        {
+          "command": [
+            "/tmp/aurora-facts-independent-review/evidence/final-native-outputs/array64-blocks16-candidate"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.01062857099896064,
+          "max_rss_kib": 8892,
+          "user_seconds": 0.0005859999999999999,
+          "system_seconds": 0.0,
+          "harness_deadline_kill": false,
+          "tool_sha256": "2b17796915333f360fd4da3de08da230c1bd93fb091df0f61e8b2f6ca9f5092f",
+          "stdout_hex": "2a00000000000000",
+          "stderr_hex": ""
+        }
+      ]
+    }
+  ]
+}

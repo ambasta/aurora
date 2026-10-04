@@ -587,10 +587,14 @@ def rejection_cases(suite):
         "Factory factory=Factory();Leaf result=factory.get();return result.get();", LEAF +
         "class Factory{public:Factory(){}auto get()->Leaf{Leaf value=Leaf(42);return value;}};"))
     for argument in ("own<i64>", "ref<i64>", "array<i64,2>", "builtin::array<i64,2>",
-                     "Pair<i64,i64>", "std::array<i64,2>", "Unknown", "42", ""):
+                     "Unknown", "42", ""):
         suite.check("unsupported Value argument " + repr(argument), program(
             f"static_assert(size_of(Pair<{argument},i64>)>0);return 42;", definitions,
             imports="import std.array;"), error=True)
+    for argument, size in (("Pair<i64,i64>", 24), ("std::array<i64,2>", 24)):
+        suite.check("concrete nested Value argument " + argument, program(
+            f"static_assert(size_of(Pair<{argument},i64>)=={size});return 42;", definitions,
+            imports="import std.array;"))
     for spelling in ("template<Value T=Leaf>", "template<Value... T>", "template<Value>",
                      "template<Value T,Value T>", "template<Value T,Value U,Value V>",
                      "template<Value T,i64 N>"):

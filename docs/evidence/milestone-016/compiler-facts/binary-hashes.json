@@ -1,0 +1,8 @@
+{
+  "/tmp/aurora-resource-main-compiler-frozen": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "/tmp/aurora-resource-sanitizer/aurorac": "805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf",
+  "/tmp/aurora-resource-sanitizer/ir-tests": "1651e32995efcf3797ef8ce3a4fc526a6d9849efc094a7ac3e8da5f937b420de",
+  "/tmp/aurora-resource-sanitizer/initialization-facts-tests": "3285f17a1b124ac566f1cfbdd6863c2c4eb41d7be0df044a2eaeac5fec0b46bd",
+  "/tmp/aurora-resource-sanitizer/host-source-tests": "f3a596429c1d46587aba115aaec6fffb3dfa839ab9bdaa962723db6addbec344",
+  "/tmp/aurora-resource-sanitizer/host-output-tests": "8bf1e6742d21a2f2c05a167ae44b6a7dd93efc83346fa7997a7326c6836939fa"
+}

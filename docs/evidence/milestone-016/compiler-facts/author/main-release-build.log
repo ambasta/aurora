@@ -1,0 +1,4 @@
+make: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
+mkdir -p /tmp/aurora-resource-main-release/
+g++ -std=c++23 -O2 -Wall -Wextra -Wpedantic -Werror main.cpp -o /tmp/aurora-resource-main-release/aurorac
+make: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'

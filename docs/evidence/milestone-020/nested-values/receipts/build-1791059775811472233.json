@@ -1,0 +1,28 @@
+{
+  "command": [
+    "g++",
+    "-std=c++23",
+    "-Werror=switch",
+    "-fsyntax-only",
+    "-I",
+    "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/aurora-ir-exhaustive-m9_8f9nn",
+    "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/tmp/aurora-ir-exhaustive-m9_8f9nn/probe.cpp"
+  ],
+  "returncode": 1,
+  "wait_status": 256,
+  "wall_timeout": false,
+  "elapsed_seconds": 2.10505004299921,
+  "peak_rss_kib": 311328,
+  "cpu_user_seconds": 1.9598399999999998,
+  "cpu_system_seconds": 0.137253,
+  "address_space_bytes": 2147483648,
+  "cpu_seconds": [
+    120,
+    130
+  ],
+  "wall_seconds": 180,
+  "regular_file_bytes": 536870912,
+  "candidate_bytes_before": 202938556,
+  "candidate_bytes_after": 202938556,
+  "free_bytes_after": 2187718656
+}

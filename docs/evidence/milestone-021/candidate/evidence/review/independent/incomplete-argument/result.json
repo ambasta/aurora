@@ -1,0 +1,21 @@
+{
+  "name": "incomplete-argument",
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/incomplete-argument/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/incomplete-argument/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/incomplete-argument/compiled.s"
+  ],
+  "returncode": 1,
+  "stderr": "aurorac: line 1: expected '=' (found ';')\n",
+  "negative": true,
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/incomplete-argument/input.au": "4c47e427e17ed39cf63f902507ff78835a993f6ea2079a2bf28dcd717768b1bb"
+  },
+  "inputs_unchanged": true,
+  "pass": true
+}

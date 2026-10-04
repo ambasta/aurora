@@ -4,6 +4,9 @@
 #endif
 #include "tables.hpp"
 #include "acpi-policy.hpp"
+#ifdef AURORA_UEFI_BAR_CAPTURE
+#include "bar-loader.hpp"
+#endif
 #include "../console.hpp"
 #include "uefi-payload.hpp"
 #include <span>
@@ -61,6 +64,11 @@ auto __attribute__((ms_abi)) entry(void* image,void* system) -> U64 {
     if (allocate(1,1,Handoff::arena_bytes/4096,&arena)!=0 || arena<0x100000 || arena%4096
         || arena>0x100000000ULL-Handoff::arena_bytes) fail("owned arena allocation");
     for (auto& byte:span(arena,Handoff::arena_bytes)) byte=std::byte{0};
+#ifdef AURORA_UEFI_BAR_CAPTURE
+    std::uint32_t capture_a,capture_b,capture_c,capture_d;
+    asm volatile("cpuid":"=a"(capture_a),"=b"(capture_b),"=c"(capture_c),"=d"(capture_d):"a"(0x80000008U),"c"(0));
+    if (!aurora::uefi::BarLoader{boot,arena,capture_a&255}.capture()) fail("bounded BAR firmware capture");
+#endif
     const auto payload_size=reinterpret_cast<U64>(&payload_end)-reinterpret_cast<U64>(&payload_begin);
     const auto transition_size=reinterpret_cast<U64>(&transition_end)-reinterpret_cast<U64>(&transition_begin);
     if (payload_size!=aurora::uefi::payload_size || payload_size>Handoff::payload_limit || transition_size>4096) fail("embedded image bounds");
@@ -100,6 +108,9 @@ auto __attribute__((ms_abi)) entry(void* image,void* system) -> U64 {
 #ifdef AURORA_UEFI_DISPATCH
     install_user(2,peer_bytes,std::array<U64,8>{peer_entry,peer_size,peer_return_pc,peer_bounds_pc,peer_overflow_pc,peer_division_zero_pc,peer_shift_count_pc,peer_probe_offset});
 #endif
+#endif
+#ifdef AURORA_UEFI_BAR_CAPTURE
+    put(handoff,8,4,4); put(handoff,120,arena+Handoff::bar_record_offset);
 #endif
     put(handoff,16,Handoff::arena_bytes); put(handoff,24,arena);
     put(handoff,56,payload_size); put(handoff,64,aurora::uefi::payload_text_end);

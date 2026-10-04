@@ -400,7 +400,7 @@ for label, definition in [
     ("three parameters", "template<Scalar T,Scalar U,Scalar V>class Bad{public:T value;};"),
     ("duplicate parameter", "template<Scalar T,Scalar T>class Bad{public:T value;};"),
     ("builtin parameter name", "template<Scalar i64>class Bad{public:i64 value;};"),
-    ("function template", "template<Scalar T>auto identity(T value)->T{return value;}"),
+    ("function capacity template parameter", "template<Scalar T,i64 N>auto identity(T value)->T{return value;}"),
     ("explicit specialization", "template<>class Bad{public:i64 value;};"),
     ("default argument", "template<Scalar T=i64>class Bad{public:T value;};"),
     ("non-type parameter", "template<i64 N>class Bad{public:i64 value;};"),

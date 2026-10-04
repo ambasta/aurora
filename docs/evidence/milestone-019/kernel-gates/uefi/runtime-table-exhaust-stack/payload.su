@@ -1,0 +1,12 @@
+kernel/uefi/tables.hpp:120:24:uint64_t aurora::uefi::PageTables::entry(uint64_t) const	16	static
+kernel/uefi/runtime-layout.hpp:85:41:static constexpr bool aurora::uefi::RuntimeLayoutProfile<Domains>::valid(uint64_t) [with long unsigned int Domains = 2]	240	static
+kernel/uefi/handoff.hpp:11:24:uint64_t aurora::uefi::Bytes::get(std::size_t, unsigned int) const	8	static
+kernel/uefi/handoff.hpp:27:24:bool aurora::uefi::MemoryMap::valid() const	48	static
+kernel/uefi/handoff.hpp:69:31:static bool aurora::uefi::Handoff::valid(std::span<const std::byte>, uint64_t)	64	static
+kernel/uefi/tables.hpp:131:13:uint64_t aurora::uefi::expected_flags(uint64_t, const Bytes&)	8	static
+kernel/uefi/../console.hpp:31:17:static void aurora::hardware::Serial::text(std::string_view)	8	static
+kernel/uefi/payload.cpp:17:19:void {anonymous}::fail(std::string_view)	32	static
+kernel/uefi/../console.hpp:34:17:static void aurora::hardware::Serial::number(long long unsigned int)	40	static
+kernel/uefi/payload.cpp:33:6:void payload_fail(U64, U64, U64)	48	static
+kernel/uefi/tables.hpp:85:25:aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)> [with auto:1 = const aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)>&]	96	static
+kernel/uefi/payload.cpp:40:6:void payload_main(U64, U64)	224	static

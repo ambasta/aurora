@@ -1,0 +1,91 @@
+{
+  "control_write_witness_passed": true,
+  "protocol_and_state_checks_passed": true,
+  "strict_whole_run_absence_contract_passed": false,
+  "trace_event_counts": {
+    "amdvi_command_error": 1,
+    "amdvi_control_status": 1,
+    "amdvi_iotlb_reset": 2,
+    "amdvi_ir_remap_msi": 1,
+    "amdvi_ir_remap_msi_req": 1,
+    "amdvi_mem_ir_write": 1,
+    "amdvi_mem_ir_write_req": 1,
+    "amdvi_mmio_read": 20,
+    "memory_region_ops_write": 2
+  },
+  "generic_writes": [
+    {
+      "trace_line": 3,
+      "cpu": -1,
+      "region_identity": "0x56292ba5c4f0",
+      "address": 4276092928,
+      "value": 0,
+      "width": 4,
+      "region_name": "amdvi-ir",
+      "raw": "memory_region_ops_write cpu -1 mr 0x56292ba5c4f0 addr 0xfee00000 value 0x0 size 4 name 'amdvi-ir'"
+    },
+    {
+      "trace_line": 17,
+      "cpu": -1,
+      "region_identity": "0x56292ba5c1c0",
+      "address": 4275568664,
+      "value": 0,
+      "width": 8,
+      "region_name": "amdvi-mmio",
+      "raw": "memory_region_ops_write cpu -1 mr 0x56292ba5c1c0 addr 0xfed80018 value 0x0 size 8 name 'amdvi-mmio'",
+      "region_base": 4275568640,
+      "relative_offset": 24
+    }
+  ],
+  "control_write": {
+    "trace_line": 17,
+    "cpu": -1,
+    "region_identity": "0x56292ba5c1c0",
+    "address": 4275568664,
+    "value": 0,
+    "width": 8,
+    "region_name": "amdvi-mmio",
+    "raw": "memory_region_ops_write cpu -1 mr 0x56292ba5c1c0 addr 0xfed80018 value 0x0 size 8 name 'amdvi-mmio'",
+    "region_base": 4275568640,
+    "relative_offset": 24
+  },
+  "qtest_requests": 20,
+  "qtest_read_requests": 19,
+  "qtest_write_requests": 1,
+  "qmp_status_before_after": [
+    {
+      "status": "prelaunch",
+      "running": false
+    },
+    {
+      "status": "prelaunch",
+      "running": false
+    }
+  ],
+  "unexpected_records": [
+    {
+      "trace_line": 3,
+      "raw": "memory_region_ops_write cpu -1 mr 0x56292ba5c4f0 addr 0xfee00000 value 0x0 size 4 name 'amdvi-ir'"
+    },
+    {
+      "trace_line": 4,
+      "raw": "amdvi_mem_ir_write_req addr 0x0 data 0x0 size 0x4"
+    },
+    {
+      "trace_line": 5,
+      "raw": "amdvi_ir_remap_msi_req addr 0xfee00000 data 0x0 devid 0xa0"
+    },
+    {
+      "trace_line": 6,
+      "raw": "amdvi_ir_remap_msi (addr 0xfee00000, data 0x0) -> (addr 0xfee00000, data 0x0)"
+    },
+    {
+      "trace_line": 7,
+      "raw": "amdvi_mem_ir_write addr 0xfee00000 data 0x0"
+    }
+  ],
+  "named_mmio_write_event_limitation": "The pinned source emits amdvi_mmio_write only on an invalid-range branch. Its absence does not establish absence of valid writes.",
+  "expected_command_error_explanation": "CTRL=0 causes amdvi_cmdbuf_run to emit disabled-buffer command_error(0) and return before executing any command.",
+  "initialization_observation": "The complete trace contains an amdvi-ir write and four IR trace records before the first qtest MMIO read. They are retained and fail the whole-run absence criterion.",
+  "scope": "Separate trace coverage evidence only; not a clean controller run, DMA isolation proof, or physical AMD validation."
+}

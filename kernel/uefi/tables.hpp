@@ -129,6 +129,7 @@ public:
     }
 };
 inline auto expected_flags(std::uint64_t offset,const Bytes& h) -> std::uint64_t {
+    if (h.get(8,4)==4 && offset==Handoff::bar_record_offset) return 1|PageTables::nx;
     if (h.get(8,4)==3) {
         const auto flags=RuntimeLayout::kernel_flags(offset);
         if (flags) return flags;

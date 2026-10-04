@@ -1,0 +1,11 @@
+{
+  "verified_baseline_files": 36,
+  "integrated_exact_candidate_files": [
+    "library/examples/storage_fields.au",
+    "library/fs/xfs_probe.au",
+    "library/std/binary.au",
+    "library/std/checksum.au",
+    "tests/compiler/storage_binary.py"
+  ],
+  "compiler_source_modified": false
+}

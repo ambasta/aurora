@@ -1,0 +1,27 @@
+{
+  "inputs": [
+    {
+      "path": "/tmp/aurora-m015-research/qemu-v10.0.13-amd_iommu.c",
+      "sha256": "7dbe81fc13a533c265683ee70cd616ccc00e46e890b17dd0113e79d5f9fa52d3",
+      "bytes": 56657
+    },
+    {
+      "path": "/tmp/aurora-m015-research/qemu-v10.0.13-amd_iommu.h",
+      "sha256": "f19a9e828d3fce319099cf3e4800818a824c4b9ae8d7913eb33778b92d87aff5",
+      "bytes": 13781
+    },
+    {
+      "path": "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64",
+      "sha256": "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067",
+      "bytes": 28994112
+    },
+    {
+      "path": "/tmp/aurora-msix-trace-control/attempt3/control.py",
+      "sha256": "46e505298fc46bf71277f3ec2c901bddf73ceb2cbaf379c97551e173fbae217d",
+      "bytes": 5334
+    }
+  ],
+  "source_commit": "98f88efe8f07067667b8d9b1a5ce9551d34036c1",
+  "source_tag": "v10.0.13",
+  "source_url": "https://github.com/qemu/qemu/blob/98f88efe8f07067667b8d9b1a5ce9551d34036c1/hw/i386/amd_iommu.c"
+}

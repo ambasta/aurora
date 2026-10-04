@@ -1,0 +1,34 @@
+{
+  "commit": "038d61fd642278bab63ee8ef722c50d10ab01e8f",
+  "retrieval": "2026-10-03, official torvalds/linux GitHub connector after web cache misses",
+  "sources": [
+    {
+      "path": "fs/xfs/libxfs/xfs_sb.c",
+      "blob": "711e180f9ebb835296afda1949f320d3425ecca6",
+      "ranges": [
+        [
+          42,
+          73
+        ],
+        [
+          593,
+          757
+        ]
+      ],
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_sb.c"
+    },
+    {
+      "path": "fs/xfs/libxfs/xfs_format.h",
+      "blob": "9566a76233654004d54f47aac17ac60dd8a6629a",
+      "ranges": [
+        [
+          348,
+          444
+        ]
+      ],
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_format.h"
+    }
+  ],
+  "purpose": "corroborate required-feature policy, scalar/AG/log checks, and known extended masks; proposal pins remaining format/address sources",
+  "implementation": "original Aurora; no C implementation copied"
+}

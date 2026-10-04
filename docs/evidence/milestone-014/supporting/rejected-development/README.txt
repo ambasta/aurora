@@ -1,0 +1,1 @@
+Span candidate rejected4100>4096 unchangedRXbound; historicalclean restored; separate449-byte span image verified. EarlierBAR build strlen link failure fixed before execution. These are failed development attempts, not passed gates. Named pipes from the control transport are omitted; immutable protocol/logs remain.

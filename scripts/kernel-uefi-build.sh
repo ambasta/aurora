@@ -4,10 +4,18 @@ cd "$(dirname "$0")/.."
 mkdir -p build/uefi/esp/EFI/BOOT
 compiler="${AURORAC:-build/aurorac}"
 if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi
-flags=(-std=c++23 -O2 -Wall -Wextra -Werror -ffreestanding -fno-exceptions -fno-rtti -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns)
+flags=(-std=c++23 -O2 -fstack-usage -Wall -Wextra -Werror -ffreestanding -fno-exceptions -fno-rtti -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns)
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-pair|ivrs-alias|ivrs-reserved|ivrs-scope|ivrs-capability|ivrs-range|ivrs-missing)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2 -DAURORA_UEFI_IVRS)
+   flag="${UEFI_MODE#ivrs-}"; extra+=("-DAURORA_IVRS_${flag^^}") ;;
+ bar-read|bar-inherited|bar-write|bar-revoked|bar-alias)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2)
+   if [[ "$UEFI_MODE" == bar-write || "$UEFI_MODE" == bar-revoked || "$UEFI_MODE" == bar-alias ]]; then flag="${UEFI_MODE#bar-}"; extra+=("-DAURORA_BAR_${flag^^}"); fi ;;
+ bar-capture) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_ADMISSION -DAURORA_UEFI_BAR_CAPTURE) ;;
+ bar-state) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_ADMISSION) ;;
  user-phases|user-context|user-retire-pending|user-request-budget|user-completion-budget|user-request-bounds|user-completion-bounds|user-request-overflow|user-completion-overflow|user-pending|user-role|user-phase|user-transaction|user-epoch|user-root|user-unknown|user-stale-grant)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET -DAURORA_UEFI_DISPATCH -DAURORA_UEFI_USER_BUDGET)
    flag="${UEFI_MODE#user-}"; flag="${flag//-/_}"; extra+=("-DAURORA_USER_${flag^^}"); ;;
@@ -20,9 +28,17 @@ case "${UEFI_MODE:-normal}" in
  ipc|ipc-fault|ipc-cancel|ipc-owner|ipc-stale|ipc-version|ipc-phase|ipc-transaction|ipc-site|ipc-unknown|ipc-root|ipc-kernel-trap|ipc-duplicate|ipc-late|ipc-exhausted)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC)
    if [[ "$UEFI_MODE" != ipc ]]; then flag="${UEFI_MODE#ipc-}"; flag="${flag//-/_}"; extra+=("-DAURORA_IPC_${flag^^}"); fi ;;
- runtime|runtime-code|runtime-stack|runtime-kernel|runtime-window|runtime-root|runtime-kernel-trap|runtime-entry-stack|runtime-write|runtime-nx|runtime-return|runtime-unknown|runtime-syscall|runtime-sysenter)
+ runtime-table-readback|runtime-table-reject|runtime-table-exhaust|runtime-table-quarantine)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_PINS -DAURORA_UEFI_TABLES -DAURORA_DORMANT_TABLE_TESTING=1)
+   flag="${UEFI_MODE#runtime-table-}"; extra+=("-DAURORA_TABLE_${flag^^}")
+   if [[ "$UEFI_MODE" == runtime-table-quarantine ]]; then extra+=(-DAURORA_PIN_FAULT); fi ;;
+ runtime-pin-cancel|runtime-pin-fault|runtime-pin-stale|runtime-pin-exhaust)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_PINS)
+   flag="${UEFI_MODE#runtime-pin-}"; extra+=("-DAURORA_PIN_${flag^^}")
+   if [[ "$UEFI_MODE" == runtime-pin-fault ]]; then extra+=(-DAURORA_PIN_LEDGER_TESTING=1); fi ;;
+ runtime|runtime-span|runtime-code|runtime-stack|runtime-kernel|runtime-window|runtime-root|runtime-kernel-trap|runtime-entry-stack|runtime-write|runtime-nx|runtime-return|runtime-unknown|runtime-syscall|runtime-sysenter)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME)
-   if [[ "$UEFI_MODE" != runtime ]]; then flag="${UEFI_MODE#runtime-}"; flag="${flag//-/_}"; extra+=("-DAURORA_RUNTIME_${flag^^}"); fi ;;
+   if [[ "$UEFI_MODE" != runtime && "$UEFI_MODE" != runtime-span ]]; then flag="${UEFI_MODE#runtime-}"; flag="${flag//-/_}"; extra+=("-DAURORA_RUNTIME_${flag^^}"); fi ;;
  pci|pci-devices|pci-bridge) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI) ;;
  pci-checksum|pci-reserved|pci-overlap|pci-range|pci-write|pci-revoked|pci-cycle)
    flag="${UEFI_MODE#pci-}"; flag="${flag//-/_}"; extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI "-DAURORA_PCI_${flag^^}") ;;
@@ -41,7 +57,7 @@ esac
 runtime_objects=()
 if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* || "${UEFI_MODE:-normal}" == dispatch* || "${UEFI_MODE:-normal}" == user-* ]]; then
  mode="${UEFI_MODE#runtime-}"
- case "$mode" in code|stack|kernel|window|write|nx|return|unknown|syscall|sysenter) ;; *) mode=normal ;; esac
+ case "$mode" in span|code|stack|kernel|window|write|nx|return|unknown|syscall|sysenter) ;; *) mode=normal ;; esac
  if [[ "$UEFI_MODE" == user-* ]]; then
    mode=normal
    if [[ "$UEFI_MODE" == user-unknown ]]; then mode=unknown; fi
@@ -79,6 +95,9 @@ g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/pci.cpp
 g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -Ibuild/uefi -c kernel/uefi/runtime.cpp -o build/uefi/runtime.o
 ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 build/uefi/payload-entry.o build/uefi/payload.o build/uefi/acpi.o build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" build/uefi/language.o -o build/uefi/payload.elf
 objcopy -O binary build/uefi/payload.elf build/uefi/payload.bin
+if [[ "${UEFI_MODE:-normal}" == runtime-table-* ]]; then
+    python3 tests/kernel-uefi-tables-stack.py build/uefi "build/uefi/table-stack/$UEFI_MODE"
+fi
 python3 - <<'PY'
 from pathlib import Path
 import subprocess,json
@@ -90,6 +109,20 @@ if symbols['uefi_payload_entry']!=0: raise SystemExit('Entry must start payload'
 if subprocess.check_output(['nm','-u','build/uefi/payload.elf'],text=True).strip(): raise SystemExit('Unresolved payload reference')
 p=Path('build/uefi/payload.bin')
 Path('build/uefi/uefi-payload.hpp').write_text('namespace aurora::uefi {\n'+f'inline constexpr unsigned long long payload_size={p.stat().st_size};\n'+''.join(f'inline constexpr unsigned long long {name}={symbols["__"+name]};\n' for name in ['payload_text_end','payload_read_end','payload_memory_end'])+'}\n')
+bar_faults={}
+for mode,name,opcode in [('bar-write','uefi_bar_write_probe',bytes.fromhex('c70000000000')),('bar-revoked','uefi_bar_revoked_probe',bytes.fromhex('8b00'))]:
+ if name in symbols:
+  at=symbols[name]
+  if not 0<at<symbols['__payload_text_end'] or p.read_bytes()[at:at+len(opcode)]!=opcode:raise SystemExit('Invalid exact BAR fault site')
+  bar_faults[mode]=at
+Path('build/uefi/bar-metadata.json').write_text(json.dumps(dict(offset=0x22000,bytes=symbols['__payload_text_end'],fault_offsets=bar_faults),indent=2)+'\n')
+ivrs_faults={}
+for mode,name,opcode in [('ivrs-write','uefi_ivrs_write_probe',bytes.fromhex('48c70000000000')),('ivrs-revoked','uefi_ivrs_revoked_probe',bytes.fromhex('488b00'))]:
+    if name in symbols:
+        address=symbols[name]
+        if not 0<address<symbols['__payload_text_end'] or p.read_bytes()[address:address+len(opcode)]!=opcode: raise ValueError('Wrong IVRS probe opcode')
+        ivrs_faults[mode]=address
+Path('build/uefi/ivrs-metadata.json').write_text(json.dumps(dict(offset=0x22000,bytes=symbols['__payload_text_end'],fault_offsets=ivrs_faults),indent=2)+'\n')
 if 'uefi_service_drain_begin' in symbols:
  drain_begin=symbols['uefi_service_drain_begin'];drain_end=symbols['uefi_service_drain_end']
  if not 0<=drain_begin<drain_end<symbols['__payload_text_end'] or p.read_bytes()[drain_begin:drain_end]!=bytes.fromhex('fb9090fa'):raise SystemExit('Invalid exact drain interval')
@@ -106,3 +139,5 @@ ld -mi386pep --subsystem 10 --entry=aurora_efi_entry --image-base=0x100000 --ena
 printf 'Built UEFI PE32+ loader and independent payload\n'
 
 python3 tests/kernel-uefi-image.py
+
+if [[ "${UEFI_MODE:-normal}" == ivrs-* ]]; then python3 tests/kernel-uefi-ivrs-stack.py build/uefi build/uefi/ivrs-stack.json; fi

@@ -1,0 +1,125 @@
+{
+  "schema": "aurora-ivrs-run-v1",
+  "mode": "ivrs-range",
+  "argv": [
+    "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64",
+    "-L",
+    "/tmp/aurora-qemu/firmware",
+    "-machine",
+    "q35",
+    "-accel",
+    "tcg",
+    "-cpu",
+    "qemu64",
+    "-smp",
+    "1",
+    "-m",
+    "128M",
+    "-drive",
+    "if=pflash,format=raw,unit=0,file=/tmp/aurora-clean-ovmf/output/OVMF_CODE.fd,readonly=on",
+    "-drive",
+    "if=pflash,format=raw,unit=1,file=/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/vars-runtime.fd",
+    "-drive",
+    "format=raw,file=fat:ro:/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/esp,snapshot=on",
+    "-device",
+    "nvme,serial=AURORA_READ_ONLY,bus=pcie.0,addr=02.0",
+    "-nic",
+    "none",
+    "-display",
+    "none",
+    "-serial",
+    "stdio",
+    "-monitor",
+    "none",
+    "-no-reboot",
+    "-trace",
+    "events=/tmp/aurora-m015-profile/events.txt,file=/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/trace.log",
+    "-chardev",
+    "file,id=firmware,path=/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/firmware.log",
+    "-device",
+    "isa-debugcon,iobase=0x402,chardev=firmware",
+    "-device",
+    "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-device",
+    "amd-iommu,pt=off,intremap=off,device-iotlb=off,xtsup=off"
+  ],
+  "cwd": "/workspace/scratch/48c5de6446f8/aurora",
+  "environment": {
+    "LD_LIBRARY_PATH": "/tmp/aurora-qemu/root/usr/lib/x86_64-linux-gnu"
+  },
+  "firmware_profile": "clean",
+  "boot_root": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/esp",
+  "stdio": {
+    "stdout": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/serial.log",
+    "stderr": "stdout"
+  },
+  "files": {
+    "qemu": {
+      "path": "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64",
+      "sha256": "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067"
+    },
+    "events": {
+      "path": "/tmp/aurora-m015-profile/events.txt",
+      "sha256": "999da26943509b1ea3b3689ff24e46480cc5475327cd0f5026adf42fa9042191"
+    },
+    "compiler": {
+      "path": "/tmp/aurora-resource-main-compiler-frozen",
+      "sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980"
+    },
+    "coverage": {
+      "path": "/tmp/aurora-m015-coverage.json",
+      "sha256": "6a0f3c8b86d6bc1e4a8b17b12c01cd2d5ca1619514a76f3c2dbb27b0d5eaa249"
+    },
+    "payload": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/payload.bin",
+      "sha256": "547d67f5ebaa3d0e695f41dfc27cc88d5fa188fd86d037b0594bebecd407a848"
+    },
+    "payload_elf": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/payload.elf",
+      "sha256": "d957bb5bcf88b27d185380771791aae64a93730a9ff2a85e33528fad216d9409"
+    },
+    "payload_metadata": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/ivrs-metadata.json",
+      "sha256": "ce7d56075457325ae38fac56215541395052f2d9060bceebb042470b73e5b33b"
+    },
+    "loader": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/esp/EFI/BOOT/BOOTX64.EFI",
+      "sha256": "1a2b87d4d17d4b65470834c07c5bb06f8dec0748e17baa241d91d2c10f75c3a5"
+    },
+    "firmware_code": {
+      "path": "/tmp/aurora-clean-ovmf/output/OVMF_CODE.fd",
+      "sha256": "82c1ea28dc532053bfbe5c0b7a8013f3eef5742534e3358264a220b70ec24d49"
+    },
+    "vars_template": {
+      "path": "/tmp/aurora-clean-ovmf/output/OVMF_VARS.fd",
+      "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"
+    },
+    "vars_initial": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/vars-initial.fd",
+      "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"
+    },
+    "firmware_patch": {
+      "path": "/tmp/aurora-clean-ovmf/provenance/policy-three-file.patch",
+      "sha256": "2a6e8f018d16fc1b4c0304bf7d1f3b56ca4962ca8ec204a19ff94b0e4790ad1f"
+    },
+    "serial": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/serial.log",
+      "sha256": "1294e39201ebcdac72ce8e89b1fa7988523f87b7adc40de980510acec2464d74"
+    },
+    "trace": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/trace.log",
+      "sha256": "ed5818c0bca2ab99d934ac3ba4bc1f2690f70f50bf82835b50cde065e1dfb37e"
+    },
+    "firmware_log": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/firmware.log",
+      "sha256": "9b022ebfa4ccc95b50c9ec1560359dceae2e3e959f5ce3a4c28afb6d4fc3a0b1"
+    },
+    "vars_after": {
+      "path": "/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts/ivrs/ivrs-range/vars-runtime.fd",
+      "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0"
+    }
+  },
+  "iommu_profile": "qemu-10.0.13-cold",
+  "firmware_source_revision": "fbe0805b2091393406952e84724188f8c1941837",
+  "status": 35
+}

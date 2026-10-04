@@ -1,0 +1,2270 @@
+{
+  "original_archive": "/workspace/shared/aurora-checkpoints/milestone-016-facts-independent-original.tar.gz",
+  "archive_sha256": "e89c8ccdd6a8739b378fd265295f3c3ede61aed214b57da7ce8dc955538d2a6a",
+  "copied_text": [
+    {
+      "path": "REVIEW.md",
+      "sha256": "92a9c8ae8a9b835fc9420d7283b31ab059195e122aded21ae9e883dcf26b5916",
+      "bytes": 16238
+    },
+    {
+      "path": "baseline/main.cpp",
+      "sha256": "9a8bc5fefaf16c75cba0aec254a3d54420ae04a3b7eac9da0fe30f95a7b8a431",
+      "bytes": 1847
+    },
+    {
+      "path": "candidate/main.cpp",
+      "sha256": "9a8bc5fefaf16c75cba0aec254a3d54420ae04a3b7eac9da0fe30f95a7b8a431",
+      "bytes": 1847
+    },
+    {
+      "path": "differential-compiler.py",
+      "sha256": "01e4314f0a23c1b5754f2bf07cec5fea8701456cc3a357afb1df15d085088810",
+      "bytes": 2029
+    },
+    {
+      "path": "evidence/author-facts.log",
+      "sha256": "bf915907098f281f9577b06c4ee1a63c9928535cc5b95e09d5825e92d34e0384",
+      "bytes": 83
+    },
+    {
+      "path": "evidence/build-baseline.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/build-candidate.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/candidate-ir.log",
+      "sha256": "5bdb75fae7746c43a004983592f6b1ddbca9913f555fb2c0797f46c4195d1fb9",
+      "bytes": 41061
+    },
+    {
+      "path": "evidence/classes-differential.log",
+      "sha256": "0eedb3ffafad90bfd6cd84a8586f4c5de213ec07c75cf68b1e38bb67e725aa4b",
+      "bytes": 3311
+    },
+    {
+      "path": "evidence/composed-differential.log",
+      "sha256": "cb5c636346d39dd9479c9fa2737b821ee729519d8f26529fc771e65ca8a285ac",
+      "bytes": 11743
+    },
+    {
+      "path": "evidence/driver-negative-control-after.log",
+      "sha256": "2729819fb99452f61f5827d5ce28c388dfa49ff64f7935ed3a997fb50f0be719",
+      "bytes": 576
+    },
+    {
+      "path": "evidence/driver-negative-control-before.log",
+      "sha256": "b0072c39d3abbebe536e897a4286f43dd0e5eaf5bb13d54eec4c7d3c09caacae",
+      "bytes": 961
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks0.au",
+      "sha256": "2b93dbe2a55ef1985b36073da246709d5021586617a5d0dfaa8d69fd9e76075f",
+      "bytes": 16562
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks16.au",
+      "sha256": "eb93e6c9d09f69c9bacdbe3ec09a68f411c63c7f6728a4c40b87e528431ed289",
+      "bytes": 19522
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks4.au",
+      "sha256": "27636de6f9f0af96ff755fcc98de1d07763a356fa36e0ec54108c7f3d8c323ad",
+      "bytes": 17302
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks64.au",
+      "sha256": "d85644e37915c807cfa86536c739cf6d524e88cccc261fe12cb004b5e85be98a",
+      "bytes": 28402
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks8.au",
+      "sha256": "431f00df9116bfde4045e7476d142fd7f9f3902aa049b40aa3080304ac0ba223",
+      "bytes": 18042
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks96.au",
+      "sha256": "7d243cc0618b678997be8146ac28f5554588eed7a9fd375fa5851d88afdefe8d",
+      "bytes": 34322
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array512-blocks16.au",
+      "sha256": "61b739da599b9cdb3725d8c9676f3b231adb31bb536e64fa45674c7ec153750a",
+      "bytes": 5168
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array64-blocks16.au",
+      "sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+      "bytes": 3358
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/results.json",
+      "sha256": "617e288693dfb57341465fff06ceabfca6d8ed3f3cbfda42831ef899932f85dc",
+      "bytes": 15164
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control-fixed/array64-blocks16.au",
+      "sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+      "bytes": 3358
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control-fixed/results.json",
+      "sha256": "36600eaa817e76d1cc55ac104f2a73a317561a76b146dd83d16dfd2b20d2ca08",
+      "bytes": 2381
+    },
+    {
+      "path": "evidence/equivalence.log",
+      "sha256": "f3ddd103cd97f25af95ab556f422bd92e9ddd341759e0367d88f2f3e1500e263",
+      "bytes": 47
+    },
+    {
+      "path": "evidence/final-driver-controls/always-fail/array64-blocks16.au",
+      "sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+      "bytes": 3358
+    },
+    {
+      "path": "evidence/final-driver-controls/always-fail/results.json",
+      "sha256": "47417f2b5b9da3e040c34eddce7570ebb9f050524a40f40673ac1c93c0f82755",
+      "bytes": 2555
+    },
+    {
+      "path": "evidence/final-driver-controls/controls.json",
+      "sha256": "28266bd294c9a5ba9976c33e325f6ceb2bba849ea6c1c833a5c17f36eaf06c2f",
+      "bytes": 12558
+    },
+    {
+      "path": "evidence/final-driver-controls/provenance.json",
+      "sha256": "235af5f9cff46a8fadc37d4f649f9b50da4ce4edc936b8cfcd2dee59fc8735e7",
+      "bytes": 393
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16.au",
+      "sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+      "bytes": 3358
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/results.json",
+      "sha256": "7787d7b272ad159e46bfa59ba25093fb57438f56c592eab6bb516fc004825c53",
+      "bytes": 5750
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output-compiler.py",
+      "sha256": "e782b45b8f7f1aa5899c6d0aed428d330bc75006eb48ce7e853acbbc248c3400",
+      "bytes": 261
+    },
+    {
+      "path": "evidence/final-driver-controls.log",
+      "sha256": "f5375e43bcf530f08e19b421ff718b9659e7338a983f22320910897358d7bc28",
+      "bytes": 83
+    },
+    {
+      "path": "evidence/final-native-outputs/results.json",
+      "sha256": "f5823140e8fb437254fd74700ae7b47b47d405b5cb9056d6cf5b93d61f0bedef",
+      "bytes": 25361
+    },
+    {
+      "path": "evidence/independent-facts-san-fatal.log",
+      "sha256": "7ca05bd8149fdf4df9c21371a4f0b461617b26335dbd2a65d270199136d57d8a",
+      "bytes": 124
+    },
+    {
+      "path": "evidence/independent-facts-san.log",
+      "sha256": "7ca05bd8149fdf4df9c21371a4f0b461617b26335dbd2a65d270199136d57d8a",
+      "bytes": 124
+    },
+    {
+      "path": "evidence/ir-exhaustive.log",
+      "sha256": "bb8077fa3fcadda0696b1fe1fb209c83c271c5a67ea9378b37d2afb3a563239c",
+      "bytes": 1705
+    },
+    {
+      "path": "evidence/packed-differential.log",
+      "sha256": "5359fdedf1f74057caf4998367b786c3db83f7fd289d78d52a9eb6303610f83e",
+      "bytes": 6621
+    },
+    {
+      "path": "evidence/readonly-differential.log",
+      "sha256": "4f54e04f69ab5f816933cbd4c063234def25b8c3bdce61fb454e67da05fb5f6d",
+      "bytes": 10634
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks0.au",
+      "sha256": "2b93dbe2a55ef1985b36073da246709d5021586617a5d0dfaa8d69fd9e76075f",
+      "bytes": 16562
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks16.au",
+      "sha256": "eb93e6c9d09f69c9bacdbe3ec09a68f411c63c7f6728a4c40b87e528431ed289",
+      "bytes": 19522
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks4.au",
+      "sha256": "27636de6f9f0af96ff755fcc98de1d07763a356fa36e0ec54108c7f3d8c323ad",
+      "bytes": 17302
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks64.au",
+      "sha256": "d85644e37915c807cfa86536c739cf6d524e88cccc261fe12cb004b5e85be98a",
+      "bytes": 28402
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks8.au",
+      "sha256": "431f00df9116bfde4045e7476d142fd7f9f3902aa049b40aa3080304ac0ba223",
+      "bytes": 18042
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks96.au",
+      "sha256": "7d243cc0618b678997be8146ac28f5554588eed7a9fd375fa5851d88afdefe8d",
+      "bytes": 34322
+    },
+    {
+      "path": "evidence/resources-256/array512-blocks16.au",
+      "sha256": "61b739da599b9cdb3725d8c9676f3b231adb31bb536e64fa45674c7ec153750a",
+      "bytes": 5168
+    },
+    {
+      "path": "evidence/resources-256/array64-blocks16.au",
+      "sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+      "bytes": 3358
+    },
+    {
+      "path": "evidence/resources-256/results.json",
+      "sha256": "150fb434cfc9166cbbad80f9af57e5d212945e5d569331f9bfa58bbeb3a3dd61",
+      "bytes": 15602
+    },
+    {
+      "path": "evidence/resources-256.log",
+      "sha256": "979219a70e586a5263fc67565940ff56566e8e01277c55b99d3c0424d0d574d7",
+      "bytes": 963
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks0.au",
+      "sha256": "2b93dbe2a55ef1985b36073da246709d5021586617a5d0dfaa8d69fd9e76075f",
+      "bytes": 16562
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks16.au",
+      "sha256": "eb93e6c9d09f69c9bacdbe3ec09a68f411c63c7f6728a4c40b87e528431ed289",
+      "bytes": 19522
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks4.au",
+      "sha256": "27636de6f9f0af96ff755fcc98de1d07763a356fa36e0ec54108c7f3d8c323ad",
+      "bytes": 17302
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks64.au",
+      "sha256": "d85644e37915c807cfa86536c739cf6d524e88cccc261fe12cb004b5e85be98a",
+      "bytes": 28402
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks8.au",
+      "sha256": "431f00df9116bfde4045e7476d142fd7f9f3902aa049b40aa3080304ac0ba223",
+      "bytes": 18042
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks96.au",
+      "sha256": "7d243cc0618b678997be8146ac28f5554588eed7a9fd375fa5851d88afdefe8d",
+      "bytes": 34322
+    },
+    {
+      "path": "evidence/resources-512/array512-blocks16.au",
+      "sha256": "61b739da599b9cdb3725d8c9676f3b231adb31bb536e64fa45674c7ec153750a",
+      "bytes": 5168
+    },
+    {
+      "path": "evidence/resources-512/array64-blocks16.au",
+      "sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+      "bytes": 3358
+    },
+    {
+      "path": "evidence/resources-512/results.json",
+      "sha256": "7329b5fe1ddef1005dc2922134357a6927306354aaee849ea05dfff3b1a136f4",
+      "bytes": 15664
+    },
+    {
+      "path": "evidence/resources-512.log",
+      "sha256": "a9b8efbe48c91b10ae294f9f06180542e618fe3a56287fe238c96bdbfe4d822e",
+      "bytes": 963
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks0.au",
+      "sha256": "2b93dbe2a55ef1985b36073da246709d5021586617a5d0dfaa8d69fd9e76075f",
+      "bytes": 16562
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks16.au",
+      "sha256": "eb93e6c9d09f69c9bacdbe3ec09a68f411c63c7f6728a4c40b87e528431ed289",
+      "bytes": 19522
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks4.au",
+      "sha256": "27636de6f9f0af96ff755fcc98de1d07763a356fa36e0ec54108c7f3d8c323ad",
+      "bytes": 17302
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks64.au",
+      "sha256": "d85644e37915c807cfa86536c739cf6d524e88cccc261fe12cb004b5e85be98a",
+      "bytes": 28402
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks8.au",
+      "sha256": "431f00df9116bfde4045e7476d142fd7f9f3902aa049b40aa3080304ac0ba223",
+      "bytes": 18042
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks96.au",
+      "sha256": "7d243cc0618b678997be8146ac28f5554588eed7a9fd375fa5851d88afdefe8d",
+      "bytes": 34322
+    },
+    {
+      "path": "evidence/resources-final-driver/array512-blocks16.au",
+      "sha256": "61b739da599b9cdb3725d8c9676f3b231adb31bb536e64fa45674c7ec153750a",
+      "bytes": 5168
+    },
+    {
+      "path": "evidence/resources-final-driver/array64-blocks16.au",
+      "sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+      "bytes": 3358
+    },
+    {
+      "path": "evidence/resources-final-driver/results.json",
+      "sha256": "602a7205c54357079cc244232e900a84e12d6f0650989b2f484f82f7538b4513",
+      "bytes": 15867
+    },
+    {
+      "path": "evidence/resources-final-driver.log",
+      "sha256": "a6257a5adcda1f5742b47972d8d06ff57ffa973458dae8fde93db818b6d30c1b",
+      "bytes": 962
+    },
+    {
+      "path": "evidence/review-manifest.json",
+      "sha256": "d9aaf86bccef6a911f9dfcf9131af719458c9291cb26b453130d9bbb92279f46",
+      "bytes": 52343
+    },
+    {
+      "path": "evidence/source-sha256.json",
+      "sha256": "e01198b5fb118edba44614804f8dbc8dd9a26bb708b096b7d1ed1870484a408c",
+      "bytes": 2558
+    },
+    {
+      "path": "evidence/source-sparse/2048-branches-results.json",
+      "sha256": "08fcb1ab8a3945b425386d1f22df62bfd5889048081cff8c960cca7a66dce543",
+      "bytes": 1948
+    },
+    {
+      "path": "evidence/source-sparse/results.json",
+      "sha256": "6fb0cbc4731f4956d37b97fff3985c8da5e14c3eea9ea20b442fe3ebfdcd8688",
+      "bytes": 5987
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-1.au",
+      "sha256": "ea5d3706b4a86496a7c844ad989e5eeddd280958a692be2fe0bbeab938318211",
+      "bytes": 24651
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-16.au",
+      "sha256": "cd7c225f968d751c49a5109993de40c4c2391926f7546d6206bd8f8e7b04ea12",
+      "bytes": 270807
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-2048branches.au",
+      "sha256": "c1a0a638d1a6a74c84087e38ac38343814b79fa110e291c2afa8b2e51832374b",
+      "bytes": 98457
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4.au",
+      "sha256": "a83820b3a296d65eebcb7e7f98bfdad260a1c88ad7a04c33e044115f44ca877e",
+      "bytes": 73881
+    },
+    {
+      "path": "evidence/source-sparse.log",
+      "sha256": "ea64fd15c9ecee665c30c6664612cd020cebdf7a77d6241097a15695fc94f38f",
+      "bytes": 241
+    },
+    {
+      "path": "evidence/sparse-build-baseline.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/sparse-build-candidate.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/sparse-results.json",
+      "sha256": "3c95d7d428ff3600cf72ff867d93c159003b7f01e739666fb50cc029a0174559",
+      "bytes": 756
+    },
+    {
+      "path": "evidence/storage-differential.log",
+      "sha256": "3db384aaa1a8cbbb25c3016baee64741bfe45bf71d27fb57d499403db3518a5f",
+      "bytes": 14461
+    },
+    {
+      "path": "independent-facts.cpp",
+      "sha256": "cda9a4a6d16bdd4b02be2bf50a74937517f2689b944500002015387457089755",
+      "bytes": 3659
+    },
+    {
+      "path": "run-sparse.py",
+      "sha256": "9baf41cbc8d77185b09c8114fbf084aba5b81063840d6dbde2cce1b868b3d2f0",
+      "bytes": 1567
+    },
+    {
+      "path": "source-sparse.py",
+      "sha256": "ac342b0cad42a5b816782d778ed7b9059b28636c3e4c6ec128596c725bc2ebf6",
+      "bytes": 1521
+    },
+    {
+      "path": "sparse-facts-benchmark.cpp",
+      "sha256": "346eed8672ae4be995a0fdf6bbd9c589af93e7857d43513ecdaafcf293bf1ccb",
+      "bytes": 811
+    }
+  ],
+  "generated_artifact_omissions": [
+    {
+      "path": "baseline/host_sources.hpp",
+      "sha256": "ca6f557288b94db0bcd431efb086bba185390b9831543436d184c76263a06794",
+      "bytes": 12438,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/ir.hpp",
+      "sha256": "1670554cfb3dcfeb248997bae47e747d49b03aca90a316061e290380bd1fb601",
+      "bytes": 9557,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/ir_layout.hpp",
+      "sha256": "23ee596d7ae009345c39fd0d847a91c85d648a665cd95a623457da2a5110f88d",
+      "bytes": 4568,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/ir_verify.hpp",
+      "sha256": "768aef0661561a7e49d83c854736c90d5af3fee7b4636f28bca6a5612630de59",
+      "bytes": 89548,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/lexer.hpp",
+      "sha256": "c33b789738e3fd625f5f1b786cfaad22e90db9bed8e757aa4ad8af726f62c7b6",
+      "bytes": 1730,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/modules.hpp",
+      "sha256": "46788d754f39d8d73732fd837d375a5919a0f8a691a4613bf7aed4b7d1a9dfd2",
+      "bytes": 47461,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/parser.hpp",
+      "sha256": "0377cf477abfe3f8119437244c627ab43e4b61a139de76c5917adb83c2958ebf",
+      "bytes": 28589,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/semantics.hpp",
+      "sha256": "6374e36c471c046c45c97c247cd9cce5410fd36826fe91d9a52996cc91ec0c3d",
+      "bytes": 67699,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/syntax.hpp",
+      "sha256": "9a2cb78053770303994be3faccd90135a7490ad55401fb0f28a8b3d6822b5c99",
+      "bytes": 2751,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/templates.hpp",
+      "sha256": "9558565e74e6828102d8b99ce5f36ee8ae9f0fecc21ab7666cedd3a77c03e554",
+      "bytes": 11161,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/types.hpp",
+      "sha256": "0597921203f55e07f923c8b65079f21b4d2797decfbe7fab64aa4a3cf73a2149",
+      "bytes": 5799,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "baseline/x86.hpp",
+      "sha256": "818d9a5a3476d46e65c3bcd06d26f4b9d5fa5e8c7c39b10dfd5bbccff27525f4",
+      "bytes": 35680,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "bin/author-facts",
+      "sha256": "6027c115f867f0d6518d6ae45da400c94eb972142796b36885ccf807782442f2",
+      "bytes": 92856,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "bin/baseline",
+      "sha256": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+      "bytes": 1077752,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "bin/candidate",
+      "sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+      "bytes": 1089016,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "bin/candidate-ir-tests",
+      "sha256": "355ba743191d844477457f207861915be7080127fbc948d357eb6b47eb2673ae",
+      "bytes": 2211200,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "bin/independent-facts-san",
+      "sha256": "508389ede02813c2d97758511248e7239be7713b1490c00a84ca18959f1ba2b4",
+      "bytes": 1906824,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "bin/sparse-baseline",
+      "sha256": "058bf13842d058b85923bc6f6c8ce0f778f4f0e0393c4e947e21239ec633abc1",
+      "bytes": 683304,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "bin/sparse-candidate",
+      "sha256": "03c1565cec961b3c93c91cec710903fecf6df036013f3cede90aad46e9a3dc35",
+      "bytes": 690472,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/host_sources.hpp",
+      "sha256": "ca6f557288b94db0bcd431efb086bba185390b9831543436d184c76263a06794",
+      "bytes": 12438,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/initialization_facts.hpp",
+      "sha256": "d36bd9d835def4b679001facbb7f68627296df8ab4c0c90119e506275b4e6d80",
+      "bytes": 7769,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/ir.hpp",
+      "sha256": "1670554cfb3dcfeb248997bae47e747d49b03aca90a316061e290380bd1fb601",
+      "bytes": 9557,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/ir_layout.hpp",
+      "sha256": "23ee596d7ae009345c39fd0d847a91c85d648a665cd95a623457da2a5110f88d",
+      "bytes": 4568,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/ir_verify.hpp",
+      "sha256": "ded7d28ba24104c82a69fd9922c13caf972ac910df66c129c2e3fa031d05e32b",
+      "bytes": 91088,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/lexer.hpp",
+      "sha256": "c33b789738e3fd625f5f1b786cfaad22e90db9bed8e757aa4ad8af726f62c7b6",
+      "bytes": 1730,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/modules.hpp",
+      "sha256": "46788d754f39d8d73732fd837d375a5919a0f8a691a4613bf7aed4b7d1a9dfd2",
+      "bytes": 47461,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/parser.hpp",
+      "sha256": "0377cf477abfe3f8119437244c627ab43e4b61a139de76c5917adb83c2958ebf",
+      "bytes": 28589,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/semantics.hpp",
+      "sha256": "6374e36c471c046c45c97c247cd9cce5410fd36826fe91d9a52996cc91ec0c3d",
+      "bytes": 67699,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/syntax.hpp",
+      "sha256": "9a2cb78053770303994be3faccd90135a7490ad55401fb0f28a8b3d6822b5c99",
+      "bytes": 2751,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/templates.hpp",
+      "sha256": "9558565e74e6828102d8b99ce5f36ee8ae9f0fecc21ab7666cedd3a77c03e554",
+      "bytes": 11161,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/types.hpp",
+      "sha256": "0597921203f55e07f923c8b65079f21b4d2797decfbe7fab64aa4a3cf73a2149",
+      "bytes": 5799,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "candidate/x86.hpp",
+      "sha256": "818d9a5a3476d46e65c3bcd06d26f4b9d5fa5e8c7c39b10dfd5bbccff27525f4",
+      "bytes": 35680,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/differential-calls.jsonl",
+      "sha256": "d3959e72a169213d3667e21a34ff15f1fe951ccd65d2a04e2ec4d39258d9a183",
+      "bytes": 225598,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks0-baseline.s",
+      "sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1",
+      "bytes": 537240,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks0-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks0-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks0-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks0-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks16-baseline.s",
+      "sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673",
+      "bytes": 562423,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks4-baseline.s",
+      "sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6",
+      "bytes": 543523,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks4-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks4-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks4-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks4-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks64-baseline.stderr",
+      "sha256": "19e54eb1b71964e93f12901a5cbaa2fd30e437946748cbc67ec680553e623f5a",
+      "bytes": 24,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks64-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks64-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks64-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks8-baseline.s",
+      "sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95",
+      "bytes": 549823,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks8-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks8-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks8-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks8-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks96-baseline.stderr",
+      "sha256": "19e54eb1b71964e93f12901a5cbaa2fd30e437946748cbc67ec680553e623f5a",
+      "bytes": 24,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks96-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks96-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array4096-blocks96-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array512-blocks16-baseline.s",
+      "sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda",
+      "bytes": 93325,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array512-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array512-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array512-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array512-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array64-blocks16-baseline.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array64-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array64-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array64-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control/array64-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control-fixed/array64-blocks16-baseline.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control-fixed/array64-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control-fixed/array64-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control-fixed/array64-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/driver-rejection-negative-control-fixed/array64-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/always-fail/array64-blocks16-baseline.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/always-fail/array64-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/always-fail/array64-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/always-fail/array64-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/always-fail/array64-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-baseline.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-candidate.s",
+      "sha256": "ffe830e25ddc4041cc2edb9a6552236c3cde280bb1def0bc247ba7cad229350a",
+      "bytes": 82,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-native",
+      "sha256": "9f0923ac035a110c55c8e5711ab4dd36bbc4e887c8c45887c139b68f675925be",
+      "bytes": 4680,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-native.code.o",
+      "sha256": "5b8d96c730073bc6216fece8a76f18c2afc95262e123bb073253b479ba24ce4d",
+      "bytes": 704,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-native.entry.o",
+      "sha256": "a9d190c76c5b103e8941d7480fb52335e0e603daf9b4f66911df0a1dc5f50ce8",
+      "bytes": 872,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-native.entry.s",
+      "sha256": "94d5f5a77c41f857a080886e044e9e2efa2024fed17a5fe339d202af802bb7f4",
+      "bytes": 226,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-native.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-driver-controls/wrong-output/array64-blocks16-native.stdout",
+      "sha256": "8bf3cd6bb2af61dde37441d65f1b1f6b1d2f20e07b243fbb80a19d6bef508abb",
+      "bytes": 8,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks0-candidate",
+      "sha256": "924048c7e0dbd714525814089752cd047bfff5dedd79d124ed036e0af3f808d9",
+      "bytes": 135536,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks0-candidate.code.o",
+      "sha256": "aa5fbc64e36468e1a0d9a8e242bee22ce06742a79d3a07a1ba968809a2ed0d62",
+      "bytes": 131496,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks0-candidate.entry.o",
+      "sha256": "a9d190c76c5b103e8941d7480fb52335e0e603daf9b4f66911df0a1dc5f50ce8",
+      "bytes": 872,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks0-candidate.entry.s",
+      "sha256": "94d5f5a77c41f857a080886e044e9e2efa2024fed17a5fe339d202af802bb7f4",
+      "bytes": 226,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks0-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks0-candidate.stdout",
+      "sha256": "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c",
+      "bytes": 8,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks16-candidate",
+      "sha256": "c2f6a0bb33e86900c8c74244ed7d55321ebf8a24fce8f09861c62bed254e1f89",
+      "bytes": 141096,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks16-candidate.code.o",
+      "sha256": "5dcf993303de94364556b1c484de9e7cdfa278af98d809224c752ca3f93cda08",
+      "bytes": 137064,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks16-candidate.entry.o",
+      "sha256": "a9d190c76c5b103e8941d7480fb52335e0e603daf9b4f66911df0a1dc5f50ce8",
+      "bytes": 872,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks16-candidate.entry.s",
+      "sha256": "94d5f5a77c41f857a080886e044e9e2efa2024fed17a5fe339d202af802bb7f4",
+      "bytes": 226,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks16-candidate.stdout",
+      "sha256": "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c",
+      "bytes": 8,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks4-candidate",
+      "sha256": "b6f71a65d95dcc2d6f05656ae4cd2bd6cdd376ef6a621afe81e9a7e4a97b7251",
+      "bytes": 136920,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks4-candidate.code.o",
+      "sha256": "5e29dfaccee609c448fddd2b0ceebea9e436d314cb40a44a9d297201792e1f23",
+      "bytes": 132888,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks4-candidate.entry.o",
+      "sha256": "a9d190c76c5b103e8941d7480fb52335e0e603daf9b4f66911df0a1dc5f50ce8",
+      "bytes": 872,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks4-candidate.entry.s",
+      "sha256": "94d5f5a77c41f857a080886e044e9e2efa2024fed17a5fe339d202af802bb7f4",
+      "bytes": 226,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks4-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks4-candidate.stdout",
+      "sha256": "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c",
+      "bytes": 8,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks64-candidate",
+      "sha256": "b1c1dc590afc82829e16db14b55d47ad37603b4ce4f100294622c63f11071b8a",
+      "bytes": 157800,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks64-candidate.code.o",
+      "sha256": "18f3657d7a2199e7e4642eb0698232dc08ac7b50abe37f895869036ca8dc4eac",
+      "bytes": 153768,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks64-candidate.entry.o",
+      "sha256": "a9d190c76c5b103e8941d7480fb52335e0e603daf9b4f66911df0a1dc5f50ce8",
+      "bytes": 872,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks64-candidate.entry.s",
+      "sha256": "94d5f5a77c41f857a080886e044e9e2efa2024fed17a5fe339d202af802bb7f4",
+      "bytes": 226,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks64-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks64-candidate.stdout",
+      "sha256": "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c",
+      "bytes": 8,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks8-candidate",
+      "sha256": "a754c288cfd9eb3b84dc2856a77393157841765d12d2b1e94ce91c1864fc7210",
+      "bytes": 138312,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks8-candidate.code.o",
+      "sha256": "adcda2cd3b269f926e35f5060a16484788f4f7c27c8d2f6ac36f46240501f1af",
+      "bytes": 134280,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks8-candidate.entry.o",
+      "sha256": "a9d190c76c5b103e8941d7480fb52335e0e603daf9b4f66911df0a1dc5f50ce8",
+      "bytes": 872,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks8-candidate.entry.s",
+      "sha256": "94d5f5a77c41f857a080886e044e9e2efa2024fed17a5fe339d202af802bb7f4",
+      "bytes": 226,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks8-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks8-candidate.stdout",
+      "sha256": "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c",
+      "bytes": 8,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks96-candidate",
+      "sha256": "ff92b744ad197447dc3a260460ed9eed659c2cf030e6dfc992672eb0fd54b665",
+      "bytes": 168936,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks96-candidate.code.o",
+      "sha256": "0591c6c157cbf53a8506e56762a3afc97924b3ad8a5256171ed41f2475b141a9",
+      "bytes": 164904,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks96-candidate.entry.o",
+      "sha256": "a9d190c76c5b103e8941d7480fb52335e0e603daf9b4f66911df0a1dc5f50ce8",
+      "bytes": 872,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks96-candidate.entry.s",
+      "sha256": "94d5f5a77c41f857a080886e044e9e2efa2024fed17a5fe339d202af802bb7f4",
+      "bytes": 226,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks96-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array4096-blocks96-candidate.stdout",
+      "sha256": "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c",
+      "bytes": 8,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array512-blocks16-candidate",
+      "sha256": "8d10d553ee161e2c6504352de1d603e4b4fc868d9fc286fb938e8063c8c68ad2",
+      "bytes": 26408,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array512-blocks16-candidate.code.o",
+      "sha256": "6ce9793a34dd7d119765ded54875e523e0c203ae70419e1dbfca68b0270ca7b8",
+      "bytes": 22376,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array512-blocks16-candidate.entry.o",
+      "sha256": "a9d190c76c5b103e8941d7480fb52335e0e603daf9b4f66911df0a1dc5f50ce8",
+      "bytes": 872,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array512-blocks16-candidate.entry.s",
+      "sha256": "94d5f5a77c41f857a080886e044e9e2efa2024fed17a5fe339d202af802bb7f4",
+      "bytes": 226,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array512-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array512-blocks16-candidate.stdout",
+      "sha256": "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c",
+      "bytes": 8,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array64-blocks16-candidate",
+      "sha256": "2b17796915333f360fd4da3de08da230c1bd93fb091df0f61e8b2f6ca9f5092f",
+      "bytes": 12056,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array64-blocks16-candidate.code.o",
+      "sha256": "cdad805c86b338c0cb1c7599aa847e78244b2c0e0be39d7fc7dca9e5040ff118",
+      "bytes": 8016,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array64-blocks16-candidate.entry.o",
+      "sha256": "a9d190c76c5b103e8941d7480fb52335e0e603daf9b4f66911df0a1dc5f50ce8",
+      "bytes": 872,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array64-blocks16-candidate.entry.s",
+      "sha256": "94d5f5a77c41f857a080886e044e9e2efa2024fed17a5fe339d202af802bb7f4",
+      "bytes": 226,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array64-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/final-native-outputs/array64-blocks16-candidate.stdout",
+      "sha256": "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c",
+      "bytes": 8,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks0-baseline.s",
+      "sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1",
+      "bytes": 537240,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks0-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks0-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks0-candidate.s",
+      "sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1",
+      "bytes": 537240,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks0-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks0-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks16-baseline.s",
+      "sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673",
+      "bytes": 562423,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks16-candidate.s",
+      "sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673",
+      "bytes": 562423,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks4-baseline.s",
+      "sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6",
+      "bytes": 543523,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks4-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks4-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks4-candidate.s",
+      "sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6",
+      "bytes": 543523,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks4-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks4-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks64-baseline.stderr",
+      "sha256": "19e54eb1b71964e93f12901a5cbaa2fd30e437946748cbc67ec680553e623f5a",
+      "bytes": 24,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks64-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks64-candidate.s",
+      "sha256": "350aa06d7e1b8150d826d1c56bfb278371b567f79bf450e160e303c62291afa4",
+      "bytes": 638801,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks64-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks64-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks8-baseline.s",
+      "sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95",
+      "bytes": 549823,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks8-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks8-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks8-candidate.s",
+      "sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95",
+      "bytes": 549823,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks8-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks8-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks96-baseline.stderr",
+      "sha256": "19e54eb1b71964e93f12901a5cbaa2fd30e437946748cbc67ec680553e623f5a",
+      "bytes": 24,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks96-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks96-candidate.s",
+      "sha256": "07d76a84ebc7b008404617a15fc8007bcfe9781c079519d72dc4876b3fe8e5f5",
+      "bytes": 690033,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks96-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array4096-blocks96-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array512-blocks16-baseline.s",
+      "sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda",
+      "bytes": 93325,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array512-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array512-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array512-blocks16-candidate.s",
+      "sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda",
+      "bytes": 93325,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array512-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array512-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array64-blocks16-baseline.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array64-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array64-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array64-blocks16-candidate.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array64-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-256/array64-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks0-baseline.s",
+      "sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1",
+      "bytes": 537240,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks0-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks0-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks0-candidate.s",
+      "sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1",
+      "bytes": 537240,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks0-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks0-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks16-baseline.s",
+      "sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673",
+      "bytes": 562423,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks16-candidate.s",
+      "sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673",
+      "bytes": 562423,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks4-baseline.s",
+      "sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6",
+      "bytes": 543523,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks4-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks4-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks4-candidate.s",
+      "sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6",
+      "bytes": 543523,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks4-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks4-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks64-baseline.s",
+      "sha256": "350aa06d7e1b8150d826d1c56bfb278371b567f79bf450e160e303c62291afa4",
+      "bytes": 638801,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks64-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks64-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks64-candidate.s",
+      "sha256": "350aa06d7e1b8150d826d1c56bfb278371b567f79bf450e160e303c62291afa4",
+      "bytes": 638801,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks64-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks64-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks8-baseline.s",
+      "sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95",
+      "bytes": 549823,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks8-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks8-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks8-candidate.s",
+      "sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95",
+      "bytes": 549823,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks8-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks8-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks96-baseline.stderr",
+      "sha256": "19e54eb1b71964e93f12901a5cbaa2fd30e437946748cbc67ec680553e623f5a",
+      "bytes": 24,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks96-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks96-candidate.s",
+      "sha256": "07d76a84ebc7b008404617a15fc8007bcfe9781c079519d72dc4876b3fe8e5f5",
+      "bytes": 690033,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks96-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array4096-blocks96-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array512-blocks16-baseline.s",
+      "sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda",
+      "bytes": 93325,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array512-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array512-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array512-blocks16-candidate.s",
+      "sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda",
+      "bytes": 93325,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array512-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array512-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array64-blocks16-baseline.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array64-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array64-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array64-blocks16-candidate.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array64-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-512/array64-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks0-baseline.s",
+      "sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1",
+      "bytes": 537240,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks0-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks0-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks0-candidate.s",
+      "sha256": "04006df2a58d81fb312ee7726301c8337a7703489b39a7ce850cce9df3b6fdf1",
+      "bytes": 537240,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks0-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks0-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks16-baseline.s",
+      "sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673",
+      "bytes": 562423,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks16-candidate.s",
+      "sha256": "c9a65a6b8d7a024d4e72d086b2fc2a8e14df817aea50a1177c4015c98afee673",
+      "bytes": 562423,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks4-baseline.s",
+      "sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6",
+      "bytes": 543523,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks4-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks4-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks4-candidate.s",
+      "sha256": "47239b4b3c421c932cc9f71e2347a43175720b990349df4c90754183413664d6",
+      "bytes": 543523,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks4-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks4-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks64-baseline.stderr",
+      "sha256": "19e54eb1b71964e93f12901a5cbaa2fd30e437946748cbc67ec680553e623f5a",
+      "bytes": 24,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks64-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks64-candidate.s",
+      "sha256": "350aa06d7e1b8150d826d1c56bfb278371b567f79bf450e160e303c62291afa4",
+      "bytes": 638801,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks64-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks64-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks8-baseline.s",
+      "sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95",
+      "bytes": 549823,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks8-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks8-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks8-candidate.s",
+      "sha256": "65f19906e57ec42d449395a89b29397efb238b507496e13c008bd3cae9583c95",
+      "bytes": 549823,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks8-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks8-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks96-baseline.stderr",
+      "sha256": "19e54eb1b71964e93f12901a5cbaa2fd30e437946748cbc67ec680553e623f5a",
+      "bytes": 24,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks96-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks96-candidate.s",
+      "sha256": "07d76a84ebc7b008404617a15fc8007bcfe9781c079519d72dc4876b3fe8e5f5",
+      "bytes": 690033,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks96-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array4096-blocks96-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array512-blocks16-baseline.s",
+      "sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda",
+      "bytes": 93325,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array512-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array512-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array512-blocks16-candidate.s",
+      "sha256": "3d82fb13f2921a8b716e542411642dbd1925de2278aca8f9c113151b21ce5eda",
+      "bytes": 93325,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array512-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array512-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array64-blocks16-baseline.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array64-blocks16-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array64-blocks16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array64-blocks16-candidate.s",
+      "sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb",
+      "bytes": 35621,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array64-blocks16-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/resources-final-driver/array64-blocks16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-1-baseline.s",
+      "sha256": "ced59f143542a73777961bf23a5089e8fd924fb76c6fa332b8e63c29dad0cbef",
+      "bytes": 362958,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-1-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-1-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-1-candidate.s",
+      "sha256": "ced59f143542a73777961bf23a5089e8fd924fb76c6fa332b8e63c29dad0cbef",
+      "bytes": 362958,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-1-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-1-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-16-baseline.stderr",
+      "sha256": "19e54eb1b71964e93f12901a5cbaa2fd30e437946748cbc67ec680553e623f5a",
+      "bytes": 24,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-16-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-16-candidate.stderr",
+      "sha256": "19e54eb1b71964e93f12901a5cbaa2fd30e437946748cbc67ec680553e623f5a",
+      "bytes": 24,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-16-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-2048branches-baseline.s",
+      "sha256": "a15a97ddf2614bf1db4de7122d04331729ff21ec096cb5618b50b93562ee23ae",
+      "bytes": 1461440,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-2048branches-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-2048branches-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-2048branches-candidate.s",
+      "sha256": "a15a97ddf2614bf1db4de7122d04331729ff21ec096cb5618b50b93562ee23ae",
+      "bytes": 1461440,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-2048branches-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-2048branches-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-baseline.s",
+      "sha256": "2412b0ca9a094e47a436dd1bc8b88d2895d4d4632a88f5b238440682f3810f5f",
+      "bytes": 1303232,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-baseline.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-candidate.s",
+      "sha256": "2412b0ca9a094e47a436dd1bc8b88d2895d4d4632a88f5b238440682f3810f5f",
+      "bytes": 1303232,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/source-sparse/sparse-prefix-4-candidate.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/sparse-baseline.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/sparse-baseline.stdout",
+      "sha256": "1be6c3a1d6f74fd16fa96583accfa01cd0776fd9506aeee5d3ceb082ea7c1e94",
+      "bytes": 44,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/sparse-candidate.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    },
+    {
+      "path": "evidence/sparse-candidate.stdout",
+      "sha256": "1be6c3a1d6f74fd16fa96583accfa01cd0776fd9506aeee5d3ceb082ea7c1e94",
+      "bytes": 44,
+      "reason": "Generated binary/assembly/raw-output/cache omitted from distributed source; original retained in full local archive. Structured receipts retain observations."
+    }
+  ],
+  "historical_manifest": "independent/evidence/review-manifest.json preserved unchanged"
+}

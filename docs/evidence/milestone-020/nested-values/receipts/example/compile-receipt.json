@@ -1,0 +1,47 @@
+[
+  {
+    "label": "baseline",
+    "command": [
+      "/tmp/aurora-resource-main-compiler-frozen",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/examples/nested_token_values.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/receipts/example/baseline.s"
+    ],
+    "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+    "source_sha256": "6bc300f429ce77fd3fada0e361f47baf213d082353f4850d94ab128064140f20",
+    "returncode": 1,
+    "assembly_sha256": null
+  },
+  {
+    "label": "release-a",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/examples/nested_token_values.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/receipts/example/release-a.s"
+    ],
+    "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+    "source_sha256": "6bc300f429ce77fd3fada0e361f47baf213d082353f4850d94ab128064140f20",
+    "returncode": 0,
+    "assembly_sha256": "4dce852294071d66c21d2c375a91f12f28a224ca852286fb7877753a0c82e84d"
+  },
+  {
+    "label": "release-b",
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/build/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/library",
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/examples/nested_token_values.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-nested-values-next/receipts/example/release-b.s"
+    ],
+    "compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+    "source_sha256": "6bc300f429ce77fd3fada0e361f47baf213d082353f4850d94ab128064140f20",
+    "returncode": 0,
+    "assembly_sha256": "4dce852294071d66c21d2c375a91f12f28a224ca852286fb7877753a0c82e84d"
+  }
+]

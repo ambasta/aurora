@@ -1,0 +1,42 @@
+{
+  "name": "unused-ambiguous-cross-kind",
+  "source_group": "independent",
+  "negative": true,
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/san/aurorac",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-ambiguous-cross-kind/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-ambiguous-cross-kind/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/sanitized-replay/independent/unused-ambiguous-cross-kind/compiled.s"
+  ],
+  "compiler_status": 1,
+  "compiler_stderr": "aurorac: ambiguous visible declaration in review: copy\n",
+  "seconds": 0.009266853332519531,
+  "release_evidence": "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-ambiguous-cross-kind/result.json",
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-ambiguous-cross-kind/input.au": "c20c52082ee117aec457e0d06dc404031bc3e7ac7e9fb4cf1ab1fb4165acb640",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-ambiguous-cross-kind/modules/a.au": "65d701defd5b5eeebf54f6a707fc6f03f7c64e79856608219214e513e5a5313b",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-ambiguous-cross-kind/modules/b.au": "d7a6d40ac9da3c1d4f1b8624909fceb0592a838c3ff347973c975703e28fa535"
+  },
+  "pass": true,
+  "existing_output_preserved": true,
+  "absent_replay": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/san/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-ambiguous-cross-kind/modules",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/unused-ambiguous-cross-kind/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/sanitized-replay/independent/unused-ambiguous-cross-kind/absent.s"
+    ],
+    "status": 1,
+    "diagnostic": "aurorac: ambiguous visible declaration in review: copy\n",
+    "absent": true
+  },
+  "inputs_unchanged": true
+}

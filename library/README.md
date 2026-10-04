@@ -31,7 +31,7 @@ The implementations are intentionally simple and currently retain ordinary funct
 
 ## Deliberately absent
 
-There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, heap ownership and interprocedural borrowing remain deferred; ordinary inline class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.
+There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, heap ownership and general interprocedural borrowing remain deferred; the milestone014 candidate adds only synchronous readonly local-byte-array spans. ordinary inline class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.
 
 The long-term goal remains a native runtime responsible for the useful roles currently served by libc, and a broad safe C++ standard-library ecosystem without C source/ABI compatibility. This module establishes actual imports, private implementation helpers, typed calls and executable scalar contracts toward that goal.
 
@@ -69,7 +69,9 @@ standard-library compatibility. See compiler/INTEGERS.md for edge cases and boun
 ## Reusable value pairs
 
 The current template candidate supplies `import std.utility;` and `std::pair<T,U>` for explicit i64/u64/bool type arguments; the milestone011 development
-extension also accepts named concrete class arguments under the Value constraint. A complete constructor initializes public first/second fields; exact-type scalar-field mutation and independent ordinary-function value copies use the existing safe class semantics. All nine scalar tuples compile from one actual Aurora template definition. No deduction, nested template-id arguments, reference pairs, operator overloads or foreign pair ABI is provided. See compiler/TEMPLATES.md for nominal identity, module privacy and bounded instantiation.
+extension also accepts named concrete class arguments under the Value constraint. A complete constructor initializes public first/second fields; exact-type scalar-field mutation and independent ordinary-function value copies use the existing safe class semantics. All nine scalar tuples compile from one actual Aurora template definition. Verified milestone020 accepts fully concrete nested template-id arguments,
+including std::pair<std::array<u8,16>,SourceRange>, under compiler/NESTED-VALUES.md.
+No deduction, reference pairs, operator overloads or foreign pair ABI is provided. See compiler/TEMPLATES.md for nominal identity, module privacy and bounded instantiation.
 
 ## Fixed initialized containers
 
@@ -105,5 +107,83 @@ zero-filled value on failure, even for a publicly constructed nonzero error repo
 Decoding accepts every four-byte pattern. Bytes4 owns a checked private four-byte
 array; its representation gate is distinct from the numeric/API gate. See
 [the contract](../compiler/BYTES.md) and [example](examples/byte_codec.au).
-The milestone013 candidate is under validation; it is not a text encoding or
-general runtime API, and no equivalent-C performance claim is made.
+The milestone013 numeric and packed-representation gates are verified in the
+recorded checkpoint. This is not a general text/runtime API, and no equivalent-C
+performance claim is made.
+
+## Borrowed binary reader candidate
+
+`import std.binary;` supplies ByteReadStatus, ByteReadResult, read_le32 and
+read_be32 in namespace std. Readers take builtin::span<const u8> plus an i64
+offset and return a copied report. Negative offsets, inputs shorter than four
+bytes, and offsets beyond length minus four report out_of_range before any read.
+Every successful four-byte pattern produces a u64 value. status() and eager
+value_or(u64) expose the result without exposing a stored error payload.
+
+The [binary reader example](examples/binary_reader.au) forwards a whole local
+array, reads two values and mutates the owner only after the temporary borrow
+ends. [SPANS.md](../compiler/SPANS.md) states the static lifetime and private-call
+contract. This candidate has no heap, returned views, mutable span, subspan or
+private std.array storage borrowing. Independent compiler review and full compiler
+gates passed on the corrected candidate; milestone014 parent/kernel integration
+is verified in its recorded checkpoint.
+
+
+## Storage fields and header-integrity candidate
+
+`std.binary` now includes `read_le16`, `read_be16`, `read_le64` and `read_be64`
+alongside its 32-bit readers. All return existing copied `ByteReadResult` reports
+and carry field values in u64 with explicit width-dependent mathematical ranges.
+`std.checksum` supplies recoverable `crc32c` and `crc32c_extend` over readonly
+spans; the latter accepts a prior finalized 32-bit checksum carried in u64.
+
+`fs.xfs_probe` supplies `probe_xfs_v5_512`, a bounded header/integrity fact report
+for the exact 512-byte profile. Raw feature masks are uninterpreted observations;
+CRC success does not establish mountability, clean-log state or feature support.
+See [the API contract](../docs/checksum-xfs-probe.md),
+[the real offline fixture](../docs/offline-xfs-fixture.md) and
+[the running example](examples/storage_fields.au). The isolated implementation
+passed independent review and milestone015 combined acceptance. These are header
+facts, not a filesystem mount or operational feature-support claim.
+
+Run `make -C compiler test-storage` for synthetic/native model checks and replay
+of the preserved real mkfs-generated header. This test does not create or mount
+an image, and does not require installed xfsprogs.
+
+
+## Bounded primary-header geometry candidate
+
+Import both `fs.xfs_geometry` and `fs.xfs_probe` to use
+`fs::inspect_xfs_v5_512_geometry`. The direct probe import is required by the
+existing type-visibility rules because the public copied report contains a probe
+value. The original probe implementation and statuses remain unchanged.
+
+The inspector returns a closed status/first-issue report, raw feature observations,
+unsupported/unknown masks and 24 grouped geometry facts. Failure facts are all zero;
+raw diagnostics are untrusted observations. The narrow admitted-feature policy
+permits only these header calculations and is never a mount-support allowlist.
+It checks encoded AG-relative log addresses, final-AG ranges and u64 byte-size
+representability without following any metadata or reading a device.
+
+The [exact contract and precedence addendum](../docs/xfs-geometry-contract.md)
+retain the approved pinned-source proposal and its boundaries. The
+[running example](examples/xfs_geometry.au) consumes the preserved real header and
+checks its claimed byte size and internal log placement. Source/functional review
+and focused author gates passed; final integrated milestone acceptance is pending.
+Run `make -C compiler test-xfs-geometry` for the bigint/native corpus and bounded
+mutation controls. The explicit `--sanitized-compiler` flag is supplied through
+`XFS_GEOMETRY_TEST_FLAGS` only when testing an instrumented compiler.
+
+## Verified milestone021: explicit copied pair factory
+
+`std.utility` also provides `std::make_pair<T,U>(first,second)` with explicit
+Scalar/Value-compatible types. It constructs a complete independent pair through
+Aurora code; class arguments are readonly left-to-right snapshots and the result
+initializes a fresh typed local. There is no deduction, reference-pair, heap or ABI
+addition. `examples/function_token_values.au` combines `std::array<u8,16>` and a
+source-range class. Complete release/fatal host ASan/UBSan compiler targets,
+independent review/replay and parent aggregate/integration gates passed.
+See [the contract](../compiler/FUNCTION-TEMPLATES.md) and
+[M021 evidence](../docs/evidence/milestone-021/README.md) for finite grammar,
+combined graph budgets, preserved failures and verified pins. This is a copied
+value factory, not general standard-library, text-consumer or self-hosting completion.

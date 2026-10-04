@@ -1,0 +1,16 @@
+PASS regular512MiB image hash, first-sector identity and recorded executable/loaded-library hashes
+Read-only command: ["/tmp/aurora-xfs-offline-tools/root/usr/sbin/xfs_db", "-r", "-f", "-c", "sb 0", "-c", "p magicnum versionnum sectsize sectlog crc features_compat features_ro_compat features_incompat features_log_incompat", "-c", "version", "/tmp/aurora-xfs-offline-disk.img"]
+Exit: 0
+magicnum = 0x58465342
+versionnum = 0xb4a5
+sectsize = 512
+sectlog = 9
+crc = 0xc71371b6 (correct)
+features_compat = 0
+features_ro_compat = 0xf
+features_incompat = 0x2b
+features_log_incompat = 0
+versionnum [0xb4a5+0x18a] = V5,NLINK,DIRV2,ALIGN,LOGV2,EXTFLG,MOREBITS,ATTR2,LAZYSBCOUNT,PROJID32BIT,CRC,FTYPE,FINOBT,SPARSE_INODES,RMAPBT,REFLINK,INOBTCNT,BIGTIME,NREXT64
+
+
+PASS retained full image unchanged after independent read-only xfs_db

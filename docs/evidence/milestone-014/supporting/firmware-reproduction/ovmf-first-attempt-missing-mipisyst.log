@@ -1,0 +1,26 @@
+Build environment: Linux-6.18.44-x86_64-with-glibc2.41
+Build start time: 10:47:11, Oct.03 2026
+
+WORKSPACE        = /tmp/aurora-clean-ovmf/edk2
+EDK_TOOLS_PATH   = /tmp/aurora-clean-ovmf/edk2/BaseTools
+CONF_PATH        = /tmp/aurora-clean-ovmf/edk2/Conf
+PYTHON_COMMAND   = python3
+
+
+Processing meta-data .
+Architecture(s)  = X64
+Build target     = DEBUG
+Toolchain        = GCC5
+
+Active Platform          = /tmp/aurora-clean-ovmf/edk2/OvmfPkg/OvmfPkgX64.dsc
+
+
+build.py...
+/tmp/aurora-clean-ovmf/edk2/MdePkg/MdePkg.dec(33): error 000E: File/directory not found in workspace
+	/tmp/aurora-clean-ovmf/edk2/MdePkg/Library/MipiSysTLib/mipisyst/library/include
+ 
+
+- Failed -
+Build end time: 10:47:12, Oct.03 2026
+Build total time: 00:00:01
+

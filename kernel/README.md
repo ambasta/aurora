@@ -595,3 +595,77 @@ The opt-in [all-controlled-user-phase budget and retirement contract](uefi/user-
 adds isolated client recovery. All 17 new modes passed independent review, and the
 final 139-mode integration passed with the packed-byte compiler. Parent aggregate and selected spot checks passed; see the contract for exact
 compiler provenance and limits.
+
+## Read-only resource handoff development
+
+The bounded BAR slice and its separate cold-reset firmware fixture are described
+in [BAR-RESOURCE-CONTRACT.md](uefi/BAR-RESOURCE-CONTRACT.md). Seven actual BAR
+gates and the span gate passed both author and independent execution on the
+M014 compiler 2d86780c. The final integrated 147-mode run passed with 225 input
+hashes unchanged; parent fresh aggregate and M014 archive acceptance also passed. A separate 449-byte protected
+readonly-span fixture preserves the historical clean program and existing 4KiB
+RX bound; it returns 42, survives a separate contained bounds program, runs again
+and cleans up. No controller activation or filesystem implementation is claimed.
+
+M014 final worker evidence: `/tmp/aurora-m014-kernel-receipts` contains 498 verified
+receipt hashes and pre/post source manifests. The source manifest SHA256 is
+`ee257b35c474eca2c9578265e6712d7e19e115d8da5ff9824796b6f5c85acd3d`.
+The 147 modes preserve 37 BIOS gates on their BIOS/QEMU path and 102 historical
+UEFI gates on packaged OVMF; span also uses packaged OVMF. BAR state/capture/
+inherited modes use packaged firmware, while read/write/revoked/alias use the
+explicit custom cold-reset fixture. The filtered distributable evidence omits
+third-party firmware bytes while retaining their hashes and local audit copies.
+
+## AMD-Vi observation development
+
+The explicitly selected read-only QEMU profile is described in
+[IVRS-OBSERVATION-CONTRACT.md](uefi/IVRS-OBSERVATION-CONTRACT.md). It copies and
+reconciles paired IVRS records with live PCI identity, refuses the disabled
+architectural aperture by default, and grants three static reads only under the
+separate emulator profile. It provides no DMA protection or device activation.
+Independent execution passed all eleven new modes. The final integrated run
+passed all 158 modes with 257 project inputs and 178 external inputs unchanged;
+parent fresh aggregate, selected actual spots and archive verification subsequently passed.
+
+M015 receipts are in `/tmp/aurora-m015-kernel-receipts` (708 verified file
+hashes). Source manifest SHA256:
+`9fd392b5682cee4639f90870922056ebd1c2361ec62250af2c4154953ff60b3b`.
+External tool/firmware/control manifest SHA256:
+`c4efd3e2b74a3b7243ce9479a6f4383c3d9107de2a61ba4636b8c44a3a42878d`.
+The separate control still fails its original broader whole-run absence
+criterion; only its independently reviewed bounded write witness supplies
+trace coverage. No DMA protection or physical AMD support is established.
+
+## CPU-only pin ownership candidate
+
+The [pin ownership contract](uefi/PIN-OWNERSHIP-CONTRACT.md) records a bounded
+real-PageLease ledger exercised through four UEFI modes: cancellation/scrubbed
+reuse, persistent quarantine through a known service fault and same-slot restart,
+stale incarnation rejection, and separate ledger/pool exhaustion. Independent
+review passed all four on final compiler 14cbaa33. The final worker run passed all 162
+modes with 266 project inputs and 182 external pins unchanged; 720 receipt hashes
+were verified and normal images restored. Parent aggregate, selected actual spots
+and archive verification subsequently passed. No hardware publication/completion adapter or
+DMA protection is implemented.
+
+The CPU-only dormant-table candidate is described in
+[the dormant-table contract](uefi/DORMANT-TABLE-CONTRACT.md). Its four explicit
+`runtime-table-*` gates use real leased guest RAM and preserve the existing memory
+budget. These results concern constructed bytes and a software translation model;
+no IOMMU publication, interrupt isolation or DMA containment is established.
+Independent final review passed all four modes on the integrated source. The final
+worker run passed166 distinct modes (37 BIOS and129 UEFI-family) on compiler
+14cbaa33, with288 project inputs and183 external pins unchanged. All757 receipt
+hashes verified; normal images restored with inspector/code absence checks. Each
+new mode's measured stack bound is13136/16384 bytes including1024 fault reserve.
+Parent fresh aggregate and readback/quarantine/normal smoke checks passed.
+The immutable source archive has a separate byte/inventory/Git-tree audit;
+functional acceptance does not itself claim remote publication.
+
+Final receipt directory: `/workspace/scratch/48c5de6446f8/aurora-m019-kernel-receipts`.
+Source manifest SHA256:
+`c563aa97e3c585cca5688331c62748d1e16a2f71d95b4cc8fbf8ab721f0f023b`.
+External manifest SHA256:
+`ef6336767f277b6cbf36af3eed36986300b9cf6a8eedd684a771bf40c662d651`.
+Independent guest report SHA256:
+`880d75406270894050ceb36b8b4b6ce311f7384f1ba3db1e34f7d152e7123a34`.

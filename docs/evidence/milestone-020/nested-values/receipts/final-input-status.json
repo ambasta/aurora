@@ -1,0 +1,14 @@
+{
+  "main_inputs_checked": 189,
+  "main_inputs_changed": [],
+  "candidate_inputs": 193,
+  "candidate_manifest_sha256": "c29b5076284bca6cb5dc11017d152ce47341e18e5f90309fd2d7790b5a0b4653",
+  "baseline_compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "release_compiler_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6",
+  "tools": {
+    "g++ --version": "g++ (Debian 14.2.0-19) 14.2.0",
+    "as --version": "GNU assembler (GNU Binutils for Debian) 2.44",
+    "ld --version": "GNU ld (GNU Binutils for Debian) 2.44",
+    "python3 --version": "Python 3.12.14"
+  }
+}

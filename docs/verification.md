@@ -741,3 +741,651 @@ No unresolved reproduced defect remains in this reviewed bounded checkpoint.
 It does not establish arbitrary process recovery, global resource/stack bounds,
 SMP, calibrated deadlines, DMA or physical Framework support, complete language or
 stdlib safety, arbitrary binary serialization or equivalent-C throughput.
+
+## Milestone014: readonly spans and read-only PCI resources
+
+Verified 2026-10-03. Corrected compiler SHA256:
+`2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8`.
+Readonly whole-array byte spans provide a bounded synchronous borrowing interface;
+std.binary reads are real compiled code. A separate 449-byte protected span program
+runs without enlarging the existing 4 KiB RX profile or dropping historical checks.
+
+Evidence and provenance:
+
+- [Fresh parent make test](evidence/milestone-014/parent-make-test.log) passed the
+  complete aggregate, including storage host-model, BAR and span targets.
+- [Compiler evidence index](evidence/milestone-014/compiler-review/README.md)
+  preserves author and independent runs, exact pins, initial lifetime-join
+  reproduction, corrected rejection and all failed/interim attempts.
+- [Fresh parent sanitized tools](evidence/milestone-014/parent-sanitized-tools.log)
+  passed readonly-span execution/rejection tests, all 950 direct IR cases and
+  host source/output adapters. Instrumentation is on host tools, not emitted code.
+- Independent scalar regression passed [nine self-tests](evidence/milestone-014/parent-oracle-selftests.log),
+  [630 default](evidence/milestone-014/parent-oracle-default.log) and
+  [1,526 stress](evidence/milestone-014/parent-oracle-stress.log) cases on the exact pin.
+- [Complete retained final run](evidence/milestone-014/kernel-gates/README.txt)
+  passed 147 distinct modes from 11:45:08 through 12:00:43 UTC: 37 BIOS, 102
+  historical UEFI, one span mode and seven BAR modes. All 225 executable/build/test
+  inputs, including the four storage-model Python files, were hashed before the
+  first build and matched afterward. Independent review separately repeated all
+  eight new modes on the same corrected compiler.
+- [Parent receipt validation](evidence/milestone-014/receipt-validation.log)
+  checked 498 original local receipt hashes, all 225 live inputs, 147 unique
+  successful mode records and 36 compiler-review receipts.
+- [Fresh parent actual spots](evidence/milestone-014/parent-spot-checks.log)
+  repeated normal BIOS, protected span, stock BAR-state refusal, clean read and
+  revoked-window fault. Selected reruns are not a second complete 147-mode run.
+  [Retained parent BAR records](evidence/milestone-014/parent-bar-spots/retained-sha256.json)
+  preserve metadata/serial/debug/trace and explicitly list omitted generated or
+  third-party artifacts by hash and local audit path. Normal images were restored.
+- [Final source manifest](evidence/milestone-014/source.sha256) and
+  [binary identities](evidence/milestone-014/compiler-binaries.sha256).
+
+The independent compiler runs passed 91 native span cases, including 25 exact
+bounds traps, 69 normal rejections and 64 additional mixed-argument ABI cases on
+both release and sanitized pins. The initial same-storage restart/unchanged-branch
+IR join was accepted without a reproduced invalid-memory access. Static origin,
+creation and parent-site identity now rejects that incompatible join, with five
+additional IR regressions. Fully closed loop reuse remains permitted; static
+sites are not claimed to be unique dynamic generations. The final 950 IR cases,
+ten exhaustive-dispatch checks and native groups, including fourteen span cases
+and four exact bounds sites, passed independently.
+
+The BAR slice validates one explicitly selected EDK2/q35/NVMe producer profile,
+resource ownership and every assigned competing memory BAR, exact live PCI
+identity, RAM/arena/ECAM/APIC exclusions and readonly supervisor UC/R/NX mapping.
+Seven bounded register observations establish the narrowly permitted inactive
+state. Stock firmware command 7 and initialized-controller state are refused.
+The clean firmware observed command 2 and zero CC/CSTS/AQA/ASQ/ACQ; write and
+revoked-read probes produced exact page faults 14/error 3 and 14/error 0. This
+is not DMA ownership or an NVMe queue/namespace driver.
+
+The clean fixture uses EDK2 commit
+`fbe0805b2091393406952e84724188f8c1941837`, with exactly the reviewed X64 DSC/FDF
+NVMe-driver omissions and exact-endpoint MEMORY-only platform policy. Initial
+BME must already be clear; no clearing/reset operation is added. Other endpoints
+keep upstream behavior. Official source/dependency hashes, the three-file patch,
+notices, build receipts, consumed-input hashes and trace controls are retained in
+[supporting evidence](evidence/milestone-014/supporting/SHA256.json). QEMU's PCI
+attribute probe did transiently enable and restore BME, so no claim of 'BME was
+never enabled' is made. The relevant claim is no NVMe initialization from cold
+reset and the validated inactive handoff.
+
+Firmware profiles are explicit per mode: BIOS uses the existing BIOS/QEMU path;
+historical UEFI, span and three refusal BAR modes use packaged OVMF; four clean
+BAR modes use custom CODE with fresh VARS. Cold config/MMIO traces have positive
+stock-firmware and separately isolated MSI-X observation controls. Validator
+review closed contradictory failure-marker, late handoff-marker, unaccounted
+configuration-write and overlapping-write-interval gaps. Hosted checks passed
+142,075 policy and 1,101 complete-reservation cases with fatal sanitizers and
+NDEBUG, plus serial 7 positive/859 negative and trace 4 positive/1,003 negative
+controls. Supplemental firmware-directory hashes were captured after the initial
+BIOS gates began; this timing is disclosed, while each BAR invocation separately
+pins its actual tools, firmware and artifacts before execution.
+
+Optional unused GoogleTest/Subhook dependency fetches encountered a retained 403;
+no alternate fetch/version was substituted and unused placeholders remained.
+A conservative target closure and consumed-input manifest exclude those missing
+unit-test dependencies. A local-socket control encountered EPERM; the separately
+recorded ordinary-pipe control used no socket/network endpoint or sandbox change.
+Its actual timing relative to the hold/clarification is retained, not rewritten.
+The control left CPUs stopped, DMA/controller/MSI-X activation disabled and made
+one same-value masked table write solely to validate trace observation. It is
+not part of Aurora's readonly runtime path. Failed over-limit combined span
+fixtures remain historical; a separate bounded program was used instead.
+
+The source distribution omits eight third-party VARS files and 21 generated
+ELF/payload/EFI products while retaining hashes and original local audit copies.
+The original-local and worker-distribution manifests are historical provenance;
+the parent kernel-gates SHA256.json covers retained source/evidence files. See
+[PARENT-DISTRIBUTION.txt](evidence/milestone-014/kernel-gates/PARENT-DISTRIBUTION.txt).
+Original worker filtered archive SHA256:
+`96cb40a9615f042e3e5d9aa5b4b90fa639b7fc8a06589337c601dd014412663a`;
+supporting archive SHA256:
+`756be74e63daf2f29d5f0cef280b87f55e40caa006b71fb76137512a7d93350b`.
+Corrected sanitizer compiler SHA256:
+`ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa`;
+IR SHA256 `34181616b8dc98bb105e5437f2245d06c1c29ae40087f03db0a6e9d44c616310`.
+Leak detection remains disabled for the recorded environment limitation; captured
+pipe memory is not covered by the regular-file size limit.
+
+The separately reviewed storage S0 package is integrated under storage/design
+with its original 56 sections, XFS extension, traceability, roadmap and host-only
+model. Fourteen model tests and eight document mutation controls pass normally
+and under Python optimization. No target filesystem, XFS mount/replay/write,
+DMA/IOMMU isolation, physical Framework support or complete Rust-level safety/
+C-level performance follows from this checkpoint. Isolated next-library work
+is intentionally not part of this verified main-tree snapshot.
+
+
+### Publication byte-identity correction
+
+The [publication audit](publication-integrity.md) identified historical JSON
+newline normalization in evidence files only. Original raw source archives and
+receipts remain intact; this snapshot uses byte-preserving serialization. The
+new publication helper passed seventeen independent normal and optimized tests,
+separate from the kernel aggregate. No execution result or failed test is changed
+by restoring diagnostic bytes. Remote publication state is not inferred from
+local snapshot preparation.
+
+
+## Milestone015: storage integrity libraries and read-only AMD-Vi
+
+Verified locally on2026-10-03. The complete final emulator run passed158 distinct
+modes (37 BIOS,121 UEFI), from13:21:02 to13:38:18 UTC. All257 project inputs and178
+external tool/firmware/control inputs matched their pre-run hashes afterward.
+Parent verification independently checked all708 original receipt hashes, reran
+make test, and executed four fresh actual IVRS modes: architectural-default
+refusal, read success, write fault and revoked-read fault. These spots are not a
+second full158 run. Normal images were restored. Parent results are in
+[evidence/milestone-015/parent/results.json](evidence/milestone-015/parent/results.json).
+The release compiler remains SHA256
+`2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8`.
+
+### Library slice
+
+Checked LE/BE16/32/64 readers and CRC32C/extend execute over readonly byte spans.
+The XFS probe accepts only an exact512-byte v5 header geometry and reports header
+integrity, not mountability. Complete compiler targets passed release and fatal
+ASan/UBSan with950 IR cases and existing semantics, plus254 new native storage
+cases and real-fixture replay. Independent polynomial/hardware CRC comparison,
+extra boundary/feature tests and strict canonical-hex transport checks passed.
+See [storage-library validation](storage-library-validation.md) for commands,
+exact pins and the unchanged raw512-byte identity. The original mkfs exit code
+was not retained; independent read-only inspection and native replay are separate
+evidence. No disk was mounted or physical device accessed. Two duplicate generated
+binary fixture receipts are omitted from the source distribution, with explicit
+hash mappings to the canonical hex fixture; historical receipt manifests remain.
+
+### Kernel observation slice
+
+The actual168-byte IVRS pairs IVHD10/11 descriptions of one IOMMU. The admitted
+profile exactly reconciles its seven requester SELECT entries, live PCI identity,
+capability bytes and full16KiB aperture. Contradictory pairs, aliases, IVMD,
+requester mismatch, capability mismatch, overlaps and missing-device cases refuse.
+Architecture-default refuses MMIO Enable=0 before mapping. The distinct compile-
+selected Qemu10_0_13AmdViCold profile reflects the pinned producer's unconditional
+MMIO mapping and per-format feature constants; it is not generic AMD equivalence.
+Only CTRL/EFR/STATUS reads occur, with expected0/0x29d3/0, through supervisor UC,
+read-only/NX mappings. Write and revoked probes fault before prohibited access.
+The target NVMe remains inactive/BME-clear. CTRL.IommuEn=0 permits identity DMA;
+pt=off alone does not provide isolation. Other firmware bus masters are outside
+this bounded observation claim.
+
+Independent review passed eleven fresh actual modes and121,025 host-policy cases
+in both release and ASan/UBSan. It closed timestamp/order, post-handoff APIC/IOAPIC
+write and missing-device startup validation gaps. Parent make test additionally
+passed serial11/4236, trace11/723, provenance11/532 and stack1/27 synthetic controls.
+These finite checks are not a proof. The original stack-guard fault is retained;
+temporary lifetimes were shortened and inspect_bar made explicit for frame
+accounting, keeping the unchanged16KiB stack. Independent .su/linked-call analysis
+bounds the reviewed maximum at12,776 bytes including512 bytes of fault reserve.
+The original failed ELF/.su was not preserved, so pre-fix function attribution
+must not be represented as independently hash-bound binary evidence.
+
+The separate stopped-CPU trace control made one same-zero64-bit CTRL write with
+unchanged readbacks. It validates the generic write-event producer only. Its
+original whole-run no-interrupt criterion FAILED and remains failed: a startup
+APIC passthrough event and its four related records are retained. Pinned-source
+HPET/PIT/IOAPIC reset ordering explains that sequence by inference, not an
+instrumented call stack. No rerun erased the failure, no blanket event whitelist
+was introduced, and no claim of globally clean interrupt state follows. Named
+amdvi_mmio_write absence alone is insufficient because valid writes use the
+generic producer. See the [independent report](evidence/milestone-015/kernel-support/independent-review/review.md).
+
+### Distribution and remaining limits
+
+Original filtered kernel archive SHA256
+`53f5296dd4ca0a14793cc0b84742da5f131dd6cc948bfacde07cfd3e0978fdf5`;
+supporting archive SHA256
+`ced086117b5720d41253ce766e3e5c599dcd4cee59cdaef3beeca11ac9076e01`.
+The source distribution omits30 third-party VARS copies and54 generated ELF/bin/
+EFI files while preserving original local artifacts, hashes and explicit omission
+maps. Parent spot outputs have equivalent explicit omission records. Original
+worker manifests are historical; current distribution manifests cover retained
+bytes. Serialization preserves raw text bytes, including diagnostic CRLF.
+
+No active IOMMU mappings, NVMe queues, target filesystem, XFS mount/replay/write,
+SMP, physical Framework qualification, full-language safety proof or C-performance
+equivalence is established. Isolated mutable-byte and resource-hardening work is
+not included in this snapshot. Publication is separately permission-gated; local
+verification does not imply a remote commit or draft PR.
+
+
+## Milestone016: compiler fact storage and real page-pin ownership
+
+Verified locally2026-10-03. The final exact-source run passed162 modes (37 BIOS,
+125 UEFI), from14:40:39 to14:58:39 UTC. All266 project inputs and182 external pins
+matched pre/post hashes. Parent independently checked720 raw receipt hashes,
+reran make test and1,526 seed404 semantic cases, then freshly ran pin-cancel,
+pin-fault and normal UEFI profiles. Normal images were restored. These spots are
+not a second full162 run. See [parent results](evidence/milestone-016/parent/results.json)
+and [kernel receipts](evidence/milestone-016/kernel-gates/results.json).
+
+### Representation-only compiler change
+
+Release SHA256 `14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980`;
+instrumented compiler `805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf`.
+The two initialized/maybe-initialized scalar-slot fact sets now use checked dense
+bitsets over the existing validated slot universe. Other lifetime/provenance facts
+and CFG/worklist behavior remain unchanged. Existing frame validation bounds the
+universe to65,536 slots; two fact payloads are at most16,384 bytes per retained
+state. This is not a total compiler memory bound or a new language admission cap.
+
+Author and independent checks cover set-operation equivalence,956 IR cases,
+source/native/module/host-I/O regressions and exact before/after outputs. Independent
+review executed37,126,294 fatal-sanitizer fact checks and831 exact compiler
+comparisons. All eight candidate benchmark programs execute42. The benchmark
+originally could report success for an always-failing candidate; it was corrected
+and independently tested with always-fail and wrong-output controls.
+
+Controlled dense workload RSS fell510,588 to62,976KiB with identical assembly.
+A valid sparse-prefix source instead rose189,692 to210,048KiB (~10.7%); observed
+wall time did not worsen in that sample. The stronger all-unused65,536-slot case
+is IR-only. These are bounded individual measurements, not universal throughput
+or memory claims; other state/AST/resource growth remains open.
+
+The complete release target passed. The full instrumented target initially failed
+when GCC compiling the large IR-test translation unit was SIGKILLed; cause was
+not established. A serialized same-flags retry under2GiB failed cleanly with virtual
+memory exhaustion. Both receipts remain. An explicit IR-test-only -g1 debug-info
+accommodation then completed in67.21s at1,662,392KiB RSS. It retained -O1, fatal
+ASan/UBSan and frame pointers; compiler/fact-model/host-I/O builds retained -g.
+All runtime gates executed and passed. Integrated replay used exact-source pinned
+instrumented binaries and reran the affected suites. This is not an assertion
+that the original full-debug build passed. [Compiler evidence](evidence/milestone-016/compiler-facts/README.md)
+records flags, source identities, partial failures and distribution omissions.
+No mutable-byte-view candidate was integrated.
+
+### Kernel page ownership
+
+A static fixed-capacity ledger consumes actual move-only PageLease objects,
+binding owner DomainHandle/incarnation and non-wrapping entry generations.
+Clean cancellation is permitted only before any publication and scrubs every
+page before releasing any. Uncertain-publication injection is test-build-only;
+production exposes no publication or completion operation. Quarantine is
+absorbing and survives service destruction/restart. No scalar service value can
+mint retirement evidence. All origins retain existing CPL/CR3/ProgramRun checks.
+
+Independent hosted normal/fatal-sanitizer checks passed165 ordinary and294
+bounded-generation cases, production API absence and four invalid configurations.
+Receipt tests passed4 positives/236 negatives in Python and optimized Python,
+plus24 independent mutations. Four independent actual modes passed on the final
+compiler before the full162 run. The actual fault mode observes service slot1
+incarnation2 to4, stale original owner/token rejection, clean peer42 progress,
+new-incarnation compiled42 and exactlytwo retained quarantined pages. Original
+pre-strengthening development receipts remain distinct. Explicit exhaustion
+checks do not steal domain stack frames. Trusted allocator/backing lifetime,
+singleCPU and static ledger persistence remain assumptions; reconstructing a
+trusted allocator over the same physical range is not globally prevented by this
+bootstrap API. See [pin contract](../kernel/uefi/PIN-OWNERSHIP-CONTRACT.md).
+
+The accompanying finite host model is a prerequisite design experiment only:
+its hardware completion observations are assumed and unavailable in the actual
+kernel. The implemented ledger does not use simulated observations to release
+uncertain pages. There is no IOMMU programming, DMA publication, NVMe queue,
+filesystem mount/replay/write or physical device support in this milestone.
+
+### Distribution
+
+Filtered kernel evidence archive SHA256
+`522219f7909b356cc1be1951bc2c0c90983bb7519cce862e658332936045c5bc`;
+supporting archive SHA256
+`4cdd2b828f5bc9e546ffd51ac12cc24c7f0bed36c0f402b92515329d618ef625`.
+Thirty firmware copies and54 generated kernel products are excluded with explicit
+hashes; supporting evidence excludes16 generated products. Compiler review
+excludes306 generated artifacts while preserving an unchanged full audit archive
+outside source. Original manifests refer to preserved local originals; current
+distribution SHA256 manifests describe included bytes. Source serialization must
+remain byte-preserving. Remote publication remains separate from local acceptance.
+
+
+## Milestone017: strict readonly UTF-8
+
+Verified locally2026-10-03. The additive library/test delta introduces std.utf8,
+a native example, bounded tests and contract; compiler/Makefile only registers
+its target/flags. The existing140 tracked compiler/runtime/script/root-Makefile/
+old-fixture inputs remain byte-identical. Release compiler SHA256 is still
+`14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980`;
+instrumented compiler remains
+`805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf`.
+Library implementation SHA256:
+`6ad8d1c11ce26197932e2118151a7761e518ea2db7dc64a1fd1a3e956761f31c`.
+
+The contract pins Unicode17.0.0 chapter3 §3.9 D92/Table3-7. Checked range validation
+precedes all reads. Decoding rejects overlong/surrogate/out-of-range/forbidden
+byte forms, accepts all scalar values including noncharacters/NUL/BOM, and strips
+nothing. Already-invalid available bytes reject immediately even when later bytes
+are absent. Otherwise a proper incomplete prefix reports truncated for final input
+or need_more for nonfinal input, consuming no incomplete scalar. The API is
+stateless: caller retains/replays the tail. Result constructors are ordinary data,
+not certificates or authority. See [the complete contract](utf8-contract.md).
+
+Author bounded tests passed406 checks/39 fixtures per pin, using runtime loops
+and batches for all1,112,064 scalar values, all one/two-byte inputs and24,200 longer
+boundary combinations. Independent native review passed1,367,060 cases per pin,
+plus seven report/capacity groups and nine semantic-rejection groups. Corpus counts
+overlap and must not be summed as unique coverage. Independent Table3-7 checks
+include immediate-invalid ED/E0/F0/F4 second-byte prefixes in both final modes;
+Python incremental-decoder timing is not the normative contract. Native release
+and instrumented-compiler outputs agreed; generated machine code itself is not
+ASan-instrumented. The example actually decodes/validates and returns42.
+
+Eight final isolated commands and eight integrated commands had known zero exits
+with stable inputs. A prior exec transport outage lost its shell session status
+although terminal logs showed PASS; these remain historical unknown-status records,
+not inferred successful exits. Later known-status verification is recorded
+separately. Parent verified429 curated evidence hashes, reran make test and freshly
+executed runtime-span, runtime-pin-fault and normal UEFI profiles. Images restored.
+See [parent results](evidence/milestone-017/parent/results.json) and
+[UTF8 evidence](evidence/milestone-017/utf8/README.md).
+
+No fresh full162 emulator run was performed for this pure-library change. M016
+remains the historical full-suite checkpoint for unchanged runtime implementation.
+This milestone does not implement UTF-8 encoding, owned strings, normalization,
+grapheme segmentation, path policy, rendering, terminal behavior, filesystem I/O,
+DMA isolation or physical hardware qualification. Public documentation updates do
+not change the historical source/test identities preserved in integration receipts.
+
+
+## Milestone018: owned UTF-8 scalar encoding
+
+Verified locally2026-10-03. An additive std.utf8 extension encodes one u64 scalar
+into a private copied std::array<u8,4>, logical size and recoverable status. Only
+library/std/utf8.au and compiler/Makefile changed among implementation/test baseline
+files, with one new example, bounded test and contract. The prior decoder text
+and all246 captured inputs outside the delta stayed byte-identical, including
+compiler, kernel, scripts and old fixtures. The release/instrumented compiler
+pins remain14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980
+and805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf.
+The extended module SHA256 is
+`a9448bed52974ca1e690b9a10e86a5f879c5b24f475a12ab1ec079e4e97bc646`.
+
+Factory-produced valid scalars yield canonical shortest UTF-8 bytes, size1..4 and
+zero padding. Surrogates and values aboveU+10FFFF produce failure, size0 and zeros.
+NUL is valid size1. byte_or validates logical index/status/width before array
+access; bytes_or_zero returns an independent value with unused tail zeroed. Public
+constructors remain ordinary report data. Invalid widths/status normalize to
+failure, but a valid-width forged success report can still carry non-UTF8 bytes.
+No validation certificate, borrow, mutable span or raw capability is introduced.
+See [owned encoding contract](utf8-encoding-contract.md).
+
+Author final11-command aggregate and integrated10-command targets all exited0
+with stable inputs. Author186 checks/35 fixtures and24 rejection compilations
+passed both compilers. Independent review compared actual output for all1,112,064
+scalars with Python strict encoding, a separate arithmetic oracle and Unicode17
+Tables3-6/3-7, plus10,375 invalid values per compiler. It also passed8,784 report/
+copy cases, a mixed-six-argument ABI fixture,16 exact native bounds sites and18
+compile rejections per pin. Those overlapping observation counts are not unique
+population totals. The native example actually encodes/observes bytes and returns42;
+release/instrumented compiler example assemblies are identical. Generated native
+code itself is not ASan-instrumented. Fixed-value copies are explicit; no universal
+zero-cost or performance assertion is made. One stale preliminary contract hash
+was corrected with its original metadata retained historically.
+
+Parent independently checked97 curated receipt hashes and246 unchanged inputs,
+reran make test, then freshly executed runtime-span, runtime-pin-fault and normal
+UEFI profiles. Normal images restored. [Parent results](evidence/milestone-018/parent/results.json)
+and [integration evidence](evidence/milestone-018/utf8-encoding/README.md) distinguish
+author, independent and parent outcomes. No fresh full162 suite was run for this
+library-only delta; M016 remains the historical complete kernel checkpoint.
+Original binary/output audits are archived outside distributed text evidence with
+explicit omission records. This milestone does not implement owned strings,
+normalization, graphemes, terminals, XFS mounting, hardware DMA or physical support.
+
+
+## Milestone019 — verified functional checkpoint, 2026-10-03
+
+The full integrated run began 17:28:21.332659 UTC and completed
+17:46:44.819577 UTC: **166 distinct modes, 37 BIOS and 129 UEFI-family**.
+All 288 project input hashes and 183 external pins were unchanged; all 757
+original receipt hashes verified. The coordinating build separately passed
+`make test`, `runtime-table-readback`, `runtime-table-quarantine` and `normal`.
+Independent guest review passed all four new actual modes. Normal images were
+restored with test-inspector/code absence checks. No claim of a second full run.
+
+Compiler SHA256: `14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980`.
+Instrumented compiler SHA256: `805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf`.
+Project manifest SHA256: `c563aa97e3c585cca5688331c62748d1e16a2f71d95b4cc8fbf8ab721f0f023b`.
+External manifest SHA256: `ef6336767f277b6cbf36af3eed36986300b9cf6a8eedd684a771bf40c662d651`.
+
+### Dormant table scope and corrective evidence
+
+The AMD310Host4KBus0 profile constructs 256 dense DTEs in two 4 KiB pages,
+one 512-entry leaf page and at most two data pages, five frames/three ledger
+entries. Canonical holes are V=TV=1, Mode0, read/write denied. The exact RID0x10
+mapping has DomainID1 and checked root/leaf alignment, widths and ownership.
+IV=0 does not isolate interrupts. There is no MMIO/base/enable/BME/queue,
+publication or hardware-completion API. All guest markers are CPU-byte or
+software-model observations, not device DMA.
+
+The four modes cover full readback, rejection, exhaustion and quarantine. The
+stack bound is 13,136/16,384 bytes including 1,024 bytes of fault reserve, derived
+from raw `.su` and linked call paths. Phase separation fixes the earlier nested
+ACPI/PCI path; wrapper/lambda call edges and a forbidden nesting control are
+included. No stack/page budget was widened. Initially invalid privacy tests
+failed for the wrong C++ reason; preserved originals are superseded by valid
+member-pointer probes and compiling public-mutant controls. Independent host
+checks include all 98,304 table-bit corruptions and scrub/reentrancy controls.
+
+### XFS geometry scope and corrective evidence
+
+`library/fs/xfs_geometry.au` SHA256
+`c67c03928e0d4cf5896178906bd447523ec15b57cc95c4ade8b8330305a77864`.
+The result contains 42 scalar leaves, 336-byte layout, no device authority.
+Independent review repeats the same 2,016 headers on both compiler pins:
+451 narrow successes and 1,565 recoverable failures per pin, not summed coverage.
+It checks all leaves, copied/forged reports, input stability, ten killed semantic
+mutants and privacy/lifetime/artifact-preservation controls. Author coverage is
+586 headers, 25,198 raw observations and 51 mutation controls per pin; these
+sets overlap independent coverage. The final recipe/docs addendum and all 127
+curated receipt hashes and 90 protected inputs passed coordinating rechecks.
+Initial LeakSanitizer failures under ptrace remain retained; later runs disabled
+only leak detection, retaining fatal ASan/UBSan. An incorrect expected diagnostic
+was fixed in the test, with library source unchanged. Optional compiler pinning
+records actual hashes and rejects a supplied wrong hash. Author negative-test
+coverage is existing-output preservation, not absent-plus-existing coverage.
+
+The old checksum probe is unchanged. Error priority, supported masks, overflow
+checks and encoded AG addresses are detailed in the
+[XFS contract](xfs-geometry-contract.md). Reports describe bytes only: no
+mountability, clean log, replay, read/write support or storage-capacity assurance.
+
+### Evidence and preservation
+
+[Coordinating evidence](evidence/milestone-019/parent/README.md),
+[full kernel evidence](evidence/milestone-019/kernel-gates/README.txt),
+[kernel supporting review](evidence/milestone-019/kernel-support/) and
+[XFS evidence](evidence/milestone-019/xfs-geometry/) preserve the bounded text
+receipts. Original generated binaries/images are retained locally and omitted
+from source with exact hashes/reasons; original manifests remain distinguishable
+from source-included manifests. An initial staging-layout mismatch was rejected
+before adoption and documented. No AMD PDF or copied specification tables are
+redistributed. Independent distribution review caught four copied reference extracts
+in the initial supporting bundle. They were moved outside source unchanged, with
+exact omission hashes/reasons; the initial byte-valid archives remain unaccepted
+and are not publication sources. The corrected source archives are byte-preserving
+and independently audited. Five inherited complete QEMU C references were also
+omitted from the M019 source distribution, with unchanged external originals,
+source URLs, hashes and distinct historical/current manifests retained;
+the documented archive-only 0700-to-Git100755 script representation never changes
+the live source permission. Functional verification is not remote publication.
+
+
+## Milestone020: bounded concrete nested generic values
+
+Verified locally 2026-10-03. The parent adopted 18 exact reviewed paths from the
+isolated candidate after checking original base hashes and candidate hashes.
+Only four compiler implementation headers changed (`parser.hpp`, `types.hpp`,
+`templates.hpp`, `modules.hpp`); no kernel/runtime implementation changed. The
+extension resolves fully concrete nested template-id children before parents and
+reuses existing nominal identity, visibility, class/value-copy and metadata checks.
+It adds no IR instruction, backend operation, ABI or calling convention.
+
+Template-id nesting four is independent of class-containment depth four. Existing
+64 leaves, 64 template definitions, 256 total concrete instances including inner
+instances, and literal capacities 1..64 remain separate bounds. Dependent template
+bodies, recursive instantiation, deduction, owners/references as arguments and C
+compatibility remain excluded. The native token/source-range example returns 42
+after checking independent copied token bytes and range data. See the
+[nested-value contract](../compiler/NESTED-VALUES.md).
+
+### Exact identities and compiler evidence
+
+- Release compiler SHA256:
+  `e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6`.
+- Fatal ASan/UBSan compiler SHA256:
+  `78379d081bfae56608a6a60e72bc290e9abd68e88b1a9c3e96f93d25b007cfb5`.
+- Frozen baseline compiler SHA256:
+  `14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980`.
+- Frozen implementation manifest SHA256:
+  `4a9847eddc4419cf032ac449ec63f64bee808ca480fdaf3512616e39c56ca9a9`.
+
+Both complete compiler targets exited 0 on the final isolated inputs. Each
+includes 313 focused checks (129 native returns, 24 exact-site bounds traps,
+80 rejection fixtures run with absent and existing outputs), 960 typed IR cases,
+10 exhaustive-dispatch controls, 18 native receiver-array IR cases and all prior
+compiler/library/numeric/model suites. The alternate seed repeats the same focused
+contract and is not additive. Instrumentation applies to the host compiler/C++
+tests; emitted native Aurora machine code is not itself ASan-instrumented.
+
+Serial compiler builds retain a 2 GiB address-space cap, CPU120/130s, wall180s,
+regular-file512MiB/core0 limits. Runtime ASan processes do not inherit the build
+address cap. Full-debug instrumented compiler build: 45.88s / 1,445,480 KiB peak
+RSS. Instrumented IR-test build uses the retained `-g1` debug-only accommodation:
+63.40s / 1,655,932 KiB peak RSS. Fatal ASan/UBSan checks were unchanged;
+LeakSanitizer alone remains disabled for the known tracing limitation. The initial
+release build used 2,304 MiB; the final release reproduction used 2 GiB and matched
+the release hash byte-for-byte. These measurements are finite observations, not
+whole-task resource bounds or equivalent-C performance claims.
+
+The baseline-compatible differential corpus has 1,639 invocations from 1,398
+source hashes: all 821 accepted assembly outputs are byte-identical and all 818
+rejection statuses agree. Independent review passed the same 78 adversarial cases
+on each compiler (31 native successes, 47 ordinary rejections) and an independent
+694-source arithmetic differential control (520 accepted, 174 rejected), with no
+status or assembly difference. These overlapping corpora must not be summed into
+unique coverage or interpreted as whole-compiler safety proof. No actionable
+implementation defect was reproduced within the reviewed scope.
+
+### Parent integration and restoration
+
+The parent rebuilt the adopted release compiler, verified the exact release pin,
+and completed `make test` with exit 0. It then ran three actual UEFI profiles:
+
+- `./scripts/kernel-uefi-smoke.sh runtime-span`: exit 0; compiled readonly-value
+  behavior returned 42 and restored the domain/root.
+- `./scripts/kernel-uefi-smoke.sh runtime-pin-fault`: exit 0; retained compiler
+  fault containment and CPU-only pin-ledger contract passed.
+- `./scripts/kernel-uefi-smoke.sh normal`: exit 0; final clean language result 42
+  and `AURORA_UEFI_OK`, with the normal image restored.
+
+The 359 captured source inputs and 183 external pins were unchanged throughout
+these gates. Final acceptance documentation is a separately recorded text-only
+change after testing; no implementation/test input was changed. This is three
+fresh selected profiles, not a fresh full 166-mode qualification. M019 remains
+the historical full-suite evidence for the unchanged kernel implementation.
+No physical AMD support, device DMA, active IOMMU, interrupt isolation, XFS mount,
+self-hosting, owned-string or full standard-library capability follows.
+
+### Historical failures and distribution evidence
+
+Original nonzero development attempts are retained: stale nested-argument
+rejection expectations, a not-yet-written focused suite, a reserved-name fixture,
+a missing pinned XFS proposal document in the source-only candidate, and an
+incorrect source-first CLI assumption in the differential wrapper. Each is
+identified in the unchanged candidate verification record with its own exit/log;
+none is relabeled as a pass. The unsupported assignment-expression fixture and
+other early focused logs also remain preserved.
+
+[M020 evidence](evidence/milestone-020/README.md) includes byte-preserved candidate
+and independent receipts, exact parent logs/statuses and source/external manifests,
+source-delta provenance, copied-file hashes and an explicit omission ledger. The
+original evidence ZIP contains 152 hash-listed payload members plus its manifest
+(153 ZIP entries); all member hashes match the originals. Generated binaries,
+assembly products, binary archives, full build/tmp trees and duplicate source
+archives remain outside source. No third-party reference extract or secret is
+added. Historical candidate acceptance statements remain labeled as historical.
+M019 archives are immutable and unchanged. Source archive audit/publication status
+is recorded separately from functional acceptance; no remote action is implied.
+
+
+## Milestone021: bounded explicit copied-value function templates
+
+Verified locally 2026-10-03. Parent adopted exactly 18 base/candidate-hash-checked
+paths and rebuilt the identical reviewed release compiler. The implementation
+adds finite namespace-level explicit one/two Scalar/Value function-template
+instantiation and real std::make_pair<T,U>. It deep-copies concrete function ASTs,
+uses existing exact nominal authority and copied-value boundaries, and adds no
+IR instruction, backend operation, runtime generic representation or ABI.
+The [contract](../compiler/FUNCTION-TEMPLATES.md) defines eager structural/privacy
+checks versus deferred ordinary validity for unrequested tuples. Class/function
+graph limits are combined 64 definitions/256 instances; class nominal/containment
+depths, leaves, array capacities and frames remain separately checked.
+
+### Exact pins and finite compiler evidence
+
+- Release compiler: d866abc707349ca8652a966800d38bd920bd41345997f08e4b849c9bfc3b7b64.
+- ASan/UBSan compiler: 423db8bcf0642263e445582107c73f967decdc13132f2bd98a973fce2db03d0f.
+- Immutable M020 compiler: e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6.
+- Compiler-source manifest: 7d073cd0ec17d7da500baea3b66e6cf810fe21af235d6e99cc5ea4924df4d65e.
+- Adoption manifest: 6e0dbfb3c5d9a15755d741b7a8c78f1ef48578a08c99136c3c3c6e9e1fb4c48b.
+
+Both complete compiler targets exited zero. Each includes 227 focused fixtures /
+349 executions: 81 native returns, 24 exact-site traps and 122 negative fixtures
+run with absent and existing output. The same focused suite passed a fatal-abort
+sanitizer replay. The aggregate also passes 964 direct IR cases, ten exhaustive
+controls and all existing native ABI/library/numeric/module/host-I/O suites.
+Independent review passes 46 fixtures (24 native, 22 negatives) plus 22 absent-output
+checks on both release and fatal instrumented compilers. Owner M020 differential
+checks 232 unchanged contract fixtures (224 source hashes): 153 byte-identical
+accepted assemblies and 79 matching rejections, plus 36 unchanged example/program
+sources. Corpora and repeat runs overlap and are not additive unique coverage.
+Two formerly blanket function-template negatives changed to still-unsupported
+forms; the newly accepted unused definition is explicitly excluded from the final
+differential, with the original expected difference retained.
+
+Instrumentation covers the compiler host/C++ tests, not generated native Aurora
+machine code. ASan/UBSan errors remain fatal; leak detection alone is disabled for
+the documented tracing limitation. Final C++ builds use the locked serial wrapper:
+2 GiB address space, CPU120/130s, wall180s, regular-file512MiB, core0. Runtime ASan
+does not inherit the build address cap. Full-debug sanitizer compiler build took
+46.62s / 1,437,796 KiB peak RSS; instrumented IR build peaked at 1,657,196 KiB with
+the retained IR-only -g1 accommodation. Initial exploratory observer compiles
+lacked that explicit wrapper; the initial release build had only the shell address
+cap. These exceptions remain disclosed rather than relabeled as bounded builds.
+No whole-compiler safety/resource proof or equivalent-C performance is claimed.
+
+### Reproduced defects and retained development failures
+
+Independent review reproduced parameter-qualified names hidden in argument trees,
+including namespace collisions, and receiver-method precedence incorrectly blocked
+by unrelated function-template names. Recursive structural-name validation and
+receiver-aware lookup fixed them; final independent release/fatal replay passes.
+Owner tests also exposed fixed exported-signature privacy leakage, corrected by
+eager recursive visibility checks. Original failures, reproductions, fixes and
+final source pins are retained byte-for-byte. Other preserved failures include
+unavailable /usr/bin/time, a non-empty-constructor test outside the existing
+contract, initially omitted pinned XFS proposal dependency, and a new IR check's
+wrong expected diagnostic. No failing attempt is silently recast as a pass.
+
+### Parent integration, curation and archival boundary
+
+Fresh parent make test exited zero on the rebuilt reviewed release pin. Actual
+runtime-span, runtime-pin-fault and final normal UEFI profiles all exited zero;
+normal returned 42 with AURORA_UEFI_OK and restored the normal image. All 363
+captured source inputs and 183 external pins stayed unchanged through these gates.
+Final acceptance documentation is a separately recorded text-only change afterward;
+implementation/test/fixture bytes remain the reviewed ones. This is three fresh
+selected profiles, not a fresh full 166-mode run. M019 remains the historical
+full-suite checkpoint for unchanged kernel implementation.
+
+[M021 evidence](evidence/milestone-021/README.md) provides exact copied-file mapping,
+byte hashes, parent statuses/input manifests, independent review, original failed
+receipts and capped-build exceptions. Generated assembly/binaries/archives and
+sentinel binary outputs remain unchanged outside source with exact omission
+inventories; archive-member JSON receipts describe external generated products.
+No binary product, reference extract, secret or carrier helper is added to source.
+M019/M020 archives remain immutable. Raw-source archive/canonical Git audit is a
+separate bounded tree-only gate; no large JSON export, publication, hardware,
+active DMA, filesystem mount or native self-hosting claim follows.

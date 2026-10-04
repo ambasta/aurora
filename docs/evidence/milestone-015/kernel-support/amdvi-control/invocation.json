@@ -1,0 +1,54 @@
+{
+  "argv": [
+    "/tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64",
+    "-L",
+    "/tmp/aurora-qemu/firmware",
+    "-machine",
+    "q35",
+    "-accel",
+    "tcg",
+    "-cpu",
+    "qemu64",
+    "-smp",
+    "1",
+    "-m",
+    "128M",
+    "-nodefaults",
+    "-S",
+    "-nic",
+    "none",
+    "-display",
+    "none",
+    "-serial",
+    "none",
+    "-monitor",
+    "none",
+    "-no-reboot",
+    "-no-shutdown",
+    "-device",
+    "amd-iommu,pt=off,intremap=off,device-iotlb=off,xtsup=off",
+    "-qmp",
+    "stdio",
+    "-qtest",
+    "pipe:/tmp/aurora-m015-amdvi-control/qtest",
+    "-qtest-log",
+    "/tmp/aurora-m015-amdvi-control/qtest-native.log",
+    "-trace",
+    "events=/tmp/aurora-m015-amdvi-control/trace-enable-events.txt,file=/tmp/aurora-m015-amdvi-control/trace.log"
+  ],
+  "environment_override": {
+    "LD_LIBRARY_PATH": "/tmp/aurora-qemu/root/usr/lib/x86_64-linux-gnu"
+  },
+  "qemu_sha256": "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067",
+  "control_script_sha256": "538f2d66c356635084d550f3b7c7033a7414294be87c6c988f05565f4898ef91",
+  "transport": {
+    "qmp": "child stdin/stdout",
+    "qtest": "local filesystem FIFOs"
+  },
+  "purpose": "Separate trace coverage control; one already-zero CTRL write. CPUs never started; no guest firmware execution or guest storage.",
+  "firmware_note": "No explicit firmware image is supplied. Q35 default BIOS may be mapped from -L, but -S and absence of cont ensure it never executes.",
+  "limitations": [
+    "pt=off is not DMA isolation",
+    "amdvi_mmio_write event does not cover valid writes in the pinned source"
+  ]
+}

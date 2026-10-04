@@ -34,9 +34,9 @@ auto answer(i64 input) -> i64 {
 ```
 
 - Each file declares `module name;` or an importable `export module name;`. Named imports, export visibility and namespace blocks now work with explicit `--module-root` directories; see MODULES.md. Separate binary compilation/linking remains deferred.
-- Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar or bounded inline class parameters, forward calls and ordinary-function recursion work. Class values use a separate checked native value-call convention; see VALUE-CALLS.md. Parameters are immutable in this bootstrap subset; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
+- Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar, bounded inline class, or readonly byte-span parameters work on ordinary functions, including synchronous forwarding and ordinary recursion. The span boundary is an independently reviewed milestone014 candidate; see SPANS.md. Class values use a separate checked native value-call convention; see VALUE-CALLS.md. Parameters are immutable in this bootstrap subset; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
 - Local declarations are `const Type name = initializer;` or `Type name = initializer;`. Initialization is mandatory. Const scalar/aggregate locals cannot be assigned; unqualified scalar locals and scalar fields/elements of unqualified aggregates can be assigned. Ownership binding rules are stricter below.
-- Scalar types are `i64`, `u64`, `u8` and `bool` in the milestone013 development candidate. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
+- Scalar types are `i64`, `u64`, `u8` and `bool` since milestone013. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
 - Blocks, `if (bool) { ... } else { ... }`, `while (bool) { ... }`, `return`, and `static_assert` are supported. `break`, `continue`, and `for` are deferred.
 - Functions must return on every statically continuing path. A while-loop is conservatively allowed to run zero times even for literal `true`, so it does not by itself prove a function returns. Unreachable statements following an unconditional return are rejected.
 - Decimal integers (u64 literals use the exact `u64` suffix), booleans, parentheses, signed unary `-`, bool `!`, arithmetic and comparisons are supported. U64 adds exact 64-bit `~ & | ^`, checked `<<` and logical `>>` with i64 counts, plus explicit checked integer conversions. There are no implicit scalar conversions, pointer arithmetic, increment operators, or short-circuit boolean operators. See [the exact unsigned contract](UNSIGNED.md).
@@ -137,7 +137,7 @@ The compiler implements ordinary class-value function boundaries and the real sc
 
 The current unsigned candidate adds the real scalar-specialized `std.bit` module, checked u64 arithmetic/conversions and explicit bit operations. [UNSIGNED.md](UNSIGNED.md) specifies failure sites, exact 64-bit behavior, type identity and limits. Ownership/reference types remain i64-only; this is not a raw-memory or general numeric-conversion API.
 
-The current class-template candidate adds one or two explicit builtin Scalar- or Value-constrained type parameters, or one Scalar plus a bounded i64 capacity parameter and the real `std.utility` module exporting `std::pair<T,U>`. Specializations are concrete nominal classes checked by the existing class/value-call pipeline. [TEMPLATES.md](TEMPLATES.md) defines visibility, substitution, identity, caps and deferred generic features. This does not add function templates, nested arguments, deduction or general concepts.
+The current class-template candidate adds one or two explicit builtin Scalar- or Value-constrained type parameters, or one Scalar plus a bounded i64 capacity parameter and the real `std.utility` module exporting `std::pair<T,U>`. Specializations are concrete nominal classes checked by the existing class/value-call pipeline. [TEMPLATES.md](TEMPLATES.md) defines visibility, substitution, identity, caps and deferred generic features. Verified milestone020 adds fully concrete nested arguments under [NESTED-VALUES.md](NESTED-VALUES.md). M021 adds the separately verified explicit copied-value function-template subset and `std::make_pair<T,U>` under [FUNCTION-TEMPLATES.md](FUNCTION-TEMPLATES.md), sharing 64 definitions/256 instances across class and function templates. Nested dependent expansion, deduction and general concepts remain excluded.
 
 The current fixed-container candidate adds real `std.array`/`std::array<T,N>` with completely zero-initialized private `builtin::array<T,N>` storage, copied at(), mutable set() and size(). The unqualified array type is a globally fixed builtin alias, never an injected wrapper name. See [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md) for exact naming, capacity, flattened-layout and receiver-bound evidence rules.
 
@@ -153,3 +153,17 @@ The milestone013 development candidate adds checked bytes and real recoverable
 `std.bytes` endian codecs. See [BYTES.md](BYTES.md) for the separate numeric and
 packed-layout gates, explicit representation/ABI rules and pending independent
 review. A successful numeric-only gate does not establish compact storage.
+
+## Readonly byte-span candidate
+
+The milestone014 candidate supports `const builtin::span<const u8>` locals
+acquired from a named local builtin byte array with `borrow_bytes`. Readonly
+reborrows can be forwarded synchronously through ordinary functions. Owner writes
+are rejected while a borrow is live; scope exit and returns release capabilities
+in dependency order. There are no returned spans, mutable spans, class fields,
+wrapper-private-field exceptions, arbitrary pointer/length constructors or
+reflection/conversion access to capability storage. See [SPANS.md](SPANS.md).
+
+The real std.binary module reads four-byte endian values from a borrowed input
+and returns an independent recoverable ByteReadResult. Complete author release/sanitizer and independent compiler checks pass on the
+corrected static-site candidate; final parent/kernel integration remains pending.

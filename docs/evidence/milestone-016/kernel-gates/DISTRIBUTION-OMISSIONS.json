@@ -1,0 +1,422 @@
+{
+  "ivrs/ivrs-capability/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-capability/payload.elf": {
+    "sha256": "4624e067d2272619d6b3b6a2163b468649638ea21853c923d78d96733b82a5cb",
+    "bytes": 61040,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-capability/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-capability/payload.bin": {
+    "sha256": "fad3ee1ec2191a4a4c70e13b049e1ae96dc628a611ca4a88a215fc23978a00d3",
+    "bytes": 51374,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-write/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-write/payload.elf": {
+    "sha256": "bf8147cef30b09034415793c23041929465a8af4c845efcd39811ba5ed8fcdae",
+    "bytes": 61024,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-write/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-write/payload.bin": {
+    "sha256": "6e14b2c60184138e640b5d469c8352eab45cb6a25e5c5e6e7185a304d3046bdb",
+    "bytes": 51310,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-range/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-range/payload.elf": {
+    "sha256": "d957bb5bcf88b27d185380771791aae64a93730a9ff2a85e33528fad216d9409",
+    "bytes": 61112,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-range/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-range/payload.bin": {
+    "sha256": "547d67f5ebaa3d0e695f41dfc27cc88d5fa188fd86d037b0594bebecd407a848",
+    "bytes": 51446,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-missing/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-missing/payload.elf": {
+    "sha256": "02fd650512455f73ee2f1fd3b37216372d44df642a67c13c035d86810cf81620",
+    "bytes": 61040,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-missing/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-missing/payload.bin": {
+    "sha256": "a56b5d3646d8a9116efd128c52e57b1ce570dfb21cc0e4afc1e91f507d902c80",
+    "bytes": 51374,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-pair/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-pair/payload.elf": {
+    "sha256": "4e0c48fc2bf41ae81c991e2333877a19c84b48e5e5c0ac977fda9c45430a51ba",
+    "bytes": 61040,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-pair/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-pair/payload.bin": {
+    "sha256": "9e9c8b33f08f40a3fbb95ee561efe79fafeb97192aa9dc8b3e398f0cdbe5d8a1",
+    "bytes": 51374,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-revoked/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-revoked/payload.elf": {
+    "sha256": "0882460feab5d09328bb811f1df8effdeba4f4d0d70b4452819f05441048b3c4",
+    "bytes": 61088,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-revoked/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-revoked/payload.bin": {
+    "sha256": "1d2adb8474e9b3386d222d0262d39586854774c394fda0eedceee40031b62563",
+    "bytes": 51374,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-alias/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-alias/payload.elf": {
+    "sha256": "4398d8a963fbb64383b719403481e08b6aad22ec28ec6749929c94e79162880f",
+    "bytes": 61040,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-alias/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-alias/payload.bin": {
+    "sha256": "e558deec46320baaa5a40291ae17b61bb217dd71f1e60c60b90139e289986cfa",
+    "bytes": 51374,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-read/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-read/payload.elf": {
+    "sha256": "02fd650512455f73ee2f1fd3b37216372d44df642a67c13c035d86810cf81620",
+    "bytes": 61040,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-read/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-read/payload.bin": {
+    "sha256": "a56b5d3646d8a9116efd128c52e57b1ce570dfb21cc0e4afc1e91f507d902c80",
+    "bytes": 51374,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-default/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-default/payload.elf": {
+    "sha256": "ab7912312474efd7484c7602ffd6e2d5166646fab5ac1e9b0d4ad8a06d0f3a0b",
+    "bytes": 61032,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-default/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-default/payload.bin": {
+    "sha256": "cdf89a839934f601891fafd0528d3a874326a3a8c7f401f389a4decbea14dc77",
+    "bytes": 51366,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-reserved/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-reserved/payload.elf": {
+    "sha256": "04e6f00e9ad0957ad1a93f802c645b894f65a8c938d03a1feaa9ff6840e9cc54",
+    "bytes": 61040,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-reserved/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-reserved/payload.bin": {
+    "sha256": "482350046109bfb83bb6919cf584a1e4b514bbd8d8ae6ddb6ac3b6dfbdb0be94",
+    "bytes": 51374,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-scope/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-scope/payload.elf": {
+    "sha256": "9a40f3dbdaacd4e149fb9547afe777725b6a6815e394c266c08a034a5bbc86d1",
+    "bytes": 61040,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-scope/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "ivrs/ivrs-scope/payload.bin": {
+    "sha256": "ef601d2b219ddc0d0c105a67c761f3637e600f866213429aad2bb8e96670324a",
+    "bytes": 51372,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-capability/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "68913a7a46560472696bdf90820fb71e686f9051d7e5911537e366a64a8d044c",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-write/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "ba22a078f5766f8e5a5e68c8b88663d265dcbbd265479384bc672aa2c896d3ac",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-range/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "1a2b87d4d17d4b65470834c07c5bb06f8dec0748e17baa241d91d2c10f75c3a5",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-missing/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "0d4d4d86fbc99bf1096ec8d04a05d0e2b193771f69611a71c014b0d311c4f457",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-pair/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "043d712564032905e9636a35411152b0790b327027cc34579ebf94412d16c1de",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-revoked/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "c3d58fa512aa9c3c14733bf333350f22130980c1744b5cf5ad2445446b63874f",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-alias/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "35427d9bade66c515b62a246660c93697ab77147229ac84102a567335d2e83b9",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-read/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "0d4d4d86fbc99bf1096ec8d04a05d0e2b193771f69611a71c014b0d311c4f457",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-default/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "57cc4c451751fa36ea792ba256c8677c3b96778b306a10bc740671f186ce3d34",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-reserved/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "bb891c3bf8d3ff69c4e8f7104219c5c60f6c09df8bca25861d283b132835388f",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "ivrs/ivrs-scope/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "37451c71e0b36415b1f9d089be6c38eba84bbda163cd47af99885dfe8820a34e",
+    "bytes": 76275,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-inherited/payload.elf": {
+    "sha256": "c5c3a50ef1908621a4b33f639aa32565931a7841578fa21841e563c1d99af9ab",
+    "bytes": 47120,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-inherited/payload.bin": {
+    "sha256": "7e4dafa0cd9da9ab5f6ad095098939acb265ef0ca39c53ff01a820b8e427fce3",
+    "bytes": 38478,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-write/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "bar/bar-write/payload.elf": {
+    "sha256": "257c03712b7f81c03d94e140c3f69ba3dca39f7069a6e2ae3bc9f885e70a53e7",
+    "bytes": 47264,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-write/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "bar/bar-write/payload.bin": {
+    "sha256": "5ea7fc5854a14f6cd94ab6ee2138aefc62a2e2c891c277d6eff4105d76a199e2",
+    "bytes": 38502,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-alias/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "bar/bar-alias/payload.elf": {
+    "sha256": "8f53e8513a8412bf90a4000efae74cb9d4985643afa08f9497d57f4cd09917de",
+    "bytes": 42424,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-alias/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "bar/bar-alias/payload.bin": {
+    "sha256": "abf2fb3ce239f51b7e036de1496fc8bb7e2f8508ab6eb0d0374e996803c22987",
+    "bytes": 34158,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-read/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "bar/bar-read/payload.elf": {
+    "sha256": "c5c3a50ef1908621a4b33f639aa32565931a7841578fa21841e563c1d99af9ab",
+    "bytes": 47120,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-read/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "bar/bar-read/payload.bin": {
+    "sha256": "7e4dafa0cd9da9ab5f6ad095098939acb265ef0ca39c53ff01a820b8e427fce3",
+    "bytes": 38478,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-state/payload.elf": {
+    "sha256": "1e6b481af95c43a67799fa50c565698d9023b1576f02b637f437e24d66d7cacf",
+    "bytes": 37464,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-state/payload.bin": {
+    "sha256": "de9cf3de46501939c0464fdce58022b0091d66e90a654f29a85082983c2a1b6c",
+    "bytes": 29926,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-revoked/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "bar/bar-revoked/payload.elf": {
+    "sha256": "ab1e6b63aa9ed29c23b53e594376dadb3ec63607886524ad1b6424ccf44cf74f",
+    "bytes": 47168,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-revoked/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "bytes": 540672,
+    "reason": "third-party firmware"
+  },
+  "bar/bar-revoked/payload.bin": {
+    "sha256": "69029c2fdaaac403f6c6afb7413d9ae695964199563c759b87b5be8504ec8e61",
+    "bytes": 38478,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-capture/payload.elf": {
+    "sha256": "be7a117541307d656b2c75e955591e3a30afbdb20b75215d45f584fc1987287d",
+    "bytes": 47120,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-capture/payload.bin": {
+    "sha256": "3253d96cbca649a2b7c08657dd11030453ffb0d27359dd1a6bbd4603fbf42e9b",
+    "bytes": 38478,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-inherited/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "ba0f54f67452bf6659e1c858cd87bd58acb097692ce921190007221066171ef7",
+    "bytes": 63475,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-write/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "582404158ee4f1017bb40d3453c12edeb6578d38731d26ad2cdfc31e4b96c2b1",
+    "bytes": 63475,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-alias/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "f28e42698538cb9134621de07ade02fd0e580951dc6111e6fb257dee222a8090",
+    "bytes": 58867,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-read/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "ba0f54f67452bf6659e1c858cd87bd58acb097692ce921190007221066171ef7",
+    "bytes": 63475,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-state/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "d41fea1fca56a8dbff88c5c757395bfeaf02d055a1529ce6bd6b16f87435c991",
+    "bytes": 45241,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-revoked/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "5b249194c3391a9ff2bbf99a66b0d2a6ef47526e4ae98d985548733a8d7f6f0e",
+    "bytes": 63475,
+    "reason": "generated executable; original local audit retained"
+  },
+  "bar/bar-capture/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "7b765341675a648d94d3c3ead2e374cd4a1995578fba411304741c768430d5ed",
+    "bytes": 63475,
+    "reason": "generated executable; original local audit retained"
+  }
+}

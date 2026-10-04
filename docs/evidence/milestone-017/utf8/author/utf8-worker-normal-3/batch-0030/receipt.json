@@ -1,0 +1,28 @@
+{
+  "cases": [
+    "public invalid_sequence report scalar 55296",
+    "public invalid_sequence report scalar 57343",
+    "public invalid_sequence report scalar 57344",
+    "public invalid_sequence report scalar 1114111",
+    "public invalid_sequence report scalar 1114112",
+    "public invalid_sequence report scalar 18446744073709551615",
+    "public truncated report scalar 0",
+    "public truncated report scalar 55295",
+    "public truncated report scalar 55296",
+    "public truncated report scalar 57343",
+    "public truncated report scalar 57344",
+    "public truncated report scalar 1114111"
+  ],
+  "source_bytes": 2284,
+  "source_sha256": "c254026357f2f33d01f58130fe89f4b9898781977faf4340dd6cf11aa4877e4e",
+  "status": "passed",
+  "observation": {
+    "exit_code": 0,
+    "terminal_signal": null,
+    "delivery_signal": null,
+    "pc": null,
+    "instruction": null,
+    "signal_code": null
+  },
+  "seconds": 0.023246
+}

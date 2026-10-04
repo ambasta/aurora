@@ -1,0 +1,15 @@
+{
+  "command": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+    "-B",
+    "/workspace/scratch/48c5de6446f8/aurora/fixtures/xfs-offline/verify_native.py",
+    "--transport-self-test-only"
+  ],
+  "extra_environment": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "exit_code": 0,
+  "duration_seconds": 0.035,
+  "stdout": "PASS 17 hex transport rejection controls and exact raw/transport hashes\n",
+  "stderr": ""
+}

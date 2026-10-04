@@ -1,0 +1,13 @@
+{
+  "make_test_exit": 0,
+  "actual_spots": {
+    "runtime-span": 0,
+    "runtime-pin-fault": 0,
+    "normal": 0
+  },
+  "unchanged_prior_inputs": 246,
+  "input_mismatches": [],
+  "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "fresh_full162_run": false,
+  "scope": "Owned-value library extension on unchanged compiler/kernel. Prior full162 is M016 evidence; fresh aggregate and three existing smoke profiles passed."
+}

@@ -14,8 +14,10 @@ interchangeable. Arguments must be visible through the requesting module's own
 scope or direct imports. Public nested fields and public constructor signatures
 participate in that visibility closure. Exporting a specialization cannot expose
 a private argument type; generated bodies retain their defining scope without
-granting callers access to its private classes. Nested template-id arguments, reference/resource types,
-deduction and recursive template instantiation remain unsupported.
+granting callers access to its private classes. Fully concrete nested template-id
+arguments are supported up to four template-id levels under NESTED-VALUES.md.
+Reference/resource types, deduction and dependent/recursive template-body
+instantiation remain unsupported.
 
 A class can contain a class-valued field. Such a class must declare a complete
 constructor. Its initializer list copies a complete, exact-type named constructor

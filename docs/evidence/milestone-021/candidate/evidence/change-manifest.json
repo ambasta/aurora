@@ -1,0 +1,20 @@
+{
+  "changed": [
+    "compiler/Makefile",
+    "compiler/modules.hpp",
+    "compiler/parser.hpp",
+    "compiler/semantics.hpp",
+    "compiler/syntax.hpp",
+    "compiler/templates.hpp",
+    "compiler/types.hpp",
+    "library/std/utility.au",
+    "tests/compiler/ir_tests.cpp",
+    "tests/compiler/nested_values.py",
+    "tests/compiler/templates.py"
+  ],
+  "added": [
+    "compiler/FUNCTION-TEMPLATES.md",
+    "examples/function_token_values.au",
+    "tests/compiler/function_templates.py"
+  ]
+}

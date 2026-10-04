@@ -1,0 +1,245 @@
+{
+  "build_receipts": 97,
+  "maximum_cxx_rss_kib": 1657196,
+  "maximum_recorded_candidate_bytes": 355665735,
+  "minimum_recorded_free_bytes": 1541660672,
+  "current_candidate_file_bytes": 185770388,
+  "current_free_bytes": 1725071360,
+  "final_compiler_builds": [
+    {
+      "command": [
+        "g++",
+        "-std=c++23",
+        "-O1",
+        "-g",
+        "-fsanitize=address,undefined",
+        "-fno-sanitize-recover=all",
+        "-fno-omit-frame-pointer",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-Werror",
+        "compiler/main.cpp",
+        "-o",
+        "build/san/aurorac"
+      ],
+      "returncode": 0,
+      "wall_timeout": false,
+      "elapsed_seconds": 46.61729374200513,
+      "peak_rss_kib": 1437796,
+      "address_space_bytes": 2147483648,
+      "cpu_seconds": [
+        120,
+        130
+      ],
+      "wall_seconds": 180,
+      "regular_file_bytes": 536870912,
+      "candidate_bytes_before": 94045236,
+      "candidate_bytes_after": 125954284,
+      "free_bytes_after": 1785769984,
+      "receipt": "evidence/build-1791064714686337146.json"
+    },
+    {
+      "command": [
+        "g++",
+        "-std=c++23",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-Werror",
+        "compiler/main.cpp",
+        "-o",
+        "build/aurorac"
+      ],
+      "returncode": 0,
+      "wall_timeout": false,
+      "elapsed_seconds": 20.15537999299704,
+      "peak_rss_kib": 699448,
+      "address_space_bytes": 2147483648,
+      "cpu_seconds": [
+        120,
+        130
+      ],
+      "wall_seconds": 180,
+      "regular_file_bytes": 536870912,
+      "candidate_bytes_before": 39640456,
+      "candidate_bytes_after": 39674861,
+      "free_bytes_after": 1875628032,
+      "receipt": "evidence/build-1791063987672407486.json"
+    },
+    {
+      "command": [
+        "g++",
+        "-std=c++23",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-Werror",
+        "compiler/main.cpp",
+        "-o",
+        "build/aurorac"
+      ],
+      "returncode": 0,
+      "wall_timeout": false,
+      "elapsed_seconds": 19.97627329399984,
+      "peak_rss_kib": 700528,
+      "address_space_bytes": 2147483648,
+      "cpu_seconds": [
+        120,
+        130
+      ],
+      "wall_seconds": 180,
+      "regular_file_bytes": 536870912,
+      "candidate_bytes_before": 5571056,
+      "candidate_bytes_after": 5571056,
+      "free_bytes_after": 1910517760,
+      "receipt": "evidence/build-1791063416744164784.json"
+    },
+    {
+      "command": [
+        "g++",
+        "-std=c++23",
+        "-O1",
+        "-g1",
+        "-fsanitize=address,undefined",
+        "-fno-sanitize-recover=all",
+        "-fno-omit-frame-pointer",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-Werror",
+        "-I.",
+        "../tests/compiler/ir_tests.cpp",
+        "-o",
+        "../build/san/ir-tests"
+      ],
+      "returncode": 0,
+      "wall_timeout": false,
+      "elapsed_seconds": 63.7737272069935,
+      "peak_rss_kib": 1657196,
+      "address_space_bytes": 2147483648,
+      "cpu_seconds": [
+        120,
+        130
+      ],
+      "wall_seconds": 180,
+      "regular_file_bytes": 536870912,
+      "candidate_bytes_before": 324291487,
+      "candidate_bytes_after": 355665735,
+      "free_bytes_after": 1541660672,
+      "receipt": "evidence/build-1791065071069157564.json"
+    },
+    {
+      "command": [
+        "g++",
+        "-std=c++23",
+        "-O1",
+        "-g",
+        "-fsanitize=address,undefined",
+        "-fno-sanitize-recover=all",
+        "-fno-omit-frame-pointer",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-Werror",
+        "compiler/main.cpp",
+        "-o",
+        "build/san/aurorac"
+      ],
+      "returncode": 0,
+      "wall_timeout": false,
+      "elapsed_seconds": 47.243309951998526,
+      "peak_rss_kib": 1436752,
+      "address_space_bytes": 2147483648,
+      "cpu_seconds": [
+        120,
+        130
+      ],
+      "wall_seconds": 180,
+      "regular_file_bytes": 536870912,
+      "candidate_bytes_before": 6603864,
+      "candidate_bytes_after": 38507350,
+      "free_bytes_after": 1876799488,
+      "receipt": "evidence/build-1791063926174702149.json"
+    },
+    {
+      "command": [
+        "g++",
+        "-std=c++23",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-Werror",
+        "compiler/main.cpp",
+        "-o",
+        "build/aurorac"
+      ],
+      "returncode": 0,
+      "wall_timeout": false,
+      "elapsed_seconds": 20.2898561010079,
+      "peak_rss_kib": 699840,
+      "address_space_bytes": 2147483648,
+      "cpu_seconds": [
+        120,
+        130
+      ],
+      "wall_seconds": 180,
+      "regular_file_bytes": 536870912,
+      "candidate_bytes_before": 67629796,
+      "candidate_bytes_after": 67629796,
+      "free_bytes_after": 1848619008,
+      "receipt": "evidence/build-1791064313559900715.json"
+    },
+    {
+      "command": [
+        "g++",
+        "-std=c++23",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-Werror",
+        "compiler/main.cpp",
+        "-o",
+        "build/aurorac"
+      ],
+      "returncode": 0,
+      "wall_timeout": false,
+      "elapsed_seconds": 20.57387069000106,
+      "peak_rss_kib": 700084,
+      "address_space_bytes": 2147483648,
+      "cpu_seconds": [
+        120,
+        130
+      ],
+      "wall_seconds": 180,
+      "regular_file_bytes": 536870912,
+      "candidate_bytes_before": 5865209,
+      "candidate_bytes_after": 5869441,
+      "free_bytes_after": 1909678080,
+      "receipt": "evidence/build-1791063640057017036.json"
+    }
+  ],
+  "expected_exhaustive_rejection_receipts": [
+    "evidence/build-1791064580389436364.json",
+    "evidence/build-1791064581815202399.json",
+    "evidence/build-1791064584047110288.json",
+    "evidence/build-1791064585378968192.json",
+    "evidence/build-1791064587655051370.json",
+    "evidence/build-1791064588984068450.json",
+    "evidence/build-1791064591155813481.json",
+    "evidence/build-1791064592474330682.json",
+    "evidence/build-1791065092736320853.json",
+    "evidence/build-1791065094020968835.json",
+    "evidence/build-1791065096316977332.json",
+    "evidence/build-1791065097598129098.json",
+    "evidence/build-1791065099681860991.json",
+    "evidence/build-1791065100966643064.json",
+    "evidence/build-1791065103154016657.json",
+    "evidence/build-1791065104391216048.json"
+  ],
+  "no_unexpected_recorded_build_failures": true
+}

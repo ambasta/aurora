@@ -1,0 +1,24 @@
+checked 16 / 2016, mismatches 0
+checked 176 / 2016, mismatches 0
+checked 336 / 2016, mismatches 0
+checked 496 / 2016, mismatches 0
+checked 656 / 2016, mismatches 0
+checked 816 / 2016, mismatches 0
+checked 976 / 2016, mismatches 0
+checked 1136 / 2016, mismatches 0
+checked 1296 / 2016, mismatches 0
+checked 1456 / 2016, mismatches 0
+checked 1616 / 2016, mismatches 0
+checked 1776 / 2016, mismatches 0
+checked 1936 / 2016, mismatches 0
+{
+  "compiler": "/tmp/aurora-resource-main-compiler-frozen",
+  "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "module_sha256": "c67c03928e0d4cf5896178906bd447523ec15b57cc95c4ade8b8330305a77864",
+  "seed": 193706,
+  "unique_inputs": 2016,
+  "passed": 2016,
+  "failures": [],
+  "seconds": 31.525922298431396,
+  "scope": "44 full-width outputs per unique input:42 report leaves, repeat-status and size; input byte preservation checked after repeated calls. Sanitized compiler does not instrument generated Aurora."
+}

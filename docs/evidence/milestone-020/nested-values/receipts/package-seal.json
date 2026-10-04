@@ -1,0 +1,12 @@
+{
+  "evidence_archive": "receipts/nested-values-evidence.zip",
+  "evidence_archive_sha256": "214ad71fc43986ab54f7bfb744356162d9f57a50ea35ec23e2776dfb11762e21",
+  "evidence_archive_bytes": 43730632,
+  "evidence_files_verified": 152,
+  "source_delta_archive": "receipts/nested-values-source-delta.zip",
+  "source_delta_sha256": "585257c1aeaf0fb5bbde6b1a70672dfcbc1a88831a9274f04288951e898cc186",
+  "source_delta_bytes": 170949,
+  "source_delta_files_verified": 18,
+  "candidate_bytes_after": 165508350,
+  "filesystem_free_bytes": 2214404096
+}

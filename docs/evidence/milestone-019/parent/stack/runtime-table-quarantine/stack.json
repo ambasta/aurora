@@ -1,0 +1,2725 @@
+{
+  "paths": {
+    "acpi": 7472,
+    "pci": 12112,
+    "construction": 2248,
+    "readback": 1904,
+    "corruption": 1848,
+    "exhaustion": 2248,
+    "cleanup": 2088,
+    "runtime_ancillary": 4288
+  },
+  "peak_with_fault_reserve": 13136,
+  "fault_reserve": 1024,
+  "stack_bytes": 16384,
+  "minimum_unused": 3248,
+  "linked_edges": [
+    [
+      "uefi_payload_entry",
+      "uefi_payload_main"
+    ],
+    [
+      "uefi_payload_entry",
+      "AURORA_RELATIVE_ONLY+0x5"
+    ],
+    [
+      "uefi_payload_fault",
+      "fault_common"
+    ],
+    [
+      "fault_common",
+      "uefi_payload_fail"
+    ],
+    [
+      "fault_common",
+      "AURORA_RELATIVE_ONLY+0x5"
+    ],
+    [
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)+0x40"
+    ],
+    [
+      "uefi_payload_fail",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_fail",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "uefi_payload_fail",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_fail",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "uefi_payload_fail",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_fail",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "uefi_payload_fail",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_fail",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "uefi_payload_fail",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_fail",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "uefi_payload_main+0x86"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::MemoryMap::valid() const"
+    ],
+    [
+      "uefi_payload_main",
+      "uefi_payload_main+0x186"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "uefi_payload_main+0x277"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "uefi_payload_main",
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "uefi_payload_main",
+      "uefi_payload_main+0x48a"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "uefi_payload_main+0x533"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::PageTables::entry(unsigned long) const [clone .isra.0]"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "uefi_payload_main+0x4fa"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::PageTables::entry(unsigned long) const [clone .isra.0]"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::PageTables::entry(unsigned long) const [clone .isra.0]"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::PageTables::entry(unsigned long) const [clone .isra.0]"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::discover_acpi(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "uefi_payload_main+0x7fd"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora_kernel_value"
+    ],
+    [
+      "uefi_payload_main",
+      "(anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "uefi_payload_main",
+      "uefi_payload_main+0x892"
+    ],
+    [
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)",
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)+0x19c"
+    ],
+    [
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)",
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)+0x2a1"
+    ],
+    [
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)",
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)+0x258"
+    ],
+    [
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)",
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)+0x1b2"
+    ],
+    [
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)",
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)+0x10b"
+    ],
+    [
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)",
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)+0x10b"
+    ],
+    [
+      "aurora::uefi::MemoryMap::valid() const",
+      "aurora::uefi::MemoryMap::valid() const+0x3e"
+    ],
+    [
+      "aurora::uefi::MemoryMap::valid() const",
+      "aurora::uefi::MemoryMap::valid() const+0x3e"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)+0x6c"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)+0x32d"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)+0x6c"
+    ],
+    [
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)",
+      "aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)+0x6a"
+    ],
+    [
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)+0xf6"
+    ],
+    [
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)+0x76"
+    ],
+    [
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)+0x35"
+    ],
+    [
+      "aurora::hardware::Serial::number(unsigned long long)",
+      "aurora::hardware::Serial::number(unsigned long long)+0xa5"
+    ],
+    [
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const",
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const+0xcc"
+    ],
+    [
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const",
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const"
+    ],
+    [
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const",
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const+0x130"
+    ],
+    [
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const",
+      "bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const+0x132"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)",
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)",
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)+0x25"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::ReadWindow::table(unsigned long, std::span<std::byte, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >) [clone .constprop.0]",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::ReadWindow::table(unsigned long, std::span<std::byte, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >) [clone .constprop.0]",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::ReadWindow::table(unsigned long, std::span<std::byte, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >) [clone .constprop.0]",
+      "aurora::uefi::Acpi::table(std::span<std::byte const, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::ReadWindow::table(unsigned long, std::span<std::byte, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >) [clone .constprop.0]",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::table(unsigned long, std::span<std::byte, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >) [clone .constprop.0]+0xe5"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::Acpi::table(std::span<std::byte const, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)+0x6a2"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::table(unsigned long, std::span<std::byte, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >) [clone .constprop.0]"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)+0xbc8"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::(anonymous namespace)::ReadWindow::table(unsigned long, std::span<std::byte, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >) [clone .constprop.0]"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::number(unsigned long long)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)+0xd3a"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)+0x1a7"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)+0x460"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)+0x462"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)+0x1a7"
+    ],
+    [
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)",
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)+0x1a7"
+    ],
+    [
+      "aurora::uefi::discover_acpi(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::prepare_table_acpi(unsigned long, aurora::uefi::Bytes const&, unsigned int&, unsigned long&)"
+    ],
+    [
+      "aurora::uefi::discover_acpi(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)"
+    ],
+    [
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const",
+      "aurora::uefi::MemoryMap::valid() const"
+    ],
+    [
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const",
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const+0x223"
+    ],
+    [
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const",
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const+0x16d"
+    ],
+    [
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const",
+      "aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const+0x15c"
+    ],
+    [
+      "aurora::uefi::Acpi::table(std::span<std::byte const, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::Acpi::table(std::span<std::byte const, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >)+0x49"
+    ],
+    [
+      "aurora::uefi::Acpi::table(std::span<std::byte const, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Bytes::get(unsigned long, unsigned int) const"
+    ],
+    [
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x87"
+    ],
+    [
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x490"
+    ],
+    [
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x80"
+    ],
+    [
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x297"
+    ],
+    [
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x2e0"
+    ],
+    [
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1e5"
+    ],
+    [
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1e5"
+    ],
+    [
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x2e0"
+    ],
+    [
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const",
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const+0x2d4"
+    ],
+    [
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const",
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const+0x40"
+    ],
+    [
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const",
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const+0x43"
+    ],
+    [
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const",
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const+0x4c5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Mcfg::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Q35Ecam::authorize(aurora::uefi::Mcfg const&, std::span<std::byte const, 18446744073709551615ul>, unsigned long, unsigned long)"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x4ba"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x61"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x795"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x855"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x895"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x955"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x9a5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1035"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x10e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1125"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x11e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1225"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x12e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1325"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x13e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1425"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x14e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1525"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x15e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1625"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x16e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1725"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x17e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1825"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x18e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1925"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x19e5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1a25"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1ae5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1b25"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1be5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1c25"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1ce5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1d15"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1d35"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1d7d"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1e35"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1e75"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1f35"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1f65"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1f8d"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x1fc5"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x207d"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x20ad"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x20d9"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x63"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0xc27"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0xbc7"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x2250"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0xe73"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x61"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0xee7"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x664"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x741"
+    ],
+    [
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0xa48"
+    ],
+    [
+      "aurora::uefi::Mcfg::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Mcfg::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x280"
+    ],
+    [
+      "aurora::uefi::Mcfg::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)",
+      "aurora::uefi::Mcfg::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)+0x2c5"
+    ],
+    [
+      "aurora::uefi::Q35Ecam::authorize(aurora::uefi::Mcfg const&, std::span<std::byte const, 18446744073709551615ul>, unsigned long, unsigned long)",
+      "aurora::uefi::MemoryMap::valid() const"
+    ],
+    [
+      "aurora::uefi::Q35Ecam::authorize(aurora::uefi::Mcfg const&, std::span<std::byte const, 18446744073709551615ul>, unsigned long, unsigned long)",
+      "aurora::uefi::Q35Ecam::authorize(aurora::uefi::Mcfg const&, std::span<std::byte const, 18446744073709551615ul>, unsigned long, unsigned long)+0x51"
+    ],
+    [
+      "aurora::uefi::Q35Ecam::authorize(aurora::uefi::Mcfg const&, std::span<std::byte const, 18446744073709551615ul>, unsigned long, unsigned long)",
+      "aurora::uefi::Q35Ecam::authorize(aurora::uefi::Mcfg const&, std::span<std::byte const, 18446744073709551615ul>, unsigned long, unsigned long)+0x163"
+    ],
+    [
+      "aurora::uefi::Q35Ecam::authorize(aurora::uefi::Mcfg const&, std::span<std::byte const, 18446744073709551615ul>, unsigned long, unsigned long)",
+      "aurora::uefi::Q35Ecam::authorize(aurora::uefi::Mcfg const&, std::span<std::byte const, 18446744073709551615ul>, unsigned long, unsigned long)+0x15c"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_scrub(void*, unsigned long, unsigned long)",
+      "aurora::uefi::(anonymous namespace)::table_scrub(void*, unsigned long, unsigned long)+0x99"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_scrub(void*, unsigned long, unsigned long)",
+      "aurora::uefi::(anonymous namespace)::table_scrub(void*, unsigned long, unsigned long)+0x1e"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)+0xbd"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)+0x109"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)+0x80"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)+0x67"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)+0xca"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)+0x2a9"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)+0x2a0"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)+0x263"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)+0x82"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x45"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x85"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0xd5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x1b5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x205"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x2f5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x345"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x435"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x485"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x575"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x5c5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x675"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)+0x6c5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)",
+      "aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)+0x97"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)",
+      "aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)+0x86"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .constprop.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .constprop.0]"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .constprop.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .constprop.0]+0x1b2"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .constprop.0]",
+      "aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .constprop.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .constprop.0]+0x15b"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)::{lambda(unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .constprop.0]"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)+0x21b"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)+0x27"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)+0x23c"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::RuntimeTables::entry(unsigned long) const"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)+0x27"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::RuntimeTables::entry(unsigned long) const"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::RuntimeTables::entry(unsigned long) const"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::(anonymous namespace)::expected(aurora::uefi::(anonymous namespace)::Domain const&, unsigned long)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::RuntimeTables::entry(unsigned long) const"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)",
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)+0x29"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x50"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x50"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x10a"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x96"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x6e4"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x6c8"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x5b3"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x6b"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x1e4"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x180"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x180"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x88c"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x860"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x180"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]+0x55"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_prepare(aurora::memory::DormantTables&, aurora::user::DomainHandle) [clone .constprop.0]",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)+0x40"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::memory::DormantTables::ownership()"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::memory::DormantTables::bytes_match() const"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "independent::validate(independent::Input const&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "independent::validate(independent::Input const&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)+0x65"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)+0x83"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)+0x3b5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)+0x405"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)+0x123"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)+0x123"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)+0x123"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()+0xd7"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()+0xf3"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()+0x7a"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::memory::DormantTables::release()"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()+0x110"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()+0x264"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()+0x2b5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()",
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()+0x2c2"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x9a"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::memory::DormantTables::release()"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::memory::DormantTables::ownership()"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::memory::DormantTables::bytes_match() const"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0xfc"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x2b0"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x2cd"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::memory::DormantTables::release()"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x173"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x163"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x270"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x270"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x57b"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x855"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x935"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x985"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0xa35"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0xa85"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x4e8"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x1af"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x788"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x1d"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x140"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)+0x18f"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::user::ProgramContract::valid() const"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x8b"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x2ed"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x320"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x35d"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x40d"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x44d"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x4f5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x535"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x5e5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x610"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x631"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "uefi_runtime_enter"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x2c2"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x775"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x7a0"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x7d5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x87d"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x8b5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x955"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x995"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x9f5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0xa35"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0xad5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0xafd"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0xb1e"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x743"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)+0x1d9"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::pin_request()+0xf9"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::pin_request()+0x8c"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::pin_request()+0x305"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::pin_request()+0x3d5"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::pin_request()+0x405"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::pin_request()+0x42d"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::table_prepare(aurora::memory::DormantTables&, aurora::user::DomainHandle) [clone .constprop.0]"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::pin_request()+0x2c2"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::table_readback(aurora::user::DomainHandle)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::(anonymous namespace)::pin_request()",
+      "aurora::uefi::(anonymous namespace)::verify(aurora::uefi::(anonymous namespace)::Domain const&)"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x55"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x115"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x165"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x215"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x265"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x315"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x365"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x39d"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x3e5"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x4a5"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x4f5"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x5e5"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x635"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x715"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x745"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x76d"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x890"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x855"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora::user::ProgramContract::valid() const"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0xb46"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0xae8"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0xae8"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0x916"
+    ],
+    [
+      "aurora_exception_dispatch",
+      "aurora_exception_dispatch+0xae8"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x3da"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xc0"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xe2"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "uefi_runtime_handler"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::pin_request()"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::pin_fault_returned()"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xb34"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x5a5"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::pin_retained() [clone .part.0]"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::user::DomainRegistry::activate(aurora::user::DomainHandle)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::user::DomainRegistry::destroy(aurora::user::DomainHandle)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xd59"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xdb5"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xe85"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xeb5"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xedd"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xd2d"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::execute(unsigned int, aurora::user::ProgramEvent)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::pin_reborn(aurora::user::DomainHandle)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::retire(unsigned int)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x1060"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x11f9"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x11f0"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x11a3"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x1344"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x1344"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xefd"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xcb3"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xa33"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xab5"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::create(unsigned int) [clone .part.0]"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xa0e"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x159d"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x15cd"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::table_record(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x1625"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x1675"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x1785"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x17d5"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xc2"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0x169c"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xc19"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xced"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xc19"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::(anonymous namespace)::stop(std::basic_string_view<char, std::char_traits<char> >)"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xb70"
+    ],
+    [
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)",
+      "aurora::uefi::run_protected(unsigned long, aurora::uefi::Bytes const&)+0xb70"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]+0x337"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]+0x2e0"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]+0x260"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]+0x260"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]+0x296"
+    ],
+    [
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]+0x296"
+    ],
+    [
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)",
+      "bool aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long, bool&, bool&)#1} const&>(aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)::{lambda(unsigned long, unsigned long)#1}&&, unsigned long, unsigned int, unsigned long, bool&, bool&) const [clone .isra.0]"
+    ],
+    [
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)",
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)+0x288"
+    ],
+    [
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)",
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)+0x80"
+    ],
+    [
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)",
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)+0x82"
+    ],
+    [
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)",
+      "aurora::uefi::RuntimeTables::map(unsigned long, unsigned long, unsigned long)+0x345"
+    ],
+    [
+      "aurora::user::ProgramContract::valid() const",
+      "aurora::user::ProgramContract::valid() const+0x16f"
+    ],
+    [
+      "aurora::user::DomainRegistry::activate(aurora::user::DomainHandle)",
+      "aurora::user::DomainRegistry::activate(aurora::user::DomainHandle)+0x1c"
+    ],
+    [
+      "aurora::user::DomainRegistry::destroy(aurora::user::DomainHandle)",
+      "aurora::user::DomainRegistry::destroy(aurora::user::DomainHandle)+0x1c"
+    ],
+    [
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)+0xb0"
+    ],
+    [
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)+0x21d"
+    ],
+    [
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)+0x1e8"
+    ],
+    [
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)+0xb0"
+    ],
+    [
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)+0xb0"
+    ],
+    [
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)+0xb2"
+    ],
+    [
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)+0x31f"
+    ],
+    [
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)",
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)+0x24"
+    ],
+    [
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)",
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)+0xad"
+    ],
+    [
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)"
+    ],
+    [
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)",
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)+0x28"
+    ],
+    [
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)",
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)+0x25e"
+    ],
+    [
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)",
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)+0x25e"
+    ],
+    [
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)",
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)+0x1bf"
+    ],
+    [
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)",
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)+0x199"
+    ],
+    [
+      "aurora::memory::DormantTables::ownership()",
+      "aurora::memory::DormantTables::ownership()+0x60"
+    ],
+    [
+      "aurora::memory::DormantTables::ownership()",
+      "aurora::memory::DormantTables::ownership()+0x62"
+    ],
+    [
+      "aurora::memory::DormantTables::ownership()",
+      "aurora::memory::DormantTables::ownership()+0x26e"
+    ],
+    [
+      "aurora::memory::DormantTables::ownership()",
+      "aurora::memory::DormantTables::ownership()+0x60"
+    ],
+    [
+      "aurora::memory::DormantTables::ownership()",
+      "aurora::memory::DormantTables::ownership()+0x60"
+    ],
+    [
+      "aurora::memory::DormantTables::ownership()",
+      "aurora::memory::DormantTables::ownership()+0x280"
+    ],
+    [
+      "aurora::memory::DormantTables::bytes_match() const",
+      "aurora::memory::DormantTables::bytes_match() const+0xc6"
+    ],
+    [
+      "aurora::memory::DormantTables::bytes_match() const",
+      "aurora::memory::DormantTables::bytes_match() const+0x20"
+    ],
+    [
+      "aurora::memory::DormantTables::bytes_match() const",
+      "aurora::memory::DormantTables::bytes_match() const+0x209"
+    ],
+    [
+      "aurora::memory::DormantTables::bytes_match() const",
+      "aurora::memory::DormantTables::bytes_match() const+0x22"
+    ],
+    [
+      "aurora::memory::DormantTables::bytes_match() const",
+      "aurora::memory::DormantTables::bytes_match() const+0x142"
+    ],
+    [
+      "aurora::memory::DormantTables::bytes_match() const",
+      "aurora::memory::DormantTables::bytes_match() const+0xc6"
+    ],
+    [
+      "aurora::memory::DormantTables::bytes_match() const",
+      "aurora::memory::DormantTables::bytes_match() const+0x232"
+    ],
+    [
+      "aurora::memory::DormantTables::release()",
+      "aurora::memory::PinLedger::release_reserved(aurora::memory::PinLedger::Entry&)"
+    ],
+    [
+      "aurora::memory::DormantTables::release()",
+      "aurora::memory::DormantTables::release()+0x38"
+    ],
+    [
+      "aurora::memory::DormantTables::release()",
+      "aurora::memory::DormantTables::release()+0x38"
+    ],
+    [
+      "aurora::memory::DormantTables::release()",
+      "aurora::memory::DormantTables::release()+0x4a"
+    ],
+    [
+      "aurora::memory::DormantTables::release()",
+      "aurora::memory::DormantTables::release()+0x112"
+    ],
+    [
+      "aurora::memory::DormantTables::release()",
+      "aurora::memory::DormantTables::release()+0x140"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::PinLedger::grant(aurora::user::DomainHandle, unsigned long)"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x27d"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x260"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::release()"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x60"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::ownership()"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x41a"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x3f0"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x495"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x12a"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x595"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::ownership()"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::bytes_match() const"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x62"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x595"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x616"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x203"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x215"
+    ],
+    [
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)",
+      "aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, unsigned char, std::span<unsigned long const, 18446744073709551615ul>, std::span<bool const, 18446744073709551615ul>)+0x3cf"
+    ],
+    [
+      "independent::validate(independent::Input const&)",
+      "independent::validate(independent::Input const&)+0xac"
+    ],
+    [
+      "independent::validate(independent::Input const&)",
+      "independent::validate(independent::Input const&)+0x19"
+    ],
+    [
+      "independent::validate(independent::Input const&)",
+      "independent::validate(independent::Input const&)+0x105"
+    ],
+    [
+      "independent::validate(independent::Input const&)",
+      "independent::validate(independent::Input const&)+0xb1"
+    ],
+    [
+      "independent::validate(independent::Input const&)",
+      "independent::validate(independent::Input const&)+0x32e"
+    ],
+    [
+      "independent::validate(independent::Input const&)",
+      "independent::validate(independent::Input const&)+0xb3"
+    ],
+    [
+      "independent::validate(independent::Input const&)",
+      "independent::validate(independent::Input const&)+0x134"
+    ],
+    [
+      "independent::validate(independent::Input const&)",
+      "independent::validate(independent::Input const&)+0xb3"
+    ],
+    [
+      "aurora_exception_0",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_1",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_2",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_3",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_4",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_5",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_6",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_7",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_8",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_9",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_10",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_11",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_12",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_13",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_14",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_15",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_16",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_17",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_18",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_19",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_20",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_21",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_22",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_23",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_24",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_25",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_26",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_27",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_28",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_29",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_30",
+      "exception_common"
+    ],
+    [
+      "aurora_exception_31",
+      "exception_common"
+    ],
+    [
+      "aurora_timer_interrupt",
+      "exception_common"
+    ],
+    [
+      "aurora_program_return",
+      "exception_common"
+    ],
+    [
+      "aurora_user_return",
+      "exception_common"
+    ],
+    [
+      "exception_common",
+      "aurora_exception_dispatch"
+    ],
+    [
+      "aurora_breakpoint_probe",
+      "probe_done"
+    ],
+    [
+      "aurora_kernel_value",
+      "aurora_kernel_value+0x49"
+    ]
+  ],
+  "elf_sha256": "edadd173056fbb89cdc6ebd80e0c5c852d1b6e11232b90ea4eb61366fac8ffd6",
+  "compiler_frames": {
+    "payload:kernel/uefi/tables.hpp:120:24:uint64_t aurora::uefi::PageTables::entry(uint64_t) const": 16,
+    "payload:kernel/uefi/runtime-layout.hpp:85:41:static constexpr bool aurora::uefi::RuntimeLayoutProfile<Domains>::valid(uint64_t) [with long unsigned int Domains = 2]": 240,
+    "payload:kernel/uefi/handoff.hpp:11:24:uint64_t aurora::uefi::Bytes::get(std::size_t, unsigned int) const": 8,
+    "payload:kernel/uefi/handoff.hpp:27:24:bool aurora::uefi::MemoryMap::valid() const": 48,
+    "payload:kernel/uefi/handoff.hpp:69:31:static bool aurora::uefi::Handoff::valid(std::span<const std::byte>, uint64_t)": 64,
+    "payload:kernel/uefi/tables.hpp:131:13:uint64_t aurora::uefi::expected_flags(uint64_t, const Bytes&)": 8,
+    "payload:kernel/uefi/../console.hpp:31:17:static void aurora::hardware::Serial::text(std::string_view)": 8,
+    "payload:kernel/uefi/payload.cpp:17:19:void {anonymous}::fail(std::string_view)": 32,
+    "payload:kernel/uefi/../console.hpp:34:17:static void aurora::hardware::Serial::number(long long unsigned int)": 40,
+    "payload:kernel/uefi/payload.cpp:33:6:void payload_fail(U64, U64, U64)": 48,
+    "payload:kernel/uefi/tables.hpp:85:25:aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)> [with auto:1 = const aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)>&]": 96,
+    "payload:kernel/uefi/payload.cpp:40:6:void payload_main(U64, U64)": 224,
+    "acpi:kernel/uefi/handoff.hpp:11:24:uint64_t aurora::uefi::Bytes::get(std::size_t, unsigned int) const": 8,
+    "acpi:kernel/uefi/handoff.hpp:27:24:bool aurora::uefi::MemoryMap::valid() const": 48,
+    "acpi:kernel/uefi/acpi-policy.hpp:15:24:bool aurora::uefi::FirmwareRanges::readable(uint64_t, uint64_t) const": 112,
+    "acpi:kernel/uefi/acpi.cpp:44:24:bool aurora::uefi::{anonymous}::ReadWindow::copy(aurora::uefi::{anonymous}::U64, std::span<std::byte>)": 144,
+    "acpi:kernel/uefi/acpi-policy.hpp:111:31:static bool aurora::uefi::Acpi::table(std::span<const std::byte>, std::string_view)": 32,
+    "acpi:kernel/uefi/acpi.cpp:58:24:constprop(aurora::uefi::{anonymous}::U64, std::span<std::byte>, std::string_view)": 128,
+    "acpi:kernel/uefi/acpi-policy.hpp:139:31:static std::optional<aurora::uefi::Topology> aurora::uefi::Topology::parse(std::span<const std::byte>, unsigned int)": 3184,
+    "acpi:kernel/uefi/tables.hpp:131:13:uint64_t aurora::uefi::expected_flags(uint64_t, const Bytes&)": 8,
+    "acpi:kernel/uefi/../console.hpp:31:17:static void aurora::hardware::Serial::text(std::string_view)": 8,
+    "acpi:kernel/uefi/../console.hpp:34:17:static void aurora::hardware::Serial::number(long long unsigned int)": 40,
+    "acpi:kernel/uefi/tables.hpp:85:25:aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)> [with auto:1 = const aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)>&]": 96,
+    "acpi:kernel/uefi/tables.hpp:81:24:bool aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const": 208,
+    "acpi:kernel/uefi/acpi.cpp:91:24:bool aurora::uefi::prepare_table_acpi({anonymous}::U64, const Bytes&, unsigned int&, std::size_t&)": 3504,
+    "acpi:kernel/uefi/acpi.cpp:281:6:bool aurora::uefi::discover_acpi({anonymous}::U64, const Bytes&)": 48,
+    "pci:kernel/uefi/handoff.hpp:11:24:uint64_t aurora::uefi::Bytes::get(std::size_t, unsigned int) const": 8,
+    "pci:kernel/uefi/handoff.hpp:27:24:bool aurora::uefi::MemoryMap::valid() const": 48,
+    "pci:kernel/uefi/pci-policy.hpp:20:31:static std::optional<aurora::uefi::Mcfg> aurora::uefi::Mcfg::parse(std::span<const std::byte>, unsigned int)": 184,
+    "pci:kernel/uefi/pci-policy.hpp:68:31:static std::optional<aurora::uefi::Q35Ecam> aurora::uefi::Q35Ecam::authorize(const aurora::uefi::Mcfg&, std::span<const std::byte>, std::size_t, uint64_t)": 96,
+    "pci:kernel/uefi/tables.hpp:131:13:uint64_t aurora::uefi::expected_flags(uint64_t, const Bytes&)": 8,
+    "pci:kernel/uefi/tables.hpp:85:25:aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)> [with auto:1 = const aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)>&]": 96,
+    "pci:kernel/uefi/tables.hpp:81:24:bool aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const": 208,
+    "pci:kernel/uefi/pci.cpp:106:6:bool aurora::uefi::discover_pci({anonymous}::U64, const Bytes&, std::span<const std::byte>, unsigned int)": 10736,
+    "runtime:kernel/uefi/dormant-runtime.inc:9:24:bool aurora::uefi::{anonymous}::table_scrub(void*, U64, std::size_t)": 8,
+    "runtime:kernel/uefi/dormant-runtime.inc:18:6:0()": 8,
+    "runtime:kernel/uefi/runtime.cpp:130:20:bool aurora::uefi::{anonymous}::retire(unsigned int)": 56,
+    "runtime:kernel/uefi/dormant-runtime.inc:19:6:void aurora::uefi::{anonymous}::table_record(std::string_view)": 64,
+    "runtime:kernel/uefi/runtime-tables.hpp:47:25:aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(uint64_t, uint64_t, uint64_t)::<lambda(uint64_t, uint64_t)> >(aurora::uefi::RuntimeTables::map(uint64_t, uint64_t, uint64_t)::<lambda(uint64_t, uint64_t)>&&) const::<lambda(auto:1&&, std::size_t, unsigned int, uint64_t, bool&, bool&)> [with auto:1 = const aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::map(uint64_t, uint64_t, uint64_t)::<lambda(uint64_t, uint64_t)> >(aurora::uefi::RuntimeTables::map(uint64_t, uint64_t, uint64_t)::<lambda(uint64_t, uint64_t)>&&) const::<lambda(auto:1&&, std::size_t, unsigned int, uint64_t, bool&, bool&)>&]": 192,
+    "runtime:kernel/uefi/runtime-layout.hpp:85:41:static constexpr bool aurora::uefi::RuntimeLayoutProfile<Domains>::valid(uint64_t) [with long unsigned int Domains = 2]": 240,
+    "runtime:kernel/uefi/runtime-tables.hpp:109:24:bool aurora::uefi::RuntimeTables::map(uint64_t, uint64_t, uint64_t)": 192,
+    "runtime:kernel/uefi/runtime-tables.hpp:141:24:uint64_t aurora::uefi::RuntimeTables::entry(uint64_t) const": 56,
+    "runtime:kernel/uefi/../user-program.hpp:54:34:constexpr bool aurora::user::ProgramContract::valid() const": 24,
+    "runtime:kernel/uefi/tables.hpp:131:13:uint64_t aurora::uefi::expected_flags(uint64_t, const Bytes&)": 8,
+    "runtime:kernel/uefi/runtime.cpp:97:20:aurora::uefi::{anonymous}::U64 aurora::uefi::{anonymous}::expected(const Domain&, U64)": 32,
+    "runtime:kernel/uefi/runtime-tables.hpp:47:25:aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::{anonymous}::verify(const Domain&)::<lambda(aurora::uefi::{anonymous}::U64)> >(aurora::uefi::{anonymous}::verify(const Domain&)::<lambda(aurora::uefi::{anonymous}::U64)>&&) const::<lambda(uint64_t, uint64_t)> >(aurora::uefi::RuntimeTables::verify<aurora::uefi::{anonymous}::verify(const Domain&)::<lambda(aurora::uefi::{anonymous}::U64)> >(aurora::uefi::{anonymous}::verify(const Domain&)::<lambda(aurora::uefi::{anonymous}::U64)>&&) const::<lambda(uint64_t, uint64_t)>&&) const::<lambda(auto:1&&, std::size_t, unsigned int, uint64_t, bool&, bool&)> [with auto:1 = const aurora::uefi::RuntimeTables::inspect<aurora::uefi::RuntimeTables::verify<aurora::uefi::{anonymous}::verify(const Domain&)::<lambda(aurora::uefi::{anonymous}::U64)> >(aurora::uefi::{anonymous}::verify(const Domain&)::<lambda(aurora::uefi::{anonymous}::U64)>&&) const::<lambda(uint64_t, uint64_t)> >(aurora::uefi::RuntimeTables::verify<aurora::uefi::{anonymous}::verify(const Domain&)::<lambda(aurora::uefi::{anonymous}::U64)> >(aurora::uefi::{anonymous}::verify(const Domain&)::<lambda(aurora::uefi::{anonymous}::U64)>&&) const::<lambda(uint64_t, uint64_t)>&&) const::<lambda(auto:1&&, std::size_t, unsigned int, uint64_t, bool&, bool&)>&]": 144,
+    "runtime:kernel/uefi/runtime.cpp:116:20:bool aurora::uefi::{anonymous}::verify(const Domain&)": 176,
+    "runtime:kernel/uefi/runtime.cpp:144:20:0(unsigned int)": 176,
+    "runtime:kernel/uefi/../domain-policy.hpp:54:24:bool aurora::user::DomainRegistry::activate(aurora::user::DomainHandle)": 24,
+    "runtime:kernel/uefi/../domain-policy.hpp:68:24:bool aurora::user::DomainRegistry::destroy(aurora::user::DomainHandle)": 24,
+    "runtime:kernel/uefi/../pin-ledger.hpp:134:24:bool aurora::memory::PinLedger::release_reserved(Entry&)": 144,
+    "runtime:kernel/uefi/../pin-ledger.hpp:175:24:std::optional<aurora::memory::PinHandle> aurora::memory::PinLedger::grant(aurora::user::DomainHandle, std::size_t)": 160,
+    "runtime:kernel/uefi/../dormant-tables.hpp:56:24:bool aurora::memory::DormantTables::ownership()": 168,
+    "runtime:kernel/uefi/../dormant-tables.hpp:92:24:bool aurora::memory::DormantTables::bytes_match() const": 48,
+    "runtime:kernel/uefi/../dormant-tables.hpp:106:24:bool aurora::memory::DormantTables::release()": 112,
+    "runtime:kernel/uefi/../dormant-tables.hpp:129:24:bool aurora::memory::DormantTables::prepare(aurora::user::DomainHandle, uint8_t, std::span<const long unsigned int>, std::span<const bool>)": 192,
+    "runtime:kernel/uefi/dormant-runtime.inc:27:24:bool aurora::uefi::{anonymous}::table_prepare(aurora::memory::DormantTables&, aurora::user::DomainHandle)": 64,
+    "runtime:kernel/uefi/../dormant-decoder.hpp:63:27:bool independent::validate(const Input&)": 48,
+    "runtime:kernel/uefi/../console.hpp:31:17:static void aurora::hardware::Serial::text(std::string_view)": 8,
+    "runtime:kernel/uefi/runtime.cpp:90:19:void aurora::uefi::{anonymous}::stop(std::string_view)": 32,
+    "runtime:kernel/uefi/dormant-runtime.inc:33:24:void aurora::uefi::{anonymous}::table_readback(aurora::user::DomainHandle)": 176,
+    "runtime:kernel/uefi/dormant-runtime.inc:124:24:void aurora::uefi::{anonymous}::pin_fault_returned()": 112,
+    "runtime:kernel/uefi/dormant-runtime.inc:136:24:void aurora::uefi::{anonymous}::pin_reborn(aurora::user::DomainHandle)": 224,
+    "runtime:kernel/uefi/runtime.cpp:231:6:void aurora::uefi::{anonymous}::execute(unsigned int, aurora::user::ProgramEvent)": 112,
+    "runtime:kernel/uefi/dormant-runtime.inc:92:24:void aurora::uefi::{anonymous}::pin_request()": 80,
+    "runtime:kernel/uefi/runtime.cpp:273:6:aurora::uefi::{anonymous}::U64 aurora::uefi::dispatch({anonymous}::U64, {anonymous}::U64, {anonymous}::U64, {anonymous}::U64, {anonymous}::U64, {anonymous}::U64)": 144,
+    "runtime:kernel/uefi/tables.hpp:85:25:aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:2&&, uint64_t, unsigned int, uint64_t)> [with auto:2 = const aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:2&&, uint64_t, unsigned int, uint64_t)>&]": 96,
+    "runtime:kernel/uefi/runtime.cpp:364:6:bool aurora::uefi::run_protected({anonymous}::U64, const Bytes&)": 864
+  }
+}

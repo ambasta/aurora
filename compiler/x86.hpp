@@ -92,12 +92,14 @@ class X86Emitter {
         if (function.result.isClass())
             return true;
         for (const auto &type : function.parameters)
-            if (type.isClass())
+            if (type.isClass() || type.isSpan())
                 return true;
         return false;
     }
     int argumentBytes(const Type &type) const {
-        return type.isClass() ? classStorage->at(type.className).reservedBytes : 8;
+        return type.isClass()  ? classStorage->at(type.className).reservedBytes
+               : type.isSpan() ? 16
+                               : 8;
     }
     int recordOffset(const ir::Function &function, std::size_t parameter) const {
         int offset = 0;
@@ -111,9 +113,10 @@ class X86Emitter {
     const ir::ClassStorage &receiverStorage() const {
         return classStorage->at(currentFunction->receiver->className);
     }
-    int packArguments(const ir::Function &target, const std::vector<int> &objects) {
+    int packArguments(const ir::Function &target, const std::vector<int> &objects,
+                      const std::vector<int> &spans = {}) {
         for (std::size_t index = target.parameters.size(); index > 0; --index)
-            if (!target.parameters[index - 1].isClass())
+            if (!target.parameters[index - 1].isClass() && !target.parameters[index - 1].isSpan())
                 pop(argumentRegisters[index - 1]);
         const int recordBytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
         if (recordBytes)
@@ -128,7 +131,7 @@ class X86Emitter {
             };
             if (type.isClass())
                 clearPadding(type.className, destination);
-            else
+            else if (!type.isSpan())
                 clearBytes(ir::storageWidth(type), 8, destination);
         }
         clearBytes(recordOffset(target, target.parameters.size()), recordBytes,
@@ -136,7 +139,12 @@ class X86Emitter {
         for (std::size_t index = 0; index < target.parameters.size(); ++index) {
             const auto &type = target.parameters[index];
             const int offset = recordOffset(target, index);
-            if (!type.isClass())
+            if (type.isSpan()) {
+                line("movq " + address(spans[index]) + ", %rax");
+                line("movq %rax, " + std::to_string(offset) + "(%rsp)");
+                line("movq " + address(spans[index] - 8) + ", %rax");
+                line("movq %rax, " + std::to_string(offset + 8) + "(%rsp)");
+            } else if (!type.isClass())
                 storeArgument(type, index, std::to_string(offset) + "(%rsp)");
             else {
                 const auto &layout = classLayouts->at(type.className);
@@ -360,12 +368,37 @@ class X86Emitter {
                     call(operation.callee);
                 } else if constexpr (std::is_same_v<Op, ir::AggregateCall>) {
                     const auto &target = *functions.at(operation.callee);
-                    const int recordBytes = packArguments(target, operation.objectArguments);
+                    const int recordBytes =
+                        packArguments(target, operation.objectArguments, operation.spanArguments);
                     if (target.result.isClass())
                         line("leaq " + address(operation.resultOffset) + ", %r10");
                     call(operation.callee);
                     if (recordBytes)
                         line("addq $" + std::to_string(recordBytes) + ", %rsp");
+                } else if constexpr (std::is_same_v<Op, ir::BeginArray> ||
+                                     std::is_same_v<Op, ir::EndArray> ||
+                                     std::is_same_v<Op, ir::EndSpan>) {
+                    // Static lifetime changes preserve the scalar current value.
+                } else if constexpr (std::is_same_v<Op, ir::BorrowSpan>) {
+                    line("leaq " + address(operation.arrayOffset) + ", %rcx");
+                    line("movq %rcx, " + address(operation.resultOffset));
+                    line("movq $" +
+                         std::to_string(currentFunction->arraySlots.at(operation.arrayOffset)) +
+                         ", " + address(operation.resultOffset - 8));
+                } else if constexpr (std::is_same_v<Op, ir::ReborrowSpan>) {
+                    line("movq " + address(operation.sourceOffset) + ", %rcx");
+                    line("movq %rcx, " + address(operation.resultOffset));
+                    line("movq " + address(operation.sourceOffset - 8) + ", %rcx");
+                    line("movq %rcx, " + address(operation.resultOffset - 8));
+                } else if constexpr (std::is_same_v<Op, ir::SpanLength>) {
+                    line("movq " + address(operation.offset - 8) + ", %rax");
+                } else if constexpr (std::is_same_v<Op, ir::SpanLoad>) {
+                    // Unsigned comparison rejects negative signed indices before
+                    // loading the base pointer or addressing any payload byte.
+                    line("cmpq " + address(operation.offset - 8) + ", %rax");
+                    line("jae .Laurora_bounds_trap");
+                    line("movq " + address(operation.offset) + ", %rcx");
+                    line("movzbq (%rcx,%rax,1), %rax");
                 } else if constexpr (std::is_same_v<Op, ir::BeginObject>) {
                     clearObject(operation.offset,
                                 currentFunction->objectSlots.at(operation.offset).className);
@@ -505,6 +538,13 @@ class X86Emitter {
                         storeValue(operation.type, address(operation.offset));
                     } else
                         storeArgument(operation.type, operation.index, address(operation.offset));
+                } else if constexpr (std::is_same_v<Op, ir::BindSpanParameter>) {
+                    line("movq " + address(callRecordSaveOffset) + ", %r11");
+                    const int offset = recordOffset(*currentFunction, operation.index);
+                    line("movq " + std::to_string(offset) + "(%r11), %rax");
+                    line("movq %rax, " + address(operation.offset));
+                    line("movq " + std::to_string(offset + 8) + "(%r11), %rax");
+                    line("movq %rax, " + address(operation.offset - 8));
                 } else if constexpr (std::is_same_v<Op, ir::BindObjectParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     const auto &layout = classLayouts->at(operation.className);

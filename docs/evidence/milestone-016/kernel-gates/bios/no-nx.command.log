@@ -1,0 +1,7 @@
+PASS: 3 separately linked RX user images, exact return/UD2 metadata, 84 negative image cases
+PASS: boot signature, ELF entry, zero unresolved symbols, 45808-byte payload, 1 MiB image; 14 negative controls; RX/R/RW segments and bounded BIOS packet
+Built build/aurora.img (raw emulator disk) and build/kernel.elf
+Aurora bootstrap: x86-64 long mode
+Required NX capability or protected mapping validation failed
+AURORA_BOOT_FAIL
+PASS: kernel emulator verification (--no-nx)

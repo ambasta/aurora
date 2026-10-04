@@ -13,6 +13,7 @@ class Local {
     std::string name;
     Type type;
     int offset = 0, owner = -1, shared = 0;
+    int spanOrigin = -1;
     bool mut = false, live = true, exclusive = false;
 };
 class SemanticAnalyzer {
@@ -166,6 +167,8 @@ class SemanticAnalyzer {
     }
     Type payloadType(const Type &type) { return type == Type::Own ? Type::I64 : type; }
     std::int64_t reflectedValue(ExpressionPtr expression) {
+        if (expression->reflectedType.isSpan())
+            fail(expression->token, "span capabilities are unavailable to reflection");
         if (expression->token.text == "type_id")
             return typeId(expression->reflectedType, expression->token);
         if (expression->token.text == "field_count")
@@ -229,14 +232,17 @@ class SemanticAnalyzer {
         l.name = n;
         l.type = t;
         l.mut = mut;
-        const auto needed = (t.isClass() || t.isArray())
+        const auto needed = t.isSpan() ? 2
+                            : (t.isClass() || t.isArray())
                                 ? ir::roundedStorage(static_cast<int>(typeSize(t, tok))) / 8
                                 : 1;
         if (needed > maxFrameSlots || slot > maxFrameSlots - needed)
             fail(tok, "function local stack frame exceeds 65536 bytes");
         slot += static_cast<int>(needed);
         l.offset = 8 * slot;
-        if (t.isClass()) {
+        if (t.isSpan()) {
+            lowered.spanSlots.insert(l.offset);
+        } else if (t.isClass()) {
             lowered.objectSlots[l.offset] = ir::ObjectSlot{t.className, mut};
             if (begin)
                 emit(ir::BeginObject{l.offset});
@@ -245,6 +251,10 @@ class SemanticAnalyzer {
                 lowered.slots[l.offset - classStorage.at(t.className).leafOffsets[index]] =
                     leaves[index];
         } else if (t.isArray()) {
+            if (t.elementKind == TypeKind::U8) {
+                lowered.arraySlots[l.offset] = t.length;
+                emit(ir::BeginArray{l.offset});
+            }
             for (int index = 0; index < t.length; ++index)
                 lowered.slots[l.offset - index * ir::storageWidth(Type(t.elementKind))] =
                     Type(t.elementKind);
@@ -255,6 +265,59 @@ class SemanticAnalyzer {
         if (bind)
             scopes.back()[n] = i;
         return i;
+    }
+    static bool byteArray(const Type &type) {
+        return type.isArray() && type.elementKind == TypeKind::U8;
+    }
+    int acquireSpan(ExpressionPtr expression, const std::string &name = "", bool bind = false) {
+        int parent = -1, origin = -1;
+        if (expression->op == "call" && expression->token.text == "borrow_bytes") {
+            arity(expression, 1);
+            origin = source(expression->args[0]);
+            if (!byteArray(locals[origin].type))
+                fail(expression->token, "borrow_bytes requires a named local byte array");
+        } else if (expression->op == "name") {
+            parent = source(expression);
+            if (!locals[parent].type.isSpan())
+                fail(expression->token, "span initializer requires borrow_bytes or a live span");
+            origin = locals[parent].spanOrigin;
+        } else {
+            fail(expression->token, "span initializer requires borrow_bytes or a live span");
+        }
+        const int destination = add(name, Type::ByteSpan, false, expression->token, bind);
+        locals[destination].owner = parent;
+        locals[destination].spanOrigin = origin;
+        if (parent >= 0) {
+            ++locals[parent].shared;
+            emit(ir::ReborrowSpan{offset(parent), offset(destination)});
+        } else {
+            emit(ir::BorrowSpan{offset(origin), offset(destination)});
+        }
+        if (origin >= 0)
+            ++locals[origin].shared;
+        return destination;
+    }
+    void releaseSpan(int local, bool instructions) {
+        auto &span = locals[local];
+        if (span.shared)
+            throw Error("span lifetime ended before a dependent reborrow");
+        if (instructions)
+            emit(ir::EndSpan{span.offset});
+        if (span.owner >= 0)
+            --locals[span.owner].shared;
+        if (span.spanOrigin >= 0)
+            --locals[span.spanOrigin].shared;
+        span.live = false;
+    }
+    void endReturnBorrows() {
+        // Emit in reverse creation order without mutating the analyzer's branch
+        // state: returning paths do not constrain continuing siblings.
+        for (std::size_t index = locals.size(); index > 0; --index)
+            if (locals[index - 1].live && locals[index - 1].type.isSpan())
+                emit(ir::EndSpan{locals[index - 1].offset});
+        for (std::size_t index = locals.size(); index > 0; --index)
+            if (locals[index - 1].live && byteArray(locals[index - 1].type))
+                emit(ir::EndArray{locals[index - 1].offset});
     }
     class IndexedStorage {
       public:
@@ -302,6 +365,8 @@ class SemanticAnalyzer {
     void requireVisibleType(const Type &type, const Token &token) {
         if ((!type.isClass() && !type.isEnum()) || reflectionAccess.empty())
             return;
+        if (currentFunction->templateTypeAuthority.contains(type.className))
+            return;
         if (!currentFunction->receiverClass.empty()) {
             const auto &definition = classDefinition(Type(currentFunction->receiverClass), token);
             // A generated body retains only its fixed instance and exact nominal
@@ -331,6 +396,24 @@ class SemanticAnalyzer {
             receiver = source(value->args[0]);
         }
         const auto type = implicit ? Type(currentFunction->receiverClass) : locals[receiver].type;
+        if (type.isSpan()) {
+            if (resultBinding || implicit)
+                fail(value->token, "span operation requires a named live span");
+            if (value->token.text == "size") {
+                if (value->args.size() != 1)
+                    fail(value->token, "span size expects no arguments");
+                emit(ir::SpanLength{offset(receiver)});
+                return Type::I64;
+            }
+            if (value->token.text == "at") {
+                if (value->args.size() != 2)
+                    fail(value->token, "span at expects one index");
+                match(expression(value->args[1]), Type::I64, value->token);
+                emit(ir::SpanLoad{offset(receiver)});
+                return Type::U8;
+            }
+            fail(value->token, "span supports only readonly size and at operations");
+        }
         const auto &callee = method(type, value->token);
         requireVisibleType(callee.result, value->token);
         for (const auto &parameter : callee.params)
@@ -367,12 +450,18 @@ class SemanticAnalyzer {
             match(callee.result, resultBinding->type, expression->token);
         arity(expression, callee.params.size());
         std::vector<int> arguments(callee.params.size(), 0);
+        std::vector<int> spanArguments(callee.params.size(), 0), spanBorrows;
         std::vector<int> snapshots;
         bool aggregate = callee.result.isClass();
         for (std::size_t index = 0; index < callee.params.size(); ++index) {
             const auto &type = callee.params[index].type;
             const auto &argument = expression->args[index];
-            if (type.isClass()) {
+            if (type.isSpan()) {
+                aggregate = true;
+                const int borrowed = acquireSpan(argument);
+                spanArguments[index] = offset(borrowed);
+                spanBorrows.push_back(borrowed);
+            } else if (type.isClass()) {
                 aggregate = true;
                 if (argument->op != "name")
                     fail(argument->token, "class argument requires a complete local name");
@@ -392,11 +481,13 @@ class SemanticAnalyzer {
             destination = offset(add(resultBinding->name, resultBinding->type,
                                      resultBinding->mutableValue, resultBinding->token));
         if (aggregate)
-            emit(ir::AggregateCall{callee.name, arguments, destination});
+            emit(ir::AggregateCall{callee.name, arguments, destination, spanArguments});
         else
             emit(ir::Call{callee.name});
         for (int snapshot : snapshots)
             emit(ir::EndObject{snapshot});
+        for (auto it = spanBorrows.rbegin(); it != spanBorrows.rend(); ++it)
+            releaseSpan(*it, true);
         return callee.result;
     }
     ir::Constant literal(const Token &token) {
@@ -487,6 +578,8 @@ class SemanticAnalyzer {
             if (!scalarValue(locals[i].type))
                 fail(e->token, "owned values cannot be implicitly copied; use move, "
                                "read, or borrow");
+            if (locals[i].type.isSpan())
+                fail(e->token, "span capability cannot be used as a scalar value");
             emit(ir::Load{offset(i), payloadType(locals[i].type)});
             return locals[i].type;
         }
@@ -562,6 +655,8 @@ class SemanticAnalyzer {
         }
         if (e->op != "call")
             fail(e->token, "invalid expression");
+        if (n == "borrow_bytes")
+            fail(e->token, "borrow_bytes requires a span binding or span argument");
         if (n == "size_of" || n == "type_id" || n == "field_count") {
             emit(ir::Constant{reflectedValue(e), Type::I64});
             return Type::I64;
@@ -678,8 +773,25 @@ class SemanticAnalyzer {
                 fail(s->token, "unreachable statement");
             terminal = statement(s);
         }
-        for (const auto &pair : scopes.back()) {
-            auto &l = locals[pair.second];
+        std::vector<int> leaving;
+        for (const auto &[name, local] : scopes.back()) {
+            (void)name;
+            leaving.push_back(local);
+        }
+        std::sort(leaving.rbegin(), leaving.rend());
+        for (int local : leaving) {
+            auto &l = locals[local];
+            if (l.type.isSpan()) {
+                releaseSpan(local, !terminal);
+                continue;
+            }
+            if (byteArray(l.type)) {
+                if (l.shared)
+                    fail(Token(l.name, 0), "byte array lifetime ends while borrowed");
+                if (!terminal)
+                    emit(ir::EndArray{l.offset});
+                l.live = false;
+            }
             if (l.type == Type::Ref)
                 --locals[l.owner].shared;
             if (l.type == Type::MutRef)
@@ -837,9 +949,11 @@ class SemanticAnalyzer {
                     fail(s->token, "class return requires a complete local name");
                 const int local = source(s->expr);
                 match(locals[local].type, result, s->token);
+                endReturnBorrows();
                 emit(ir::ReturnObject{offset(local)});
             } else {
                 match(expression(s->expr), result, s->token);
+                endReturnBorrows();
                 emit(ir::Return{});
             }
             return true;
@@ -858,6 +972,12 @@ class SemanticAnalyzer {
             return false;
         }
         if (s->kind == "let") {
+            if (s->type.isSpan()) {
+                if (s->mutableValue)
+                    fail(s->token, "span bindings must be const and cannot be rebound");
+                acquireSpan(s->expr, s->name, true);
+                return false;
+            }
             if (s->type.isArray()) {
                 initializeArray(s);
                 return false;
@@ -913,8 +1033,12 @@ class SemanticAnalyzer {
             if (storage.member) {
                 if (currentFunction->receiverConst)
                     fail(s->token, "const method cannot write receiver arrays");
-            } else if (!locals[storage.local].mut)
-                fail(s->token, "index assignment requires a mutable array local");
+            } else {
+                if (!locals[storage.local].mut)
+                    fail(s->token, "index assignment requires a mutable array local");
+                if (locals[storage.local].shared)
+                    fail(s->token, "cannot mutate a byte array while a span is live");
+            }
             push();
             match(expression(s->expr), Type(storage.type.elementKind), s->token);
             if (storage.member)
@@ -995,10 +1119,16 @@ class SemanticAnalyzer {
                 locals[i] = before[i];
             bool noReturn = block(s->other);
             for (std::size_t i = 0; i < before.size(); ++i) {
-                if (noReturn && !yesReturn)
-                    locals[i].live = yes[i].live;
-                else if (!yesReturn)
+                if (noReturn && !yesReturn) {
+                    locals[i] = yes[i];
+                } else if (!yesReturn && !noReturn) {
+                    if (locals[i].shared != yes[i].shared ||
+                        locals[i].exclusive != yes[i].exclusive ||
+                        locals[i].spanOrigin != yes[i].spanOrigin ||
+                        locals[i].owner != yes[i].owner)
+                        fail(s->token, "continuing branches must preserve the same borrow state");
                     locals[i].live = locals[i].live && yes[i].live;
+                }
             }
             emit(ir::Label{end});
             return yesReturn && noReturn;
@@ -1019,6 +1149,7 @@ class SemanticAnalyzer {
         static const std::set<std::string> builtins = {"i64",
                                                        "u64",
                                                        "u8",
+                                                       "borrow_bytes",
                                                        "own",
                                                        "move",
                                                        "borrow",
@@ -1117,7 +1248,9 @@ class SemanticAnalyzer {
                 const auto &parameter = function.params[index];
                 const int local = add(parameter.name, parameter.type, false, function.token, true,
                                       !parameter.type.isClass());
-                if (parameter.type.isClass())
+                if (parameter.type.isSpan())
+                    emit(ir::BindSpanParameter{static_cast<int>(index), offset(local)});
+                else if (parameter.type.isClass())
                     emit(ir::BindObjectParameter{static_cast<int>(index), offset(local),
                                                  parameter.type.className});
                 else

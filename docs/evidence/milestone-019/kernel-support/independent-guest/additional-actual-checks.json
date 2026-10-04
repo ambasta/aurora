@@ -1,0 +1,6 @@
+{
+  "assertions": 187,
+  "verified_receipt_hashes": 54,
+  "result": "PASS",
+  "scope": "archived actual guest serial/stack evidence; no device DMA"
+}

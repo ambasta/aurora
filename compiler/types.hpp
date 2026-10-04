@@ -16,14 +16,20 @@ class Token {
     Token(std::string t, int l) : text(std::move(t)), line(l) {}
 };
 // Append new kinds so existing IR and template identity ordinals remain stable.
-enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter, Enum, U8 };
+enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter, Enum, U8, ByteSpan };
 enum class TemplateArgumentKind { Type, Value };
+inline constexpr int maximumTemplateNesting = 4;
 class TemplateArgument {
   public:
     TemplateArgumentKind kind = TemplateArgumentKind::Type;
     TypeKind type = TypeKind::I64;
     std::int64_t value = 0;
     std::string className, displayName;
+    // Trusted frontend substitution provenance; never grants source name lookup.
+    bool resolvedClass = false;
+    // Frontend-only unresolved concrete template-id. Resolution interns children
+    // first and clears this tree before substitution or the concrete IR boundary.
+    std::vector<TemplateArgument> templateArguments;
     TemplateArgument() = default;
     TemplateArgument(TypeKind value) : type(value) {}
     explicit TemplateArgument(std::string name)
@@ -69,6 +75,7 @@ class Type {
     bool isClass() const { return kind == TypeKind::Class; }
     bool isEnum() const { return kind == TypeKind::Enum; }
     bool isArray() const { return kind == TypeKind::Array; }
+    bool isSpan() const { return kind == TypeKind::ByteSpan; }
     static Type enumeration(std::string name) {
         Type type(TypeKind::Enum);
         type.className = std::move(name);
@@ -80,7 +87,7 @@ class Type {
         type.length = count;
         return type;
     }
-    static const Type I64, U64, U8, Bool, Own, Ref, MutRef;
+    static const Type I64, U64, U8, Bool, Own, Ref, MutRef, ByteSpan;
 };
 inline const Type Type::I64{TypeKind::I64};
 inline const Type Type::U64{TypeKind::U64};
@@ -89,6 +96,7 @@ inline const Type Type::Bool{TypeKind::Bool};
 inline const Type Type::Own{TypeKind::Own};
 inline const Type Type::Ref{TypeKind::Ref};
 inline const Type Type::MutRef{TypeKind::MutRef};
+inline const Type Type::ByteSpan{TypeKind::ByteSpan};
 inline std::string typeName(const Type &type) {
     switch (type.kind) {
     case TypeKind::I64:
@@ -105,6 +113,8 @@ inline std::string typeName(const Type &type) {
         return "ref<i64>";
     case TypeKind::MutRef:
         return "mutref<i64>";
+    case TypeKind::ByteSpan:
+        return "builtin::span<const u8>";
     case TypeKind::Parameter:
         return type.className;
     case TypeKind::Enum:
@@ -117,12 +127,15 @@ inline std::string typeName(const Type &type) {
                 if (index)
                     name += ", ";
                 const auto &argument = type.templateArguments[index];
-                name += argument.kind == TemplateArgumentKind::Type
-                            ? (argument.type == TypeKind::Class || argument.type == TypeKind::Enum
-                                   ? (argument.displayName.empty() ? argument.className
-                                                                   : argument.displayName)
-                                   : typeName(Type(argument.type)))
-                            : std::to_string(argument.value);
+                if (argument.kind == TemplateArgumentKind::Value)
+                    name += std::to_string(argument.value);
+                else {
+                    Type argumentType(argument.type);
+                    argumentType.className = argument.className;
+                    argumentType.displayName = argument.displayName;
+                    argumentType.templateArguments = argument.templateArguments;
+                    name += typeName(argumentType);
+                }
             }
             name += ">";
         }

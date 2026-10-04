@@ -1,0 +1,8 @@
+array64-blocks16 baseline 0 7004 0.01054763999854913
+array64-blocks16 candidate 1 6904 0.010484047001227736
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora-resource-next/diagnostics/compare_readonly_resources.py", line 118, in <module>
+    main()
+  File "/workspace/scratch/48c5de6446f8/aurora-resource-next/diagnostics/compare_readonly_resources.py", line 111, in main
+    raise RuntimeError('candidate failed valid readonly corpus; complete receipt retained')
+RuntimeError: candidate failed valid readonly corpus; complete receipt retained

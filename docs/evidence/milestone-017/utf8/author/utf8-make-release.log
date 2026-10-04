@@ -1,0 +1,46 @@
+make: Entering directory '/workspace/scratch/48c5de6446f8/aurora-utf8-next/compiler'
+python3 -O ../tests/compiler/utf8.py /tmp/aurora-resource-main-compiler-frozen 
+PASS UTF-8 harness controls (active under Python -O)
+{"compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980", "utf8_sha256": "6ad8d1c11ce26197932e2118151a7761e518ea2db7dc64a1fd1a3e956761f31c", "test_sha256": "c30c913e6f5a81b724002a112acfdf7dc98b7c4dc4b9165f0a0999f005e9df84", "artifacts": "/workspace/scratch/48c5de6446f8/aurora-utf8-next/build/utf8-native-rbs3re16"}
+PASS Python strict crosscheck: 1112064 scalars, 256 one-byte, 65536 two-byte, 24200 longer boundary inputs
+PASS native UTF-8 batch 1: 1 checks; all 1112064 Unicode scalars in native runtime loop
+PASS native UTF-8 batch 2: 1 checks; all 256 inputs of length 1, final and chunk
+PASS native UTF-8 batch 3: 1 checks; all 65536 inputs of length 2, final and chunk
+PASS native UTF-8 batch 4: 1 checks; 2200 length-3 boundary-class inputs, final and chunk
+PASS native UTF-8 batch 5: 1 checks; 22000 length-4 boundary-class inputs, final and chunk
+PASS native UTF-8 batch 6: 12 checks; scalar U+0000 window prefix 0, final=False
+PASS native UTF-8 batch 7: 12 checks; scalar U+0080 window prefix 0, final=False
+PASS native UTF-8 batch 8: 12 checks; scalar U+0800 window prefix 0, final=False
+PASS native UTF-8 batch 9: 12 checks; scalar U+D7FF window prefix 0, final=True
+PASS native UTF-8 batch 10: 12 checks; scalar U+FFFF window prefix 0, final=False
+PASS native UTF-8 batch 11: 12 checks; scalar U+10000 window prefix 4, final=False
+PASS native UTF-8 batch 12: 12 checks; scalar U+10FFFF window prefix 1, final=True
+PASS native UTF-8 batch 13: 12 checks; scalar U+FFFD window prefix 0, final=False
+PASS native UTF-8 batch 14: 12 checks; scalar U+FDD0 window prefix 0, final=True
+PASS native UTF-8 batch 15: 12 checks; scalar U+1FFFE window prefix 0, final=False
+PASS native UTF-8 batch 16: 12 checks; scalar U+0378 window prefix 2, final=False
+PASS native UTF-8 batch 17: 12 checks; range offset=-9223372036854775808 count=2 final=False
+PASS native UTF-8 batch 18: 12 checks; range offset=-1 count=1 final=False
+PASS native UTF-8 batch 19: 12 checks; range offset=0 count=0 final=False
+PASS native UTF-8 batch 20: 12 checks; range offset=1 count=-1 final=False
+PASS native UTF-8 batch 21: 12 checks; range offset=3 count=-9223372036854775808 final=False
+PASS native UTF-8 batch 22: 12 checks; range offset=3 count=9223372036854775807 final=False
+PASS native UTF-8 batch 23: 12 checks; range offset=4 count=4 final=False
+PASS native UTF-8 batch 24: 12 checks; range offset=5 count=2 final=False
+PASS native UTF-8 batch 25: 12 checks; range offset=9223372036854775807 count=1 final=False
+PASS native UTF-8 batch 26: 12 checks; validated prefix before c0 final=False
+PASS native UTF-8 batch 27: 12 checks; validated prefix before f08f final=False
+PASS native UTF-8 batch 28: 12 checks; validated prefix before e180 final=False
+PASS native UTF-8 batch 29: 12 checks; public success report scalar 55296
+PASS native UTF-8 batch 30: 12 checks; public end_of_input report scalar 0
+PASS native UTF-8 batch 31: 12 checks; public end_of_input report width 4 is ordinary data
+PASS native UTF-8 batch 32: 12 checks; public out_of_range report width 0 is ordinary data
+PASS native UTF-8 batch 33: 12 checks; public invalid_sequence report width -9223372036854775808 is ordinary data
+PASS native UTF-8 batch 34: 12 checks; public truncated report scalar 1114112
+PASS native UTF-8 batch 35: 12 checks; public need_more report scalar 57344
+PASS native UTF-8 batch 36: 12 checks; full maximum-capacity 4096-byte span
+PASS native UTF-8 batch 37: 12 checks; stateless two-chunk replay 007fc280e0a080f0908080f48fbfbfefbbbfefb790 split=10
+PASS native UTF-8 batch 38: 12 checks; one-byte chunk replay with at most three retained bytes 007fc280e0a080f0908080f48fbfbfefbbbfefb790
+PASS native UTF-8 batch 39: 5 checks; stateless two-chunk replay f09f998241ed9fbfee8080cdb800 split=11
+PASS UTF-8: 406 native checks in 39 bounded fixtures; all 1112064 scalars, 256 one-byte, 65536 two-byte, 24200 longer boundary inputs; artifacts=/workspace/scratch/48c5de6446f8/aurora-utf8-next/build/utf8-native-rbs3re16
+make: Leaving directory '/workspace/scratch/48c5de6446f8/aurora-utf8-next/compiler'

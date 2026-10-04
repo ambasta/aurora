@@ -1,0 +1,110 @@
+[
+  {
+    "path": "README.md",
+    "base_sha256": "369fcc833b65db1e67b6389ba515ccd1214f2571afdbf2386e66f17c4b3d698e",
+    "candidate_sha256": "62a55c74214deb329225634786eda640b5520182daa5c14eedddfc7741a7eec6",
+    "candidate_bytes": 24881
+  },
+  {
+    "path": "compiler/COMPOSED-VALUES.md",
+    "base_sha256": "97d4fe3b58dd2afd4037b6e8d9b8f137096da2798285d9602920d8bab646776e",
+    "candidate_sha256": "65ca2a8734d3e1237ef56767e00862bf2a414d4aa7fd5b65b1020be051e1c1b1",
+    "candidate_bytes": 6226
+  },
+  {
+    "path": "compiler/ENUM-RESULTS.md",
+    "base_sha256": "fab949222042b0781b11796665b572615fc3b61bc052fc5fe75e869a6c123581",
+    "candidate_sha256": "b7b2545509e2f458df28c3ae23b38242b98df4b02882a8017a09a39450c27409",
+    "candidate_bytes": 8078
+  },
+  {
+    "path": "compiler/Makefile",
+    "base_sha256": "e1d7a88a42a591175d5792ecd76dc68e387c35c55be1f4a5ac24ecee456ec75a",
+    "candidate_sha256": "779110080235a2088b1b6a27bc5ccb901419cf91a33c3f450419b22855b9c8fd",
+    "candidate_bytes": 4143
+  },
+  {
+    "path": "compiler/NESTED-VALUES.md",
+    "base_sha256": null,
+    "candidate_sha256": "71df9d3af434ec7f78e4ea5ad77f3a8dd8be2911af499ac98a769b602ea1e578",
+    "candidate_bytes": 4605
+  },
+  {
+    "path": "compiler/README.md",
+    "base_sha256": "15a08040191feb2639366d6d4da594577505729ce1fb44f8b721e494af64566c",
+    "candidate_sha256": "0f5c3c238133291e92125a305674094035a7b2da5e9eb11f570bece7bc785604",
+    "candidate_bytes": 20416
+  },
+  {
+    "path": "compiler/TEMPLATES.md",
+    "base_sha256": "a2338fdb212e2b35b57f07a0ccdfc97be9f33f0c65d665efca3301e99c4f836a",
+    "candidate_sha256": "1ddb77354571105e0d8e4eee95f4a0207e06ce6c69cf9faea54ef8ed8dc9dd0b",
+    "candidate_bytes": 9172
+  },
+  {
+    "path": "compiler/modules.hpp",
+    "base_sha256": "46788d754f39d8d73732fd837d375a5919a0f8a691a4613bf7aed4b7d1a9dfd2",
+    "candidate_sha256": "cd6e3bddfc1d2b89795cafd2b2ca438d018cc4a52e9744bd1569db6691721bef",
+    "candidate_bytes": 47350
+  },
+  {
+    "path": "compiler/parser.hpp",
+    "base_sha256": "0377cf477abfe3f8119437244c627ab43e4b61a139de76c5917adb83c2958ebf",
+    "candidate_sha256": "dbc74dc42e60247109adb9e6597b14cc14a552ee7079d615fe27004374ad32d5",
+    "candidate_bytes": 29389
+  },
+  {
+    "path": "compiler/templates.hpp",
+    "base_sha256": "9558565e74e6828102d8b99ce5f36ee8ae9f0fecc21ab7666cedd3a77c03e554",
+    "candidate_sha256": "6a83ac625bf084c1bbb42abd412ade0071abbe6e3c0875b869f96a561d8e5d8f",
+    "candidate_bytes": 11661
+  },
+  {
+    "path": "compiler/types.hpp",
+    "base_sha256": "0597921203f55e07f923c8b65079f21b4d2797decfbe7fab64aa4a3cf73a2149",
+    "candidate_sha256": "9c36e0a4cd7186655fb0d8d93844133bfcb120ff67e092237674eb70ee9ae979",
+    "candidate_bytes": 6078
+  },
+  {
+    "path": "docs/completeness-matrix.md",
+    "base_sha256": "e12c9cfaf67d2c6f8721fc8d4a7502ca23a4dfb81daecf5c9d58d027c7f3227c",
+    "candidate_sha256": "6138005e5f2a2258c96907d02e42a735de3ec495d87add007dc273815ec60476",
+    "candidate_bytes": 27327
+  },
+  {
+    "path": "examples/nested_token_values.au",
+    "base_sha256": null,
+    "candidate_sha256": "6bc300f429ce77fd3fada0e361f47baf213d082353f4850d94ab128064140f20",
+    "candidate_bytes": 2421
+  },
+  {
+    "path": "library/README.md",
+    "base_sha256": "4d17f2029523f17ee9d3263e281224d4b2d358f2a47973f657799d75eaf52134",
+    "candidate_sha256": "a8904976d242dce811c9fd3157e96190fa70087b3cf3334a2ae6ef3f02451e24",
+    "candidate_bytes": 11996
+  },
+  {
+    "path": "tests/compiler/composed_values.py",
+    "base_sha256": "ffd220ccc45ee758865d383fc401adccba017da08c275fa21b0acccaa16ee40e",
+    "candidate_sha256": "24bdd85c44f474a1ccca5a8a9fc2f574f6611cd1ce286be2f69d51d1d77847c0",
+    "candidate_bytes": 49292
+  },
+  {
+    "path": "tests/compiler/enum_composition.py",
+    "base_sha256": "997f02bdbaafdcde8b8bba15526b07828170b6c5b659630c9d2f3a14c7549d1a",
+    "candidate_sha256": "277ce3c23431c552780d3e890813547dfa426b56e9f221131a8ccd3743a67cf7",
+    "candidate_bytes": 43502
+  },
+  {
+    "path": "tests/compiler/ir_tests.cpp",
+    "base_sha256": "c7fccfb057b6570086216b356a32f885a3e6ca23347c8eb3f377cae4f8a4f6ce",
+    "candidate_sha256": "c16e6d57a07cf27eed493f3557344f37f05a34452cf6f863ec553626a3bbb8fc",
+    "candidate_bytes": 224984
+  },
+  {
+    "path": "tests/compiler/nested_values.py",
+    "base_sha256": null,
+    "candidate_sha256": "2c4f3f2c80fe93565c4b8a4edafdef0458170051258be2a45c89fe7e0d6a4cf6",
+    "candidate_bytes": 34519
+  }
+]

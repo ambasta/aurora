@@ -1,0 +1,17 @@
+module example.binary_reader;
+import std.binary;
+
+auto consume(builtin::span<const u8> bytes) -> i64 {
+    const std::ByteReadResult first = std::read_le32(bytes, 0);
+    const std::ByteReadResult second = std::read_be32(bytes, 4);
+    if (first.status() != std::ByteReadStatus::success) { return 1; }
+    if (second.status() != std::ByteReadStatus::success) { return 2; }
+    return i64(first.value_or(0u64) + second.value_or(0u64));
+}
+
+auto main() -> i64 {
+    array<u8, 8> storage = {20u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 22u8};
+    const i64 result = consume(borrow_bytes(storage));
+    storage[0] = 0u8;
+    return result;
+}

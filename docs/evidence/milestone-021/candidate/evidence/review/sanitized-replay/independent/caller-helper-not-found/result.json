@@ -1,0 +1,41 @@
+{
+  "name": "caller-helper-not-found",
+  "source_group": "independent",
+  "negative": true,
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/san/aurorac",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-helper-not-found/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-helper-not-found/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/sanitized-replay/independent/caller-helper-not-found/compiled.s"
+  ],
+  "compiler_status": 1,
+  "compiler_stderr": "aurorac: line 1: unknown function 'helper' in defining module generic\n",
+  "seconds": 0.009285926818847656,
+  "release_evidence": "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-helper-not-found/result.json",
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-helper-not-found/input.au": "671a26d4064ce024f5dad3e137b999434ad879835cc9848bda2baced39dc916c",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-helper-not-found/modules/generic.au": "ea511457c8b043550aebb9848056e03f7fb97b623aec3ae2e0f98140ccc6ae7d"
+  },
+  "pass": true,
+  "existing_output_preserved": true,
+  "absent_replay": {
+    "command": [
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/san/aurorac",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+      "--module-root",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-helper-not-found/modules",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-helper-not-found/input.au",
+      "-o",
+      "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/sanitized-replay/independent/caller-helper-not-found/absent.s"
+    ],
+    "status": 1,
+    "diagnostic": "aurorac: line 1: unknown function 'helper' in defining module generic\n",
+    "absent": true
+  },
+  "inputs_unchanged": true
+}

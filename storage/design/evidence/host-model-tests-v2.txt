@@ -1,0 +1,25 @@
+HOST-ONLY durability model; no disk/driver/target filesystem coverage
+safe two-fence: 181 crash images; 0 violations; 4 valid unacknowledged new states
+broken single-final-flush: 684 crash images; 126 violations; 4 valid unacknowledged new states
+  first counterexample: {'cut': 'submit-commit', 'masks': {'data-a': 0, 'data-b': 0, 'manifest': 0, 'commit': 3}, 'reason': 'missing/corrupt manifest'}
+broken premature-ack: 186 crash images; 3 violations; 3 valid unacknowledged new states
+  first counterexample: {'cut': 'acknowledge', 'masks': {'commit': 0}, 'reason': 'acknowledged commit lost'}
+test_bounded_outcome_retention_does_not_reexecute_expired_token (__main__.DurabilityTests.test_bounded_outcome_retention_does_not_reexecute_expired_token) ... ok
+test_dependency_loss_is_corruption_not_silent_rollback (__main__.DurabilityTests.test_dependency_loss_is_corruption_not_silent_rollback) ... ok
+test_every_record_byte_bit_flip_and_truncation (__main__.DurabilityTests.test_every_record_byte_bit_flip_and_truncation) ... ok
+test_lost_reply_retry_returns_same_durable_result (__main__.DurabilityTests.test_lost_reply_retry_returns_same_durable_result) ... ok
+test_malformed_and_duplicate_reference_shapes (__main__.DurabilityTests.test_malformed_and_duplicate_reference_shapes) ... ok
+test_missing_commit_durability_fence_loses_acknowledgement (__main__.DurabilityTests.test_missing_commit_durability_fence_loses_acknowledgement) ... ok
+test_no_commit_leaves_old_state (__main__.DurabilityTests.test_no_commit_leaves_old_state) ... ok
+test_null_outcome_cannot_erase_first_wins_contract (__main__.DurabilityTests.test_null_outcome_cannot_erase_first_wins_contract) ... ok
+test_outcome_window_explicit_type_and_range_bounds (__main__.DurabilityTests.test_outcome_window_explicit_type_and_range_bounds) ... ok
+test_safe_protocol_all_crash_images (__main__.DurabilityTests.test_safe_protocol_all_crash_images) ... ok
+test_single_final_flush_is_detected_as_broken (__main__.DurabilityTests.test_single_final_flush_is_detected_as_broken) ... ok
+test_unacknowledged_valid_commit_is_recovered (__main__.DurabilityTests.test_unacknowledged_valid_commit_is_recovered) ... ok
+test_valid_checksums_do_not_override_identity (__main__.DurabilityTests.test_valid_checksums_do_not_override_identity) ... ok
+test_valid_checksums_do_not_override_manifest_or_commit_contract (__main__.DurabilityTests.test_valid_checksums_do_not_override_manifest_or_commit_contract) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.007s
+
+OK

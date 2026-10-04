@@ -1,0 +1,236 @@
+[
+  {
+    "name": "always-fail",
+    "command": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+      "-O",
+      "/workspace/scratch/48c5de6446f8/aurora-resource-next/diagnostics/compare_readonly_resources.py",
+      "/tmp/aurora-m014-compiler-corrected",
+      "/bin/false",
+      "/tmp/aurora-resource-driver-controls/always-fail"
+    ],
+    "returncode": 1,
+    "stdout_hex": "617272617936342d626c6f636b73313620626173656c696e65203020313039303820302e30323039333535393439393931373331390a617272617936342d626c6f636b7331362063616e646964617465203120313138333620302e3031303531313334323939363332333934370a",
+    "stderr_hex": "54726163656261636b20286d6f737420726563656e742063616c6c206c617374293a0a202046696c6520222f776f726b73706163652f736372617463682f3438633564653634343666382f6175726f72612d7265736f757263652d6e6578742f646961676e6f73746963732f636f6d706172655f726561646f6e6c795f7265736f75726365732e7079222c206c696e65203135392c20696e203c6d6f64756c653e0a202020206d61696e28290a202046696c6520222f776f726b73706163652f736372617463682f3438633564653634343666382f6175726f72612d7265736f757263652d6e6578742f646961676e6f73746963732f636f6d706172655f726561646f6e6c795f7265736f75726365732e7079222c206c696e65203134332c20696e206d61696e0a2020202072616973652052756e74696d654572726f72282763616e646964617465206661696c65642076616c696420726561646f6e6c7920636f727075733b20636f6d706c65746520726563656970742072657461696e656427290a52756e74696d654572726f723a2063616e646964617465206661696c65642076616c696420726561646f6e6c7920636f727075733b20636f6d706c65746520726563656970742072657461696e65640a",
+    "observed": {
+      "scope": "Readonly source only; no mutable borrowing prerequisite",
+      "compiler_sha256": {
+        "baseline": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+        "candidate": "d22a87e4d3bac34db5025ba813f9275244336880b297a5ae0bcbc19206454ddf"
+      },
+      "driver_sha256": "d9218c4934bfe290951b581eee1cbd2d5bf0e25b971d3345c59895c7bb90e6e9",
+      "limits": {
+        "address_space_mib": 256,
+        "cpu_seconds": [
+          4,
+          5
+        ],
+        "wall_seconds": 10,
+        "regular_file_mib": 8,
+        "core_bytes": 0
+      },
+      "results": [
+        {
+          "name": "array64-blocks16",
+          "source_bytes": 3358,
+          "baseline": {
+            "command": [
+              "/tmp/aurora-m014-compiler-corrected",
+              "--module-root",
+              "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+              "/tmp/aurora-resource-driver-controls/always-fail/array64-blocks16.au",
+              "-o",
+              "/tmp/aurora-resource-driver-controls/always-fail/array64-blocks16-baseline.s"
+            ],
+            "exit_code": 0,
+            "wall_seconds": 0.02093559499917319,
+            "max_rss_kib": 10908,
+            "user_seconds": 0.009807999999999999,
+            "system_seconds": 0.005391,
+            "harness_deadline_kill": false,
+            "tool_sha256": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+            "stdout_hex": "",
+            "stderr_hex": "",
+            "source_sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+            "assembly_sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb"
+          },
+          "candidate": {
+            "command": [
+              "/usr/bin/false",
+              "--module-root",
+              "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+              "/tmp/aurora-resource-driver-controls/always-fail/array64-blocks16.au",
+              "-o",
+              "/tmp/aurora-resource-driver-controls/always-fail/array64-blocks16-candidate.s"
+            ],
+            "exit_code": 1,
+            "wall_seconds": 0.010511342996323947,
+            "max_rss_kib": 11836,
+            "user_seconds": 0.0,
+            "system_seconds": 0.001343,
+            "harness_deadline_kill": false,
+            "tool_sha256": "d22a87e4d3bac34db5025ba813f9275244336880b297a5ae0bcbc19206454ddf",
+            "stdout_hex": "",
+            "stderr_hex": "",
+            "source_sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+            "assembly_sha256": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wrong-output",
+    "command": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+      "-O",
+      "/workspace/scratch/48c5de6446f8/aurora-resource-next/diagnostics/compare_readonly_resources.py",
+      "/tmp/aurora-m014-compiler-corrected",
+      "/tmp/aurora-resource-driver-controls/wrong-output-compiler.py",
+      "/tmp/aurora-resource-driver-controls/wrong-output"
+    ],
+    "returncode": 1,
+    "stdout_hex": "617272617936342d626c6f636b73313620626173656c696e65203020313130303020302e30323038373033323830303034353536330a617272617936342d626c6f636b7331362063616e646964617465203020313139323420302e30353134313936363830303134373230320a",
+    "stderr_hex": "54726163656261636b20286d6f737420726563656e742063616c6c206c617374293a0a202046696c6520222f776f726b73706163652f736372617463682f3438633564653634343666382f6175726f72612d7265736f757263652d6e6578742f646961676e6f73746963732f636f6d706172655f726561646f6e6c795f7265736f75726365732e7079222c206c696e65203135392c20696e203c6d6f64756c653e0a202020206d61696e28290a202046696c6520222f776f726b73706163652f736372617463682f3438633564653634343666382f6175726f72612d7265736f757263652d6e6578742f646961676e6f73746963732f636f6d706172655f726561646f6e6c795f7265736f75726365732e7079222c206c696e65203135322c20696e206d61696e0a2020202072616973652052756e74696d654572726f72282763616e646964617465206e617469766520726573756c74206973206e6f74206578616374207536342034323b20636f6d706c65746520726563656970742072657461696e656427290a52756e74696d654572726f723a2063616e646964617465206e617469766520726573756c74206973206e6f74206578616374207536342034323b20636f6d706c65746520726563656970742072657461696e65640a",
+    "observed": {
+      "scope": "Readonly source only; no mutable borrowing prerequisite",
+      "compiler_sha256": {
+        "baseline": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+        "candidate": "e782b45b8f7f1aa5899c6d0aed428d330bc75006eb48ce7e853acbbc248c3400"
+      },
+      "driver_sha256": "d9218c4934bfe290951b581eee1cbd2d5bf0e25b971d3345c59895c7bb90e6e9",
+      "limits": {
+        "address_space_mib": 256,
+        "cpu_seconds": [
+          4,
+          5
+        ],
+        "wall_seconds": 10,
+        "regular_file_mib": 8,
+        "core_bytes": 0
+      },
+      "results": [
+        {
+          "name": "array64-blocks16",
+          "source_bytes": 3358,
+          "baseline": {
+            "command": [
+              "/tmp/aurora-m014-compiler-corrected",
+              "--module-root",
+              "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+              "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16.au",
+              "-o",
+              "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-baseline.s"
+            ],
+            "exit_code": 0,
+            "wall_seconds": 0.02087032800045563,
+            "max_rss_kib": 11000,
+            "user_seconds": 0.007135,
+            "system_seconds": 0.003928,
+            "harness_deadline_kill": false,
+            "tool_sha256": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+            "stdout_hex": "",
+            "stderr_hex": "",
+            "source_sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+            "assembly_sha256": "2711bc51d3e1f1be3917705c040fa1fc64809e8b724250eb54c71a5e82d248bb"
+          },
+          "candidate": {
+            "command": [
+              "/tmp/aurora-resource-driver-controls/wrong-output-compiler.py",
+              "--module-root",
+              "/workspace/scratch/48c5de6446f8/aurora-resource-next/library",
+              "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16.au",
+              "-o",
+              "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-candidate.s"
+            ],
+            "exit_code": 0,
+            "wall_seconds": 0.05141966800147202,
+            "max_rss_kib": 11924,
+            "user_seconds": 0.034211,
+            "system_seconds": 0.008267,
+            "harness_deadline_kill": false,
+            "tool_sha256": "e782b45b8f7f1aa5899c6d0aed428d330bc75006eb48ce7e853acbbc248c3400",
+            "stdout_hex": "",
+            "stderr_hex": "",
+            "source_sha256": "41f13f47f03d4f69e59991d547a8d95200f4e9461780140ca78dfca6a05ac98f",
+            "assembly_sha256": "ffe830e25ddc4041cc2edb9a6552236c3cde280bb1def0bc247ba7cad229350a"
+          },
+          "assembly_identical": false,
+          "native": [
+            {
+              "command": [
+                "/usr/bin/as",
+                "--64",
+                "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-candidate.s",
+                "-o",
+                "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-native.code.o"
+              ],
+              "exit_code": 0,
+              "wall_seconds": 0.010629521995724645,
+              "max_rss_kib": 11924,
+              "user_seconds": 0.002234,
+              "system_seconds": 0.0,
+              "harness_deadline_kill": false,
+              "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+              "stdout_hex": "",
+              "stderr_hex": ""
+            },
+            {
+              "command": [
+                "/usr/bin/as",
+                "--64",
+                "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-native.entry.s",
+                "-o",
+                "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-native.entry.o"
+              ],
+              "exit_code": 0,
+              "wall_seconds": 0.01061086000117939,
+              "max_rss_kib": 11924,
+              "user_seconds": 0.002992,
+              "system_seconds": 0.0,
+              "harness_deadline_kill": false,
+              "tool_sha256": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+              "stdout_hex": "",
+              "stderr_hex": ""
+            },
+            {
+              "command": [
+                "/usr/bin/ld",
+                "--build-id=none",
+                "-e",
+                "_start",
+                "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-native.entry.o",
+                "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-native.code.o",
+                "-o",
+                "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-native"
+              ],
+              "exit_code": 0,
+              "wall_seconds": 0.010563834002823569,
+              "max_rss_kib": 11924,
+              "user_seconds": 0.001099,
+              "system_seconds": 0.0035399999999999997,
+              "harness_deadline_kill": false,
+              "tool_sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+              "stdout_hex": "",
+              "stderr_hex": ""
+            },
+            {
+              "command": [
+                "/tmp/aurora-resource-driver-controls/wrong-output/array64-blocks16-native"
+              ],
+              "exit_code": 0,
+              "wall_seconds": 0.01065173600363778,
+              "max_rss_kib": 11924,
+              "user_seconds": 0.000686,
+              "system_seconds": 0.0,
+              "harness_deadline_kill": false,
+              "tool_sha256": "9f0923ac035a110c55c8e5711ab4dd36bbc4e887c8c45887c139b68f675925be",
+              "stdout_hex": "2b00000000000000",
+              "stderr_hex": ""
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

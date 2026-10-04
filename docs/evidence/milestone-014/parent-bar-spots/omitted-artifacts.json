@@ -1,0 +1,54 @@
+{
+  "bar-revoked/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-revoked/vars-runtime.fd"
+  },
+  "bar-revoked/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-revoked/vars-initial.fd"
+  },
+  "bar-revoked/payload.elf": {
+    "sha256": "ab1e6b63aa9ed29c23b53e594376dadb3ec63607886524ad1b6424ccf44cf74f",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-revoked/payload.elf"
+  },
+  "bar-revoked/payload.bin": {
+    "sha256": "69029c2fdaaac403f6c6afb7413d9ae695964199563c759b87b5be8504ec8e61",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-revoked/payload.bin"
+  },
+  "bar-read/vars-runtime.fd": {
+    "sha256": "179856ebb42fa874346848ccf1ed5ac1f25e8e7a626dd6adc4717c802f4688d0",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-read/vars-runtime.fd"
+  },
+  "bar-read/vars-initial.fd": {
+    "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-read/vars-initial.fd"
+  },
+  "bar-read/payload.elf": {
+    "sha256": "c5c3a50ef1908621a4b33f639aa32565931a7841578fa21841e563c1d99af9ab",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-read/payload.elf"
+  },
+  "bar-read/payload.bin": {
+    "sha256": "7e4dafa0cd9da9ab5f6ad095098939acb265ef0ca39c53ff01a820b8e427fce3",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-read/payload.bin"
+  },
+  "bar-state/payload.elf": {
+    "sha256": "1e6b481af95c43a67799fa50c565698d9023b1576f02b637f437e24d66d7cacf",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-state/payload.elf"
+  },
+  "bar-state/payload.bin": {
+    "sha256": "de9cf3de46501939c0464fdce58022b0091d66e90a654f29a85082983c2a1b6c",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-state/payload.bin"
+  },
+  "bar-revoked/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "5b249194c3391a9ff2bbf99a66b0d2a6ef47526e4ae98d985548733a8d7f6f0e",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-revoked/esp/EFI/BOOT/BOOTX64.EFI"
+  },
+  "bar-read/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "ba0f54f67452bf6659e1c858cd87bd58acb097692ce921190007221066171ef7",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-read/esp/EFI/BOOT/BOOTX64.EFI"
+  },
+  "bar-state/esp/EFI/BOOT/BOOTX64.EFI": {
+    "sha256": "d41fea1fca56a8dbff88c5c757395bfeaf02d055a1529ce6bd6b16f87435c991",
+    "local_path": "/tmp/aurora-m014-parent-spots/bar-state/esp/EFI/BOOT/BOOTX64.EFI"
+  }
+}

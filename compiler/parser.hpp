@@ -7,9 +7,10 @@ namespace aurora {
 class Parser {
     std::vector<Token> tokens;
     std::size_t position = 0;
-    int expressionNesting = 0, blockNesting = 0, typeNesting = 0;
+    int expressionNesting = 0, blockNesting = 0, typeNesting = 0, templateNesting = 0;
     std::set<std::string> templateParameters;
     std::set<std::string> capacityParameters;
+    bool functionTemplate = false;
     class Nesting {
         int &depth;
 
@@ -85,16 +86,52 @@ class Parser {
     bool scalarOrParameter(const Type &value) const {
         return scalar(value) || value.kind == TypeKind::Parameter;
     }
-    std::vector<TemplateArgument> templateArguments() {
-        if (!templateParameters.empty())
+    void templateClose() {
+        if (eat(">"))
+            return;
+        if (peek().text == ">>") {
+            // Consume only the first closer. The remaining token keeps its source
+            // line and is consumed by the enclosing template-id, never by lexing.
+            tokens[position].text = ">";
+            return;
+        }
+        fail("expected '>'");
+    }
+    // Locate an entire explicit argument list without changing tokens. Only this
+    // type/construction lookahead treats >> as two closers; arithmetic keeps it.
+    std::size_t templateArgumentEnd(std::size_t start) const {
+        if (start >= tokens.size() || tokens[start].text != "<")
+            return tokens.size();
+        int depth = 0;
+        for (std::size_t index = start; index < tokens.size(); ++index) {
+            const auto &token = tokens[index].text;
+            if (token == "<")
+                ++depth;
+            else if (token == ">" || token == ">>") {
+                depth -= token == ">>" ? 2 : 1;
+                if (depth < 0)
+                    return tokens.size();
+                if (depth == 0)
+                    return index + 1;
+            } else if (token == ";" || token == "}" || token == "<eof>" || token == "(" ||
+                       token == "{" || token == "=")
+                return tokens.size();
+        }
+        return tokens.size();
+    }
+    std::vector<TemplateArgument> templateArguments(int callAllowance = 0) {
+        // Calls are kind-resolved later. Their outer argument list is not a
+        // class-template level; class construction depth is checked in resolution.
+        Nesting nesting(templateNesting, maximumTemplateNesting + callAllowance, peek().line, "template-id");
+        if (!templateParameters.empty() && !functionTemplate)
             fail("template-id references inside template definitions are not supported");
         need("<");
         std::vector<TemplateArgument> arguments;
         do {
             if (arguments.size() >= 2)
                 fail("template arguments are limited to one or two types or capacity literals");
-            // Named classes and enums resolve in the requesting module; arguments never
-            // recursively parse a template-id, resource, reference or array type.
+            // Concrete named types and nested template-ids bind in the requesting
+            // module. Resource, reference and builtin storage arguments stay closed.
             if (eat("i64"))
                 arguments.push_back(TypeKind::I64);
             else if (eat("u64"))
@@ -119,32 +156,29 @@ class Parser {
             } else if (peek().text != "own" && peek().text != "ref" && peek().text != "mutref" &&
                        peek().text != "array" && peek().text != "builtin" &&
                        peek().text != "true" && peek().text != "false") {
-                const auto argument = qualifiedIdent();
+                auto argument = ident();
+                while (eat("::"))
+                    argument.text += "::" + ident(true).text;
+                TemplateArgument value(argument.text);
+                if (templateParameters.contains(argument.text)) {
+                    if (templateNesting != 1 || peek().text == "<")
+                        fail("nested dependent template arguments are not supported");
+                    value.type = TypeKind::Parameter;
+                }
                 if (peek().text == "<")
-                    fail("nested template arguments are not supported");
-                arguments.emplace_back(argument.text);
+                    value.templateArguments = templateArguments(callAllowance);
+                arguments.push_back(std::move(value));
             } else
                 fail("template arguments require scalar, named class or enum types, or capacities "
                      "from 1 to 64");
         } while (eat(","));
-        need(">");
+        templateClose();
         return arguments;
     }
     bool templateExpressionAhead() const {
-        if (peek().text != "<")
-            return false;
-        // Expression positions only parse an explicit template-id when followed by
-        // construction syntax. Comparisons retain their usual parser path.
-        for (std::size_t index = position + 1; index < tokens.size() && index < position + 136;
-             ++index) {
-            const auto &token = tokens[index].text;
-            if (token == ">")
-                return index + 1 < tokens.size() &&
-                       (tokens[index + 1].text == "(" || tokens[index + 1].text == "{");
-            if (token == ";" || token == "}" || token == "<eof>" || token == "(")
-                return false;
-        }
-        return false;
+        const auto end = templateArgumentEnd(position);
+        return end < tokens.size() &&
+               (tokens[end].text == "(" || tokens[end].text == "{");
     }
     Type type() {
         Nesting nesting(typeNesting, 64, peek().line, "type");
@@ -164,6 +198,14 @@ class Parser {
         auto t = take();
         if (t.text == "builtin") {
             need("::");
+            if (eat("span")) {
+                // This is one dedicated borrow type, not a generic template-id.
+                need("<");
+                need("const");
+                need("u8");
+                need(">");
+                return Type::ByteSpan;
+            }
             need("array");
             t.text = "array";
         }
@@ -286,7 +328,7 @@ class Parser {
             t.text += "::" + ident(true).text;
         e->token.text = t.text;
         if (templateExpressionAhead())
-            e->templateArguments = templateArguments();
+            e->templateArguments = templateArguments(1);
         if (eat("(")) {
             e->op = "call";
             if (t.text == "size_of" || t.text == "type_id" || t.text == "field_count") {
@@ -363,12 +405,7 @@ class Parser {
         while (look + 1 < tokens.size() && tokens[look].text == "::")
             look += 2;
         if (look < tokens.size() && tokens[look].text == "<") {
-            const auto argumentEnd = look + 16;
-            while (look < tokens.size() && look < argumentEnd && tokens[look].text != ">" &&
-                   tokens[look].text != ";" && tokens[look].text != "<eof>")
-                ++look;
-            if (look < tokens.size() && tokens[look].text == ">")
-                ++look;
+            look = templateArgumentEnd(look);
         }
         const auto &next = tokens.at(std::min(look, tokens.size() - 1)).text;
         return !next.empty() &&
@@ -441,7 +478,8 @@ class Parser {
                 parameter.name = ident().text;
                 // Nominal names are unresolved here; module resolution permits
                 // enum method arguments and class constructor/function arguments.
-                if (!scalarOrParameter(parameter.type) && !parameter.type.isClass())
+                if (!scalarOrParameter(parameter.type) && !parameter.type.isClass() &&
+                    !parameter.type.isSpan())
                     fail(allowClass
                              ? "only scalar function parameters or scalar-field class values are "
                                "supported"
@@ -541,8 +579,11 @@ class Parser {
                      declaredParameters.front().kind != TemplateParameterKind::Scalar ||
                      declaredParameters.back().kind != TemplateParameterKind::Capacity))
                     fail("template capacity requires a preceding Scalar parameter");
-                if (peek().text != "class")
-                    fail("only Scalar- or Value-constrained class templates are supported");
+                if (peek().text != "class" && peek().text != "auto")
+                    fail("only class or namespace-level function templates are supported");
+                functionTemplate = peek().text == "auto";
+                if (functionTemplate && !capacityParameters.empty())
+                    fail("function templates require only Scalar or Value type parameters");
             }
             if (eat("class")) {
                 ClassDefinition definition(ident(scope == "std"));
@@ -635,13 +676,22 @@ class Parser {
             Function function(ident());
             function.scope = scope;
             function.exported = exported;
+            function.templateParameters = declaredParameters;
+            if (templateParameters.contains(function.token.text))
+                fail("function name cannot shadow a template parameter");
             parameters(function, true);
             need("->");
             function.result = type();
-            if (!scalar(function.result) && !function.result.isClass())
+            if (!scalarOrParameter(function.result) && !function.result.isClass())
                 fail("only scalar function results or scalar-field class values are supported");
             function.body = block();
-            program.functions.push_back(std::move(function));
+            if (declaredParameters.empty())
+                program.functions.push_back(std::move(function));
+            else
+                program.functionTemplates.push_back(std::move(function));
+            templateParameters.clear();
+            capacityParameters.clear();
+            functionTemplate = false;
         }
     }
     Program parse() {

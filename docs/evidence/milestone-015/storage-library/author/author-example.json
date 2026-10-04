@@ -1,0 +1,46 @@
+[
+  {
+    "compiler": "/tmp/aurora-m014-compiler-corrected",
+    "sha256": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+    "commands": [
+      [
+        "/tmp/aurora-m014-compiler-corrected",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-storage-next/library",
+        "/workspace/scratch/48c5de6446f8/aurora-storage-next/library/examples/storage_fields.au",
+        "-o",
+        "/tmp/aurora-storage-fields.s"
+      ],
+      [
+        "gcc",
+        "-no-pie",
+        "/tmp/aurora-storage-fields.s",
+        "-o",
+        "/tmp/aurora-storage-fields"
+      ]
+    ],
+    "native_exit": 42
+  },
+  {
+    "compiler": "/tmp/aurora-m014-compiler-corrected-sanitized",
+    "sha256": "ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa",
+    "commands": [
+      [
+        "/tmp/aurora-m014-compiler-corrected-sanitized",
+        "--module-root",
+        "/workspace/scratch/48c5de6446f8/aurora-storage-next/library",
+        "/workspace/scratch/48c5de6446f8/aurora-storage-next/library/examples/storage_fields.au",
+        "-o",
+        "/tmp/aurora-storage-fields.s"
+      ],
+      [
+        "gcc",
+        "-no-pie",
+        "/tmp/aurora-storage-fields.s",
+        "-o",
+        "/tmp/aurora-storage-fields"
+      ]
+    ],
+    "native_exit": 42
+  }
+]

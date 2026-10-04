@@ -1,0 +1,110 @@
+[
+  {
+    "path": "BaseTools/Source/C/BrotliCompress/brotli",
+    "pinned_commit": "f4153a09f87cbb9c826d8fc12c74642bb2d879ea",
+    "actual_commit": "f4153a09f87cbb9c826d8fc12c74642bb2d879ea",
+    "pin_matches": true,
+    "tracked_file_count": 354,
+    "checkout_populated": true,
+    "tracked_files_sha256": "58c5d8bed068362167c557c079fe8c43a9b16ef5555963a9395a542ba3b87776"
+  },
+  {
+    "path": "CryptoPkg/Library/MbedTlsLib/mbedtls",
+    "pinned_commit": "8c89224991adff88d53cd380f42a2baa36f91454",
+    "actual_commit": "8c89224991adff88d53cd380f42a2baa36f91454",
+    "pin_matches": true,
+    "tracked_file_count": 1460,
+    "checkout_populated": true,
+    "tracked_files_sha256": "8f2d12eb9a1f143252300a6a36ec95849777368a21baacfafe2efd2c69d6ce2b"
+  },
+  {
+    "path": "CryptoPkg/Library/OpensslLib/openssl",
+    "pinned_commit": "98acb6b02839c609ef5b837794e08d906d965335",
+    "actual_commit": "98acb6b02839c609ef5b837794e08d906d965335",
+    "pin_matches": true,
+    "tracked_file_count": 5445,
+    "checkout_populated": true,
+    "tracked_files_sha256": "310a421e47177481aa2ae8e5a0bf0d2d8e639f9301327172ceeb30195bdb20e7"
+  },
+  {
+    "path": "MdeModulePkg/Library/BrotliCustomDecompressLib/brotli",
+    "pinned_commit": "f4153a09f87cbb9c826d8fc12c74642bb2d879ea",
+    "actual_commit": "f4153a09f87cbb9c826d8fc12c74642bb2d879ea",
+    "pin_matches": true,
+    "tracked_file_count": 354,
+    "checkout_populated": true,
+    "tracked_files_sha256": "58c5d8bed068362167c557c079fe8c43a9b16ef5555963a9395a542ba3b87776"
+  },
+  {
+    "path": "MdeModulePkg/Universal/RegularExpressionDxe/oniguruma",
+    "pinned_commit": "abfc8ff81df4067f309032467785e06975678f0d",
+    "actual_commit": "abfc8ff81df4067f309032467785e06975678f0d",
+    "pin_matches": true,
+    "tracked_file_count": 159,
+    "checkout_populated": true,
+    "tracked_files_sha256": "7562b7a1d8a4c665ef1c3186ab8fe1876c25aead8ba016739f324a3231a2d995"
+  },
+  {
+    "path": "MdePkg/Library/BaseFdtLib/libfdt",
+    "pinned_commit": "cfff805481bdea27f900c32698171286542b8d3c",
+    "actual_commit": "cfff805481bdea27f900c32698171286542b8d3c",
+    "pin_matches": true,
+    "tracked_file_count": 23,
+    "checkout_populated": true,
+    "tracked_files_sha256": "aa6e1700cb9cd764b80f965fd581140471552002d64d4348c51f75020cf8d428"
+  },
+  {
+    "path": "MdePkg/Library/MipiSysTLib/mipisyst",
+    "pinned_commit": "370b5944c046bab043dd8b133727b2135af7747a",
+    "actual_commit": "370b5944c046bab043dd8b133727b2135af7747a",
+    "pin_matches": true,
+    "tracked_file_count": 91,
+    "checkout_populated": true,
+    "tracked_files_sha256": "32f3f66ae525cfa1abdb03a6bd0645f9c60eb2f99c15def1fe352aac26c67a37"
+  },
+  {
+    "path": "RedfishPkg/Library/JsonLib/jansson",
+    "pinned_commit": "e9ebfa7e77a6bee77df44e096b100e7131044059",
+    "actual_commit": "e9ebfa7e77a6bee77df44e096b100e7131044059",
+    "pin_matches": true,
+    "tracked_file_count": 358,
+    "checkout_populated": true,
+    "tracked_files_sha256": "1b15a2e15e5c0270b13d3d68e79473870219de014f817c7d474535fdc07ebdb1"
+  },
+  {
+    "path": "SecurityPkg/DeviceSecurity/SpdmLib/libspdm",
+    "pinned_commit": "98ef964e1e9a0c39c7efb67143d3a13a819432e0",
+    "actual_commit": "98ef964e1e9a0c39c7efb67143d3a13a819432e0",
+    "pin_matches": true,
+    "tracked_file_count": 1673,
+    "checkout_populated": true,
+    "tracked_files_sha256": "dbffb9085042ba020b8e0b8e971139abcef9ee2674abc5266f378ede3fc3b4b6"
+  },
+  {
+    "path": "UnitTestFrameworkPkg/Library/CmockaLib/cmocka",
+    "pinned_commit": "1cc9cde3448cdd2e000886a26acf1caac2db7cf1",
+    "actual_commit": "1cc9cde3448cdd2e000886a26acf1caac2db7cf1",
+    "pin_matches": true,
+    "tracked_file_count": 114,
+    "checkout_populated": true,
+    "tracked_files_sha256": "dc53aa074f4e4a3ce190382fa523f3e98ec3543e9b36b8f46990b45743ffd8b9"
+  },
+  {
+    "path": "UnitTestFrameworkPkg/Library/GoogleTestLib/googletest",
+    "pinned_commit": "86add13493e5c881d7e4ba77fb91c1f57752b3a4",
+    "actual_commit": "988ea2c1798de7779f656df2281dd36d6039a17a",
+    "pin_matches": false,
+    "tracked_file_count": 0,
+    "checkout_populated": false,
+    "tracked_files_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "UnitTestFrameworkPkg/Library/SubhookLib/subhook",
+    "pinned_commit": "83d4e1ebef3588fae48b69a7352cc21801cb70bc",
+    "actual_commit": "83d4e1ebef3588fae48b69a7352cc21801cb70bc",
+    "pin_matches": true,
+    "tracked_file_count": 0,
+    "checkout_populated": false,
+    "tracked_files_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

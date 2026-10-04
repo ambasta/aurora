@@ -1,0 +1,344 @@
+PASS: 3 independently compiled staged IPC RX images
+Built UEFI PE32+ loader and independent payload
+PASS: PE32+ EFI relocation/RX policy, exact PIC payload; 14 negative images
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+BdsDxe: starting Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+AURORA_UEFI_ENTRY
+AURORA_UEFI_EXIT_OK: attempts=1
+AURORA_UEFI_PAYLOAD_ENTRY
+AURORA_UEFI_OWNERSHIP_OK: arena=99753984 bytes=1048576 descriptors=111
+AURORA_UEFI_PROTECTION_OK: root=99823616 stack=100048672
+AURORA_ACPI_CPU: id=0 uid=0 enabled=1 capable=0 x2=0
+AURORA_ACPI_TOPOLOGY: records=1 enabled=1 capable=0 lapic=4276092928
+AURORA_ACPI_WINDOW_CLOSED: copies=14
+AURORA_PCI_APERTURE: base=3758096384 bytes=268435456 segment=0 first=0 last=255
+AURORA_PCI_FUNCTION: segment=0 bus=0 device=0 function=0 vendor=32902 product=10688 class=6 subclass=0 interface=0 header=0 command=7 secondary=0 subordinate=0
+AURORA_PCI_FUNCTION: segment=0 bus=0 device=1 function=0 vendor=4660 product=4369 class=3 subclass=0 interface=0 header=0 command=7 secondary=0 subordinate=0
+AURORA_PCI_FUNCTION: segment=0 bus=0 device=31 function=0 vendor=32902 product=10520 class=6 subclass=1 interface=0 header=0 command=7 secondary=0 subordinate=0
+AURORA_PCI_FUNCTION: segment=0 bus=0 device=31 function=2 vendor=32902 product=10530 class=1 subclass=6 interface=1 header=0 command=7 secondary=0 subordinate=0
+AURORA_PCI_FUNCTION: segment=0 bus=0 device=31 function=3 vendor=32902 product=10544 class=12 subclass=5 interface=0 header=0 command=7 secondary=0 subordinate=0
+AURORA_PCI_INVENTORY: functions=5 buses=1
+AURORA_PCI_WINDOW_CLOSED: reads=39
+AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 id=0 root=99823616
+AURORA_UEFI_DISPATCH_BIND: client=0 transaction=0 first=1 second=0 queued=0
+AURORA_UEFI_DISPATCH_BIND: client=1 transaction=0 first=2 second=2 queued=0
+AURORA_UEFI_DISPATCH_ENTER: client=1 domain=2 phase=0 root=100605952 grant=2 transaction=0
+AURORA_UEFI_USER_RUN: epoch=1 role=client phase=request client=1 transaction=0 source=0 root=100605952
+AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root=100605952
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511635968 cpl=3 root=100605952 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=1 used=1 remaining=127 pc=1099511635968 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=129 error=0 pc=1099511636039 cpl=3 root=100605952 frame=100310864 cr2=0
+AURORA_UEFI_DISPATCH_ENVELOPE: client=1 phase=0 version=1 slot=0 generation=2 transaction=0 value=70 second=3
+AURORA_UEFI_DISPATCH_SUBMIT: client=1 transaction=3 first=70 second=3 queued=1
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=99921562 cpl=0 root=99823616 frame=100047952 cr2=0
+AURORA_UEFI_TIMER_DRAIN: epoch=1 root=99823616 ss=16
+AURORA_UEFI_TIMER_QUIET: epoch=1 ticks=1 drains=1 compiled=0 context=0 root=99823616
+AURORA_UEFI_DISPATCH_RESTORE: client=1 domain=2 root=99823616 stack=100048144 event=returned value=70
+AURORA_UEFI_DISPATCH_ENTER: client=0 domain=0 phase=8 root=100343808 grant=1 transaction=0
+AURORA_UEFI_USER_RUN: epoch=2 role=client phase=request client=0 transaction=0 source=8 root=100343808
+AURORA_UEFI_TIMER_ARM: epoch=2 budget=128 root=100343808
+AURORA_UEFI_DOMAIN_EVENT: vector=6 error=0 pc=1099511628855 cpl=3 root=100343808 frame=100310864 cr2=0
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=99921562 cpl=0 root=99823616 frame=100047952 cr2=0
+AURORA_UEFI_TIMER_DRAIN: epoch=2 root=99823616 ss=16
+AURORA_UEFI_TIMER_QUIET: epoch=2 ticks=0 drains=1 compiled=0 context=0 root=99823616
+AURORA_UEFI_DISPATCH_RESTORE: client=0 domain=0 root=99823616 stack=100048144 event=bounds value=0
+AURORA_UEFI_USER_DISPOSE: client=0 disposition=idle transaction=0 value=0
+AURORA_UEFI_USER_REVOKE: root=100343808 kernel=99823616 tables=16 frames=4 used=8
+AURORA_UEFI_USER_REBIND: client=0 old=1 fresh=4 peer=2 transaction=3 frame=100540416
+AURORA_UEFI_DISPATCH_SELECT: client=1 transaction=3 first=70 second=3 queued=0
+AURORA_UEFI_DISPATCH_ENTER: client=1 domain=1 phase=1 root=100409344 grant=2 transaction=3
+AURORA_UEFI_USER_RUN: epoch=3 role=service phase=service client=1 transaction=3 source=1 root=100409344
+AURORA_UEFI_TIMER_ARM: epoch=3 budget=128 root=100409344
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=1 remaining=127 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=2 remaining=126 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=3 remaining=125 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=4 remaining=124 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=5 remaining=123 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=6 remaining=122 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=7 remaining=121 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=8 remaining=120 pc=1099511632220 flags=66051
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=9 remaining=119 pc=1099511632161 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=10 remaining=118 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=11 remaining=117 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=12 remaining=116 pc=1099511632249 flags=66070
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=13 remaining=115 pc=1099511632161 flags=66066
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=14 remaining=114 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=15 remaining=113 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=16 remaining=112 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=17 remaining=111 pc=1099511632161 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=18 remaining=110 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=19 remaining=109 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=20 remaining=108 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=21 remaining=107 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=22 remaining=106 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=23 remaining=105 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=24 remaining=104 pc=1099511632220 flags=66051
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=25 remaining=103 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=26 remaining=102 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=27 remaining=101 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=28 remaining=100 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=29 remaining=99 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=30 remaining=98 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=31 remaining=97 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=32 remaining=96 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=33 remaining=95 pc=1099511632220 flags=66183
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=34 remaining=94 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=35 remaining=93 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=36 remaining=92 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=37 remaining=91 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=38 remaining=90 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=39 remaining=89 pc=1099511632220 flags=66183
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=40 remaining=88 pc=1099511632220 flags=66183
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=41 remaining=87 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=42 remaining=86 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=43 remaining=85 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=44 remaining=84 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=45 remaining=83 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=46 remaining=82 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=47 remaining=81 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=48 remaining=80 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=49 remaining=79 pc=1099511632161 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=50 remaining=78 pc=1099511632220 flags=66051
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=51 remaining=77 pc=1099511632220 flags=66051
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=52 remaining=76 pc=1099511632249 flags=66066
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=53 remaining=75 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=54 remaining=74 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=55 remaining=73 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=56 remaining=72 pc=1099511632249 flags=66066
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=57 remaining=71 pc=1099511632220 flags=66051
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=58 remaining=70 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=59 remaining=69 pc=1099511632161 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=3 used=60 remaining=68 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=129 error=0 pc=1099511631943 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_DISPATCH_ENVELOPE: client=1 phase=1 version=1 slot=1 generation=2 transaction=3 value=73 second=3
+AURORA_UEFI_DISPATCH_REPLY: client=1 transaction=3 first=73 second=0 queued=0
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=99921562 cpl=0 root=99823616 frame=100047776 cr2=0
+AURORA_UEFI_TIMER_DRAIN: epoch=3 root=99823616 ss=16
+AURORA_UEFI_TIMER_QUIET: epoch=3 ticks=60 drains=1 compiled=60 context=0 root=99823616
+AURORA_UEFI_DISPATCH_RESTORE: client=1 domain=1 root=99823616 stack=100047968 event=returned value=73
+AURORA_UEFI_DISPATCH_CONSUME: client=1 transaction=3 first=73 second=0 queued=0
+AURORA_UEFI_DISPATCH_ENTER: client=1 domain=2 phase=2 root=100605952 grant=2 transaction=3
+AURORA_UEFI_USER_RUN: epoch=4 role=client phase=completion client=1 transaction=3 source=2 root=100605952
+AURORA_UEFI_TIMER_ARM: epoch=4 budget=128 root=100605952
+AURORA_UEFI_DOMAIN_EVENT: vector=129 error=0 pc=1099511636039 cpl=3 root=100605952 frame=100310864 cr2=0
+AURORA_UEFI_DISPATCH_ENVELOPE: client=1 phase=2 version=1 slot=0 generation=2 transaction=3 value=73 second=0
+AURORA_UEFI_DISPATCH_COMPLETE: client=1 transaction=3 first=73 second=0 queued=0
+AURORA_UEFI_TIMER_QUIET: epoch=4 ticks=0 drains=0 compiled=0 context=0 root=99823616
+AURORA_UEFI_DISPATCH_RESTORE: client=1 domain=2 root=99823616 stack=100047920 event=returned value=73
+AURORA_UEFI_DISPATCH_ENTER: client=0 domain=0 phase=0 root=100343808 grant=4 transaction=0
+AURORA_UEFI_USER_RUN: epoch=5 role=client phase=request client=0 transaction=0 source=0 root=100343808
+AURORA_UEFI_TIMER_ARM: epoch=5 budget=128 root=100343808
+AURORA_UEFI_DOMAIN_EVENT: vector=129 error=0 pc=1099511627847 cpl=3 root=100343808 frame=100310864 cr2=0
+AURORA_UEFI_DISPATCH_ENVELOPE: client=0 phase=0 version=1 slot=0 generation=4 transaction=0 value=40 second=2
+AURORA_UEFI_DISPATCH_SUBMIT: client=0 transaction=5 first=40 second=2 queued=1
+AURORA_UEFI_TIMER_QUIET: epoch=5 ticks=0 drains=0 compiled=0 context=0 root=99823616
+AURORA_UEFI_DISPATCH_RESTORE: client=0 domain=0 root=99823616 stack=100048144 event=returned value=40
+AURORA_UEFI_DISPATCH_SELECT: client=0 transaction=5 first=40 second=2 queued=0
+AURORA_UEFI_DISPATCH_ENTER: client=0 domain=1 phase=1 root=100409344 grant=4 transaction=5
+AURORA_UEFI_USER_RUN: epoch=6 role=service phase=service client=0 transaction=5 source=1 root=100409344
+AURORA_UEFI_TIMER_ARM: epoch=6 budget=128 root=100409344
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=1 remaining=127 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=2 remaining=126 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=3 remaining=125 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=4 remaining=124 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=5 remaining=123 pc=1099511632220 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=6 remaining=122 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=7 remaining=121 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=8 remaining=120 pc=1099511632220 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=9 remaining=119 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=10 remaining=118 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=11 remaining=117 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=12 remaining=116 pc=1099511632220 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=13 remaining=115 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=14 remaining=114 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=15 remaining=113 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=16 remaining=112 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=17 remaining=111 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=18 remaining=110 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=19 remaining=109 pc=1099511632249 flags=66066
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=20 remaining=108 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=21 remaining=107 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=22 remaining=106 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=23 remaining=105 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=24 remaining=104 pc=1099511632220 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=25 remaining=103 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=26 remaining=102 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=27 remaining=101 pc=1099511632161 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=28 remaining=100 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=29 remaining=99 pc=1099511632220 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=30 remaining=98 pc=1099511632220 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=31 remaining=97 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=32 remaining=96 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=33 remaining=95 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=34 remaining=94 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=35 remaining=93 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=36 remaining=92 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=37 remaining=91 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=38 remaining=90 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=39 remaining=89 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632192 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=40 remaining=88 pc=1099511632192 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=41 remaining=87 pc=1099511632220 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=42 remaining=86 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=43 remaining=85 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=44 remaining=84 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=45 remaining=83 pc=1099511632249 flags=66066
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=46 remaining=82 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=47 remaining=81 pc=1099511632220 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=48 remaining=80 pc=1099511632220 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=49 remaining=79 pc=1099511632220 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=50 remaining=78 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=51 remaining=77 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=52 remaining=76 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=53 remaining=75 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632220 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=54 remaining=74 pc=1099511632220 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=55 remaining=73 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=56 remaining=72 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=57 remaining=71 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=58 remaining=70 pc=1099511632249 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=59 remaining=69 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=60 remaining=68 pc=1099511632161 flags=66050
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632161 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=61 remaining=67 pc=1099511632161 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc=1099511632249 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_TIMER_TICK: epoch=6 used=62 remaining=66 pc=1099511632249 flags=66054
+AURORA_UEFI_DOMAIN_EVENT: vector=129 error=0 pc=1099511631943 cpl=3 root=100409344 frame=100310864 cr2=0
+AURORA_UEFI_DISPATCH_ENVELOPE: client=0 phase=1 version=1 slot=1 generation=4 transaction=5 value=42 second=2
+AURORA_UEFI_DISPATCH_REPLY: client=0 transaction=5 first=42 second=0 queued=0
+AURORA_UEFI_TIMER_QUIET: epoch=6 ticks=62 drains=0 compiled=62 context=0 root=99823616
+AURORA_UEFI_DISPATCH_RESTORE: client=0 domain=1 root=99823616 stack=100047968 event=returned value=42
+AURORA_UEFI_DISPATCH_CONSUME: client=0 transaction=5 first=42 second=0 queued=0
+AURORA_UEFI_DISPATCH_ENTER: client=0 domain=0 phase=2 root=100343808 grant=4 transaction=5
+AURORA_UEFI_USER_RUN: epoch=7 role=client phase=completion client=0 transaction=5 source=2 root=100343808
+AURORA_UEFI_TIMER_ARM: epoch=7 budget=128 root=100343808
+AURORA_UEFI_DOMAIN_EVENT: vector=129 error=0 pc=1099511627847 cpl=3 root=100343808 frame=100310864 cr2=0
+AURORA_UEFI_DISPATCH_ENVELOPE: client=0 phase=2 version=1 slot=0 generation=4 transaction=5 value=42 second=0
+AURORA_UEFI_DISPATCH_COMPLETE: client=0 transaction=5 first=42 second=0 queued=0
+AURORA_UEFI_TIMER_QUIET: epoch=7 ticks=0 drains=0 compiled=0 context=0 root=99823616
+AURORA_UEFI_DISPATCH_RESTORE: client=0 domain=0 root=99823616 stack=100047920 event=returned value=42
+AURORA_UEFI_DISPATCH_CLEANUP_OK: used=0 records=0
+AURORA_UEFI_DISPATCH_OK
+AURORA_UEFI_USER_PHASES_OK
+AURORA_UEFI_LANGUAGE_OK: value=42
+AURORA_UEFI_OK
+PASS: exact user-run authority, hardware budgets and client recovery transcript
+PASS: actual OVMF UEFI gate (user-request-bounds)

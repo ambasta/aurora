@@ -1,0 +1,43 @@
+{
+  "invocations": 853,
+  "unique_sources": 847,
+  "accepted": 501,
+  "rejected": 352,
+  "all_identical": true,
+  "suites": [
+    {
+      "suite": "run",
+      "returncode": 0
+    },
+    {
+      "suite": "classes",
+      "returncode": 0
+    },
+    {
+      "suite": "value_calls",
+      "returncode": 0
+    },
+    {
+      "suite": "templates",
+      "returncode": 0
+    },
+    {
+      "suite": "fixed_containers",
+      "returncode": 0
+    },
+    {
+      "suite": "integers",
+      "returncode": 0
+    },
+    {
+      "suite": "unsigned",
+      "returncode": 0
+    },
+    {
+      "suite": "u8_numeric",
+      "returncode": 1
+    }
+  ],
+  "baseline_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "candidate_sha256": "e47a9f89369e4c0399f79f7da88cb5b4f099d7c8aa709bf108e594d7920e33c6"
+}

@@ -1,0 +1,57 @@
+{
+  "compiler/Makefile": {
+    "baseline_sha256": "87528b161b5f5d65b7c43fa135886d279daa7b0e361b8aaccc454bfbb15e69cf",
+    "actual_sha256": "87528b161b5f5d65b7c43fa135886d279daa7b0e361b8aaccc454bfbb15e69cf",
+    "verified": true
+  },
+  "compiler/initialization_facts.hpp": {
+    "baseline": "absent",
+    "verified": true
+  },
+  "compiler/ir_verify.hpp": {
+    "baseline_sha256": "768aef0661561a7e49d83c854736c90d5af3fee7b4636f28bca6a5612630de59",
+    "actual_sha256": "768aef0661561a7e49d83c854736c90d5af3fee7b4636f28bca6a5612630de59",
+    "verified": true
+  },
+  "diagnostics/bounded_ir_build.py": {
+    "baseline": "absent",
+    "verified": true
+  },
+  "diagnostics/compare_readonly_resources.py": {
+    "baseline": "absent",
+    "verified": true
+  },
+  "diagnostics/test_resource_driver.py": {
+    "baseline": "absent",
+    "verified": true
+  },
+  "tests/compiler/initialization_facts.cpp": {
+    "baseline": "absent",
+    "verified": true
+  },
+  "tests/compiler/ir_exhaustive.py": {
+    "baseline_sha256": "77bc2af8b0d85d2ae369499939499220c98a57591f2ba66e52618e85086e2309",
+    "actual_sha256": "77bc2af8b0d85d2ae369499939499220c98a57591f2ba66e52618e85086e2309",
+    "verified": true
+  },
+  "tests/compiler/ir_tests.cpp": {
+    "baseline_sha256": "d47b96a82763025ba7eea44bad4a566292fe76253c82811f8420a6562e745d18",
+    "actual_sha256": "d47b96a82763025ba7eea44bad4a566292fe76253c82811f8420a6562e745d18",
+    "verified": true
+  },
+  "compiler/ARCHITECTURE.md": {
+    "baseline_sha256": "c403dddb8fe33515941de6def096d921bfd48e82cfb2444e42cd04f8e4843b7d",
+    "actual_sha256": "c403dddb8fe33515941de6def096d921bfd48e82cfb2444e42cd04f8e4843b7d",
+    "verified": true
+  },
+  "compiler/RESOURCE-NOTE.md": {
+    "baseline_sha256": "9b4cdbb440989a43035c1cb786925cc14a2baa64a22fa78549729411694654c9",
+    "actual_sha256": "9b4cdbb440989a43035c1cb786925cc14a2baa64a22fa78549729411694654c9",
+    "verified": true
+  },
+  "docs/completeness-matrix.md": {
+    "baseline_sha256": "4c32e684fabc3ae76b923e7bcd9db9675d3359e8241476a6da36bc46b321bcd9",
+    "actual_sha256": "b61672f5cdba94b5a4089b640e76248894e5d9d1bae75a5169d0d73356ab2f4c",
+    "strategy": "append only reviewed resource section; preserve current parent/kernel text"
+  }
+}

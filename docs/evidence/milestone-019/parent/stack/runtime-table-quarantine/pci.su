@@ -1,0 +1,8 @@
+kernel/uefi/handoff.hpp:11:24:uint64_t aurora::uefi::Bytes::get(std::size_t, unsigned int) const	8	static
+kernel/uefi/handoff.hpp:27:24:bool aurora::uefi::MemoryMap::valid() const	48	static
+kernel/uefi/pci-policy.hpp:20:31:static std::optional<aurora::uefi::Mcfg> aurora::uefi::Mcfg::parse(std::span<const std::byte>, unsigned int)	184	static
+kernel/uefi/pci-policy.hpp:68:31:static std::optional<aurora::uefi::Q35Ecam> aurora::uefi::Q35Ecam::authorize(const aurora::uefi::Mcfg&, std::span<const std::byte>, std::size_t, uint64_t)	96	static
+kernel/uefi/tables.hpp:131:13:uint64_t aurora::uefi::expected_flags(uint64_t, const Bytes&)	8	static
+kernel/uefi/tables.hpp:85:25:aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)> [with auto:1 = const aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)>&]	96	static
+kernel/uefi/tables.hpp:81:24:bool aurora::uefi::PageTables::verify(uint64_t, const aurora::uefi::Bytes&, const aurora::uefi::LocalApicAdmission*) const	208	static
+kernel/uefi/pci.cpp:106:6:bool aurora::uefi::discover_pci({anonymous}::U64, const Bytes&, std::span<const std::byte>, unsigned int)	10736	static

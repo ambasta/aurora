@@ -1,0 +1,25 @@
+{
+  "name": "compile-time-exact-authority",
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/compile-time-exact-authority/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/compile-time-exact-authority/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/compile-time-exact-authority/compiled.s"
+  ],
+  "returncode": 0,
+  "stderr": "",
+  "negative": false,
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/compile-time-exact-authority/input.au": "1cdac35dab2d05b5042c7a166c59811be6767c395b48792984538c76ec04def0",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/compile-time-exact-authority/modules/generic.au": "3d70849ba3bb3e8e00bb0e453d3ad373e39a83cf1cdf5ad03ba79fb84de5eb68"
+  },
+  "inputs_unchanged": true,
+  "pass": true,
+  "native_status": 0,
+  "native_hex": "2a00000000000000",
+  "expected": 42
+}

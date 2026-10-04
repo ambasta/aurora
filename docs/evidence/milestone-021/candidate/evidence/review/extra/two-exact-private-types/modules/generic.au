@@ -1,0 +1,1 @@
+export module generic;export template<Value T,Value U>auto extract(T x)->U{const U r=x.get();return r;}

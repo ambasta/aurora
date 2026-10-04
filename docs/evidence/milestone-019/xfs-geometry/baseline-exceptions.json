@@ -1,0 +1,4 @@
+{
+  "non_target_drift": [],
+  "concurrent_kernel_work": "Parent authorizes kernel/scripts/tests-kernel/root-Makefile changes; these active scopes are deliberately outside this compiler/library stability assertion. No global main-tree unchanged claim."
+}

@@ -1,0 +1,1 @@
+module review;enum class A{ready};enum class B{ready};template<Value T>auto copy(T x)->T{const T result=x;return result;}auto test()->i64{A a=A::ready;B b=copy<B>(a);return 42;}

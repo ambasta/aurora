@@ -43,7 +43,8 @@ def build(compiler,out,mode):
     records={}; header=['#pragma once','#include <array>','#include <cstddef>','namespace aurora::uefi::images {']
     for index,name in enumerate(('clean','bounds')):
         prefix=out/f'user-{name}'
-        run([compiler,ROOT/f'tests/kernel-programs/{name}.au','--module-root',ROOT/'library','-o',prefix.with_suffix('.s')])
+        source='span-clean' if name=='clean' and mode=='span' else name
+        run([compiler,ROOT/f'tests/kernel-programs/{source}.au','--module-root',ROOT/'library','-o',prefix.with_suffix('.s')])
         run(['as','--64','-L',prefix.with_suffix('.s'),'-o',prefix.with_suffix('.o')])
         adapter=out/f'user-{name}-entry.o'
         flags=['--defsym',f'UEFI_USER_{mode.upper()}=1'] if index==0 and mode in ('code','stack','window','kernel','write','nx','return','unknown','syscall','sysenter') else []
@@ -62,5 +63,5 @@ def build(compiler,out,mode):
     print('PASS: two independently linked high-VA RX user images')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--compiler',required=True);parser.add_argument('--output',default='build/uefi');parser.add_argument('--mode',default='normal',choices=['normal','code','stack','window','kernel','write','nx','return','unknown','syscall','sysenter'])
+    parser=argparse.ArgumentParser();parser.add_argument('--compiler',required=True);parser.add_argument('--output',default='build/uefi');parser.add_argument('--mode',default='normal',choices=['normal','span','code','stack','window','kernel','write','nx','return','unknown','syscall','sysenter'])
     args=parser.parse_args();build(Path(args.compiler).resolve(),Path(args.output).resolve(),args.mode)

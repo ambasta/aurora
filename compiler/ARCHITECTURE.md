@@ -67,7 +67,11 @@ Historical verification manifests are preserved. A previous executable used for 
 
 ## Remaining resource scaling
 
-Basic-block snapshots remove the quadratic retained history of straight-line aggregate initialization. This does not make the whole verifier globally linear or resource bounded: initialized-slot sets are still copied at block entries, with retained memory proportional to block count times live slot facts. Branch-dense inputs can therefore use substantially more memory than equally large straight-line inputs. Compact fact sets and explicit compiler-wide resource budgets remain future hardening. The current regression targets the specific reproduced failure; it is not a general denial-of-service proof.
+Basic-block snapshots remove the quadratic retained history of straight-line aggregate initialization. In this isolated representation-only candidate, `State.initialized` and `State.maybeInitialized` use dense bits over the function's validated scalar-slot universe. Must-initialized joins use intersection and may-initialized joins use union. Other receiver/logical/object/capability facts, stacks, CFG and semantic decisions are unchanged. Negative/unknown offsets cannot become unchecked bit indices; slot-domain and allocation arithmetic follow existing frame limits.
+
+Each of the two bitsets reserves `8 * ceil(declared_scalar_slots / 64)` logical payload bytes per retained state, even when its current facts are empty. `peakRetainedInitializationPayloadBytes` measures these word payloads only: it excludes the shared universe, container/allocator overhead, temporary states and every other fact collection. The original logical fact metric continues counting facts, not bits allocated. This representation improves dense-fact snapshots but can use more memory for sparse or empty states.
+
+The sparse tradeoff is observable in valid source: 2,048 empty branch diamonds before four initialized 4,096-byte arrays used 189,692 KiB with the baseline and 210,048 KiB with this candidate in one bounded run, with identical assembly. An IR-only 65,536-unused-slot/1,537-state case reserves 25,182,208 payload bytes despite zero initialized facts. These counterexamples prohibit a universal memory or speedup claim. No compiler-wide memory/time budget is introduced; state count, stacks, remaining node-based facts, AST and other allocations still depend on program structure. See RESOURCE-NOTE.md for dense improvements, sparse costs, exact limits and pending acceptance.
 
 ## Source-depth implementation limits
 
@@ -118,3 +122,22 @@ record/result slots. Recursive ClassField metadata and logical object completion
 remain the basis of copies and returns. The fixed-instance nominal arguments
 available to a generated template body do not widen runtime descriptor views.
 See [ENUM-RESULTS.md](ENUM-RESULTS.md); compiler review passed and final integration is pending.
+
+## Readonly span invocation boundary (milestone014 candidate)
+
+Byte-array origins have explicit BeginArray/EndArray lifetimes. Typed span spills
+are disjoint sixteen-byte capability reservations, never scalar slots. BorrowSpan
+requires a complete active owner; ReborrowSpan preserves its root and direct
+parent. EndSpan rejects live children, and EndArray rejects outstanding borrows.
+Continuing CFG states must agree on all active origins and capabilities. Store
+validation rejects mutation through any original array element while borrowed.
+
+BindSpanParameter belongs to the canonical entry prefix. AggregateCall retains
+its existing objectArguments/resultOffset contract and adds independent positional
+spanArguments. All class/scalar/span record offsets are explicit; the six-source-
+parameter limit does not become twelve scalar registers. Span-bearing functions
+use private native identities/local linkage. SpanLoad combines the bounds check
+and typed byte load; no separated pointer or length can bypass it. The analyzer
+also enforces lexical scope and source-level restrictions described in SPANS.md.
+This remains a narrow synchronous static-borrow candidate, not general lifetime
+polymorphism or a runtime borrow checker.

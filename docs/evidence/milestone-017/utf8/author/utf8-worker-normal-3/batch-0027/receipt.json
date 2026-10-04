@@ -1,0 +1,28 @@
+{
+  "cases": [
+    "validated prefix before e180 final=False",
+    "validated prefix before e180 final=True",
+    "validated prefix before f180 final=False",
+    "validated prefix before f180 final=True",
+    "validated prefix before f18080 final=False",
+    "validated prefix before f18080 final=True",
+    "validated prefix before f48fbf final=False",
+    "validated prefix before f48fbf final=True",
+    "validated prefix before ff41 final=False",
+    "validated prefix before ff41 final=True",
+    "public success report scalar 0",
+    "public success report scalar 55295"
+  ],
+  "source_bytes": 6823,
+  "source_sha256": "3204193527dfe5ccb50837bb4b71dffa3ebcb673453f94c923f8bc666ed0f12c",
+  "status": "passed",
+  "observation": {
+    "exit_code": 0,
+    "terminal_signal": null,
+    "delivery_signal": null,
+    "pc": null,
+    "instruction": null,
+    "signal_code": null
+  },
+  "seconds": 0.027569
+}

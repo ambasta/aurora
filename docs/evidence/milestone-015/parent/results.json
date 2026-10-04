@@ -1,0 +1,15 @@
+{
+  "make_test_exit": 0,
+  "actual_spot_modes": {
+    "ivrs-default": 0,
+    "ivrs-read": 0,
+    "ivrs-write": 0,
+    "ivrs-revoked": 0
+  },
+  "author_full_actual_modes": 158,
+  "independent_new_actual_modes": 11,
+  "live_frozen_inputs": 257,
+  "live_input_mismatches": [],
+  "compiler_sha256": "2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8",
+  "scope": "Parent aggregate and selected actual spots; not a second full158 run. No physical hardware or active DMA qualification."
+}

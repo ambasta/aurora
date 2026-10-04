@@ -1,0 +1,34 @@
+{
+  "limits": {
+    "address_space_mib": 256,
+    "cpu_seconds": [
+      4,
+      5
+    ],
+    "wall_seconds": 10,
+    "regular_file_mib": 8,
+    "core_bytes": 0
+  },
+  "results": [
+    {
+      "label": "baseline",
+      "exit_code": 0,
+      "max_rss_kib": 26464,
+      "seconds": 0.0413169109961018,
+      "user_seconds": 0.023124,
+      "system_seconds": 0.015420999999999999,
+      "stdout": "accepted slots=65536 facts=0 snapshots=1537\n",
+      "stderr": ""
+    },
+    {
+      "label": "candidate",
+      "exit_code": 0,
+      "max_rss_kib": 51404,
+      "seconds": 0.061122249004256446,
+      "user_seconds": 0.047679,
+      "system_seconds": 0.011861,
+      "stdout": "accepted slots=65536 facts=0 snapshots=1537\n",
+      "stderr": ""
+    }
+  ]
+}

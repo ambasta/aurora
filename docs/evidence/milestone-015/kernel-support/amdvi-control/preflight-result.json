@@ -1,0 +1,33 @@
+{
+  "status": "blocked_by_static_trace_prerequisite_mismatch",
+  "qemu_control_started": false,
+  "qtest_requests": 0,
+  "guest_writes": 0,
+  "findings": [
+    {
+      "producer": "amdvi_mmio_write",
+      "call_site": "amd_iommu.c:770",
+      "behavior": "Called only if addr + size > AMDVI_MMIO_SIZE; not emitted for valid CTRL writes."
+    },
+    {
+      "producer": "amdvi_mmio_read",
+      "call_sites": [
+        "amd_iommu.c:602",
+        "amd_iommu.c:605",
+        "amd_iommu.c:775"
+      ],
+      "behavior": "The valid write handler calls the helper named amdvi_mmio_trace, which emits amdvi_mmio_read."
+    },
+    {
+      "producer": "amdvi_control_status",
+      "call_site": "amd_iommu.c:658",
+      "behavior": "A same-zero CTRL write emits amdvi_control_status with zero."
+    },
+    {
+      "producer": "amdvi_command_error",
+      "call_site": "amd_iommu.c:577",
+      "behavior": "The control handler calls amdvi_cmdbuf_run; with disabled command buffer this emits amdvi_command_error(0) and returns before commands or DMA."
+    }
+  ],
+  "required_parent_decision": "Accept memory_region_ops_write + amdvi_control_status(0) as valid CTRL write coverage, classify the single disabled-buffer amdvi_command_error(0) as expected rather than command execution, and retain amdvi_mmio_write event absence as a documented producer limitation. No out-of-range write is proposed."
+}

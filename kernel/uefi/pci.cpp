@@ -1,6 +1,13 @@
 #include "pci.hpp"
 #ifdef AURORA_UEFI_PCI
 #include "pci-policy.hpp"
+#ifdef AURORA_UEFI_IVRS
+#include "ivrs-policy.hpp"
+#endif
+#ifdef AURORA_UEFI_BAR_CAPTURE
+#include "bar-policy.hpp"
+#include "bar-record.hpp"
+#endif
 #include "acpi-policy.hpp"
 #include "tables.hpp"
 #include "../console.hpp"
@@ -56,6 +63,17 @@ public:
 #endif
         return result;
     }
+#ifdef AURORA_UEFI_IVRS
+    [[nodiscard]] auto iommu_capability(U64 page) -> std::optional<std::array<std::byte,48>> {
+        auto ticket=begin(page); if (!ticket) return std::nullopt;
+        std::array<std::byte,48> first{},second{};
+        for (auto* copy:{&first,&second})
+            for (unsigned offset=0;offset<48;offset+=4)
+                put(*copy,offset,*reinterpret_cast<volatile const std::uint32_t*>(PageTables::window_address+0x40+offset),4);
+        if (!end(*ticket) || first!=second) return std::nullopt;
+        return first;
+    }
+#endif
     [[nodiscard]] auto probe_write() -> bool {
         auto ticket=begin(Q35Ecam::base); if (!ticket) return false;
         Serial::text("AURORA_PCI_WRITE_PROBE\r\n");
@@ -66,6 +84,19 @@ public:
     [[nodiscard]] auto closed() const -> bool { return slot_ && *slot_==0 && reads_==revoked_; }
     [[nodiscard]] auto reads() const -> unsigned { return reads_; }
 };
+#ifdef AURORA_UEFI_IVRS
+// Keep scan construction temporaries out of the later BAR/IOMMU call path.
+// The fixed bootstrap stack and its guard are unchanged.
+[[gnu::noinline]] auto scan_ivrs_inventory(const Q35Ecam& aperture,EcamWindow& window) -> std::optional<PciInventory> {
+    return PciInventory::scan(aperture,[&](U64 page) { return window.read(page); });
+}
+#endif
+#ifdef AURORA_UEFI_BAR_CAPTURE
+#include "bar-reader.inc"
+#ifdef AURORA_UEFI_IVRS
+#include "ivrs-reader.inc"
+#endif
+#endif
 [[maybe_unused]] auto checksum(std::span<std::byte> table) -> void {
     table[9]=std::byte{0}; unsigned sum=0;
     for (auto value:table) sum+=std::to_integer<unsigned>(value);
@@ -117,7 +148,11 @@ auto discover_pci(U64 arena,const Bytes& handoff,std::span<const std::byte> sour
     static_cast<void>(*reinterpret_cast<volatile const std::uint32_t*>(PageTables::window_address));
     return false;
 #endif
+#ifdef AURORA_UEFI_IVRS
+    const auto inventory=scan_ivrs_inventory(*aperture,window);
+#else
     const auto inventory=PciInventory::scan(*aperture,[&](U64 page) { return window.read(page); });
+#endif
     if (!inventory || !window.closed() || !tables.verify(arena,handoff)) return false;
     for (const auto& function:inventory->functions()) {
         Serial::text("AURORA_PCI_FUNCTION: segment="); Serial::number(function.segment);
@@ -132,7 +167,37 @@ auto discover_pci(U64 arena,const Bytes& handoff,std::span<const std::byte> sour
     Serial::text("AURORA_PCI_INVENTORY: functions="); Serial::number(inventory->count());
     Serial::text(" buses="); Serial::number(inventory->bus_count()); Serial::text("\r\n");
     Serial::text("AURORA_PCI_WINDOW_CLOSED: reads="); Serial::number(window.reads()); Serial::text("\r\n");
+#ifdef AURORA_UEFI_IVRS
+    const auto ivrs_bytes=std::span<const std::byte>{reinterpret_cast<const std::byte*>(arena+0x60000),Ivrs::maximum_table};
+    const auto ivrs_length=Bytes{ivrs_bytes}.get(4,4);
+    const auto facts=ivrs_length<=ivrs_bytes.size() ? Ivrs::parse_qemu_10_0_13(ivrs_bytes.first(ivrs_length),bits) : std::nullopt;
+    if (!facts || !facts->matches_inventory(inventory->functions(),0,0,2,0)) {
+        Serial::text("AURORA_IVRS_REJECTED: reason=requester-coverage\r\n");return false;
+    }
+    if (!inspect_bar(arena,handoff,*aperture,window,*inventory,bits)) return false;
+    return inspect_ivrs(arena,handoff,*aperture,window,*inventory,bits);
+#elif defined(AURORA_UEFI_BAR_CAPTURE)
+    return inspect_bar(arena,handoff,*aperture,window,*inventory,bits);
+#elif defined(AURORA_UEFI_BAR_ADMISSION)
+    unsigned candidates=0;
+    for (const auto& function:inventory->functions()) {
+        if (function.vendor!=0x1b36 || function.device_id!=0x10 || function.class_code!=1
+            || function.subclass!=8 || function.programming_interface!=2 || function.header_type!=0) continue;
+        ++candidates;
+        Serial::text("AURORA_BAR_ADMISSION: segment="); Serial::number(function.segment);
+        Serial::text(" bus="); Serial::number(function.bus); Serial::text(" device="); Serial::number(function.device);
+        Serial::text(" function="); Serial::number(function.function); Serial::text(" command="); Serial::number(function.command);
+        // This early refusal creates no BAR mapping or controller access grant.
+        Serial::text(" grant=0 reason=");
+        if (function.command&4) Serial::text("bus-master-enabled");
+        else Serial::text("resource-handoff-required");
+        Serial::text("\r\n");
+    }
+    if (candidates!=1) Serial::text("AURORA_BAR_TARGET_REJECTED\r\n");
+    return false;
+#else
     return true;
+#endif
 }
 }
 #endif

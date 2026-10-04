@@ -1,0 +1,1862 @@
+--- a/README.md
++++ b/README.md
+@@ -30,6 +30,15 @@
+ 
+ See [kernel instructions](kernel/README.md) and [verification](docs/verification.md)
+ for tools, exact commands, evidence and limitations.
++
++## Isolated M021 language candidate
++
++This source candidate adds bounded, explicit namespace-level function templates
++and `std::make_pair<T,U>` using existing independent copied values. See
++[the function-template contract](compiler/FUNCTION-TEMPLATES.md) and executable
++`examples/function_token_values.au`. Definition/instance limits are now combined
++across class and function templates. Candidate verification is recorded separately;
++this source has not replaced the accepted compiler or any kernel image.
+ 
+ ## Current language subset
+ 
+@@ -207,7 +216,7 @@
+ ## Important limits
+ 
+ There is no production safety proof, optimizing compiler, general heap ownership,
+-general interprocedural borrowing, function templates, generic methods, inheritance, concurrency model, scheduler, SMP,
++general interprocedural borrowing, template deduction or recursive generic expansion, generic methods, inheritance, concurrency model, scheduler, SMP,
+ full virtual-memory manager, general runtime/standard library, driver stack,
+ desktop, native package system or
+ self-hosting compiler yet. C-level performance has not been established by an
+--- /dev/null
++++ b/compiler/FUNCTION-TEMPLATES.md
+@@ -0,0 +1,97 @@
++# Bounded explicit by-value function templates (M021 candidate)
++
++This isolated candidate implements namespace-level function templates with one or
++ two `Scalar` or `Value` type parameters and explicit concrete call arguments.
++It is not integrated or verified until its evidence report says so. M020 remains
++the accepted baseline. No new IR instruction, runtime generic representation,
++calling convention, heap, reference/span API or foreign ABI is introduced.
++
++```cpp
++template <Value T, Value U>
++auto make_pair(T first, U second) -> pair<T,U> {
++    const pair<T,U> result = pair<T,U>(first, second);
++    return result;
++}
++```
++
++`std::make_pair<i64,u8>(42,7u8)` returns an independent `std::pair<i64,u8>`.
++Arguments use existing readonly scalar/enum/complete-class value boundaries;
++class snapshots are evaluated left to right and the copied result initializes a
++fresh typed local. Six source parameters and 64 scalar leaves at class-value
++boundaries remain the limits. Class-valued arguments still require named complete
++locals. `examples/function_token_values.au` executes a byte-array/source-range
++factory, independent copies, fresh projections, mutation and zero-filled storage.
++
++## Finite grammar and expansion
++
++Types may be bare parameters or existing concrete types. In function template
++signatures, local declarations, construction and compile-time reflection, a
++statically named class template may use bare function parameters or fully concrete
++M020 argument trees. Thus `pair<T,U>` and `pair<array<u8,16>,T>` are admitted, but
++`pair<array<T,16>,U>` is rejected. Dependent qualified names and `T(value)` or
++`T{...}` construction/conversion are rejected. Class-template bodies keep their
++previous stricter contract.
++
++Function-template calls inside *any* template body are rejected, including
++concrete calls and bare calls without explicit arguments. Structural restrictions
++are checked when definitions load even if never requested; ordinary
++specialization validity is checked only for each requested specialization. This
++includes class-specialization arity/constraints in signatures and unresolved
++concrete names in bodies; an unused invalid tuple need not be rejected. Fixed
++exported-signature visibility is checked eagerly as described below. This does not
++claim universal validity for all unrequested argument tuples. Deduction,
++overloads, partial/explicit specialization, defaults, variadics, generic methods,
++function capacity parameters, user concepts, resource/reference/span/builtin-array
++arguments and recursive generic expansion remain unavailable. Existing ordinary
++runtime recursion restrictions and stack limitations remain unchanged.
++
++Phases are finite: register immutable definitions; validate body shapes; collect
++ordinary requests without mutating traversed vectors; intern class requests and
++function clones; substitute exact argument identities into independently deep
++copied function ASTs; collect and instantiate only the resulting class requests;
++freeze instances; resolve layouts/signatures/bodies; use existing semantic/IR
++verification and lowering. Generated functions cannot request more functions.
++
++## Independent limits and identity
++
++The whole graph permits 64 combined class/function template definitions and 256
++combined distinct class/function specializations, including nested and factory
++class requests. Repeated identical requests are interned. Identity includes the
++defining declaration and ordered resolved nominal arguments; same physical layout
++does not allow substitution. Generated function symbols are internally mangled,
++including scalar specializations, and are not ordinary exported entrypoints.
++
++Class-template nominal ancestry remains at most four levels, checked again after
++substitution. The function-call argument list does not consume a class-template
++level. Identity of a depth-four zero-storage `Tag` chain is allowed; wrapping it
++in `pair<T,u8>` rejects depth five even if containment remains shallow. Independent
++containment depth four, 64 leaves, array capacities 1..64, six source parameters,
++65,536-byte function frames, source/module limits and checked arithmetic remain.
++These are admission rules, not a global compiler-memory or target-stack proof.
++
++## Scope and authority
++
++Explicit arguments resolve in each caller's lexical/direct-import scope and are
++checked with their public signature/type closure. Fixed names and helpers bind
++in the defining module. A caller-private class may be supplied to a generic
++factory, with exact nominal compile-time authority carried by the specialization.
++This authority permits copied values and the required generated classes, not
++private fields/constructors, arbitrary caller lookup or caller imports. Generated
++functions are not exported ordinary APIs. Ordinary exported wrappers still cannot
++leak private argument/result types, and every call checks signature visibility.
++
++Compile-time reflection can name explicitly supplied types. Runtime reflection
++keeps the defining module's unchanged visibility view; specialization does not
++create access to unrelated caller types. Unresolved parameters and argument trees
++must disappear before the existing concrete IR verifier.
++
++## Acceptance and scope
++
++Required gates are focused native/copy/order/enum/empty/privacy/nominal/depth/budget
++cases, complete existing compiler regressions and numeric oracles, malformed IR
++and exhaustive dispatch/native ABI controls, fatal ASan/UBSan host runs, frozen
++M020 assembly/status differential and independent review of frozen implementation.
++Changed formerly-unsupported-function negatives are identified, and repeated runs
++are overlapping coverage. Emitted native code is not itself ASan instrumented.
++Kernel/emulator integration and source adoption are separate parent-controlled
++gates. No physical hardware or equivalent-C performance claim follows.
+--- a/compiler/Makefile
++++ b/compiler/Makefile
+@@ -15,6 +15,7 @@
+ 	python3 ../tests/compiler/classes.py $(abspath $(OUT))
+ 	python3 ../tests/compiler/value_calls.py $(abspath $(OUT))
+ 	python3 ../tests/compiler/templates.py $(abspath $(OUT))
++	python3 -O ../tests/compiler/function_templates.py $(abspath $(OUT))
+ 	python3 ../tests/compiler/fixed_containers.py $(abspath $(OUT))
+ 	python3 ../tests/compiler/composed_values.py $(abspath $(OUT))
+ 	python3 -O ../tests/compiler/nested_values.py $(abspath $(OUT))
+--- a/compiler/TEMPLATES.md
++++ b/compiler/TEMPLATES.md
+@@ -67,7 +67,9 @@
+ Scalar arguments are explicit `i64`, `u64`, `u8` or `bool` spellings. Missing/wrong-arity
+ arguments, non-scalar arguments to Scalar parameters, builtin array/owner/reference
+ arguments to Value parameters, partial/explicit specialization,
+-function templates and deduction are rejected. A template definition cannot name
++deduction are rejected. Namespace-level function templates have the separate bounded
++M021 candidate contract in [FUNCTION-TEMPLATES.md](FUNCTION-TEMPLATES.md). A class
++template definition cannot name
+ an explicit user-template specialization, including itself. Fully concrete source
+ argument trees may contain up to four template-id levels; inner instances are
+ resolved first. Dependent body expansion and recursive instantiation remain unavailable. Plain injected self-class names
+@@ -149,7 +151,8 @@
+ of the exact field type. Class-valued fields require fresh-local projection and
+ cannot be reassigned in this subset. Copies and ordinary function arguments/results are
+ independent values. All nine scalar combinations are meaningful concrete APIs.
+-There is no comparison overload, deduction guide, make_pair helper, tuple protocol,
++The M021 candidate adds an explicitly typed `make_pair` helper under its separate
++function-template contract. There is no comparison overload, deduction guide, tuple protocol,
+ reference pair or general standard-library compatibility claim.
+ The developing Value form permits named concrete class fields, copied through
+ complete construction and fresh-local projection. Whole class-field reassignment
+--- a/compiler/modules.hpp
++++ b/compiler/modules.hpp
+@@ -149,7 +149,8 @@
+ };
+ 
+ class ModuleResolver {
+-    enum class Kind { Function, Class, Template, Enum, Any };
++    enum class Kind { Function, Class, Template, FunctionTemplate, Enum, Any };
++    Function *activeFunction = nullptr;
+     const ClassDefinition *activeClass = nullptr;
+     bool initializingReceiver = false, classTypesResolved = false;
+     class Declaration {
+@@ -160,6 +161,7 @@
+         bool exported;
+         std::string module;
+         const ClassDefinition *templateDefinition = nullptr;
++        const Function *functionTemplateDefinition = nullptr;
+         const EnumDefinition *enumDefinition = nullptr;
+     };
+     ModuleLoader::Graph graph;
+@@ -170,6 +172,7 @@
+     std::map<std::string, std::vector<Type>> publicTypes;
+     std::vector<std::pair<std::string, Type>> argumentVisibilityChecks;
+     std::size_t instanceCount = 0;
++    std::map<std::string, int> instanceNesting;
+     std::map<std::string, std::string> instanceDisplayNames;
+     const std::set<std::string> builtins = {"i64",
+                                             "u64",
+@@ -273,7 +276,8 @@
+                     kind == Kind::Function && unit.root && scope.empty() && !valueBoundary
+                         ? leaf
+                         : mangle(kind == Kind::Function ? (valueBoundary ? 'v' : 'f')
+-                                                        : (kind == Kind::Template ? 't'
++                                                        : (kind == Kind::FunctionTemplate ? 'g'
++                                                           : kind == Kind::Template ? 't'
+                                                            : kind == Kind::Enum   ? 'e'
+                                                                                   : 'c'),
+                                  name, scope, leaf);
+@@ -310,12 +314,21 @@
+             }
+             for (auto &definition : unit.program.templates) {
+                 if (++templateCount > 64)
+-                    throw Error("module graph exceeds 64 class templates");
++                    throw Error("module graph exceeds 64 class templates and function templates combined");
+                 ClassTemplateExpansion::validate(definition);
+                 definition.name = add(Kind::Template, definition.scope, definition.token.text,
+                                       definition.exported);
+                 table.at(qualify(definition.scope, definition.token.text)).templateDefinition =
+                     &definition;
++            }
++            for (auto &function : unit.program.functionTemplates) {
++                if (++templateCount > 64)
++                    throw Error("module graph exceeds 64 class templates and function templates combined");
++                FunctionTemplateExpansion::validate(function);
++                function.name = add(Kind::FunctionTemplate, function.scope, function.token.text,
++                                    function.exported);
++                table.at(qualify(function.scope, function.token.text)).functionTemplateDefinition =
++                    &function;
+             }
+             for (auto &function : unit.program.functions) {
+                 const bool valueBoundary =
+@@ -384,7 +397,9 @@
+             if (argument.kind != TemplateArgumentKind::Type || argument.type != TypeKind::Class)
+                 continue;
+             const auto *declaration =
+-                argument.templateArguments.empty()
++                argument.resolvedClass
++                    ? classDeclaration(ClassTemplateExpansion::argumentType(argument))
++                    : argument.templateArguments.empty()
+                     ? lookup(unit, scope, argument.className, Kind::Any)
+                     : specialization(unit, scope, argument.className, argument.templateArguments,
+                                      expand, depth + 1);
+@@ -397,6 +412,7 @@
+             argument.className = declaration->native;
+             argument.displayName = displayName(*declaration);
+             argument.templateArguments.clear();
++            argument.resolvedClass = true;
+         }
+         return result;
+     }
+@@ -408,6 +424,7 @@
+       public:
+         std::string module, scope, name;
+         std::vector<TemplateArgument> arguments;
++        bool expression = false;
+     };
+     void collectTemplateType(const Type &type, const ModuleLoader::Unit &unit,
+                              const std::string &scope, std::vector<TemplateRequest> &requests) {
+@@ -427,7 +444,7 @@
+         collectTemplateType(value->reflectedType, unit, scope, requests);
+         if (!value->templateArguments.empty())
+             requests.push_back(
+-                {unit.program.moduleName, scope, value->token.text, value->templateArguments});
++                {unit.program.moduleName, scope, value->token.text, value->templateArguments, true});
+         for (const auto &argument : value->args)
+             collectTemplateExpression(argument, unit, scope, requests);
+     }
+@@ -452,6 +469,70 @@
+             collectTemplateExpression(initializer, unit, function.scope, requests);
+         }
+         collectTemplateStatements(function.body, unit, function.scope, requests);
++    }
++    void validateTemplateType(const Type &type, const ModuleLoader::Unit &unit,
++                              const std::string &scope) {
++        if (!type.templateArguments.empty()) {
++            const auto *target = lookup(unit, scope, type.className, Kind::Template);
++            if (!target)
++                throw Error("function template requires a statically named class template: " + type.className);
++        }
++    }
++    void validateTemplateExpression(const ExpressionPtr &value, const ModuleLoader::Unit &unit,
++                                    const std::string &scope) {
++        if (!value)
++            return;
++        validateTemplateType(value->reflectedType, unit, scope);
++        if (value->op == "call" || value->op == "construct") {
++            const bool receiverMember = activeClass && value->op == "call" &&
++                (std::any_of(activeClass->methods.begin(), activeClass->methods.end(),
++                             [&](const auto &method) { return method.token.text == value->token.text; }) ||
++                 std::any_of(activeClass->fields.begin(), activeClass->fields.end(),
++                             [&](const auto &field) { return field.token.text == value->token.text; }));
++            // Match concrete binding: an implicit receiver member takes
++            // precedence over unrelated namespace-level template declarations.
++            const auto *target = builtins.contains(value->token.text) || receiverMember ? nullptr :
++                                 lookup(unit, scope, value->token.text, Kind::Any);
++            if (target && target->kind == Kind::FunctionTemplate)
++                throw Error("function template calls inside template bodies are unsupported");
++            if (!value->templateArguments.empty() && (!target || target->kind != Kind::Template))
++                throw Error("template body requires a statically named class template");
++        }
++        for (const auto &argument : value->args)
++            validateTemplateExpression(argument, unit, scope);
++    }
++    void validateTemplateStatements(const std::vector<StatementPtr> &body,
++                                    const ModuleLoader::Unit &unit, const std::string &scope) {
++        for (const auto &statement : body) {
++            validateTemplateType(statement->type, unit, scope);
++            validateTemplateExpression(statement->expr, unit, scope);
++            validateTemplateExpression(statement->target, unit, scope);
++            validateTemplateStatements(statement->body, unit, scope);
++            validateTemplateStatements(statement->other, unit, scope);
++        }
++    }
++    void validateTemplateDefinitions() {
++        for (const auto &name : graph.order) {
++            const auto &unit = *graph.units.at(name);
++            auto validate = [&](const Function &function) {
++                validateTemplateType(function.result, unit, function.scope);
++                for (const auto &parameter : function.params)
++                    validateTemplateType(parameter.type, unit, function.scope);
++                for (const auto &[field, expression] : function.initializers) {
++                    (void)field;
++                    validateTemplateExpression(expression, unit, function.scope);
++                }
++                validateTemplateStatements(function.body, unit, function.scope);
++            };
++            for (const auto &function : unit.program.functionTemplates)
++                validate(function);
++            for (const auto &definition : unit.program.templates) {
++                activeClass = &definition;
++                for (const auto &method : definition.methods)
++                    validate(method);
++                activeClass = nullptr;
++            }
++        }
+     }
+     void expandTemplates() {
+         // Collect before appending classes, so no traversal keeps a pointer into
+@@ -468,9 +549,58 @@
+                     collectTemplateFunction(method, unit, requests);
+             }
+         }
+-        for (const auto &request : requests)
++        for (const auto &request : requests) {
++            const auto &unit = *graph.units.at(request.module);
++            const auto *target = lookup(unit, request.scope, request.name, Kind::Any);
++            if (request.expression && target && target->kind == Kind::FunctionTemplate)
++                (void)functionSpecialization(unit, request.scope, request.name, request.arguments, true);
++            else
++                (void)specialization(unit, request.scope, request.name, request.arguments, true);
++        }
++        // The preceding pass only appends immutable function copies. No traversal
++        // can be invalidated, and these copies can request only class instances.
++        std::vector<TemplateRequest> generated;
++        for (const auto &name : graph.order) {
++            const auto &unit = *graph.units.at(name);
++            for (const auto &function : unit.program.functions)
++                if (!function.templateArguments.empty())
++                    collectTemplateFunction(function, unit, generated);
++        }
++        for (const auto &request : generated)
+             (void)specialization(*graph.units.at(request.module), request.scope, request.name,
+                                  request.arguments, true);
++    }
++    const Declaration *functionSpecialization(
++        const ModuleLoader::Unit &unit, const std::string &scope, const std::string &name,
++        const std::vector<TemplateArgument> &requested, bool expand = false) {
++        const auto *declaration = lookup(unit, scope, name, Kind::FunctionTemplate);
++        if (!declaration)
++            throw Error("unknown function template: " + name);
++        const auto &source = *declaration->functionTemplateDefinition;
++        if (requested.size() != source.templateParameters.size())
++            throw Error("wrong number of function template arguments for " + name);
++        // A function call's outer list does not consume a class-template level.
++        const auto arguments = resolveArguments(requested, unit, scope, expand, 0);
++        if (expand)
++            for (const auto &argument : arguments)
++                if (argument.kind == TemplateArgumentKind::Type)
++                    argumentVisibilityChecks.emplace_back(
++                        unit.program.moduleName, ClassTemplateExpansion::argumentType(argument));
++        const auto qualified = declaration->qualified + ClassTemplateExpansion::argumentSuffix(arguments);
++        auto &table = declarations.at(declaration->module);
++        if (const auto found = table.find(qualified); found != table.end())
++            return &found->second;
++        if (!expand)
++            throw Error("unexpanded function template specialization: " + qualified);
++        if (++instanceCount > 256)
++            throw Error("module graph exceeds 256 class template instantiations and function instances combined");
++        auto function = FunctionTemplateExpansion::instantiate(source, arguments);
++        function.name = mangle('g', declaration->module, source.scope, source.token.text) +
++                        ClassTemplateExpansion::nativeSuffix(arguments);
++        const auto inserted = table.emplace(qualified, Declaration{
++            Kind::Function, qualified, function.name, false, declaration->module});
++        graph.units.at(declaration->module)->program.functions.push_back(std::move(function));
++        return &inserted.first->second;
+     }
+     const Declaration *specialization(const ModuleLoader::Unit &unit, const std::string &scope,
+                                       const std::string &name,
+@@ -489,12 +619,22 @@
+         // No template body can request an instance. This recursion follows only
+         // the bounded, fully concrete source tree; children are interned first.
+         const auto arguments = resolveArguments(requestedArguments, unit, scope, expand, depth);
+-        if (expand)
+-            for (const auto &argument : arguments)
+-                if (argument.kind == TemplateArgumentKind::Type &&
+-                    (argument.type == TypeKind::Class || argument.type == TypeKind::Enum))
+-                    argumentVisibilityChecks.emplace_back(
+-                        unit.program.moduleName, ClassTemplateExpansion::argumentType(argument));
++        int nominalDepth = 1;
++        for (std::size_t index = 0; index < arguments.size(); ++index) {
++            const auto &argument = arguments[index];
++            if (argument.type == TypeKind::Class) {
++                if (const auto child = instanceNesting.find(argument.className);
++                    child != instanceNesting.end())
++                    nominalDepth = std::max(nominalDepth, child->second + 1);
++            }
++            if (expand && !requestedArguments[index].resolvedClass &&
++                argument.kind == TemplateArgumentKind::Type &&
++                (argument.type == TypeKind::Class || argument.type == TypeKind::Enum))
++                argumentVisibilityChecks.emplace_back(
++                    unit.program.moduleName, ClassTemplateExpansion::argumentType(argument));
++        }
++        if (nominalDepth > maximumTemplateNesting)
++            throw Error("template-id nesting exceeds 4 after substitution");
+         const auto qualified =
+             declaration->qualified + ClassTemplateExpansion::argumentSuffix(arguments);
+         auto &table = declarations.at(declaration->module);
+@@ -503,7 +643,7 @@
+         if (!expand)
+             throw Error("unexpanded class template specialization: " + qualified);
+         if (++instanceCount > 256)
+-            throw Error("module graph exceeds 256 class template instantiations");
++            throw Error("module graph exceeds 256 class template instantiations and function instances combined");
+         auto definition = ClassTemplateExpansion::instantiate(source, arguments);
+         definition.name =
+             mangle('c', declaration->module, definition.scope, definition.token.text) +
+@@ -511,6 +651,7 @@
+         auto &definingUnit = *graph.units.at(declaration->module);
+         registerMembers(definition, definingUnit);
+         instanceArguments.emplace(definition.name, arguments);
++        instanceNesting.emplace(definition.name, nominalDepth);
+         instanceDisplayNames.emplace(
+             definition.name,
+             declaration->qualified + ClassTemplateExpansion::argumentSuffix(arguments, true));
+@@ -531,6 +672,9 @@
+         if (type.resolvedClass) {
+             if (!classDeclaration(type))
+                 throw Error("unknown resolved class identity: " + type.className);
++            if (classTypesResolved && !bodyTypeVisible(type, unit))
++                throw Error("resolved class type requires a direct visible import: " + typeName(type));
++            recordAuthority(type, unit);
+             return;
+         }
+         if (type.className == "array" || type.className == "builtin::array")
+@@ -558,15 +702,17 @@
+             type.displayName = displayName(*declaration);
+             type.resolvedClass = true;
+             type.templateArguments.clear();
+-            if (classTypesResolved && !typeVisible(type, unit))
++            if (classTypesResolved && !bodyTypeVisible(type, unit))
+                 throw Error("class type requires a direct visible import: " + typeName(type));
++            recordAuthority(type, unit);
+         }
+     }
+     const Declaration *classDeclaration(const Type &type) const {
+         const auto found = nativeClasses.find(type.className);
+         return found == nativeClasses.end() ? nullptr : found->second;
+     }
+-    bool typeAccessible(const Type &type, const ModuleLoader::Unit *unit) const {
++    bool typeAccessible(const Type &type, const ModuleLoader::Unit *unit,
++                        const Function *authority = nullptr) const {
+         std::vector<Type> pending{type};
+         std::set<std::string> visited;
+         while (!pending.empty()) {
+@@ -574,6 +720,14 @@
+             pending.pop_back();
+             if ((!current.isClass() && !current.isEnum()) ||
+                 !visited.insert(current.className).second)
++                continue;
++            // Authority is limited to exact arguments already checked in the
++            // requesting caller. It grants no lookup or private-member access.
++            if (authority && std::any_of(authority->templateArguments.begin(),
++                                        authority->templateArguments.end(), [&](const auto &argument) {
++                    return argument.kind == TemplateArgumentKind::Type &&
++                           argument.type == current.kind && argument.className == current.className;
++                }))
+                 continue;
+             const auto *declaration = classDeclaration(current);
+             if (!declaration)
+@@ -604,6 +758,22 @@
+     }
+     bool typeVisible(const Type &type, const ModuleLoader::Unit &unit) const {
+         return typeAccessible(type, &unit);
++    }
++    bool bodyTypeVisible(const Type &type, const ModuleLoader::Unit &unit) const {
++        if (activeClass && !activeClass->templateArguments.empty()) {
++            if (type.isClass() && type.className == activeClass->name)
++                return true;
++            for (const auto &argument : activeClass->templateArguments)
++                if (argument.kind == TemplateArgumentKind::Type && argument.type == type.kind &&
++                    argument.className == type.className)
++                    return true;
++        }
++        return typeAccessible(type, &unit, activeFunction);
++    }
++    void recordAuthority(const Type &type, const ModuleLoader::Unit &unit) {
++        if (activeFunction && !activeFunction->templateArguments.empty() &&
++            (type.isClass() || type.isEnum()) && bodyTypeVisible(type, unit))
++            activeFunction->templateTypeAuthority.insert(type.className);
+     }
+     bool typeExported(const Type &type) const { return typeAccessible(type, nullptr); }
+     void resolveClassTypes() {
+@@ -679,10 +849,56 @@
+                 throw Error("template argument type requires a direct visible import: " +
+                             typeName(type));
+     }
++    void validateFunctionTemplateSignatureType(const Type &type,
++                                               const ModuleLoader::Unit &unit,
++                                               const Function &function) {
++        if (!type.isClass() && !type.isEnum())
++            return;
++        const auto *target = lookup(unit, function.scope, type.className, Kind::Any);
++        if (!target)
++            throw Error("unknown fixed type in function template signature: " + typeName(type));
++        if (!type.templateArguments.empty()) {
++            if (target->kind != Kind::Template)
++                throw Error("function template signature requires a class template");
++            if (function.exported && !target->exported)
++                throw Error("exported function template signature exposes private template: " + typeName(type));
++            for (const auto &argument : type.templateArguments) {
++                if (argument.kind != TemplateArgumentKind::Type || argument.type == TypeKind::Parameter)
++                    continue;
++                Type child(argument.type);
++                child.className = argument.className;
++                child.templateArguments = argument.templateArguments;
++                validateFunctionTemplateSignatureType(child, unit, function);
++            }
++        } else {
++            if (target->kind != Kind::Class && target->kind != Kind::Enum)
++                throw Error("function template signature requires a concrete fixed type");
++            Type fixed(target->native);
++            if (target->kind == Kind::Enum)
++                fixed.kind = TypeKind::Enum;
++            if (!typeVisible(fixed, unit))
++                throw Error("function template signature type requires a direct visible import: " + typeName(type));
++            if (function.exported && !typeExported(fixed))
++                throw Error("exported function template signature exposes private type: " + typeName(type));
++        }
++    }
++    void validateFunctionTemplateSignatures() {
++        // Fixed signature privacy is a declaration invariant, including unused
++        // exported definitions. Dependent tuples remain checked per request.
++        for (const auto &name : graph.order) {
++            const auto &unit = *graph.units.at(name);
++            for (const auto &function : unit.program.functionTemplates) {
++                validateFunctionTemplateSignatureType(function.result, unit, function);
++                for (const auto &parameter : function.params)
++                    validateFunctionTemplateSignatureType(parameter.type, unit, function);
++            }
++        }
++    }
+     void resolveSignatures() {
+         for (const auto &name : graph.order) {
+             auto &unit = *graph.units.at(name);
+             for (auto &function : unit.program.functions) {
++                activeFunction = &function;
+                 auto resolve = [&](Type &type) {
+                     resolveType(type, unit, function.scope);
+                     if (type.isClass() || type.isEnum()) {
+@@ -690,7 +906,7 @@
+                         if (!declaration)
+                             throw Error("unknown class type in function signature: " +
+                                         typeName(type));
+-                        if (!typeVisible(type, unit))
++                        if (!bodyTypeVisible(type, unit))
+                             throw Error(
+                                 "function signature type requires a direct visible import: " +
+                                 typeName(type));
+@@ -703,6 +919,7 @@
+                 resolve(function.result);
+                 for (auto &parameter : function.params)
+                     resolve(parameter.type);
++                activeFunction = nullptr;
+             }
+         }
+     }
+@@ -716,15 +933,36 @@
+         if (!value->templateArguments.empty()) {
+             if (value->op != "call" && value->op != "construct")
+                 throw Error("template arguments require a class construction");
++            const auto *target = lookup(unit, scope, value->token.text, Kind::Any);
++            if (target && target->kind == Kind::FunctionTemplate) {
++                if (activeClass || (activeFunction && !activeFunction->templateArguments.empty())) {
++                    if ((activeClass && !activeClass->templateArguments.empty()) ||
++                        (activeFunction && !activeFunction->templateArguments.empty()))
++                        throw Error("function template calls inside template bodies are unsupported");
++                }
++                if (value->op != "call")
++                    throw Error("function template arguments require a call");
++                const auto *declaration = functionSpecialization(
++                    unit, scope, value->token.text, value->templateArguments);
++                for (const auto &type : signatures.at(declaration->native))
++                    if (!bodyTypeVisible(type, unit))
++                        throw Error("function signature type requires a direct visible import: " + typeName(type));
++                value->resolvedName = declaration->native;
++                value->templateArguments.clear();
++                for (const auto &argument : value->args)
++                    expression(argument, unit, scope);
++                return;
++            }
+             const auto *declaration =
+                 specialization(unit, scope, value->token.text, value->templateArguments);
+             value->resolvedName = declaration->native;
+             value->reflectedType = Type(declaration->native);
+             value->reflectedType.displayName = displayName(*declaration);
+             value->reflectedType.resolvedClass = true;
+-            if (!typeVisible(value->reflectedType, unit))
++            if (!bodyTypeVisible(value->reflectedType, unit))
+                 throw Error("class construction type requires a direct visible import: " +
+                             typeName(value->reflectedType));
++            recordAuthority(value->reflectedType, unit);
+             if (value->op == "call")
+                 value->op = "constructor_call";
+             value->templateArguments.clear();
+@@ -768,15 +1006,17 @@
+                     throw Error("line " + std::to_string(value->token.line) +
+                                 ": unknown function '" + value->token.text +
+                                 "' in defining module " + unit.program.moduleName);
+-                if (declaration->kind == Kind::Template)
+-                    throw Error("class template requires explicit type arguments: " +
++                if (declaration->kind == Kind::Template || declaration->kind == Kind::FunctionTemplate)
++                    throw Error(std::string(declaration->kind == Kind::Template ?
++                                            "class template requires explicit type arguments: " :
++                                            "function template requires explicit type arguments: ") +
+                                 value->token.text);
+                 if (declaration->kind == Kind::Enum)
+                     throw Error("enum values require a named case: " + value->token.text);
+                 value->resolvedName = declaration->native;
+                 if (declaration->kind == Kind::Function) {
+                     for (const auto &type : signatures.at(declaration->native))
+-                        if (!typeVisible(type, unit))
++                        if (!bodyTypeVisible(type, unit))
+                             throw Error(
+                                 "function signature type requires a direct visible import: " +
+                                 typeName(type));
+@@ -789,7 +1029,7 @@
+                     const bool generatedSelf = activeClass &&
+                                                !activeClass->templateArguments.empty() &&
+                                                declaration->native == activeClass->name;
+-                    if (!generatedSelf && !typeVisible(value->reflectedType, unit))
++                    if (!generatedSelf && !bodyTypeVisible(value->reflectedType, unit))
+                         throw Error("class construction type requires a direct visible import: " +
+                                     typeName(value->reflectedType));
+                 }
+@@ -843,8 +1083,10 @@
+     explicit ModuleResolver(ModuleLoader::Graph value) : graph(std::move(value)) {}
+     Program resolve() {
+         registerDeclarations();
++        validateTemplateDefinitions();
+         expandTemplates();
+         resolveClassTypes();
++        validateFunctionTemplateSignatures();
+         resolveSignatures();
+         Program result;
+         result.moduleName = graph.root;
+@@ -876,7 +1118,9 @@
+             }
+             for (auto &function : unit.program.functions) {
+                 function.moduleScope = unit.scope;
++                activeFunction = &function;
+                 statements(function.body, unit, function.scope);
++                activeFunction = nullptr;
+                 result.functions.push_back(std::move(function));
+             }
+             for (auto &definition : unit.program.classes) {
+--- a/compiler/parser.hpp
++++ b/compiler/parser.hpp
+@@ -10,6 +10,7 @@
+     int expressionNesting = 0, blockNesting = 0, typeNesting = 0, templateNesting = 0;
+     std::set<std::string> templateParameters;
+     std::set<std::string> capacityParameters;
++    bool functionTemplate = false;
+     class Nesting {
+         int &depth;
+ 
+@@ -118,9 +119,11 @@
+         }
+         return tokens.size();
+     }
+-    std::vector<TemplateArgument> templateArguments() {
+-        Nesting nesting(templateNesting, maximumTemplateNesting, peek().line, "template-id");
+-        if (!templateParameters.empty())
++    std::vector<TemplateArgument> templateArguments(int callAllowance = 0) {
++        // Calls are kind-resolved later. Their outer argument list is not a
++        // class-template level; class construction depth is checked in resolution.
++        Nesting nesting(templateNesting, maximumTemplateNesting + callAllowance, peek().line, "template-id");
++        if (!templateParameters.empty() && !functionTemplate)
+             fail("template-id references inside template definitions are not supported");
+         need("<");
+         std::vector<TemplateArgument> arguments;
+@@ -157,8 +160,13 @@
+                 while (eat("::"))
+                     argument.text += "::" + ident(true).text;
+                 TemplateArgument value(argument.text);
++                if (templateParameters.contains(argument.text)) {
++                    if (templateNesting != 1 || peek().text == "<")
++                        fail("nested dependent template arguments are not supported");
++                    value.type = TypeKind::Parameter;
++                }
+                 if (peek().text == "<")
+-                    value.templateArguments = templateArguments();
++                    value.templateArguments = templateArguments(callAllowance);
+                 arguments.push_back(std::move(value));
+             } else
+                 fail("template arguments require scalar, named class or enum types, or capacities "
+@@ -320,7 +328,7 @@
+             t.text += "::" + ident(true).text;
+         e->token.text = t.text;
+         if (templateExpressionAhead())
+-            e->templateArguments = templateArguments();
++            e->templateArguments = templateArguments(1);
+         if (eat("(")) {
+             e->op = "call";
+             if (t.text == "size_of" || t.text == "type_id" || t.text == "field_count") {
+@@ -571,8 +579,11 @@
+                      declaredParameters.front().kind != TemplateParameterKind::Scalar ||
+                      declaredParameters.back().kind != TemplateParameterKind::Capacity))
+                     fail("template capacity requires a preceding Scalar parameter");
+-                if (peek().text != "class")
+-                    fail("only Scalar- or Value-constrained class templates are supported");
++                if (peek().text != "class" && peek().text != "auto")
++                    fail("only class or namespace-level function templates are supported");
++                functionTemplate = peek().text == "auto";
++                if (functionTemplate && !capacityParameters.empty())
++                    fail("function templates require only Scalar or Value type parameters");
+             }
+             if (eat("class")) {
+                 ClassDefinition definition(ident(scope == "std"));
+@@ -665,13 +676,22 @@
+             Function function(ident());
+             function.scope = scope;
+             function.exported = exported;
++            function.templateParameters = declaredParameters;
++            if (templateParameters.contains(function.token.text))
++                fail("function name cannot shadow a template parameter");
+             parameters(function, true);
+             need("->");
+             function.result = type();
+-            if (!scalar(function.result) && !function.result.isClass())
++            if (!scalarOrParameter(function.result) && !function.result.isClass())
+                 fail("only scalar function results or scalar-field class values are supported");
+             function.body = block();
+-            program.functions.push_back(std::move(function));
++            if (declaredParameters.empty())
++                program.functions.push_back(std::move(function));
++            else
++                program.functionTemplates.push_back(std::move(function));
++            templateParameters.clear();
++            capacityParameters.clear();
++            functionTemplate = false;
+         }
+     }
+     Program parse() {
+--- a/compiler/semantics.hpp
++++ b/compiler/semantics.hpp
+@@ -364,6 +364,8 @@
+     }
+     void requireVisibleType(const Type &type, const Token &token) {
+         if ((!type.isClass() && !type.isEnum()) || reflectionAccess.empty())
++            return;
++        if (currentFunction->templateTypeAuthority.contains(type.className))
+             return;
+         if (!currentFunction->receiverClass.empty()) {
+             const auto &definition = classDefinition(Type(currentFunction->receiverClass), token);
+--- a/compiler/syntax.hpp
++++ b/compiler/syntax.hpp
+@@ -46,6 +46,10 @@
+     std::string receiverClass;
+     bool receiverConst = false, constructor = false, publicAccess = false;
+     std::vector<std::pair<Token, ExpressionPtr>> initializers;
++    std::vector<TemplateParameter> templateParameters;
++    std::vector<TemplateArgument> templateArguments;
++    // Exact compile-time authority only. Runtime reflection keeps moduleScope.
++    std::set<std::string> templateTypeAuthority;
+     std::vector<Param> params;
+     std::vector<StatementPtr> body;
+     explicit Function(Token t) : name(t.text), token(std::move(t)), result(Type::I64) {}
+@@ -90,6 +94,7 @@
+     std::set<std::string> namespaces;
+     std::map<int, std::set<std::string>> reflectionAccess;
+     std::vector<Function> functions;
++    std::vector<Function> functionTemplates;
+     std::vector<ClassDefinition> classes;
+     std::vector<ClassDefinition> templates;
+     std::vector<EnumDefinition> enums;
+--- a/compiler/templates.hpp
++++ b/compiler/templates.hpp
+@@ -220,4 +220,144 @@
+         return result;
+     }
+ };
++
++// This distinct expander intentionally does not relax class-template bodies.
++// Its only generated requests are statically named class specializations.
++class FunctionTemplateExpansion {
++    std::map<std::string, Type> substitutions;
++    std::vector<TemplateArgument> arguments(const std::vector<TemplateArgument> &source,
++                                          bool nested = false) const {
++        auto result = source;
++        for (auto &argument : result) {
++            name(argument.className);
++            if (argument.type == TypeKind::Parameter) {
++                if (nested || !argument.templateArguments.empty())
++                    throw Error("nested dependent template arguments are not supported");
++                const auto found = substitutions.find(argument.className);
++                if (found == substitutions.end())
++                    throw Error("unknown function template parameter: " + argument.className);
++                argument.type = found->second.kind;
++                argument.className = found->second.className;
++                argument.displayName = found->second.displayName;
++                argument.resolvedClass = found->second.resolvedClass;
++            } else
++                argument.templateArguments = arguments(argument.templateArguments, true);
++        }
++        return result;
++    }
++    Type type(Type value) const {
++        name(value.className);
++        if (value.kind == TypeKind::Parameter) {
++            const auto found = substitutions.find(value.className);
++            if (found == substitutions.end())
++                throw Error("unknown function template parameter: " + value.className);
++            return found->second;
++        }
++        value.templateArguments = arguments(value.templateArguments);
++        if (!value.elementParameter.empty()) {
++            const auto found = substitutions.find(value.elementParameter);
++            if (found == substitutions.end() || !scalar(found->second))
++                throw Error("function template array element requires a scalar type");
++            value.elementKind = found->second.kind;
++            value.elementParameter.clear();
++        }
++        if (!value.lengthParameter.empty())
++            throw Error("function templates do not have capacity parameters");
++        return value;
++    }
++    void name(const std::string &value) const {
++        for (const auto &[parameter, unused] : substitutions) {
++            (void)unused;
++            if (value.starts_with(parameter + "::"))
++                throw Error("dependent qualified names are not supported: " + value);
++        }
++    }
++    ExpressionPtr expression(const ExpressionPtr &source) const {
++        if (!source)
++            return nullptr;
++        name(source->token.text);
++        if ((source->op == "call" || source->op == "construct") &&
++            substitutions.contains(source->token.text))
++            throw Error("dependent construction or conversion is not supported: " +
++                        source->token.text);
++        auto result = std::make_shared<Expression>(*source);
++        result->templateArguments = arguments(source->templateArguments);
++        result->reflectedType = type(source->reflectedType);
++        result->args.clear();
++        for (const auto &argument : source->args)
++            result->args.push_back(expression(argument));
++        return result;
++    }
++    StatementPtr statement(const StatementPtr &source) const {
++        if (source->kind == "let" && substitutions.contains(source->name))
++            throw Error("local cannot shadow a function template parameter: " + source->name);
++        auto result = std::make_shared<Statement>(*source);
++        result->type = type(source->type);
++        result->expr = expression(source->expr);
++        result->target = expression(source->target);
++        result->body.clear();
++        result->other.clear();
++        for (const auto &child : source->body)
++            result->body.push_back(statement(child));
++        for (const auto &child : source->other)
++            result->other.push_back(statement(child));
++        return result;
++    }
++  public:
++    static Function instantiate(const Function &source,
++                                const std::vector<TemplateArgument> &arguments) {
++        if (arguments.size() != source.templateParameters.size())
++            throw Error("wrong number of function template arguments for " + source.token.text);
++        FunctionTemplateExpansion expansion;
++        for (std::size_t index = 0; index < arguments.size(); ++index) {
++            const auto &parameter = source.templateParameters[index];
++            const auto &argument = arguments[index];
++            const auto value = ClassTemplateExpansion::argumentType(argument);
++            if (argument.kind != TemplateArgumentKind::Type ||
++                (parameter.kind == TemplateParameterKind::Scalar && !scalar(value)) ||
++                (parameter.kind == TemplateParameterKind::Value && !scalarValue(value) &&
++                 !value.isClass()) || parameter.kind == TemplateParameterKind::Capacity)
++                throw Error("function template argument violates Scalar or Value constraint");
++            expansion.substitutions.emplace(parameter.name, value);
++        }
++        Function result = source;
++        result.templateParameters.clear();
++        result.templateArguments = arguments;
++        result.exported = false;
++        result.result = expansion.type(source.result);
++        for (auto &parameter : result.params) {
++            if (expansion.substitutions.contains(parameter.name))
++                throw Error("function parameter cannot shadow a template parameter: " + parameter.name);
++            parameter.type = expansion.type(parameter.type);
++        }
++        result.body.clear();
++        for (const auto &statement : source.body)
++            result.body.push_back(expansion.statement(statement));
++        return result;
++    }
++    static void validate(const Function &source) {
++        if (source.templateParameters.empty() || source.templateParameters.size() > 2 ||
++            !source.receiverClass.empty() || source.constructor)
++            throw Error("function templates require one or two namespace-level type parameters");
++        auto boundary = [](const Type &type) {
++            if (!scalarValue(type) && !type.isClass() && type.kind != TypeKind::Parameter)
++                throw Error("function template boundaries require copied Scalar or Value types");
++        };
++        boundary(source.result);
++        for (const auto &parameter : source.params)
++            boundary(parameter.type);
++        std::set<std::string> names;
++        std::vector<TemplateArgument> arguments;
++        for (const auto &parameter : source.templateParameters) {
++            if (parameter.kind == TemplateParameterKind::Capacity ||
++                !names.insert(parameter.name).second)
++                throw Error("function templates require distinct Scalar or Value parameters");
++            arguments.push_back(TypeKind::I64);
++        }
++        // Disposable scalar substitution checks structural restrictions even for
++        // unrequested definitions, without claiming universal body validity.
++        (void)instantiate(source, arguments);
++    }
++};
++
+ } // namespace aurora
+--- a/compiler/types.hpp
++++ b/compiler/types.hpp
+@@ -25,6 +25,8 @@
+     TypeKind type = TypeKind::I64;
+     std::int64_t value = 0;
+     std::string className, displayName;
++    // Trusted frontend substitution provenance; never grants source name lookup.
++    bool resolvedClass = false;
+     // Frontend-only unresolved concrete template-id. Resolution interns children
+     // first and clears this tree before substitution or the concrete IR boundary.
+     std::vector<TemplateArgument> templateArguments;
+--- /dev/null
++++ b/docs/completeness-matrix-m021-candidate.md
+@@ -0,0 +1,19 @@
++# M021 candidate completeness update (not adopted)
++
++- Explicit namespace-level function templates: implemented in isolated source;
++  bounded one/two Scalar/Value parameters, explicit calls, copied values.
++- Reusable factory: `std::make_pair<T,U>` and executable byte-array/source-range
++  example use existing class construction/copy semantics.
++- Narrow dependent class template-id: bare function parameters or concrete M020
++  argument trees; nested dependent expressions and template-body function-template
++  calls are rejected. Class-template bodies are unchanged.
++- Validation: complete isolated release/fatal host ASan/UBSan compiler gates and
++  independent frozen-source review/replay passed; see evidence/VERIFICATION.md.
++- Still unavailable: deduction, overloads, generic methods, function capacity
++  parameters, recursive generic expansion, general concepts, heap/resource/ref
++  generics, a new ABI, complete standard library and self-hosting.
++- Mainline/compiler image integration: not performed in this candidate.
++
++On adoption, merge these statuses into the canonical completeness matrix without
++copying or replacing its unrelated rows. See compiler/FUNCTION-TEMPLATES.md for
++limits, finite phases, authority, and test obligations.
+--- /dev/null
++++ b/examples/function_token_values.au
+@@ -0,0 +1,62 @@
++module function_token_values;
++import std.array;
++import std.utility;
++
++// A bounded token owns sixteen inline bytes. Its source range is an independent
++// value too. This example deliberately does not claim to implement a tokenizer,
++// text encoding, unbounded strings, or borrowed source storage.
++class SourceRange {
++    i64 begin_offset;
++    i64 end_offset;
++public:
++    SourceRange(i64 begin, i64 end) : begin_offset(begin), end_offset(end) {}
++    auto begin() const -> i64 { return begin_offset; }
++    auto end() const -> i64 { return end_offset; }
++    auto width() const -> i64 { return end_offset - begin_offset; }
++    auto shift(i64 amount) -> i64 {
++        begin_offset = begin_offset + amount;
++        end_offset = end_offset + amount;
++        return begin_offset;
++    }
++};
++
++auto transport(std::pair<std::array<u8,16>,SourceRange> token)
++    -> std::pair<std::array<u8,16>,SourceRange> {
++    return token;
++}
++
++auto test() -> i64 {
++    std::array<u8,16> bytes = std::array<u8,16>();
++    bytes.set(0, 105u8);
++    bytes.set(1, 100u8);
++    const SourceRange source = SourceRange(10, 12);
++    const std::pair<std::array<u8,16>,SourceRange> token =
++        std::make_pair<std::array<u8,16>,SourceRange>(bytes, source);
++    const std::pair<std::array<u8,16>,SourceRange> returned = transport(token);
++
++    bytes.set(0, 0u8);
++    std::array<u8,16> changed_bytes = returned.first;
++    SourceRange changed_range = returned.second;
++    changed_bytes.set(0, 120u8);
++    changed_range.shift(20);
++
++    const std::array<u8,16> saved_bytes = token.first;
++    const SourceRange saved_range = token.second;
++    const std::array<u8,16> returned_bytes = returned.first;
++    const SourceRange returned_range = returned.second;
++    if (saved_bytes.at(0) != 105u8) { return 1; }
++    if (saved_bytes.at(1) != 100u8) { return 2; }
++    if (returned_bytes.at(0) != 105u8) { return 3; }
++    if (changed_bytes.at(0) != 120u8) { return 4; }
++    if (saved_range.begin() != 10) { return 5; }
++    if (returned_range.end() != 12) { return 6; }
++    if (changed_range.begin() != 30) { return 7; }
++    i64 index = 2;
++    while (index < saved_bytes.size()) {
++        if (saved_bytes.at(index) != 0u8) { return 8; }
++        index = index + 1;
++    }
++    static_assert(size_of(std::pair<std::array<u8,16>,SourceRange>) == 32);
++    static_assert(field_count(std::pair<std::array<u8,16>,SourceRange>) == 2);
++    return changed_range.begin() + returned_range.end();
++}
+--- a/library/README.md
++++ b/library/README.md
+@@ -173,3 +173,13 @@
+ Run `make -C compiler test-xfs-geometry` for the bigint/native corpus and bounded
+ mutation controls. The explicit `--sanitized-compiler` flag is supplied through
+ `XFS_GEOMETRY_TEST_FLAGS` only when testing an instrumented compiler.
++
++## Explicit copied pair factory (M021 candidate)
++
++`std.utility` also provides `std::make_pair<T,U>(first,second)` with explicit
++Scalar/Value-compatible types. It constructs a complete independent pair through
++Aurora code; class arguments are readonly left-to-right snapshots and the result
++initializes a fresh typed local. There is no deduction, reference-pair, heap or ABI
++addition. `examples/function_token_values.au` combines `std::array<u8,16>` and a
++source-range class. See `compiler/FUNCTION-TEMPLATES.md` for candidate limits and
++verification gates.
+--- a/library/std/utility.au
++++ b/library/std/utility.au
+@@ -10,4 +10,9 @@
+         pair(T first_value, U second_value)
+             : first(first_value), second(second_value) {}
+     };
++    template <Value T, Value U>
++    auto make_pair(T first, U second) -> pair<T,U> {
++        const pair<T,U> result = pair<T,U>(first, second);
++        return result;
++    }
+ }
+--- /dev/null
++++ b/tests/compiler/function_templates.py
+@@ -0,0 +1,746 @@
++#!/usr/bin/env python3
++"""Focused executable contract for bounded explicit function templates (M021).
++
++Run: python3 -O tests/compiler/function_templates.py build/aurorac
++     python3 tests/compiler/function_templates.py --plan-only
++
++Native observations preserve all 64 result bits. Traps require a kernel SIGILL
++at the exact named UD2 instruction, using composed_values/integer_oracle's
++freestanding observer. Every negative fixture is compiled with both absent and
++byte-exact pre-existing output; all source, module, and library inputs must remain
++unchanged. require() stays active under -O. Successful cases are deleted; failing
++source, modules, command, diagnostics and native artifacts remain under tmp/.
++Counts are observed and disjoint (native returns, traps, rejection executions),
++with unique negative fixture counts reported separately. This is bounded evidence,
++not a language-equivalence or memory-safety proof. No kernel images are produced.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++from itertools import product
++import json
++from pathlib import Path
++import random
++import re
++import resource
++import shutil
++import subprocess
++import tempfile
++import time
++
++from composed_values import (Trap, observer_self_test, program, require, signed_bits)
++from integer_oracle import NativeRunner, validate_trap, validate_values
++
++ROOT = Path(__file__).resolve().parents[2]
++IMPORTS = "import std.utility;import std.array;"
++SCALARS = ("i64", "u64", "u8", "bool")
++VALUES = {"i64": "-9223372036854775808", "u64": "18446744073709551615u64",
++          "u8": "255u8", "bool": "true"}
++OTHER = {"i64": "9223372036854775807", "u64": "9223372036854775808u64",
++         "u8": "0u8", "bool": "false"}
++BITS = {"i64": -(1 << 63), "u64": (1 << 64)-1, "u8": 255, "bool": 1}
++COPY = "template<Value T>auto copy(T value)->T{const T result=value;return result;}"
++PROBE = "template<Value T>auto probe()->i64{return 42;}"
++MAKE = ("template<Value T,Value U>auto make(T x,U y)->std::pair<T,U>{"
++        "const std::pair<T,U> result=std::pair<T,U>(x,y);return result;}")
++LEAF = ("class Leaf{u8 value;public:Leaf(u8 n):value(n){}"
++        "auto get()const->u8{return value;}auto set(u8 n)->u8{value=n;return value;}};")
++EMPTY = "class Empty{public:Empty(){}auto answer()const->i64{return 42;}};"
++BOX = "template<Value T>class Box{public:T item;Box(T x):item(x){} };"
++TAG = "template<Value T>class Tag{public:Tag(){} };"
++PRESERVED = b"previous verified assembly\x00\xff\n"
++
++
++def p(body, definitions="", helpers="", imports=IMPORTS, result="i64"):
++    return program(body, definitions, helpers, imports, result)
++
++
++class Suite:
++    def __init__(self, directory, compiler, keep_going=False, fixture="", plan_only=False):
++        self.directory, self.compiler = directory, compiler
++        self.keep_going, self.fixture, self.plan_only = keep_going, fixture, plan_only
++        self.runner = None if plan_only else NativeRunner(directory, compiler, 5)
++        self.library_inputs = {} if plan_only else {
++            path: path.read_bytes() for path in (ROOT / "library").rglob("*.au")}
++        self.count = self.traps = self.rejections = self.negative_fixtures = 0
++        self.attempts = self.selected_fixtures = 0
++        self.failures, self.names = [], set()
++
++    def check(self, name, source, expected=42, error=None, modules=None,
++              existing_output=None, _selected=False):
++        if not _selected:
++            require(name not in self.names, "duplicate fixture name: " + name)
++            self.names.add(name)
++            if self.fixture and self.fixture.lower() not in name.lower():
++                return
++            self.selected_fixtures += 1
++        self.attempts += 1
++        if self.plan_only:
++            self.count += 1
++            self.rejections += int(error is not None)
++            self.traps += int(isinstance(expected, Trap) and error is None)
++            print("PLAN function templates", name, flush=True)
++            return
++        slug = re.sub(r"[^a-zA-Z0-9]+", "-", name)[:75].strip("-")
++        directory = Path(tempfile.mkdtemp(prefix=slug + "-", dir=self.directory))
++        source_path, output = directory / "input.au", directory / "compiled.s"
++        source_path.write_text(source)
++        inputs = dict(self.library_inputs)
++        inputs[source_path] = source.encode()
++        roots = [ROOT / "library"]
++        if modules:
++            root = directory / "modules"
++            root.mkdir()
++            roots.insert(0, root)
++            for module, content in modules.items():
++                path = root / (module.replace(".", "/") + ".au")
++                path.parent.mkdir(parents=True, exist_ok=True)
++                path.write_text(content)
++                inputs[path] = content.encode()
++        if existing_output is not None:
++            output.write_bytes(existing_output)
++        command = [str(self.compiler), str(source_path), "-o", str(output)]
++        for root in roots:
++            command.extend(["--module-root", str(root)])
++        (directory / "command.json").write_text(json.dumps(command, indent=2) + "\n")
++        original_runner_directory = self.runner.directory
++        try:
++            compiled = subprocess.run(command, capture_output=True, timeout=10,
++                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)))
++            (directory / "stdout.bin").write_bytes(compiled.stdout)
++            (directory / "stderr.bin").write_bytes(compiled.stderr)
++            for path, before in inputs.items():
++                require(path.read_bytes() == before, name + ": input changed: " + str(path))
++            if error is not None:
++                require(compiled.returncode == 1,
++                        f"{name}: expected compiler exit 1, got {compiled.returncode}: {compiled.stderr!r}")
++                require(bool(compiled.stderr), name + ": missing rejection diagnostic")
++                if existing_output is None:
++                    require(not output.exists(), name + ": artifact created on rejection")
++                else:
++                    require(output.read_bytes() == existing_output,
++                            name + ": previous output changed on rejection")
++                if error is not True:
++                    fragments = (error,) if isinstance(error, str) else error
++                    require(any(x.lower().encode() in compiled.stderr.lower() for x in fragments),
++                            name + ": unexpected diagnostic: " + repr(compiled.stderr))
++                self.rejections += 1
++            else:
++                require(compiled.returncode == 0,
++                        f"{name}: compiler exit {compiled.returncode}: {compiled.stderr!r}")
++                self.runner.directory = directory
++                observed, symbols = self.runner.assemble(output.read_text(), ["test"])
++                if isinstance(expected, Trap):
++                    validate_trap(observed, expected, symbols, name)
++                    self.traps += 1
++                else:
++                    validate_values(observed, [signed_bits(expected)], [name])
++            self.count += 1
++            print("PASS function templates", name, flush=True)
++        except (AssertionError, OSError, subprocess.TimeoutExpired) as failure:
++            details = f"{name}: {failure}\nPreserved reproduction: {directory}"
++            (directory / "failure.txt").write_text(details + "\n")
++            self.failures.append(details)
++            print("FAIL function templates", details, flush=True)
++            if not self.keep_going:
++                raise AssertionError(details) from failure
++        else:
++            shutil.rmtree(directory)
++        finally:
++            self.runner.directory = original_runner_directory
++
++    def reject(self, name, source, error=True, modules=None):
++        require(name not in self.names, "duplicate fixture name: " + name)
++        self.names.add(name)
++        if self.fixture and self.fixture.lower() not in name.lower():
++            return
++        self.selected_fixtures += 1
++        before = self.rejections
++        for suffix, previous in (("absent output", None), ("saved output", PRESERVED)):
++            self.check(name + ": " + suffix, source, error=error, modules=modules,
++                       existing_output=previous, _selected=True)
++        if self.rejections == before + 2:
++            self.negative_fixtures += 1
++
++
++def native_cases(suite, seed, steps):
++    for first, second in product(SCALARS, repeat=2):
++        pair = f"std::pair<{first},{second}>"
++        suite.check(f"make_pair all ordered scalar tuples {first}/{second}", p(
++            f"{pair} value=std::make_pair<{first},{second}>({VALUES[first]},{VALUES[second]});"
++            f"{pair} changed=copy<{pair}>(value);changed.first={OTHER[first]};"
++            f"changed.second={OTHER[second]};if(value.first!={VALUES[first]}){{return 1;}}"
++            f"if(value.second!={VALUES[second]}){{return 2;}}"
++            f"if(changed.first!={OTHER[first]}){{return 3;}}"
++            f"if(changed.second!={OTHER[second]}){{return 4;}}return 42;", COPY))
++    for scalar in SCALARS:
++        suite.check("Scalar identity full-width native result " + scalar, p(
++            f"return identity<{scalar}>({VALUES[scalar]});",
++            "template<Scalar T>auto identity(T x)->T{return x;}", imports="", result=scalar),
++            expected=BITS[scalar])
++        suite.check("Value identity full-width native result " + scalar, p(
++            f"return copy<{scalar}>({VALUES[scalar]});", COPY, imports="", result=scalar),
++            expected=BITS[scalar])
++    suite.check("mixed Scalar Value constraints and namespace-qualified explicit call", p(
++        "Leaf leaf=Leaf(40u8);std::pair<u8,Leaf> value=tools::pack<u8,Leaf>(2u8,leaf);"
++        "const Leaf result=value.second;return i64(value.first)+i64(result.get());", LEAF +
++        "namespace tools{template<Scalar T,Value U>auto pack(T x,U y)->std::pair<T,U>{"
++        "const std::pair<T,U> result=std::pair<T,U>(x,y);return result;}}"))
++    suite.check("explicit calls in ordinary constructor initializer and method", p(
++        "Ordinary value=Ordinary(42u8);return i64(value.get());", COPY +
++        "class Ordinary{u8 value;public:Ordinary(u8 x):value(copy<u8>(x)){}"
++        "auto get()const->u8{return copy<u8>(value);}};", imports=""))
++    receiver_shadow = ("template<Scalar T>class Receiver{public:Receiver(){}"
++        "auto helper(i64 x)const->i64{return x;}auto get()const->i64{return helper(42);}};")
++    namespace_helper = "template<Scalar U>auto helper(U x)->i64{return 999;}"
++    suite.check("class-template receiver method shadows local function-template name", p(
++        "const Receiver<i64> value=Receiver<i64>();return value.get();",
++        namespace_helper + receiver_shadow, imports=""))
++    suite.check("class-template receiver method shadows imported function-template name", p(
++        "const Receiver<i64> value=Receiver<i64>();return value.get();",
++        receiver_shadow, imports="import helpers;"),
++        modules={"helpers": "export module helpers;export " + namespace_helper})
++    suite.check("same template many scalar specializations have independent substituted ASTs", p(
++        "if(copy<i64>(-1)!=-1){return 1;}if(copy<u8>(255u8)!=255u8){return 2;}"
++        "if(copy<bool>(true)!=true){return 3;}"
++        "if(copy<u64>(18446744073709551615u64)!=18446744073709551615u64){return 4;}"
++        "return copy<i64>(42);", COPY, imports=""))
++    suite.check("Value closed nominal enum copies and pair fields", p(
++        "Status original=Status::ready;Status copied=copy<Status>(original);"
++        "std::pair<Status,u8> value=std::make_pair<Status,u8>(copied,42u8);"
++        "if(value.first!=Status::ready){return 1;}return i64(value.second);",
++        "enum class Status{ready,failed};" + COPY))
++    suite.check("Value named private class snapshots and independent returned copy", p(
++        "Leaf original=Leaf(20u8);Leaf copied=copy<Leaf>(original);original.set(1u8);"
++        "copied.set(22u8);Leaf saved=copy<Leaf>(copied);copied.set(3u8);"
++        "return i64(saved.get())+19+i64(original.get());", LEAF + COPY))
++    suite.check("Value empty class result retains initialization and const methods", p(
++        "Empty source=Empty();Empty result=copy<Empty>(source);"
++        "std::pair<Empty,Empty> pair=std::make_pair<Empty,Empty>(source,result);"
++        "const Empty projected=pair.second;return projected.answer();", EMPTY + COPY))
++    suite.check("bare dependent class-template arguments in result local and constructor", p(
++        "Leaf leaf=Leaf(40u8);std::pair<Leaf,u8> value=make<Leaf,u8>(leaf,2u8);"
++        "const Leaf result=value.first;return i64(result.get())+i64(value.second);", LEAF + MAKE))
++    suite.check("fully concrete nested class argument inside function template", p(
++        "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(2,40u8);"
++        "std::pair<std::array<u8,3>,u8> inner=std::make_pair<std::array<u8,3>,u8>(bytes,2u8);"
++        "std::pair<std::pair<std::array<u8,3>,u8>,u8> outer=wrap<u8>(inner,0u8);"
++        "const std::pair<std::array<u8,3>,u8> saved=outer.first;"
++        "const std::array<u8,3> copy=saved.first;return i64(copy.at(2))+i64(saved.second);",
++        "template<Value T>auto wrap(std::pair<std::array<u8,3>,u8> source,T last)"
++        "->std::pair<std::pair<std::array<u8,3>,u8>,T>{"
++        "const std::pair<std::pair<std::array<u8,3>,u8>,T> result="
++        "std::pair<std::pair<std::array<u8,3>,u8>,T>(source,last);return result;}"))
++    suite.check("function argument syntax supports adjacent and spaced nested closers", p(
++        "std::array<u8,03> source=std::array<u8,3>();source.set(2,42u8);"
++        "const std::array<u8,3> a=copy<std::array<u8,03>>(source);"
++        "const std::array<u8,3> b=copy< std::array< u8, 3 > >(a);return i64(b.at(2));", COPY))
++    suite.check("left-to-right scalar argument side effects", p(
++        "Leaf leaf=Leaf(0u8);std::pair<u8,u8> result=std::make_pair<u8,u8>(leaf.set(20u8),leaf.set(22u8));"
++        "return i64(result.first)+i64(result.second);", LEAF))
++    suite.check("left-to-right class snapshot precedes later argument mutation", p(
++        "Leaf leaf=Leaf(20u8);std::pair<Leaf,u8> result=std::make_pair<Leaf,u8>(leaf,leaf.set(22u8));"
++        "const Leaf saved=result.first;return i64(saved.get())+i64(result.second);", LEAF))
++    suite.check("left-to-right array snapshot precedes later argument mutation", p(
++        "std::array<u8,1> bytes=std::array<u8,1>();bytes.set(0,20u8);"
++        "std::pair<std::array<u8,1>,u8> result=std::make_pair<std::array<u8,1>,u8>(bytes,bytes.set(0,22u8));"
++        "const std::array<u8,1> saved=result.first;return i64(saved.at(0))+i64(result.second);"))
++    suite.check("repeated class source arguments become independent snapshots", p(
++        "Leaf source=Leaf(20u8);std::pair<Leaf,Leaf> pair=std::make_pair<Leaf,Leaf>(source,source);"
++        "Leaf first=pair.first;Leaf second=pair.second;first.set(22u8);source.set(1u8);"
++        "return i64(first.get())+i64(second.get());", LEAF))
++    suite.check("function result binding observes outer same-name source", p(
++        "Leaf source=Leaf(42u8);{Leaf source=copy<Leaf>(source);if(source.get()!=42u8){return 1;}}"
++        "return i64(source.get());", LEAF + COPY))
++    suite.check("returned class survives template frame and repeated loop calls", p(
++        "Leaf source=Leaf(20u8);i64 i=0;while(i<12){Leaf saved=copy<Leaf>(source);"
++        "saved.set(22u8);if(source.get()!=20u8){return 1;}i=i+1;}"
++        "Leaf result=copy<Leaf>(source);return i64(result.get())+22;", LEAF + COPY))
++    range_class = ("class SourceRange{i64 begin_offset;i64 end_offset;public:"
++        "SourceRange(i64 a,i64 b):begin_offset(a),end_offset(b){}"
++        "auto begin()const->i64{return begin_offset;}auto end()const->i64{return end_offset;}"
++        "auto shift(i64 amount)->i64{begin_offset=begin_offset+amount;end_offset=end_offset+amount;return begin_offset;}};")
++    suite.check("bounded token source-range make_pair owns independent sixteen bytes", p(
++        "std::array<u8,16> bytes=std::array<u8,16>();bytes.set(0,105u8);bytes.set(1,100u8);"
++        "SourceRange source=SourceRange(10,12);"
++        "std::pair<std::array<u8,16>,SourceRange> token=std::make_pair<std::array<u8,16>,SourceRange>(bytes,source);"
++        "const std::pair<std::array<u8,16>,SourceRange> returned=copy<std::pair<std::array<u8,16>,SourceRange>>(token);"
++        "bytes.set(0,0u8);source.shift(100);std::array<u8,16> changed=returned.first;"
++        "SourceRange moved=returned.second;changed.set(0,120u8);moved.shift(20);"
++        "const std::array<u8,16> saved=token.first;const SourceRange range=token.second;"
++        "if(saved.at(0)!=105u8){return 1;}if(saved.at(1)!=100u8){return 2;}"
++        "if(range.begin()!=10){return 3;}if(changed.at(0)!=120u8){return 4;}"
++        "i64 i=2;while(i<16){if(saved.at(i)!=0u8){return 5;}i=i+1;}"
++        "static_assert(size_of(std::pair<std::array<u8,16>,SourceRange>)==32);"
++        "static_assert(field_count(std::pair<std::array<u8,16>,SourceRange>)==2);"
++        "return moved.begin()+range.end();", range_class + COPY))
++    rng = random.Random(seed)
++    for capacity in (1, 3, 16, 63, 64):
++        concrete = f"std::array<u8,{capacity}>"
++        initial = [rng.randrange(256) for _ in range(capacity)]
++        body = [f"{concrete} source={concrete}();"]
++        body += [f"source.set({i},{v}u8);" for i, v in enumerate(initial)]
++        body += [f"const {concrete} saved=copy<{concrete}>(source);", f"{concrete} changed=copy<{concrete}>(saved);"]
++        model = initial.copy()
++        for _ in range(steps):
++            index, value = rng.randrange(capacity), rng.randrange(256)
++            body.append(f"changed.set({index},{value}u8);")
++            model[index] = value
++        body.append(f"source.set(0,{(initial[0]+1)%256}u8);")
++        for index, (old, new) in enumerate(zip(initial, model)):
++            body.append(f"if(saved.at({index})!={old}u8){{return 1;}}if(changed.at({index})!={new}u8){{return 2;}}")
++        suite.check(f"seeded independent generic byte-copy model capacity {capacity}", p("".join(body)+"return 42;", COPY))
++
++
++def boundary_cases(suite):
++    for count in (1, 2):
++        signature = COPY if count == 1 else "template<Scalar T,Scalar U>auto choose(T x,U y)->T{return x;}"
++        call = "copy<i64>(42)" if count == 1 else "choose<i64,u8>(42,0u8)"
++        suite.check(f"function template parameter count {count}", p("return " + call + ";", signature, imports=""))
++    for depth in (3, 4, 5):
++        concrete = "i64"
++        for _ in range(depth):
++            concrete = f"Tag<{concrete}>"
++        source = p(f"return probe<{concrete}>();", TAG + PROBE, imports="")
++        if depth <= 4:
++            suite.check(f"function explicit argument list does not consume nominal depth {depth}", source)
++        else:
++            suite.reject("function argument nominal template depth five rejected", source, error=("depth", "four", "4", "nesting", "nested"))
++    for depth in (3, 4):
++        concrete = "i64"
++        for _ in range(depth):
++            concrete = f"Tag<{concrete}>"
++        source = p(f"return expanded<{concrete}>();", TAG +
++            "template<Value T>auto expanded()->i64{static_assert(size_of(Tag<T>)==8);return 42;}", imports="")
++        if depth == 3:
++            suite.check("substitution produces exactly four nominal template levels", source)
++        else:
++            suite.reject("substitution cannot conceal fifth nominal template level", source,
++                         error=("depth", "four", "4", "nesting", "nested"))
++    for named_leaf in (False, True):
++        concrete = "Leaf" if named_leaf else "u8"
++        body = "Leaf value0=Leaf(42u8);" if named_leaf else "u8 value0=42u8;"
++        for level in range(1, 5):
++            concrete = f"Box<{concrete}>"
++            body += f"{concrete} value{level}={concrete}(value{level-1});"
++        body += f"const {concrete} result=copy<{concrete}>(value4);return 42;"
++        source = p(body, LEAF + BOX + COPY, imports="")
++        if named_leaf:
++            suite.reject("four nominal template levels cannot bypass containment five", source,
++                         error=("depth", "four", "4"))
++        else:
++            suite.check("generic copy at exactly four independent containment levels", source)
++    for leaves in (63, 64, 65):
++        capacity = leaves-1
++        inner, outer = f"std::array<u8,{capacity}>", f"std::pair<std::array<u8,{capacity}>,u8>"
++        source = p(f"{inner} bytes={inner}();bytes.set({capacity-1},40u8);"
++            f"{outer} value=std::make_pair<{inner},u8>(bytes,2u8);"
++            f"const {outer} returned=copy<{outer}>(value);const {inner} saved=returned.first;"
++            f"return i64(saved.at({capacity-1}))+i64(returned.second);", COPY)
++        if leaves <= 64:
++            suite.check(f"function-template class result flattened leaves {leaves}", source)
++        else:
++            suite.reject("function-template class result flattened leaves 65", source,
++                         error=("64", "leaf", "leaves"))
++    for count in (6, 7):
++        parameters = ",".join(f"T a{i}" for i in range(count))
++        arguments = ",".join("7" for _ in range(count))
++        body = "+".join(f"a{i}" for i in range(count))
++        source = p(f"return sum<i64>({arguments});", f"template<Scalar T>auto sum({parameters})->T{{return {body};}}", imports="")
++        if count == 6:
++            suite.check("instantiated function exactly six ordinary scalar parameters", source)
++        else:
++            suite.reject("instantiated function seven ordinary parameters", source, error=("six", "parameter"))
++    suite.check("instantiated function exactly six independent class parameters", p(
++        "Leaf source=Leaf(42u8);Leaf result=last<Leaf>(source,source,source,source,source,source);return i64(result.get());",
++        LEAF + "template<Value T>auto last(T a,T b,T c,T d,T e,T f)->T{return f;}", imports=""))
++    # i64 parameter (8) + 4096 i64 elements (32768) + 4095 i64 elements
++    # (32760) is exactly 65536 bytes. One additional i64 exceeds the frame cap.
++    frame_body = ("const array<i64,4096> first={" + ",".join(["0"]*4096) + "};"
++                  "const array<i64,4095> second={" + ",".join(["0"]*4095) + "};")
++    for extra in (False, True):
++        source = p("return frame<i64>(42);", "template<Scalar T>auto frame(T value)->T{" +
++            frame_body + ("const i64 overflow=0;" if extra else "") + "return value;}", imports="")
++        if extra:
++            suite.reject("instantiated function frame 65544 rejects beyond 65536", source, error=("frame", "65536"))
++        else:
++            suite.check("instantiated function frame exactly 65536 bytes", source)
++    for count in (64, 65):
++        classes = [TAG.replace("Tag", f"Tag{i}") for i in range(32)]
++        functions = [PROBE.replace("probe", f"probe{i}") for i in range(count-32)]
++        definitions = "".join(classes + functions)
++        body = "return probe0<Tag0<u8>>();"
++        source = p(body, definitions, imports="")
++        if count == 64:
++            suite.check("combined class plus function definitions exactly 64", source)
++        else:
++            suite.reject("combined class plus function definitions 65", source, error=("64", "template"))
++        modules = {"classes": "export module classes;" + "".join("export " + x for x in classes),
++                   "functions": "export module functions;" + "".join("export " + x for x in functions)}
++        source = p(body, imports="import classes;import functions;")
++        if count == 64:
++            suite.check("combined 64 definitions counted across module graph", source, modules=modules)
++        else:
++            suite.reject("combined 65 definitions rejected across module graph", source,
++                         modules=modules, error=("64", "template"))
++    # Each of 128 distinct std::array types and its probe specialization is one
++    # instance: exactly 128 class + 128 function = 256, with no pair requests.
++    types = [f"std::array<{scalar},{capacity}>" for scalar in ("u8", "i64") for capacity in range(1, 65)]
++    requests = [f"probe<{concrete}>();" for concrete in types]
++    suite.check("combined 128 class plus 128 function specializations exactly 256",
++        p("".join(requests)+"return 42;", PROBE, imports="import std.array;"))
++    suite.reject("combined instance 257 one extra function specialization",
++        p("".join(requests)+"probe<u8>();return 42;", PROBE, imports="import std.array;"),
++        error=("256", "instantiat", "specializ"))
++    suite.reject("combined instance 257 one extra class specialization",
++        p("".join(requests)+"static_assert(size_of(Tag<u8>)==8);return 42;", PROBE + TAG, imports="import std.array;"),
++        error=("256", "instantiat", "specializ"))
++    repeated = "probe< std::array< u8, 03 > >();probe<std::array<u8,3>>();" * 150
++    suite.check("canonical repeated requests share exact combined 256 instance budget",
++        p("".join(requests)+repeated+"return 42;", PROBE, imports="import std.array;"))
++    modules = {"generic": "export module generic;export " + PROBE,
++               "left": "export module left;import generic;import std.array;export auto left_value()->i64{" +
++                       "".join(requests[:64])+"return 20;}",
++               "right": "export module right;import generic;import std.array;export auto right_value()->i64{" +
++                        "".join(requests[64:])+"return 22;}"}
++    suite.check("combined 256 specializations counted across modules",
++        p("return left_value()+right_value();", imports="import left;import right;"), modules=modules)
++    too_many = dict(modules)
++    too_many["right"] = too_many["right"].replace("return 22;", "probe<bool>();return 22;")
++    suite.reject("combined 257 specializations rejected across modules",
++        p("return left_value()+right_value();", imports="import left;import right;"), modules=too_many,
++        error=("256", "instantiat", "specializ"))
++
++
++def rejection_cases(suite):
++    for label, definition, body in (
++        ("empty parameter list", "template<>auto f(i64 x)->i64{return x;}", "return 42;"),
++        ("third type parameter", "template<Value T,Value U,Value V>auto f(T x)->T{return x;}", "return 42;"),
++        ("capacity function parameter", "template<Scalar T,i64 N>auto f(T x)->T{return x;}", "return 42;"),
++        ("class keyword constraint", "template<class T>auto f(T x)->T{return x;}", "return 42;"),
++        ("typename keyword constraint", "template<typename T>auto f(T x)->T{return x;}", "return 42;"),
++        ("duplicate parameter name", "template<Value T,Value T>auto f(T x)->T{return x;}", "return 42;"),
++        ("default type argument", "template<Value T=i64>auto f(T x)->T{return x;}", "return 42;"),
++        ("variadic type arguments", "template<Value... T>auto f()->i64{return 42;}", "return 42;"),
++        ("function explicit specialization", COPY + "template<>auto copy<i64>(i64 x)->i64{return x;}", "return 42;"),
++        ("function partial specialization", COPY + "template<Value T>auto copy<Box<T>>(Box<T> x)->Box<T>{return x;}", "return 42;"),
++        ("overloaded function template", COPY + "template<Value T>auto copy(T a,T b)->T{return a;}", "return 42;"),
++        ("ordinary function same name", COPY + "auto copy(i64 x)->i64{return x;}", "return 42;"),
++        ("generic method", "class Bad{public:Bad(){}template<Value T>auto f(T x)->T{return x;}};", "return 42;"),
++        ("local function template", "", "template<Value T>auto local(T x)->T{return x;}return 42;"),
++        ("type constructor T value", "template<Value T>auto construct(T x)->T{const T result=T(x);return result;}", "return 42;"),
++        ("dependent scoped member", "template<Value T>auto member()->T{return T::ready;}", "return 42;"),
++    ):
++        suite.reject("unsupported declaration " + label, p(body, definition, imports=""))
++    for call in ("copy(42)", "copy<>(42)", "copy<i64,u8>(42)", "copy<i64,u8,bool>(42)",
++                 "copy<i64>()", "copy<i64>(42,1)", "copy<u8>(42)", "copy<Unknown>(42)",
++                 "copy<42>(42)", "copy<own<i64>>(42)", "copy<ref<i64>>(42)",
++                 "copy<span<u8>>(42)", "copy<array<u8,3>>(42)", "copy<builtin::array<u8,3>>(42)",
++                 "copy<std::array<u8,0>>(42)", "copy<std::array<u8,65>>(42)",
++                 "copy<i64,>(42)", "copy<i64>>(42)", "copy<i64(42)"):
++        suite.reject("explicit function call rejected " + call, p("return " + call + ";", COPY))
++    for concrete, setup, argument in (("Leaf", "Leaf value=Leaf(42u8);", "value"),
++                                      ("Empty", "Empty value=Empty();", "value"),
++                                      ("Status", "Status value=Status::ready;", "value"),
++                                      ("std::array<u8,3>", "std::array<u8,3> value=std::array<u8,3>();", "value")):
++        suite.reject("Scalar function constraint excludes " + concrete, p(setup + f"identity<{concrete}>({argument});return 42;",
++            LEAF + EMPTY + "enum class Status{ready};template<Scalar T>auto identity(T x)->T{return x;}"))
++    for label, definition in (
++        ("nested dependent result", "template<Value T>auto bad(T x)->Box<Box<T>>{return x;}"),
++        ("nested dependent parameter", "template<Value T>auto bad(Box<Box<T>> x)->i64{return 42;}"),
++        ("nested dependent local", "template<Value T>auto bad(T x)->i64{Box<Box<T>> result=x;return 42;}"),
++        ("nested dependent constructor", "template<Value T>auto bad(T x)->i64{Box<u8> result=Box<Box<T>>(x);return 42;}"),
++        ("nested dependent query", "template<Value T>auto bad()->i64{return size_of(Box<Box<T>>);}"),
++        ("dependent capacity tree", "template<Value T,Value U>auto bad(T x,U y)->std::pair<std::array<T,16>,U>{return x;}"),
++    ):
++        suite.reject("unused function structurally rejects " + label, p("return 42;", BOX + definition))
++    # Qualified dependent names must be rejected while checking the unused
++    # definition, including names hidden inside an otherwise-concrete argument
++    # tree. Requested variants also verify the ordinary expansion path rejects.
++    qualified_arguments = [
++        ("local", "template<Value T>auto bad()->i64{const Tag<T::Hidden> value=Tag<T::Hidden>();return 42;}",
++         "return bad<u8>();"),
++        ("nested local", "template<Value T>auto bad()->i64{const Tag<Tag<T::Hidden>> value=Tag<Tag<T::Hidden>>();return 42;}",
++         "return bad<u8>();"),
++        ("constructor expression", "template<Value T>auto bad()->i64{const Tag<u8> value=Tag<T::Hidden>();return 42;}",
++         "return bad<u8>();"),
++        ("parameter signature", "template<Value T>auto bad(Tag<T::Hidden> source)->i64{return 42;}",
++         "Tag<u8> source=Tag<u8>();return bad<u8>(source);"),
++        ("result signature", "template<Value T>auto bad()->Tag<T::Hidden>{const Tag<T::Hidden> result=Tag<T::Hidden>();return result;}",
++         "const Tag<u8> result=bad<u8>();return 42;"),
++    ]
++    for query in ("size_of", "type_id", "field_count"):
++        qualified_arguments.append(("reflected type " + query,
++            f"template<Value T>auto bad()->i64{{return {query}(Tag<T::Hidden>);}}",
++            "return bad<u8>();"))
++    for position, definition, request in qualified_arguments:
++        for used in (False, True):
++            suite.reject("dependent qualified template argument " + position +
++                         (" requested" if used else " unused"),
++                         p(request if used else "return 42;", TAG + definition, imports=""))
++    # The name T is a parameter here, even when an unrelated namespace with
++    # that spelling would make T::Hidden a resolvable concrete nominal type.
++    namespace_collision = ("namespace T{class Hidden{public:Hidden(){} };}" + TAG +
++        "template<Value T>auto bad()->i64{const Tag<T::Hidden> result=Tag<T::Hidden>();return 42;}")
++    for used in (False, True):
++        suite.reject("dependent qualified argument cannot bind same-name namespace " +
++                     ("requested" if used else "unused"),
++                     p("return bad<i64>();" if used else "return 42;", namespace_collision, imports=""))
++    # All enclosing bodies are unused. A concrete request is still a forbidden
++    # function-template call and must not be deferred until instantiation.
++    for label, body in (
++        ("return", "return copy<i64>(42);"),
++        ("local initializer", "const i64 result=copy<i64>(42);return result;"),
++        ("dead branch", "if(false){copy<i64>(42);}return 42;"),
++        ("dead loop", "while(false){copy<i64>(42);}return 42;"),
++        ("static assertion", "static_assert(copy<i64>(42)==42);return 42;"),
++        ("nested ordinary call", "return helper(copy<i64>(42));"),
++        ("dependent call", "return copy<T>(x);"),
++        ("self recursion", "return bad<T>(x);"),
++        ("qualified library call", "std::pair<i64,u8> result=std::make_pair<i64,u8>(40,2u8);return 42;"),
++    ):
++        suite.reject("unused function template forbids function-template call in " + label,
++            p("return 42;", COPY + f"template<Value T>auto bad(T x)->i64{{{body}}}",
++              helpers="auto helper(i64 x)->i64{return x;}"))
++    for label, body in (
++        ("return", "return copy<i64>(42);"),
++        ("dead branch", "if(false){copy<i64>(42);}return 42;"),
++        ("local initializer", "const i64 result=copy<i64>(42);return result;"),
++        ("static assertion", "static_assert(copy<i64>(42)==42);return 42;"),
++    ):
++        suite.reject("unused class template forbids function-template call in " + label,
++            p("return 42;", COPY + "template<Value T>class Bad{public:Bad(){}auto get()const->i64{" + body + "}};"))
++    for qualified in (False, True):
++        helper = "template<Scalar U>auto helper(U x)->U{return x;}"
++        spelling = "api::helper" if qualified else "helper"
++        definition = (("namespace api{" + helper + "}" if qualified else helper) +
++            "template<Scalar T>class Receiver{public:Receiver(){}"
++            "auto helper(i64 x)const->i64{return x;}auto get()const->i64{return " +
++            spelling + "<i64>(42);}};")
++        for used in (False, True):
++            suite.reject("receiver method cannot conceal explicit " +
++                ("qualified" if qualified else "unqualified") + " function-template call " +
++                ("requested" if used else "unused"),
++                p("const Receiver<i64> value=Receiver<i64>();return value.get();" if used else "return 42;",
++                  definition, imports=""))
++    suite.reject("unused class constructor forbids function-template initializer call", p("return 42;", COPY +
++        "template<Value T>class Bad{i64 value;public:Bad():value(copy<i64>(42)){} };"))
++    suite.reject("nonempty template constructor body remains unsupported", p("return 42;", COPY +
++        "template<Value T>class Bad{public:Bad(){copy<i64>(42);} };"))
++    prefix = "Leaf source=Leaf(42u8);"
++    for label, body, generic in (
++        ("mutable parameter field", "return mutate<Leaf>(source);", "template<Value T>auto mutate(T x)->i64{x.value=1u8;return 42;}"),
++        ("mutable parameter method", "return mutate<Leaf>(source);", "template<Value T>auto mutate(T x)->i64{x.set(1u8);return 42;}"),
++        ("private field access", "return expose<Leaf>(source);", "template<Value T>auto expose(T x)->i64{return i64(x.value);}"),
++        ("class argument temporary", "Leaf result=copy<Leaf>(Leaf(42u8));return 42;", COPY),
++        ("class nested result argument", "Leaf result=copy<Leaf>(copy<Leaf>(source));return 42;", COPY),
++        ("class direct result return", "Leaf result=wrap(source);return 42;", COPY + "auto wrap(Leaf x)->Leaf{return copy<Leaf>(x);}"),
++        ("class return constructor", "Leaf result=make<Leaf>(source);return 42;", "template<Value T>auto make(T x)->Leaf{return Leaf(42u8);}"),
++        ("wrong nominal argument", "Empty result=copy<Empty>(source);return 42;", COPY),
++        ("wrong nominal result", "Empty result=copy<Leaf>(source);return 42;", COPY),
++        ("resource result", "return bad<i64>(42);", "template<Value T>auto bad(T x)->own<i64>{return new i64(x);}"),
++    ):
++        suite.reject("ordinary value restrictions preserved " + label, p(prefix + body, LEAF + EMPTY + generic))
++    suite.reject("class parameter publicly writable field is still readonly", p(
++        "Public source=Public(42u8);return mutate<Public>(source);",
++        "class Public{public:u8 value;Public(u8 n):value(n){} };"
++        "template<Value T>auto mutate(T x)->i64{x.value=0u8;return 42;}", imports=""))
++    suite.reject("private method stays private after type substitution", p(prefix + "return expose<Leaf>(source);",
++        "class Leaf{u8 value;auto secret()const->u8{return value;}public:Leaf(u8 n):value(n){} };"
++        "template<Value T>auto expose(T x)->i64{return i64(x.secret());}", imports=""))
++    suite.reject("equal-layout reordered nominal function arguments stay distinct", p(
++        "std::pair<i64,u64> source=std::pair<i64,u64>(20,22u64);"
++        "std::pair<u64,i64> result=copy<std::pair<u64,i64>>(source);return 42;", COPY))
++    suite.reject("function template is not a class reflection type", p("return type_id(copy<i64>);", COPY, imports=""))
++    suite.reject("function template cannot become a value pointer", p("const i64 address=copy<i64>;return address;", COPY, imports=""))
++
++
++def module_cases(suite):
++    generic = {"generic": "export module generic;export " + COPY}
++    suite.check("exported template accepts caller-private nominal class without member access", p(
++        "Leaf source=Leaf(42u8);const Leaf result=copy<Leaf>(source);return i64(result.get());",
++        LEAF, imports="import generic;"), modules=generic)
++    suite.check("exported template accepts caller-private nominal enum", p(
++        "Status source=Status::ready;Status result=copy<Status>(source);if(result==Status::ready){return 42;}return 0;",
++        "enum class Status{ready,failed};", imports="import generic;"), modules=generic)
++    suite.check("exported template accepts caller-private class inside concrete tree", p(
++        "Leaf leaf=Leaf(40u8);std::pair<Leaf,u8> source=std::make_pair<Leaf,u8>(leaf,2u8);"
++        "const std::pair<Leaf,u8> result=copy<std::pair<Leaf,u8>>(source);"
++        "const Leaf value=result.first;return i64(value.get())+i64(result.second);",
++        LEAF, imports="import generic;import std.utility;"), modules=generic)
++    helpers = {"generic": "export module generic;auto helper()->i64{return 22;}"
++               "export template<Scalar T>auto plus_helper(T x)->i64{return i64(x)+helper();}"}
++    suite.check("fixed helper binds defining module rather than caller shadow", p(
++        "return plus_helper<u8>(20u8);", helpers="auto helper()->i64{return 999;}", imports="import generic;"), modules=helpers)
++    scoped = {"generic": "export module generic;namespace detail{auto helper()->i64{return 22;}"
++              "export template<Scalar T>auto plus_helper(T x)->i64{return i64(x)+helper();}}"}
++    suite.check("fixed helper binds template defining namespace", p(
++        "return detail::plus_helper<u8>(20u8);", helpers="auto helper()->i64{return 999;}", imports="import generic;"), modules=scoped)
++    private = {"generic": "export module generic;" + COPY +
++               "export auto ordinary()->i64{return copy<i64>(42);}"}
++    suite.check("private template is callable by ordinary defining-module helper", p(
++        "return ordinary();", imports="import generic;"), modules=private)
++    suite.reject("private function template cannot be named outside defining module", p(
++        "return copy<i64>(42);", imports="import generic;"), modules=private,
++        error=("private", "visible", "unknown", "template"))
++    transitive = dict(generic)
++    transitive["bridge"] = "export module bridge;import generic;export auto answer()->i64{return copy<i64>(42);}"
++    suite.check("ordinary wrapper may use directly imported function template", p(
++        "return answer();", imports="import bridge;"), modules=transitive)
++    suite.reject("transitive import cannot name function template", p(
++        "return copy<i64>(42);", imports="import bridge;"), modules=transitive)
++    suite.check("direct import restores function-template visibility", p(
++        "return copy<i64>(42);", imports="import bridge;import generic;"), modules=transitive)
++    for hidden_kind, hidden, hidden_value in (
++        ("class", LEAF.replace("Leaf", "Hidden"), "Hidden(42u8)"),
++        ("enum", "enum class Hidden{ready};", "Hidden::ready"),
++    ):
++        for label, template in (
++            ("fixed parameter", "template<Value T>auto bad(Hidden secret,T x)->T{return x;}"),
++            ("fixed result", "template<Value T>auto bad(T x)->Hidden{const Hidden result=" + hidden_value + ";return result;}"),
++            ("nested fixed parameter", "template<Value T>auto bad(std::pair<Hidden,T> x)->T{const T result=x.second;return result;}"),
++            ("nested fixed result", "template<Value T>auto bad(T x)->std::pair<Hidden,T>{const Hidden secret=" + hidden_value + ";const std::pair<Hidden,T> result=std::pair<Hidden,T>(secret,x);return result;}"),
++        ):
++            suite.reject(f"exported function template cannot launder private {hidden_kind} in {label}",
++                p("return 42;", imports="import hidden;"),
++                modules={"hidden": "export module hidden;import std.utility;" + hidden + "export " + template},
++                error=("private", "visible", "export"))
++    suite.reject("exported template signature cannot launder private template declaration", p("return 42;", imports="import hidden;"),
++        modules={"hidden": "export module hidden;" + BOX +
++            "export template<Value T>auto bad(Box<T> x)->T{const T result=x.item;return result;}"},
++        error=("private", "visible", "export"))
++    signature_modules = {
++        "types": "export module types;export " + LEAF,
++        "generic": "export module generic;import types;export template<Value T>auto identity(Leaf source,T extra)->Leaf{return source;}"}
++    suite.check("fixed signature type works with explicit direct type import", p(
++        "Leaf source=Leaf(42u8);Leaf result=identity<u8>(source,0u8);return i64(result.get());",
++        imports="import types;import generic;"), modules=signature_modules)
++    suite.reject("fixed signature type cannot be obtained through transitive import", p(
++        "Leaf source=Leaf(42u8);Leaf result=identity<u8>(source,0u8);return i64(result.get());",
++        imports="import generic;"), modules=signature_modules)
++    specialized = {"generic": "export module generic;import std.utility;export " + MAKE,
++        "bridge": "export module bridge;import generic;import std.utility;"
++                  "export auto pair_id()->i64{std::pair<i64,u8> value=make<i64,u8>(40,2u8);return type_id(std::pair<i64,u8>);}"}
++    suite.check("runtime reflection hides transitive specialization declaration", p(
++        "if(reflect_size(pair_id())!=0){return 1;}if(reflect_field_count(pair_id())!=0){return 2;}return 42;",
++        imports="import bridge;"), modules=specialized)
++    suite.check("directly imported specialization metadata matches instantiated class", p(
++        "if(reflect_size(pair_id())!=16){return 1;}if(reflect_field_count(pair_id())!=2){return 2;}return 42;",
++        imports="import bridge;import std.utility;"), modules=specialized)
++    same_names = {}
++    for module, value in (("left", 20), ("right", 22)):
++        same_names[module] = (f"export module {module};import generic;import std.utility;" + LEAF.replace("Leaf", "Point") +
++            f"export auto {module}_value()->i64{{Point source=Point({value}u8);"
++            "Point result=copy<Point>(source);return i64(result.get());}"
++            f"export auto {module}_id()->i64{{Point source=Point({value}u8);"
++            "std::pair<Point,u8> result=std::make_pair<Point,u8>(source,0u8);return type_id(std::pair<Point,u8>);}")
++    same_names.update(generic)
++    suite.check("same-spelling caller-private class arguments use distinct module identities", p(
++        "if(left_id()==right_id()){return 1;}return left_value()+right_value();",
++        imports="import left;import right;"), modules=same_names)
++    suite.check("runtime reflection stays closed over private function specialization arguments", p(
++        "if(reflect_size(left_id())!=0){return 1;}if(reflect_field_count(right_id())!=0){return 2;}return 42;",
++        imports="import left;import right;import std.utility;"), modules=same_names)
++    suite.reject("imported generic copy confers no private member access", p(
++        "Leaf source=Leaf(42u8);Leaf result=copy<Leaf>(source);return i64(result.value);", LEAF,
++        imports="import generic;"), modules=generic)
++    exposed = {"generic": "export module generic;export template<Value T>auto expose(T x)->u8{return x.value;}"}
++    suite.reject("imported template cannot inspect private caller class field", p(
++        "Leaf source=Leaf(42u8);return i64(expose<Leaf>(source));", LEAF, imports="import generic;"), modules=exposed)
++
++
++def trap_cases(suite):
++    for scalar, maximum, one in (("i64", "9223372036854775807", "1"),
++                                 ("u64", "18446744073709551615u64", "1u64"),
++                                 ("u8", "255u8", "1u8")):
++        suite.check("generic checked addition exact overflow trap " + scalar, p(
++            f"return add<{scalar}>({maximum},{one});",
++            "template<Scalar T>auto add(T a,T b)->T{return a+b;}", imports="", result=scalar), expected=Trap.OVERFLOW)
++    for scalar, one, zero in (("i64", "1", "0"), ("u64", "1u64", "0u64"), ("u8", "1u8", "0u8")):
++        suite.check("generic checked division exact zero trap " + scalar, p(
++            f"return divide<{scalar}>({one},{zero});",
++            "template<Scalar T>auto divide(T a,T b)->T{return a/b;}", imports="", result=scalar), expected=Trap.ZERO)
++    for capacity in (1, 16, 64):
++        for index in (-1, capacity, 9223372036854775807):
++            for operation in ("at", "set"):
++                concrete = f"std::array<u8,{capacity}>"
++                arguments = str(index) + (",1u8" if operation == "set" else "")
++                suite.check(f"generic array result exact bounds trap {operation}/{capacity}/{index}", p(
++                    f"{concrete} source={concrete}();{concrete} result=copy<{concrete}>(source);"
++                    f"return i64(result.{operation}({arguments}));", COPY), expected=Trap.BOUNDS)
++    for scalar, value, shift, expected in (("u64", "18446744073709551615u64", 1, (1 << 63)-1),
++                                          ("u8", "255u8", 1, 127),
++                                          ("u64", "9223372036854775808u64", 63, 1),
++                                          ("u8", "128u8", 7, 1)):
++        suite.check(f"explicit function type closers preserve ordinary right shift {scalar}/{shift}", p(
++            f"return copy<{scalar}>({value}) >> {shift};", COPY, imports="", result=scalar), expected=expected)
++    suite.check("explicit type argument parsing preserves ordinary comparisons", p(
++        "const i64 value=copy<i64>(40);if(value<41){if(value<=40){if(value>39){if(value>=40){return 42;}}}}return 0;",
++        COPY, imports=""))
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
++    parser.add_argument("--seed", type=int, default=21021)
++    parser.add_argument("--steps", type=int, default=24)
++    parser.add_argument("--section", choices=("all", "native", "boundaries", "rejections", "modules", "traps"), default="all")
++    parser.add_argument("--fixture", default="", help="case-insensitive fixture-name substring")
++    parser.add_argument("--self-test-only", action="store_true")
++    parser.add_argument("--plan-only", action="store_true", help="enumerate/count fixtures without compiling anything")
++    parser.add_argument("--keep-going", action="store_true")
++    args = parser.parse_args()
++    require(1 <= args.steps <= 128, "steps must be between 1 and 128")
++    require(not (args.self_test_only and args.plan_only), "choose self-test-only or plan-only")
++    compiler = args.compiler.resolve()
++    started = time.monotonic()
++    if not args.self_test_only and not args.plan_only:
++        print(f"INFO function templates compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
++        for relative in ("tests/compiler/function_templates.py", "library/std/utility.au", "library/std/array.au"):
++            print(f"INFO function templates {relative} sha256={hashlib.sha256((ROOT/relative).read_bytes()).hexdigest()}", flush=True)
++    temporary_root = ROOT / "tmp"
++    temporary_root.mkdir(exist_ok=True)
++    directory = Path(tempfile.mkdtemp(prefix="function-templates-", dir=temporary_root))
++    clean = False
++    try:
++        suite = Suite(directory, compiler, args.keep_going, args.fixture, args.plan_only)
++        if not args.plan_only:
++            observer_self_test(suite)
++        if args.self_test_only:
++            print("PASS function templates observer self-tests; no compiler acceptance claimed", flush=True)
++            clean = True
++            return
++        sections = {"native": lambda: native_cases(suite, args.seed, args.steps),
++                    "boundaries": lambda: boundary_cases(suite),
++                    "rejections": lambda: rejection_cases(suite),
++                    "modules": lambda: module_cases(suite),
++                    "traps": lambda: trap_cases(suite)}
++        for name, run in sections.items():
++            if args.section in ("all", name):
++                before = (suite.count, suite.traps, suite.rejections, suite.selected_fixtures)
++                run()
++                print(f"INFO function templates section={name} fixtures={suite.selected_fixtures-before[3]} "
++                      f"executions={suite.count-before[0]} traps={suite.traps-before[1]} "
++                      f"rejection-runs={suite.rejections-before[2]}", flush=True)
++        require(suite.selected_fixtures > 0, "no fixtures selected")
++        native = suite.count-suite.traps-suite.rejections
++        label = "planned" if args.plan_only else "passed"
++        print(f"INFO function templates: {suite.selected_fixtures} selected fixtures; {suite.count} {label} executions; "
++              f"{native} native returns; {suite.traps} exact-site traps; {suite.negative_fixtures} rejection fixtures / "
++              f"{suite.rejections} rejection runs; {len(suite.failures)} failed executions; "
++              f"section={args.section}; seed={args.seed}; steps={args.steps}; elapsed={time.monotonic()-started:.2f}s", flush=True)
++        require(suite.count+len(suite.failures) == suite.attempts, "execution accounting mismatch")
++        require(suite.rejections == 2*suite.negative_fixtures or bool(suite.failures), "rejection accounting mismatch")
++        require(not suite.failures, f"{len(suite.failures)} failed executions; artifacts: {directory}")
++        print("PLAN function templates complete (not executed)" if args.plan_only else "PASS function templates complete", flush=True)
++        clean = True
++    finally:
++        if clean:
++            shutil.rmtree(directory)
++        else:
++            print("INFO function templates retained artifacts:", directory, flush=True)
++
++
++if __name__ == "__main__":
++    main()
+--- a/tests/compiler/ir_tests.cpp
++++ b/tests/compiler/ir_tests.cpp
+@@ -4659,6 +4659,30 @@
+                 m.functions[2].receiver->className = "OtherSpecialization";
+             },
+             "forwarded receiver nominal class mismatch");
++        rejectValue(
++            "function-template unresolved value parameter",
++            [](Module &m) { m.functions[1].parameters[0] = Type(TypeKind::Parameter); },
++            "invalid aggregate parameter type");
++        rejectValue(
++            "function-template unresolved scalar parameter",
++            [](Module &m) { m.functions[1].parameters[1] = Type(TypeKind::Parameter); },
++            "invalid aggregate parameter type");
++        rejectValue(
++            "function-template dependent class result metadata",
++            [](Module &m) {
++                TemplateArgument parameter(TypeKind::Parameter);
++                parameter.className = "T";
++                m.functions[1].result.templateArguments = {parameter};
++            },
++            "invalid value boundary type");
++        rejectValue(
++            "function-template substituted identity cannot retain argument metadata",
++            [](Module &m) {
++                TemplateArgument argument("Pair");
++                argument.resolvedClass = true;
++                m.functions[1].parameters[0].templateArguments = {argument};
++            },
++            "invalid value boundary type");
+         std::cout << passed << " typed IR tests passed\n";
+         return 0;
+     } catch (const std::exception &error) {
+--- a/tests/compiler/nested_values.py
++++ b/tests/compiler/nested_values.py
+@@ -348,7 +348,7 @@
+         ("nested concrete method result", "template<Value T>class Bad{public:Bad(){}auto f()->Box<Box<u8>>{return missing;}};"),
+         ("explicit specialization definition", "template<>class Box<std::array<u8,3>>{};"),
+         ("partial specialization definition", "template<Value T>class Box<std::pair<T,u8>>{};"),
+-        ("function template", "template<Value T>auto make()->Box<T>{return missing;}"),
++        ("nested dependent function-template result", "template<Value T>auto make()->Box<Box<T>>{return missing;}"),
+     ):
+         suite.reject("unsupported template-body or template form: " + label, p("return 42;", BOX + definition))
+ 
+--- a/tests/compiler/templates.py
++++ b/tests/compiler/templates.py
+@@ -400,7 +400,7 @@
+     ("three parameters", "template<Scalar T,Scalar U,Scalar V>class Bad{public:T value;};"),
+     ("duplicate parameter", "template<Scalar T,Scalar T>class Bad{public:T value;};"),
+     ("builtin parameter name", "template<Scalar i64>class Bad{public:i64 value;};"),
+-    ("function template", "template<Scalar T>auto identity(T value)->T{return value;}"),
++    ("function capacity template parameter", "template<Scalar T,i64 N>auto identity(T value)->T{return value;}"),
+     ("explicit specialization", "template<>class Bad{public:i64 value;};"),
+     ("default argument", "template<Scalar T=i64>class Bad{public:T value;};"),
+     ("non-type parameter", "template<i64 N>class Bad{public:i64 value;};"),

@@ -1,0 +1,24 @@
+{
+  "name": "class-generated-first-order-interning",
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-corrected",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/extra/class-generated-first-order-interning/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/extra/class-generated-first-order-interning/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/extra/class-generated-first-order-interning/compiled.s"
+  ],
+  "returncode": 0,
+  "stderr": "",
+  "negative": false,
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/extra/class-generated-first-order-interning/input.au": "58ca1f7ec9466210aaf00d053197e4c55ed3670a714a97fd7ecded70247d389f"
+  },
+  "inputs_unchanged": true,
+  "pass": true,
+  "native_status": 0,
+  "native_hex": "2a00000000000000",
+  "expected": 42
+}

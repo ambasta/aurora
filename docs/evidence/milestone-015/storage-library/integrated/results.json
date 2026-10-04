@@ -1,0 +1,9 @@
+{
+  "complete_release_target_exit": 0,
+  "complete_sanitized_target_exit": 0,
+  "semantic_harness_and_both_default_stress_exit": 0,
+  "example_both_exit": 42,
+  "compiler_sources_unchanged_from_corrected_m014": true,
+  "exact_reviewed_delta_unchanged": true,
+  "scope": "Compiler/library integration only; kernel and parent combined milestone acceptance remain separate."
+}

@@ -1,0 +1,44 @@
+{
+  "scope": "Documentation-only finalization after parent test/emulator gates; historical source-before manifest retained unchanged.",
+  "captured_source_inputs": 359,
+  "unchanged_inputs": 352,
+  "documentation_changes": [
+    {
+      "path": "README.md",
+      "tested_sha256": "62a55c74214deb329225634786eda640b5520182daa5c14eedddfc7741a7eec6",
+      "final_sha256": "f6ba260bb0cff91b0166178392f00cb2a7e74fafc7a43c174b388f155486aa34"
+    },
+    {
+      "path": "compiler/README.md",
+      "tested_sha256": "0f5c3c238133291e92125a305674094035a7b2da5e9eb11f570bece7bc785604",
+      "final_sha256": "64f74c26fdac86ca2b60ebc861a347bd893a0775e1e298f5a4bfdec3cc1e3703"
+    },
+    {
+      "path": "compiler/NESTED-VALUES.md",
+      "tested_sha256": "71df9d3af434ec7f78e4ea5ad77f3a8dd8be2911af499ac98a769b602ea1e578",
+      "final_sha256": "f1258a8b48817d317d905fa920edb378fcb0305852e82c05f7fa39dd2adeef65"
+    },
+    {
+      "path": "library/README.md",
+      "tested_sha256": "a8904976d242dce811c9fd3157e96190fa70087b3cf3334a2ae6ef3f02451e24",
+      "final_sha256": "238909eb487aa761a9d0cfc7f1676896b0921ad17d592ecb942ade06c22b4163"
+    },
+    {
+      "path": "docs/completeness-matrix.md",
+      "tested_sha256": "6138005e5f2a2258c96907d02e42a735de3ec495d87add007dc273815ec60476",
+      "final_sha256": "ed1d9a048f6e8c83a5fe3b4752dc2a104967fa515590639391d997dad8577b17"
+    },
+    {
+      "path": "docs/roadmap.md",
+      "tested_sha256": "e9d8c12120e8b8d187d4675b043389be0d859dcca19c7adca2b6ee67a252124f",
+      "final_sha256": "f9d36b4ae31e6c16d749a3e1b23fc1e523e2210687b76404db2531740a381a29"
+    },
+    {
+      "path": "docs/verification.md",
+      "tested_sha256": "44cb9246b0055af45184447005b08b1ad2ccf658dab84116f33f23f99db66437",
+      "final_sha256": "2861bf7da9e69c05fbe1d046543b01f349aa65e82ddab71063159e23045d3909"
+    }
+  ],
+  "implementation_test_fixture_changes": [],
+  "normal_restoration": "Root coordinator confirmed final normal profile and restored normal image."
+}

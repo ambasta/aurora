@@ -1,0 +1,22 @@
+{
+  "name": "caller-private-method",
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/build/aurorac",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-private-method/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-private-method/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-private-method/compiled.s"
+  ],
+  "returncode": 1,
+  "stderr": "aurorac: line 1: private method is inaccessible\n",
+  "negative": true,
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-private-method/input.au": "5552473b1e9ed4a28a190751b35ed146ae05a5c0b7a1fb1239899f43d82254e0",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/caller-private-method/modules/generic.au": "54afd6eb4c0e6131f81a8df40f942fb4196fc04734947980bab4dea444519e38"
+  },
+  "inputs_unchanged": true,
+  "pass": true
+}

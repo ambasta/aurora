@@ -2546,9 +2546,712 @@ void enumAndMethodResultTests() {
     std::cout << "PASS IR method receiver and class result use distinct saved capabilities\n";
 }
 
+Module spanBaseline() {
+    Module module;
+    aurora::ir::Function function;
+    function.name = "span_local";
+    function.result = Type::U8;
+    function.frameBytes = 48;
+    function.slots = {{8, Type::U8}, {7, Type::U8}, {6, Type::U8}};
+    function.arraySlots = {{8, 3}};
+    function.spanSlots = {24, 40};
+    function.code = {BeginArray{8},
+                     Constant{11, Type::U8},
+                     Store{8, Type::U8},
+                     Constant{128, Type::U8},
+                     Store{7, Type::U8},
+                     Constant{255, Type::U8},
+                     Store{6, Type::U8},
+                     BorrowSpan{8, 24},
+                     ReborrowSpan{24, 40},
+                     Constant{1, Type::I64},
+                     SpanLoad{40},
+                     EndSpan{40},
+                     EndSpan{24},
+                     EndArray{8},
+                     Return{}};
+    module.functions.push_back(function);
+    return module;
+}
+Module spanCallModule() {
+    auto module = spanBaseline();
+    auto local = module.functions.front();
+    local.name = "span_length";
+    local.result = Type::I64;
+    local.code[9] = SpanLength{24};
+    local.code.erase(local.code.begin() + 10);
+    module.functions.push_back(local);
+    local = module.functions.front();
+    local.name = "span_preserve_current";
+    local.code.erase(local.code.begin() + 9, local.code.begin() + 11);
+    module.functions.push_back(local);
+
+    aurora::ir::Function read;
+    read.name = "span_read";
+    read.result = Type::U8;
+    read.parameters = {Type::ByteSpan, Type::I64};
+    read.frameBytes = 32;
+    read.slots = {{8, Type::I64}};
+    read.spanSlots = {24};
+    read.code = {BindSpanParameter{0, 24},
+                 BindParameter{1, 8, Type::I64},
+                 Load{8, Type::I64},
+                 SpanLoad{24},
+                 EndSpan{24},
+                 Return{}};
+    module.functions.push_back(read);
+    auto relay = read;
+    relay.name = "span_forward";
+    relay.frameBytes = 48;
+    relay.spanSlots.insert(40);
+    relay.code = {BindSpanParameter{0, 24},
+                  BindParameter{1, 8, Type::I64},
+                  ReborrowSpan{24, 40},
+                  Load{8, Type::I64},
+                  Push{},
+                  AggregateCall{"span_read", {0, 0}, 0, {40, 0}},
+                  EndSpan{40},
+                  EndSpan{24},
+                  Return{}};
+    module.functions.push_back(relay);
+    auto dynamic = module.functions.front();
+    dynamic.name = "span_dynamic";
+    dynamic.frameBytes = 64;
+    dynamic.parameters = {Type::I64};
+    dynamic.slots[56] = Type::I64;
+    dynamic.code = {BindParameter{0, 56, Type::I64},
+                    BeginArray{8},
+                    Constant{11, Type::U8},
+                    Store{8, Type::U8},
+                    Constant{128, Type::U8},
+                    Store{7, Type::U8},
+                    Constant{255, Type::U8},
+                    Store{6, Type::U8},
+                    BorrowSpan{8, 24},
+                    Load{56, Type::I64},
+                    Push{},
+                    AggregateCall{"span_forward", {0, 0}, 0, {24, 0}},
+                    EndSpan{24},
+                    EndArray{8},
+                    Return{}};
+    module.functions.push_back(dynamic);
+
+    module.classLayouts["SpanPacket"] = {Type::U8, Type::I64, Type::U8};
+    aurora::ir::Function mixed;
+    mixed.name = "span_mixed_callee";
+    mixed.result = Type("SpanPacket");
+    mixed.parameters = {Type::U8,  Type::ByteSpan, Type("SpanPacket"),
+                        Type::I64, Type::ByteSpan, Type::Bool};
+    mixed.frameBytes = 160;
+    mixed.slots = {{1, Type::U8},   {56, Type::U8},   {48, Type::I64}, {40, Type::U8},
+                   {64, Type::I64}, {96, Type::Bool}, {128, Type::U8}, {120, Type::I64},
+                   {112, Type::U8}, {136, Type::I64}};
+    mixed.objectSlots = {{56, ObjectSlot{"SpanPacket", false}},
+                         {128, ObjectSlot{"SpanPacket", false}}};
+    mixed.spanSlots = {24, 88};
+    mixed.code = {BindParameter{0, 1, Type::U8},
+                  BindSpanParameter{1, 24},
+                  BindObjectParameter{2, 56, "SpanPacket"},
+                  BindParameter{3, 64, Type::I64},
+                  BindSpanParameter{4, 88},
+                  BindParameter{5, 96, Type::Bool},
+                  BeginObject{128},
+                  Constant{0, Type::I64},
+                  Push{},
+                  AggregateCall{"span_forward", {0, 0}, 0, {24, 0}},
+                  Convert{Type::U8, Type::I64},
+                  Push{},
+                  Load{48, Type::I64},
+                  BinaryValue{Binary::CheckedAdd},
+                  Push{},
+                  Load{64, Type::I64},
+                  BinaryValue{Binary::CheckedAdd},
+                  Push{},
+                  Constant{2, Type::I64},
+                  Push{},
+                  AggregateCall{"span_forward", {0, 0}, 0, {88, 0}},
+                  Convert{Type::U8, Type::I64},
+                  BinaryValue{Binary::CheckedAdd},
+                  Store{136, Type::I64},
+                  Load{96, Type::Bool},
+                  BranchFalse{1},
+                  Load{136, Type::I64},
+                  Push{},
+                  Constant{1, Type::I64},
+                  BinaryValue{Binary::CheckedAdd},
+                  Store{136, Type::I64},
+                  Label{1},
+                  Load{136, Type::I64},
+                  Store{120, Type::I64},
+                  Load{1, Type::U8},
+                  Store{128, Type::U8},
+                  Load{40, Type::U8},
+                  Store{112, Type::U8},
+                  EndSpan{88},
+                  EndSpan{24},
+                  ReturnObject{128}};
+    module.functions.push_back(mixed);
+    auto forwarding = mixed;
+    forwarding.name = "span_mixed_forward";
+    forwarding.frameBytes = 192;
+    forwarding.spanSlots.insert({160, 176});
+    forwarding.code.resize(6);
+    for (const auto &op : std::vector<Instruction>{
+             BeginObject{128}, ReborrowSpan{24, 160}, ReborrowSpan{88, 176}, Load{1, Type::U8},
+             Push{}, Load{64, Type::I64}, Push{}, Load{96, Type::Bool}, Push{},
+             AggregateCall{"span_mixed_callee", {0, 0, 56, 0, 0, 0}, 128, {0, 160, 0, 0, 176, 0}},
+             EndSpan{176}, EndSpan{160}, EndSpan{88}, EndSpan{24}, ReturnObject{128}})
+        forwarding.code.push_back(op);
+    module.functions.push_back(forwarding);
+    aurora::ir::Function caller;
+    caller.name = "span_mixed_sum";
+    caller.result = Type::I64;
+    caller.frameBytes = 128;
+    caller.slots = {{8, Type::U8},  {7, Type::U8},   {6, Type::U8},    {32, Type::U8},
+                    {31, Type::U8}, {30, Type::U8},  {56, Type::U8},   {48, Type::I64},
+                    {40, Type::U8}, {112, Type::U8}, {104, Type::I64}, {96, Type::U8}};
+    caller.arraySlots = {{8, 3}, {32, 3}};
+    caller.spanSlots = {24, 80};
+    caller.objectSlots = {{56, ObjectSlot{"SpanPacket", false}},
+                          {112, ObjectSlot{"SpanPacket", false}}};
+    caller.code = {
+        BeginArray{8},
+        Constant{11, Type::U8},
+        Store{8, Type::U8},
+        Constant{128, Type::U8},
+        Store{7, Type::U8},
+        Constant{255, Type::U8},
+        Store{6, Type::U8},
+        BeginArray{32},
+        Constant{100, Type::U8},
+        Store{32, Type::U8},
+        Constant{200, Type::U8},
+        Store{31, Type::U8},
+        Constant{255, Type::U8},
+        Store{30, Type::U8},
+        BeginObject{56},
+        Constant{42, Type::U8},
+        Store{56, Type::U8},
+        Constant{13, Type::I64},
+        Store{48, Type::I64},
+        Constant{77, Type::U8},
+        Store{40, Type::U8},
+        BorrowSpan{8, 24},
+        BorrowSpan{32, 80},
+        BeginObject{112},
+        Constant{31, Type::U8},
+        Push{},
+        Constant{19, Type::I64},
+        Push{},
+        Constant{1, Type::Bool},
+        Push{},
+        AggregateCall{"span_mixed_forward", {0, 0, 56, 0, 0, 0}, 112, {0, 24, 0, 0, 80, 0}},
+        EndSpan{80},
+        EndSpan{24},
+        EndArray{32},
+        EndArray{8},
+        Load{104, Type::I64},
+        Return{}};
+    module.functions.push_back(caller);
+    for (const auto &[name, offset] : std::vector<std::pair<std::string, int>>{
+             {"span_mixed_first", 112}, {"span_mixed_last", 96}}) {
+        auto projection = caller;
+        projection.name = name;
+        projection.result = Type::U8;
+        projection.code[projection.code.size() - 2] = Load{offset, Type::U8};
+        module.functions.push_back(projection);
+    }
+    caller.name = "span_mixed_saved_operand";
+    caller.code.insert(caller.code.begin() + 24, {Constant{1000, Type::I64}, Push{}});
+    caller.code.insert(caller.code.end() - 1, BinaryValue{Binary::CheckedAdd});
+    module.functions.push_back(caller);
+    return module;
+}
+void spanTests() {
+    accept("readonly local byte span and reborrow", spanBaseline());
+    accept("readonly span forwarding and six mixed argument positions", spanCallModule());
+    const auto rejectSpan = [&](const std::string &name,
+                                const std::function<void(aurora::ir::Function &)> &mutate,
+                                const std::string &expected) {
+        rejectModule(
+            name, spanBaseline(), [&](Module &module) { mutate(module.functions[0]); }, expected);
+    };
+    for (int base : {-1, 0, 8, 15, 17, 56})
+        rejectSpan(
+            "invalid span spill " + std::to_string(base),
+            [=](auto &f) { f.spanSlots.insert(base); }, "span spill");
+    rejectSpan(
+        "overlapping span spills", [](auto &f) { f.spanSlots.insert(32); },
+        "overlapping span spills");
+    rejectSpan(
+        "span overlaps byte scalar", [](auto &f) { f.slots[20] = Type::U8; },
+        "span spill overlaps");
+    rejectSpan(
+        "span overlaps wide scalar interior", [](auto &f) { f.slots[16] = Type::I64; },
+        "span spill overlaps");
+    for (int length : {-1, 0, 9, 4097})
+        rejectSpan(
+            "invalid byte origin extent " + std::to_string(length),
+            [=](auto &f) { f.arraySlots[8] = length; }, "byte array origin extent");
+    rejectSpan("origin past frame", [](auto &f) { f.arraySlots[56] = 1; }, "origin extent");
+    rejectSpan(
+        "overlapping byte origins", [](auto &f) { f.arraySlots[7] = 2; },
+        "overlapping byte array origins");
+    rejectSpan(
+        "missing byte origin element", [](auto &f) { f.slots.erase(7); }, "exact u8 element slots");
+    rejectSpan(
+        "wrong byte origin element type", [](auto &f) { f.slots[8] = Type::I64; },
+        "overlapping scalar slot");
+    rejectSpan(
+        "span spill scalar payload", [](auto &f) { f.slots[48] = Type::ByteSpan; },
+        "invalid slot payload type");
+    rejectSpan(
+        "missing byte origin declaration", [](auto &f) { f.arraySlots.clear(); },
+        "exact byte array origin");
+    rejectSpan(
+        "borrow scalar origin", [](auto &f) { f.code[7] = BorrowSpan{7, 24}; },
+        "exact local byte array origin");
+    rejectSpan(
+        "borrow origin outside frame", [](auto &f) { f.code[7] = BorrowSpan{64, 24}; },
+        "exact local byte array origin");
+    rejectSpan(
+        "borrow requires typed spill", [](auto &f) { f.code[7] = BorrowSpan{8, 32}; },
+        "exact typed spill");
+    rejectSpan(
+        "array write before lifetime", [](auto &f) { f.code.erase(f.code.begin()); },
+        "array element access outside active lifetime");
+    rejectSpan(
+        "array read after lifetime", [](auto &f) { f.code[14] = Load{8, Type::U8}; },
+        "array element access outside active lifetime");
+    rejectSpan(
+        "array begin twice", [](auto &f) { f.code[7] = BeginArray{8}; },
+        "array lifetime already active");
+    rejectSpan(
+        "array end unknown origin", [](auto &f) { f.code[13] = EndArray{7}; },
+        "exact byte array origin");
+    rejectSpan(
+        "array end twice", [](auto &f) { f.code[14] = EndArray{8}; },
+        "array lifetime is not active");
+    rejectSpan(
+        "array end with direct borrow", [](auto &f) { f.code[8] = EndArray{8}; },
+        "array lifetime ends with live readonly span");
+    rejectSpan(
+        "array end with derived borrow", [](auto &f) { f.code[11] = EndArray{8}; },
+        "array lifetime ends with live readonly span");
+    rejectSpan(
+        "partial byte array initialization", [](auto &f) { f.code.erase(f.code.begin() + 6); },
+        "array element not initialized");
+    rejectSpan(
+        "borrow ended array", [](auto &f) { f.code.insert(f.code.begin() + 7, EndArray{8}); },
+        "active byte array origin");
+    rejectSpan(
+        "borrow after rebegin needs new initialization",
+        [](auto &f) { f.code.insert(f.code.begin() + 7, {EndArray{8}, BeginArray{8}}); },
+        "array element not initialized");
+    rejectSpan(
+        "overwrite live span", [](auto &f) { f.code[8] = BorrowSpan{8, 24}; },
+        "span spill is already active");
+    rejectSpan(
+        "reborrow self", [](auto &f) { f.code[8] = ReborrowSpan{24, 24}; },
+        "span spill is already active");
+    rejectSpan(
+        "reborrow unknown spill", [](auto &f) { f.code[8] = ReborrowSpan{32, 40}; },
+        "exact typed spill");
+    rejectSpan(
+        "reborrow inactive spill", [](auto &f) { f.code[8] = ReborrowSpan{40, 24}; },
+        "span capability is not active");
+    rejectSpan(
+        "end parent before child", [](auto &f) { f.code[11] = EndSpan{24}; },
+        "live child reborrow");
+    rejectSpan(
+        "end span twice", [](auto &f) { f.code[12] = EndSpan{40}; },
+        "span capability is not active");
+    rejectSpan("end unknown spill", [](auto &f) { f.code[11] = EndSpan{32}; }, "exact typed spill");
+    rejectSpan(
+        "load inactive span", [](auto &f) { f.code[7] = SpanLoad{24}; },
+        "span capability is not active");
+    rejectSpan(
+        "length inactive span", [](auto &f) { f.code[7] = SpanLength{24}; },
+        "span capability is not active");
+    rejectSpan(
+        "load after end span", [](auto &f) { f.code[13] = SpanLoad{40}; },
+        "span capability is not active");
+    rejectSpan(
+        "load span with unsigned index", [](auto &f) { f.code[9] = Constant{1, Type::U64}; },
+        "mistyped current value");
+    rejectSpan(
+        "load span with byte index", [](auto &f) { f.code[9] = Constant{1, Type::U8}; },
+        "mistyped current value");
+    rejectSpan(
+        "load span with bool index", [](auto &f) { f.code[9] = Constant{1, Type::Bool}; },
+        "mistyped current value");
+    rejectSpan(
+        "write owner with direct span", [](auto &f) { f.code[8] = Store{8, Type::U8}; },
+        "write to byte array with live readonly span");
+    rejectSpan(
+        "write owner with derived span", [](auto &f) { f.code[11] = Store{7, Type::U8}; },
+        "write to byte array with live readonly span");
+    rejectSpan(
+        "indexed write owner with span",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 9,
+                          {Constant{0, Type::I64}, BoundsGuard{8, 3, Type::U8}, Push{},
+                           Constant{22, Type::U8}, IndexStore{8, 3, Type::U8}});
+        },
+        "write to byte array with live readonly span");
+    rejectSpan(
+        "indexed subrange write owner with span",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 9,
+                          {Constant{0, Type::I64}, BoundsGuard{7, 2, Type::U8}, Push{},
+                           Constant{22, Type::U8}, IndexStore{7, 2, Type::U8}});
+        },
+        "write to byte array with live readonly span");
+    rejectSpan(
+        "return with active child span", [](auto &f) { f.code[11] = Return{}; },
+        "return with active span or byte array lifetime");
+    rejectSpan(
+        "return with active parent span", [](auto &f) { f.code[12] = Return{}; },
+        "return with active span or byte array lifetime");
+    rejectSpan(
+        "return with active byte origin", [](auto &f) { f.code[13] = Return{}; },
+        "return with active span or byte array lifetime");
+    rejectSpan(
+        "scalar load cannot expose span pointer", [](auto &f) { f.code[9] = Load{24, Type::I64}; },
+        "slot type/layout mismatch");
+    rejectSpan(
+        "scalar store cannot overwrite span length",
+        [](auto &f) { f.code[10] = Store{16, Type::I64}; }, "slot type/layout mismatch");
+    rejectSpan(
+        "span constant cannot mint capability",
+        [](auto &f) { f.code[9] = Constant{0, Type::ByteSpan}; }, "invalid constant type");
+    rejectSpan(
+        "span cannot become scalar through conversion",
+        [](auto &f) { f.code[9] = Convert{Type::ByteSpan, Type::I64}; },
+        "invalid checked conversion types");
+    rejectSpan(
+        "scalar cannot become span through conversion",
+        [](auto &f) { f.code[10] = Convert{Type::I64, Type::ByteSpan}; },
+        "invalid checked conversion types");
+    rejectSpan(
+        "span cannot use scalar comparison",
+        [](auto &f) { f.code[10] = Compare{Comparison::Equal, Type::ByteSpan}; },
+        "non-scalar comparison");
+    rejectSpan(
+        "span cannot be function result", [](auto &f) { f.result = Type::ByteSpan; },
+        "only an ordinary function parameter");
+    rejectSpan(
+        "bind span outside entry", [](auto &f) { f.code[7] = BindSpanParameter{0, 24}; },
+        "parameter binding outside entry prefix");
+    rejectSpan(
+        "span branch lifetime mismatch",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 9,
+                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40}, Label{7}});
+        },
+        "incompatible active span capabilities");
+    rejectSpan(
+        "span branch origin mismatch",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 9, {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40},
+                                               BorrowSpan{8, 40}, Label{7}});
+        },
+        "incompatible active span capabilities");
+    rejectSpan(
+        "span backedge lifetime mismatch",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 8, {Label{7}, ReborrowSpan{24, 40}, Jump{7}});
+        },
+        "incompatible active span capabilities");
+    rejectSpan(
+        "array branch lifetime mismatch",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 14, {Constant{1, Type::Bool}, BranchFalse{7},
+                                                BeginArray{8}, Label{7}, Constant{128, Type::U8}});
+        },
+        "incompatible active array lifetimes");
+
+    const auto rejectCall = [&](const std::string &name,
+                                const std::function<void(Module &)> &mutate,
+                                const std::string &expected) {
+        rejectModule(name, spanCallModule(), mutate, expected);
+    };
+    rejectCall(
+        "plain call cannot supply span",
+        [](Module &m) { m.functions[5].code[11] = Call{"span_forward"}; },
+        "plain call cannot target aggregate signature");
+    rejectCall(
+        "missing positional span arguments",
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments.clear(); },
+        "span call argument vector size mismatch");
+    rejectCall(
+        "short positional span arguments",
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments = {24}; },
+        "span call argument vector size mismatch");
+    rejectCall(
+        "long positional span arguments",
+        [](Module &m) {
+            std::get<AggregateCall>(m.functions[5].code[11]).spanArguments = {24, 0, 0};
+        },
+        "span call argument vector size mismatch");
+    rejectCall(
+        "missing positional object arguments for span call",
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).objectArguments.clear(); },
+        "aggregate call argument vector size mismatch");
+    rejectCall(
+        "span argument cannot borrow ordinary scalar slot",
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[0] = 56; },
+        "exact typed spill");
+    rejectCall(
+        "span argument cannot use inactive spill",
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[0] = 40; },
+        "span capability is not active");
+    rejectCall(
+        "scalar argument cannot also name capability",
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[1] = 24; },
+        "non-span argument cannot name span storage");
+    rejectCall(
+        "span argument cannot also name object",
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).objectArguments[0] = 8; },
+        "span argument cannot name object storage");
+    rejectCall(
+        "ended capability cannot cross call",
+        [](Module &m) {
+            m.functions[5].code.insert(m.functions[5].code.begin() + 11, EndSpan{24});
+        },
+        "span capability is not active");
+    rejectCall(
+        "owner write between borrow and call",
+        [](Module &m) {
+            m.functions[5].code.insert(m.functions[5].code.begin() + 9, Store{8, Type::U8});
+        },
+        "write to byte array with live readonly span");
+    rejectCall(
+        "span parameter missing canonical prefix",
+        [](Module &m) { m.functions[3].code[0] = BeginArray{8}; },
+        "span parameter bindings must form the entry prefix");
+    rejectCall(
+        "span parameter wrong source position",
+        [](Module &m) { m.functions[3].code[0] = BindSpanParameter{1, 24}; },
+        "span parameter bindings must form the entry prefix");
+    rejectCall(
+        "span parameter cannot use scalar binding",
+        [](Module &m) { m.functions[3].code[0] = BindParameter{0, 24, Type::ByteSpan}; },
+        "span parameter bindings must form the entry prefix");
+    rejectCall(
+        "scalar parameter cannot use span binding",
+        [](Module &m) { m.functions[3].code[1] = BindSpanParameter{1, 24}; },
+        "parameter bindings must form the entry prefix");
+    rejectCall(
+        "span parameter cannot bind scalar storage",
+        [](Module &m) { m.functions[3].code[0] = BindSpanParameter{0, 8}; },
+        "span parameter requires exact typed spill");
+    rejectCall(
+        "span parameter cannot be rebound",
+        [](Module &m) { m.functions[4].code.insert(m.functions[4].code.begin() + 6, EndSpan{24}); },
+        "live child reborrow");
+    rejectCall(
+        "span parameter rebinding after end",
+        [](Module &m) {
+            auto &f = m.functions[6];
+            f.code.insert(f.code.begin() + 6, {EndSpan{24}, ReborrowSpan{88, 24}});
+        },
+        "span parameter cannot be rebound");
+    rejectCall(
+        "receiver span parameter prohibited",
+        [](Module &m) { m.functions[3].receiver = Receiver{"SpanPacket", false, false}; },
+        "only an ordinary function parameter");
+    rejectCall(
+        "constructor span parameter prohibited",
+        [](Module &m) {
+            auto &f = m.functions[3];
+            f.result = Type::I64;
+            f.receiver = Receiver{"SpanPacket", true, true};
+        },
+        "only an ordinary function parameter");
+    rejectCall(
+        "class field cannot contain span",
+        [](Module &m) { m.classLayouts["Bad"] = {Type::ByteSpan}; },
+        "non-scalar class layout field");
+    rejectCall(
+        "span spill overlaps object reservation padding",
+        [](Module &m) {
+            m.classLayouts["Tiny"] = {Type::U8};
+            auto &f = m.functions[0];
+            f.objectSlots[32] = ObjectSlot{"Tiny", false};
+            f.slots[32] = Type::U8;
+        },
+        "span spill overlaps");
+    rejectCall(
+        "object leaf cannot mint local byte origin",
+        [](Module &m) {
+            auto &f = m.functions[8];
+            f.arraySlots[56] = 1;
+        },
+        "byte array origin overlaps object storage");
+    rejectCall(
+        "scalar parameter cannot mint byte origin",
+        [](Module &m) {
+            auto &f = m.functions[6];
+            f.arraySlots[1] = 1;
+        },
+        "parameter cannot bind byte array origin storage");
+    rejectCall(
+        "class return requires span cleanup",
+        [](Module &m) {
+            auto &f = m.functions[6];
+            f.code.erase(f.code.end() - 2);
+        },
+        "return with active span or byte array lifetime");
+    rejectCall(
+        "two span parameters cannot bind same spill",
+        [](Module &m) { m.functions[6].code[4] = BindSpanParameter{4, 24}; },
+        "span parameter bindings overlap");
+
+    auto writes = spanBaseline();
+    auto &wf = writes.functions[0];
+    wf.code.insert(wf.code.begin() + 13, {Constant{42, Type::U8}, Store{8, Type::U8}});
+    accept("owner write after every span ends", writes);
+    auto reads = spanBaseline();
+    reads.functions[0].code.insert(reads.functions[0].code.begin() + 9, Load{8, Type::U8});
+    accept("owner read with live readonly span", reads);
+    auto reuse = spanBaseline();
+    reuse.functions[0].code.insert(reuse.functions[0].code.begin() + 13,
+                                   {BorrowSpan{8, 24}, EndSpan{24}});
+    accept("ended local span spill can begin a later lifetime", reuse);
+    auto loop = spanBaseline();
+    loop.functions[0].code.insert(
+        loop.functions[0].code.begin() + 9,
+        {Label{7}, Constant{0, Type::Bool}, BranchFalse{8}, Jump{7}, Label{8}});
+    accept("unchanged readonly span capabilities across loop", loop);
+    auto freshLoop = spanBaseline();
+    freshLoop.functions[0].code.insert(freshLoop.functions[0].code.begin() + 7,
+                                       {Label{7}, BorrowSpan{8, 24}, EndSpan{24},
+                                        Constant{0, Type::Bool}, BranchFalse{8}, Jump{7},
+                                        Label{8}});
+    accept("span reborrow lifetime closes on backedge", freshLoop);
+
+    // A storage address alone is not the identity of a continuing lifetime.
+    // Restarted capabilities on only one branch must not join their predecessors.
+    rejectSpan(
+        "restarted array and span lifetimes cannot join previous lifetimes",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 9,
+                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40}, EndSpan{24},
+                           EndArray{8}, BeginArray{8}, Constant{43, Type::U8}, Store{8, Type::U8},
+                           Store{7, Type::U8}, Store{6, Type::U8}, BorrowSpan{8, 24},
+                           ReborrowSpan{24, 40}, Label{7}});
+        },
+        "incompatible active array lifetimes");
+    rejectSpan(
+        "restarted child span cannot join previous lifetime in same spill",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 9, {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40},
+                                               ReborrowSpan{24, 40}, Label{7}});
+        },
+        "incompatible active span capabilities");
+    rejectSpan(
+        "restarted parent authority cannot join previous reborrow tree",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 9,
+                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40}, EndSpan{24},
+                           BorrowSpan{8, 24}, ReborrowSpan{24, 40}, Label{7}});
+        },
+        "incompatible active span capabilities");
+    auto closedLoop = spanBaseline();
+    auto &closed = closedLoop.functions[0];
+    closed.code = {Label{7},
+                   BeginArray{8},
+                   Constant{43, Type::U8},
+                   Store{8, Type::U8},
+                   Store{7, Type::U8},
+                   Store{6, Type::U8},
+                   BorrowSpan{8, 24},
+                   ReborrowSpan{24, 40},
+                   EndSpan{40},
+                   EndSpan{24},
+                   EndArray{8},
+                   Constant{0, Type::Bool},
+                   BranchFalse{8},
+                   Jump{7},
+                   Label{8},
+                   Constant{42, Type::U8},
+                   Return{}};
+    accept("fully ended array and span sites can be reused on loop backedge", closedLoop);
+    auto childLoop = spanBaseline();
+    childLoop.functions[0].code.insert(childLoop.functions[0].code.begin() + 8,
+                                       {Label{7}, ReborrowSpan{24, 40}, EndSpan{40},
+                                        Constant{0, Type::Bool}, BranchFalse{8}, Jump{7},
+                                        Label{8}});
+    accept("fully ended child reborrow site can be reused with live parent", childLoop);
+
+    const auto assembly = X86Emitter{}.emit(validate(spanCallModule()));
+    for (const auto &name :
+         {"span_read", "span_forward", "span_mixed_callee", "span_mixed_forward"})
+        if (assembly.find(std::string(".local ") + name + "\n") == std::string::npos)
+            throw Error("span signatures must have local linkage");
+    ++passed;
+    std::cout << "PASS IR span signatures use private compiler linkage\n";
+    const auto compare = assembly.find("cmpq -32(%rbp), %rax");
+    const auto bounds = assembly.find("jae .Laurora_bounds_trap", compare);
+    const auto pointer = assembly.find("movq -40(%rbp), %rcx", compare);
+    const auto payload = assembly.find("movzbq (%rcx,%rax,1), %rax", compare);
+    if (compare == std::string::npos ||
+        !(compare < bounds && bounds < pointer && pointer < payload))
+        throw Error("span bounds check must precede pointer and payload loads");
+    ++passed;
+    std::cout << "PASS IR span negative and upper bounds precede pointer load\n";
+}
+
+void initializationPayloadMetricTests() {
+    // Existing legal frame extremes and word boundaries: these are representation
+    // measurements, not new semantic admission thresholds or RSS expectations.
+    for (int slotCount : {0, 1, 63, 64, 65, 65536}) {
+        aurora::ir::Function function;
+        function.name = "initialization_payload";
+        function.result = Type::I64;
+        function.frameBytes = ((slotCount + 15) / 16) * 16;
+        function.code.push_back(Constant{1, Type::U8});
+        for (int offset = 1; offset <= slotCount; ++offset) {
+            function.slots.emplace(offset, Type::U8);
+            function.code.push_back(Store{offset, Type::U8});
+        }
+        for (int branch = 0; branch < 2; ++branch) {
+            const int alternate = branch * 2;
+            const int join = alternate + 1;
+            function.code.insert(function.code.end(),
+                                 {Constant{1, Type::Bool}, BranchFalse{alternate},
+                                  Constant{1, Type::I64}, Jump{join}, Label{alternate},
+                                  Constant{2, Type::I64}, Label{join}});
+        }
+        function.code.push_back(Return{});
+        std::map<std::string, const aurora::ir::Function *> functions{
+            {function.name, &function}};
+        verification::Metrics metrics;
+        verification::verifyFunction(function, functions, &metrics);
+        const auto count = static_cast<std::size_t>(slotCount);
+        const auto words = count / 64 + (count % 64 != 0);
+        if (metrics.snapshots != 7 || metrics.peakOperandDepth != 0 ||
+            metrics.peakRetainedValueFacts != 12 * count ||
+            metrics.peakRetainedInitializationPayloadBytes !=
+                7 * 2 * words * sizeof(std::uint64_t))
+            throw Error("retained initialization payload differs from exact dense word storage");
+        ++passed;
+        std::cout << "PASS IR initialization payload for " << count
+                  << " slots: snapshots=" << metrics.snapshots
+                  << ", retained facts=" << metrics.peakRetainedValueFacts
+                  << ", initialization payload bytes="
+                  << metrics.peakRetainedInitializationPayloadBytes << '\n';
+    }
+}
+
 } // namespace
 int main(int argc, char **argv) {
     try {
+        if (argc == 2 && std::string(argv[1]) == "--emit-spans") {
+            std::cout << X86Emitter{}.emit(validate(spanCallModule()));
+            return 0;
+        }
         if (argc == 2 && std::string(argv[1]) == "--emit-value-abi") {
             std::cout << X86Emitter{}.emit(validate(valueBaseline()));
             return 0;
@@ -2577,12 +3280,14 @@ int main(int argc, char **argv) {
             std::cout << X86Emitter{}.emit(validate(methodResultNativeModule()));
             return 0;
         }
+        spanTests();
         enumAndMethodResultTests();
         composedTests();
         arrayReceiverTests();
         unsignedTests();
         byteTests();
         packedStorageTests();
+        initializationPayloadMetricTests();
         for (const auto operation : {Binary::CheckedDivide, Binary::CheckedRemainder}) {
             const auto name = operation == Binary::CheckedDivide ? "division" : "remainder";
             auto arithmetic = baseline();
@@ -3837,12 +4542,16 @@ int main(int argc, char **argv) {
         verification::Metrics metrics;
         verification::verifyFunction(largeFunction, largeFunctions, &metrics);
         if (metrics.peakOperandDepth != elementCount || metrics.snapshots > 8 ||
-            metrics.peakRetainedValueFacts > elementCount * 16)
+            metrics.peakRetainedValueFacts > elementCount * 16 ||
+            metrics.peakRetainedInitializationPayloadBytes !=
+                metrics.snapshots * 2 * (elementCount / 64) * sizeof(std::uint64_t))
             throw Error("maximum initializer retained non-linear verifier state");
         ++passed;
         std::cout << "PASS IR bounded maximum initializer: snapshots=" << metrics.snapshots
                   << ", peak operand depth=" << metrics.peakOperandDepth
-                  << ", retained facts=" << metrics.peakRetainedValueFacts << '\n';
+                  << ", retained facts=" << metrics.peakRetainedValueFacts
+                  << ", initialization payload bytes="
+                  << metrics.peakRetainedInitializationPayloadBytes << '\n';
         reject(
             "query cannot change module view",
             [](Module &m) {
@@ -3899,6 +4608,36 @@ int main(int argc, char **argv) {
             "unresolved specialization arguments on parameter",
             [](Module &m) { m.functions[1].parameters[0].templateArguments = {TypeKind::I64}; },
             "invalid value boundary type");
+        // Nested syntax is frontend-only. Even a tree whose leaf types and
+        // apparent layout are otherwise valid cannot reach the concrete IR.
+        const auto nestedArgument = [] {
+            TemplateArgument inner("Inner");
+            inner.templateArguments = {TypeKind::U8, TemplateArgument::capacity(16)};
+            TemplateArgument outer("Outer");
+            outer.templateArguments = {inner, TypeKind::I64};
+            return outer;
+        };
+        rejectValue(
+            "unresolved nested specialization result",
+            [&](Module &m) { m.functions[1].result.templateArguments = {nestedArgument()}; },
+            "invalid value boundary type");
+        rejectValue(
+            "unresolved nested specialization parameter",
+            [&](Module &m) {
+                m.functions[1].parameters[0].templateArguments = {nestedArgument()};
+            },
+            "invalid value boundary type");
+        reject(
+            "unresolved nested specialization scalar slot",
+            [&](Module &m) { m.functions[0].slots[8].templateArguments = {nestedArgument()}; },
+            "invalid slot payload type");
+        reject(
+            "unresolved nested specialization scalar constant",
+            [&](Module &m) {
+                std::get<Constant>(m.functions[0].code[0]).type.templateArguments =
+                    {nestedArgument()};
+            },
+            "invalid constant type");
         rejectValue(
             "same-layout specialization argument forgery",
             [](Module &m) {
@@ -3920,6 +4659,30 @@ int main(int argc, char **argv) {
                 m.functions[2].receiver->className = "OtherSpecialization";
             },
             "forwarded receiver nominal class mismatch");
+        rejectValue(
+            "function-template unresolved value parameter",
+            [](Module &m) { m.functions[1].parameters[0] = Type(TypeKind::Parameter); },
+            "invalid aggregate parameter type");
+        rejectValue(
+            "function-template unresolved scalar parameter",
+            [](Module &m) { m.functions[1].parameters[1] = Type(TypeKind::Parameter); },
+            "invalid aggregate parameter type");
+        rejectValue(
+            "function-template dependent class result metadata",
+            [](Module &m) {
+                TemplateArgument parameter(TypeKind::Parameter);
+                parameter.className = "T";
+                m.functions[1].result.templateArguments = {parameter};
+            },
+            "invalid value boundary type");
+        rejectValue(
+            "function-template substituted identity cannot retain argument metadata",
+            [](Module &m) {
+                TemplateArgument argument("Pair");
+                argument.resolvedClass = true;
+                m.functions[1].parameters[0].templateArguments = {argument};
+            },
+            "invalid value boundary type");
         std::cout << passed << " typed IR tests passed\n";
         return 0;
     } catch (const std::exception &error) {

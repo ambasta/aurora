@@ -1,0 +1,21 @@
+{
+  "name": "post-substitution-depth-5",
+  "command": [
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/aurorac-reviewed-original",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/library",
+    "--module-root",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/post-substitution-depth-5/modules",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/post-substitution-depth-5/input.au",
+    "-o",
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/post-substitution-depth-5/compiled.s"
+  ],
+  "returncode": 1,
+  "stderr": "aurorac: template-id nesting exceeds 4 after substitution\n",
+  "negative": true,
+  "input_sha256": {
+    "/workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/evidence/review/independent/post-substitution-depth-5/input.au": "6b556ec064b15568f491d5296cdd6a4d0c30653e57eab4d9c0d9803e16e1d82c"
+  },
+  "inputs_unchanged": true,
+  "pass": true
+}

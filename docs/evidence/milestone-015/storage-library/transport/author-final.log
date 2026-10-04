@@ -1,0 +1,20 @@
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'fixtures/xfs-offline/verify_native.py', '--transport-self-test-only']
+PASS 17 hex transport rejection controls and exact raw/transport hashes
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', '-O', 'fixtures/xfs-offline/verify_native.py', '--transport-self-test-only']
+PASS 17 hex transport rejection controls and exact raw/transport hashes
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', 'fixtures/xfs-offline/verify_native.py', '--receipt', '/tmp/aurora-m015-hex-release-final.json']
+PASS 17 hex transport rejection controls and exact raw/transport hashes
+PASS 15 native observations against real mkfs.xfs fixture
+CRC bytes=c7 13 71 b6 LE/GF(2)/native=0xb67113c7
+Raw feature masks: features_compat=0x0, features_ro_compat=0xf, features_incompat=0x2b, features_log_incompat=0x0
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', '-O', 'fixtures/xfs-offline/verify_native.py']
+PASS 17 hex transport rejection controls and exact raw/transport hashes
+PASS 15 native observations against real mkfs.xfs fixture
+CRC bytes=c7 13 71 b6 LE/GF(2)/native=0xb67113c7
+Raw feature masks: features_compat=0x0, features_ro_compat=0xf, features_incompat=0x2b, features_log_incompat=0x0
+COMMAND ['/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3', '-O', 'fixtures/xfs-offline/verify_native.py', '--compiler', '/tmp/aurora-m014-compiler-corrected-sanitized', '--compiler-sha256', 'ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa', '--receipt', '/tmp/aurora-m015-hex-sanitized-final.json']
+PASS 17 hex transport rejection controls and exact raw/transport hashes
+PASS 15 native observations against real mkfs.xfs fixture
+CRC bytes=c7 13 71 b6 LE/GF(2)/native=0xb67113c7
+Raw feature masks: features_compat=0x0, features_ro_compat=0xf, features_incompat=0x2b, features_log_incompat=0x0
+PASS final canonical hex transport controls normal/-O; real15 observations release, release-O and sanitized

@@ -1,0 +1,39 @@
+0000000000004318 r C.128.1
+0000000000004318 r C.17.0
+0000000000004308 r C.89.0
+00000000000000c0 t (anonymous namespace)::fail(std::basic_string_view<char, std::char_traits<char> >)
+0000000000005000 b (anonymous namespace)::pool
+00000000000018c0 t aurora::uefi::(anonymous namespace)::ReadWindow::copy(unsigned long, std::span<std::byte, 18446744073709551615ul>)
+0000000000001af0 T aurora::uefi::discover_acpi(unsigned long, aurora::uefi::Bytes const&)
+0000000000001320 W aurora::uefi::expected_flags(unsigned long, aurora::uefi::Bytes const&)
+00000000000054a8 u aurora::uefi::WindowAuthority::next_
+0000000000000a10 W aurora::uefi::RuntimeLayoutProfile<2ul>::valid(unsigned long)
+0000000000002bc0 W aurora::uefi::Acpi::table(std::span<std::byte const, 18446744073709551615ul>, std::basic_string_view<char, std::char_traits<char> >)
+0000000000000f80 W aurora::uefi::Handoff::valid(std::span<std::byte const, 18446744073709551615ul>, unsigned long)
+0000000000002ce0 W aurora::uefi::Topology::parse(std::span<std::byte const, 18446744073709551615ul>, unsigned int)
+00000000000054a0 u aurora::memory::PhysicalPages::next_epoch_
+00000000000015e0 W aurora::hardware::Serial::text(std::basic_string_view<char, std::char_traits<char> >)
+0000000000001640 W aurora::hardware::Serial::number(unsigned long long)
+0000000000000040 t aurora::uefi::PageTables::entry(unsigned long) const [clone .isra.0]
+00000000000031c0 W aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const
+0000000000002960 W aurora::uefi::FirmwareRanges::readable(unsigned long, unsigned long) const
+0000000000000d60 W aurora::uefi::Bytes::get(unsigned long, unsigned int) const
+0000000000000dc0 W aurora::uefi::MemoryMap::valid() const
+0000000000001710 W bool aurora::uefi::PageTables::verify(unsigned long, aurora::uefi::Bytes const&, aurora::uefi::LocalApicAdmission const*) const::{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1}::operator()<{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&>({lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#1} const&, unsigned long, unsigned int, unsigned long) const
+0000000000006000 B __payload_memory_end
+0000000000005000 B __payload_read_end
+0000000000004000 R __payload_text_end
+0000000000000000 a acpi.cpp
+0000000000003747 T aurora_kernel_value
+00000000000037f8 T aurora_reflect_field_count
+0000000000003792 T aurora_reflect_size
+0000000000000023 t fault_common
+0000000000000000 a payload-entry.o
+0000000000000000 a payload.cpp
+0000000000000000 a pci.cpp
+0000000000000000 a runtime.cpp
+0000000000000000 T uefi_payload_entry
+0000000000000110 T uefi_payload_fail
+000000000000000a T uefi_payload_fault
+00000000000001b0 T uefi_payload_main
+0000000000000015 T uefi_payload_page_fault

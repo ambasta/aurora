@@ -1,0 +1,36 @@
+{
+  "commands.json": [
+    {
+      "argv": [
+        "make",
+        "-C",
+        "compiler",
+        "test-storage",
+        "OUT=/tmp/aurora-resource-main-compiler-frozen",
+        "-o",
+        "/tmp/aurora-resource-main-compiler-frozen"
+      ],
+      "returncode": 0,
+      "seconds": 7.849328092997894,
+      "ASAN_OPTIONS": null,
+      "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+      "outer_wall_timeout": 180
+    },
+    {
+      "argv": [
+        "make",
+        "-C",
+        "compiler",
+        "test-storage",
+        "OUT=/tmp/aurora-resource-sanitizer/aurorac",
+        "-o",
+        "/tmp/aurora-resource-sanitizer/aurorac"
+      ],
+      "returncode": 0,
+      "seconds": 20.254627681002603,
+      "ASAN_OPTIONS": "detect_leaks=0:halt_on_error=1",
+      "compiler_sha256": "805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf",
+      "outer_wall_timeout": 180
+    }
+  ]
+}

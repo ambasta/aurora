@@ -1,0 +1,13 @@
+{
+  "make_test_exit": 0,
+  "actual_spots": {
+    "runtime-span": 0,
+    "runtime-pin-fault": 0,
+    "normal": 0
+  },
+  "unchanged_prior_runtime_inputs": 140,
+  "runtime_input_mismatches": [],
+  "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+  "fresh_full162_run": false,
+  "scope": "Pure library addition; M016 full162 remains historical evidence for unchanged runtime. Parent fresh aggregate and three actual existing profiles passed."
+}

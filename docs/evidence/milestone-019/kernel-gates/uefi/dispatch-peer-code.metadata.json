@@ -1,0 +1,55 @@
+{
+  "images": {
+    "clean": {
+      "entry": 1099511627776,
+      "size": 519,
+      "return_pc": 1099511627847,
+      "bounds_pc": 1099511628287,
+      "overflow_pc": 1099511628289,
+      "division_zero_pc": 1099511628291,
+      "shift_count_pc": 1099511628293,
+      "probe_offset": 0,
+      "probe_pc": 0,
+      "compiled_begin": 1099511627851,
+      "compiled_end": 1099511628083,
+      "context_begin": 0,
+      "context_end": 0
+    },
+    "bounds": {
+      "entry": 1099511631872,
+      "size": 652,
+      "return_pc": 1099511631943,
+      "bounds_pc": 1099511632516,
+      "overflow_pc": 1099511632518,
+      "division_zero_pc": 1099511632520,
+      "shift_count_pc": 1099511632522,
+      "probe_offset": 0,
+      "probe_pc": 0,
+      "compiled_begin": 1099511631947,
+      "compiled_end": 1099511632278,
+      "context_begin": 0,
+      "context_end": 0
+    },
+    "peer": {
+      "entry": 1099511635968,
+      "size": 532,
+      "return_pc": 1099511636052,
+      "bounds_pc": 1099511636492,
+      "overflow_pc": 1099511636494,
+      "division_zero_pc": 1099511636496,
+      "shift_count_pc": 1099511636498,
+      "probe_offset": 0,
+      "probe_pc": 1099511636026,
+      "compiled_begin": 1099511636056,
+      "compiled_end": 1099511636288,
+      "context_begin": 0,
+      "context_end": 0
+    }
+  },
+  "kernel": {
+    "drain_begin": 28312,
+    "drain_end": 28316,
+    "text_end": 73728,
+    "forged_pc": 0
+  }
+}

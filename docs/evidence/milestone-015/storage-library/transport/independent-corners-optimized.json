@@ -1,0 +1,42 @@
+{
+  "scope": "Independent canonical hex transport corner checks; source unchanged",
+  "python_optimized": true,
+  "subject_sha256": "f5a1d552b56f92c9e974b0e09e485613483a05a192e694ce2841f9f439547069",
+  "transport_sha256": "d1d3fbc3f8b693d1c0ddf395e92b136a81b2a5d30b9e3cdec36addd580d42986",
+  "raw_sha256": "55ad821909c312048d9936a74c8904cd25f97aa190b48ae0004b03eaffdc6586",
+  "checks_by_category": {
+    "positive raw equality and canonical reconstruction": 1,
+    "all single data-nibble alternatives": 15360,
+    "non-ASCII at every transport location": 1728,
+    "all distinct row-pair swaps": 496,
+    "uppercase data letters": 1,
+    "CRLF rows": 1,
+    "CR rows": 1,
+    "UTF-8 BOM": 1,
+    "UTF-16 little endian": 1,
+    "UTF-16 big endian": 1,
+    "embedded NUL": 1,
+    "trailing ASCII space": 1,
+    "leading newline": 1,
+    "raw binary mistaken for hex": 1,
+    "duplicate final newline": 1,
+    "no row newlines": 1,
+    "transport identity guard": 1,
+    "raw identity guard": 1,
+    "exact bounded read": 1,
+    "overflow bounded read": 1,
+    "missing hex never falls back to raw": 1,
+    "binary hex never falls back to raw": 1,
+    "valid isolated hex accepts": 1
+  },
+  "rejection_reasons": {
+    "decoded raw fixture SHA256 mismatch": 15361,
+    "invalid canonical row or two-digit byte width": 1700,
+    "hex transport must have exactly 32 rows": 32,
+    "hex row offset is missing, duplicate or unordered": 496,
+    "hex transport must be exactly 1728 bytes": 8,
+    "hex transport SHA256 mismatch": 1
+  },
+  "total_checks": 17604,
+  "passed": true
+}

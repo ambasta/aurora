@@ -56,7 +56,7 @@ test-uefi-dispatch:
 test-uefi-user-phases:
 	./scripts/kernel-uefi-user-phases-tests.sh
 
-test: test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases test-semantics
+test: test-dormant-tables test-uefi-tables test-pin-ledger test-uefi-pins test-storage-model test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases test-uefi-bar test-uefi-span test-uefi-ivrs test-semantics
 
 # QEMU is intentionally a separate acceptance gate, never silently skipped.
 smoke:
@@ -102,6 +102,11 @@ smoke-uefi-user-phases:
 	./scripts/kernel-uefi-user-phases-all.sh
 
 smoke-all:
+	./scripts/kernel-uefi-tables-all.sh
+	./scripts/kernel-uefi-ivrs-all.sh
+	./scripts/kernel-uefi-pin-all.sh
+	./scripts/kernel-uefi-span-all.sh
+	./scripts/kernel-uefi-bar-all.sh
 	./scripts/kernel-protection-smoke.sh
 	./scripts/kernel-scheduling-smoke.sh
 	./scripts/kernel-uefi-all.sh
@@ -114,3 +119,53 @@ smoke-all:
 	./scripts/kernel-uefi-budget-all.sh
 	./scripts/kernel-uefi-dispatch-all.sh
 	./scripts/kernel-uefi-user-phases-all.sh
+
+
+.PHONY: test-storage-model
+test-storage-model:
+	python3 storage/design/model/test_durability.py
+	python3 -O storage/design/model/test_durability.py
+	python3 storage/design/model/check_traceability.py
+	python3 -O storage/design/model/check_traceability.py
+	python3 storage/design/model/test_traceability.py
+	python3 -O storage/design/model/test_traceability.py
+
+.PHONY: test-uefi-bar test-uefi-span smoke-uefi-bar smoke-uefi-span
+test-uefi-bar:
+	./scripts/kernel-uefi-bar-tests.sh
+
+test-uefi-span:
+	./scripts/kernel-uefi-span-tests.sh
+
+smoke-uefi-bar:
+	./scripts/kernel-uefi-bar-all.sh
+
+smoke-uefi-span:
+	./scripts/kernel-uefi-span-all.sh
+
+.PHONY: test-uefi-ivrs smoke-uefi-ivrs
+test-uefi-ivrs:
+	./scripts/kernel-uefi-ivrs-tests.sh
+
+smoke-uefi-ivrs:
+	./scripts/kernel-uefi-ivrs-all.sh
+
+.PHONY: test-pin-ledger test-uefi-pins smoke-uefi-pins
+test-pin-ledger:
+	./scripts/kernel-pin-tests.sh
+
+test-uefi-pins:
+	./scripts/kernel-uefi-pin-tests.sh
+
+smoke-uefi-pins:
+	./scripts/kernel-uefi-pin-all.sh
+
+.PHONY: test-dormant-tables test-uefi-tables smoke-uefi-tables
+test-dormant-tables:
+	./scripts/kernel-dormant-tests.sh
+
+test-uefi-tables:
+	./scripts/kernel-uefi-tables-tests.sh
+
+smoke-uefi-tables:
+	./scripts/kernel-uefi-tables-all.sh

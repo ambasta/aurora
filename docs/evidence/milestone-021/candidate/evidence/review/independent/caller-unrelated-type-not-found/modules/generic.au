@@ -1,0 +1,1 @@
+export module generic;export template<Value T>auto inspect(T x)->i64{return size_of(Unrelated);}

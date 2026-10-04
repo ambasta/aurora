@@ -1,0 +1,56 @@
+{
+  "command": [
+    "/usr/bin/g++",
+    "-std=c++23",
+    "-O1",
+    "-g",
+    "-fsanitize=address,undefined",
+    "-fno-omit-frame-pointer",
+    "-fno-sanitize-recover=all",
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-Werror",
+    "-I.",
+    "../tests/compiler/ir_tests.cpp",
+    "-o",
+    "/tmp/aurora-resource-sanitizer/ir-tests"
+  ],
+  "cwd": "/workspace/scratch/48c5de6446f8/aurora-resource-next/compiler",
+  "environment": {
+    "TMPDIR": "/workspace/scratch/48c5de6446f8/aurora-resource-next/build/bounded-ir-build/gcc-temp"
+  },
+  "limits": {
+    "address_space_bytes": 2147483648,
+    "cpu_seconds": [
+      120,
+      130
+    ],
+    "wall_seconds": 180,
+    "regular_file_bytes": 536870912,
+    "core_bytes": 0
+  },
+  "tool_sha256": "6b3696e4dcb85e1c949c732a02befa50e3983ecf94ce7e8e58d9d503b954b79d",
+  "source_sha256": {
+    "compiler/x86.hpp": "818d9a5a3476d46e65c3bcd06d26f4b9d5fa5e8c7c39b10dfd5bbccff27525f4",
+    "compiler/parser.hpp": "0377cf477abfe3f8119437244c627ab43e4b61a139de76c5917adb83c2958ebf",
+    "compiler/host_sources.hpp": "ca6f557288b94db0bcd431efb086bba185390b9831543436d184c76263a06794",
+    "compiler/templates.hpp": "9558565e74e6828102d8b99ce5f36ee8ae9f0fecc21ab7666cedd3a77c03e554",
+    "compiler/modules.hpp": "46788d754f39d8d73732fd837d375a5919a0f8a691a4613bf7aed4b7d1a9dfd2",
+    "compiler/ir.hpp": "1670554cfb3dcfeb248997bae47e747d49b03aca90a316061e290380bd1fb601",
+    "compiler/lexer.hpp": "c33b789738e3fd625f5f1b786cfaad22e90db9bed8e757aa4ad8af726f62c7b6",
+    "compiler/initialization_facts.hpp": "d36bd9d835def4b679001facbb7f68627296df8ab4c0c90119e506275b4e6d80",
+    "compiler/types.hpp": "0597921203f55e07f923c8b65079f21b4d2797decfbe7fab64aa4a3cf73a2149",
+    "compiler/ir_verify.hpp": "ded7d28ba24104c82a69fd9922c13caf972ac910df66c129c2e3fa031d05e32b",
+    "compiler/semantics.hpp": "6374e36c471c046c45c97c247cd9cce5410fd36826fe91d9a52996cc91ec0c3d",
+    "compiler/ir_layout.hpp": "23ee596d7ae009345c39fd0d847a91c85d648a665cd95a623457da2a5110f88d",
+    "compiler/syntax.hpp": "9a2cb78053770303994be3faccd90135a7490ad55401fb0f28a8b3d6822b5c99",
+    "tests/compiler/ir_tests.cpp": "c7fccfb057b6570086216b356a32f885a3e6ca23347c8eb3f377cae4f8a4f6ce"
+  },
+  "exit_code": 1,
+  "elapsed_seconds": 48.37948545099789,
+  "peak_rss_kib": 1966388,
+  "user_cpu_seconds": 47.227166,
+  "system_cpu_seconds": 1.120953,
+  "harness_wall_kill": false
+}

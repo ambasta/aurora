@@ -1,0 +1,61 @@
+{
+  "candidate_manifest_sha256": "1ad685957fdcaa4bc1b41d56676d4bfd4744b2d2ccc5bdf966ec2b6d4b89ccf7",
+  "integration_delta_sha256": "89b44d98bc2f1d8a59b208ec393140010fc473c02832a4926e8e6aab925beb21",
+  "candidate_count": 111,
+  "delta_count": 9,
+  "candidate_hash_mismatches": [],
+  "delta_hash_mismatches": [],
+  "actual_delta": [
+    "compiler/Makefile",
+    "docs/xfs-geometry-contract.md",
+    "docs/xfs-geometry-proposal.md",
+    "docs/xfs-observed-fixture-facts.json",
+    "docs/xfs-source-check.json",
+    "library/README.md",
+    "library/examples/xfs_geometry.au",
+    "library/fs/xfs_geometry.au",
+    "tests/compiler/xfs_geometry.py"
+  ],
+  "delta_matches": true,
+  "deleted_baseline": [],
+  "author_gate_input_count": 71,
+  "author_gate_changed_inputs": [],
+  "author_command_count": 12,
+  "author_exit_statuses": {
+    "selftests-normal": 0,
+    "selftests-optimized": 0,
+    "geometry-release": 0,
+    "old-storage-release": 0,
+    "example-compile-release": 0,
+    "geometry-sanitized": 0,
+    "old-storage-sanitized": 0,
+    "example-compile-sanitized": 0,
+    "assemble-example": 0,
+    "assemble-entry": 0,
+    "link-example": 0,
+    "native-example-42": 0
+  },
+  "example_release_sanitized_assembly_same": true,
+  "build/xfs-geometry-m1p67gdr/manifest.json": {
+    "sha256": "fe601a3038d2ef2192b0e457e599cbcdd30d20877f8f2fb69571ff387b182fa5",
+    "status": "passed",
+    "headers": 586,
+    "raw_observations": 25198,
+    "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+    "explicit_pin": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
+    "input_changes": [],
+    "case_filter": null,
+    "mutations_only": false
+  },
+  "build/xfs-geometry-hrixqicv/manifest.json": {
+    "sha256": "79b4c40c0a279bdfe88c0dc0a359b6825b522c9a41e8eae529039fc84fe5c41e",
+    "status": "passed",
+    "headers": 586,
+    "raw_observations": 25198,
+    "compiler_sha256": "805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf",
+    "explicit_pin": "805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf",
+    "input_changes": [],
+    "case_filter": null,
+    "mutations_only": false
+  }
+}
