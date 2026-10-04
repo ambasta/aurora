@@ -1,0 +1,9 @@
+{
+  "status": "ready for full rerun",
+  "wrapper_sha256": "50038e8b05a518b0ab0d4d422ec9b36047160db119df319913fa76f2f36e8307",
+  "controls_sha256": "3f8f3bcb0a05799985149c4c70c37420dc2cb4cbc7efc7d72c1738a5d64ddb25",
+  "controls": 4,
+  "growth_reserve_bytes": 335544320,
+  "cap_bytes": 536870912,
+  "note": "320MiB incremental reservation exceeds first observed aggregate growth (~281MiB);64MiB ongoing stop reserve remains. Includes candidate,work,oldXFS allocation."
+}

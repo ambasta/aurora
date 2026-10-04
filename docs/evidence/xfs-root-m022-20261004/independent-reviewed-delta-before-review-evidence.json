@@ -1,0 +1,329 @@
+{
+  "base_commit": "53cb2fe5d9222bce5a51a2d176edf8f8321960c7",
+  "base_tree": "61fb4071050450de758d5c90291ca34d3dc73fb7",
+  "reviewed_source_files": 419,
+  "delta_paths": 40,
+  "entries": [
+    {
+      "path": "README.md",
+      "action": "modify",
+      "bytes": 28619,
+      "sha256": "0f94a30e4e55c3bbaab0fd606921e264f774f37cae67baf1e06a3e4d5db6cd4a",
+      "git_blob": "6dc3424c2ee9dfc837257a0964dc13ca1621e87f",
+      "mode": "100644"
+    },
+    {
+      "path": "compiler/Makefile",
+      "action": "modify",
+      "bytes": 6121,
+      "sha256": "fb62f07365763fb6a9ea94d242e1bc290cf0977158b3c098164451f025507f77",
+      "git_blob": "66b8a96f4b7dd8c560198c901468083e74964bd3",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/completeness-matrix.md",
+      "action": "modify",
+      "bytes": 33294,
+      "sha256": "58315e5b37786e312ac14dca7a793d55f24f56758a0e6a34ba3a48c655e16665",
+      "git_blob": "2e119c7cd19bd83daa5d8204f7d09f5923723f4b",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/README.md",
+      "action": "add",
+      "bytes": 2015,
+      "sha256": "74bda1d462fa9f866a0cb50ec647c3da8767aa08bf99aa9c425bf45f1f4edbf8",
+      "git_blob": "af08d575a221a328fa1cea52a2a568445d04c04a",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/api-full-receipts.json",
+      "action": "add",
+      "bytes": 22060,
+      "sha256": "6efec8ea47ff18bcb2b3b1ee81347c3e8372d766af704f1d833546c02deaade6",
+      "git_blob": "8b59c8eeffcf785825fd7b9ca2b470ced6abc374",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/api-manifest.json",
+      "action": "add",
+      "bytes": 3382,
+      "sha256": "7b981247ae7be110bab6c244149e5ad0473ca0aef325f66630d8a5073597ceaf",
+      "git_blob": "34621b22a5c2a466fa3dc0bc9ad67ba3fdd6d093",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/baseline-subset.json",
+      "action": "add",
+      "bytes": 96742,
+      "sha256": "86cf27ef2c14cb9727b70e8154b797cc0538a726ad2f3c6ec3b5b10812a48f34",
+      "git_blob": "176d91a9c8303bcc48c4319d12e059a7b691e39c",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/contract-wording-clarification.json",
+      "action": "add",
+      "bytes": 314,
+      "sha256": "e0189749bcb6c7541188985ce9b8675cd2087372a0512cd6d3df97b3a6490110",
+      "git_blob": "a8b563ae31eb86c77d7a69bea3d11e7d422d3410",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/external-tools-after.json",
+      "action": "add",
+      "bytes": 271,
+      "sha256": "927419fde48b6d7223efadfc91813366488bad402a05b350a8afd4baa3f12b1c",
+      "git_blob": "fadfc355b080cf0b6c93d0df72c0c8bcffe144bb",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/external-tools-before.json",
+      "action": "add",
+      "bytes": 256,
+      "sha256": "4c04af4f66437e63c422efe2ceafc58f1e64d33ad74a13b921f78949a14d7675",
+      "git_blob": "279cddd1aa4e7fac6d66cb9c51e7c619f5147176",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/external-tools-inventory.json",
+      "action": "add",
+      "bytes": 11333,
+      "sha256": "ec0a7135d13004ab2b24951f59cafb110b02878869f243ab129ae225a3d5babc",
+      "git_blob": "1e7dbbfbd060a99b4bbd64dacce0814b53b2ae07",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/first-aggregate-failure.json",
+      "action": "add",
+      "bytes": 915,
+      "sha256": "f1e6869478358adcfd2d93c114b2da36a494212e85099e2585558e58baedc007",
+      "git_blob": "ca047965616a101a05ff29dae2af3080b7c94193",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/first-incomplete-make-test.json",
+      "action": "add",
+      "bytes": 43166,
+      "sha256": "bf2880086fe97891be32188f029d75157d74c64444784b8c5769163b5c4f4f8d",
+      "git_blob": "d7113d63cc1457f410d30174eacb15b17176d09f",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/first-incomplete-make-test.stderr",
+      "action": "add",
+      "bytes": 6229,
+      "sha256": "f1b080e3167355bce40ea75d2dd21b4c25d74935b613ebb086407307a70a3b5e",
+      "git_blob": "865d3ba442245b9c254dd6dc1f5a7c537eb17ea2",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/first-incomplete-make-test.stdout",
+      "action": "add",
+      "bytes": 269956,
+      "sha256": "45d281f4df7a1ae4e86e342214ab689ac037bbb168dd542d9425e086bfba8f6c",
+      "git_blob": "71c9432008054b38cbbc4c84f54ecc99468c3dcf",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/first-supervisor.py",
+      "action": "add",
+      "bytes": 2966,
+      "sha256": "07f06688046951be3c5838dc251e232c44b3d9f9b3a0e9a495ce67a78df5c5e1",
+      "git_blob": "55cd52f229811dc7d1e26bc2d765240c2525fae2",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/fixed-supervisor.py",
+      "action": "add",
+      "bytes": 3856,
+      "sha256": "50038e8b05a518b0ab0d4d422ec9b36047160db119df319913fa76f2f36e8307",
+      "git_blob": "30c4c0ff5fd68a60dc8f6bc9a48ea3bbbd0d7205",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/inode-reconstruction.json",
+      "action": "add",
+      "bytes": 1008,
+      "sha256": "1d0c241113fc4f2cc3c014b4f86c89654f0bf257a71043a8a48b82f850799cb0",
+      "git_blob": "434a1f5437b748c512d5f7b36e77467fd7754454",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/intermediate-fixed-supervisor.py",
+      "action": "add",
+      "bytes": 3808,
+      "sha256": "03b5bcde477d493e0ef3a591372328ad893a5e226a6e207cdd0a2ab535da1f6c",
+      "git_blob": "d03348eb4ab74ae71876f8d6f77eef05d46eb33d",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/lookup-full-vector-receipts.json",
+      "action": "add",
+      "bytes": 304576,
+      "sha256": "245a4bd57009dcbcb1ca974816106af8d96d3734a9131383185b55a6c4408627",
+      "git_blob": "58e613491c334edbdf8a72f2ef427865d228432a",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/lookup-manifest.json",
+      "action": "add",
+      "bytes": 3808,
+      "sha256": "69830064b17d983f1a2cd4d1382d3540f4f5168779ade7a130e7dfb58e7b5806",
+      "git_blob": "91167a838396b073461a694e17ba71212386b10d",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/parent-make-test.json",
+      "action": "add",
+      "bytes": 43148,
+      "sha256": "87302e834a3ecf078e5b38afe3ab48bb6a61e1c3199fa446572a90dd6035c9e9",
+      "git_blob": "65450b4b47fd9e8f71bab599d052e58195fb55de",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/parent-make-test.stderr",
+      "action": "add",
+      "bytes": 6229,
+      "sha256": "e3f6fa8d75350d635263279beeb2f2bdd863173772ae3693dca9c828d11069d5",
+      "git_blob": "091d785e9a84fbb642f7215af7a1282873e1bfd3",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/parent-make-test.stdout",
+      "action": "add",
+      "bytes": 270033,
+      "sha256": "2c51d4b959d7bb0521c1d5d9c151aa5a67676ac4d665c5c4aab3aaae960b7409",
+      "git_blob": "8ed0bbb5dfbea0449fc64b86f6cbec3a349c45d5",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/superblock-reconstruction.json",
+      "action": "add",
+      "bytes": 756,
+      "sha256": "42a65d51a14d361720877d1060a2484d9d0374ad6970fd136ba5f8ea5a520308",
+      "git_blob": "60cdfb08d7adffd61aa69bbc8222a5db2d11d145",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/supervisor-controls.json",
+      "action": "add",
+      "bytes": 276,
+      "sha256": "3f8f3bcb0a05799985149c4c70c37420dc2cb4cbc7efc7d72c1738a5d64ddb25",
+      "git_blob": "2a3533b913fe73140d90761bcaaa8386b3e0ee00",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/supervisor-fix.json",
+      "action": "add",
+      "bytes": 469,
+      "sha256": "19725eb626d88ca893c3da6a0e203bdcc9483ef55ef94e47c19b715c5bd54123",
+      "git_blob": "aa934a7155cd5dcf3ab53c9e2eef14cfbc6db047",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/supervisor-regression-tests.py",
+      "action": "add",
+      "bytes": 2576,
+      "sha256": "3c0d08f8b5197bf24b7af79f97685539f7b8d36c097d4197d02ac09ece76defa",
+      "git_blob": "b16c642c2f067211a41c12e3b2384d51e260d4b0",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/evidence/xfs-root-m022-20261004/supervisor-revision-clarification.json",
+      "action": "add",
+      "bytes": 1192,
+      "sha256": "e5a0feb712f679d96efe74203a550e9afc8ade04a9bd09411657c562556a998d",
+      "git_blob": "7758184a2b9ef7aea3ab5954eed57ebc81be5b75",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/verification.md",
+      "action": "modify",
+      "bytes": 99009,
+      "sha256": "cb12f02aaaab1cdc3f23e3f1bc080f95b6b21ab2a2b307fce78e5815c4939a50",
+      "git_blob": "f6c7a03dbdcfd042cd85c3e74c2d17d633e90761",
+      "mode": "100644"
+    },
+    {
+      "path": "docs/xfs-root-contract.md",
+      "action": "add",
+      "bytes": 6192,
+      "sha256": "27d4bed0c3b261af4b50b525a8762bf46129c5ca017fa49f21fefb33766ba2e6",
+      "git_blob": "862a1033303f7376a2f9d88d7d1fe7c1738b5c26",
+      "mode": "100644"
+    },
+    {
+      "path": "fixtures/xfs-root/README.md",
+      "action": "add",
+      "bytes": 1327,
+      "sha256": "2fa6e51e4dc246b41dd9b983914ee6715955949e35509c579d8741f84a899b5c",
+      "git_blob": "1d205f77b85b6f4edb56aa7139f2a30a6ed00d92",
+      "mode": "100644"
+    },
+    {
+      "path": "fixtures/xfs-root/empty-root.hex",
+      "action": "add",
+      "bytes": 1025,
+      "sha256": "e8fda748240ce4a8903e43513f056eb6768edfebeb1509360950220061a6e2f9",
+      "git_blob": "317d5d5a7a1eda79e06d57139706e6c30a6fb8d0",
+      "mode": "100644"
+    },
+    {
+      "path": "fixtures/xfs-root/empty-superblock.hex",
+      "action": "add",
+      "bytes": 1025,
+      "sha256": "8bb52b4dc1185e5ea2dbfe3eedc091af758662152858e3752accc2a09aec356d",
+      "git_blob": "b7f82195bd42e982b9320c2987fae444d28d9d9f",
+      "mode": "100644"
+    },
+    {
+      "path": "fixtures/xfs-root/named-root.hex",
+      "action": "add",
+      "bytes": 1025,
+      "sha256": "39da3748e0a602270b36ae30e932f9eb82ddb1982aa5b9c24a56c164b4688ccd",
+      "git_blob": "a277a7c78f2698d016a76dcf4c020047fff992ab",
+      "mode": "100644"
+    },
+    {
+      "path": "fixtures/xfs-root/named-superblock.hex",
+      "action": "add",
+      "bytes": 1025,
+      "sha256": "567a7fbc83cc47c228f55e5628a785378a8fda990bebfd267ceec74b1d141cf0",
+      "git_blob": "fd48c4b72820f670f0cc25774f79d0e006e5d704",
+      "mode": "100644"
+    },
+    {
+      "path": "library/README.md",
+      "action": "modify",
+      "bytes": 15977,
+      "sha256": "9f9655cd2b2c7d28987d504c4d3dc93ea24a2aa9c55a362a165f54b8032afee8",
+      "git_blob": "3f960fd7b9ed5334c99a73373b9365437e25c994",
+      "mode": "100644"
+    },
+    {
+      "path": "library/fs/xfs_root.au",
+      "action": "add",
+      "bytes": 14571,
+      "sha256": "8f669775ea7a5e850a314e50c37d90a5ba1ef30b1d60f6c8a54be5a6faef9e4f",
+      "git_blob": "45446903903c4160798078d9a2bed9fb8782c054",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/compiler/xfs_root.py",
+      "action": "add",
+      "bytes": 20246,
+      "sha256": "36e617b36b8b3f6a81dfc546540df8af02107a5fbb061d89b20bd36659c8b731",
+      "git_blob": "2a25c7a66d9cccac52df9f5db4a40d70e3aa07c7",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/compiler/xfs_root_api.py",
+      "action": "add",
+      "bytes": 4340,
+      "sha256": "0f7b8a36f9f42e39673bb1fe086635397b345b540f7f475943bba7bb4b0047c8",
+      "git_blob": "3dd30c68ebfad06912f9263da7e7586980e53fbf",
+      "mode": "100644"
+    }
+  ],
+  "deletions": []
+}

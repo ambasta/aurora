@@ -1,0 +1,69 @@
+{
+  "status": "passed",
+  "note": "Independent Python byte decoding and reflected CRC recurrence, without importing product or author harness. No mount, filesystem image, native code, or xfs_db run.",
+  "fixtures": [
+    {
+      "fixture": "empty",
+      "crc_checks": [
+        {
+          "type": "superblock",
+          "decoded_bytes": 512,
+          "sha256": "55ad821909c312048d9936a74c8904cd25f97aa190b48ae0004b03eaffdc6586",
+          "computed_crc32c": 3060863943,
+          "stored_crc32c": 3060863943
+        },
+        {
+          "type": "inode",
+          "decoded_bytes": 512,
+          "sha256": "963d4d1ae9f5821528cdeaac5dbc65abc0a4146a737dab84ade621a12d2c326e",
+          "computed_crc32c": 190474169,
+          "stored_crc32c": 190474169
+        }
+      ],
+      "root_inode": 128,
+      "offset": 65536,
+      "parent": 128,
+      "count": 0,
+      "payload_bytes": 6,
+      "entries": []
+    },
+    {
+      "fixture": "named",
+      "crc_checks": [
+        {
+          "type": "superblock",
+          "decoded_bytes": 512,
+          "sha256": "9fd8b9f7bfa7d12c99ae6e7b3a7633cc3ab48c45ff5facde79c36ad69503edb7",
+          "computed_crc32c": 1660987837,
+          "stored_crc32c": 1660987837
+        },
+        {
+          "type": "inode",
+          "decoded_bytes": 512,
+          "sha256": "283d31448057d3a9b1406cf655274b799e0636abb32e466b40c15bf3df9d265b",
+          "computed_crc32c": 3299051603,
+          "stored_crc32c": 3299051603
+        }
+      ],
+      "root_inode": 128,
+      "offset": 65536,
+      "parent": 128,
+      "count": 2,
+      "payload_bytes": 31,
+      "entries": [
+        {
+          "name_hex": "616c706861",
+          "inode": 131,
+          "file_type": 1,
+          "saved_offset": 96
+        },
+        {
+          "name_hex": "646f6373",
+          "inode": 132,
+          "file_type": 2,
+          "saved_offset": 120
+        }
+      ]
+    }
+  ]
+}

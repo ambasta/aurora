@@ -281,3 +281,19 @@ exception was reverted; parser.hpp is byte-identical M021. No ownership/referenc
 generic-method, global resource bound, Rust-equivalent safety, physical-hardware
 or equivalent-C performance claim is added. See [contract](../compiler/METHOD-VALUES.md)
 and [evidence](evidence/milestone-022/README.md).
+
+## XFS-only local-root lookup checkpoint after milestone022
+
+The candidate `fs.xfs_root` module interprets an offline 512-byte v3 root inode and
+bounded 32-bit shortform directory from checked readonly byte spans, after the
+existing XFS geometry/header gates. It validates the full directory before found
+or missing, returns copied class reports, and masks all failure facts to zero.
+The supported core/feature flags, CRC/identity, inode geometry, raw names,16-entry
+limit and saved-offset accounting are explicit in [the contract](xfs-root-contract.md).
+Fresh M022 standalone tests passed203 cases/2,233 full u64 observations plus77 API
+observations and12 rejection controls; independent source and portable Make review
+passed. This isolated full parent `make test` passed; the
+[independent delta review](evidence/xfs-root-m022-20261004/review.md) records the final acceptance scope. Kernel/compiler implementation remains byte-identical to accepted M022.
+The Storage/network/input row's absence of target drivers and filesystem services
+continues to apply: an offline root lookup is not a mount, allocation/existence
+proof, replay, file-data reader, block-device service, or read-write filesystem.
