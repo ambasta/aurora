@@ -404,7 +404,7 @@ def rejection_cases(suite):
         ("span cannot use general indexing", view() + "return u64(view[0]);"),
         ("span read cannot be an assignment target", view() + "view.at(0)=2u8;" + done),
         ("span has no mutable setter", view() + "view.set(0,2u8);" + done),
-        ("span has no subspan operation", view() + "view.subspan(0,1);" + done),
+        ("span subspan requires a binding or call argument", view() + "view.subspan(0,1);" + done),
         ("span index requires signed i64", view() + "return u64(view.at(0u64));"),
         ("span index rejects a byte", view() + "return u64(view.at(0u8));"),
         ("span index rejects bool", view() + "return u64(view.at(false));"),

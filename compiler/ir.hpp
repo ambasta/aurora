@@ -134,6 +134,14 @@ class ReborrowSpan {
     int sourceOffset;
     int resultOffset;
 };
+// Checked readonly child window. Consumes a saved i64 offset from the operand
+// stack and the current i64 count; preserves the current scalar count. Runtime
+// bounds are checked before loading/adjusting the parent payload address.
+class Subspan {
+  public:
+    int sourceOffset;
+    int resultOffset;
+};
 class EndSpan {
   public:
     int offset;
@@ -263,7 +271,7 @@ using Instruction =
                  ReceiverLoad, ReceiverStore, ReceiverArrayZero, ReceiverBoundsGuard,
                  ReceiverIndexLoad, ReceiverIndexStore, MethodCall, MetadataQuery, Label, Jump,
                  BranchFalse, Return, ReturnObject, BindParameter, BindObjectParameter, BeginArray,
-                 EndArray, BorrowSpan, ReborrowSpan, EndSpan, SpanLength, SpanLoad,
+                 EndArray, BorrowSpan, ReborrowSpan, Subspan, EndSpan, SpanLength, SpanLoad,
                  BindSpanParameter>;
 class ObjectSlot {
   public:

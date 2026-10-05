@@ -13,7 +13,9 @@ fields and std::array wrappers retain their existing limits and cannot supply
 origins for this span operation.
 
 A span provides readonly `size() -> i64` and bounds-checked `at(i64) -> u8`.
-It covers the whole array; there is no subspan or zero-length construction.
+The accepted milestone014 baseline covers the whole array. The later verified
+[readonly-window feature](READONLY-WINDOWS.md) adds checked named-span subspan
+construction, including zero-length windows, under the same non-escape rules.
 A local span copy reborrows readonly storage instead of copying bytes. Its lifetime
 is conservatively bounded by the source span binding's lexical scope, even when
 an underlying owner might live longer. Local bindings must be const, initialized

@@ -526,3 +526,20 @@ This explicitly differs from whole-window `utf8_subrange` validation. Independen
 native review and a fresh full top-level aggregate passed on the frozen source.
 Compiler/kernel, old APIs, terminal behavior and hardware qualification are unchanged. See [the exact
 contract](docs/utf8-lines-contract.md).
+
+## Verified checked readonly byte windows
+
+Named readonly byte spans now support checked `bytes.subspan(offset, count)`,
+including empty endpoint windows, with exact root-owner/direct-parent provenance
+and lexical/call-only non-escape rules. Existing single-span library APIs remain
+unchanged. See the [source/IR contract](compiler/READONLY-WINDOWS.md) and executable
+[bounded binary-reader example](examples/binary_window.au).
+
+Complete isolated release/fatal ASan/UBSan compiler targets and independent
+provenance/native review passed. The combined PR22 kernel/library source rebuilt
+the identical release compiler, passed a fresh full `make test`, all **170 actual
+emulator modes**, and two separate normal BIOS/UEFI restoration boots. Independent
+terminal, archive and all 172 retained-validator checks passed. Leak checking
+remains unavailable; this is bounded compiler/emulator evidence. The exact
+[integration results](docs/readonly-windows-integration-results.md) preserve pins,
+earlier failures, final documentation-only changes and remaining limits.

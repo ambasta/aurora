@@ -271,7 +271,21 @@ class SemanticAnalyzer {
     }
     int acquireSpan(ExpressionPtr expression, const std::string &name = "", bool bind = false) {
         int parent = -1, origin = -1;
-        if (expression->op == "call" && expression->token.text == "borrow_bytes") {
+        const bool subspan = expression->op == "method_call" &&
+                             expression->token.text == "subspan";
+        if (subspan) {
+            if (expression->args.size() != 3)
+                fail(expression->token, "span subspan expects offset and count");
+            parent = source(expression->args[0]);
+            if (!locals[parent].type.isSpan())
+                fail(expression->token, "subspan requires a named live readonly span");
+            origin = locals[parent].spanOrigin;
+            // Validate the named parent before evaluating offset, then count.
+            // Parent authority remains live throughout both operand evaluations.
+            match(this->expression(expression->args[1]), Type::I64, expression->token);
+            push();
+            match(this->expression(expression->args[2]), Type::I64, expression->token);
+        } else if (expression->op == "call" && expression->token.text == "borrow_bytes") {
             arity(expression, 1);
             origin = source(expression->args[0]);
             if (!byteArray(locals[origin].type))
@@ -279,17 +293,20 @@ class SemanticAnalyzer {
         } else if (expression->op == "name") {
             parent = source(expression);
             if (!locals[parent].type.isSpan())
-                fail(expression->token, "span initializer requires borrow_bytes or a live span");
+                fail(expression->token, "span initializer requires borrow_bytes, a live span or its subspan");
             origin = locals[parent].spanOrigin;
         } else {
-            fail(expression->token, "span initializer requires borrow_bytes or a live span");
+            fail(expression->token, "span initializer requires borrow_bytes, a live span or its subspan");
         }
         const int destination = add(name, Type::ByteSpan, false, expression->token, bind);
         locals[destination].owner = parent;
         locals[destination].spanOrigin = origin;
         if (parent >= 0) {
             ++locals[parent].shared;
-            emit(ir::ReborrowSpan{offset(parent), offset(destination)});
+            if (subspan)
+                emit(ir::Subspan{offset(parent), offset(destination)});
+            else
+                emit(ir::ReborrowSpan{offset(parent), offset(destination)});
         } else {
             emit(ir::BorrowSpan{offset(origin), offset(destination)});
         }
@@ -412,7 +429,9 @@ class SemanticAnalyzer {
                 emit(ir::SpanLoad{offset(receiver)});
                 return Type::U8;
             }
-            fail(value->token, "span supports only readonly size and at operations");
+            if (value->token.text == "subspan")
+                fail(value->token, "subspan requires a span binding or span argument");
+            fail(value->token, "span supports only readonly size, at and subspan operations");
         }
         const auto &callee = method(type, value->token);
         requireVisibleType(callee.result, value->token);
@@ -531,8 +550,12 @@ class SemanticAnalyzer {
         for (std::size_t index = 0; index < value->args.size(); ++index) {
             const auto &argument = value->args[index];
             const int local = argument->op == "name" ? lookupLocal(argument->token) : -1;
+            const int windowReceiver = argument->op == "method_call" &&
+                argument->token.text == "subspan" && !argument->args.empty() &&
+                argument->args[0]->op == "name" ? lookupLocal(argument->args[0]->token) : -1;
             const bool span = (local >= 0 && locals[local].type.isSpan()) ||
-                              (argument->op == "call" && argument->token.text == "borrow_bytes");
+                              (argument->op == "call" && argument->token.text == "borrow_bytes") ||
+                              (windowReceiver >= 0 && locals[windowReceiver].type.isSpan());
             if (span) {
                 aggregate = true;
                 const int borrowed = acquireSpan(argument);

@@ -394,6 +394,22 @@ class X86Emitter {
                     line("movq %rcx, " + address(operation.resultOffset));
                     line("movq " + address(operation.sourceOffset - 8) + ", %rcx");
                     line("movq %rcx, " + address(operation.resultOffset - 8));
+                } else if constexpr (std::is_same_v<Op, ir::Subspan>) {
+                    pop("%rcx"); // offset; current %rax is count
+                    // Lengths originate only in validated local byte-array borrows
+                    // and checked child windows. Unsigned comparisons reject both
+                    // negative i64 operands and values above the bounded extent.
+                    line("movq " + address(operation.sourceOffset - 8) + ", %rdx");
+                    line("cmpq %rdx, %rcx");
+                    line("ja .Laurora_bounds_trap");
+                    line("subq %rcx, %rdx");
+                    line("cmpq %rdx, %rax");
+                    line("ja .Laurora_bounds_trap");
+                    // Even an empty endpoint view stays tied to its parent; no
+                    // byte is loaded here, and SpanLoad rejects every empty index.
+                    line("addq " + address(operation.sourceOffset) + ", %rcx");
+                    line("movq %rcx, " + address(operation.resultOffset));
+                    line("movq %rax, " + address(operation.resultOffset - 8));
                 } else if constexpr (std::is_same_v<Op, ir::SpanLength>) {
                     line("movq " + address(operation.offset - 8) + ", %rax");
                 } else if constexpr (std::is_same_v<Op, ir::SpanLoad>) {
