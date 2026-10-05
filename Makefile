@@ -219,3 +219,11 @@ test-kernel-budget-native:
 	python3 -B -O tests/kernel-budget-native.py --compiler $(abspath $(KERNEL_BUDGET_COMPILER)) --compiler-sha256 $(KERNEL_BUDGET_COMPILER_SHA256) --candidate-cap-mib $(KERNEL_BUDGET_CAP_MIB)
 
 test: test-kernel-budget-native
+
+# Host-toolchain boot-layout checks need no compiler build or emulator.
+.PHONY: test-boot
+test-boot:
+	python3 -B tests/kernel-boot-image.py
+	python3 -B -O tests/kernel-boot-image.py
+
+test: test-boot

@@ -437,3 +437,23 @@ No mutable/returned view, heap container, new kernel mechanism, full-language
 safety/resource proof, physical AMD qualification or equivalent-C performance
 claim follows. Leak checking remains unavailable. See the [source/IR contract](../compiler/READONLY-WINDOWS.md)
 and [exact integration evidence](readonly-windows-integration-results.md).
+
+
+## BIOS host-toolchain layout portability candidate
+
+The BIOS sector now uses an explicit 0x7c00/512-byte linker contract rather than
+the host linker's default ELF section layout. Named GNU metadata is discarded;
+unknown sections, separate writable storage and invalid entry/size fail closed.
+The production-linker regression passes four assembler-note variants, preserves
+the previous relocated instruction bytes and rejects nine malformed layouts,
+under ordinary and optimized Python on Debian GNU binutils 2.44. The original
+Gentoo 2.47p1 report identified an allocated GNU property note in the boot object;
+a fixed Gentoo rerun remains pending. The candidate passed a production kernel
+build using the unchanged accepted compiler, ordinary/optimized image validators,
+an actual normal BIOS boot and an actual controlled divide-fault BIOS boot. Fault
+cleanup restored identical normal image bytes (512-byte boot sector, 45,808-byte
+kernel payload). Independent focused source review passed. The full native and
+all-mode emulator aggregates were not rerun for this narrow linker change. These
+results establish no additional physical-platform or broad host-distribution
+qualification. See the
+[toolchain contract and diagnostic commands](../kernel/README.md#host-toolchain-boot-layout).
