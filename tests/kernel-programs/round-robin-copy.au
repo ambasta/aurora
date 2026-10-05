@@ -1,0 +1,31 @@
+module round_robin_copy;
+import kernel.round_robin;
+
+auto inspect_copy(kernel::SelectionDecision decision) -> u64 {
+    const kernel::SelectionDecision later = kernel::round_robin_next(1u64, 3u64);
+    if (later.action() != kernel::SelectionAction::selected) { return 0u64; }
+    if (decision.action() != kernel::SelectionAction::selected) { return 0u64; }
+    return decision.selected() + decision.next();
+}
+
+auto round_robin_copy_probe() -> u64 {
+    const kernel::SelectionDecision first = kernel::round_robin_next(0u64, 3u64);
+    const kernel::SelectionDecision saved = first;
+    const kernel::SelectionDecision second = kernel::round_robin_next(1u64, 3u64);
+    const kernel::SelectionDecision idle = kernel::round_robin_next(1u64, 0u64);
+    const kernel::SelectionDecision rejected = kernel::round_robin_next(2u64, 3u64);
+    if (inspect_copy(saved) != 1u64) { return 0u64; }
+    if (first.selected() != 0u64) { return 0u64; }
+    if (first.next() != 1u64) { return 0u64; }
+    if (saved.selected() != 0u64) { return 0u64; }
+    if (saved.next() != 1u64) { return 0u64; }
+    if (second.selected() != 1u64) { return 0u64; }
+    if (second.next() != 0u64) { return 0u64; }
+    if (idle.action() != kernel::SelectionAction::idle) { return 0u64; }
+    if (idle.selected() != 0u64) { return 0u64; }
+    if (idle.next() != 1u64) { return 0u64; }
+    if (rejected.action() != kernel::SelectionAction::rejected) { return 0u64; }
+    if (rejected.selected() != 0u64) { return 0u64; }
+    if (rejected.next() != 0u64) { return 0u64; }
+    return 42u64;
+}

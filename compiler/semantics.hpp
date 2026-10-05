@@ -733,6 +733,33 @@ class SemanticAnalyzer {
         }
         if (e->op == "binary") {
             const auto left = expression(e->args[0]);
+            if (n == "&&" || n == "||") {
+                match(left, Type::Bool, e->token);
+                const auto before = locals;
+                const int end = fresh();
+                if (n == "&&") {
+                    emit(ir::BranchFalse{end});
+                } else {
+                    const int right = fresh();
+                    emit(ir::BranchFalse{right});
+                    emit(ir::Jump{end});
+                    emit(ir::Label{right});
+                }
+                // Runtime laziness never suppresses type or lifetime checking.
+                // Both paths preserve the existing operand stack; the current
+                // bool is either the determining LHS or the evaluated RHS.
+                match(expression(e->args[1]), Type::Bool, e->token);
+                for (std::size_t index = 0; index < before.size(); ++index) {
+                    if (locals[index].shared != before[index].shared ||
+                        locals[index].exclusive != before[index].exclusive ||
+                        locals[index].spanOrigin != before[index].spanOrigin ||
+                        locals[index].owner != before[index].owner)
+                        fail(e->token, "logical paths must preserve the same borrow state");
+                    locals[index].live = locals[index].live && before[index].live;
+                }
+                emit(ir::Label{end});
+                return Type::Bool;
+            }
             push();
             const auto right = expression(e->args[1]);
             if (n == "<<" || n == ">>") {
@@ -857,6 +884,11 @@ class SemanticAnalyzer {
         if (e->op == "binary") {
             const auto left = constant(e->args[0]), right = constant(e->args[1]);
             match(right.type, left.type, e->token);
+            if (name == "&&" || name == "||") {
+                match(left.type, Type::Bool, e->token);
+                return {name == "&&" ? left.value && right.value : left.value || right.value,
+                        Type::Bool};
+            }
             auto compare = [&](auto a, auto b) -> bool {
                 if (name == "==")
                     return a == b;
@@ -871,7 +903,7 @@ class SemanticAnalyzer {
                 if (name == ">=")
                     return a >= b;
                 fail(e->token,
-                     "static_assert supports literals, reflection, comparisons, and ! only");
+                     "static_assert supports literals, reflection, comparisons, !, && and || only");
             };
             const bool result = left.type == Type::U64
                                     ? compare(std::bit_cast<std::uint64_t>(left.value),
@@ -884,7 +916,7 @@ class SemanticAnalyzer {
             match(operand.type, Type::Bool, e->token);
             return {!operand.value, Type::Bool};
         }
-        fail(e->token, "static_assert supports literals, reflection, comparisons, and ! only");
+        fail(e->token, "static_assert supports literals, reflection, comparisons, !, && and || only");
     }
     bool block(const std::vector<StatementPtr> &body) {
         scopes.emplace_back();

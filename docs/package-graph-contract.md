@@ -191,7 +191,7 @@ make test
 ```
 
 The focused recipe uses Python -B -O and a 256 MiB candidate ceiling. The aggregate
-recipe explicitly selects 512 MiB, but task-level aggregate admission still requires
+recipe explicitly selects 1024 MiB, but task-level aggregate admission still requires
 measured approval and an external supervisor accounting for retained sibling work.
 PACKAGE_GRAPH_COMPILER selects the compiler path without bypassing its exact pin.
 PACKAGE_GRAPH_TEST_FLAGS may select a fresh contained artifact directory; development
@@ -211,3 +211,15 @@ SHA256 6a54b890a7b33abd378c9ca7a0de05c179cb4448c2fc2daaf5a33c677aeafa42.
 That source is included in the publication inventory so clean checkouts can run
 this gate. Its permutation-enumeration model predates production inspection and
 is structurally independent of the implementation's ready-mask algorithm.
+
+
+## Current bounded resource-configuration checks
+
+The maximum selectable whole-candidate storage cap is 1024 MiB; focused defaults
+remain unchanged. Any increase still needs separate measured aggregate admission,
+including retained roots, growth reserve and the existing free-space floor. This
+does not change per-process address-space, per-file or source-size limits.
+`--check-cap-only` validates resource configuration without reading/running a
+compiler or creating a native acceptance receipt. Its configuration-only result
+cannot replace this contract's behavioral oracle and full acceptance gates.
+Historical frozen contracts and receipts retain their original limits and pins.

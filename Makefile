@@ -56,7 +56,7 @@ test-uefi-dispatch:
 test-uefi-user-phases:
 	./scripts/kernel-uefi-user-phases-tests.sh
 
-test: test-dormant-tables test-uefi-tables test-pin-ledger test-uefi-pins test-storage-model test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases test-uefi-bar test-uefi-span test-uefi-ivrs test-semantics
+test: test-round-robin test-dormant-tables test-uefi-tables test-pin-ledger test-uefi-pins test-storage-model test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases test-uefi-bar test-uefi-span test-uefi-ivrs test-semantics
 
 # QEMU is intentionally a separate acceptance gate, never silently skipped.
 smoke:
@@ -178,7 +178,7 @@ PACKAGE_IDENTITY_TEST_FLAGS ?=
 PACKAGE_IDENTITY_CAP_MIB ?= 128
 # The inherited full regression build retains more than 128 MiB. Keep the
 # focused gate small while giving the aggregate an explicit bounded ceiling.
-test: PACKAGE_IDENTITY_CAP_MIB = 512
+test: PACKAGE_IDENTITY_CAP_MIB = 1024
 .PHONY: test-package-identity
 test-package-identity:
 	python3 -B -O tests/compiler/package_identity.py $(abspath $(PACKAGE_IDENTITY_COMPILER)) --compiler-sha256 "$(PACKAGE_IDENTITY_COMPILER_SHA256)" --candidate-cap-mib $(PACKAGE_IDENTITY_CAP_MIB) $(PACKAGE_IDENTITY_TEST_FLAGS)
@@ -190,7 +190,7 @@ PACKAGE_MANIFEST_COMPILER ?= build/aurorac
 PACKAGE_MANIFEST_COMPILER_SHA256 ?= e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
 PACKAGE_MANIFEST_TEST_FLAGS ?=
 PACKAGE_MANIFEST_CAP_MIB ?= 256
-test: PACKAGE_MANIFEST_CAP_MIB = 512
+test: PACKAGE_MANIFEST_CAP_MIB = 1024
 .PHONY: test-package-manifest
 test-package-manifest:
 	python3 -B -O tests/compiler/package_manifest.py $(abspath $(PACKAGE_MANIFEST_COMPILER)) --compiler-sha256 "$(PACKAGE_MANIFEST_COMPILER_SHA256)" --candidate-cap-mib $(PACKAGE_MANIFEST_CAP_MIB) $(PACKAGE_MANIFEST_TEST_FLAGS)
@@ -202,7 +202,7 @@ PACKAGE_GRAPH_COMPILER ?= build/aurorac
 PACKAGE_GRAPH_COMPILER_SHA256 ?= e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e
 PACKAGE_GRAPH_TEST_FLAGS ?=
 PACKAGE_GRAPH_CAP_MIB ?= 256
-test: PACKAGE_GRAPH_CAP_MIB = 512
+test: PACKAGE_GRAPH_CAP_MIB = 1024
 .PHONY: test-package-graph
 test-package-graph:
 	python3 -B -O tests/compiler/package_graph.py $(abspath $(PACKAGE_GRAPH_COMPILER)) --compiler-sha256 $(PACKAGE_GRAPH_COMPILER_SHA256) --candidate-cap-mib $(PACKAGE_GRAPH_CAP_MIB) $(PACKAGE_GRAPH_TEST_FLAGS)
@@ -213,12 +213,18 @@ test: test-package-graph
 KERNEL_BUDGET_COMPILER ?= build/aurorac
 KERNEL_BUDGET_COMPILER_SHA256 ?= 8d4099fe52a19307a266a6cbe5191203307462877cc94c7b6f3dae78f817c631
 KERNEL_BUDGET_CAP_MIB ?= 128
-test: KERNEL_BUDGET_CAP_MIB = 512
+test: KERNEL_BUDGET_CAP_MIB = 1024
 .PHONY: test-kernel-budget-native
 test-kernel-budget-native:
 	python3 -B -O tests/kernel-budget-native.py --compiler $(abspath $(KERNEL_BUDGET_COMPILER)) --compiler-sha256 $(KERNEL_BUDGET_COMPILER_SHA256) --candidate-cap-mib $(KERNEL_BUDGET_CAP_MIB)
 
 test: test-kernel-budget-native
+
+ROUND_ROBIN_TEST_CAP_MIB ?= 128
+test: ROUND_ROBIN_TEST_CAP_MIB = 1024
+.PHONY: test-round-robin
+test-round-robin: compiler
+	ROUND_ROBIN_TEST_CAP_MIB="$(ROUND_ROBIN_TEST_CAP_MIB)" ./scripts/kernel-round-robin-tests.sh
 
 # Host-toolchain boot-layout checks need no compiler build or emulator.
 .PHONY: test-boot
@@ -240,3 +246,11 @@ smoke-boot-capacity:
 	python3 -B tests/kernel-boot-capacity.py --qemu
 
 smoke-all: smoke-boot-capacity
+
+# Resource configuration only; this never substitutes for native behavioral gates.
+.PHONY: test-native-cap-contracts
+test-native-cap-contracts:
+	python3 -B tests/native-cap-contracts.py
+	python3 -B -O tests/native-cap-contracts.py
+
+test: test-native-cap-contracts

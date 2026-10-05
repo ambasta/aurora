@@ -3,7 +3,7 @@
 
 This verifier never creates, opens, mounts or modifies a filesystem image.
 It decodes only the bounded canonical hex transport of the preserved512-byte
-fixture. Native build outputs stay in /tmp.
+fixture. Native build outputs use tempfile and honor the caller's TMPDIR.
 """
 from __future__ import annotations
 
@@ -60,6 +60,11 @@ def read_fixture_hex(path):
     return decode_fixture_hex(payload)
 
 
+def native_workspace():
+    # Do not force /tmp: bounded callers provide their own measured TMPDIR.
+    return tempfile.TemporaryDirectory(prefix='aurora-xfs-native-')
+
+
 def transport_self_tests(payload):
     rows = payload.splitlines(keepends=True)
     controls = {
@@ -101,7 +106,18 @@ def transport_self_tests(payload):
             pass
         else:
             raise RuntimeError('bounded reader accepted oversized transport')
+    # Exercise the same factory used by the native probe under a distinct
+    # caller-selected tempfile root. Restore Python's cached choice afterward.
+    with tempfile.TemporaryDirectory(prefix='aurora-xfs-temp-policy-') as parent:
+        saved = tempfile.tempdir
+        try:
+            tempfile.tempdir = parent
+            with native_workspace() as native:
+                require(Path(native).parent == Path(parent), 'native workspace ignores caller temp root')
+        finally:
+            tempfile.tempdir = saved
     print('PASS 17 hex transport rejection controls and exact raw/transport hashes')
+    print('PASS native workspace honors caller-selected tempfile root')
 
 
 def reverse_bits(value, width):
@@ -163,7 +179,7 @@ def main():
         'crc_gf2': computed,
         'xfs_db_crc_display': '0xc71371b6 (correct)',
     }
-    with tempfile.TemporaryDirectory(prefix='aurora-xfs-native-', dir='/tmp') as temporary:
+    with native_workspace() as temporary:
         work = Path(temporary)
         copied_runner = work / 'unsigned_oracle.py'
         shutil.copyfile(ROOT / 'tests/compiler/unsigned_oracle.py', copied_runner)

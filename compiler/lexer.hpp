@@ -35,7 +35,7 @@ inline std::vector<Token> lex(const std::string &s) {
         }
         auto two = s.substr(i, 2);
         if (two == "->" || two == "==" || two == "!=" || two == "<=" || two == ">=" ||
-            two == "::" || two == "<<" || two == ">>") {
+            two == "::" || two == "<<" || two == ">>" || two == "&&" || two == "||") {
             out.emplace_back(two, line);
             i += 2;
             continue;

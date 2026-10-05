@@ -19,7 +19,7 @@ case "${UEFI_MODE:-normal}" in
  user-phases|user-context|user-retire-pending|user-request-budget|user-completion-budget|user-request-bounds|user-completion-bounds|user-request-overflow|user-completion-overflow|user-pending|user-role|user-phase|user-transaction|user-epoch|user-root|user-unknown|user-stale-grant)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET -DAURORA_UEFI_DISPATCH -DAURORA_UEFI_USER_BUDGET)
    flag="${UEFI_MODE#user-}"; flag="${flag//-/_}"; extra+=("-DAURORA_USER_${flag^^}"); ;;
- dispatch|dispatch-budget|dispatch-fault|dispatch-mixed|dispatch-pending|dispatch-cross-reply|dispatch-client-owner|dispatch-stale|dispatch-duplicate|dispatch-full|dispatch-root|dispatch-peer-code)
+ dispatch|dispatch-budget|dispatch-fault|dispatch-mixed|dispatch-pending|dispatch-cross-reply|dispatch-client-owner|dispatch-stale|dispatch-duplicate|dispatch-full|dispatch-root|dispatch-peer-code|dispatch-policy-cursor|dispatch-policy-mask|dispatch-policy-output)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET -DAURORA_UEFI_DISPATCH)
    if [[ "$UEFI_MODE" != dispatch ]]; then flag="${UEFI_MODE#dispatch-}"; flag="${flag//-/_}"; extra+=("-DAURORA_DISPATCH_${flag^^}"); fi ;;
  budget|budget-fault|budget-noapic|budget-smp|budget-discovery|budget-cache|budget-alias|budget-pending|budget-forged|budget-root|budget-mmio|budget-softint|budget-fpu|budget-context|budget-epoch|budget-policy-zero|budget-policy-counts|budget-policy-wide|budget-policy-output)

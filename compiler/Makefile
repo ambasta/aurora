@@ -145,3 +145,14 @@ test-readonly-windows: $(OUT)
 	"$$work/ir-tests"; \
 	python3 -B -O ../tests/compiler/readonly_windows_ir_native.py "$$work/ir-tests" --artifacts "$$work/native"; \
 	printf 'PASS readonly window Make recipe: %s\n' "$$work"
+
+.PHONY: test-short-circuit
+test: test-short-circuit
+test-short-circuit: $(OUT)
+	@set -eu; \
+	work="$$(mktemp -d "$(dir $(abspath $(OUT)))short-circuit.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/short_circuit.py "$(abspath $(OUT))" --artifacts "$$work/source"; \
+	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/short_circuit_ir.cpp -o "$$work/ir-tests"; \
+	"$$work/ir-tests"; \
+	python3 -B -O ../tests/compiler/short_circuit_ir_native.py "$$work/ir-tests" --artifacts "$$work/native"; \
+	printf 'PASS short-circuit Make recipe: %s\n' "$$work"

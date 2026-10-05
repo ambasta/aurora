@@ -30,6 +30,23 @@ ENTRY_WIDTH=33
 def require(ok,message):
     if not ok:raise AssertionError(message)
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def candidate_cap(mib):
+    require(type(mib) is int and 256 <= mib <= 1024,
+            'candidate cap must be an integer between 256 and 1024 MiB; increases require explicit aggregate admission')
+    return mib << 20
+
+
+def cap_self_test():
+    for mib in (256, 512, 513, 1023, 1024):
+        require(candidate_cap(mib) == mib << 20, 'candidate cap boundary conversion')
+    for mib in (-1, 0, 255, 1025, 1 << 30, True, 512.0, '1024', None):
+        try:
+            candidate_cap(mib)
+        except AssertionError:
+            continue
+        raise AssertionError('invalid candidate cap accepted')
+
+
 def signed(x):return '(-9223372036854775807-1)' if x==IMIN else str(x)
 def artifact_path(value):
     raw=Path(value).absolute()
@@ -627,6 +644,7 @@ def all_cases():
     return [case for group in groups for case in group],dict(zip(names,map(len,groups)))
 
 def self_test():
+    cap_self_test()
     require(len(make_manifest())==37,'minimal manifest bytes')
     require(manifest(make_manifest())==(Identity(b'a',(0,0,0)),()),'minimum parser')
     for bad in (make_manifest()+b'\n',make_manifest()[:-1],make_manifest(b'a',deps=((b'a',(1,2,3)),)),make_manifest(b'a',deps=((b'b',(0,0,0)),(b'b',(1,2,3))))):require(manifest(bad) is None,'strict grammar control')
@@ -667,12 +685,19 @@ def main():
     parser.add_argument('--self-test-only',action='store_true')
     parser.add_argument('--freeze-reference',type=Path)
     parser.add_argument('--compiler-sha256',default=COMPILER_SHA256,help='explicit approved expected compiler SHA256; historical M022 default remains unchanged')
-    parser.add_argument('--candidate-cap-mib',type=int,default=256,help='whole-candidate cap; values above256 require separate explicit aggregate admission')
-    args=parser.parse_args();self_test()
+    parser.add_argument('--candidate-cap-mib',type=int,default=256,help='whole-candidate storage cap 256..1024 MiB; default 256; increases require explicit aggregate admission')
+    parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
+    args=parser.parse_args()
+    cap=candidate_cap(args.candidate_cap_mib)
+    if args.check_cap_only:
+        cap_self_test()
+        print(json.dumps(dict(status='configuration-only', native_executed=False,
+            candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap,
+            focused_default_mib=256, maximum_cap_mib=1024), sort_keys=True))
+        return
+    self_test()
     require(re.fullmatch('[0-9a-fA-F]{64}',args.compiler_sha256) is not None,'compiler SHA256 must be exactly64 hexadecimal characters')
     expected_compiler_sha=args.compiler_sha256.lower()
-    require(256<=args.candidate_cap_mib<=512,'candidate cap must be256..512 MiB; above256 only with separately authorized aggregate admission')
-    cap=args.candidate_cap_mib<<20
     frozen=ROOT/'evidence/package-graph/contract-before-implementation.md'
     reference=ROOT/'evidence/package-graph/oracle/reference-v1/reference.py'
     require(sha(frozen)==CONTRACT_SHA256,'frozen pre-implementation contract changed')

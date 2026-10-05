@@ -1,0 +1,11 @@
+{
+  "status": "source-only-preparation",
+  "baseline_main": "3d85ef4ec24fa7f879106f1803df0931d9b386f4",
+  "baseline_tree": "4687cf171d1098349c46bee7158b90ff85719d82",
+  "baseline_files": 535,
+  "baseline_manifest": "fe069ac102d9393a6266761356fa24913aa55b8dcfbc5fd133026a82737d2394",
+  "accepted_compiler_sha256": "8d4099fe52a19307a266a6cbe5191203307462877cc94c7b6f3dae78f817c631",
+  "cap_bytes": 134217728,
+  "minimum_free_bytes": 1073741824,
+  "no_heavy_stage_admitted": true
+}

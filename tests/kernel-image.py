@@ -15,6 +15,64 @@ def require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
+def validate_bios_root(bios: str, uefi: str) -> None:
+    """Keep the existing BIOS value/ownership probe, without unused UEFI imports."""
+    begin = uefi.index("auto aurora_kernel_value()")
+    end = uefi.index("\n}\n", begin) + 3
+    require(bios == "module kernel;\n\n" + uefi[begin:end],
+            "BIOS Aurora root must preserve the exact value/ownership probe only")
+
+
+def validate_language_symbols(symbols: str, final_image: bool = False) -> None:
+    rows = [line.split() for line in symbols.splitlines() if line.strip()]
+    require(rows and all(len(row) == 3 for row in rows), "Invalid defined Aurora symbol inventory")
+    entries = [(row[1], row[2]) for row in rows if row[2].startswith("aurora_kernel_")]
+    expected = [("T", "aurora_kernel_value")]
+    if final_image:
+        expected.append(("T", "aurora_kernel_main"))  # Existing C++ entry.
+    require(sorted(entries) == sorted(expected), "Unexpected BIOS Aurora kernel entry set")
+    forbidden = ("interrupt_budget", "round_robin", "TickDecision", "SelectionDecision")
+    require(not any(part in row[2] for row in rows for part in forbidden),
+            "Unused UEFI policy graph linked into BIOS image")
+
+
+def root_controls(bios: str, uefi: str) -> None:
+    validate_bios_root(bios, uefi)
+    valid = "00000000 T aurora_kernel_value\n0000004b T aurora_reflect_size\n"
+    validate_language_symbols(valid)
+    validate_language_symbols(valid + "000000cc T aurora_kernel_main\n", final_image=True)
+    invalid_symbols = (
+        "", valid + "000000cc T aurora_kernel_value\n",
+        valid.replace("T aurora_kernel_value", "t aurora_kernel_value"),
+        valid.replace("aurora_kernel_value", "aurora_kernel_unexpected"),
+        valid + "000000cc T aurora_kernel_budget_tick\n",
+        valid + "000000cc T aurora_kernel_round_robin_next\n",
+        valid + "000000cc t __au_v_m2_6kernel16interrupt_budget_n1_6kernel_d14interrupt_tick\n",
+        valid + "000000cc t __au_v_m2_6kernel11round_robin_n1_6kernel_d16round_robin_next\n",
+        valid + "000000cc t __au_k_TickDecision\n",
+        valid + "000000cc t __au_k_SelectionDecision\n",
+        valid + "malformed\n",
+    )
+    bad_inventories = [(symbols, False) for symbols in invalid_symbols]
+    bad_inventories += [(symbols + "000000cc T aurora_kernel_main\n", True)
+                        for symbols in invalid_symbols]
+    bad_inventories += [(valid, True), (valid + "000000cc T aurora_kernel_main\n" * 2, True)]
+    for invalid, final_image in bad_inventories:
+        try:
+            validate_language_symbols(invalid, final_image)
+        except ValueError:
+            continue
+        raise RuntimeError("Invalid BIOS Aurora graph accepted by negative control")
+    for invalid in (bios.replace("own(40)", "own(41)"),
+                    bios.replace("module kernel;", "module kernel;\nimport kernel.round_robin;"),
+                    bios + "\nauto extra() -> i64 { return 0; }\n"):
+        try:
+            validate_bios_root(invalid, uefi)
+        except ValueError:
+            continue
+        raise RuntimeError("Changed BIOS value/root accepted by negative control")
+
+
 def validate(boot: bytes, kernel: bytes, elf: bytes, packet_offset: int) -> None:
     require(len(boot) == 512, f"Expected 512 boot bytes, got {len(boot)}")
     require(boot[510:] == b"\x55\xaa", "Missing BIOS signature")
@@ -90,7 +148,16 @@ def package_image(boot: bytes, kernel: bytes, elf: bytes, packet_offset: int) ->
 
 
 def main() -> None:
-    build = Path(__file__).resolve().parents[1] / "build"
+    root = Path(__file__).resolve().parents[1]
+    build = root / "build"
+    root_controls((root / "examples/kernel-bios.au").read_text(),
+                  (root / "examples/kernel.au").read_text())
+    # Check the compiled root and final image separately. The generic reflection
+    # entrypoints are compiler bootstrap output; UEFI policy graphs are forbidden.
+    for artifact in ("kernel-language.o", "kernel.elf"):
+        validate_language_symbols(subprocess.check_output(
+            ["nm", "--defined-only", str(build / artifact)], text=True),
+            final_image=artifact == "kernel.elf")
     boot = (build / "boot.bin").read_bytes()
     kernel = (build / "kernel.bin").read_bytes()
     elf = (build / "kernel.elf").read_bytes()
@@ -134,6 +201,8 @@ def main() -> None:
     else:
         raise RuntimeError("Unaligned BIOS packet accepted")
     print(f"PASS: boot signature, ELF entry, zero unresolved symbols, {len(kernel)}-byte payload, 1 MiB image; 14 negative controls; RX/R/RW segments and bounded BIOS packet")
+
+    print("PASS: BIOS value/ownership root unchanged; no unused UEFI policy graph; 27 root/symbol negative controls")
 
 
 if __name__ == "__main__":

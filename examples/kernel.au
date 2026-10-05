@@ -1,5 +1,6 @@
 module kernel;
 import kernel.interrupt_budget;
+import kernel.round_robin;
 
 auto aurora_kernel_value() -> i64 {
     static_assert(size_of(i64) == 8);
@@ -20,4 +21,13 @@ auto aurora_kernel_budget_tick(u64 initial, u64 remaining, u64 used) -> u64 {
     u64 action = 1u64;
     if (decision.action() == kernel::TickAction::exhausted) { action = 2u64; }
     return (action << 16) | (decision.used() << 8) | decision.remaining();
+}
+
+// Private bootstrap transport of copied selection facts, never mailbox authority.
+auto aurora_kernel_round_robin_next(u64 cursor, u64 eligible_mask) -> u64 {
+    const kernel::SelectionDecision decision = kernel::round_robin_next(cursor, eligible_mask);
+    if (decision.action() == kernel::SelectionAction::rejected) { return 0u64; }
+    u64 action = 1u64;
+    if (decision.action() == kernel::SelectionAction::selected) { action = 2u64; }
+    return action | (decision.selected() << 8) | (decision.next() << 16);
 }

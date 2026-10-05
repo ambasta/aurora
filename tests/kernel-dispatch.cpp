@@ -502,8 +502,33 @@ auto generation_exhaustion() -> void {
     Dispatcher closed{registry, 0}; check(!closed.bind(clients, service) && closed.scrubbed(), "zero ceiling is closed");
 }
 
+auto continuous_fairness_and_idle() -> void {
+    Fixture fixture;
+    const Snapshot empty{fixture};
+    for (unsigned repeat = 0; repeat < 8; ++repeat)
+        check(!fixture.dispatch.select(Phase::inactive) && empty.unchanged(fixture), "idle preserves empty cursor and records");
+    fixture.submit(0); fixture.submit(1);
+    for (std::size_t step = 0; step < 128; ++step) {
+        const auto chosen = step % 2;
+        fixture.select(chosen); fixture.reply(chosen); fixture.finish(); fixture.consume(chosen);
+        check(fixture.dispatch.recycle(Phase::inactive, chosen), "continuous pending client recycle");
+        fixture.submit(chosen);
+    }
+    check(fixture.dispatch.cancel_pending(Phase::inactive) == 2, "continuous trace cancellation");
+    fixture.consume(0, Outcome::cancelled, 0); fixture.consume(1, Outcome::cancelled, 0);
+    const Snapshot cursor_zero{fixture};
+    check(!fixture.dispatch.select(Phase::inactive) && cursor_zero.unchanged(fixture), "idle preserves retained zero cursor");
+    check(fixture.dispatch.recycle(Phase::inactive, 0), "isolated slot recycle");
+    fixture.submit(0); fixture.select(0); fixture.reply(0); fixture.finish(); fixture.consume(0);
+    check(fixture.dispatch.next_client() == 1, "isolated selection advances cursor");
+    const Snapshot cursor_one{fixture};
+    for (unsigned repeat = 0; repeat < 8; ++repeat)
+        check(!fixture.dispatch.select(Phase::inactive) && cursor_one.unchanged(fixture), "idle preserves retained one cursor");
+}
+
 auto main() -> int {
     admission_and_fairness();
+    continuous_fairness_and_idle();
     terminal_orders_and_copies();
     identity_and_rebinding();
     generation_exhaustion();

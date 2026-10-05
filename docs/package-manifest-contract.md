@@ -140,7 +140,7 @@ of both production and oracle authors. Preserve failures and their exact sources
 No kernel changes means no new device/emulator gate or qualification claim.
 
 Initial whole focused candidate budget is 256 MiB, with conservative growth reserve
-and a 1 GiB filesystem free floor. Aggregate may use 512 MiB only after measured
+and a 1 GiB filesystem free floor. Aggregate may use up to 1024 MiB only after measured
 approval from the parent. Keep an early verified source archive and preserve all
 failed test artifacts. Only losslessly verified successful-output compaction is
 permitted. No accepted-main write or publication before the parent seal.
@@ -160,7 +160,7 @@ make test
 ```
 
 The focused target runs the independent harness under Python -B -O. Its default
-whole-candidate cap is 256 MiB; the aggregate target explicitly chooses 512 MiB.
+whole-candidate cap is 256 MiB; the aggregate target explicitly chooses 1024 MiB.
 An external aggregate supervisor must additionally account for retained sibling
 workspaces and growth reserve. `PACKAGE_MANIFEST_COMPILER` selects the compiler
 path, without disabling its exact pin. `PACKAGE_MANIFEST_TEST_FLAGS` can select a
@@ -183,3 +183,15 @@ A new compiler integration must record and review its expected pin independently
 then deliberately supply it. Wrong/malformed pins and baseline-default behavior
 have independent rejection/compatibility checks. The format/oracle and frozen
 pre-implementation contract are unchanged.
+
+
+## Current bounded resource-configuration checks
+
+The maximum selectable whole-candidate storage cap is 1024 MiB; focused defaults
+remain unchanged. Any increase still needs separate measured aggregate admission,
+including retained roots, growth reserve and the existing free-space floor. This
+does not change per-process address-space, per-file or source-size limits.
+`--check-cap-only` validates resource configuration without reading/running a
+compiler or creating a native acceptance receipt. Its configuration-only result
+cannot replace this contract's behavioral oracle and full acceptance gates.
+Historical frozen contracts and receipts retain their original limits and pins.

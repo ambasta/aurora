@@ -79,6 +79,24 @@ inline void require(bool condition, const std::string &message) {
     if (!condition)
         fail(message);
 }
+// Limits on retained block-entry snapshots, not a global memory/time proof.
+// Account before copying a State; revisits retain the same exact operand stack.
+class BlockRetentionBudget {
+    std::size_t states_ = 0, operands_ = 0;
+
+  public:
+    static constexpr std::size_t maximumStates = 65536;
+    static constexpr std::size_t maximumOperands = 262144;
+    void retain(std::size_t operands) {
+        require(states_ < maximumStates, "block-entry state retention limit exceeds 65536");
+        require(operands_ <= maximumOperands && operands <= maximumOperands - operands_,
+                "block-entry operand retention limit exceeds 262144");
+        ++states_;
+        operands_ += operands;
+    }
+    std::size_t states() const { return states_; }
+    std::size_t operands() const { return operands_; }
+};
 inline bool scalarValueType(const Type &type, const std::map<std::string, int> &enumCases) {
     return scalar(type) || (type.isEnum() && type == Type::enumeration(type.className) &&
                             enumCases.contains(type.className));
@@ -87,6 +105,7 @@ class Metrics {
   public:
     std::size_t snapshots = 0;
     std::size_t peakOperandDepth = 0;
+    std::size_t peakRetainedOperandFacts = 0;
     std::size_t peakRetainedValueFacts = 0;
     // Both scalar initialization word payloads across retained block entries.
     // Excludes shared universe, other facts, current/merge states and allocator overhead.
@@ -284,6 +303,9 @@ inline void verifyFunction(Function &function,
     // makes a straight-line N-element initializer retain O(N^2) stack/set contents.
     std::vector<bool> blockEntry(function.code.size(), false);
     std::vector<bool> reached(function.code.size(), false);
+    // Depths alone are linear-sized. Full operand/provenance states still live
+    // only at basic-block entries, never once per instruction.
+    std::vector<std::size_t> stackBefore(function.code.size()), stackAfter(function.code.size());
     blockEntry[0] = true;
     for (std::size_t index = 0; index < function.code.size(); ++index) {
         if (std::holds_alternative<Label>(function.code[index]))
@@ -293,6 +315,8 @@ inline void verifyFunction(Function &function,
             blockEntry[index + 1] = true;
     }
     std::vector<std::optional<State>> states(function.code.size());
+    BlockRetentionBudget retention;
+    retention.retain(0);
     states[0] = State{initializationUniverse};
     if (function.receiver && !function.receiver->constructor) {
         for (std::size_t field = 0; field < receiverLayout->size(); ++field) {
@@ -343,10 +367,14 @@ inline void verifyFunction(Function &function,
         require(index < function.code.size(), "reachable fallthrough without return");
         require(blockEntry[index], "worklist target is not a basic-block entry");
         if (!states[index]) {
+            // Check before the snapshot allocation, whether metrics are enabled
+            // or not. These retained counts never grow on worklist revisits.
+            retention.retain(state.stack.size());
             retainedValueFacts += facts(state);
             retainedInitializationPayloadBytes += initializationPayload(state);
             if (metrics) {
                 ++metrics->snapshots;
+                metrics->peakRetainedOperandFacts = retention.operands();
                 metrics->peakRetainedValueFacts =
                     std::max(metrics->peakRetainedValueFacts, retainedValueFacts);
                 metrics->peakRetainedInitializationPayloadBytes =
@@ -357,15 +385,16 @@ inline void verifyFunction(Function &function,
             pending.push_back(index);
             return;
         }
-        State merged = *states[index];
-        require(merged.activeObjects == state.activeObjects,
+        const auto &existing = *states[index];
+        require(existing.activeObjects == state.activeObjects,
                 "incompatible active object lifetimes at control-flow join");
-        require(merged.activeArrays == state.activeArrays,
+        require(existing.activeArrays == state.activeArrays,
                 "incompatible active array lifetimes at control-flow join");
-        require(merged.activeSpans == state.activeSpans,
+        require(existing.activeSpans == state.activeSpans,
                 "incompatible active span capabilities at control-flow join");
-        require(merged.stack == state.stack,
+        require(existing.stack == state.stack,
                 "incompatible value/guard stacks at control-flow join");
+        State merged = existing;
         if (merged.current != state.current)
             merged.current.reset();
         merged.initialized.intersectWith(state.initialized);
@@ -398,6 +427,7 @@ inline void verifyFunction(Function &function,
         State state = *states[index];
         while (true) {
             reached[index] = true;
+            stackBefore[index] = state.stack.size();
             bool fallsThrough = true;
             auto current = [&](const Type &expected) -> Value {
                 require(state.current && state.current->type == expected,
@@ -1165,14 +1195,13 @@ inline void verifyFunction(Function &function,
                         current(Type::I64);
                         state.current = Value{Type::I64, {}};
                     } else if constexpr (std::is_same_v<Op, Label>) {
-                        require(state.stack.empty(), "temporary values cross a statement label");
+                        // Nonempty expression stacks retain exact type and guard
+                        // equality at every join, including loop backedges.
                     } else if constexpr (std::is_same_v<Op, Jump>) {
-                        require(state.stack.empty(), "temporary values cross a jump");
                         enqueue(labels.at(operation.target), state);
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, BranchFalse>) {
                         current(Type::Bool);
-                        require(state.stack.empty(), "temporary values cross a branch");
                         enqueue(labels.at(operation.target), state);
                     } else if constexpr (std::is_same_v<Op, Return>) {
                         require(scalarValueType(function.result, enumCases),
@@ -1257,6 +1286,7 @@ inline void verifyFunction(Function &function,
                     }
                 },
                 function.code[index]);
+            stackAfter[index] = state.stack.size();
             if (!fallsThrough)
                 break;
             ++index;
@@ -1268,16 +1298,23 @@ inline void verifyFunction(Function &function,
         }
     }
     std::vector<Instruction> reachable;
+    std::size_t emittedDepth = 0;
     for (std::size_t index = 0; index < function.code.size(); ++index) {
-        if (reached[index])
+        if (reached[index]) {
+            // The backend counts push/pop effects in emitted order. Certify
+            // that order separately from CFG joins; arbitrary non-linear stack
+            // layouts are unsupported. Never reset this counter at a label.
+            require(stackBefore[index] == emittedDepth,
+                    "operand stack depth differs from linear emission order");
+            emittedDepth = stackAfter[index];
             reachable.push_back(std::move(function.code[index]));
-        else
+        } else
             require(std::holds_alternative<Label>(function.code[index]) ||
                         std::holds_alternative<Jump>(function.code[index]),
                     "unreachable semantic instruction");
     }
     // Remove unreachable structural artifacts (e.g. a jump emitted after a branch return).
-    // This also keeps backend linear stack accounting identical to reachable execution.
+    // Depth continuity above includes only this exact retained emission sequence.
     function.code = std::move(reachable);
 }
 inline bool symbol(const std::string &value) {

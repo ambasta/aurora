@@ -1,5 +1,25 @@
 # Completeness and acceptance matrix
 
+## Candidate Aurora round-robin policy — not yet accepted
+
+The real UEFI two-client dispatcher now calls a copied Aurora selection policy in
+the candidate source. Authority, mailbox mutation, context and hardware stay in
+trusted C++/assembly. Native, ABI, independent and actual-emulator gates remain
+pending. See the [bounded contract](kernel-round-robin-contract.md); this adds no
+general scheduler or physical-platform qualification claim.
+
+The first combined aggregate is preserved as failed at the BIOS payload-size
+gate. A BIOS-only root removes unused UEFI policy graphs while preserving its
+value/ownership probe. The final candidate also incorporates the separately
+reviewed 127-sector transport correction and exact-bool short-circuit compiler;
+fresh combined acceptance is pending.
+
+A later full-aggregate attempt was blocked before child execution when its
+1024 MiB configuration conflicted with three harnesses' 512 MiB ceilings. The
+test-only replay aligns all five bounded cap contracts while preserving focused
+defaults and all behavioral gates. Configuration-only checks are not native or
+emulator acceptance; the blocked packet and prior failures remain preserved.
+
 ## Verified Aurora kernel-budget checkpoint — 2026-10-05
 
 The [interrupt-budget transition](kernel-budget-contract.md) is a pure Aurora
@@ -476,3 +496,17 @@ restoration pass. The Gentoo rerun, full native/scheduling/all-mode aggregates a
 physical hardware remain unverified for this candidate. Future growth beyond
 this bound needs a separately reviewed loading mechanism.
 See the [active transport contract](../kernel/README.md#bounded-bios-transport-capacity-and-host-code-generation).
+
+
+## Unaccepted exact-bool short-circuit candidate
+
+The isolated frontend adds C++-precedence `&&` and `||`, exact bool operands,
+left-to-right single evaluation and runtime-only RHS laziness. Both operands
+remain statically checked. Existing typed IR joins retain stack provenance and
+lifetime/initialization facts; an emitted-depth certificate protects unchanged
+x86 call alignment. Explicit per-function block/operand-retention limits reject
+excessive logical-prefix complexity before snapshot copies. Independent review,
+release/fatal sanitizers and fresh complete integration are required before
+acceptance. See [contract](../compiler/SHORT-CIRCUIT.md). No kernel mechanism,
+ABI, heap/reference extension, full-language safety/resource proof or physical
+hardware/performance qualification follows.

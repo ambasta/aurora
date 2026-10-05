@@ -22,6 +22,23 @@ def need(condition, reason):
         raise RuntimeError(reason)
 
 
+def candidate_cap(mib):
+    need(type(mib) is int and 128 <= mib <= 1024,
+            'candidate cap must be an integer between 128 and 1024 MiB; increases require explicit aggregate admission')
+    return mib << 20
+
+
+def cap_self_test():
+    for mib in (128, 512, 513, 1023, 1024):
+        need(candidate_cap(mib) == mib << 20, 'candidate cap boundary conversion')
+    for mib in (-1, 0, 127, 1025, 1 << 30, True, 512.0, '1024', None):
+        try:
+            candidate_cap(mib)
+        except RuntimeError:
+            continue
+        raise RuntimeError('invalid candidate cap accepted')
+
+
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -31,7 +48,8 @@ def allocated():
 
 
 def guard(cap):
-    need(allocated() < cap * 1024 * 1024, 'Candidate allocation cap reached')
+    cap_bytes = candidate_cap(cap)
+    need(allocated() < cap_bytes, 'Candidate allocation cap reached')
     need(shutil.disk_usage(ROOT).free >= 1024 ** 3, 'One GiB free-space floor reached')
 
 
@@ -177,8 +195,17 @@ def main():
     parser.add_argument('--compiler', default=str(ROOT / 'build/aurorac'))
     parser.add_argument('--compiler-sha256', default=ACCEPTED)
     parser.add_argument('--output')
-    parser.add_argument('--candidate-cap-mib', type=int, default=128)
+    parser.add_argument('--candidate-cap-mib', type=int, default=128, help='whole-candidate storage cap 128..1024 MiB; increases require explicit aggregate admission')
+    parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
     args = parser.parse_args()
+    cap_bytes = candidate_cap(args.candidate_cap_mib)
+    if args.check_cap_only:
+        cap_self_test()
+        print(json.dumps(dict(status='configuration-only', native_executed=False,
+            candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap_bytes,
+            focused_default_mib=128, maximum_cap_mib=1024), sort_keys=True))
+        return
+    cap_self_test()
     compiler = Path(args.compiler).resolve()
     need(len(args.compiler_sha256) == 64 and all(c in '0123456789abcdef' for c in args.compiler_sha256), 'Invalid compiler pin')
     need(sha(compiler) == args.compiler_sha256, 'Compiler pin mismatch')
@@ -204,6 +231,7 @@ def main():
     need(pins == {name: sha(ROOT / name) for name in pins}, 'Source changed during test')
     guard(args.candidate_cap_mib)
     summary = dict(status='passed', compiler_sha256=sha(compiler), source_pins=pins, cases=counts,
+        candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap_bytes,
         candidate_allocated_bytes=allocated(), free_bytes=shutil.disk_usage(ROOT).free,
         limits='Hosted observation only; not a QEMU, source-safety proof, or kernel acceptance result.')
     (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')

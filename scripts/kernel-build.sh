@@ -22,7 +22,7 @@ fi
 if [[ "$unsigned_fixture" != none && ( "$division_fixture" != none || "${KERNEL_TEST_SCHEDULE:-0}" == 1 ) ]]; then
     echo 'Unsigned fixtures require the uncombined sequential user-program gate' >&2; exit 2
 fi
-"$compiler" --module-root kernel/policies examples/kernel.au -o build/kernel-language.s
+"$compiler" --module-root kernel/policies examples/kernel-bios.au -o build/kernel-language.s
 as --64 build/kernel-language.s -o build/kernel-language.o
 as --32 kernel/boot.S -o build/boot.o
 ./scripts/kernel-boot-link.sh build/boot.o build/boot.bin
