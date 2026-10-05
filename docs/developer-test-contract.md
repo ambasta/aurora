@@ -334,3 +334,75 @@ or emulator workload is run. Revision 2's 66 selected ordinary and optimized
 results remain historical; its unchanged omitted executable-expression cap
 method is not newly credited. A permitted review and complete separately admitted
 qualification remain necessary, with no approval or execution authority implied.
+
+
+## Revision 4: active safe-suite scope and retired observation
+
+The active `test_make_caps_reject_raw_values_without_expansion` method is retired
+from the current suite and preserved in the immutable revision-3 history (source
+manifest `9fb6708056d472e312c4d8ecbf03f8bcd5c499ce3e58fbd6bb60a5f8c99695c5`).
+It is not rerun, assigned a new PASS, or replaced by static inspection credit.
+It attempted an end-to-end dynamic observation about executable Make expressions;
+that observation is not reproduced by this revision.
+
+The existing pure cap tests now use inert dollar references or ordinary malformed
+data. Expanded `test_cap_controls_reject_before_artifacts_or_execution` covers all
+five cap variables through both supervisor entries, developer mode and explicitly
+pinned-prebuilt mode. Root pinned coverage models `test-acceptance`; compiler
+pinned coverage models the existing focused `test-short-circuit` route. It
+requires rejection before tool/query/capture/execution or artifact-write calls,
+and checks unchanged temporary-artifact membership, contents and modes. This is
+Python pre-dispatch coverage. A separate static composition review inspects the
+Makefiles' non-evaluating raw-value guards and their order before export; that
+static review is not equivalent to the retired dynamic execution observation.
+
+Revision 4 had 69 active methods. That phase executed the complete permitted
+non-Make set of 63 methods in ordinary and optimized Python. Six ordinary Make-invoking
+methods remain active in source but are explicitly unrun in this phase:
+
+- `test_nested_future_source_does_not_rebuild_compiler`
+- `test_make_cap_ranges_reject_before_build_dispatch`
+- `test_safe_public_make_dry_runs_reject_inert_raw_flag_syntax`
+- `test_safe_public_make_dry_runs_preserve_canonical_flag_arguments`
+- `test_pr26_consuming_targets_use_shared_fresh_route`
+- `test_make_pin_rejections_do_not_launch_builds`
+
+They are retained for separately admitted legitimate public Make workflow checks;
+this phase does not impose a permanent ban or silently remove those controls.
+Owned lifecycle, diagnostic-only subprocesses and the unchanged RR wrapper with
+its failing owned stub remain bounded non-Make controls. A validation-only guard
+rejects unapproved processes, and any such violation fails the whole validation;
+it never turns blocked work into success. Exact included/excluded lists, call
+chains and remaining Make commands/artifacts/resource needs accompany the source
+packet. Passing the permitted subset does not mean all 69 methods or a native
+aggregate passed. Historical partial reviews/results are not stitched into
+complete-current-composition approval. Static composition review and separately
+admitted complete qualification remain required.
+
+
+## Revision 5: explicit-empty prebuilt selector admission
+
+Omitting `ACCEPTANCE_COMPILER` retains the documented fresh-build selection,
+including a fresh build checked against an explicit expected pin when requested.
+An explicitly present empty `ACCEPTANCE_COMPILER` is unsupported and rejects in
+`prepare_controls` before tool queries, command execution or run artifacts.
+Valid nonempty prebuilt paths keep their existing acceptance-only path, executable
+and expected-hash checks. Empty input is not silently reinterpreted as omission.
+
+The completed revision-4 static composition review found one fail-closed ordering
+defect: an empty selector could survive truthiness checks and cause tool queries
+and failed-run artifacts before a later regular-file check rejected it. It could
+not execute a selected compiler, create a passing context or produce a false native
+pass. This correction moves that rejection to the promised input boundary; it is
+not described as repairing a false-pass defect. The reviewed revision-4 freeze
+and its evidence remain unchanged, and no static review grants workload admission.
+
+The active suite now has 70 methods. The complete permitted non-Make set has 64,
+including an inert pure/mocked empty-vs-omitted/nonempty selector regression across
+both entries and developer/pinned-prebuilt routes. It checks zero query/capture/
+execution/write calls and unchanged artifact membership, contents and modes.
+The same six ordinary Make methods and 98 calls per mode remain retained, unrun
+and subject to separate admission. The retired dynamic experiment stays retired
+and uncredited. Current-source composition continuity, the genuine three-file
+delta and new validation records accompany this revision; earlier reports are
+not summed into acceptance of corrected source or a complete native workflow.

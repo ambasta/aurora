@@ -479,6 +479,8 @@ def validate_cap_controls(env):
 def prepare_controls(args, env):
     require(args.entry in ('root', 'compiler'), 'invalid Make entrypoint')
     require(re.fullmatch(r'test(?:-[a-z0-9-]+)?', args.goal) is not None, 'invalid test goal')
+    require(env.get('ACCEPTANCE_COMPILER') != '',
+            'ACCEPTANCE_COMPILER must not be empty; omit it for a fresh build')
     reject_make_controls(env)
     validate_cap_controls(env)
     selected_flag_vectors(env)

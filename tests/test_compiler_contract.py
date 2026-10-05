@@ -193,6 +193,49 @@ class Controls(unittest.TestCase):
                 c.prepare_controls(self.launch('test-acceptance'), env)
         self.assertEqual(before, set(self.root.rglob('*')))
 
+    def test_empty_prebuilt_selector_rejects_before_queries_and_artifacts(self):
+        def artifacts():
+            rows = {}
+            for path in (self.root, *sorted(self.root.rglob('*'))):
+                relative = str(path.relative_to(self.root)); mode = path.lstat().st_mode & 0o7777
+                if path.is_symlink(): rows[relative] = ('symlink', mode, os.readlink(path))
+                elif path.is_file(): rows[relative] = ('file', mode, path.stat().st_size, c.digest(path))
+                else: rows[relative] = ('directory', mode)
+            return rows
+
+        before = artifacts()
+        pin = {'ACCEPTANCE_COMPILER_SHA256': c.digest(self.compiler)}
+        routes = (('root', 'test', 'developer', {}),
+                  ('root', 'test-acceptance', 'acceptance', pin),
+                  ('compiler', 'test', 'developer', {}),
+                  ('compiler', 'test-short-circuit', 'acceptance', pin))
+        for entry, goal, mode, controls in routes:
+            args = self.launch(goal, entry=entry)
+            # Omission still selects the documented fresh-build route.
+            selected = c.prepare_controls(args, controls)
+            self.assertEqual(selected[0], mode); self.assertIsNone(selected[2])
+            # Valid nonempty paths retain the existing acceptance-only semantics.
+            nonempty = {**controls, 'ACCEPTANCE_COMPILER': str(self.compiler)}
+            if mode == 'acceptance':
+                chosen = c.prepare_controls(args, nonempty)
+                self.assertEqual(chosen[0], 'acceptance'); self.assertEqual(chosen[2], self.compiler)
+            else:
+                with self.assertRaisesRegex(c.ContractError, 'prebuilt compiler is only valid in acceptance mode'):
+                    c.prepare_controls(args, nonempty)
+            self.assertEqual(before, artifacts())
+            with self.subTest(entry=entry, goal=goal, mode=mode), \
+                 patch.dict(os.environ, {**controls, 'ACCEPTANCE_COMPILER': ''}), \
+                 patch.object(c, 'tool_record', side_effect=AssertionError('no tool query')) as tool, \
+                 patch.object(c, 'query', side_effect=AssertionError('no query')) as query, \
+                 patch.object(c, 'capture', side_effect=AssertionError('no command capture')) as capture, \
+                 patch.object(c, 'execute', side_effect=AssertionError('no command execution')) as execute, \
+                 patch.object(c, 'write_json', side_effect=AssertionError('no artifact write')) as write, \
+                 self.assertRaisesRegex(c.ContractError, 'ACCEPTANCE_COMPILER must not be empty'):
+                c.run(args)
+            for forbidden in (tool, query, capture, execute, write): forbidden.assert_not_called()
+            self.assertEqual(before, artifacts())
+        self.assertEqual(before, artifacts())
+
     def test_prebuilt_alias_must_agree(self):
         env = {'ACCEPTANCE_COMPILER_SHA256': c.digest(self.compiler), 'ACCEPTANCE_COMPILER': str(self.compiler),
                'OUT': str(self.compiler), 'AURORAC': str(self.compiler)}
@@ -495,9 +538,9 @@ class Controls(unittest.TestCase):
             for value in (str(minimum), '513', str(maximum)):
                 c.validate_cap_controls({name: value})
             for value in ('', ' ', '\t', '\n', str(minimum - 1), '1025', '-1', '+128', '128.0',
-                          '128 --check-cap-only', '1024 --self-test-only', '128; false',
-                          '128 && false', '128\n--check-cap-only', '128\t--check-cap-only',
-                          ' 128', '128 ', '$(shell false)', '`false`', '1' * 5000, None, True, 128):
+                          '128 --check-cap-only', '1024 --self-test-only', '128 invalid',
+                          '128 unexpected', '128\n--check-cap-only', '128\t--check-cap-only',
+                          ' 128', '128 ', '$UNEXPANDED', '${UNEXPANDED}', '1' * 5000, None, True, 128):
                 for goal in ('test', 'test-round-robin', 'test-acceptance'):
                     env = {name: value}
                     if goal == 'test-acceptance': env['ACCEPTANCE_COMPILER_SHA256'] = '0' * 64
@@ -518,38 +561,49 @@ class Controls(unittest.TestCase):
             self.assertEqual(record['selected_controls'][name], '1024')
 
     def test_cap_controls_reject_before_artifacts_or_execution(self):
-        before = set(self.root.rglob('*'))
-        for name, (minimum, maximum) in c.CAP_CONTROLS.items():
-            for value in ('', str(minimum - 1), '1025', '128 --check-cap-only', '$(shell false)'):
-                with self.subTest(name=name, value=value), patch.dict(os.environ, {name: value}), \
-                     patch.object(c, 'execute', side_effect=AssertionError('must never execute')) as execute, \
-                     self.assertRaises(c.ContractError):
-                    c.run(self.launch())
-                execute.assert_not_called()
-        self.assertEqual(before, set(self.root.rglob('*')))
+        # Pure Python pre-dispatch coverage. This does not run Make or reproduce
+        # the retired end-to-end executable-expression observation.
+        def artifacts():
+            rows = {}
+            for path in (self.root, *sorted(self.root.rglob('*'))):
+                relative = str(path.relative_to(self.root))
+                mode = path.lstat().st_mode & 0o7777
+                if path.is_symlink():
+                    rows[relative] = ('symlink', mode, os.readlink(path))
+                elif path.is_file():
+                    rows[relative] = ('file', mode, path.stat().st_size, c.digest(path))
+                else:
+                    rows[relative] = ('directory', mode)
+            return rows
 
-    def test_make_caps_reject_raw_values_without_expansion(self):
-        # The sentinel would expose an unsafe Make expansion; no real compiler
-        # recipe can run because Make dry-run is used for these raw-value probes.
-        sentinel = self.root / 'build/unsafe-cap-expansion'
-        before = set(self.root.rglob('*'))
-        for directory, goal in (('', 'test'), ('compiler', 'test')):
-            for name in c.CAP_CONTROLS:
-                for value in ('', '128 --check-cap-only', '128; false', '128  ',
-                              '$(shell touch ' + str(sentinel) + ')128'):
-                    for location in ('environment', 'command-line'):
-                        env = dict(self.env); argv = [shutil.which('make'), '-n', goal]
-                        if location == 'environment': env[name] = value
-                        else: argv.append(name + '=' + value)
-                        with self.subTest(directory=directory, name=name, value=value, location=location):
-                            result = subprocess.run(argv, cwd=ROOT / directory, env=env,
-                                                    capture_output=True, text=True, timeout=10)
-                            self.assertNotEqual(result.returncode, 0, result.stdout)
-                            self.assertIn('invalid controls:', result.stderr)
-                            self.assertNotIn('$(shell', result.stderr)
-                            self.assertNotIn('compiler_contract.py run', result.stdout)
-                            self.assertFalse(sentinel.exists())
-        self.assertEqual(before, set(self.root.rglob('*')))
+        before = artifacts()
+        pinned = {'ACCEPTANCE_COMPILER_SHA256': c.digest(self.compiler),
+                  'ACCEPTANCE_COMPILER': str(self.compiler)}
+        routes = (('root', 'test', 'developer', {}),
+                  ('root', 'test-acceptance', 'acceptance', pinned),
+                  ('compiler', 'test', 'developer', {}),
+                  ('compiler', 'test-short-circuit', 'acceptance', pinned))
+        for entry, goal, mode, controls in routes:
+            self.assertEqual(c.prepare_controls(self.launch(goal, entry=entry), controls)[0], mode)
+            for name, (minimum, maximum) in c.CAP_CONTROLS.items():
+                values = ('', str(minimum - 1), str(maximum + 1), '128 --check-cap-only',
+                          '1024 --self-test-only', '128 trailing', '128,256', ' 128',
+                          '128\n--check-cap-only', '$UNEXPANDED', '$(UNEXPANDED)')
+                for value in values:
+                    with self.subTest(entry=entry, goal=goal, mode=mode, name=name, value=value), \
+                         patch.dict(os.environ, {**controls, name: value}), \
+                         patch.object(c, 'tool_record', side_effect=AssertionError('no tool query')) as tool, \
+                         patch.object(c, 'query', side_effect=AssertionError('no query')) as query, \
+                         patch.object(c, 'capture', side_effect=AssertionError('no command capture')) as capture, \
+                         patch.object(c, 'execute', side_effect=AssertionError('no command execution')) as execute, \
+                         patch.object(c, 'write_json', side_effect=AssertionError('no artifact write')) as write, \
+                         self.assertRaises(c.ContractError):
+                        c.run(self.launch(goal, entry=entry))
+                    for forbidden in (tool, query, capture, execute, write):
+                        forbidden.assert_not_called()
+                    self.assertEqual(before, artifacts())
+        self.assertEqual(before, artifacts())
+
 
     def test_make_cap_ranges_reject_before_build_dispatch(self):
         before = set((ROOT / 'build').rglob('*')) if (ROOT / 'build').exists() else set()
