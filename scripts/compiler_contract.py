@@ -332,16 +332,12 @@ def parse_flags(value, name='CXXFLAGS'):
     warning_flags = {'-Werror', '-Wno-error', '-Wformat=2'}
     warning_flags.update(prefix + warning for warning in warnings
                          for prefix in ('-W', '-Wno-', '-Werror=', '-Wno-error='))
-    path_options = {'-I', '-isystem', '-iquote', '-idirafter', '-include', '-imacros'}
-    operand_options = path_options | {'-D', '-U'}
+    header_options = ('-I', '-isystem', '-iquote', '-idirafter', '-include', '-imacros')
+    operand_options = {'-D', '-U'}
 
     def operand(option, text):
         require(bool(text) and len(text) <= 1024, name + ' has an empty or oversized operand')
-        if option in path_options:
-            require(re.fullmatch(r'[A-Za-z0-9_./][A-Za-z0-9_./+ -]*', text) is not None
-                    and text == text.strip() and not text.endswith(('.gch', '.pch')),
-                    name + ' include operands require a simple controlled path; PCH is unsupported')
-        elif option == '-U':
+        if option == '-U':
             require(re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', text) is not None,
                     name + ' undefines require one identifier')
         else:
@@ -351,13 +347,15 @@ def parse_flags(value, name='CXXFLAGS'):
 
     pending = None
     for flag in flags:
+        require(not any(flag.startswith(option) for option in header_options),
+                name + ' user header/search/forced-header options are unsupported; host header closure is not recorded')
         if pending is not None:
             operand(pending, flag); pending = None
             continue
         if flag in operand_options:
             pending = flag
             continue
-        attached = next((option for option in ('-I', '-D', '-U')
+        attached = next((option for option in ('-D', '-U')
                          if flag.startswith(option) and len(flag) > len(option)), None)
         if attached:
             operand(attached, flag[len(attached):])

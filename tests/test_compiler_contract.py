@@ -229,7 +229,7 @@ class Controls(unittest.TestCase):
                       '-flto', '-fuse-ld=gold', '-B/other/bin', '-Wa,@flags', '-Xassembler flags',
                       '-fprofile-use=/profile', '-fmodules-ts', '-std=c++23 extra.cpp', '-o elsewhere', '-std=c++23 header.gch'):
             with self.subTest(value=value), self.assertRaises(c.ContractError): c.parse_flags(value)
-        self.assertEqual(c.parse_flags('-std=c++23 -include forced.hpp'), ['-std=c++23', '-include', 'forced.hpp'])
+        with self.assertRaises(c.ContractError): c.parse_flags('-std=c++23 -include forced.hpp')
         for name in c.OPAQUE_ENV:
             with self.subTest(name=name), self.assertRaises(c.ContractError):
                 c.prepare_controls(self.launch(), {name: 'opaque'})
@@ -589,15 +589,14 @@ class Controls(unittest.TestCase):
 
 
     def test_flag_policy_preserves_supported_parsed_vectors(self):
-        value = "-std=c++23 -O2 -g3 -Wall -Wextra -Werror=conversion -DCOUNT=7 -D WORD=token -U DROP -I 'include path' -isystem system/include -include forced.hpp"
+        value = "-std=c++23 -O2 -g3 -Wall -Wextra -Werror=conversion -DCOUNT=7 -D WORD=token -U DROP"
         expected = ['-std=c++23', '-O2', '-g3', '-Wall', '-Wextra', '-Werror=conversion',
-                    '-DCOUNT=7', '-D', 'WORD=token', '-U', 'DROP', '-I', 'include path',
-                    '-isystem', 'system/include', '-include', 'forced.hpp']
+                    '-DCOUNT=7', '-D', 'WORD=token', '-U', 'DROP']
         self.assertEqual(c.parse_flags(value), expected)
         self.assertEqual(c.parse_flags(shlex.join(expected)), expected)
         self.assertEqual(c.parse_flags(c.DEFAULT_FLAGS), shlex.split(c.DEFAULT_FLAGS))
-        self.assertEqual(c.parse_flags('-I../include -DHEX=0xF0u -DNEG=-1 -UNAME'),
-                         ['-I../include', '-DHEX=0xF0u', '-DNEG=-1', '-UNAME'])
+        self.assertEqual(c.parse_flags('-DHEX=0xF0u -DNEG=-1 -UNAME'),
+                         ['-DHEX=0xF0u', '-DNEG=-1', '-UNAME'])
 
     def test_flag_policy_rejects_unsupported_raw_and_operand_forms(self):
         values = ('', ' ', '-O2\n-g', '-O2\r-g', '-O2\t-g', '-DVALUE=$UNEXPANDED',
@@ -637,8 +636,8 @@ class Controls(unittest.TestCase):
         self.assertEqual(before, set(self.root.rglob('*')))
 
     def test_both_flag_vectors_are_canonical_in_forwarding_and_receipts(self):
-        raw_build = '-std=c++23  -O2 -I"include path" -DCOUNT=7'
-        raw_ir = "-std=c++23 -O1 -g '-Ihost include' -DTRACE=1"
+        raw_build = '-std=c++23  -O2 "-DCOUNT=7" -D WORD=token'
+        raw_ir = "-std=c++23 -O1 -g '-DTRACE=1' -U DROP"
         expected = {'CXXFLAGS': shlex.split(raw_build), 'IR_TEST_CXXFLAGS': shlex.split(raw_ir)}
         with patch.dict(os.environ, {'CXXFLAGS': raw_build, 'IR_TEST_CXXFLAGS': raw_ir}):
             calls = self.simulate('test-round-robin')
@@ -703,8 +702,8 @@ class Controls(unittest.TestCase):
                             self.assertNotIn('compiler_contract.py run', result.stdout)
 
     def test_safe_public_make_dry_runs_preserve_canonical_flag_arguments(self):
-        build = ['-std=c++23', '-O2', '-I', 'include path', '-DCOUNT=7']
-        ir = ['-std=c++23', '-O1', '-Ihost include', '-DTRACE=1']
+        build = ['-std=c++23', '-O2', '-D', 'WORD=token', '-DCOUNT=7']
+        ir = ['-std=c++23', '-O1', '-DTRACE=1', '-U', 'DROP']
         env = {**self.env, 'CXX': 'g++', 'CXXFLAGS': shlex.join(build),
                'IR_TEST_CXXFLAGS': shlex.join(ir), 'AURORA_TEST_CONTEXT': str(self.receipt),
                'AURORA_TEST_COMPILER': str(self.compiler), 'AURORA_TEST_MODE': 'developer',
@@ -718,6 +717,59 @@ class Controls(unittest.TestCase):
             line = next(line for line in result.stdout.splitlines() if suffix in line and line.startswith('g++ '))
             argv = shlex.split(line.rstrip().removesuffix('\\').strip())
             self.assertEqual(argv[1:argv.index('-I.')], expected)
+
+
+    def test_supervised_header_option_forms_reject_in_both_vectors(self):
+        forms = ('-I', '-I.', '-I../include', '-I include', '-I "include path"',
+                 '-isystem include', '-isysteminclude', '-isystem=include',
+                 '-iquote include', '-iquoteinclude', '-iquote=include',
+                 '-idirafter include', '-idirafterinclude', '-idirafter=include',
+                 '-include forced.hpp', '-includeforced.hpp', '-include=forced.hpp',
+                 '-imacros macros.hpp', '-imacrosmacros.hpp', '-imacros=macros.hpp',
+                 '-include-pch cached.pch')
+        for name in ('CXXFLAGS', 'IR_TEST_CXXFLAGS'):
+            for value in forms:
+                with self.subTest(name=name, value=value), self.assertRaisesRegex(c.ContractError, 'header/search/forced-header'):
+                    c.parse_flags('-std=c++23 ' + value, name)
+            for value in ('-iprefix include', '-iwithprefix include', '-isysroot sysroot',
+                          '--sysroot=sysroot', '-fpch-preprocess', '-fpch-deps',
+                          '-fpreprocessed', '@header-flags'):
+                with self.subTest(name=name, value=value), self.assertRaises(c.ContractError):
+                    c.parse_flags('-std=c++23 ' + value, name)
+
+    def test_header_option_rejection_precedes_tools_and_artifacts_in_all_modes(self):
+        before = set(self.root.rglob('*'))
+        cases = ('-Iinclude', '-I include', '-isystem include', '-iquote include',
+                 '-idirafter include', '-include forced.hpp', '-imacros macros.hpp')
+        for goal, extra in (('test', {}), ('test-acceptance', {'ACCEPTANCE_COMPILER_SHA256': c.digest(self.compiler),
+                                                            'ACCEPTANCE_COMPILER': str(self.compiler)})):
+            for name in ('CXXFLAGS', 'IR_TEST_CXXFLAGS'):
+                for value in cases:
+                    with self.subTest(goal=goal, name=name, value=value), \
+                         patch.dict(os.environ, {**extra, name: '-std=c++23 ' + value}), \
+                         patch.object(c, 'tool_record', side_effect=AssertionError('no tool query')) as tool, \
+                         patch.object(c, 'query', side_effect=AssertionError('no subprocess query')) as query, \
+                         patch.object(c, 'execute', side_effect=AssertionError('no execution')) as execute, \
+                         self.assertRaisesRegex(c.ContractError, 'header/search/forced-header'):
+                        c.run(self.launch(goal))
+                    tool.assert_not_called(); query.assert_not_called(); execute.assert_not_called()
+        self.assertEqual(before, set(self.root.rglob('*')))
+
+    def test_header_rejection_keeps_default_release_and_recorded_vectors(self):
+        expected = shlex.split(c.DEFAULT_FLAGS)
+        self.assertEqual(c.selected_flag_vectors({}), {'CXXFLAGS': expected, 'IR_TEST_CXXFLAGS': expected})
+        explicit = {'CXXFLAGS': '-std=c++23 -O2 -Wall -Wextra -Wpedantic -Werror',
+                    'IR_TEST_CXXFLAGS': '-std=c++23 -O1 -g -DTRACE=1 -U DROP'}
+        parsed = c.selected_flag_vectors(explicit)
+        for name, value in explicit.items():
+            self.assertEqual(parsed[name], shlex.split(value))
+            self.assertEqual(c.parse_flags(shlex.join(parsed[name]), name), parsed[name])
+        # Recipe-owned includes are immutable source inputs, not admitted user
+        # flags. This check reads the Makefile; it never invokes Make.
+        self.assertIn('$(CXX) $(CXXFLAGS) -I. ../tests/compiler/initialization_facts.cpp',
+                      (ROOT / 'compiler/Makefile').read_text())
+        self.assertIn('$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/short_circuit_ir.cpp',
+                      (ROOT / 'compiler/Makefile').read_text())
 
     def test_cxx_omission_and_empty_are_distinct_before_tools(self):
         before = set(self.root.rglob('*'))

@@ -48,8 +48,8 @@ The outer Make entry invokes `scripts/compiler_contract.py`. For this run it:
 2. Inventories actual current source contents and test inputs, rather than relying
    on timestamps or a pre-existing `build/aurorac`.
 3. Records the exact build recipe, working directory, flags, relevant environment,
-   resolved GNU tool executables and versions, and compiler system-header dependency
-   closure. Normal distribution symlinks are resolved and their names retained.
+   resolved GNU tool executables and versions, and the fresh bootstrap compiler's
+   discovered header dependency closure. Normal distribution symlinks are resolved and their names retained.
 4. Builds the current compiler once into a unique run-owned directory beneath
    `build/test-contract-*`, verifies the observed dependency closure and inputs,
    and makes the compiler read-only and executable.
@@ -57,7 +57,8 @@ The outer Make entry invokes `scripts/compiler_contract.py`. For this run it:
    gates in the requested graph. The inner graph validates its receipt and must
    not rebuild or replace those bytes. Existing positive, rejection, oracle,
    mutation, image and hosted-kernel checks remain required.
-6. Rechecks source, tools, headers, receipt and compiler identity and records the
+6. Rechecks source, tools, the recorded bootstrap headers when present, receipt
+   and target-compiler identity and records the
    actual native-stage result. Failure or interruption is retained as failure,
    never successful prefix coverage.
 
@@ -118,7 +119,7 @@ native pin-aware runner requires exactly one explicit expected pin or
 `--developer-build-receipt /absolute/path/to/compiler-context.json`; it has no
 implicit historical expected pin. The latter validates an actual controlled
 developer fresh-build receipt, matching source root, compiler, recipe, tools,
-headers and environment. It does not accept a boolean “developer mode” assertion
+recorded bootstrap headers and environment. It does not accept a boolean “developer mode” assertion
 or relabel a prebuilt compiler as freshly built.
 
 Help and explicitly compiler-free self-tests/cap-only checks, and reference-freeze
@@ -139,15 +140,29 @@ The default recipe uses GNU C++ with
 supported GNU executable; ordinary distribution symlinks are allowed. The
 supervisor records the resolved driver and selected GNU subtools.
 
-`CXXFLAGS` accepts only an explicit allowlist of ordinary standard, optimization,
-warning, debug, sanitizer, include/macro and other documented recipe options in
-`parse_flags`. Include and macro inputs are covered by dependency discovery and
-post-build checks. This is not a generic arbitrary-`CXXFLAGS` guarantee. Opaque
-response files, specs, plugins, precompiled headers, LTO, profile/module controls,
-alternate subtool controls and untracked wrappers are rejected clearly. Opaque
-compiler/loader environment controls are also rejected. Accepted flag syntax does
-not imply that every flag combination, sanitizer configuration or host has passed
-acceptance. This candidate's real build and sanitizer qualification is still pending.
+For supervised compiler-consuming test routes, both `CXXFLAGS` and
+`IR_TEST_CXXFLAGS` accept only the explicit allowlist of ordinary standard,
+optimization, warning, debug, sanitizer, simple define/undefine and other exact
+recipe options in `parse_flags`. User header/search/forced-header options are
+rejected in both vectors: attached or separate `-I`, `-isystem`, `-iquote`,
+`-idirafter`, `-include`, and `-imacros`. Response files, specs, plugins, explicit
+PCH-control flags, LTO, profile/module controls, alternate subtool controls and untracked wrappers
+remain unsupported. Hardcoded recipe includes such as `-I.` are unchanged.
+
+Fresh bootstrap builds record their discovered header inputs and recheck them.
+That closure covers the bootstrap compilation only. It is not a comprehensive
+header/PCH inventory for every host test recipe; prebuilt target-compiler mode
+performs no bootstrap-header discovery. The two recorded host-test flag vectors
+identify admitted argv, not comprehensive host-header/PCH identity. Neither an
+external target-compiler hash nor recorded host argv closes that separate gap.
+
+The Python grammar applies to supervised compiler-consuming test entrypoints and
+their validated inner graph. Ordinary `make`/`make -C compiler` and a standalone
+host-only `make -C compiler test-initialization-facts` do not enter that grammar
+or establish its receipt contract. Existing Make raw-expression guards are not
+a replacement for the supervised Python policy. This is no generic arbitrary-
+flag guarantee, and accepted syntax does not qualify every flag combination,
+sanitizer setup or host. Actual combined-workflow qualification remains pending.
 
 ## Receipts and interpretation
 
@@ -157,7 +172,8 @@ stages execute. A receipt distinguishes:
 - mode and origin: local developer fresh build, pinned fresh build, or
   `externally-pinned-prebuilt`;
 - actual source/test content, build recipe and flags, tools, relevant environment
-  and, for a fresh build, the system-header input closure;
+  and, for a fresh bootstrap build, that compilation's discovered header closure;
+- recorded host-test flag vectors, without comprehensive host-header/PCH attestation;
 - the **observed** compiler SHA-256 and the separately **caller-supplied expected**
   digest, which is absent for ordinary developer mode;
 - requested entry/goal and scope, stage return codes, completion status and limits.
@@ -273,12 +289,11 @@ The raw flag policy accepts at most 16384 characters, 256 parsed arguments and
 1024 characters per argument. It supports the listed GNU C++23, ordinary
 optimization/debug, known warning, sanitizer and other exact recipe flags in
 parse_flags. Simple -D operands name an identifier with an optional identifier
-or integer value; -U names one identifier. -I and the explicit include/header
-options require controlled paths containing letters, digits, underscore, dot,
-slash, plus, hyphen and interior spaces. Paths cannot begin with a hyphen or
-have outer whitespace. Quoting may group an interior space; canonical forwarding
-preserves the parsed argument, rather than changing it. String/function-like
-macro bodies, arbitrary warnings/options, response files, PCH, raw dollar/Make
+or integer value; -U names one identifier. Revision 2 initially admitted controlled
+include/search/forced-header paths. Revision 3 withdraws that admission in both
+supervised vectors, as described below. Canonical forwarding still preserves each
+admitted parsed argument rather than changing it. String/function-like macro
+bodies, arbitrary warnings/options, response files, PCH-control flags, raw dollar/Make
 expressions, backticks, line breaks, backslash escapes and shell metacharacters
 are unsupported and reject clearly. Unsupported spelling is never sanitized
 into a different accepted option.
@@ -293,3 +308,29 @@ identity. This bounded correction does not redesign other path selectors or
 provide a generic arbitrary-flag/host-toolchain guarantee. Synthetic checks do
 not establish compiler/native/emulator, current-source full-workflow or portable
 host qualification.
+
+
+## Revision 3: narrow user-header rejection and attestation limits
+
+The completed read-only static review of revision 2 found F1: user header and
+search flags were admitted for host tests even though dependency discovery and
+PCH checks cover only a fresh bootstrap compilation. Recording argv alone cannot
+attest comprehensive host-header identity, and prebuilt mode does not discover
+bootstrap headers at all. Revision 2 remains a preserved, explicitly unaccepted
+WIP; neither its static review nor its earlier selected author checks establish
+full acceptance.
+
+This revision rejects caller-supplied header/search/forced-header options in both
+supervised vectors until complete host closure is available. It adds no dependency
+framework and changes no Make recipe, fixed `-I.` input, compiler, library, kernel,
+or behavioral gate. External target-compiler identity, optional fresh-bootstrap
+header closure, and recorded host-test vectors remain distinct forms of evidence.
+Normal GNU release flags remain admitted. The supervised-only scope and ordinary
+Make/standalone-host-test limits above are explicit.
+
+Validation of this narrow correction uses pure parsing, mocked rejection before
+tools/artifacts and ordinary syntax checks only. No Make probe, compiler, native
+or emulator workload is run. Revision 2's 66 selected ordinary and optimized
+results remain historical; its unchanged omitted executable-expression cap
+method is not newly credited. A permitted review and complete separately admitted
+qualification remain necessary, with no approval or execution authority implied.
