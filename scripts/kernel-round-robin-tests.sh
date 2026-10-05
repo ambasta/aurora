@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-compiler="${AURORAC:-build/aurorac}"
-if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi
-python3 -B -O tests/kernel-round-robin-native.py --compiler "$compiler" \
-    --compiler-sha256 "$(sha256sum "$compiler" | cut -d ' ' -f 1)" \
+if [[ -z "${AURORAC:-}" || $# != 2 ]]; then
+    printf '%s\n' 'Supply AURORAC and exactly one --compiler-sha256 DIGEST or --developer-build-receipt FILE pair; use make test-round-robin for a fresh build.' >&2
+    exit 2
+fi
+case "$1" in
+    --compiler-sha256|--developer-build-receipt) identity=("$1" "$2") ;;
+    *) printf '%s\n' 'Invalid compiler identity mode' >&2; exit 2 ;;
+esac
+compiler="$AURORAC"
+python3 -B -O tests/kernel-round-robin-native.py --compiler "$compiler" "${identity[@]}" \
     --candidate-cap-mib "${ROUND_ROBIN_TEST_CAP_MIB:-128}"
 mkdir -p build/uefi
 flags=()

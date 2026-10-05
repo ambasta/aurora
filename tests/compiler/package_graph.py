@@ -11,7 +11,8 @@ from pathlib import Path
 from dataclasses import dataclass
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2]
-COMPILER_SHA256='e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e'
+sys.path.insert(0, str(ROOT / 'scripts'))
+from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 CONTRACT_SHA256='2272fba3b7163550f5dabef95c5b54c0d1039063b84545ef0c0b20f93928e01c'
 REFERENCE_SHA256='6a54b890a7b33abd378c9ca7a0de05c179cb4448c2fc2daaf5a33c677aeafa42'
 CAP,FLOOR,RESERVE=256<<20,1<<30,24<<20
@@ -29,7 +30,6 @@ ENTRY_WIDTH=33
 
 def require(ok,message):
     if not ok:raise AssertionError(message)
-def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def candidate_cap(mib):
     require(type(mib) is int and 256 <= mib <= 1024,
             'candidate cap must be an integer between 256 and 1024 MiB; increases require explicit aggregate admission')
@@ -47,6 +47,7 @@ def cap_self_test():
         raise AssertionError('invalid candidate cap accepted')
 
 
+def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def signed(x):return '(-9223372036854775807-1)' if x==IMIN else str(x)
 def artifact_path(value):
     raw=Path(value).absolute()
@@ -684,10 +685,11 @@ def main():
     parser.add_argument('--quick','--smoke',dest='smoke',action='store_true',help='development subset, not full acceptance')
     parser.add_argument('--self-test-only',action='store_true')
     parser.add_argument('--freeze-reference',type=Path)
-    parser.add_argument('--compiler-sha256',default=COMPILER_SHA256,help='explicit approved expected compiler SHA256; historical M022 default remains unchanged')
+    add_identity_arguments(parser)
     parser.add_argument('--candidate-cap-mib',type=int,default=256,help='whole-candidate storage cap 256..1024 MiB; default 256; increases require explicit aggregate admission')
     parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
     args=parser.parse_args()
+    validate_identity_selection(args,preflight=args.self_test_only or args.check_cap_only)
     cap=candidate_cap(args.candidate_cap_mib)
     if args.check_cap_only:
         cap_self_test()
@@ -695,23 +697,23 @@ def main():
             candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap,
             focused_default_mib=256, maximum_cap_mib=1024), sort_keys=True))
         return
+    if not args.self_test_only:
+        compiler=args.compiler.resolve(strict=True)
+        identity=resolve_identity(args,compiler,ROOT)
+        expected_compiler_sha=identity.sha256
     self_test()
-    require(re.fullmatch('[0-9a-fA-F]{64}',args.compiler_sha256) is not None,'compiler SHA256 must be exactly64 hexadecimal characters')
-    expected_compiler_sha=args.compiler_sha256.lower()
     frozen=ROOT/'evidence/package-graph/contract-before-implementation.md'
     reference=ROOT/'evidence/package-graph/oracle/reference-v1/reference.py'
     require(sha(frozen)==CONTRACT_SHA256,'frozen pre-implementation contract changed')
     require(sha(reference)==REFERENCE_SHA256,'independent pre-inspection reference changed')
-    compiler=args.compiler.resolve(strict=True)
-    require(sha(compiler)==expected_compiler_sha,'compiler SHA256 does not match explicit approved expected pin')
     if args.self_test_only:print('PASS independent reference, full-width observer, grammar, precedence and path controls');return
     if args.freeze_reference:
         directory=artifact_path(args.freeze_reference)
         require(not directory.exists(),'fresh corpus freeze directory required')
         guard=Runner(compiler,directory,cap);guard.budget(RESERVE)
-        freeze_report=dict(status='running',mode='corpus-freeze',cap_bytes=cap,free_floor_bytes=FLOOR,reserve_bytes=RESERVE,expected_compiler_sha256=expected_compiler_sha)
+        freeze_report=dict(status='running',mode='corpus-freeze',compiler_identity=identity.record(),cap_bytes=cap,free_floor_bytes=FLOOR,reserve_bytes=RESERVE,observed_compiler_sha256=identity.sha256,expected_compiler_sha256=identity.expected)
         try:
-            freeze_corpus(directory);freeze_report['status']='passed'
+            freeze_corpus(directory);identity.verify();freeze_report['status']='passed'
         except BaseException as exc:
             freeze_report.update(status='failed',error=str(exc),exception_type=type(exc).__name__);raise
         finally:
@@ -724,8 +726,8 @@ def main():
     runner=Runner(compiler,artifacts,cap);runner.budget(65536);artifacts.mkdir()
     inputs=[compiler,ROOT/'library/package/graph.au',ROOT/'library/package/manifest.au',ROOT/'library/package/identity.au',ROOT/'library/std/array.au',Path(__file__).resolve(),frozen,reference,Path(sys.executable).resolve(strict=True),*runner.tools.values()]
     runner.pins={p:sha(p) for p in inputs}
-    report=dict(status='running',pins={str(p):h for p,h in runner.pins.items()},tool_paths={name:str(path) for name,path in runner.tools.items()},
-      expected_compiler_sha256=expected_compiler_sha,command=sys.argv,started_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),cap_bytes=cap,free_floor_bytes=FLOOR,reserve_bytes=RESERVE,per_source_cap_bytes=SOURCE_CAP,cases_per_batch=BATCH,smoke_only=args.smoke,
+    report=dict(status='running',compiler_identity=identity.record(),pins={str(p):h for p,h in runner.pins.items()},tool_paths={name:str(path) for name,path in runner.tools.items()},
+      observed_compiler_sha256=identity.sha256,expected_compiler_sha256=identity.expected,command=sys.argv,started_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),cap_bytes=cap,free_floor_bytes=FLOOR,reserve_bytes=RESERVE,per_source_cap_bytes=SOURCE_CAP,cases_per_batch=BATCH,smoke_only=args.smoke,
       model='Independent exact byte-line grammar, decimal roundtrip, arbitrary precision windows, exhaustive full permutation search in canonical-name lexical order',
       native='GNU as/ld x86-64, direct Linux write/exit, complete little-endian u64 observations; no target libc',
       compaction='Only completed successful batch directories: tar.xz exact member/mode/length/hash readback before deletion; all failures retained',
@@ -740,13 +742,13 @@ def main():
             runner.batch(number,batch);done+=len(batch)
             print(f'PASS package graph {done}/{len(cases)} native cases',flush=True)
         for number,(label,source,message) in enumerate(negative_cases()):runner.reject(number,label,source,message)
-        runner.verify_pins();report['status']='passed'
+        runner.verify_pins();identity.verify();report['status']='passed'
     except BaseException as exc:
         report.update(status='failed',error=str(exc),exception_type=type(exc).__name__);raise
     finally:
         original_error_active=sys.exc_info()[0] is not None
         final_errors=finalize_report(runner,report,compiler,artifacts)
         if final_errors and not original_error_active:raise AssertionError('run finalization failed: '+'; '.join(final_errors))
-    print(f'PASS package graph: {len(cases)} native cases, {report["complete_u64_observations"]} complete u64 observations, {2*report["rejection_cases"]} rejection runs; pinned compiler unchanged',flush=True)
+    print(f'PASS package graph: {len(cases)} native cases, {report["complete_u64_observations"]} complete u64 observations, {2*report["rejection_cases"]} rejection runs; selected compiler identity unchanged',flush=True)
 
 if __name__=='__main__':main()

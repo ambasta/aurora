@@ -5,7 +5,7 @@ sys.dont_write_bytecode=True
 import xfs_root as r
 
 def main():
- args=r.parser(api=True).parse_args();r.configure(args)
+ args=r.parser(api=True).parse_args();identity=r.configure(args)
  compiler=args.compiler;directory=r.ARTIFACTS;suite=r.Suite(compiler,directory,sanitized=args.sanitized_compiler)
  paths=[compiler,*r.input_paths(__file__)];pins={str(p):r.sha(p) for p in paths}
  source=r.PREFIX+r.shared();functions=[];expected=[]
@@ -16,7 +16,7 @@ def main():
   facts=(2**63,2**64-1,3,4,5) if status in ('found','not_found') else (0,)*5
   values=(40,16,72,*facts,*((6,7) if status=='found' else (0,0)),0)
   expected.extend(r.Case(name+f'/{i}','',v) for i,v in enumerate(values))
- report={'status':'running','revision':'post-reset reconstruction; fresh evidence','pins':pins,'compiler_sha256':args.compiler_sha256}
+ report={'status':'running','revision':'post-reset reconstruction; fresh evidence','pins':pins,'compiler_sha256':identity.sha256,'compiler_identity':identity.record()}
  try:
   suite.run(source,functions,expected,directory/'values')
   prefix=r.PREFIX+'auto answer()->u64{const array<u8,1> bytes={0u8};'
@@ -39,6 +39,7 @@ def main():
     r.require(out.read_bytes()==sentinel if existing else not out.exists(),'output preservation');r.require(path.read_text()==text,'source preservation')
     (d/'receipt.json').write_text(json.dumps({'status':'passed','label':label,'existing_output':existing,'diagnostic':diagnostic},indent=2)+'\n')
   r.require(pins=={str(p):r.sha(p) for p in paths},'run-stable all inputs')
+  identity.verify()
   report.update(status='passed',native_observations=len(expected),source_negative_controls=12)
   print('PASS API77 native observations,12 source negatives')
  except Exception as e:report['status']='failed';report['error']=str(e);raise

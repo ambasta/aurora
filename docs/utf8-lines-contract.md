@@ -131,8 +131,14 @@ module does not re-export its dependency.
 
 ## Focused gate
 
-`make -C compiler test-utf8-lines OUT=/absolute/path/to/accepted/aurorac` creates
-fresh retained artifacts and checks the explicit accepted compiler pin. The Python
+`make -C compiler test-utf8-lines` creates fresh retained artifacts using a fresh
+run-owned compiler and validated developer receipt under the
+[shared test contract](developer-test-contract.md). There is no historical default
+compiler pin. For a reviewed prebuilt use the shared acceptance selectors, not
+`OUT` alone; `UTF8_LINES_COMPILER_SHA256` remains an explicit focused pin selector.
+Direct native use requires exactly one `--compiler-sha256` or
+`--developer-build-receipt`. Focused success is not root native acceptance; the
+historical checkpoint below is unchanged. The Python
 oracle independently partitions at byte LF, detects a preceding CR, and strictly
 decodes the consumed bytes; it does not duplicate the Aurora loop. Native output
 records complete i64 status/content/consumed/ending values. Repeated-scan fixtures

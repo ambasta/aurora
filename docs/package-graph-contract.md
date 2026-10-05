@@ -1,5 +1,10 @@
 # Bounded exact-manifest graph contract
 
+Current tooling: use the [shared developer-test contract](developer-test-contract.md).
+The frozen API/oracle contract and historical checkpoint pins below are unchanged.
+Current-source developer tests have no historical default compiler pin; explicitly
+pinned native acceptance remains separately selectable.
+
 This contract is frozen before production implementation or independent oracle
 construction. It advances the explicit system-release requirement for bootstrap
 ordering and cycle/conflict handling. Repository inspection found package.identity
@@ -183,7 +188,7 @@ bounded dependency masks followed by lexicographic ready-node selection. The
 [example](../library/examples/package_graph.au) has a shuffled four-package catalog
 with shared and transitive dependencies. The current compiler is unchanged.
 
-With the pinned compiler at build/aurorac:
+For current-source developer verification:
 
 ```
 make test-package-graph
@@ -193,18 +198,20 @@ make test
 The focused recipe uses Python -B -O and a 256 MiB candidate ceiling. The aggregate
 recipe explicitly selects 1024 MiB, but task-level aggregate admission still requires
 measured approval and an external supervisor accounting for retained sibling work.
-PACKAGE_GRAPH_COMPILER selects the compiler path without bypassing its exact pin.
-PACKAGE_GRAPH_TEST_FLAGS may select a fresh contained artifact directory; development
-quick/self-test modes do not constitute acceptance.
+The shared supervisor supplies a fresh run-owned compiler and validated developer
+receipt; use its explicit acceptance selectors for a separately pinned prebuilt.
+`PACKAGE_GRAPH_COMPILER` cannot silently override the fresh-build path.
+`PACKAGE_GRAPH_TEST_FLAGS` may select a fresh contained artifact directory on a
+focused developer invocation. Full aggregates and acceptance reject these
+overrides; quick/self-test modes do not constitute native acceptance.
 
-The host harness also accepts --compiler-sha256 as an explicitly supplied expected
-hash; PACKAGE_GRAPH_COMPILER_SHA256 passes it through Make. The unchanged default
-is the historical accepted M022 pin above, and every acceptance result for this
-candidate uses that pin. The actual compiler must match the valid recorded pin
-before artifact/native output creation. No expected pin is automatically inferred
-from the binary under test. This host-runner option supports later independently
-reviewed compiler checkpoints; it is not part of the manifest or graph grammar.
-Malformed and mismatched expected hashes must reject without producing artifacts.
+The native harness requires exactly one `--compiler-sha256` explicit expected hash
+or `--developer-build-receipt` for a validated local fresh build. It has no default
+historical expected pin. `PACKAGE_GRAPH_COMPILER_SHA256` remains supported on
+focused Make invocations; complete pinned root testing uses `make test-acceptance`
+and `ACCEPTANCE_COMPILER_SHA256`. An explicit pin must match before artifact/native
+output creation and is never inferred from the binary under test. This tooling
+selection does not change the manifest/graph grammar or historical evidence.
 
 The harness also requires the immutable independent [reference source](../evidence/package-graph/oracle/reference-v1/reference.py),
 SHA256 6a54b890a7b33abd378c9ca7a0de05c179cb4448c2fc2daaf5a33c677aeafa42.

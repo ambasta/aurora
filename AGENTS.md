@@ -36,8 +36,11 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 2. Implement running mechanisms, not unused scaffolding presented as functionality.
 3. Add positive, negative, regression and adversarial tests. Check metadata against
    actual generated layout/behavior. Fail closed for unsupported syntax/semantics.
-4. Run make test and actual emulator gates for kernel-affecting changes. Fault
-   injection gates must fail as intended and restore a normal image afterward.
+4. Run make test under the shared build-once compiler contract and actual emulator
+   gates for kernel-affecting changes. For independently pinned native acceptance,
+   use make test-acceptance with an externally reviewed ACCEPTANCE_COMPILER_SHA256.
+   Require a newly completed matching run.json; Make exit zero alone is not evidence.
+   Fault injection gates must fail as intended and restore a normal image afterward.
 5. Review changes independently before considering a milestone verified. Record
    reproduced defects and fixes, commands, source revision, tool versions and limits.
 6. Update implementation docs and the completeness matrix in the same change.
@@ -47,10 +50,21 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 
 ## Validation
 
-- make test: compiler execution/rejection, image and hosted kernel checks
+- make test: fresh current-source compiler once, then the complete root native graph
+- make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>: explicitly
+  pinned root native graph; optional ACCEPTANCE_COMPILER selects a reviewed prebuilt
+- make -C compiler test: complete compiler-only scope, not the root full aggregate
 - make smoke: real QEMU normal boot
 - make smoke-fault: real fail-stop exception injection (see scripts for modes)
 - SANITIZE=1 ./scripts/kernel-tests.sh: hosted allocator sanitizers/model tests
+
+Read [the developer-test contract](docs/developer-test-contract.md) before changing
+test routing or interpreting its receipts. This tooling candidate is unqualified
+and under review; initial source/synthetic checks establish no real fresh-compiler,
+full native, sanitizer, emulator or Gentoo GCC 16 acceptance. Ordinary developer
+builds require no historical binary pin. Explicit independently supervised pins
+remain supported. Full aggregates/acceptance reject coverage-reducing overrides;
+focused and compiler-free diagnostic runs do not establish root native acceptance.
 
 Missing tools or blocked tests must be reported as such, never silently passed.
 Do not install this experimental kernel on physical hardware or modify a host

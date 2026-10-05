@@ -13,7 +13,7 @@ operations. These are design targets, not current guarantees.
 ## Build and test
 
 Requirements: x86-64 Linux, GNU C++ with C++23 support, GNU Make, GNU binutils,
-Python 3, Bash, and QEMU system x86 for the actual emulator gates.
+Python 3, Bash, ripgrep, and QEMU system x86 for the actual emulator gates.
 
 ```sh
 make
@@ -22,11 +22,22 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-The native acceptance gates currently retain older reference-compiler hash
-defaults. Combined checkpoint runs supply explicit independently reviewed pins;
-plain `make test` is not yet a portable developer-test contract across legitimate
-host GCC builds. A separate tooling correction must address that gap without
-weakening externally pinned release/acceptance receipts.
+`make test` now builds current compiler source once into a unique run-owned
+read-only executable, records local build provenance and routes the complete
+native graph through the same bytes. It does not require a fixed historical
+compiler hash. For independently pinned native acceptance, use
+`make test-acceptance ACCEPTANCE_COMPILER_SHA256="$REVIEWED_SHA256"`; optionally
+add `ACCEPTANCE_COMPILER=/absolute/path/to/reviewed/aurorac` for a byte-identical
+private prebuilt copy, labeled `externally-pinned-prebuilt` without a fresh-source
+claim. `make -C compiler test` is complete only for compiler scope.
+
+This is an **unqualified tooling candidate under review**, with source/synthetic
+checks only and no new real fresh-compiler, full native, ASan/emulator or Gentoo
+GCC 16 acceptance. Require a newly completed matching `run.json`, not Make exit
+zero, a dry run, preflight or partial test. Full aggregates and acceptance reject
+coverage-reducing test overrides. See [the shared contract](docs/developer-test-contract.md)
+for supported GNU flags, explicit pins, provenance and limits. Historical
+checkpoint results below apply only to their identified sources.
 
 `make smoke-all` configures 173 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates, including four verified kernel-budget policy fault modes. It also runs three dedicated BIOS capacity probes (a full 127-sector read and two failing controls). `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).

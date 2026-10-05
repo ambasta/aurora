@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse, hashlib, importlib, json, pathlib, random, resource, shutil, subprocess, sys
 from dataclasses import dataclass
 sys.dont_write_bytecode = True
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / 'scripts'))
+from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 ROOT = FIXTURES = ARTIFACTS = CANDIDATE = None
 geometry = None
 MODULE_PATHS = {}
@@ -28,8 +30,8 @@ def budget(reserve=0):
  require(shutil.disk_usage(ARTIFACTS if ARTIFACTS.exists() else ARTIFACTS.parent).free-reserve>FLOOR,'global free floor including reserve')
 def configure(args):
  global ROOT,FIXTURES,ARTIFACTS,CANDIDATE,geometry,MODULE_PATHS
- require(len(args.compiler_sha256)==64 and all(c in '0123456789abcdef' for c in args.compiler_sha256),'explicit lowercase compiler SHA256')
- require(sha(args.compiler)==args.compiler_sha256,'compiler hash mismatch')
+ validate_identity_selection(args)
+ identity=resolve_identity(args,args.compiler,args.repo_root)
  for supplied in [args.repo_root,args.fixture_root,args.artifact_root,args.candidate_library or args.repo_root/'library']:
   p=pathlib.Path(supplied).absolute();require(not any(x.is_symlink() for x in [p,*p.parents]),'symlink root rejected')
  ROOT=args.repo_root.resolve(strict=True);FIXTURES=args.fixture_root.resolve(strict=True)
@@ -50,6 +52,7 @@ def configure(args):
  sys.path.insert(0,str(dep));geometry=importlib.import_module('xfs_geometry')
  for name in DEPS:require(pathlib.Path(sys.modules[name].__file__).resolve()==dep/(name+'.py'),'oracle root mismatch '+name)
  budget(65536);ARTIFACTS.mkdir()
+ return identity
 def input_paths(extra=None):
  p=[*MODULE_PATHS.values(),pathlib.Path(__file__).resolve()]
  p += [ROOT/'tests/compiler'/(x+'.py') for x in DEPS]
@@ -252,12 +255,12 @@ class Suite:
 def parser(api=False):
  p=argparse.ArgumentParser(description=__doc__)
  for x in ['repo-root','fixture-root','artifact-root','compiler']:p.add_argument('--'+x,type=pathlib.Path,required=True)
- p.add_argument('--candidate-library',type=pathlib.Path);p.add_argument('--compiler-sha256',required=True);p.add_argument('--sanitized-compiler',action='store_true')
+ p.add_argument('--candidate-library',type=pathlib.Path);add_identity_arguments(p);p.add_argument('--sanitized-compiler',action='store_true')
  if not api:
   group=p.add_mutually_exclusive_group();group.add_argument('--compatibility',action='store_true');group.add_argument('--representative',action='store_true');p.add_argument('--limit',type=int)
  return p
 def main():
- args=parser().parse_args();configure(args);inputs=[args.compiler,*input_paths()];pins={str(p):sha(p) for p in inputs};corpus=cases();require(len(corpus)==203,'reconstructed corpus count')
+ args=parser().parse_args();identity=configure(args);inputs=[args.compiler,*input_paths()];pins={str(p):sha(p) for p in inputs};corpus=cases();require(len(corpus)==203,'reconstructed corpus count')
  if args.compatibility:
   labels={'real alpha','real docs','real absent','unrepaired byte100','duplicate','nonpower AG root524416'};corpus=[c for c in corpus if c.label in labels];require(len(corpus)==6,'compatibility set')
  if args.representative:
@@ -267,14 +270,14 @@ def main():
    if c.label.startswith(('real ','raw name','flags','nonpower','partial','sixteen','last footprint','permitted first')):extra.append(c)
   corpus=list({c.label:c for c in [*unique.values(),*extra]}.values())
  if args.limit is not None:require(1<=args.limit<=203,'positive bounded limit');corpus=corpus[:args.limit]
- report={'status':'running','revision':'post-reset reconstruction; fresh evidence','requested_compiler_sha256':args.compiler_sha256,'repo_root':str(ROOT),'candidate_library':str(CANDIDATE),'fixture_root':str(FIXTURES),'artifact_root':str(ARTIFACTS),'pins':pins,'cases':len(corpus),'complete_u64_observations':11*len(corpus),'compatibility_only':args.compatibility,'representative_only':args.representative,'case_limit':args.limit,'budget_bytes':CAP,'floor_bytes':FLOOR}
+ report={'status':'running','revision':'post-reset reconstruction; fresh evidence','requested_compiler_sha256':args.compiler_sha256,'compiler_identity':identity.record(),'repo_root':str(ROOT),'candidate_library':str(CANDIDATE),'fixture_root':str(FIXTURES),'artifact_root':str(ARTIFACTS),'pins':pins,'cases':len(corpus),'complete_u64_observations':11*len(corpus),'compatibility_only':args.compatibility,'representative_only':args.representative,'case_limit':args.limit,'budget_bytes':CAP,'floor_bytes':FLOOR}
  suite=Suite(args.compiler,ARTIFACTS,sanitized=args.sanitized_compiler)
  try:
   for start in range(0,len(corpus),6):
    batch=corpus[start:start+6];names=[f'root_case_{i}' for i in range(len(batch))];source=PREFIX+shared()+''.join(render(c,n) for c,n in zip(batch,names))
    expected=[Case(c.label+f'/slot{i}','',v) for c in batch for i,v in enumerate(c.expected().scalars())]
    suite.run(source,names,expected,ARTIFACTS/f'batch-{start//6:03}');print('PASS',start+len(batch),'/',len(corpus),flush=True)
-  require(pins=={str(p):sha(p) for p in inputs},'run-stable all input pins');report['status']='passed'
+  require(pins=={str(p):sha(p) for p in inputs},'run-stable all input pins');identity.verify();report['status']='passed'
  except Exception as e:report['status']='failed';report['error']=str(e);raise
  finally:report['allocated_bytes']=allocated();report['global_free_bytes']=shutil.disk_usage(ARTIFACTS).free;(ARTIFACTS/'manifest.json').write_text(json.dumps(report,indent=2)+'\n')
 if __name__=='__main__':main()

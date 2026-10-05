@@ -5,6 +5,20 @@ SHA2568f669775ea7a5e850a314e50c37d90a5ba1ef30b1d60f6c8a54be5a6faef9e4f matches t
 historical reviewed source exactly. Fresh host runners have new identities;
 old receipts, complete images and native-product archives were lost.
 
+## Current test invocation
+
+`make -C compiler test-xfs-root` runs both native runners using one fresh run-owned
+compiler and its validated developer receipt. See the
+[shared test contract](developer-test-contract.md) for current provenance,
+explicitly pinned acceptance and the tooling candidate's unqualified status.
+There is no historical default compiler pin. Direct native runners require
+exactly one `--compiler-sha256` or `--developer-build-receipt`. For a reviewed
+prebuilt through Make, use the shared acceptance selectors rather than `OUT`
+alone. The observed hash is recorded separately from any caller-supplied pin.
+Representative or other reduced runs remain partial; full aggregates and
+acceptance reject test-flag overrides. Historical reconstruction and fixture
+provenance below retain their original meaning.
+
 ## Mechanism and interface
 
 `fs::lookup_xfs_v5_512_root(superblock, inode, name)` accepts three readonly

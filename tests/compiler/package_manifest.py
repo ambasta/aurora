@@ -27,7 +27,8 @@ import time
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
-COMPILER_SHA256 = 'e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e'
+sys.path.insert(0, str(ROOT / 'scripts'))
+from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 CONTRACT_SHA256 = '5aa8786a1afc3fac793deccb1e4bb11ae2d6497ab10093b0545c72aa39dc7103'
 CAP, MAX_CAP, FLOOR = 256 << 20, 1024 << 20, 1 << 30
 SOURCE_CAP, BATCH = 64 << 10, 128
@@ -47,6 +48,17 @@ def require(ok, message):
         raise AssertionError(message)
 
 
+def cap_self_test():
+    for mib in (256, 512, 513, 1023, 1024):
+        require(candidate_cap(mib) == mib << 20, 'candidate cap boundary conversion')
+    for mib in (-1, 0, 255, 1025, 1 << 30, True, 512.0, '1024', None):
+        try:
+            candidate_cap(mib)
+        except AssertionError:
+            continue
+        raise AssertionError('invalid candidate cap accepted')
+
+
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -64,17 +76,6 @@ def candidate_cap(mib):
     require(type(mib) is int and 256 <= mib <= 1024,
             'candidate cap must be an integer between 256 and 1024 MiB; increases require explicit aggregate admission')
     return mib << 20
-
-
-def cap_self_test():
-    for mib in (256, 512, 513, 1023, 1024):
-        require(candidate_cap(mib) == mib << 20, 'candidate cap boundary conversion')
-    for mib in (-1, 0, 255, 1025, 1 << 30, True, 512.0, '1024', None):
-        try:
-            candidate_cap(mib)
-        except AssertionError:
-            continue
-        raise AssertionError('invalid candidate cap accepted')
 
 
 def signed(value):
@@ -719,9 +720,11 @@ def main():
     parser.add_argument('--self-test-only',action='store_true')
     parser.add_argument('--freeze-reference',type=Path)
     parser.add_argument('--candidate-cap-mib',type=int,default=256,help='whole-candidate storage cap 256..1024 MiB; default 256; increases require explicit aggregate admission')
-    parser.add_argument('--compiler-sha256', default=COMPILER_SHA256, help='explicit expected compiler SHA256; default preserves accepted M022 pin')
     parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
+    add_identity_arguments(parser)
     args=parser.parse_args()
+    diagnostic_only=args.self_test_only or args.freeze_reference is not None
+    validate_identity_selection(args,preflight=diagnostic_only or args.check_cap_only)
     cap=candidate_cap(args.candidate_cap_mib)
     if args.check_cap_only:
         cap_self_test()
@@ -729,6 +732,9 @@ def main():
             candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap,
             focused_default_mib=256, maximum_cap_mib=1024), sort_keys=True))
         return
+    if not diagnostic_only:
+        compiler=args.compiler.resolve(strict=True)
+        identity=resolve_identity(args,compiler,ROOT)
     self_test()
     frozen=ROOT/'evidence/package-manifest/contract-before-implementation.md'
     require(sha(frozen)==CONTRACT_SHA256,'frozen pre-implementation contract byte identity')
@@ -736,16 +742,13 @@ def main():
         print('PASS independent grammar/integer oracle and high-bit/length/exit/budget/path controls');return
     if args.freeze_reference:
         freeze_corpus(artifact_path(args.freeze_reference));return
-    compiler=args.compiler.resolve(strict=True)
-    require(re.fullmatch(r'[0-9a-f]{64}', args.compiler_sha256) is not None, 'expected compiler SHA256 must be 64 lowercase hex characters')
-    require(sha(compiler)==args.compiler_sha256,'exact expected compiler SHA256 required')
     artifacts=artifact_path(args.artifact_root or ROOT/f'build/package-manifest-{os.getpid()}')
     require(artifacts.parent.is_dir() and not artifacts.exists(),'fresh artifact root with existing parent required')
     runner=Runner(compiler,artifacts,cap)
     runner.budget(65536);artifacts.mkdir()
     inputs=[compiler,ROOT/'library/package/manifest.au',ROOT/'library/package/identity.au',ROOT/'library/std/array.au',Path(__file__).resolve(),frozen,Path(sys.executable).resolve(strict=True),*runner.tools.values()]
     runner.pins={p:sha(p) for p in inputs}
-    report=dict(status='running',pins={str(p):h for p,h in runner.pins.items()},tool_paths={name:str(path) for name,path in runner.tools.items()},
+    report=dict(status='running',compiler_identity=identity.record(),pins={str(p):h for p,h in runner.pins.items()},tool_paths={name:str(path) for name,path in runner.tools.items()},
                 command=sys.argv,started_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),cap_bytes=cap,free_floor_bytes=FLOOR,
                 per_source_cap_bytes=SOURCE_CAP,cases_per_batch=BATCH,smoke_only=args.smoke,
                 model='Independent Python line grammar fullmatch, canonical identity regex, arbitrary precision integers and set uniqueness',
@@ -766,7 +769,7 @@ def main():
             print(f'PASS package manifest {done}/{len(cases)} native cases',flush=True)
         for number,(label,source,message) in enumerate(negative_cases()):
             runner.reject(number,label,source,message)
-        runner.verify_pins();report['status']='passed'
+        runner.verify_pins();identity.verify();report['status']='passed'
     except BaseException as exc:
         report.update(status='failed',error=str(exc),exception_type=type(exc).__name__);raise
     finally:
@@ -774,7 +777,7 @@ def main():
         final_errors=finalize_report(runner,report,compiler,artifacts)
         if final_errors and not original_error_active:
             raise AssertionError('run finalization failed: '+'; '.join(final_errors))
-    print(f'PASS package manifest: {len(cases)} native cases, {report["complete_u64_observations"]} complete u64 observations, {2*report["rejection_cases"]} rejection runs; pinned compiler unchanged',flush=True)
+    print(f'PASS package manifest: {len(cases)} native cases, {report["complete_u64_observations"]} complete u64 observations, {2*report["rejection_cases"]} rejection runs; selected compiler identity unchanged',flush=True)
 
 
 if __name__=='__main__':main()

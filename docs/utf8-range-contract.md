@@ -106,11 +106,15 @@ name its result types, explicitly import `std.utf8` as in the example.
 
 ## Native gate
 
-`make -C compiler test-utf8-range OUT=/absolute/path/to/accepted/aurorac` runs a
-bytecode-disabled Python gate. `UTF8_RANGE_COMPILER_SHA256` defaults to the accepted
-M022 release pin; another explicitly supplied pin may be used for a separately
-identified host-instrumented M022 build. The runner checks the compiler pin before
-creating outputs, snapshots imported library sources, and verifies them afterward.
+`make -C compiler test-utf8-range` runs a bytecode-disabled focused Python gate
+using a fresh run-owned compiler and validated developer receipt under the
+[shared test contract](developer-test-contract.md). There is no historical default
+compiler pin. For a reviewed prebuilt use the shared acceptance selectors, not
+`OUT` alone; `UTF8_RANGE_COMPILER_SHA256` remains an explicit focused pin selector.
+Direct native use requires exactly one `--compiler-sha256` or
+`--developer-build-receipt`. Identity is checked before outputs; imported library
+sources are snapshotted and verified afterward. Focused success is not root
+native acceptance, and the historical checkpoint below is unchanged.
 Each invocation creates a fresh artifact directory, preserving source, assembly,
 objects, native bytes, expected/observed full i64 values, and tool receipts.
 

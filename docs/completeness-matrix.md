@@ -1,5 +1,27 @@
 # Completeness and acceptance matrix
 
+## Current developer-test tooling candidate — 2026-10-05
+
+The [shared test contract](developer-test-contract.md) adds build-once local
+developer provenance and an explicit externally pinned native acceptance route.
+`make test` fresh-builds current source without imposing a historical binary pin;
+`make test-acceptance` requires a reviewed `ACCEPTANCE_COMPILER_SHA256` and can
+copy an explicitly selected pinned prebuilt without claiming a fresh source build.
+All compiler-consuming gates use the run-owned read-only bytes. Require a newly
+completed matching `run.json` and native-stage result. Full compiler-entry `test`
+is complete only for compiler scope; focused/diagnostic work and Make exit zero
+alone are not root acceptance. Actual emulator checks remain separate.
+
+Status: **source-only tooling candidate on accepted PR26, not yet qualified**. Round-robin and short-circuit implementation bytes and all five cap
+consumers are retained from the frozen PR26 implementation. Its final 569-file
+result-document source is reconciled to accepted main
+`3ac216b64caf8b769147f1864aa8389011f0112b`.
+Only source/synthetic
+checks apply to this composed source; no fresh compiler, full native, sanitizer,
+emulator, Gentoo or broad-host qualification is claimed. Earlier D/P focused
+kernel-budget evidence is explicitly PR25-only. Existing checkpoint evidence
+below keeps its original source scope; see the shared contract for exact identities.
+
 ## Verified Aurora round-robin and short-circuit checkpoint — 2026-10-05
 
 The real UEFI two-client dispatcher now calls a copied Aurora selection policy.
@@ -74,7 +96,7 @@ The modern C++ syntax, fixed-array, loop and checked-arithmetic expansion is imp
 
 ## Required evidence discipline
 
-Run `make test` for compiler/image/validator checks and `make smoke` for the actual emulator boot; one does not substitute for the other. Preserve command, tool versions, source identity, output and pass/fail status. Mark a feature **implemented but unverified**, **partially implemented**, or **not implemented** whenever that is more accurate than “supported.” A proof must identify its modeled features and trusted assumptions; passing tests is not such a proof.
+Run `make test` for the complete developer native graph, or `make test-acceptance` with an independently reviewed expected pin for explicitly pinned native checks, and `make smoke` for the actual emulator boot; one does not substitute for the other. Preserve the newly completed matching run receipt, command, tool versions, source identity, output and pass/fail status under the [shared test contract](developer-test-contract.md). Mark a feature **implemented but unverified**, **partially implemented**, or **not implemented** whenever that is more accurate than “supported.” A proof must identify its modeled features and trusted assumptions; passing tests is not such a proof.
 
 The detailed language target is in [language.md](language.md); dependency milestones are in [roadmap.md](roadmap.md); hardware-specific requirements and primary references are in [amd-support.md](amd-support.md). A fully functional kernel needs the relevant platform, isolation, scheduling and device rows, while a usable general-purpose OS additionally needs services, libraries, applications and operations. Until those gates pass, the deliverable remains a compiler/kernel bootstrap.
 

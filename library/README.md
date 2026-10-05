@@ -2,6 +2,14 @@
 
 The library is authored in Aurora's safe C++ dialect and compiled freestanding by the native module pipeline. These are small working library modules, not a complete C++ standard library or libc replacement.
 
+Current Make test invocations use the [shared developer-test contract](../docs/developer-test-contract.md):
+one fresh run-owned compiler for developer tests, or an explicitly externally
+pinned acceptance compiler. No historical binary pin is imposed on an ordinary
+developer build. Full aggregates reject coverage-reducing test flags; focused or
+compiler-free diagnostic runs do not qualify the root native aggregate. This
+tooling candidate is unqualified, and historical library receipts remain evidence
+only for their recorded source/tool checkpoints.
+
 ```text
 module application;
 import std.core;
@@ -172,7 +180,8 @@ checks its claimed byte size and internal log placement. Source/functional revie
 and focused author gates passed; final integrated milestone acceptance is pending.
 Run `make -C compiler test-xfs-geometry` for the bigint/native corpus and bounded
 mutation controls. The explicit `--sanitized-compiler` flag is supplied through
-`XFS_GEOMETRY_TEST_FLAGS` only when testing an instrumented compiler.
+`XFS_GEOMETRY_TEST_FLAGS` only for a focused developer run of an instrumented
+compiler; full aggregates and acceptance reject test-flag overrides.
 
 ## Verified milestone021: explicit copied pair factory
 
@@ -212,22 +221,25 @@ and non-found matches are zero, including fabricated public reports. Names are
 raw bytes; inode addresses establish geometry only. It does not mount, replay,
 read file data, establish inode allocation/existence, or access devices.
 
-`make -C compiler test-xfs-root OUT=/absolute/path/to/aurorac` runs 203 lookup
+`make -C compiler test-xfs-root` runs 203 lookup
 cases with 2,233 full u64 observations and 77 API observations plus 12 rejection
-controls. The aggregate compiler `test` depends on this gate. The recipe hashes
-its actual compiler and passes the same explicit pin to both bytecode-disabled
-Python runners; `XFS_ROOT_COMPILER_SHA256` optionally checks a caller-supplied
-accepted pin before creating artifacts. `XFS_ROOT_REPO`, `XFS_ROOT_FIXTURES`, and
+controls. The aggregate compiler `test` depends on this gate. The shared supervisor
+fresh-builds one run-owned compiler and passes its validated developer receipt to
+both bytecode-disabled Python runners. It records the observed hash separately
+from any externally supplied pin. For a reviewed prebuilt use the shared acceptance
+selectors; `OUT` alone no longer selects a test compiler. `XFS_ROOT_COMPILER_SHA256`
+remains an explicit focused pin selector. `XFS_ROOT_REPO`, `XFS_ROOT_FIXTURES`, and
 `XFS_ROOT_ARTIFACT_PARENT` select existing explicit roots; fixtures default to
 `REPO/fixtures/xfs-root`, artifacts to the compiler directory. Each run creates
-fresh lookup/API leaves under an owned mktemp directory. Roots can contain
-spaces; GNU Make's existing `OUT` target syntax still requires a whitespace-free
-OUT setting. The owned-output budget is 128 MiB, with a 1 GiB free floor and
+fresh lookup/API leaves under an owned mktemp directory.
+The owned-output budget is 128 MiB, with a 1 GiB free floor and
 24 MiB reserved before each output-producing command. Run serially when sharing
 a tighter task-level budget.
 
-`XFS_ROOT_TEST_FLAGS=--representative` selects the labeled 56-case/616-observation
-subset. For a fatal host-instrumented compiler set `ASAN_OPTIONS=detect_leaks=0:halt_on_error=1`,
+On a focused developer invocation, `XFS_ROOT_TEST_FLAGS=--representative` selects
+the labeled 56-case/616-observation subset. Full aggregates and acceptance reject
+these overrides. For a focused fatal host-instrumented compiler run, select
+supported instrumented `CXXFLAGS`, set `ASAN_OPTIONS=detect_leaks=0:halt_on_error=1`,
 `UBSAN_OPTIONS=halt_on_error=1`, and `--sanitized-compiler` in both
 `XFS_ROOT_TEST_FLAGS` and `XFS_ROOT_API_TEST_FLAGS`. This exempts only the compiler's
 address-space cap for sanitizer shadow memory; generated target code is not
