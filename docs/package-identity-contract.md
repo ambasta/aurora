@@ -121,12 +121,12 @@ resolution, and then checks canonical containment. Self-tests cover contained,
 traversal and outside paths. This fixes test infrastructure, not library behavior.
 
 The default candidate ceiling remains 128 MiB. A separately approved integration
-run can select `--candidate-cap-mib 512` (accepted range 128..512) because the
+run can select `--candidate-cap-mib 1024` (accepted integer range 128..1024) because the
 inherited full regression build produces more than 128 MiB. The selected ceiling
 is recorded; the 1 GiB free floor and growth reserve remain enforced. Fresh parent
 aggregate and distinct review will establish the final revised-harness status.
 
-The top-level `make test` target selects `PACKAGE_IDENTITY_CAP_MIB=512` for its
+The top-level `make test` target selects `PACKAGE_IDENTITY_CAP_MIB=1024` for its
 package prerequisite automatically. Standalone `make test-package-identity`
 keeps the 128 MiB default. This prevents the full default aggregate from inheriting
 a focused-only cap after other test products have accumulated. Both routes pass
@@ -143,3 +143,15 @@ A new compiler integration must record and review its expected pin independently
 then deliberately supply it. Wrong/malformed pins and baseline-default behavior
 have independent rejection/compatibility checks. The format/oracle and frozen
 pre-implementation contract are unchanged.
+
+
+## Current bounded resource-configuration checks
+
+The maximum selectable whole-candidate storage cap is 1024 MiB; focused defaults
+remain unchanged. Any increase still needs separate measured aggregate admission,
+including retained roots, growth reserve and the existing free-space floor. This
+does not change per-process address-space, per-file or source-size limits.
+`--check-cap-only` validates resource configuration without reading/running a
+compiler or creating a native acceptance receipt. Its configuration-only result
+cannot replace this contract's behavioral oracle and full acceptance gates.
+Historical frozen contracts and receipts retain their original limits and pins.

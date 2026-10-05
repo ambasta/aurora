@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 COMPILER_SHA256 = 'e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e'
 CONTRACT_SHA256 = '79af6fe35314b1dd17a6f1115c8269754866018e39061c5ad1cba6161634887f'
 CAP = 128 << 20
-MAX_CAP = 512 << 20
+MAX_CAP = 1024 << 20
 FLOOR = 1 << 30
 SOURCE_CAP = 64 << 10
 BATCH = 24
@@ -62,8 +62,20 @@ def artifact_path(value):
 
 
 def candidate_cap(mib):
-    require(128 <= mib <= 512, 'candidate cap must be between 128 and 512 MiB')
+    require(type(mib) is int and 128 <= mib <= 1024,
+            'candidate cap must be an integer between 128 and 1024 MiB; increases require explicit aggregate admission')
     return mib << 20
+
+
+def cap_self_test():
+    for mib in (128, 512, 513, 1023, 1024):
+        require(candidate_cap(mib) == mib << 20, 'candidate cap boundary conversion')
+    for mib in (-1, 0, 127, 1025, 1 << 30, True, 512.0, '1024', None):
+        try:
+            candidate_cap(mib)
+        except AssertionError:
+            continue
+        raise AssertionError('invalid candidate cap accepted')
 
 
 def signed(value):
@@ -416,14 +428,8 @@ def self_test():
             pass
         else:
             raise AssertionError('artifact containment accepted traversal/outside path')
-    require(candidate_cap(128) == CAP and candidate_cap(512) == MAX_CAP, 'approved cap boundaries')
-    for mib in (-1, 0, 127, 513, 1 << 30):
-        try:
-            candidate_cap(mib)
-        except AssertionError:
-            pass
-        else:
-            raise AssertionError('invalid candidate cap accepted')
+    require(candidate_cap(128) == CAP and candidate_cap(1024) == MAX_CAP, 'approved cap boundaries')
+    cap_self_test()
 
 
 class Runner:
@@ -561,11 +567,18 @@ def main():
     parser.add_argument('--artifacts', '--artifact-root', dest='artifact_root', type=Path)
     parser.add_argument('--quick', '--smoke', dest='smoke', action='store_true', help='development subset, never the full acceptance gate')
     parser.add_argument('--self-test-only', action='store_true')
-    parser.add_argument('--candidate-cap-mib', type=int, default=128, help='explicit integration storage cap 128..512 MiB; default 128')
+    parser.add_argument('--candidate-cap-mib', type=int, default=128, help='whole-candidate storage cap 128..1024 MiB; default 128; increases require explicit aggregate admission')
     parser.add_argument('--compiler-sha256', default=COMPILER_SHA256, help='explicit expected compiler SHA256; default preserves accepted M022 pin')
+    parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
     args = parser.parse_args()
-    self_test()
     cap = candidate_cap(args.candidate_cap_mib)
+    if args.check_cap_only:
+        cap_self_test()
+        print(json.dumps(dict(status='configuration-only', native_executed=False,
+            candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap,
+            focused_default_mib=128, maximum_cap_mib=1024), sort_keys=True))
+        return
+    self_test()
     if args.self_test_only:
         print('PASS independent regex/integer oracle and observation negative self-tests')
         return

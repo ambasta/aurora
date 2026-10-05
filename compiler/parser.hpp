@@ -356,22 +356,26 @@ class Parser {
         return postfix(e);
     }
     int precedence(const std::string &s) {
-        if (s == "|")
+        if (s == "||")
             return 1;
-        if (s == "^")
+        if (s == "&&")
             return 2;
-        if (s == "&")
+        if (s == "|")
             return 3;
-        if (s == "==" || s == "!=")
+        if (s == "^")
             return 4;
-        if (s == "<" || s == ">" || s == "<=" || s == ">=")
+        if (s == "&")
             return 5;
-        if (s == "<<" || s == ">>")
+        if (s == "==" || s == "!=")
             return 6;
-        if (s == "+" || s == "-")
+        if (s == "<" || s == ">" || s == "<=" || s == ">=")
             return 7;
-        if (s == "*" || s == "/" || s == "%")
+        if (s == "<<" || s == ">>")
             return 8;
+        if (s == "+" || s == "-")
+            return 9;
+        if (s == "*" || s == "/" || s == "%")
+            return 10;
         return 0;
     }
     ExpressionPtr expr(int min = 1) {

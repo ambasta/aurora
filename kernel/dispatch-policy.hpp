@@ -1,5 +1,6 @@
 #pragma once
 #include "ipc-policy.hpp"
+#include "round-robin-transport.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -129,18 +130,40 @@ public:
     }
     [[nodiscard]] auto select(Phase phase) -> std::optional<Work> {
         if (phase != Phase::inactive || !bound_ || selected_ || !registry_.ready(service_)) return std::nullopt;
-        for (std::size_t offset = 0; offset < capacity; ++offset) {
-            const auto client = (next_client_ + offset) % capacity;
-            if (mailboxes_[client].state() != State::pending) continue;
-            const auto grant = mailboxes_[client].endpoint(service_);
-            if (!grant) continue;
-            const auto request = mailboxes_[client].receive(service_, Phase::service, *grant, transactions_[client]);
-            if (!request) continue;
-            selected_ = client;
-            next_client_ = (client + 1) % capacity;
-            return Work{client, transactions_[client], *request, *grant};
+        static_assert(capacity == 2);
+        std::array<std::optional<Endpoint>, capacity> grants{};
+        std::uint64_t eligible_mask = 0;
+        for (std::size_t client = 0; client < capacity; ++client) {
+            if (disposed_[client] || mailboxes_[client].state() != State::pending
+                || !registry_.index(clients_[client]) || transactions_[client] == 0) continue;
+            grants[client] = mailboxes_[client].endpoint(service_);
+            if (grants[client]) eligible_mask |= std::uint64_t{1} << client;
         }
-        return std::nullopt;
+        // Fault modes alter local copied inputs/output only, after the existing
+        // launch/registry checks. No live cursor, mailbox or grant is corrupted.
+        std::uint64_t policy_cursor = next_client_, policy_mask = eligible_mask;
+#ifdef AURORA_DISPATCH_POLICY_CURSOR
+        policy_cursor = std::numeric_limits<std::uint64_t>::max();
+#endif
+#ifdef AURORA_DISPATCH_POLICY_MASK
+        policy_mask = std::numeric_limits<std::uint64_t>::max();
+#endif
+        auto encoded = language_round_robin_next(policy_cursor, policy_mask);
+#ifdef AURORA_DISPATCH_POLICY_OUTPUT
+        const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
+        encoded |= reserved_bit;
+#endif
+        const auto selection = RoundRobinSelection::decode(encoded, next_client_, eligible_mask);
+        if (!selection || !selection->selected()) return std::nullopt;
+        const auto client = selection->client();
+        // The pure result is only a choice. Recheck real authority and perform
+        // the actual mailbox receive before committing selected state or cursor.
+        if (!grants[client]) return std::nullopt;
+        const auto request = mailboxes_[client].receive(service_, Phase::service, *grants[client], transactions_[client]);
+        if (!request) return std::nullopt;
+        selected_ = client;
+        next_client_ = selection->next();
+        return Work{client, transactions_[client], *request, *grants[client]};
     }
     [[nodiscard]] auto reply(user::DomainHandle caller, Phase phase, Endpoint endpoint,
                              std::uint64_t transaction, std::uint64_t value) -> bool {

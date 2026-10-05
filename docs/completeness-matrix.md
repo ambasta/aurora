@@ -1,5 +1,29 @@
 # Completeness and acceptance matrix
 
+## Verified Aurora round-robin and short-circuit checkpoint — 2026-10-05
+
+The real UEFI two-client dispatcher now calls a copied Aurora selection policy.
+Authority, mailbox mutation, context and hardware stay in trusted C++/assembly.
+The 566-file tested freeze passed a fresh compiler build, all 45 focused commands,
+the complete native aggregate and all 173 production QEMU modes plus three
+capacity probes and two actual normal restoration boots. Independent native,
+ABI/IR/linked-stack and final retained-trace reviews passed. See the
+[bounded contract](kernel-round-robin-contract.md) and
+[integration results](kernel-round-robin-integration-results.md); this adds no
+general scheduler or physical-platform qualification claim.
+
+The first combined aggregate is preserved as failed at the BIOS payload-size
+gate. A BIOS-only root removes unused UEFI policy graphs while preserving its
+value/ownership probe. The final candidate also incorporates the separately
+reviewed 127-sector transport correction and exact-bool short-circuit compiler.
+Fresh combined acceptance passed without reusing failed-run prefixes.
+
+A later full-aggregate attempt was blocked before child execution when its
+1024 MiB configuration conflicted with three harnesses' 512 MiB ceilings. The
+test-only replay aligns all five bounded cap contracts while preserving focused
+defaults and all behavioral gates. Configuration-only checks are not native or
+emulator acceptance; the blocked packet and prior failures remain preserved.
+
 ## Verified Aurora kernel-budget checkpoint — 2026-10-05
 
 The [interrupt-budget transition](kernel-budget-contract.md) is a pure Aurora
@@ -36,7 +60,7 @@ This is a requirements map, not a completion percentage. Snapshot: 2026-10-04, v
 | Tooling/self-hosting | Host compiler/build/test harness; no native self-hosting | Native toolchain/packages/debugger/profiler; build compiler/system using the native core/runtime/library, inspect target dependencies and compare multi-stage outputs |
 | Boot/CPU | Separate OVMF-tested relocatable UEFI loader/payload with bounded final-map handoff, own stack/mappings and Aurora execution; Sequential protected user domains now run on UEFI; bounded UEFI run budgets and controlled client recovery are implemented. Emulator-only BIOS loader, explicit 4 KiB permissioned identity mappings, serial result, IDT/GDT/TSS/guarded IST, NXE/WP and fail-stop paths verified in QEMU | Native or UEFI boot contract; validated memory map, exception recovery, per-CPU state, feature detection, real-machine logs |
 | Memory/process isolation | Partial trusted C++ bootstrap: E820 usable-map validation and bounded 128-page arena, move-only generation/epoch tickets; controlled ring-3 probe plus new separately compiled user fixtures, bounded scalar return and validated compiler-fault containment in three owned CR3 domains with leased stacks, tested foreign-access denial, root restoration, scrubbed reuse and stale-handle checks; bounded integer-only BIOS preemption plus milestone009 sequential UEFI domains with explicit layout authority, private backing and guarded entry stacks; no general process model | Physical/virtual allocation, user isolation, capabilities, revocation and resource accounting; cross-domain access/forgery tests fail safely |
-| Scheduler/SMP/IPC | Bounded QEMU xAPIC single-CPU integer-context preemption, fixed tasks/slice budgets, pending-IRQ drain; staged copied-scalar request/reply IPC on UEFI with incarnation-bound grants and cancellation/restart; UEFI role/phase/transaction-bound client and service interrupt-count budgets with disposal, mapping retirement, scrub and rebinding; no SMP, arbitrary suspended IPC, calibrated time or general scheduler | Preemptive scheduling, multiprocessor synchronization, timers and bounded IPC; fairness, interrupt storms, starvation and restart tests |
+| Scheduler/SMP/IPC | Bounded QEMU xAPIC single-CPU integer-context preemption, fixed tasks/slice budgets, pending-IRQ drain; staged copied-scalar request/reply IPC on UEFI with incarnation-bound grants and cancellation/restart; UEFI role/phase/transaction-bound client and service interrupt-count budgets with disposal, mapping retirement, scrub and rebinding; Aurora owns the copied two-slot next-eligible policy, with authority and commit still in trusted bootstrap code; no SMP, arbitrary suspended IPC, calibrated time or general scheduler | Preemptive scheduling, multiprocessor synchronization, timers and bounded IPC; fairness, interrupt storms, starvation and restart tests |
 | Platform/power | Bounded post-firmware RSDP/XSDT/MADT discovery through a revocable R-NX window, tested in OVMF; read-only q35 MCFG/PCI function inventory through revocable UC mappings; milestone014 adds explicit validated read-only BAR/profile authority with revoked-window tests and a pinned clean-firmware fixture; no AML, device activation/IOMMU driver stack or physical-platform power support | Discovery, DMA isolation, interrupt routing, suspend/resume, shutdown and thermal policy; malformed tables, stale DMA and transition-failure tests |
 | Storage/network/input | No target driver/filesystem/network/input implementation; native NVMe object/extent filesystem and XFS on-disk backend are specified in [storage requirements](../storage/design/requirements.md); host-only durability model and traceability tests pass, not mount support | Real drivers and services, persistence/recovery, networking and input; corruption, unplug, exhaustion and restart tests on named devices |
 | AMD display | Not implemented; no framebuffer acceptance result | Boot framebuffer then native display separately; modesetting, hotplug and resume tested on named GPU/connector tuples |
@@ -439,7 +463,7 @@ claim follows. Leak checking remains unavailable. See the [source/IR contract](.
 and [exact integration evidence](readonly-windows-integration-results.md).
 
 
-## BIOS host-toolchain layout portability candidate
+## Verified bounded BIOS host-toolchain layout portability
 
 The BIOS sector now uses an explicit 0x7c00/512-byte linker contract rather than
 the host linker's default ELF section layout. Named GNU metadata is discarded;
@@ -448,18 +472,19 @@ The production-linker regression passes four assembler-note variants, preserves
 the previous relocated instruction bytes and rejects nine malformed layouts,
 under ordinary and optimized Python on Debian GNU binutils 2.44. The original
 Gentoo 2.47p1 report identified an allocated GNU property note in the boot object;
-a fixed Gentoo rerun remains pending. The candidate passed a production kernel
+the user subsequently reported a successful PR25 rebuild on 2026-10-05. That
+report is not an independently observed build log or boot. The standalone fix passed a production kernel
 build using the unchanged accepted compiler, ordinary/optimized image validators,
 an actual normal BIOS boot and an actual controlled divide-fault BIOS boot. Fault
 cleanup restored identical normal image bytes (512-byte boot sector, 45,808-byte
-kernel payload). Independent focused source review passed. The full native and
-all-mode emulator aggregates were not rerun for this narrow linker change. These
+kernel payload). Independent focused source review passed. The standalone narrow linker change did not rerun the full native/all-mode
+aggregates; the later combined checkpoint above passed them. These
 results establish no additional physical-platform or broad host-distribution
 qualification. See the
 [toolchain contract and diagnostic commands](../kernel/README.md#host-toolchain-boot-layout).
 
 
-## Bounded BIOS capacity portability candidate
+## Verified bounded BIOS capacity portability
 
 An actual 127-sector (65,024-byte) single-read contract replaces the former
 96-sector loader limit, keeping destination `[0x10000,0x1fe00)`, the conservative
@@ -472,7 +497,24 @@ pass, including optimized Python. Independent source/layout controls also pass.
 Actual maximum-transfer sentinel execution and both failing controls verify
 observed bytes and serial outcomes. A fresh production build with the unchanged
 accepted compiler, normal/fault BIOS boots, image validators and exact normal
-restoration pass. The Gentoo rerun, full native/scheduling/all-mode aggregates and
-physical hardware remain unverified for this candidate. Future growth beyond
+restoration pass. The user reported a successful PR25 Gentoo rebuild on
+2026-10-05; no independent log, new boot or physical-hardware result is inferred.
+The later combined checkpoint passed full native and all-mode emulation. Future growth beyond
 this bound needs a separately reviewed loading mechanism.
 See the [active transport contract](../kernel/README.md#bounded-bios-transport-capacity-and-host-code-generation).
+
+
+## Verified bounded exact-bool short-circuit semantics
+
+The isolated frontend adds C++-precedence `&&` and `||`, exact bool operands,
+left-to-right single evaluation and runtime-only RHS laziness. Both operands
+remain statically checked. Existing typed IR joins retain stack provenance and
+lifetime/initialization facts; an emitted-depth certificate protects unchanged
+x86 call alignment. Explicit per-function block/operand-retention limits reject
+excessive logical-prefix complexity before snapshot copies. Independent isolated
+release and fatal host ASan/UBSan compiler suites passed, followed by the fresh
+combined native and 173+3+2 emulator checkpoint. LeakSanitizer was disabled for
+executor ptrace limitations; no leak-clean claim follows. See
+[contract](../compiler/SHORT-CIRCUIT.md) and the linked integration results. This
+language feature itself adds no kernel authority, ABI or heap/reference extension,
+full-language safety/resource proof or physical-hardware/performance qualification.

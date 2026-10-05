@@ -117,3 +117,15 @@ correctly rejected that run. The dispatcher-only service fixture now performs
 actual-interrupt checks were preserved. The temporary raw failure log was
 overwritten during development; its measured output remains in the task
 transcript, and no archived raw-failure receipt is claimed.
+
+
+## Candidate Aurora selection port
+
+`Dispatcher::select` now derives a copied two-bit eligibility snapshot from live
+pending mailbox authority and calls Aurora `kernel::round_robin_next`. Canonical
+transport decoding and the actual mailbox receive precede cursor/selection commit.
+The copied choice never grants authority. The [round-robin contract](../../docs/kernel-round-robin-contract.md)
+specifies rejection, idle cursor preservation, continuous pending fairness and the
+remaining native/ABI/QEMU acceptance gates. Three new local policy-fault modes
+raise this candidate dispatcher suite to15 modes; historical12-mode receipts above
+remain unchanged and do not qualify the candidate.

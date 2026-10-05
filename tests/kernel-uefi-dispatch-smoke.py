@@ -5,7 +5,7 @@ import copy,importlib.util,json,re,sys
 spec=importlib.util.spec_from_file_location('budget',Path(__file__).with_name('kernel-uefi-budget-smoke.py'))
 budget=importlib.util.module_from_spec(spec);spec.loader.exec_module(budget)
 need=budget.need;BASE=budget.BASE;EVENT=budget.EVENT
-MODES=('dispatch','dispatch-budget','dispatch-fault','dispatch-mixed','dispatch-pending','dispatch-cross-reply','dispatch-client-owner','dispatch-stale','dispatch-duplicate','dispatch-full','dispatch-root','dispatch-peer-code')
+MODES=('dispatch','dispatch-budget','dispatch-fault','dispatch-mixed','dispatch-pending','dispatch-cross-reply','dispatch-client-owner','dispatch-stale','dispatch-duplicate','dispatch-full','dispatch-root','dispatch-peer-code','dispatch-policy-cursor','dispatch-policy-mask','dispatch-policy-output')
 SUCCESS=MODES[:5]
 
 def metadata_valid(meta,mode):
@@ -67,6 +67,8 @@ def expected(mode,images,arena):
     if mode=='dispatch-peer-code':request(1,peer=True);return rows
     request(1)
     if mode=='dispatch-full':request(0,True);return rows
+    if mode.startswith('dispatch-policy-'):
+        add('AURORA_UEFI_RUNTIME_FAIL: dispatch fair copied selection');return rows
     if mode in ('dispatch-budget','dispatch-fault','dispatch-mixed','dispatch-stale'):
         mixed=mode=='dispatch-mixed'
         if mixed:service(0);service(1,5)
@@ -138,6 +140,7 @@ def validate(status,text,mode,meta):
     for actual,pattern in zip(logical,wanted):need(re.fullmatch(pattern,actual),'Wrong dispatcher state/order: '+actual)
     if mode in SUCCESS:need(not armed and not active,'Active state at cleanup')
     elif mode=='dispatch-root':need(armed and active and used==0 and last and last[0]==64,'Wrong denied root event')
+    elif mode.startswith('dispatch-policy-'):need(not armed and not active and epoch==0,'Policy failure after service activation')
 
 def fixtures():
     arena=0x1000000;kernel=arena+0x11000;root=arena+0xa0000;frame=arena+0x88000-176

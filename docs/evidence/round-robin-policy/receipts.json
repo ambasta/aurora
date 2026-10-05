@@ -1,0 +1,270 @@
+{
+  "compiler_sha256": "66bb719d0ad1622e97b7e448a724d153bb370080f0ce4aa1e5a0b6b322a4a298",
+  "counts": {
+    "capacity_probes": 3,
+    "emulator_sealed_paths": 1240,
+    "families": {
+      "bar": 7,
+      "bios": 37,
+      "ivrs": 11,
+      "uefi": 118
+    },
+    "focused_commands": 45,
+    "native_generated_records": 26588,
+    "normal_restoration_boots": 2,
+    "production_modes": 173,
+    "total_actual_executions": 178
+  },
+  "date": "2026-10-05",
+  "finalization": {
+    "added_result_documents": 3,
+    "final_source_manifest_is_separate": true,
+    "implementation_and_modes_unchanged": true,
+    "unchanged_tested_files": 560,
+    "updated_result_documents": 6
+  },
+  "isolated_sanitizer_compiler_sha256": "5ff9115b5c35818dd0be0e9e4645b14ca18ab804c497ed34f131aaff71acca73",
+  "known_followup_limits": [
+    "Older fixed default hashes remain a public developer make-test portability gap; strict acceptance used explicit external pins.",
+    "Repeated whole-candidate package accounting scans impose harness overhead; no compiler performance equivalence claim."
+  ],
+  "normal_images": {
+    "files": {
+      "build/aurora.img": {
+        "bytes": 1048576,
+        "kind": "file",
+        "mode": "0644",
+        "sha256": "599a2e4ba7adf1cd729e30c444fc0d9b4a0c9dbb12713d89d5e3af76e5427df7"
+      },
+      "build/kernel.bin": {
+        "bytes": 45808,
+        "kind": "file",
+        "mode": "0755",
+        "sha256": "d4972a1546a6d00a4317cb403cce6daf4d23720b95f465ab3509fe0e82977b17"
+      },
+      "build/kernel.elf": {
+        "bytes": 59208,
+        "kind": "file",
+        "mode": "0755",
+        "sha256": "1a7359c0089ab1df149826a1440a842b4ac29f7f561d29d301ea3e8a0c11147f"
+      },
+      "build/uefi/esp/EFI/BOOT/BOOTX64.EFI": {
+        "bytes": 34920,
+        "kind": "file",
+        "mode": "0755",
+        "sha256": "6ef131d426107d4f98587cd3eb0796d1336fd75191e1f9864acb5d84150f37d7"
+      },
+      "build/uefi/payload.bin": {
+        "bytes": 21284,
+        "kind": "file",
+        "mode": "0755",
+        "sha256": "fd35ba5685d8c39fe2facd5959df9ca7be01c9627274347f3bf70e543aafd548"
+      },
+      "build/uefi/payload.elf": {
+        "bytes": 29560,
+        "kind": "file",
+        "mode": "0755",
+        "sha256": "cde1b8289799e376b40858990a07c6e2befd3fba19731837d030e1f79da88d1a"
+      }
+    },
+    "table_test_symbols_absent": true
+  },
+  "publication_base": {
+    "commit": "c2deb1d3319fa9f590f5ccacbddab972d4ad8774",
+    "pr": 25,
+    "tree": "dfe6f7748f752f7d5366fdb431adb2712b712684"
+  },
+  "receipts": {
+    "caller_stack_review": {
+      "bytes": 2516,
+      "retained_path": "evidence/preparation/aggregate-harness-review/independent-cap-focused-terminal/CALLER-STACK-REVIEW.md",
+      "sha256": "a52fc49df96a53a39aee64f91c62f7806a1f10e02d5a9827ba1686dfe0059169"
+    },
+    "compiler_freeze": {
+      "bytes": 1620,
+      "retained_path": "evidence/preparation/emulator/frozen/freeze-receipt.json",
+      "sha256": "c088f1ea10db0623240671c4544911e29a38aa14617a3639b3d5c32d51949e9d"
+    },
+    "emulator_admission": {
+      "bytes": 7173,
+      "retained_path": "evidence/preparation/emulator/review/plan-cap-final-v1/admission.parent-approved.json",
+      "sha256": "40a5aaa34a70f65e086f76593ebdada29ff39b7bcb1794e6e03b7933d0b8c1be"
+    },
+    "emulator_closed_lease": {
+      "bytes": 497,
+      "retained_path": "evidence/preparation/aggregate-harness-review/closed-lease-emulator-round-robin-cap-emulator-001.json",
+      "sha256": "0fad0635ee0f12f4882fd17d518506e1008363fda9f00ffaf436053a339c7b42"
+    },
+    "emulator_evidence_seal": {
+      "bytes": 233112,
+      "retained_path": "evidence/preparation/emulator/review/runs/round-robin-cap-emulator-001/SHA256.json",
+      "sha256": "af09f022e2fe1044291689c80ce0436b9a06b2ecd20048f0ec07f53bedc7f11b"
+    },
+    "emulator_independent_approval": {
+      "bytes": 4386,
+      "retained_path": "evidence/preparation/emulator/review/independent-cap-final-terminal/approval.json",
+      "sha256": "25f943a187888359e6d8dd92a93c9bafd025fcaded479d2ddf7314e44819a0b8"
+    },
+    "emulator_independent_audit": {
+      "bytes": 65505,
+      "retained_path": "evidence/preparation/emulator/review/independent-cap-final-terminal/terminal-audit.json",
+      "sha256": "2116202e4b7b73e174ed25aedd97d9f182b3b09a3482bd6bc116b26d285c5e10"
+    },
+    "emulator_independent_review": {
+      "bytes": 3449,
+      "retained_path": "evidence/preparation/emulator/review/independent-cap-final-terminal/REVIEW.md",
+      "sha256": "88c6aebb2e86ece4ec22f38fd8727a7ab998b2b7cbd39c434c663b5d372a555f"
+    },
+    "emulator_resource_plan": {
+      "bytes": 1725,
+      "retained_path": "evidence/preparation/emulator/review/plan-cap-final-v1/resource-plan.json",
+      "sha256": "b7a25b573832ee55e183bcfdb68ea5ab044b094567069b6a37aeab01a1cade67"
+    },
+    "emulator_review_seal": {
+      "bytes": 1575,
+      "retained_path": "evidence/preparation/emulator/review/independent-cap-final-terminal/REVIEW-SEAL.json",
+      "sha256": "844f404d1eef8f2fc20e31e45d432f5d76872780722a2354d3330d39a809dd21"
+    },
+    "emulator_runtime_inputs": {
+      "bytes": 10745,
+      "retained_path": "evidence/preparation/emulator/review/plan-cap-final-v1/runtime-inputs.json.gz",
+      "sha256": "b92cf8f182667214d3689573c784d5f892415963cd18c09d470951c6a77fabc2"
+    },
+    "emulator_terminal": {
+      "bytes": 724779,
+      "retained_path": "evidence/preparation/emulator/review/runs/round-robin-cap-emulator-001/results.json",
+      "sha256": "8ddaecd8bfe03f13d201da57cc6667a190e60a800c70803e15b7d16623ab8e02"
+    },
+    "focused_approval": {
+      "bytes": 3488,
+      "retained_path": "evidence/preparation/aggregate-harness-review/independent-cap-focused-terminal/approval.json",
+      "sha256": "e57c0b31625f3e3596c526aaf0fdb12077eb675c4f9925f8bb0c14e0010f095e"
+    },
+    "focused_terminal": {
+      "bytes": 8368,
+      "retained_path": "evidence/preparation/aggregate-harness-review/runs/round-robin-cap-focused-001/terminal.json",
+      "sha256": "1f687b5f60cfb48748e094e3940633f151f533caec784c9ab0c162dc33726fe9"
+    },
+    "full_native_approval": {
+      "bytes": 4085,
+      "retained_path": "evidence/preparation/aggregate-harness-review/independent-cap-full-native-terminal/approval.json",
+      "sha256": "ad96caa011066ec872175180a8f05e3c11c5dd93d46a05fa6955dd5f5b51495d"
+    },
+    "full_native_closed_lease": {
+      "bytes": 457,
+      "retained_path": "evidence/preparation/aggregate-harness-review/closed-lease-round-robin-cap-native-001.json",
+      "sha256": "0b291a87dc611736da22775ae6a8b059e636a210c56a6a86dec19574bd79ea0e"
+    },
+    "full_native_evidence_seal": {
+      "bytes": 897,
+      "retained_path": "evidence/preparation/aggregate-harness-review/runs/round-robin-cap-native-001/evidence-seal.json",
+      "sha256": "e1f91d6671c5ab0c172135139decf2ae2758206d6776d484342c9c8c30f0324d"
+    },
+    "full_native_generated_inventory": {
+      "bytes": 553717,
+      "retained_path": "evidence/preparation/aggregate-harness-review/runs/round-robin-cap-native-001/generated-inventory.json.gz",
+      "sha256": "7e713f8d8994c0063e3a3ec7fa844aaf624779d32f170fefcaba06af16ec0257"
+    },
+    "full_native_review": {
+      "bytes": 3137,
+      "retained_path": "evidence/preparation/aggregate-harness-review/independent-cap-full-native-terminal/REVIEW.md",
+      "sha256": "a21a1c88078292247e7b9f37e43315dab69496baf36fd77a34bd4f046a1c4da8"
+    },
+    "full_native_terminal": {
+      "bytes": 9790,
+      "retained_path": "evidence/preparation/aggregate-harness-review/runs/round-robin-cap-native-001/terminal.json",
+      "sha256": "86ae24ffa1b0b60a02665c460db22ff98599c1760d90e93eade9ec48d86baae0"
+    },
+    "original_native_archive": {
+      "bytes": 88231727,
+      "retained_path": "evidence/preparation/emulator/review/runs/round-robin-cap-emulator-001/native-original-build.tar.gz",
+      "sha256": "5254c29429cc0037e4a40e58808d86c992ea779355bffcc787fefa9524b25daa"
+    },
+    "original_native_binding": {
+      "bytes": 2138,
+      "retained_path": "evidence/preparation/emulator/review/runs/round-robin-cap-emulator-001/native-original-binding.json",
+      "sha256": "6b839f2516791c3368aa1d1ce8dc646d78c33568c7f327c76598aaed872d8af8"
+    },
+    "original_native_inventory": {
+      "bytes": 554531,
+      "retained_path": "evidence/preparation/emulator/review/runs/round-robin-cap-emulator-001/native-original-build-inventory.json.gz",
+      "sha256": "a767ecd892be6978ffbe315a6b2bcdd211b2909e560e8eb8a164da50d9586c26"
+    },
+    "original_native_preservation": {
+      "bytes": 1382,
+      "retained_path": "evidence/preparation/emulator/review/runs/round-robin-cap-emulator-001/native-original-build-preservation.json",
+      "sha256": "7c7d23800614272be034d294ab9c61764b48525963ae6f4c60bdb2b5b6791f47"
+    },
+    "qualified_dual_map": {
+      "bytes": 5810,
+      "retained_path": "evidence/preparation/aggregate-harness-review/independent-cap-focused-terminal/qualified-output-pins.json",
+      "sha256": "2dedb75fef97cdde80815adbefa1a3d09186ad934553b6d8505b575e9bc0d17f"
+    },
+    "short_circuit_fatal_sanitizer_audit": {
+      "bytes": 339145,
+      "retained_path": "aurora-short-circuit-candidate-20261005/evidence/short-circuit/full-preparation/review/independent-full-sanitized-v2-audit.json",
+      "sha256": "867c2b16f44a717dfa651b15dab35c96f746ea4e9a632a8474e29a8e5f0476dc"
+    },
+    "short_circuit_final_isolated_review": {
+      "bytes": 1317,
+      "retained_path": "aurora-short-circuit-candidate-20261005/evidence/short-circuit/integration-handoff-v1/FINAL-REVIEW.json",
+      "sha256": "0dd1f67183f8e94a9953604701b2ddefc6d463edd72c0ea9309635f8ccafe730"
+    },
+    "short_circuit_release_audit": {
+      "bytes": 84991,
+      "retained_path": "aurora-short-circuit-candidate-20261005/evidence/short-circuit/full-preparation/review/independent-full-release-v2-audit.json",
+      "sha256": "bbe358530a6d1fe66700a114930c6caee15c9d7cc0798bad8445b1b13b990e03"
+    },
+    "short_circuit_source_delta": {
+      "bytes": 3777,
+      "retained_path": "aurora-short-circuit-candidate-20261005/evidence/short-circuit/integration-handoff-v1/source-delta.json",
+      "sha256": "d55652d15c77a569f6def1daa3c592125b4ab2553615ed5e715f87bcf29f20e2"
+    },
+    "tested_source_archive": {
+      "bytes": 1677694,
+      "retained_path": "evidence/preparation/aurora-round-robin-cap-consistent-source-v2.tar.gz",
+      "sha256": "637f518c26b5d52009825635aad815056e35893471ff47e9713278bc031d9518"
+    },
+    "tested_source_manifest": {
+      "bytes": 111298,
+      "retained_path": "evidence/preparation/source-cap-consistent-manifest-v2.json",
+      "sha256": "f8aec37b518c2dc9ccfe0ba95b35055b06bbc3e01fa10d2295348abcd2de9366"
+    }
+  },
+  "resource": {
+    "emulator_final_disk": {
+      "accounting": "combined fresh integration+author+focused, inode deduplicated; additional 3 GiB global old-growth reservation",
+      "allocated_bytes": 1036271616,
+      "baseline_bytes": 708988928,
+      "cap_bytes": 4294967296,
+      "floor_bytes": 1073741824,
+      "free_bytes": 19208585216,
+      "growth_bytes": 0,
+      "old_growth_reservation_bytes": 3221225472,
+      "reserve_bytes": 67108864
+    },
+    "emulator_projection_bytes": 2707408636,
+    "free_floor_bytes": 1073741824,
+    "old_growth_reservation_bytes": 3221225472,
+    "outer_cap_bytes": 4294967296,
+    "reserve_bytes": 67108864,
+    "sampled_emulator_peak_bytes": 1036021760
+  },
+  "sanitizer_scope": {
+    "ASan_UBSan": "fatal isolated complete compiler targets",
+    "LeakSanitizer": "disabled for executor ptrace limitations",
+    "large_IR_debug": "-O1 -g1 with both sanitizers",
+    "whole_kernel_sanitizer_claim": false
+  },
+  "schema": "aurora-round-robin-short-circuit-integration-evidence-v1",
+  "status": "fresh focused, full native and173+3+2 emulator gates independently passed; publication is separate",
+  "tested_source_files": 566,
+  "user_reported_portability": {
+    "base": "PR25",
+    "date": "2026-10-05",
+    "independent_new_log_or_boot_observed": false,
+    "observation": "user reported rebuild success",
+    "physical_hardware_qualified": false,
+    "toolchain": "Gentoo GCC16.2.1/binutils2.47"
+  }
+}

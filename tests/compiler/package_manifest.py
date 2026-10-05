@@ -29,7 +29,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 COMPILER_SHA256 = 'e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e'
 CONTRACT_SHA256 = '5aa8786a1afc3fac793deccb1e4bb11ae2d6497ab10093b0545c72aa39dc7103'
-CAP, MAX_CAP, FLOOR = 256 << 20, 512 << 20, 1 << 30
+CAP, MAX_CAP, FLOOR = 256 << 20, 1024 << 20, 1 << 30
 SOURCE_CAP, BATCH = 64 << 10, 128
 U32, U64 = (1 << 32)-1, (1 << 64)-1
 IMIN, IMAX = -(1 << 63), (1 << 63)-1
@@ -61,8 +61,20 @@ def artifact_path(value):
 
 
 def candidate_cap(mib):
-    require(256 <= mib <= 512, 'candidate cap must be between 256 and 512 MiB')
+    require(type(mib) is int and 256 <= mib <= 1024,
+            'candidate cap must be an integer between 256 and 1024 MiB; increases require explicit aggregate admission')
     return mib << 20
+
+
+def cap_self_test():
+    for mib in (256, 512, 513, 1023, 1024):
+        require(candidate_cap(mib) == mib << 20, 'candidate cap boundary conversion')
+    for mib in (-1, 0, 255, 1025, 1 << 30, True, 512.0, '1024', None):
+        try:
+            candidate_cap(mib)
+        except AssertionError:
+            continue
+        raise AssertionError('invalid candidate cap accepted')
 
 
 def signed(value):
@@ -470,11 +482,8 @@ def self_test():
         try:artifact_path(link/'output')
         except AssertionError:pass
         else:raise AssertionError('containment accepted symlink ancestor')
-    require(candidate_cap(256)==CAP and candidate_cap(512)==MAX_CAP,'cap boundaries')
-    for mib in (-1,0,255,513,1<<30):
-        try:candidate_cap(mib)
-        except AssertionError:pass
-        else:raise AssertionError('invalid cap accepted')
+    require(candidate_cap(256)==CAP and candidate_cap(1024)==MAX_CAP,'cap boundaries')
+    cap_self_test()
 
 
 def all_cases():
@@ -709,10 +718,18 @@ def main():
     parser.add_argument('--quick','--smoke',dest='smoke',action='store_true',help='development subset, not full acceptance')
     parser.add_argument('--self-test-only',action='store_true')
     parser.add_argument('--freeze-reference',type=Path)
-    parser.add_argument('--candidate-cap-mib',type=int,default=256,help='whole-candidate storage cap 256..512 MiB; default focused cap 256')
+    parser.add_argument('--candidate-cap-mib',type=int,default=256,help='whole-candidate storage cap 256..1024 MiB; default 256; increases require explicit aggregate admission')
     parser.add_argument('--compiler-sha256', default=COMPILER_SHA256, help='explicit expected compiler SHA256; default preserves accepted M022 pin')
+    parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
     args=parser.parse_args()
-    self_test();cap=candidate_cap(args.candidate_cap_mib)
+    cap=candidate_cap(args.candidate_cap_mib)
+    if args.check_cap_only:
+        cap_self_test()
+        print(json.dumps(dict(status='configuration-only', native_executed=False,
+            candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap,
+            focused_default_mib=256, maximum_cap_mib=1024), sort_keys=True))
+        return
+    self_test()
     frozen=ROOT/'evidence/package-manifest/contract-before-implementation.md'
     require(sha(frozen)==CONTRACT_SHA256,'frozen pre-implementation contract byte identity')
     if args.self_test_only:

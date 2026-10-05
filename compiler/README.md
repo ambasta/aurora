@@ -39,7 +39,7 @@ auto answer(i64 input) -> i64 {
 - Scalar types are `i64`, `u64`, `u8` and `bool` since milestone013. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
 - Blocks, `if (bool) { ... } else { ... }`, `while (bool) { ... }`, `return`, and `static_assert` are supported. `break`, `continue`, and `for` are deferred.
 - Functions must return on every statically continuing path. A while-loop is conservatively allowed to run zero times even for literal `true`, so it does not by itself prove a function returns. Unreachable statements following an unconditional return are rejected.
-- Decimal integers (u64 literals use the exact `u64` suffix), booleans, parentheses, signed unary `-`, bool `!`, arithmetic and comparisons are supported. U64 adds exact 64-bit `~ & | ^`, checked `<<` and logical `>>` with i64 counts, plus explicit checked integer conversions. There are no implicit scalar conversions, pointer arithmetic, increment operators, or short-circuit boolean operators. See [the exact unsigned contract](UNSIGNED.md).
+- Decimal integers (u64 literals use the exact `u64` suffix), booleans, parentheses, signed unary `-`, bool `!`, arithmetic and comparisons are supported. U64 adds exact 64-bit `~ & | ^`, checked `<<` and logical `>>` with i64 counts, plus explicit checked integer conversions. There are no implicit scalar conversions, pointer arithmetic, or increment operators. Exact-bool short-circuit `&&`/`||` follow the verified bounded contract described below. See [the exact unsigned contract](UNSIGNED.md).
 - `//` comments are supported. Previous `fn`/`let` prototype syntax is rejected. This intentional source break follows the project's C++ identity; conventional C declarations such as `int main()` are also rejected.
 
 ## Defined integer and evaluation semantics
@@ -104,7 +104,7 @@ Builtin arrays cannot currently be borrowed, returned, passed directly to functi
 
 ## Working reflection
 
-`size_of(Type)`, `type_id(Type)` and `field_count(Type)` are compile-time queries. `static_assert(bool_expression)` accepts literals, these queries, comparisons and logical negation; general arithmetic constant evaluation and code generation remain deferred.
+`size_of(Type)`, `type_id(Type)` and `field_count(Type)` are compile-time queries. `static_assert(bool_expression)` accepts literals, these queries, comparisons, logical negation, and exact-bool `&&`/`||` composition; general arithmetic constant evaluation and code generation remain deferred.
 
 Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. U64 has ID8 and size8; U8 has ID11 and size1; existing builtin sizes are 8,1,8,8,8. Scalar bool's logical size is one byte, but its current stack slot is eight bytes. Class IDs begin at 100 in deterministic graph declaration order and are compilation-graph-local; defining-module/native names determine source type identity. Mentioned array types have IDs `1000000 + 2*N + B`, where B is one for bool and zero for i64. U64 array IDs use `2000000 + N`; U8 arrays use `3000000 + N`. Class IDs cannot collide with either array range.
 
@@ -177,3 +177,17 @@ one left-to-right evaluation and snapshot sequence. Return type and implicit
 conversions never select a candidate; template names and cross-module collisions
 remain restricted. Complete isolated release/fatal sanitizer gates and independent review passed;
 parent integration and milestone acceptance are still pending.
+
+
+## Verified exact-bool short-circuit semantics
+
+`&&` and `||` evaluate left to right with a lazy RHS and mandatory full static
+checking. Only exact bool operands are accepted. `&&` binds tighter than `||`;
+both bind below existing bitwise/comparison operators. Existing operands and
+arguments still evaluate once. The [contract](SHORT-CIRCUIT.md) specifies preserved
+source lifetimes, typed control-flow stacks, backend depth certification and
+explicit per-function snapshot-retention limits. Isolated release and fatal host
+ASan/UBSan compiler suites, followed by fresh combined native and 173+3+2 emulator
+integration, passed independent review. LeakSanitizer was disabled for executor
+ptrace limitations, so this is not a leak-clean result. See the
+[integration record](../docs/kernel-round-robin-integration-results.md).
