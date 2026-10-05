@@ -1,5 +1,20 @@
 # Completeness and acceptance matrix
 
+## Verified Aurora kernel-budget checkpoint — 2026-10-05
+
+The [interrupt-budget transition](kernel-budget-contract.md) is a pure Aurora
+class/enum implementation wired into the existing UEFI service/client timer path
+through a private scalar bootstrap transport. Next-state calculation and
+resume/exhaust selection execute in Aurora; domain/frame/epoch/ISR authority,
+timer hardware, storage and cancellation remain trusted bootstrap mechanisms.
+A fresh compiler build, full native aggregate, all 170 actual emulator modes and
+two additional normal BIOS/UEFI boots passed, with independent terminal reviews.
+The [evidence index](evidence/kernel-budget-policy/README.md) identifies the exact
+533-file tested freeze and preserves the earlier failed/interrupted attempts
+without borrowing their mode prefixes. Result-only documentation was finalized
+separately; implementation, test and runtime bytes are unchanged from that freeze.
+The BIOS scheduler, general scheduling and physical-platform status do not change.
+
 This is a requirements map, not a completion percentage. Snapshot: 2026-10-04, verified milestone022 functional checkpoint. Copied ordinary method class parameters and std::array exchange passed complete release/fatal host ASan/UBSan compiler gates, independent source/IR/native ABI review, a fresh parent aggregate and all 166 actual emulator modes (37 BIOS, 129 UEFI-family), followed by two separate normal restoration boots. All 368 source and 236 external inputs stayed unchanged through integration. No new kernel functionality or physical-device qualification is added. Bounded integer-only single-CPU preemption and a separate validated UEFI handoff remain the baseline. See the [verification record](verification.md) for exact source identity, commands and limits. No physical AMD platform is qualified; [Framework 13 / 7840U](framework-13-7840u.md) is the first complete-machine target.
 
 “C++-expressive” means comparable useful systems-programming capability under newly specified safety rules. It does **not** mean preserving arbitrary pointer manipulation, undefined behavior, C++ source compatibility, object layouts, or the C ABI. The confirmed identity is a recognizable modern C++ API with extreme safety, modern/elegant design and high performance. The target must specify safe replacements and any excluded features; unsafe features may be removed rather than preserved for compatibility. Neither the current compiler nor this matrix proves that every useful C++ pattern already has an equivalent.

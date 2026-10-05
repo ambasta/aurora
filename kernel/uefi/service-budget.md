@@ -90,7 +90,7 @@ continue to use the copied-message rights/generation/scrubbing rules in [ipc.md]
 
 - `SANITIZE=1 scripts/kernel-uefi-budget-tests.sh`: admission, immutable context,
   real kernel/private mapping policy, exact image intervals and strict transcripts.
-- `scripts/kernel-uefi-budget-all.sh`: fifteen actual OVMF modes, restoring the
+- `scripts/kernel-uefi-budget-all.sh`: nineteen actual OVMF modes, restoring the
   normal image after each. The prior 95 modes remain acceptance gates.
 - `budget`: compiled non-yielding service exhausts three interrupts, then a fresh
   finite service is preempted and completes the copied request.
@@ -138,3 +138,17 @@ with interrupts disabled. The drain predicate still requires exactly SS=0x10;
 the actual pending-drain gate and its selector-mutation receipt tests cover this
 regression. This normalizes the intended kernel state rather than widening the
 set of authorized interrupt frames.
+
+### Verified Aurora policy checkpoint
+
+The [pure interrupt-count transition](../../docs/kernel-budget-contract.md) is
+now compiled from Aurora and called in the actual timer path after authority and
+ISR checks. The bootstrap adapter validates its private scalar transport before
+committing counts or selecting the existing resume/cancel mechanism. Four new
+`budget-policy-*` modes cover rejected state and corrupted transport. A fresh
+full native aggregate, all 170 actual emulator modes and two additional normal
+boots passed on the reconciled source, followed by independent terminal reviews.
+The four policy modes include actual pre-commit fail-stop checks; the output mode
+also passes the linked-image guard. See the
+[exact evidence index](../../docs/evidence/kernel-budget-policy/README.md).
+Earlier failed/interrupted attempts remain separate and supply no mode credit.

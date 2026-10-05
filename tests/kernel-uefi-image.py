@@ -84,6 +84,19 @@ def elf_validate(data,binary):
         previous_end=virtual+memory
     need(0<len(binary)<=0x20000,'Payload bound')
 
+def budget_call_present(disassembly):
+    # GNU objdump -drwC on an unlinked x86-64 object: a direct E8 call with
+    # zero displacement, an exact target/addend, and relocation at its imm32.
+    pattern=(r'\s*([0-9a-f]+):\s+e8 00 00 00 00\s+callq?\s+'
+             r'([0-9a-f]+) <[^>]+>\s+([0-9a-f]+): R_X86_64_PLT32\s+'
+             r'aurora_kernel_budget_tick-0x4\s*')
+    for line in disassembly.splitlines():
+        match=re.fullmatch(pattern,line)
+        if match:
+            call,target,relocation=(int(value,16) for value in match.groups())
+            if target==call+5 and relocation==call+1: return True
+    return False
+
 def main():
     pe_path=BUILD/'esp/EFI/BOOT/BOOTX64.EFI'
     data=pe_path.read_bytes(); binary=(BUILD/'payload.bin').read_bytes(); elf=(BUILD/'payload.elf').read_bytes()
@@ -91,6 +104,13 @@ def main():
     names=['payload','payload-entry','language','acpi','pci','runtime']
     symbols=subprocess.check_output(['nm','-a',str(BUILD/'payload.elf')],text=True)
     if 'uefi_runtime_enter' in symbols: names+=['runtime-entry','runtime-exceptions']
+    if 'uefi_service_drain_begin' in symbols:
+        policy_relocations=subprocess.check_output(['objdump','-drwC',str(BUILD/'runtime.o')],text=True)
+        need(budget_call_present(policy_relocations),
+             'Service timer does not call the actual Aurora budget entry')
+        policy_symbols={row.split()[2]:int(row.split()[0],16) for row in symbols.splitlines() if len(row.split())==3}
+        need(0<policy_symbols.get('aurora_kernel_budget_tick',0)<policy_symbols['__payload_text_end'],
+             'Aurora budget entry outside owned payload RX')
     for name in names:
         relocations=subprocess.check_output(['readelf','-rW',str(BUILD/f'{name}.o')],text=True)
         types=set(re.findall(r'R_X86_64_\w+',relocations))

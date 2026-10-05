@@ -1541,3 +1541,51 @@ disappeared files/directories during accounting and terminates/waits an owned
 child on failure; four deterministic controls pass. A complete fresh aggregate
 rerun supplies the successful receipt. No Aurora implementation change was needed.
 See [curated receipts and limitations](evidence/xfs-root-m022-20261004/README.md).
+
+
+## Aurora interrupt-budget policy checkpoint — 2026-10-05
+
+The kernel delta is based on accepted ordinary-function-overload PR21 main
+`758458e8258b76b24f7c29e06a2ce01a83766b68`, tree
+`df584b38be517aa444257c90f5c7897487d484f8`. Publication is an explicit narrow
+path overlay; unlisted remote historical files must remain in that baseline.
+The tested 533-file manifest is
+`627fb53116ec13b72cd3d755dd190abb2f6ab59cc3cecb6e4560cd3cefbb0c25` and
+accepted rebuilt compiler is
+`8d4099fe52a19307a266a6cbe5191203307462877cc94c7b6f3dae78f817c631`.
+
+The Aurora `kernel::interrupt_tick` class/enum API computes the bounded interrupt
+count transition and selects resume/exhaust. A private scalar bootstrap transport
+returns that result to the existing UEFI timer path. Domain/frame/epoch/ISR
+checks, timer hardware, live storage and cancellation remain trusted C++/assembly.
+The BIOS scheduler is unchanged. No general scheduler/SMP, physical-platform,
+whole-language safety proof or equivalent-performance result is added.
+
+The successful acceptance chain is entirely fresh and same-root:
+
+- Fresh compiler build returned the exact accepted binary.
+- Full serial `make test` passed. Kernel-native observations include 104,120 policy
+  cases, 815,301 decoder cases and ten diagnostic/output-preservation rejections.
+  Full package identity/manifest/graph gates and existing regressions also ran.
+- All 170 distinct actual emulator modes passed: 37 BIOS, 115 UEFI, seven BAR and
+  eleven IVRS modes. All four new policy fault modes returned the required exit35.
+  The output-fault image matched all five independently reviewed linked members
+  before QEMU and exercised the ordinary defensive decoder.
+- Two additional fresh normal BIOS/UEFI boots each returned exit33. Final normal
+  images, source/runtime/control identity, complete evidence sealing and owned
+  process cleanup passed independent review.
+- The full native build remains in a verified 21,429-member preservation archive.
+  The final emulator seal covers 1,207 paths. Sampled counted allocation peaked
+  at 998,391,808 bytes under the three-root 3 GiB cap. Sampling is not a hard quota.
+
+The earlier first full-170 attempt failed in the live build-size census after 46
+completed modes. Its planned continuation later stopped after 88 new completed
+modes, through global ordinal134, during the following image build; it has no
+successful terminal or final normal pair and its ownership fence remains
+unresolved. Those records are preserved with their actual statuses. The successful
+fresh run borrowed no prefix or normal boot from either attempt.
+
+Only result documentation and the concise evidence index changed after the
+accepted tests. Runtime, implementation, compiler, fixture, launcher and test bytes
+remain those of the tested freeze. See the [receipt index](evidence/kernel-budget-policy/README.md)
+for exact terminal/review/source hashes, artifact-relative paths and limits.

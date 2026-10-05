@@ -2,7 +2,7 @@
 constexpr U64 timer_vector=64;
 bool timer_ready{},timer_armed{},timer_draining{},timer_exhausted{};
 U64 timer_epoch{},timer_owner_epoch{};
-unsigned timer_remaining{},timer_ticks{},timer_resumes{},timer_drains{},timer_context_hits{},timer_compiled_hits{};
+unsigned timer_initial{},timer_remaining{},timer_ticks{},timer_resumes{},timer_drains{},timer_context_hits{},timer_compiled_hits{};
 std::optional<user::DomainHandle> timer_owner;
 auto timer_read(unsigned offset) -> std::uint32_t { return *reinterpret_cast<volatile std::uint32_t*>(LocalApicAdmission::virtual_address+offset); }
 auto timer_write(unsigned offset,std::uint32_t value) -> void {
@@ -126,6 +126,7 @@ auto timer_begin(unsigned index) -> void {
 #else
     timer_remaining=launch[0]==5 ? 3 : 128;
 #endif
+    timer_initial=timer_remaining;
     timer_armed=true;
     require(timer_arm(),"timer arm");
 #ifdef AURORA_UEFI_USER_BUDGET
@@ -200,7 +201,25 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
         require((context->words()[19]&0x400)!=0,"timer DF preservation"); ++timer_context_hits; context_sample=true;
     }
 #endif
-    --timer_remaining; ++timer_ticks;
+    U64 policy_initial=timer_initial,policy_remaining=timer_remaining,policy_used=timer_ticks;
+#ifdef AURORA_BUDGET_POLICY_ZERO
+    policy_initial=0;
+#endif
+#ifdef AURORA_BUDGET_POLICY_COUNTS
+    policy_used=1; // First accepted frame has remaining==initial and used==0.
+#endif
+#ifdef AURORA_BUDGET_POLICY_WIDE
+    policy_remaining=UINT64_MAX; policy_used=UINT64_MAX;
+#endif
+    auto encoded=language_budget_tick(policy_initial,policy_remaining,policy_used);
+#ifdef AURORA_BUDGET_POLICY_OUTPUT
+    // Test-only owned local input keeps the ordinary decoder branch dynamic.
+    const volatile U64 policy_output_reserved_mask=1ULL<<63;
+    encoded|=policy_output_reserved_mask;
+#endif
+    const auto transition=BudgetTransition::decode(encoded,timer_initial,timer_remaining,timer_ticks);
+    require(transition.has_value(),"Aurora budget transition");
+    timer_remaining=transition->remaining(); timer_ticks=transition->used();
     Serial::text("AURORA_UEFI_TIMER_TICK: epoch="); Serial::number(timer_owner_epoch); Serial::text(" used="); Serial::number(timer_ticks);
     Serial::text(" remaining="); Serial::number(timer_remaining); Serial::text(" pc="); Serial::number(pc);
     Serial::text(" flags="); Serial::number(context->words()[19]); Serial::text("\r\n");
@@ -208,7 +227,7 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
         Serial::text("AURORA_UEFI_TIMER_CONTEXT: epoch="); Serial::number(timer_owner_epoch); Serial::text(" tick="); Serial::number(timer_ticks);
         Serial::text(" registers=15 df=1\r\n");
     }
-    if (timer_remaining!=0) {
+    if (transition->resume()) {
         ++timer_resumes; require(timer_arm(),"timer resume arm"); return 0;
     }
     require(program.cancel(),"timer run cancellation"); timer_exhausted=true;
