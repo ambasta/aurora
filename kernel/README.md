@@ -83,7 +83,7 @@ Missing QEMU means blocked verification, not a pass.
 
 ## Implemented and exercised
 
-- A 512-byte BIOS sector loads 96 sectors to physical 0x10000.
+- A 512-byte BIOS sector loads 127 sectors (65,024 bytes) to physical 0x10000.
 - BIOS E820 discovery passes up to 32 entries in a bounded buffer. Bad signatures,
   short entries, and capacity overflow invalidate the map. EBX zero or BIOS CF
   ends enumeration; an empty map fails the kernel's arena verification.
@@ -430,7 +430,7 @@ policy and alias tests are included in ./scripts/kernel-tests.sh and its sanitiz
 mode. Emulator transcript checks require exact CR3 transitions, nonoverlapping
 stack ownership, both code/data denials, reuse evidence and final teardown.
 
-The enlarged bootstrap remains bounded: its EDD packet reads 96 sectors (48 KiB)
+The enlarged bootstrap remains bounded: its EDD packet now reads 127 sectors (63.5 KiB)
 from LBA 1 to physical 0x10000, within one 64 KiB transfer window. Image validation
 checks the actual assembler-located packet's alignment, count, destination and window plus
 malformed-packet controls. No host disk or bootloader is modified.
@@ -720,3 +720,59 @@ External manifest SHA256:
 `ef6336767f277b6cbf36af3eed36986300b9cf6a8eedd684a771bf40c662d651`.
 Independent guest report SHA256:
 `880d75406270894050ceb36b8b4b6ce311f7384f1ba3db1e34f7d152e7123a34`.
+
+
+## Bounded BIOS transport capacity and host code generation
+
+The actual one-read EDD packet, flat-image validator and disk padding now agree
+on 127 sectors (65,024 bytes), the conservative [Phoenix EDD 1.1](https://www.t10.org/ftp/t10/document.95/95-153r0.pdf)
+block-count ceiling. Loading
+at segment:offset `1000:0000` touches physical `[0x10000,0x1fe00)`, leaving 512
+bytes before the 64 KiB window ends. The packet, BIOS signature, initial 2 MiB
+mapping, E820 buffer, BSS zeroing, RX/R/RW page separation and protected stack
+bounds remain unchanged. Zero padding extends through the last requested sector;
+it may cover early BSS, which startup clears again before calling C++.
+
+This fixes an actual capacity mismatch exposed by Gentoo GCC 16.2.1: its accepted
+kernel has 35,396 text bytes and a 49,904-byte flat payload, including permission
+alignment gaps. That needs 98 sectors. The former 96-sector transfer was too small;
+removing the unused UEFI policy alone would not bring its text under the previous
+page boundary. The 127-sector contract leaves 15,120 bytes of margin for that
+reported image, without changing optimization flags or treating BSS as file data.
+
+The validator reconstructs every initialized ELF load span at its physical
+address, checks exact flat bytes and zero alignment gaps, and checks that the
+protected image memory covers the whole read, including padding. Physical and
+virtual load addresses must agree. BSS and all loaded segments must remain below
+the unchanged aligned `0x70000` protected-stack reservation.
+
+    make test-boot-capacity
+    make smoke-boot-capacity
+
+The first command checks matching ELF/raw fixtures of 49,153, 49,904 and 65,024
+bytes, exact disk padding and malformed packet/layout controls, normally and
+under Python -O. It assembles a real maximum-capacity probe. The smoke command
+requires QEMU and tests sentinels beyond the old limit and in the final sector.
+An old-96-sector packet and a corrupt final-sector sentinel must both fail on
+the actual emulated CPU. `make test` and `make smoke-all` include these gates.
+The host-note boot-link regression remains separate and still runs unchanged
+apart from its expected actual packet count.
+
+Focused normal/optimized-Python gates pass, including 20 malformed-input controls
+and additional independent layout probes. Actual QEMU execution reads both exact
+sentinel values with the 127-sector loader; the old-96 and corrupted-last-sector
+controls print their distinct failure observations. A fresh production kernel
+build using the unchanged accepted compiler, normal/fault BIOS boots, exact
+normal-image restoration and both image-validator modes also pass. All owned
+processes closed and implementation inputs stayed unchanged during those gates.
+The Gentoo rebuild/boot remains a distinct user check. Full native, scheduling
+and all-mode emulator aggregates were not rerun for this bounded transport fix;
+no physical-machine result is implied.
+
+This is a bounded emulator bootstrap, not a general kernel-loading mechanism.
+A payload of 65,025 bytes still fails closed. Further growth requires a separately
+reviewed multi-read or stage-two loader with bounded destination/LBA arithmetic,
+per-transfer boundary checks and total memory authority. Increasing a test limit
+again would not implement that loader. Existing firmware assumptions remain:
+512-byte sectors and EDD are assumed; the first read and BSS initialization occur
+before runtime E820 grant validation. No physical BIOS compatibility is claimed.

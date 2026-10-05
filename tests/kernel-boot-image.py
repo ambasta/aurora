@@ -58,7 +58,7 @@ def main() -> None:
             packet = packets[0]
             require(packet % 4 == 0 and 0 <= packet <= 494,
                     f"{name}: invalid packet offset")
-            require(boot[packet:packet + 16] == bytes.fromhex("10006000000000100100000000000000"),
+            require(boot[packet:packet + 16] == bytes.fromhex("10007f00000000100100000000000000"),
                     f"{name}: BIOS payload read contract changed")
 
         # An ELF reference safely extracts only relocated text from the previous

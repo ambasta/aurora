@@ -227,3 +227,16 @@ test-boot:
 	python3 -B -O tests/kernel-boot-image.py
 
 test: test-boot
+
+# Fixed BIOS single-read capacity and exact ELF/raw layout, including boundaries.
+.PHONY: test-boot-capacity smoke-boot-capacity
+test-boot-capacity:
+	python3 -B tests/kernel-boot-capacity.py
+	python3 -B -O tests/kernel-boot-capacity.py
+
+test: test-boot-capacity
+
+smoke-boot-capacity:
+	python3 -B tests/kernel-boot-capacity.py --qemu
+
+smoke-all: smoke-boot-capacity

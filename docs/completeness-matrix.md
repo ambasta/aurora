@@ -457,3 +457,22 @@ all-mode emulator aggregates were not rerun for this narrow linker change. These
 results establish no additional physical-platform or broad host-distribution
 qualification. See the
 [toolchain contract and diagnostic commands](../kernel/README.md#host-toolchain-boot-layout).
+
+
+## Bounded BIOS capacity portability candidate
+
+An actual 127-sector (65,024-byte) single-read contract replaces the former
+96-sector loader limit, keeping destination `[0x10000,0x1fe00)`, the conservative
+EDD count/window bounds, BSS initialization and protected stack reservation.
+This addresses measured legitimate Gentoo GCC 16.2.1 code-generation growth to
+49,904 bytes; it is separate from the earlier ELF-note boot-sector fix and any
+round-robin candidate. Validation now checks exact ELF/flat-image correspondence
+and transfer-padding memory coverage. Synthetic boundary and rejection checks
+pass, including optimized Python. Independent source/layout controls also pass.
+Actual maximum-transfer sentinel execution and both failing controls verify
+observed bytes and serial outcomes. A fresh production build with the unchanged
+accepted compiler, normal/fault BIOS boots, image validators and exact normal
+restoration pass. The Gentoo rerun, full native/scheduling/all-mode aggregates and
+physical hardware remain unverified for this candidate. Future growth beyond
+this bound needs a separately reviewed loading mechanism.
+See the [active transport contract](../kernel/README.md#bounded-bios-transport-capacity-and-host-code-generation).
