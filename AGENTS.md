@@ -59,10 +59,13 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - SANITIZE=1 ./scripts/kernel-tests.sh: hosted allocator sanitizers/model tests
 
 Read [the developer-test contract](docs/developer-test-contract.md) before changing
-test routing or interpreting its receipts. This tooling candidate is unqualified
-and under review; initial source/synthetic checks establish no real fresh-compiler,
-full native, sanitizer, emulator or Gentoo GCC 16 acceptance. Ordinary developer
-builds require no historical binary pin. Explicit independently supervised pins
+test routing or interpreting its receipts. The exact PR26-based revision-5 full
+public developer and prebuilt-acceptance native workflows have independent review;
+see docs/developer-test-workflow-results.md for their source and evidence scope.
+The original developer outer audit failure remains preserved with a separately
+accepted composite. Gentoo make-test, new sanitizer/emulator runs and broad-host
+qualification remain separate. Ordinary developer builds require no historical
+binary pin. Explicit independently supervised pins
 remain supported. Full aggregates/acceptance reject coverage-reducing overrides;
 focused and compiler-free diagnostic runs do not establish root native acceptance.
 

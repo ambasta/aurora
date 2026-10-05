@@ -2,7 +2,7 @@
 
 ## Candidate status and scope
 
-This is a **source-only tooling candidate on accepted PR26, under review**. It composes the
+This is the **PR26-based developer-test workflow with reviewed full native results**. It composes the
 reviewed PR25 developer-test tooling with the accepted 569-file PR26 source
 baseline. Its underlying 566-file tested implementation manifest is `f8aec37b518c2dc9ccfe0ba95b35055b06bbc3e01fa10d2295348abcd2de9366`.
 That implementation includes round-robin policy and exact-bool short-circuit
@@ -17,16 +17,23 @@ reconciled from final PR26 source manifest
 The accepted baseline is main commit
 `3ac216b64caf8b769147f1864aa8389011f0112b`, tree
 `e47002622df3e8d13d9496cd09fe90b33794335b`, confirmed at PR26 merge on
-2026-10-05. This tooling candidate has 572 source files. It is a new, unqualified
-composition on that accepted baseline; no pre-existing PR26 or PR25 receipt
-qualifies it. A separately admitted complete public `make test`, independent
-review and applicable later gates remain necessary before claiming the combined
-current-source workflow passed.
+2026-10-05. The tested revision-5 source has 572 files, manifest
+`e097d1151156066b1147641ccc70092b729af9abc81c0fa0750c9314457dded9`.
+Fresh, separately admitted full public developer and externally pinned prebuilt
+native workflows completed on the reviewed GNU/Linux GCC 14 host. Independent
+review accepted the developer result through its explicit composite audit and
+the prebuilt result through its passed original terminal. No earlier PR25 or
+PR26 native receipt substitutes for these new runs.
 
-Initial validation is source inspection and synthetic tooling checks only. No real
-fresh-compiler build, full native aggregate, ASan/UBSan run, actual emulator run or
-Gentoo GCC 16 acceptance is established for this candidate. The supervisor and
-receipt contract may change during review. Do not describe it as verified portable.
+The developer command and product receipt passed; its original outer audit failed
+on three stale completion-label expectations and remains unchanged. A separately
+reviewed read-only audit and independent composite establish the retained result.
+Prebuilt acceptance passed with zero bootstrap builds. See [workflow results](developer-test-workflow-results.md)
+for exact identities, the preserved failure and evidence limits. The subsequent
+publication overlay changes documentation/evidence only; it does not claim a new
+execution of a different implementation. Gentoo make-test, new ASan/UBSan and
+emulator runs, physical hardware and broad-host qualification remain separate.
+Do not describe these scoped results as verified portable.
 
 The first supported build recipe is the default GNU release recipe on x86-64
 Linux. A local build receipt identifies observed inputs and output under a trusted
@@ -162,7 +169,8 @@ host-only `make -C compiler test-initialization-facts` do not enter that grammar
 or establish its receipt contract. Existing Make raw-expression guards are not
 a replacement for the supervised Python policy. This is no generic arbitrary-
 flag guarantee, and accepted syntax does not qualify every flag combination,
-sanitizer setup or host. Actual combined-workflow qualification remains pending.
+sanitizer setup or host. Only the exact default-vector full workflows in the
+[results record](developer-test-workflow-results.md) are qualified here.
 
 ## Receipts and interpretation
 
@@ -397,12 +405,15 @@ pass. This correction moves that rejection to the promised input boundary; it is
 not described as repairing a false-pass defect. The reviewed revision-4 freeze
 and its evidence remain unchanged, and no static review grants workload admission.
 
-The active suite now has 70 methods. The complete permitted non-Make set has 64,
+At the initial revision-5 source-validation stage, the active suite had 70 methods.
+The complete permitted non-Make set had 64,
 including an inert pure/mocked empty-vs-omitted/nonempty selector regression across
 both entries and developer/pinned-prebuilt routes. It checks zero query/capture/
 execution/write calls and unchanged artifact membership, contents and modes.
-The same six ordinary Make methods and 98 calls per mode remain retained, unrun
-and subject to separate admission. The retired dynamic experiment stays retired
+At that stage, the same six ordinary Make methods and 98 calls per mode remained
+unrun and subject to separate admission. They later passed their separately
+admitted bounded controls, followed by both complete 70-method suites in each
+full public workflow; see the current results record. The retired dynamic experiment stays retired
 and uncredited. Current-source composition continuity, the genuine three-file
 delta and new validation records accompany this revision; earlier reports are
 not summed into acceptance of corrected source or a complete native workflow.

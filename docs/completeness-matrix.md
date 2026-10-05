@@ -12,15 +12,18 @@ completed matching `run.json` and native-stage result. Full compiler-entry `test
 is complete only for compiler scope; focused/diagnostic work and Make exit zero
 alone are not root acceptance. Actual emulator checks remain separate.
 
-Status: **source-only tooling candidate on accepted PR26, not yet qualified**. Round-robin and short-circuit implementation bytes and all five cap
-consumers are retained from the frozen PR26 implementation. Its final 569-file
-result-document source is reconciled to accepted main
-`3ac216b64caf8b769147f1864aa8389011f0112b`.
-Only source/synthetic
-checks apply to this composed source; no fresh compiler, full native, sanitizer,
-emulator, Gentoo or broad-host qualification is claimed. Earlier D/P focused
-kernel-budget evidence is explicitly PR25-only. Existing checkpoint evidence
-below keeps its original source scope; see the shared contract for exact identities.
+Status: **exact PR26-based full public native workflows independently reviewed**.
+Revision 5 passed fresh developer `make test` and externally pinned prebuilt
+`make test-acceptance` on the reviewed GNU/Linux GCC 14 host. All five cap consumers
+and PR26 round-robin/short-circuit implementation bytes are retained. The baseline
+is accepted main `3ac216b64caf8b769147f1864aa8389011f0112b`; the tested source has
+572 files. The developer command/product passed, while its original outer audit
+failed on stale completion labels; that failure remains unchanged with a separate
+approved read-only composite. The prebuilt workflow has a passed original terminal,
+zero bootstrap builds and independent terminal approval. See [workflow results](developer-test-workflow-results.md).
+Gentoo make-test, new sanitizer/emulator runs, physical hardware and broad-host
+qualification remain separate. Earlier focused kernel-budget results remain
+PR25-only. Existing checkpoint evidence below keeps its original source scope.
 
 ## Verified Aurora round-robin and short-circuit checkpoint — 2026-10-05
 

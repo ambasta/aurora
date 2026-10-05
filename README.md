@@ -31,10 +31,15 @@ add `ACCEPTANCE_COMPILER=/absolute/path/to/reviewed/aurorac` for a byte-identica
 private prebuilt copy, labeled `externally-pinned-prebuilt` without a fresh-source
 claim. `make -C compiler test` is complete only for compiler scope.
 
-This is an **unqualified tooling candidate under review**, with source/synthetic
-checks only and no new real fresh-compiler, full native, ASan/emulator or Gentoo
-GCC 16 acceptance. Require a newly completed matching `run.json`, not Make exit
-zero, a dry run, preflight or partial test. Full aggregates and acceptance reject
+The exact PR26-based revision-5 workflow has passed full public developer and
+externally pinned prebuilt native runs on the reviewed GNU/Linux GCC 14 host.
+Independent review accepted the developer result through a separately preserved
+composite audit and the prebuilt result through its passed original terminal.
+See [workflow results](docs/developer-test-workflow-results.md) for identities,
+the original developer audit failure, zero prebuilt rebuilds and scope limits.
+Gentoo `make test`, new sanitizer/emulator runs and broad-host qualification remain
+separate. Require a newly completed matching `run.json`, not Make exit zero,
+a dry run, preflight or partial test. Full aggregates and acceptance reject
 coverage-reducing test overrides. See [the shared contract](docs/developer-test-contract.md)
 for supported GNU flags, explicit pins, provenance and limits. Historical
 checkpoint results below apply only to their identified sources.
