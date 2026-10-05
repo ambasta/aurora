@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` configures 170 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates, including four verified kernel-budget policy fault modes. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` configures 170 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates, including four verified kernel-budget policy fault modes. It also runs three dedicated BIOS capacity probes (a full 127-sector read and two failing controls). `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.

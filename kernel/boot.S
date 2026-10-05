@@ -90,7 +90,8 @@ gdt_pointer:
 .balign 4
 packet:
     .byte 16, 0
-    .word 96
+    /* Maximum conservative EDD count; stays within 1000:0000..fdff. */
+    .word 127
     .word 0, 0x1000
     .quad 1
 drive: .byte 0
