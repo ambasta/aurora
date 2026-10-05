@@ -1589,3 +1589,25 @@ Only result documentation and the concise evidence index changed after the
 accepted tests. Runtime, implementation, compiler, fixture, launcher and test bytes
 remain those of the tested freeze. See the [receipt index](evidence/kernel-budget-policy/README.md)
 for exact terminal/review/source hashes, artifact-relative paths and limits.
+
+
+## Verified readonly byte-window integration (2026-10-05)
+
+The checked named-span subspan feature completed isolated full release/fatal
+ASan/UBSan compiler targets and independent source/IR/native provenance review.
+Fresh combined PR22 integration rebuilt release compiler `b3c8d58565844e1b671d1589975985374b17387b405543e05762631b95552580`,
+passed the complete native aggregate and all170 actual emulator modes, then two
+additional actual normal BIOS/UEFI restoration boots. Both normals exited33.
+All540 tested source files and the declared host/runtime/firmware input closure
+remained exact. Independent review replayed all172 retained validators, verified
+native-original preservation, final normal images and closed ownership receipts.
+
+The tested-source manifest is `11d804796114f1e0bdf8f6fc1a51db7db170cfeb509d42e7328ed6abe321782c`.
+The full-native terminal is `0f4df6ecd6080fab53dc257f73b701a4d4efa850a571e6e56bd0881abc556611`;
+the emulator terminal is `60100263b54dd87804d553b2f82cc884f9cdb96133211d61ed6cebb7d2ed3c46`.
+The [results record](readonly-windows-integration-results.md) and
+[receipt index](evidence/readonly-windows/receipts.json) distinguish the final
+documentation-only checkpoint, earlier preserved failures and exact review pins.
+The qualified replacement firmware remains exact. No physical-device, general
+heap/returned-view, universal safety/resource or performance claim is added.
+Leak checking remains unavailable, while isolated ASan/UBSan findings were fatal.

@@ -1,0 +1,18 @@
+module binary_window;
+import std.binary;
+
+auto payload_word(builtin::span<const u8> payload) -> u64 {
+    const std::ByteReadResult result = std::read_le32(payload, 0);
+    return result.value_or(0u64);
+}
+
+auto answer() -> i64 {
+    array<u8, 6> packet = {255u8, 42u8, 0u8, 0u8, 0u8, 254u8};
+    u64 value = 0u64;
+    {
+        const builtin::span<const u8> bytes = borrow_bytes(packet);
+        value = payload_word(bytes.subspan(1, 4));
+    }
+    packet[1] = 0u8;
+    return i64(value);
+}

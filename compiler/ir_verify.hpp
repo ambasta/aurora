@@ -885,7 +885,14 @@ inline void verifyFunction(Function &function,
                             SpanCapability{false, operation.arrayOffset,
                                            state.activeArrays.at(operation.arrayOffset), 0, 0,
                                            index});
-                    } else if constexpr (std::is_same_v<Op, ReborrowSpan>) {
+                    } else if constexpr (std::is_same_v<Op, ReborrowSpan> ||
+                                         std::is_same_v<Op, Subspan>) {
+                        if constexpr (std::is_same_v<Op, Subspan>) {
+                            current(Type::I64);
+                            require(pop().type == Type::I64, "subspan offset requires i64");
+                            // A narrowed view creates no scalar bounds evidence.
+                            state.current = Value{Type::I64, {}};
+                        }
                         const auto capability = span(operation.sourceOffset);
                         spanTarget(operation.resultOffset);
                         state.activeSpans.emplace(

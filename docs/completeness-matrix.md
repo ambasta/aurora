@@ -28,7 +28,7 @@ This is a requirements map, not a completion percentage. Snapshot: 2026-10-04, v
 | Modules and source/artifact I/O | Explicit bounded import roots, exports/namespaces, defining-module lookup, scoped metadata views; descriptor-relative Linux source reads, atomic fail-latched output, depth caps; no separate binary-module ABI | Native module/package identities, lifecycle and resource contracts; independently tested visibility, import graphs, artifact failure behavior and later native-capability replacement of host adapter |
 | Safe type-level algebra | Not implemented | Key-set queries, mapped/conditional types, checked refinement and bounded evaluation; no unchecked top type/assertion loopholes; preserve privacy, nominal resource identity, lifetimes and effects |
 | Generics/compile-time programming | Restricted builtin/class size, type-ID, field-count facts and static assertions; milestone009 adds reviewed explicit one/two-parameter Scalar-constrained class templates, 64 definitions/256 specializations per graph; milestone010 adds Scalar-plus-i64 literal-capacity parameters restricted to 1..64, with canonical value identity and readonly substitution; milestone011 adds bounded Value class composition, and reviewed milestone012 extends Value to closed nominal enums while Scalar stays numeric/bool; milestone020 adds fully concrete nested template-id arguments to depth four, independent of class depth four, with unchanged leaf/definition/instance/capacity bounds; milestone021 adds explicit one/two-parameter Scalar/Value namespace-level function templates and narrow bare-parameter class-template substitution, with combined 64-definition/256-instance budgets; no deduction, overloads, generic methods, nested dependent expansion, function-template calls in template bodies, recursive instantiation, general concepts or reflective code generation | Constrained generics and typed reflection/code generation; generated code obeys ordinary visibility, lifetime and effect checks; reproducibility/resource-limit tests |
-| Memory safety | Scoped local owned integers plus readonly whole-array u8 spans, synchronous capability-record parameters and conservative lexical/call lifetime rejection; no async/heap ownership implementation | Heap/arena ownership, interprocedural lifetimes, aliasing/provenance and trusted intrinsic rules; formal core model, negative tests, adversarial safe clients and compiler validation |
+| Memory safety | Scoped local owned integers plus readonly whole-array u8 spans and checked named-parent readonly subwindows, synchronous capability-record parameters and conservative lexical/call lifetime rejection; no async/heap ownership implementation | Heap/arena ownership, interprocedural lifetimes, aliasing/provenance and trusted intrinsic rules; formal core model, negative tests, adversarial safe clients and compiler validation |
 | Runtime reflection | Runtime size/field-count lookup for builtin/class/mentioned-array IDs and reviewed nominal enum descriptors; class counts public fields only; no member traversal or invocation | Exported descriptors, checked invocation/mutation, ownership-preserving dynamic arguments, unload leases; stale/malformed metadata and privilege-bypass tests |
 | Concurrency/async | Not implemented | Defined atomics, data-race prevention, synchronization, cancellation and suspension lifetimes; model checking/stress/fault tests and soundness argument |
 | Freestanding core and platform/runtime | First Aurora-authored scalar std.core module implemented and cross-module execution tested; general platform/runtime services remain absent | Separate core/kernel/user profiles; Aurora-authored startup, capability-scoped allocation, threading, I/O, time/math and native OS boundary replacing libc responsibilities; no C API/ABI; dependency/failure gates in [library-stack.md](library-stack.md) |
@@ -420,3 +420,20 @@ qualified by an exact supplemental review while the original empty-tmp bookkeepi
 failure remains preserved. The qualified replacement firmware and all physical
 hardware/security limitations remain explicit in the
 [integration results](function-overloads-integration-results.md).
+
+## Verified bounded readonly byte windows
+
+Named-span `.subspan(i64 offset, i64 count)` provides checked bounds, endpoint-empty
+views, exact root/direct-parent provenance and lexical/call-only non-escape rules.
+Existing whole-span/single-span APIs remain unchanged. Isolated complete release
+and fatal host sanitizer compiler targets and independent provenance/native review
+passed. Fresh integration on the accepted PR22 kernel source rebuilt the exact
+reviewed compiler and passed the complete native aggregate, all170 actual emulator
+modes and two separate normal restoration boots. Independent final review checked
+the full retained evidence and replayed all172 validators. Final edits after this
+tested540-file freeze are result documentation only.
+
+No mutable/returned view, heap container, new kernel mechanism, full-language
+safety/resource proof, physical AMD qualification or equivalent-C performance
+claim follows. Leak checking remains unavailable. See the [source/IR contract](../compiler/READONLY-WINDOWS.md)
+and [exact integration evidence](readonly-windows-integration-results.md).

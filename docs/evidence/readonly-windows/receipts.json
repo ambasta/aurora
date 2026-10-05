@@ -1,0 +1,179 @@
+{
+  "base_commit": "3d85ef4ec24fa7f879106f1803df0931d9b386f4",
+  "base_tree": "4687cf171d1098349c46bee7158b90ff85719d82",
+  "isolated_compiler_capsule": {
+    "bytes": 11654291,
+    "sha256": "2582d020d1e62d6caa0eb2155f08491119b4e9cccdc0b8e8b2f766dc3bf46732"
+  },
+  "isolated_sanitized_compiler_sha256": "697874667bbf9ca024e30c79e89d8ce63fcbddaf5df1c176eec3540e7121c1df",
+  "limits": "Paths identify retained local evidence, not public download links. Final source/archive and durable evidence-package seals are separate. No physical hardware, universal safety/resource proof or performance claim.",
+  "receipts": {
+    "combined_preparation_review": {
+      "bytes": 9859,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/independent-window-controls-review/REVIEW.md",
+      "sha256": "a408682a2980461d07bbaf8c348b7a89e1385896088d9b87c3fd8d742dc03e38"
+    },
+    "emulator_closed_lease": {
+      "bytes": 491,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/closed-lease-emulator-readonly-windows-full170-001.json",
+      "sha256": "46f7e640ff36e3e629b27f460ebf89c35e0566066fda667dc92a36178e1835e8"
+    },
+    "emulator_evidence_seal": {
+      "bytes": 226659,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/review/runs/readonly-windows-full170-001/SHA256.json",
+      "sha256": "8bdf1ce781e79db7dc219f2c92f985b480b2c025744dea1d886c5b69ac411f03"
+    },
+    "emulator_final_review": {
+      "bytes": 12136,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/review/independent-window-terminal-review/REVIEW.md",
+      "sha256": "5d4c002b26502e82c556ba36149c060a8824099b236266e7773df2d9e5c1bb81"
+    },
+    "emulator_final_review_seal": {
+      "bytes": 2353,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/review/independent-window-terminal-review/REVIEW-SEAL.json",
+      "sha256": "724561634283ad8fb3bf8b11fc49c00736112e0936c555964b603ef42889d092"
+    },
+    "emulator_normal_restoration": {
+      "bytes": 7696,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/review/runs/readonly-windows-full170-001/normal-restoration.json",
+      "sha256": "a470e33cf5bbd05c7adf2b1f76d7b51da0d60e6f9e9d7fadc34696d53bd80376"
+    },
+    "emulator_plan_review": {
+      "bytes": 11485,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/review/independent-window-plan-review/REVIEW.md",
+      "sha256": "58181d7fef6a0a3e07eeefab968fe12a679f97b8ec46ef6648e595fa1d187449"
+    },
+    "emulator_terminal": {
+      "bytes": 693389,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/review/runs/readonly-windows-full170-001/results.json",
+      "sha256": "60100263b54dd87804d553b2f82cc884f9cdb96133211d61ed6cebb7d2ed3c46"
+    },
+    "fresh_compiler_review": {
+      "bytes": 6184,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/independent-native-chain-review/FRESH-BUILD-REVIEW.md",
+      "sha256": "7e9fd91cfb1c3bd5220f778dc077c9b7be33eb2c31871d161a835d3fa78acfe5"
+    },
+    "fresh_compiler_terminal": {
+      "bytes": 8193,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/runs/readonly-windows-fresh-build-001/terminal.json",
+      "sha256": "50ae4ba21555d3247a719149eb21dec275b566b54acfe0ebaddafbb664f1a127"
+    },
+    "frozen_compiler_receipt": {
+      "bytes": 1507,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/frozen/freeze-receipt.json",
+      "sha256": "5924f7f05ec0bc8569230a2d056670d0c503062358cf00e3c215b574745b288a"
+    },
+    "full_native_inventory": {
+      "bytes": 488125,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/runs/readonly-windows-full-native-001/generated-inventory.json.gz",
+      "sha256": "e4dcce2a0755f2f081bd20adf0f5b373056e62d916e670f3040b9a3913b529a5"
+    },
+    "full_native_review": {
+      "bytes": 11223,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/independent-native-chain-review/FULL-NATIVE-REVIEW.md",
+      "sha256": "37a69e2727ebd65afb839bf63d6be76e152b0fa80158a66786999019d9ea6d2a"
+    },
+    "full_native_seal": {
+      "bytes": 897,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/runs/readonly-windows-full-native-001/evidence-seal.json",
+      "sha256": "bf7603fff956a2917f57e81d3079940374a79087f9a97b569c45746101baa0f6"
+    },
+    "full_native_terminal": {
+      "bytes": 9746,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/runs/readonly-windows-full-native-001/terminal.json",
+      "sha256": "0f4df6ecd6080fab53dc257f73b701a4d4efa850a571e6e56bd0881abc556611"
+    },
+    "historical_linked_output_review": {
+      "bytes": 4179,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/historical-linked-output-review.md",
+      "sha256": "adf24bff32a4797665f56b8536a14f7c848839a937a4c99e6bdcdc8ebf9040b1"
+    },
+    "isolated_compiler_report": {
+      "bytes": 7471,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-candidate-20261004/evidence/readonly-windows/compiler-complete-report.md",
+      "sha256": "9a50a2ed5b0203d0c4c56d75943a0452994ac42285b8557edc20e71c611b4992"
+    },
+    "isolated_full_compiler_audit": {
+      "bytes": 5904,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/readonly-window-provenance-review-20261004/REPORT-FULL-COMPILER-AUDIT.md",
+      "sha256": "0dbd5c699b0ac8638e9b0c110d2363fc7a3a97f2c2058af37a161656567e9df4"
+    },
+    "isolated_provenance_review": {
+      "bytes": 10626,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/readonly-window-provenance-review-20261004/REPORT.md",
+      "sha256": "bb4c6d05d911561c7a6aec1fc4312b7a30539d95f8ded86df8f2022be2937562"
+    },
+    "isolated_release_terminal": {
+      "bytes": 174881,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-candidate-20261004/evidence/readonly-windows/full-release-1/result.json",
+      "sha256": "be8891f1e674c7662b31977b1114747ab57062c31f5df5b930df0ecb1ff9fb8e"
+    },
+    "isolated_sanitized_terminal": {
+      "bytes": 175182,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-candidate-20261004/evidence/readonly-windows/full-sanitized-1/result.json",
+      "sha256": "b5756862933ecf15c428b3d94fb1db2d78538596b0343785985f5ce0d86d0f17"
+    },
+    "isolated_sanitizer_review": {
+      "bytes": 5772,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/readonly-window-provenance-review-20261004/REPORT-SANITIZER.md",
+      "sha256": "9f87689d123b567beca6cffc9d4e0d5d2e88e229b93038c7d5c69ab426883008"
+    },
+    "native_original_inventory": {
+      "bytes": 488949,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/review/runs/readonly-windows-full170-001/native-original-build-inventory.json.gz",
+      "sha256": "3912936a2410ffda91e60d6dd562b3b29a9bdc73bbbcb51e79e586fb7f060480"
+    },
+    "native_original_preservation": {
+      "bytes": 1374,
+      "mode": "0600",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/review/runs/readonly-windows-full170-001/native-original-build-preservation.json",
+      "sha256": "356e3c784598d71b37039c483bb292d32cda0b4b68c8f56e75b3265310ef5728"
+    },
+    "native_review_seal": {
+      "bytes": 2050,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/aggregate-harness-review/independent-native-chain-review/REVIEW-SEAL.json",
+      "sha256": "57be5e25b256998d45feabf7d2f1ed7bd6b236f340494e9ef8cdb65cf87ee46f"
+    },
+    "original_session_closure": {
+      "bytes": 1232,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/preparation/emulator/review/readonly-windows-execution-closure.json",
+      "sha256": "9aaeb01b20bc38203bd69e4e5ce81033aa9fb6b04a1f2a60093209bf46a8f7a4"
+    },
+    "tested_source_manifest": {
+      "bytes": 104954,
+      "mode": "0644",
+      "path": "/workspace/scratch/48c5de6446f8/aurora-readonly-windows-integration-20261005/evidence/readonly-windows-integration/reconciled-source-first.json",
+      "sha256": "11d804796114f1e0bdf8f6fc1a51db7db170cfeb509d42e7328ed6abe321782c"
+    }
+  },
+  "release_compiler_sha256": "b3c8d58565844e1b671d1589975985374b17387b405543e05762631b95552580",
+  "schema": "readonly-window-integration-evidence-index-v1",
+  "status": "fresh native and all170+2 emulator chain independently passed",
+  "tested_source_files": 540,
+  "tested_source_manifest_sha256": "11d804796114f1e0bdf8f6fc1a51db7db170cfeb509d42e7328ed6abe321782c"
+}

@@ -134,3 +134,14 @@ test-utf8-lines: $(OUT)
 .PHONY: test-function-overloads
 test-function-overloads: $(OUT)
 	python3 -B -O ../tests/compiler/function_overloads.py $(abspath $(OUT))
+
+.PHONY: test-readonly-windows
+test: test-readonly-windows
+test-readonly-windows: $(OUT)
+	@set -eu; \
+	work="$$(mktemp -d "$(dir $(abspath $(OUT)))readonly-windows.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/readonly_windows.py "$(abspath $(OUT))" --artifacts "$$work/source"; \
+	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/readonly_windows_ir.cpp -o "$$work/ir-tests"; \
+	"$$work/ir-tests"; \
+	python3 -B -O ../tests/compiler/readonly_windows_ir_native.py "$$work/ir-tests" --artifacts "$$work/native"; \
+	printf 'PASS readonly window Make recipe: %s\n' "$$work"
