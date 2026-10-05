@@ -1,11 +1,17 @@
-# Exact-bool short-circuit candidate
+# Exact-bool short-circuit semantics
 
 ## Dependency and acceptance
 
 Kernel policy expressions exposed the missing `&&`/`||` language mechanism.
-Acceptance requires independent source/IR/native review, complete release and
-fatal ASan/UBSan compiler gates, and fresh combined integration before adoption.
-The isolated candidate is not yet an accepted compiler or kernel milestone.
+The declared gates were independent source/IR/native review, complete release
+and fatal ASan/UBSan compiler targets, and fresh combined integration. These
+passed: isolated release/fatal host sanitizer suites were followed by a fresh
+combined compiler, complete native aggregate and 173 production QEMU modes plus
+three capacity probes and two actual normal restoration boots. See the
+[integration record](../docs/kernel-round-robin-integration-results.md).
+LeakSanitizer was disabled because of executor ptrace limitations; the large IR
+translation unit used the documented -O1/-g1 sanitizer build. ASan/UBSan failures
+remained fatal. No leak-clean, whole-kernel sanitizer or broad safety claim follows.
 
 ## Source behavior
 

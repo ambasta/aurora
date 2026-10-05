@@ -61,8 +61,11 @@ normal BIOS boot and controlled divide-fault BIOS boot, using the unchanged
 accepted compiler. The fault script restored the exact initial normal image
 bytes. Boot size is 512 bytes and the normal kernel payload is 45,808 bytes.
 Independent focused review also verified the preserved instruction bytes and
-additional rejected layouts. The Gentoo rerun remains pending; no fresh full
-`make test` or all-mode emulator run is claimed for this narrow linker change.
+additional rejected layouts. The user reported a successful PR25 Gentoo rebuild
+on 2026-10-05; this is not an independently observed log or a boot result. The
+standalone linker fix did not rerun the full aggregate. The later
+[combined checkpoint](../docs/kernel-round-robin-integration-results.md) passed
+fresh full native and all-mode emulator qualification.
 
 For a host-toolchain failure, retain the failed files and report:
 
@@ -765,9 +768,11 @@ controls print their distinct failure observations. A fresh production kernel
 build using the unchanged accepted compiler, normal/fault BIOS boots, exact
 normal-image restoration and both image-validator modes also pass. All owned
 processes closed and implementation inputs stayed unchanged during those gates.
-The Gentoo rebuild/boot remains a distinct user check. Full native, scheduling
-and all-mode emulator aggregates were not rerun for this bounded transport fix;
-no physical-machine result is implied.
+The user reported that the PR25 Gentoo GCC 16.2.1/binutils 2.47 rebuild succeeded
+on 2026-10-05. No independent log, new boot or physical-machine result is inferred.
+The standalone transport fix did not rerun the full aggregates; the later
+[combined checkpoint](../docs/kernel-round-robin-integration-results.md) passed
+fresh full native, scheduling and all-mode emulator qualification.
 
 This is a bounded emulator bootstrap, not a general kernel-loading mechanism.
 A payload of 65,025 bytes still fails closed. Further growth requires a separately

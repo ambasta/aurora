@@ -1,22 +1,23 @@
-# Aurora two-slot round-robin policy (candidate)
+# Aurora two-slot round-robin policy
 
-This candidate moves the actual `Dispatcher::select` next-client choice from C++
+This verified checkpoint moves the actual `Dispatcher::select` next-client choice from C++
 into `kernel.round_robin`. Its existing consumers are the bounded UEFI service
 dispatcher and interrupt-budgeted client recovery profiles. It uses accepted
 language features; no compiler change or pending readonly-window feature is
 required. The BIOS three-task scheduler is unchanged. This is a two-slot policy
 port, not a general scheduler, Aurora-native kernel, SMP or physical-device claim.
 
-## Dependency and observable gate stated before implementation
+## Historical dependency and gate stated before implementation
 
-The baseline is accepted PR22 main `3d85ef4ec24fa7f879106f1803df0931d9b386f4`,
+The initial baseline was accepted PR22 main `3d85ef4ec24fa7f879106f1803df0931d9b386f4`,
 535 source files, source manifest
 `fe069ac102d9393a6266761356fa24913aa55b8dcfbc5fd133026a82737d2394`.
-Initial native tests must use accepted compiler
+Initial native tests used accepted compiler
 `8d4099fe52a19307a266a6cbe5191203307462877cc94c7b6f3dae78f817c631`.
-The independent read-only-window compiler lane may become the final integration
-baseline only after its own acceptance; no divergent main or copied build output
-is used to claim combined verification.
+The initial plan permitted the independent read-only-window compiler lane to
+become the integration baseline only after its own acceptance. It subsequently
+merged as PR23, followed by the separate PR24/PR25 portability fixes; no divergent
+main or copied build output is used to claim combined verification.
 
 Before implementation, the selected consumer, copied contract, hardware boundary,
 stack/ABI review and actual-QEMU gates were recorded. Source preparation and the
@@ -108,7 +109,7 @@ actual produced scalar. Final linked disassembly must establish that the Aurora
 call, volatile load, data-dependent OR and ordinary conditional decoder path all
 survive. A constant-folded unconditional fail-stop is insufficient evidence.
 
-## Acceptance gates, not yet acceptance results
+## Acceptance contract declared before implementation
 
 1. All eight valid source inputs; hostile full-width boundary/high-bit/random
    inputs; invalid source inputs reject normally, without SIGILL.
@@ -203,7 +204,7 @@ the kernel instructions describe that checkpoint's original root. Fresh combined
 focused builds, full aggregate and all 173 emulator modes plus two restoration
 boots remained required for that replay.
 
-## Final combined source, acceptance pending
+## Final combined source and completed acceptance
 
 The final source incorporates the separately reviewed eight-path 127-sector
 transport correction on PR25, preserving its explicit 65,024-byte limit and
@@ -216,14 +217,15 @@ older compiler, not a current language restriction.
 
 The earlier 560-file source passed all 44 focused commands and independent
 terminal/linked-image review. That evidence remains an intermediate checkpoint;
-it does not accept this changed compiler/source graph. The final focused plan
-adds ordinary and optimized boot-layout/capacity tests immediately after the BIOS
-build. A fresh compiler pin, native/ABI/IR checks, both linked output-fault proofs
-and caller-stack review must be established on the final graph. Complete native
-`make test` and actual 173 production modes, three capacity probes and two normal
-restoration boots remain required. All prior failed stages stay failed and
-preserved. None of these gates establishes physical AMD qualification or a
-general Aurora scheduler/kernel.
+it does not accept this changed compiler/source graph. The final 45-command focused stage
+passed ordinary and optimized boot-layout/capacity/configuration tests immediately
+after the BIOS build, fresh compiler/native/ABI/IR checks, both linked output-fault
+proofs and caller-stack review. The corrected 566-file freeze then passed complete
+native `make test`, all 173 production modes, three capacity probes and two actual
+normal restoration boots. Independent native and retained-trace reviews passed.
+All prior failed stages stay failed and preserved. None of these gates establishes
+physical AMD qualification or a general Aurora scheduler/kernel. Exact receipts
+and limits are in the [integration record](kernel-round-robin-integration-results.md).
 
 Acceptance commands explicitly supply the reviewed `66bb719d...` compiler pin
 to every relevant native gate. Existing older reference-hash defaults are
@@ -254,4 +256,20 @@ receipt, and does not read or run a compiler or change requested output files.
 `make test-native-cap-contracts` checks the real five entrypoints in ordinary and
 optimized Python and mocks allocation/reserve/floor boundaries without large
 allocations. This configuration gate cannot replace any native behavioral gate.
-The final source still requires fresh reviewed aggregate and emulator acceptance.
+The corrected freeze passed fresh reviewed aggregate and 173+3+2 emulator
+acceptance. The configuration-only results were not substituted for either gate.
+
+
+## Final measured boundary
+
+The accepted copied decision is 24 bytes at alignment 8. The generated selection
+chain uses 304 bytes including its initial return address. Reviewed conservative
+caller/interrupt bounds are 14,815 of 16,384 bytes for bootstrap with one early
+diagnostic, 1,575/1,511 for dispatcher/budget RSP0 paths, and 1,903/1,743 for their
+drain paths. These are bounded static call-path checks, not whole-kernel memory
+safety, arbitrary NMI nesting or recursive-fault guarantees. Both runtime output
+injections were linked to the actual generated call, volatile corruption and
+real decoder branch, and their newly rebuilt images matched the reviewed five
+members immediately before QEMU. All three new dispatcher-policy modes exited
+35 at the expected copied-selection failure after both client submissions, with
+no successful selection/service/timer event credited.

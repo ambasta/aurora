@@ -39,7 +39,7 @@ auto answer(i64 input) -> i64 {
 - Scalar types are `i64`, `u64`, `u8` and `bool` since milestone013. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
 - Blocks, `if (bool) { ... } else { ... }`, `while (bool) { ... }`, `return`, and `static_assert` are supported. `break`, `continue`, and `for` are deferred.
 - Functions must return on every statically continuing path. A while-loop is conservatively allowed to run zero times even for literal `true`, so it does not by itself prove a function returns. Unreachable statements following an unconditional return are rejected.
-- Decimal integers (u64 literals use the exact `u64` suffix), booleans, parentheses, signed unary `-`, bool `!`, arithmetic and comparisons are supported. U64 adds exact 64-bit `~ & | ^`, checked `<<` and logical `>>` with i64 counts, plus explicit checked integer conversions. There are no implicit scalar conversions, pointer arithmetic, or increment operators. Exact-bool short-circuit `&&`/`||` are available in the isolated candidate described below. See [the exact unsigned contract](UNSIGNED.md).
+- Decimal integers (u64 literals use the exact `u64` suffix), booleans, parentheses, signed unary `-`, bool `!`, arithmetic and comparisons are supported. U64 adds exact 64-bit `~ & | ^`, checked `<<` and logical `>>` with i64 counts, plus explicit checked integer conversions. There are no implicit scalar conversions, pointer arithmetic, or increment operators. Exact-bool short-circuit `&&`/`||` follow the verified bounded contract described below. See [the exact unsigned contract](UNSIGNED.md).
 - `//` comments are supported. Previous `fn`/`let` prototype syntax is rejected. This intentional source break follows the project's C++ identity; conventional C declarations such as `int main()` are also rejected.
 
 ## Defined integer and evaluation semantics
@@ -179,11 +179,15 @@ remain restricted. Complete isolated release/fatal sanitizer gates and independe
 parent integration and milestone acceptance are still pending.
 
 
-## Exact-bool short-circuit candidate
+## Verified exact-bool short-circuit semantics
 
 `&&` and `||` evaluate left to right with a lazy RHS and mandatory full static
 checking. Only exact bool operands are accepted. `&&` binds tighter than `||`;
 both bind below existing bitwise/comparison operators. Existing operands and
 arguments still evaluate once. The [contract](SHORT-CIRCUIT.md) specifies preserved
 source lifetimes, typed control-flow stacks, backend depth certification and
-explicit per-function snapshot-retention limits. Full integration remains pending.
+explicit per-function snapshot-retention limits. Isolated release and fatal host
+ASan/UBSan compiler suites, followed by fresh combined native and 173+3+2 emulator
+integration, passed independent review. LeakSanitizer was disabled for executor
+ptrace limitations, so this is not a leak-clean result. See the
+[integration record](../docs/kernel-round-robin-integration-results.md).

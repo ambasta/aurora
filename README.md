@@ -37,23 +37,25 @@ Do not write it to a physical disk or replace a host bootloader.
 See [kernel instructions](kernel/README.md) and [verification](docs/verification.md)
 for tools, exact commands, evidence and limitations.
 
-## Candidate Aurora two-slot scheduling policy
+## Verified Aurora two-slot scheduling policy
 
 The actual bounded UEFI dispatcher now calls the pure copied-value
-`kernel::round_robin_next` policy in the candidate source. Trusted C++/assembly
+`kernel::round_robin_next` policy. Trusted C++/assembly
 still owns grants, transactions, frame/domain/timer authority and all commits.
-This candidate adds three policy fault modes, so `make smoke-all` now configures
-173 modes, plus the three separately counted BIOS capacity probes. Final combined
-native, independent ABI/boundary and actual-QEMU acceptance are pending;
-see the [contract](docs/kernel-round-robin-contract.md). This is not a general
-scheduler or physical hardware qualification.
+The fresh combined checkpoint passed the full native aggregate, independent
+ABI/boundary/linked-image review, all 173 production QEMU modes, three separately
+counted BIOS capacity probes and two additional normal restoration boots. The
+three new policy fault modes fail at the intended boundary. See the
+[contract](docs/kernel-round-robin-contract.md) and
+[integration results](docs/kernel-round-robin-integration-results.md). This is not
+a general scheduler or physical hardware qualification.
 
 The combined aggregate exposed unused UEFI policies in the bounded BIOS image.
 An intermediate replay gave BIOS its own unchanged value/ownership root while
 retaining the old 96-sector limit. This combined candidate preserves that root
 and incorporates the separately reviewed 127-sector transport correction and
-exact-bool short-circuit compiler candidate. Fresh combined acceptance remains
-pending.
+exact-bool short-circuit compiler. The combined source passed fresh qualification;
+all earlier failed and blocked attempts remain identified in the results.
 
 ## Verified Aurora interrupt-budget policy
 
