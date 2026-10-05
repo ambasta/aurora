@@ -1,0 +1,151 @@
+{
+  "additional_normal_boots": 2,
+  "baseline_commit": "758458e8258b76b24f7c29e06a2ce01a83766b68",
+  "baseline_tree": "df584b38be517aa444257c90f5c7897487d484f8",
+  "borrowed_historical_modes": 0,
+  "compiler_sha256": "8d4099fe52a19307a266a6cbe5191203307462877cc94c7b6f3dae78f817c631",
+  "earlier_continuation": {
+    "completed_new_rows": 88,
+    "global_quiescence_proved": false,
+    "last_completed_global_ordinal": 134,
+    "state": "interrupted/unclosed; no successful terminal",
+    "unresolved_lease_sha256": "e2f3e4cfd1c82a76034fa85f02a49d963120e5bc9f61924e7082b3ca7d363eab"
+  },
+  "earlier_original_attempt": {
+    "state": "FAIL",
+    "terminal_sha256": "2de39384f8eefc19c923a61ab596174c822e6e235c5b083679646623d53e6e82"
+  },
+  "fresh_emulator_modes": 170,
+  "post_test_change_scope": "Only result documentation and this concise receipt index; implementation/runtime/compiler/fixture/launcher/test bytes are unchanged.",
+  "receipts": {
+    "acceptance_handoff": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/ACCEPTANCE-HANDOFF.json",
+      "bytes": 11463,
+      "mode": "0644",
+      "sha256": "2b9c54d397a378959f5dafdef2c7045cedb8c5b6565b02b43a2e42eba805b8dd"
+    },
+    "compiler_freeze": {
+      "backup_member": "fresh/evidence/preparation/emulator/frozen/freeze-receipt.json",
+      "bytes": 1470,
+      "mode": "0644",
+      "sha256": "108b802c0fb0027751696148b3dcf9ec351ce5bd68cf93718cf2a2babc4efed2"
+    },
+    "emulator_admission": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/plan-native-isolated-v1/admission.parent-approved.json",
+      "bytes": 5069,
+      "mode": "0644",
+      "sha256": "77d0e40e0682e34a2874a438a810efebb03cc5dbffc46ce6bafc4c154c52ba02"
+    },
+    "emulator_closed_lease": {
+      "backup_member": "fresh/evidence/preparation/aggregate-harness-review/closed-lease-emulator-kernel-isolated-full170-001.json",
+      "bytes": 485,
+      "mode": "0600",
+      "sha256": "28b17e77eac8da63e9f10482f7d975741451c2bacf96e373f0df11349ef9b8cb"
+    },
+    "emulator_configuration": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/plan-native-isolated-v1/configuration.NOT-AUTHORIZED.json",
+      "bytes": 4828,
+      "mode": "0600",
+      "sha256": "32b91f5c83994ee7266f4318739a21159061fc85dfb2376a19870c24dd56e17b"
+    },
+    "emulator_resource_plan": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/plan-native-isolated-v1/resource-plan.json",
+      "bytes": 1673,
+      "mode": "0600",
+      "sha256": "5820663627d27665871f636197aa12bbe94d7ef4c6c534fd8949e3c282719ace"
+    },
+    "emulator_review": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/final-terminal-review/REVIEW.md",
+      "bytes": 9489,
+      "mode": "0644",
+      "sha256": "1910abec87efb431f744a144c3bef89e6535190751bf7ae9c586ea6c11e406fe"
+    },
+    "emulator_review_seal": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/final-terminal-review/SHA256.json",
+      "bytes": 1359,
+      "mode": "0644",
+      "sha256": "4244e67e802a77a569fa01f2835253276ee80f713bdd2da73738df7f70e9e534"
+    },
+    "emulator_seal": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/runs/kernel-isolated-full170-001/SHA256.json",
+      "bytes": 226660,
+      "mode": "0600",
+      "sha256": "48a9148d1998fea06993b9ad5b5555751929c4f216cc76020b59f4382c139508"
+    },
+    "emulator_terminal": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/runs/kernel-isolated-full170-001/results.json",
+      "bytes": 690121,
+      "mode": "0600",
+      "sha256": "e151f2d6c2c3b56afcd5bb2c3ad4ef9f10cdf59f0d154a27b4646139535ce88b"
+    },
+    "fresh_compiler_review": {
+      "backup_member": "fresh/evidence/preparation/aggregate-harness-review/fresh-build-terminal-review/REVIEW.md",
+      "bytes": 4311,
+      "mode": "0644",
+      "sha256": "97fb002d676e9b471cc51452796ac2868eddca2415c6c76dccf8a621fbae6954"
+    },
+    "fresh_compiler_terminal": {
+      "backup_member": "fresh/evidence/preparation/aggregate-harness-review/runs/kernel-isolated-fresh-build-001/terminal.json",
+      "bytes": 8164,
+      "mode": "0600",
+      "sha256": "064aafd7f940082565e1f350fdf363367c1a2f773924182428df4c80cc3a96fb"
+    },
+    "full_native_review": {
+      "backup_member": "fresh/evidence/preparation/aggregate-harness-review/full-native-terminal-review/REVIEW.md",
+      "bytes": 7411,
+      "mode": "0644",
+      "sha256": "a86e5a72e27b1a0aea66fcb7a8c22198b2f5315ff238cfea0a16a92eb567b137"
+    },
+    "full_native_seal": {
+      "backup_member": "fresh/evidence/preparation/aggregate-harness-review/runs/kernel-isolated-full-native-001/evidence-seal.json",
+      "bytes": 897,
+      "mode": "0600",
+      "sha256": "ccbf59a4de0b6f23554efeb8d966abee28e2cd184938b9ae658c81f2d244f790"
+    },
+    "full_native_terminal": {
+      "backup_member": "fresh/evidence/preparation/aggregate-harness-review/runs/kernel-isolated-full-native-001/terminal.json",
+      "bytes": 9717,
+      "mode": "0600",
+      "sha256": "fe9650562ef30942301752433d5e6f78b4cb4334645ebfd2e17a121960ed119e"
+    },
+    "mode_inventory": {
+      "backup_member": "fresh/evidence/preparation/emulator/mode-inventory.json",
+      "bytes": 43133,
+      "mode": "0644",
+      "sha256": "5137934e06d00ad54f33aeeadd19462f65d7690e18941cc187f36f93af3d5726"
+    },
+    "native_closed_lease": {
+      "backup_member": "fresh/evidence/preparation/aggregate-harness-review/closed-lease-kernel-isolated-full-native-001.json",
+      "bytes": 453,
+      "mode": "0600",
+      "sha256": "2783f1a29a6d5bf6caa5ad2f97d72fd5538e0251e7a9bd6d9162ebf34e5ef364"
+    },
+    "native_generated_inventory": {
+      "backup_member": "fresh/evidence/preparation/aggregate-harness-review/runs/kernel-isolated-full-native-001/generated-inventory.json.gz",
+      "bytes": 487258,
+      "mode": "0600",
+      "sha256": "d9460e56ed17e3a7ee2bfddf828136a08ff27b0e7c4cdb822a68b7a19891888a"
+    },
+    "native_preservation_archive": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/runs/kernel-isolated-full170-001/native-original-build.tar.gz",
+      "bytes": 78073510,
+      "mode": "0600",
+      "sha256": "715d4856b5f8ab72ea4001384f86a0bdd94fb69d2b0fca6a4d143607bf69bd3b"
+    },
+    "native_preservation_inventory": {
+      "backup_member": "fresh/evidence/preparation/emulator/review/runs/kernel-isolated-full170-001/native-original-build-inventory.json.gz",
+      "bytes": 488107,
+      "mode": "0600",
+      "sha256": "64cbd18186f0a011311936bf4f9ae759f77172ef0fe0f6b2810d0fb9a25a2947"
+    },
+    "tested_source_manifest": {
+      "backup_member": "fresh/evidence/kernel-budget-integration/reconciled-source-first.json",
+      "bytes": 104313,
+      "mode": "0644",
+      "sha256": "627fb53116ec13b72cd3d755dd190abb2f6ab59cc3cecb6e4560cd3cefbb0c25"
+    }
+  },
+  "schema": "aurora-kernel-budget-checkpoint-receipts-v1",
+  "tested_source_file_count": 533,
+  "verified_date": "2026-10-05"
+}

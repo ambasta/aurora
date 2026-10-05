@@ -22,7 +22,7 @@ case "${UEFI_MODE:-normal}" in
  dispatch|dispatch-budget|dispatch-fault|dispatch-mixed|dispatch-pending|dispatch-cross-reply|dispatch-client-owner|dispatch-stale|dispatch-duplicate|dispatch-full|dispatch-root|dispatch-peer-code)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET -DAURORA_UEFI_DISPATCH)
    if [[ "$UEFI_MODE" != dispatch ]]; then flag="${UEFI_MODE#dispatch-}"; flag="${flag//-/_}"; extra+=("-DAURORA_DISPATCH_${flag^^}"); fi ;;
- budget|budget-fault|budget-noapic|budget-smp|budget-discovery|budget-cache|budget-alias|budget-pending|budget-forged|budget-root|budget-mmio|budget-softint|budget-fpu|budget-context|budget-epoch)
+ budget|budget-fault|budget-noapic|budget-smp|budget-discovery|budget-cache|budget-alias|budget-pending|budget-forged|budget-root|budget-mmio|budget-softint|budget-fpu|budget-context|budget-epoch|budget-policy-zero|budget-policy-counts|budget-policy-wide|budget-policy-output)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET)
    if [[ "$UEFI_MODE" != budget ]]; then flag="${UEFI_MODE#budget-}"; flag="${flag//-/_}"; extra+=("-DAURORA_BUDGET_${flag^^}"); fi ;;
  ipc|ipc-fault|ipc-cancel|ipc-owner|ipc-stale|ipc-version|ipc-phase|ipc-transaction|ipc-site|ipc-unknown|ipc-root|ipc-kernel-trap|ipc-duplicate|ipc-late|ipc-exhausted)
@@ -86,7 +86,7 @@ if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "$
  as --64 --defsym AURORA_RELATIVE_ONLY=1 kernel/exceptions.S -o build/uefi/runtime-exceptions.o
  runtime_objects+=(build/uefi/runtime-entry.o build/uefi/runtime-exceptions.o)
 fi
-"$compiler" examples/kernel.au -o build/uefi/language.s
+"$compiler" --module-root kernel/policies examples/kernel.au -o build/uefi/language.s
 as --64 build/uefi/language.s -o build/uefi/language.o
 as --64 kernel/uefi/payload-entry.S -o build/uefi/payload-entry.o
 g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/payload.cpp -o build/uefi/payload.o

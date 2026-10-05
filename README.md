@@ -22,7 +22,7 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-`make smoke-all` runs all 166 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` configures 170 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates, including four verified kernel-budget policy fault modes. `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -30,6 +30,23 @@ Do not write it to a physical disk or replace a host bootloader.
 
 See [kernel instructions](kernel/README.md) and [verification](docs/verification.md)
 for tools, exact commands, evidence and limitations.
+
+## Verified Aurora interrupt-budget policy
+
+The UEFI service/client timer path now uses the pure Aurora
+`kernel::interrupt_tick` policy for next-state calculation and resume/exhaust
+selection. Domain/frame/epoch/ISR authority, hardware and cancellation remain
+trusted C++/assembly bootstrap mechanisms behind a private scalar transport.
+
+A fresh compiler build, complete native `make test`, all **170 actual emulator
+modes**, and two additional normal BIOS/UEFI boots passed on the accepted overload
+compiler. Independent terminal reviews verified unchanged runtime/test inputs,
+full evidence seals, preservation archives and closed owned-process leases.
+The earlier failed and interrupted attempts remain separately recorded, with no
+prefix credit. See the [contract](docs/kernel-budget-contract.md) and
+[exact evidence index](docs/evidence/kernel-budget-policy/README.md).
+This verifies a bounded interrupt-count policy, with no general scheduler, native
+kernel, physical-platform or equivalent-performance claim.
 
 ## Verified milestone022: copied ordinary method values
 

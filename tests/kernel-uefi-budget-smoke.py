@@ -8,6 +8,8 @@ need=ipc.need
 BASE=ipc.BASE
 APIC=0xffff900000000000
 MODES=('budget','budget-fault','budget-context','budget-pending','budget-noapic','budget-smp','budget-discovery','budget-cache','budget-alias','budget-forged','budget-root','budget-mmio','budget-softint','budget-fpu','budget-epoch')
+POLICY_MODES=('budget-policy-zero','budget-policy-counts','budget-policy-wide','budget-policy-output')
+MODES+=POLICY_MODES
 SUCCESS=MODES[:4]
 EARLY=MODES[4:9]
 EVENT=r'AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)'
@@ -141,7 +143,11 @@ def validate(status,text,mode,meta):
         need(len(projected)>=8 and len(projected)<=10,'Extra negative lifecycle records')
         for line,pattern in zip(projected[:7],expected_prefix):need(re.fullmatch(pattern,line),'Wrong request before denied timer operation')
         tail=projected[7:]
-        if mode in ('budget-root','budget-epoch','budget-forged'):
+        if mode in POLICY_MODES:
+            need(used==0 and last_event is not None and last_event[:2]==(64,0) and last_event[3]==3,
+                'Policy rejection lacks uncharged real user interrupt')
+            need(tail==['AURORA_UEFI_RUNTIME_FAIL: Aurora budget transition'],'Wrong policy rejection')
+        elif mode in ('budget-root','budget-epoch','budget-forged'):
             need(used==0 and last_event is not None,'Unexpected charged rejected interrupt')
             if mode=='budget-root':need(tail==[f'AURORA_UEFI_RUNTIME_ROOT_PROBE: root={kernel}','AURORA_UEFI_RUNTIME_FAIL: timer active origin'],'Wrong root rejection')
             else:need(tail==['AURORA_UEFI_RUNTIME_FAIL: timer active origin'],'Wrong active interrupt rejection')
@@ -180,10 +186,10 @@ def self_test():
                     run+=1;phase=4 if run==1 and mode=='budget-fault' else 5 if run==1 else 1;ticks=0;contexts=0
                     rows.append(line.replace('phase=4 ',f'phase={phase} '));rows.append(f'AURORA_UEFI_TIMER_ARM: epoch={run} budget={3 if phase==5 else 128} root={root}')
                     if mode not in SUCCESS:
-                        if mode in ('budget-root','budget-epoch','budget-forged'):
+                        if mode in ('budget-root','budget-epoch','budget-forged')+POLICY_MODES:
                             rows.append(event(64,arena+0x22000+200 if mode=='budget-forged' else images['bounds']['compiled_begin'],0 if mode=='budget-forged' else 3))
                             if mode=='budget-root':rows.append(f'AURORA_UEFI_RUNTIME_ROOT_PROBE: root={kernel}')
-                            rows.append('AURORA_UEFI_RUNTIME_FAIL: timer active origin')
+                            rows.append('AURORA_UEFI_RUNTIME_FAIL: '+('Aurora budget transition' if mode in POLICY_MODES else 'timer active origin'))
                         else:
                             tick(images['bounds']['entry'],1,3)
                             v,e={'budget-mmio':(14,5),'budget-softint':(13,514),'budget-fpu':(7,0)}[mode]

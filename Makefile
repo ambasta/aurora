@@ -208,3 +208,14 @@ test-package-graph:
 	python3 -B -O tests/compiler/package_graph.py $(abspath $(PACKAGE_GRAPH_COMPILER)) --compiler-sha256 $(PACKAGE_GRAPH_COMPILER_SHA256) --candidate-cap-mib $(PACKAGE_GRAPH_CAP_MIB) $(PACKAGE_GRAPH_TEST_FLAGS)
 
 test: test-package-graph
+
+# Real UEFI interrupt-count next-state policy, compiled with the accepted language.
+KERNEL_BUDGET_COMPILER ?= build/aurorac
+KERNEL_BUDGET_COMPILER_SHA256 ?= 8d4099fe52a19307a266a6cbe5191203307462877cc94c7b6f3dae78f817c631
+KERNEL_BUDGET_CAP_MIB ?= 128
+test: KERNEL_BUDGET_CAP_MIB = 512
+.PHONY: test-kernel-budget-native
+test-kernel-budget-native:
+	python3 -B -O tests/kernel-budget-native.py --compiler $(abspath $(KERNEL_BUDGET_COMPILER)) --compiler-sha256 $(KERNEL_BUDGET_COMPILER_SHA256) --candidate-cap-mib $(KERNEL_BUDGET_CAP_MIB)
+
+test: test-kernel-budget-native

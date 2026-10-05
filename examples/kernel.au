@@ -1,4 +1,5 @@
 module kernel;
+import kernel.interrupt_budget;
 
 auto aurora_kernel_value() -> i64 {
     static_assert(size_of(i64) == 8);
@@ -9,4 +10,14 @@ auto aurora_kernel_value() -> i64 {
     }
     own<i64> answer = move(seed);
     return read(answer);
+}
+
+// Temporary scalar-only bootstrap transport. The class/enum API above this
+// seam is ordinary Aurora; this packing is private to the current UEFI adapter.
+auto aurora_kernel_budget_tick(u64 initial, u64 remaining, u64 used) -> u64 {
+    const kernel::TickDecision decision = kernel::interrupt_tick(initial, remaining, used);
+    if (decision.action() == kernel::TickAction::rejected) { return 0u64; }
+    u64 action = 1u64;
+    if (decision.action() == kernel::TickAction::exhausted) { action = 2u64; }
+    return (action << 16) | (decision.used() << 8) | decision.remaining();
 }

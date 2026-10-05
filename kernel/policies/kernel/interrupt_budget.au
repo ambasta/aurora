@@ -1,0 +1,40 @@
+export module kernel.interrupt_budget;
+
+// Pure copied-value policy. No domain, frame, timer, or memory authority enters
+// this module. The trusted adapter must establish those authorities separately.
+export namespace kernel {
+    enum class TickAction { rejected, resume, exhausted };
+
+    class TickDecision {
+        TickAction outcome;
+        u64 remaining_count;
+        u64 used_count;
+    public:
+        TickDecision(TickAction action, u64 remaining, u64 used)
+            : outcome(action), remaining_count(remaining), used_count(used) {}
+
+        auto action() const -> TickAction { return outcome; }
+        auto remaining() const -> u64 { return remaining_count; }
+        auto used() const -> u64 { return used_count; }
+    };
+
+    auto interrupt_tick(u64 initial, u64 remaining, u64 used) -> TickDecision {
+        const TickDecision rejected = TickDecision(TickAction::rejected, 0u64, 0u64);
+        if (initial == 0u64) { return rejected; }
+        if (initial > 128u64) { return rejected; }
+        if (remaining == 0u64) { return rejected; }
+        if (remaining > initial) { return rejected; }
+        if (used >= initial) { return rejected; }
+        // Subtraction is representable after the range check. Do not add
+        // potentially hostile counts to validate conservation.
+        if (used != initial - remaining) { return rejected; }
+        const u64 next_remaining = remaining - 1u64;
+        const u64 next_used = used + 1u64;
+        if (next_remaining == 0u64) {
+            const TickDecision exhausted = TickDecision(TickAction::exhausted, next_remaining, next_used);
+            return exhausted;
+        }
+        const TickDecision resumed = TickDecision(TickAction::resume, next_remaining, next_used);
+        return resumed;
+    }
+}
