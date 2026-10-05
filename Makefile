@@ -254,3 +254,15 @@ test-native-cap-contracts:
 	python3 -B -O tests/native-cap-contracts.py
 
 test: test-native-cap-contracts
+
+# Bounded operational IPC policy. Explicit acceptance identity is required until
+# reconciled with the separately accepted developer-build receipt supervisor.
+IPC_TRANSACTION_COMPILER ?= $(AURORAC)
+IPC_TRANSACTION_COMPILER_SHA256 ?=
+IPC_TRANSACTION_CAP_MIB ?= 128
+test: IPC_TRANSACTION_CAP_MIB = 1024
+.PHONY: test-ipc-transaction
+test-ipc-transaction:
+	AURORAC="$(IPC_TRANSACTION_COMPILER)" IPC_TRANSACTION_COMPILER_SHA256="$(IPC_TRANSACTION_COMPILER_SHA256)" IPC_TRANSACTION_CAP_MIB="$(IPC_TRANSACTION_CAP_MIB)" ./scripts/kernel-ipc-transaction-tests.sh
+
+test: test-ipc-transaction

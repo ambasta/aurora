@@ -8,6 +8,18 @@ images=load('ipc_images',ROOT/'scripts/kernel-uefi-ipc-images.py')
 fixtures=load('image_fixtures',ROOT/'tests/kernel-uefi-user-image.py')
 def main():
     positives=0;negative=0
+    payload=load('ipc_payload_image',ROOT/'tests/kernel-uefi-image.py')
+    direct='  10:\te8 00 00 00 00  \tcall   15 <caller+0x15>\t11: R_X86_64_PLT32\taurora_kernel_ipc_transition-0x4'
+    for good in (direct,direct.replace('call   ','callq  ')):
+        if not payload.ipc_call_present(good):raise RuntimeError('Valid direct transaction call rejected')
+        positives+=1
+    for bad in (direct.replace('transition-','transition_fake-'),direct.replace('call   ','jmp    '),
+                direct.replace('e8 00','e9 00'),direct.replace('e8 00','ff d0'),
+                direct.replace('transition-0x4','transition-0x8'),direct.replace('11: R_','12: R_'),
+                direct.replace('15 <','16 <'),direct.replace('R_X86_64_PLT32','R_X86_64_PC32'),
+                direct.replace('call   ','syscall '),direct+' trailing',direct.replace('e8 00 00 00 00','e8 01 00 00 00')):
+        if payload.ipc_call_present(bad):raise RuntimeError('Invalid direct transaction call accepted')
+        negative+=1
     for base in (images.BASE,images.BASE+4096):
         data,blob,symbols=fixtures.fixture(base);images.verify(data,blob,base,symbols);positives+=1
         failures=[]

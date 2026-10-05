@@ -25,7 +25,7 @@ case "${UEFI_MODE:-normal}" in
  budget|budget-fault|budget-noapic|budget-smp|budget-discovery|budget-cache|budget-alias|budget-pending|budget-forged|budget-root|budget-mmio|budget-softint|budget-fpu|budget-context|budget-epoch|budget-policy-zero|budget-policy-counts|budget-policy-wide|budget-policy-output)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET)
    if [[ "$UEFI_MODE" != budget ]]; then flag="${UEFI_MODE#budget-}"; flag="${flag//-/_}"; extra+=("-DAURORA_BUDGET_${flag^^}"); fi ;;
- ipc|ipc-fault|ipc-cancel|ipc-owner|ipc-stale|ipc-version|ipc-phase|ipc-transaction|ipc-site|ipc-unknown|ipc-root|ipc-kernel-trap|ipc-duplicate|ipc-late|ipc-exhausted)
+ ipc|ipc-fault|ipc-cancel|ipc-owner|ipc-stale|ipc-version|ipc-phase|ipc-transaction|ipc-site|ipc-unknown|ipc-root|ipc-kernel-trap|ipc-duplicate|ipc-late|ipc-exhausted|ipc-policy-request-input|ipc-policy-request-output|ipc-policy-cancel-input|ipc-policy-cancel-output)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC)
    if [[ "$UEFI_MODE" != ipc ]]; then flag="${UEFI_MODE#ipc-}"; flag="${flag//-/_}"; extra+=("-DAURORA_IPC_${flag^^}"); fi ;;
  runtime-table-readback|runtime-table-reject|runtime-table-exhaust|runtime-table-quarantine)
@@ -138,6 +138,8 @@ for name in loader embed transition; do objcopy --remove-section=.comment --remo
 ld -mi386pep --subsystem 10 --entry=aurora_efi_entry --image-base=0x100000 --enable-reloc-section --no-insert-timestamp build/uefi/loader-pe.o build/uefi/embed-pe.o build/uefi/transition-pe.o -o build/uefi/esp/EFI/BOOT/BOOTX64.EFI
 printf 'Built UEFI PE32+ loader and independent payload\n'
 
-python3 tests/kernel-uefi-image.py
+image_policy=()
+case "${UEFI_MODE:-normal}" in ipc*|budget*|dispatch*|user-*) image_policy+=(--ipc-policy) ;; esac
+python3 tests/kernel-uefi-image.py "${image_policy[@]}"
 
 if [[ "${UEFI_MODE:-normal}" == ivrs-* ]]; then python3 tests/kernel-uefi-ivrs-stack.py build/uefi build/uefi/ivrs-stack.json; fi

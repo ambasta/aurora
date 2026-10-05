@@ -84,12 +84,12 @@ def elf_validate(data,binary):
         previous_end=virtual+memory
     need(0<len(binary)<=0x20000,'Payload bound')
 
-def budget_call_present(disassembly):
+def policy_call_present(disassembly, symbol):
     # GNU objdump -drwC on an unlinked x86-64 object: a direct E8 call with
     # zero displacement, an exact target/addend, and relocation at its imm32.
     pattern=(r'\s*([0-9a-f]+):\s+e8 00 00 00 00\s+callq?\s+'
              r'([0-9a-f]+) <[^>]+>\s+([0-9a-f]+): R_X86_64_PLT32\s+'
-             r'aurora_kernel_budget_tick-0x4\s*')
+             + re.escape(symbol)+r'-0x4\s*')
     for line in disassembly.splitlines():
         match=re.fullmatch(pattern,line)
         if match:
@@ -97,7 +97,15 @@ def budget_call_present(disassembly):
             if target==call+5 and relocation==call+1: return True
     return False
 
-def main():
+def budget_call_present(disassembly):
+    return policy_call_present(disassembly, 'aurora_kernel_budget_tick')
+
+
+def ipc_call_present(disassembly):
+    return policy_call_present(disassembly, 'aurora_kernel_ipc_transition')
+
+
+def main(require_ipc=False):
     pe_path=BUILD/'esp/EFI/BOOT/BOOTX64.EFI'
     data=pe_path.read_bytes(); binary=(BUILD/'payload.bin').read_bytes(); elf=(BUILD/'payload.elf').read_bytes()
     nt,opt,sections=pe_validate(data,binary); elf_validate(elf,binary)
@@ -111,6 +119,12 @@ def main():
         policy_symbols={row.split()[2]:int(row.split()[0],16) for row in symbols.splitlines() if len(row.split())==3}
         need(0<policy_symbols.get('aurora_kernel_budget_tick',0)<policy_symbols['__payload_text_end'],
              'Aurora budget entry outside owned payload RX')
+    if require_ipc:
+        policy_relocations=subprocess.check_output(['objdump','-drwC',str(BUILD/'runtime.o')],text=True)
+        need(ipc_call_present(policy_relocations), 'Mailbox runtime does not call the actual Aurora transaction entry')
+        policy_symbols={row.split()[2]:int(row.split()[0],16) for row in symbols.splitlines() if len(row.split())==3}
+        need(0<policy_symbols.get('aurora_kernel_ipc_transition',0)<policy_symbols['__payload_text_end'],
+             'Aurora transaction entry outside owned payload RX')
     for name in names:
         relocations=subprocess.check_output(['readelf','-rW',str(BUILD/f'{name}.o')],text=True)
         types=set(re.findall(r'R_X86_64_\w+',relocations))
@@ -138,4 +152,7 @@ def main():
         'payload_sha256':hashlib.sha256(binary).hexdigest(),'payload_bytes':len(binary)},indent=2)+'\n')
     print(f'PASS: PE32+ EFI relocation/RX policy, exact PIC payload; {len(negatives)+1} negative images')
 
-if __name__=='__main__': main()
+if __name__=='__main__':
+    import sys
+    if sys.argv[1:] not in ([], ['--ipc-policy']): raise SystemExit('Expected optional --ipc-policy')
+    main(require_ipc=bool(sys.argv[1:]))

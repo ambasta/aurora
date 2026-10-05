@@ -28,7 +28,7 @@ plain `make test` is not yet a portable developer-test contract across legitimat
 host GCC builds. A separate tooling correction must address that gap without
 weakening externally pinned release/acceptance receipts.
 
-`make smoke-all` configures 173 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates, including four verified kernel-budget policy fault modes. It also runs three dedicated BIOS capacity probes (a full 127-sector read and two failing controls). `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` configures 177 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. The four new IPC transaction fault profiles are authored but not yet qualified; the earlier 173-mode checkpoint remains historical. It also runs three dedicated BIOS capacity probes (a full 127-sector read and two failing controls). `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -36,6 +36,19 @@ Do not write it to a physical disk or replace a host bootloader.
 
 See [kernel instructions](kernel/README.md) and [verification](docs/verification.md)
 for tools, exact commands, evidence and limitations.
+
+## Unverified Aurora IPC transition candidate
+
+The next kernel increment moves all six real Mailbox lifecycle decisions to a
+pure copied Aurora class/enum policy. Checked host adapters retain identities,
+rights, generations, transaction matching, actual payload storage and atomic
+commit. A refused or malformed individual transition cannot mutate any mailbox
+or consume a generation. Composite operations preserve already committed earlier
+transitions; they do not promise rollback. The [reviewed contract](docs/kernel-ipc-transition-contract.md)
+specifies the finite truth table, two stack contexts and four new real fault modes.
+Source authoring is not native or emulator acceptance. The standalone focused
+`test-ipc-transaction` target currently requires an explicit reviewed compiler
+identity, pending reconciliation with the separate portable test workflow.
 
 ## Verified Aurora two-slot scheduling policy
 

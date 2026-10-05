@@ -781,3 +781,21 @@ per-transfer boundary checks and total memory authority. Increasing a test limit
 again would not implement that loader. Existing firmware assumptions remain:
 512-byte sectors and EDD are assumed; the first read and BSS initialization occur
 before runtime E820 grant validation. No physical BIOS compatibility is claimed.
+
+## Copied IPC transition candidate
+
+The six production Mailbox operations now request a copied Aurora decision and
+validate its canonical effect before mutation. The trusted adapter keeps all
+identity, right, transaction, generation and storage authority. `bind` and
+`revoke` retain their accepted implementation. Invalid producer/input boundaries
+are distinct from canonical ordinary refusal; both deny before an individual
+operation mutates a mailbox or mints a stamp. Accepted composite prefixes are
+not rolled back after a later denial. See the [contract](../docs/kernel-ipc-transition-contract.md)
+for the complete state relation and pending acceptance obligations.
+
+Four additional IPC profiles cover real request and restored service-fault
+cancellation boundaries: `ipc-policy-request-input`, `ipc-policy-request-output`,
+`ipc-policy-cancel-input`, `ipc-policy-cancel-output`. They corrupt only a copied
+phase or actual producer result, not live state. Normal IPC/dispatcher/restart
+behavior, full-width payloads, isolated BIOS root and all existing gates remain
+required. Source changes alone do not qualify these profiles or this policy.

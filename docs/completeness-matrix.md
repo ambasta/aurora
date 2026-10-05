@@ -1,5 +1,19 @@
 # Completeness and acceptance matrix
 
+## Unverified copied IPC transaction policy candidate
+
+The operational six-operation Mailbox decision, next state and payload-effect
+selection are being moved into Aurora using accepted copied class/enum features.
+Identity, participant liveness, rights, exact transaction/generation matching,
+payload storage and mutation remain trusted bootstrap responsibilities. Bind and
+revoke are unchanged. Per-call refusals preserve every mailbox byte and generation;
+composite accepted prefixes remain committed. The [contract](kernel-ipc-transition-contract.md)
+requires independent native/model/fatal-sanitizer, both-stack ABI and linked-image
+reviews, a fresh full aggregate, 177 production emulator modes, three capacity
+probes and two normal restoration boots. None is claimed passed by source authoring.
+No new general service, scheduler, unsafe language ingress or physical-device
+qualification is introduced.
+
 ## Verified Aurora round-robin and short-circuit checkpoint — 2026-10-05
 
 The real UEFI two-client dispatcher now calls a copied Aurora selection policy.

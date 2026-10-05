@@ -107,7 +107,8 @@ auto run_ipc() -> void {
 #else
     ipc_execute(0,ipc::Phase::request,0,0,2,ProgramEvent::returned,40);
 #endif
-#if defined(AURORA_IPC_FAULT) || defined(AURORA_UEFI_SERVICE_BUDGET)
+#if defined(AURORA_IPC_FAULT) || defined(AURORA_UEFI_SERVICE_BUDGET) \
+    || defined(AURORA_IPC_POLICY_CANCEL_INPUT) || defined(AURORA_IPC_POLICY_CANCEL_OUTPUT)
     ipc_deliver(true); ipc_cancel();
     const auto frame=*frames.address(*domains[1].stacks[0]);
     require(mailbox->revoke(ipc::Phase::inactive) && retire(1) && !registry.index(first_service),"IPC service retirement");
