@@ -25,7 +25,7 @@ fi
 "$compiler" --module-root kernel/policies examples/kernel.au -o build/kernel-language.s
 as --64 build/kernel-language.s -o build/kernel-language.o
 as --32 kernel/boot.S -o build/boot.o
-ld -m elf_i386 -Ttext 0x7c00 --oformat binary -e _boot build/boot.o -o build/boot.bin
+./scripts/kernel-boot-link.sh build/boot.o build/boot.bin
 as --64 kernel/start.S -o build/start.o
 as --64 kernel/exceptions.S -o build/exceptions.o
 as --64 kernel/user.S -o build/user.o

@@ -24,6 +24,57 @@ selects its firmware directory. Tests use software emulation without root/KVM.
 Do not run image-mutating scripts concurrently; they share build outputs.
 Fault tests restore a normal image on exit, including failure exits.
 
+
+### Host-toolchain boot layout
+
+The supported build workflow targets x86-64 Linux with GNU tools selected on
+`PATH`: `g++` with C++23, GNU Make, `as` supporting `--32` and `--64`, GNU `ld`
+with `elf_i386`/`elf_x86_64` emulations and `--orphan-handling=error`, `objcopy`,
+`objdump`, `nm`, Python 3 and Bash. The focused regression also requires assembler
+`-mx86-used-note` (available since binutils 2.32) and
+`--generate-missing-build-notes`. This is a tool-capability contract, not a claim
+that every GNU release or distribution has passed the full kernel suite. A
+C++ compiler configured for a distribution is not itself a target-hardware limit.
+
+`kernel/boot.ld` fixes the BIOS `.text` at 0x7c00 and requires exactly 512 bytes
+with `_boot` first. The linker helper explicitly disables generated build IDs,
+discards only named GNU metadata, rejects other orphan sections, and rejects
+separate initialized/uninitialized storage. It does not truncate or pad a bad
+binary to disguise a layout failure. Existing image validation still checks the
+BIOS signature, packet and complete kernel image before packaging.
+
+Run the actual production linker and its adversarial layout checks without
+building the compiler or kernel:
+
+    make test-boot
+
+The regression tests host-default, forced-off and forced-on GNU x86 property
+notes, generated GNU build attributes, byte equality with the previous relocated
+BIOS text, exact entry/signature/EDD packet and nine rejected invalid layouts.
+Checks remain active under `python3 -O`; all scratch outputs are temporary.
+Debian GNU binutils 2.44 passes these focused checks. Gentoo binutils 2.47p1
+(2.47.0) was reported to produce a 512-byte `.text` plus an allocated 40-byte
+`.note.gnu.property`, yielding a 1064-byte raw image with the previous default
+linker layout. The affected failure class was reproduced with forced GNU notes. The fix then
+passed a production kernel build, ordinary/optimized image validation, actual
+normal BIOS boot and controlled divide-fault BIOS boot, using the unchanged
+accepted compiler. The fault script restored the exact initial normal image
+bytes. Boot size is 512 bytes and the normal kernel payload is 45,808 bytes.
+Independent focused review also verified the preserved instruction bytes and
+additional rejected layouts. The Gentoo rerun remains pending; no fresh full
+`make test` or all-mode emulator run is claimed for this narrow linker change.
+
+For a host-toolchain failure, retain the failed files and report:
+
+    as --version | head -n 1
+    ld --version | head -n 1
+    objdump -h build/boot.o
+    wc -c build/boot.bin
+
+Host toolchain verification is separate from target-machine qualification.
+Physical AMD support remains unverified; the Zen/Navi/RDNA target and the
+emulator-only safety boundary below are unchanged.
+
 Normal smoke requires exit 33, exact language result 42, E820/page/exception
 self-test markers, and AURORA_BOOT_OK with no failure/fatal marker. Fault smoke
 requires exit 35, the exact injected vector/error diagnostic, and fail-stop.
