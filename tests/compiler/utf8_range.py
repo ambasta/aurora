@@ -11,7 +11,8 @@ sys.dont_write_bytecode = True
 MIN = -(1 << 63)
 MAX = (1 << 63) - 1
 STATUSES = ('success', 'out_of_range', 'invalid_sequence', 'truncated')
-PIN = 'e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e'
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / 'scripts'))
+from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 CAP = 128 << 20
 FLOOR = 1 << 30
 RESERVE = 24 << 20
@@ -137,18 +138,20 @@ def reject_cases():
 
 
 class Suite:
-    def __init__(self, args):
+    def __init__(self, args, identity):
         self.args = args
+        self.identity = identity
         self.root = args.repo_root.resolve(strict=True)
         self.output = args.artifacts.absolute()
         self.budget_root = (args.budget_root or self.output).absolute()
-        require(args.compiler_sha256 == sha(args.compiler), 'compiler pin mismatch before artifact creation')
+        identity.verify()
+        require(identity.sha256 == sha(args.compiler), 'compiler identity mismatch before artifact creation')
         require(not self.output.exists(), 'artifact directory must be fresh')
         require(self.output.parent.is_dir(), 'artifact parent must exist')
         require(not any(p.is_symlink() for p in (self.output, *self.output.parents)), 'symlink artifact root')
         self.output.mkdir()
         self.compiler = args.compiler.resolve(strict=True)
-        self.pin = args.compiler_sha256
+        self.pin = identity.sha256
         self.count = self.batches = self.rejections = 0
         self.inputs = {str(p.relative_to(self.root)): sha(p) for p in (self.root/'library').rglob('*.au')}
         self.inputs[str(pathlib.Path(__file__).resolve())] = sha(__file__)
@@ -252,18 +255,23 @@ def self_test():
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--compiler',type=pathlib.Path)
-    p.add_argument('--compiler-sha256',default=PIN)
+    add_identity_arguments(p)
     p.add_argument('--repo-root',type=pathlib.Path,default=pathlib.Path(__file__).resolve().parents[2])
     p.add_argument('--artifacts',type=pathlib.Path)
     p.add_argument('--budget-root',type=pathlib.Path)
     p.add_argument('--budget-mib',type=int,default=128)
     p.add_argument('--sanitized-compiler',action='store_true')
     p.add_argument('--self-test-only',action='store_true')
-    a=p.parse_args();self_test()
+    a=p.parse_args()
+    validate_identity_selection(a,preflight=a.self_test_only)
+    if not a.self_test_only:
+        require(a.compiler is not None and a.artifacts is not None,'compiler and fresh artifacts required')
+        identity=resolve_identity(a,a.compiler,a.repo_root)
+    self_test()
     if a.self_test_only: print('PASS range oracle controls');return
     require(a.compiler is not None and a.artifacts is not None,'compiler and fresh artifacts required')
-    suite=Suite(a)
-    manifest=dict(compiler_sha256=suite.pin, inputs=suite.inputs, python=sys.version, optimized=not __debug__, status='running')
+    suite=Suite(a,identity)
+    manifest=dict(compiler_identity=identity.record(),compiler_sha256=suite.pin, inputs=suite.inputs, python=sys.version, optimized=not __debug__, status='running')
     try:
         batch=[]
         for item in itertools.chain(map(source_case,cases()),report_cases()):
@@ -273,6 +281,7 @@ def main():
         if batch:suite.batch(batch)
         for item in reject_cases():suite.reject(*item)
         suite.verify_inputs()
+        identity.verify()
         manifest.update(status='passed', cases=suite.count, full_i64_observations=3*suite.count, batches=suite.batches,rejections=suite.rejections)
         print(f'PASS UTF-8 scalar ranges: {suite.count} cases; {3*suite.count} full observations; {suite.rejections} rejection controls',flush=True)
     except Exception as error:

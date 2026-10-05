@@ -7,6 +7,16 @@ new compiler feature. Verification uses the accepted ordinary-function-overload
 compiler. Aurora-native kernel, general scheduler, calibrated time and hardware
 support remain outside this bounded policy checkpoint.
 
+Current test invocations follow the [shared developer-test contract](developer-test-contract.md).
+`make test-kernel-budget-native` is a focused developer gate with a fresh run-owned
+compiler and validated build receipt; `make test` is the complete root native
+graph. Explicitly pinned root testing uses `make test-acceptance` with
+`ACCEPTANCE_COMPILER_SHA256` and optional `ACCEPTANCE_COMPILER` for a reviewed
+prebuilt. Direct native use requires exactly one `--compiler-sha256` or
+`--developer-build-receipt`. Ordinary developer builds have no historical default
+pin. This unqualified tooling change does not relabel the accepted policy/compiler
+or emulator evidence below; actual emulator acceptance remains separate.
+
 ## API and complete input behavior
 
 `kernel::interrupt_tick(u64 initial, u64 remaining, u64 used)` returns an inline

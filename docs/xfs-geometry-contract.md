@@ -170,9 +170,13 @@ from release and instrumented compilers. Compiler implementation and old probe
 remain unchanged. Full main-repository aggregate and kernel acceptance are
 separate parent gates; no new kernel run is claimed by this focused evidence.
 
-The generic new test accepts future compiler builds while recording and checking
-run-stable hashes. `--compiler-sha256` optionally enforces the exact acceptance
-pin. Release compiler AS is capped at 512 MiB, native/tool AS at 128 MiB, CPU at
+Current tooling uses the [shared test contract](developer-test-contract.md).
+`make -C compiler test-xfs-geometry` uses one fresh run-owned compiler and validated
+developer receipt. Direct native invocation requires exactly one explicit
+`--compiler-sha256` or `--developer-build-receipt`, with no historical default pin.
+The observed hash remains distinct from a reviewed expected pin, and focused
+success is not root native acceptance. The historical evidence above is unchanged.
+Release compiler AS is capped at 512 MiB, native/tool AS at 128 MiB, CPU at
 10/11 seconds, regular files at 8 MiB and core files at zero. Tools have 30-second
 wall limits; native cases default to 15 seconds. Fixtures have at most four
 headers and 64 KiB source; the observed largest normal fixture is 18,841 bytes.

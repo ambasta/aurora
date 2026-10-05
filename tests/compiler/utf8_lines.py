@@ -9,7 +9,7 @@ import argparse, hashlib, itertools, json, pathlib, random, sys
 sys.dont_write_bytecode = True
 import utf8_range as harness
 require = harness.require
-MIN, MAX, PIN = harness.MIN, harness.MAX, harness.PIN
+MIN, MAX = harness.MIN, harness.MAX
 STATUSES = ('success', 'end_of_input', 'out_of_range', 'invalid_sequence', 'truncated')
 ENDINGS = ('none', 'lf', 'crlf')
 
@@ -140,8 +140,8 @@ def rejections():
 
 
 class Suite(harness.Suite):
-    def __init__(self,args):
-        super().__init__(args)
+    def __init__(self,args,identity):
+        super().__init__(args,identity)
         self.inputs[str(pathlib.Path(__file__).resolve())]=harness.sha(__file__)
 
     def batch(self,items):
@@ -175,19 +175,21 @@ class Suite(harness.Suite):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--compiler',required=True,type=pathlib.Path)
-    p.add_argument('--compiler-sha256',default=PIN)
+    harness.add_identity_arguments(p)
     p.add_argument('--repo-root',type=pathlib.Path,default=pathlib.Path(__file__).resolve().parents[2])
     p.add_argument('--artifacts',required=True,type=pathlib.Path)
     p.add_argument('--budget-root',type=pathlib.Path)
     p.add_argument('--budget-mib',type=int,default=128)
     p.add_argument('--sanitized-compiler',action='store_true')
     a=p.parse_args()
+    harness.validate_identity_selection(a)
+    identity=harness.resolve_identity(a,a.compiler,a.repo_root)
     require(model(b'A\r\n\xff',0,4)==(0,1,3,2),'deferred suffix oracle')
     require(model(b'\xc2\n',0,2)==(3,0,0,0),'lead before LF oracle')
     require(model(b'\xc2',0,1)==(4,0,0,0),'final truncation oracle')
     require(model(b'\r',0,1)==(0,1,1,0),'lone CR oracle')
     require(model(b'A',1,0)==(1,0,0,0),'EOF oracle')
-    suite=Suite(a);manifest=dict(compiler_sha256=suite.pin,inputs=suite.inputs,python=sys.version,optimized=not __debug__,status='running')
+    suite=Suite(a,identity);manifest=dict(compiler_identity=identity.record(),compiler_sha256=suite.pin,inputs=suite.inputs,python=sys.version,optimized=not __debug__,status='running')
     try:
         batch=[]
         for item in itertools.chain(map(source_case,cases()),public_reports(),sequences()):
@@ -195,7 +197,7 @@ def main():
             batch.append(item)
         if batch:suite.batch(batch)
         for item in rejections():suite.reject(*item)
-        suite.verify_inputs();manifest.update(status='passed',cases=suite.count,full_i64_observations=4*suite.count,batches=suite.batches,rejections=suite.rejections)
+        suite.verify_inputs();identity.verify();manifest.update(status='passed',cases=suite.count,full_i64_observations=4*suite.count,batches=suite.batches,rejections=suite.rejections)
         print(f'PASS UTF-8 lines: {suite.count} cases; {4*suite.count} full i64 observations; {suite.rejections} rejection controls',flush=True)
     except Exception as error:manifest.update(status='failed',error=str(error));raise
     finally:

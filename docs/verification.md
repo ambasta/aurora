@@ -4,6 +4,29 @@ Receipts are historical snapshots. A source manifest applies only to its own
 checkpoint, not a later tree with different code. Milestone001 belongs to commit
 `4ae3f1f475a3f61d8a1534a82ac5d7d532677c7e`.
 
+## Current test-tooling candidate — 2026-10-05
+
+The [developer-test contract](developer-test-contract.md) separates a fresh
+current-source developer compiler from a caller-supplied independently reviewed
+acceptance pin. `make test` builds once and routes the root native graph through
+the same read-only compiler bytes. `make test-acceptance` requires
+`ACCEPTANCE_COMPILER_SHA256`; optional `ACCEPTANCE_COMPILER` selects an explicitly
+pinned prebuilt private copy without a fresh-source provenance claim. A newly
+completed matching `run.json` and actual native-stage result are required;
+Make exit zero, dry runs, skipped/replaced recipes, preflight and focused runs
+cannot establish root native acceptance. Compiler-entry `test` has complete
+compiler-only scope. Actual emulator gates remain separate.
+
+Status: **source-only tooling candidate on accepted PR26, not yet qualified**. Round-robin and short-circuit implementation bytes and all five cap
+consumers are retained from the frozen PR26 implementation. Its final 569-file
+result-document source is reconciled to accepted main
+`3ac216b64caf8b769147f1864aa8389011f0112b`.
+Only source/synthetic
+checks apply to this composed source; no fresh compiler, full native, sanitizer,
+emulator, Gentoo or broad-host qualification is claimed. Earlier D/P focused
+kernel-budget evidence is explicitly PR25-only. Existing checkpoint evidence
+below keeps its original source scope; see the shared contract for exact identities.
+
 ## Bring-up checkpoint — 2026-10-02
 
 This checkpoint establishes only the small scalar compiler and emulator boot path.

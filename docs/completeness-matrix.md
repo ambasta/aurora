@@ -1,5 +1,30 @@
 # Completeness and acceptance matrix
 
+## Current developer-test tooling candidate — 2026-10-05
+
+The [shared test contract](developer-test-contract.md) adds build-once local
+developer provenance and an explicit externally pinned native acceptance route.
+`make test` fresh-builds current source without imposing a historical binary pin;
+`make test-acceptance` requires a reviewed `ACCEPTANCE_COMPILER_SHA256` and can
+copy an explicitly selected pinned prebuilt without claiming a fresh source build.
+All compiler-consuming gates use the run-owned read-only bytes. Require a newly
+completed matching `run.json` and native-stage result. Full compiler-entry `test`
+is complete only for compiler scope; focused/diagnostic work and Make exit zero
+alone are not root acceptance. Actual emulator checks remain separate.
+
+Status: **exact PR26-based full public native workflows independently reviewed**.
+Revision 5 passed fresh developer `make test` and externally pinned prebuilt
+`make test-acceptance` on the reviewed GNU/Linux GCC 14 host. All five cap consumers
+and PR26 round-robin/short-circuit implementation bytes are retained. The baseline
+is accepted main `3ac216b64caf8b769147f1864aa8389011f0112b`; the tested source has
+572 files. The developer command/product passed, while its original outer audit
+failed on stale completion labels; that failure remains unchanged with a separate
+approved read-only composite. The prebuilt workflow has a passed original terminal,
+zero bootstrap builds and independent terminal approval. See [workflow results](developer-test-workflow-results.md).
+Gentoo make-test, new sanitizer/emulator runs, physical hardware and broad-host
+qualification remain separate. Earlier focused kernel-budget results remain
+PR25-only. Existing checkpoint evidence below keeps its original source scope.
+
 ## Verified Aurora round-robin and short-circuit checkpoint — 2026-10-05
 
 The real UEFI two-client dispatcher now calls a copied Aurora selection policy.
@@ -74,7 +99,7 @@ The modern C++ syntax, fixed-array, loop and checked-arithmetic expansion is imp
 
 ## Required evidence discipline
 
-Run `make test` for compiler/image/validator checks and `make smoke` for the actual emulator boot; one does not substitute for the other. Preserve command, tool versions, source identity, output and pass/fail status. Mark a feature **implemented but unverified**, **partially implemented**, or **not implemented** whenever that is more accurate than “supported.” A proof must identify its modeled features and trusted assumptions; passing tests is not such a proof.
+Run `make test` for the complete developer native graph, or `make test-acceptance` with an independently reviewed expected pin for explicitly pinned native checks, and `make smoke` for the actual emulator boot; one does not substitute for the other. Preserve the newly completed matching run receipt, command, tool versions, source identity, output and pass/fail status under the [shared test contract](developer-test-contract.md). Mark a feature **implemented but unverified**, **partially implemented**, or **not implemented** whenever that is more accurate than “supported.” A proof must identify its modeled features and trusted assumptions; passing tests is not such a proof.
 
 The detailed language target is in [language.md](language.md); dependency milestones are in [roadmap.md](roadmap.md); hardware-specific requirements and primary references are in [amd-support.md](amd-support.md). A fully functional kernel needs the relevant platform, isolation, scheduling and device rows, while a usable general-purpose OS additionally needs services, libraries, applications and operations. Until those gates pass, the deliverable remains a compiler/kernel bootstrap.
 

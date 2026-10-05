@@ -1,5 +1,21 @@
 # Aurora two-slot round-robin policy
 
+
+## Current developer-test routing candidate
+
+The source-only [developer-test integration](developer-test-contract.md) routes
+`make test-round-robin` through one fresh selected compiler and its checked local
+build receipt. Direct native calls require exactly one caller-supplied expected
+`--compiler-sha256` or `--developer-build-receipt`; the shell wrapper also requires
+explicit `AURORAC`. Neither route infers authorization from the binary's own hash.
+The native summary records identity mode and checks final identity before passing.
+Oracle vectors, decoder/ABI/rejection/copy checks, resource boundaries, five-consumer
+configuration driver and 173 + 3 + 2 boot requirements are unchanged. Historical
+checkpoint receipts do not qualify this newly composed tooling source. Final PR26
+result documentation is reconciled to accepted main
+`3ac216b64caf8b769147f1864aa8389011f0112b`; the tooling composition still needs
+its own complete public native qualification and independent review.
+
 This verified checkpoint moves the actual `Dispatcher::select` next-client choice from C++
 into `kernel.round_robin`. Its existing consumers are the bounded UEFI service
 dispatcher and interrupt-budgeted client recovery profiles. It uses accepted
@@ -226,6 +242,11 @@ normal restoration boots. Independent native and retained-trace reviews passed.
 All prior failed stages stay failed and preserved. None of these gates establishes
 physical AMD qualification or a general Aurora scheduler/kernel. Exact receipts
 and limits are in the [integration record](kernel-round-robin-integration-results.md).
+
+### Historical test-route limitation at the verified freeze
+
+The following paragraph records the pre-tooling checkpoint. The current routing
+candidate and its separate qualification limits are described above.
 
 Acceptance commands explicitly supply the reviewed `66bb719d...` compiler pin
 to every relevant native gate. Existing older reference-hash defaults are

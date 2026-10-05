@@ -9,10 +9,13 @@ import random
 import shutil
 import struct
 import subprocess
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-ACCEPTED = '8d4099fe52a19307a266a6cbe5191203307462877cc94c7b6f3dae78f817c631'
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(ROOT / 'scripts'))
+from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 MAX = (1 << 64) - 1
 # Literal truth table, not a translation of the source decision algorithm.
 TABLE = ((0x1, 0x10002, 0x102, 0x10002), (0x10001, 0x10002, 0x102, 0x102))
@@ -160,11 +163,12 @@ def rejection_gate(compiler, out):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--compiler', default=str(ROOT / 'build/aurorac'))
-    parser.add_argument('--compiler-sha256', default=ACCEPTED)
+    add_identity_arguments(parser)
     parser.add_argument('--output')
     parser.add_argument('--candidate-cap-mib', type=int, default=128, help='whole-candidate storage cap 128..1024 MiB; increases require explicit aggregate admission')
     parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
     args = parser.parse_args()
+    validate_identity_selection(args, preflight=args.check_cap_only)
     cap_bytes = candidate_cap(args.candidate_cap_mib)
     if args.check_cap_only:
         cap_self_test()
@@ -173,9 +177,8 @@ def main():
             focused_default_mib=128, maximum_cap_mib=1024), sort_keys=True))
         return
     cap_self_test()
-    compiler = Path(args.compiler).resolve()
-    need(len(args.compiler_sha256) == 64 and all(c in '0123456789abcdef' for c in args.compiler_sha256), 'Invalid compiler pin')
-    need(sha(compiler) == args.compiler_sha256, 'Compiler pin mismatch')
+    compiler = Path(args.compiler).resolve(strict=True)
+    identity = resolve_identity(args, compiler, ROOT)
     guard(args.candidate_cap_mib)
     out = Path(args.output).resolve() if args.output else ROOT / 'build/kernel-round-robin-native' / str(time.time_ns())
     need(not out.exists(), 'Use a fresh output directory; never overwrite failed evidence')
@@ -199,10 +202,11 @@ def main():
     counts['copy_repetitions'] = 4096
     run(['objdump', '-drwC', str(binary)], out, 'disassembly')
     run(['readelf', '-sW', str(binary)], out, 'symbols')
-    need(sha(compiler) == args.compiler_sha256, 'Compiler changed during test')
+    need(sha(compiler) == identity.sha256, 'Compiler changed during test')
     need(pins == {name: sha(ROOT / name) for name in pins}, 'Source changed during test')
     guard(args.candidate_cap_mib)
-    summary = dict(status='passed', compiler_sha256=sha(compiler), source_pins=pins, cases=counts,
+    identity.verify()
+    summary = dict(status='passed', compiler_identity=identity.record(), compiler_sha256=sha(compiler), source_pins=pins, cases=counts,
         candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap_bytes,
         candidate_allocated_bytes=allocated(), free_bytes=shutil.disk_usage(ROOT).free,
         limits='Hosted observations only; no QEMU, source-safety proof, whole-kernel stack or acceptance claim.')
