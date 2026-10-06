@@ -139,7 +139,8 @@ BIOS uses `pc`/TCG, `qemu64`, one CPU, 32 MiB RAM and the generated
 read-only generated FAT directory with a disposable snapshot overlay. Both run
 without root or KVM, disable networking and graphical display, and capture
 serial output. They boot the existing self-test payload and automatically exit;
-there is no interactive shell or desktop.
+there is no interactive shell or desktop. QEMU's stdin is always `/dev/null`, so
+the same commands work from an interactive terminal and never change its mode.
 
 The inherited limits are 15 seconds for BIOS and 30 seconds for UEFI. Serial
 output is printed after QEMU exits and retained in `build/kernel-serial.log`
@@ -176,7 +177,9 @@ language, kernel, hardware or broad-host qualification claims.
 firmware-selection Python checks.
 `python3 -B tests/developer-commands.py` checks command routing, argument rejection,
 dependency failures, inherited-context rejection, environment selectors and Make aliases in disposable fake-tool
-fixtures. It never builds Aurora or starts real QEMU, and is not native/emulator
+fixtures. One case runs the real BIOS and UEFI smoke runners with a pseudo-terminal
+stdin and a fake QEMU that records whether it received that terminal.
+It never builds Aurora or starts real QEMU, and is not native/emulator
 acceptance. Run it under `python3 -B -O` too; the tests use `unittest` assertions.
 It remains separate from the existing compiler and native aggregate graphs.
 
@@ -191,6 +194,10 @@ actual compiler-only and normal BIOS/UEFI checks, preserved failures and limits.
   belongs to the selected QEMU installation if PC BIOS lookup fails.
 - Fault-control rejection: unset the named variable, or intentionally use the
   underlying smoke script for that fault mode.
+- `FAIL: QEMU exit status 124` with an empty serial log, only from a terminal:
+  checkouts before the stdin correction let QEMU inherit the terminal, and
+  `timeout`'s background process group was stopped by `SIGTTOU`. Update, or run
+  the older command with `</dev/null`.
 - Build or boot failure: retain the terminal output, serial log and generated
   files. Report `g++ --version` (or your selected `CXX`), `as --version`,
   `ld --version`, QEMU version, the exact command and firmware path. Do not treat

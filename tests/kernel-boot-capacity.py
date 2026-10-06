@@ -267,8 +267,8 @@ def smoke(work: Path, disk: bytes, packet: int) -> list[dict]:
                           "-drive", f"file={image},format=raw,if=ide", "-boot", "c", "-nic", "none",
                           "-display", "none", "-serial", "stdio", "-monitor", "none", "-no-reboot",
                           "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                timeout=15, text=True)
+        result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, timeout=15, text=True)
         (work / f"{name}.log").write_text(result.stdout)
         require(result.returncode == expected,
                 f"{name}: expected CPU exit {expected}, got {result.returncode}: {result.stdout}")

@@ -1,5 +1,24 @@
 # Completeness and acceptance matrix
 
+## Emulator runs from an interactive terminal — 2026-10-07
+
+Reproduced defect: from a terminal, `make run` failed with `QEMU exit status 124`
+and an empty serial log. GNU `timeout` runs QEMU in a background process group;
+`-serial stdio` changed the inherited terminal's mode, so `SIGTTOU` stopped QEMU
+(state `T`) until the limit. Non-terminal runs, including earlier recorded gates,
+passed. The BIOS and UEFI smoke runners now give QEMU `/dev/null` as stdin; the
+BIOS capacity and pinned UEFI BAR/IVRS runners use `stdin=DEVNULL`, with
+unchanged receipt schemas. A new pseudo-terminal case in
+`tests/developer-commands.py` failed on the original runners and passes now.
+
+Base `25d76b1`; Gentoo GCC 16.2.1, QEMU 10.2.3, coreutils `timeout` 9.12,
+Python 3.14.8. Under a pseudo-terminal: `make run`, `make smoke-fault` (fail-stop
+divide error, then a normal image identical to a fresh build) and
+`tests/kernel-boot-capacity.py --qemu` passed; `make test-developer-commands`
+passed in normal and optimized modes. Blocked here: UEFI emulator gates (no
+`i386pep` linker on this host) and the pinned BAR/IVRS fixtures. `make test`,
+`make smoke-all` and independent review were not run for this change.
+
 ## UEFI host portability correction — 2026-10-06
 
 The bootstrap now supplies compiler-required freestanding memory primitives,
