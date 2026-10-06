@@ -58,10 +58,12 @@ command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing; image is built b
 args=()
 if [[ -n "${QEMU_DATA:-}" ]]; then args+=(-L "$QEMU_DATA"); fi
 set +e
+# timeout runs QEMU in a background process group. A terminal on stdin would let
+# -serial stdio change its mode, and the kernel stops QEMU with SIGTTOU.
 timeout 15 "$qemu" "${args[@]}" -machine pc -accel tcg -cpu "$cpu" -smp "$cpus" -m 32M \
     -drive file=build/aurora.img,format=raw,if=ide -boot c \
     -nic none -display none -serial stdio -monitor none -no-reboot \
-    -device isa-debug-exit,iobase=0xf4,iosize=0x04 > "$log" 2>&1
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04 < /dev/null > "$log" 2>&1
 status=$?
 set -e
 cat "$log"
