@@ -193,7 +193,7 @@ addition. `examples/function_token_values.au` combines `std::array<u8,16>` and a
 source-range class. Complete release/fatal host ASan/UBSan compiler targets,
 independent review/replay and parent aggregate/integration gates passed.
 See [the contract](../compiler/FUNCTION-TEMPLATES.md) and
-[M021 evidence](../docs/evidence/milestone-021/README.md) for finite grammar,
+[M021 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-021/README.md) for finite grammar,
 combined graph budgets, preserved failures and verified pins. This is a copied
 value factory, not general standard-library, text-consumer or self-hosting completion.
 
@@ -206,7 +206,7 @@ is an Aurora convenience member, not the standard C++ std::array API or an atomi
 operation. Complete release/fatal host ASan/UBSan compiler gates, independent
 source/native ABI review, fresh parent aggregate and all 166 existing emulator
 modes passed, followed by both normal-image restoration boots. See
-[method values](../compiler/METHOD-VALUES.md) and [M022 evidence](../docs/evidence/milestone-022/README.md)
+[method values](../compiler/METHOD-VALUES.md) and [M022 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-022/README.md)
 for exact source and binary pins, preserved failures and bounded coverage.
 
 ## Read-only XFS local root lookup

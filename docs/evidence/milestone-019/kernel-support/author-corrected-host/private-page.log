@@ -1,8 +1,0 @@
-/tmp/aurora-amd310-review/host-final-2/access-page.cpp: In function 'auto expose()':
-/tmp/aurora-amd310-review/host-final-2/access-page.cpp:2:56: error: 'std::span<std::byte> aurora::memory::DormantTables::page(std::size_t) const' is private within this context
-    2 | auto expose() { return &aurora::memory::DormantTables::page; }
-      |                                                        ^~~~
-In file included from /tmp/aurora-amd310-review/host-final-2/access-page.cpp:1:
-/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include/dormant-tables.hpp:52:24: note: declared private here
-   52 |     [[nodiscard]] auto page(std::size_t index) const -> std::span<std::byte> {
-      |                        ^~~~

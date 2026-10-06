@@ -1,1 +1,0 @@
-module review;template<Value T>class Tag{public:Tag(){} };template<Value T>auto factory()->i64{return type_id(Tag<T>);}auto test()->i64{Tag<i64> first=Tag<i64>();if(factory<i64>()!=type_id(Tag<i64>)){return 1;}return 42;}

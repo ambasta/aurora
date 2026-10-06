@@ -1,3 +1,0 @@
-PASS 15 native observations against real mkfs.xfs fixture
-CRC bytes=c7 13 71 b6 LE/GF(2)/native=0xb67113c7
-Raw feature masks: features_compat=0x0, features_ro_compat=0xf, features_incompat=0x2b, features_log_incompat=0x0

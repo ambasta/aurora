@@ -1,1 +1,0 @@
-module review;import lib.api;auto answer()->i64{return 42;}

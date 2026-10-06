@@ -1,7 +1,0 @@
-{
-  "file": "aurora-dma-tables-candidate/normative/README.md",
-  "before_sha256": "14f70359a546e9212531bdb0816e4616cf6f20a24ad8c6d42107c2cdeb310b78",
-  "after_sha256": "3a47effaa6307c5c28560805600ba8ec59a7376616a0b06243e8bccb9b30d104",
-  "reason": "Reviewer confirmed original diagnostics establish conversion failure only",
-  "scope": "documentation only after author host-final-2; executable/test inputs unchanged"
-}

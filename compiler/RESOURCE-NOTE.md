@@ -4,7 +4,7 @@ Sections before the isolated M015 candidate describe the historical M003 checkpo
 
 ## Reproduced failure
 
-An extra ASan+UBSan compiler run hit the existing five-second test-command timeout on the supported 4096-element array case. There was no address/undefined-behavior sanitizer diagnostic before the timeout. The failed receipt is retained in `docs/evidence/milestone-003/compiler-sanitizers.log` rather than replaced with a passing result.
+An extra ASan+UBSan compiler run hit the existing five-second test-command timeout on the supported 4096-element array case. There was no address/undefined-behavior sanitizer diagnostic before the timeout. The failed receipt is retained in [`docs/evidence/milestone-003/compiler-sanitizers.log`](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/compiler-sanitizers.log) rather than replaced with a passing result.
 
 Investigation showed a real resource defect, not just instrumentation overhead: the first typed-IR verifier retained complete operand-stack and initialized-slot-set snapshots at every instruction. A straight-line array initializer grows and shrinks these structures over thousands of instructions, retaining quadratic history. Release compilation peaked around 4.3 GiB; instrumentation magnified the cost enough to exceed the unchanged timeout.
 
@@ -180,7 +180,7 @@ reran source/model/IR/native/module/I/O checks, and rechecked unchanged inputs.
 No new heavy instrumented build was hidden in that replay.
 
 Current receipts, all failed attempts, exact flags/limits and independent review
-are under docs/evidence/milestone-016/compiler-facts. Generated independent binary,
+are under [docs/evidence/milestone-016/compiler-facts](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-016/compiler-facts). Generated independent binary,
 assembly and raw-output artifacts are preserved outside distributed source in a
 full local archive; its hash and every omission are explicit in
 independent-distribution.json. Historical manifests remain unchanged. Combined

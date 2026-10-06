@@ -1,1 +1,0 @@
-module review;import lib.box;class Secret{i64 hidden;auto secret()const->i64{return hidden;}public:Secret(i64 v):hidden(v){}};auto answer()->i64{Secret source=Secret(42);Boxer<Secret> receiver=Boxer<Secret>();return receiver.inspect(source);}

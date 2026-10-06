@@ -1,1 +1,0 @@
-module independent_rejection;import std.utf8;auto review()->u64{builtin::array<i64,4> a={65,66,67,68};const builtin::span<const u8> v=borrow_bytes(a);return 42u64;}

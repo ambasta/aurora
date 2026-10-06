@@ -1,3 +1,0 @@
-COMMAND: python3 tests/semantics/run.py /tmp/aurora-m008-compiler-frozen
-seed=20261002 generated=128 compiler_sha256=11ad14a187f0cd69539626dbafaff2f6340762ff1dd0430059ec192332c9f99b
-PASS 630 cases {"bounds": 50, "overflow": 96, "rejected": 199, "value": 285}

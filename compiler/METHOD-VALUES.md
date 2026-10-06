@@ -3,7 +3,7 @@
 Status: complete release/fatal host ASan/UBSan compiler targets, independent
 frozen-source review, parent adoption/rebuild, fresh aggregate and all 166 existing
 emulator modes passed. Separate normal BIOS/UEFI boots restored both images.
-[M022 evidence](../docs/evidence/milestone-022/README.md) identifies exact pins,
+[M022 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-022/README.md) identifies exact pins,
 failures and review limits. This changes a private native calling convention even
 though it reuses existing typed IR instructions.
 

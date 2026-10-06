@@ -1,5 +1,0 @@
-PASS 344 receipt hashes
-PASS 186 pre/post/live input hashes
-Result fields: ['started_utc', 'completed_utc', 'distinct_modes', 'bios_distinct', 'uefi_distinct', 'compiler_sha256', 'source_inputs_unchanged_at_completion', 'source_input_count', 'source_input_manifest_sha256', 'normal_images_restored', 'independent_new_modes', 'independent_logs', 'modes']
-PASS exact compiler hash
-PASS 122 unique successful mode records; all186 inputs unchanged after parent checks

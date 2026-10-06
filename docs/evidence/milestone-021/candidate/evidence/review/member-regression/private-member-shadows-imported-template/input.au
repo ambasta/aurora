@@ -1,1 +1,0 @@
-module review;import other;template<Scalar T>class Box{auto helper(i64 x)const->i64{return x;}public:Box(){}auto get()const->i64{return helper(42);}};auto test()->i64{const Box<i64> a=Box<i64>();return a.get();}

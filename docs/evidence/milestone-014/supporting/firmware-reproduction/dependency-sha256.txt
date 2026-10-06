@@ -1,7 +1,0 @@
-eea598bdb5d10ae51801f7c586a51f33335c60d964f5f18203cdda47fd5ab069  /tmp/aurora-clean-ovmf/deps/acpica-tools_20250404-1_amd64.deb
-e5096e91356d643f54d46f3ede1d8d44e45c81a3995fb057c28ec51e3791818f  /tmp/aurora-clean-ovmf/deps/nasm_2.16.03-1_amd64.deb
-cb7d7db20e5d91193c2c6629a3f4aa917e3bc558c72b7f2db7203bcfa9a3ba1b  /tmp/aurora-clean-ovmf/deps/uuid-dev_2.41.5-0+deb13u1_amd64.deb
-b0e9b463a6f800117de60c0a55507b7880dfa0d4dbf15f47e1350e23c54c0128  /tmp/aurora-clean-ovmf/deps/root/usr/bin/nasm
-bbc9710408dfd0551549d2d1528e4d9514a8782ae5b5117fc7b3d5488ce42f07  /tmp/aurora-clean-ovmf/deps/root/usr/bin/iasl
-0f29b583df138cd9a123aa03498c8a049b71a1afcc0ff90a6dbaac44514385a4  /tmp/aurora-clean-ovmf/deps/root/usr/include/uuid/uuid.h
-632fd43a9d8d6f3496833b7e62e7840f397163373dddf8b8eb0b2b7f36593117  /usr/lib/x86_64-linux-gnu/libuuid.so.1

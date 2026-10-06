@@ -1,1 +1,0 @@
-export module generic;export template<Value T>auto inspect()->i64{return size_of(T);}

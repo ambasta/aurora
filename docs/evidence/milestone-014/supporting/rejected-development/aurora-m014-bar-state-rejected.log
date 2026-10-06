@@ -1,2 +1,0 @@
-ld: build/uefi/pci.o: in function `aurora::uefi::discover_pci(unsigned long, aurora::uefi::Bytes const&, std::span<std::byte const, 18446744073709551615ul>, unsigned int)':
-pci.cpp:(.text+0x21d5): undefined reference to `strlen'

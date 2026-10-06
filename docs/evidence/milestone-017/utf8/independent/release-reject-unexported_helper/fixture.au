@@ -1,1 +1,0 @@
-module independent_rejection;import std.utf8;auto review()->u64{const std::Utf8DecodeResult r=std::utf8_failure(std::Utf8Status::success);return 42u64;}

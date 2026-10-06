@@ -1,7 +1,0 @@
-COMMAND: python3 tests/semantics/test_runner.py
-11ad14a187f0cd69539626dbafaff2f6340762ff1dd0430059ec192332c9f99b  /tmp/aurora-m008-compiler-frozen
-.......
-----------------------------------------------------------------------
-Ran 7 tests in 0.009s
-
-OK

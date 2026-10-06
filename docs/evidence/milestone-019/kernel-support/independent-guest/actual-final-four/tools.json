@@ -1,8 +1,0 @@
-{
-  "g++": "g++ (Debian 14.2.0-19) 14.2.0",
-  "as": "GNU assembler (GNU Binutils for Debian) 2.44",
-  "ld": "GNU ld (GNU Binutils for Debian) 2.44",
-  "objdump": "GNU objdump (GNU Binutils for Debian) 2.44",
-  "python": "Python 3.12.14",
-  "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)"
-}

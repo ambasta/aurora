@@ -1,1 +1,0 @@
-module review;import generic;class Inner{public:u8 value;Inner(u8 v):value(v){} };class Outer{Inner value;public:Outer(Inner x):value(x){}auto get()const->Inner{return value;}};auto test()->i64{Inner a=Inner(42u8);Outer o=Outer(a);return extract<Outer>(o);}

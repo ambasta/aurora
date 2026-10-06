@@ -1,3 +1,0 @@
-seed=20261002 generated=128 compiler_sha256=2f2718048eaaca6f19c99785755238eb15f4c3cea57be4def51bb6c9ae9a6dac
-compiler_as_limit=512MiB native_as_limit=512MiB timeout=5s cpu_limit=3s regular_file_limit=8MiB captured_pipes=unbounded
-PASS 630 cases {"bounds": 50, "overflow": 96, "rejected": 199, "value": 285}

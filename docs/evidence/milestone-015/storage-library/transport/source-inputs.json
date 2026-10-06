@@ -1,5 +1,0 @@
-{
-  "fixtures/xfs-offline/verify_native.py": "f5a1d552b56f92c9e974b0e09e485613483a05a192e694ce2841f9f439547069",
-  "fixtures/xfs-offline/superblock-v5-512.hex": "d1d3fbc3f8b693d1c0ddf395e92b136a81b2a5d30b9e3cdec36addd580d42986",
-  "fixtures/xfs-offline/transport-provenance.json": "018c0a627c57c90b011e3e71b7d0fbfa7dd450e4fa4713df7faf4dd888dba930"
-}

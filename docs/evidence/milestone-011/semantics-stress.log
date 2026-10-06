@@ -1,3 +1,0 @@
-COMMAND: python3 tests/semantics/run.py /tmp/aurora-m011-compiler-candidate --seed 404 --cases 1024
-seed=404 generated=1024 compiler_sha256=84e14fc5e81ac6b18abb974d5d3a5c84d68e5ba99323bd04f686ac69ba443808
-PASS 1526 cases {"bounds": 229, "overflow": 205, "rejected": 199, "value": 893}

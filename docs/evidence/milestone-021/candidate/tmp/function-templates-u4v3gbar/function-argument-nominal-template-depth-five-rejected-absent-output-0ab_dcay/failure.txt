@@ -1,2 +1,0 @@
-function argument nominal template depth five rejected: absent output: function argument nominal template depth five rejected: absent output: unexpected diagnostic: b'aurorac: line 1: template-id nesting exceeds 5\n'
-Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/tmp/function-templates-u4v3gbar/function-argument-nominal-template-depth-five-rejected-absent-output-0ab_dcay

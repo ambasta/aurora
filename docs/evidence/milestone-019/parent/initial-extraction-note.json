@@ -1,4 +1,0 @@
-{
-  "status": "not_adopted",
-  "reason": "Initial inspection assumed top-level directory prefixes; worker bundles use relative roots. Combined staging directory is not used for evidence. Both original hash-verified archives remain unchanged."
-}

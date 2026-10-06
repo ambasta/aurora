@@ -1,3 +1,0 @@
-48be725f38dd75da77b94d7f2c10527f98fd12d150f4a2f1ec851fa99a5c6f67  build/san/method-values-ir-tests
-42dcee51b564efc2b4ea61350357b3dfd9e47b6c8a68f235c9c4fd019e699a4e  tests/compiler/method_values_ir.cpp
-f123e3aadf2ff09aa9e22bad8931e020593c647ed90000356f0a32716b8fdc84  tests/compiler/method_values_abi.py

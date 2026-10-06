@@ -1,6 +1,0 @@
-g++ (Debian 14.2.0-19) 14.2.0
-Python 3.12.14
-QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)
-14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980  /tmp/aurora-resource-main-compiler-frozen
-d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067  /tmp/aurora-qemu/root/usr/bin/qemu-system-x86_64
-14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db  /tmp/aurora-ovmf/root/usr/share/ovmf/OVMF.fd

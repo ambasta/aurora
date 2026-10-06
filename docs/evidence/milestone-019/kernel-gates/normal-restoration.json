@@ -1,9 +1,0 @@
-{
-  "table_test_symbols_absent": true,
-  "table_markers_absent": true,
-  "sha256": {
-    "/workspace/scratch/48c5de6446f8/aurora/build/uefi/payload.bin": "1efd83fe4487f86d52755ce16b9fff8e7e607095c2892da3a253a7241da3d75a",
-    "/workspace/scratch/48c5de6446f8/aurora/build/uefi/payload.elf": "20ee28e746d04f23cf364273b757bd226d29c0c79f1756756fc6a61de3526cb8",
-    "/workspace/scratch/48c5de6446f8/aurora/build/uefi/esp/EFI/BOOT/BOOTX64.EFI": "4dd16765fae1bf2f5cb78cf20d2e6d5b493cbd390dfc704b6bb3320eadb5c2fb"
-  }
-}

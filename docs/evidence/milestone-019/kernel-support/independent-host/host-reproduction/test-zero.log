@@ -1,4 +1,0 @@
-In file included from production-api.cpp:1:
-include/dormant-tables.hpp:7:2: error: #error "Dormant-table test access requires explicit value1"
-    7 | #error "Dormant-table test access requires explicit value1"
-      |  ^~~~~

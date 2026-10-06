@@ -1,8 +1,0 @@
-[
-  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/san/aurorac",
-  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-rjgbzzqs/seeded-exchange-snapshot-model-u8-capacity-64-tbkk_jo0/input.au",
-  "-o",
-  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-rjgbzzqs/seeded-exchange-snapshot-model-u8-capacity-64-tbkk_jo0/compiled.s",
-  "--module-root",
-  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/library"
-]

@@ -1,4 +1,0 @@
-INFO integer oracle compiler=/tmp/aurorac-integer-oracle-7043 sha256=6bed4b61d50cb2f40f2b1f6f4564172daade95336df852f80938c3f0726998b1
-INFO integer oracle std.integer sha256=b08857ab2d164c1b78be50b05fcc4277ef84ae736e1bc0f09668082433fd5a54
-PASS integer oracle self-tests: full-width output, wrong values, wrong signals, exact UD2 sites
-PASS integer oracle: 1510 native cases, 181 exact-site traps; seed=7043, random-count=32; elapsed=3.51s

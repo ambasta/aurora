@@ -4,6 +4,9 @@ Receipts are historical snapshots. A source manifest applies only to its own
 checkpoint, not a later tree with different code. Milestone001 belongs to commit
 `4ae3f1f475a3f61d8a1534a82ac5d7d532677c7e`.
 
+Milestone 001–022 files are retained in the commit-pinned Git archive. See the
+[evidence index](evidence/README.md) for access and reproduction context.
+
 ## Checkpoint index
 
 For current capabilities, start with the [project overview](../README.md) and
@@ -103,11 +106,14 @@ A fresh build from an empty build directory passed:
   corrected malformed E820 handling, and a permanent allocator-reincarnation
   regression. See [review](review.md).
 
-Receipts: [main tests](evidence/milestone-001/test.log),
-[sanitizers](evidence/milestone-001/sanitizers.log),
-[emulator](evidence/milestone-001/emulator.log), and
-[implementation SHA-256 manifest](evidence/milestone-001/source.sha256).
+Receipts: [main tests](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-001/test.log),
+[sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-001/sanitizers.log),
+[emulator](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-001/emulator.log), and
+[implementation SHA-256 manifest](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-001/source.sha256).
 Verify the tested implementation with:
+
+Historical check: use this checkpoint’s tested source and archived evidence
+snapshot, as described in the [evidence index](evidence/README.md).
 
 ```sh
 sha256sum -c docs/evidence/milestone-001/source.sha256
@@ -147,10 +153,13 @@ make smoke-all
 - Normal image restored afterward: 12,344-byte payload in the 1 MiB emulator disk.
 - The README example compiled and assembled independently. Source hashes matched.
 
-Receipts: [tests](evidence/milestone-002/test.log),
-[sanitizers](evidence/milestone-002/sanitizers.log),
-[all emulator modes](evidence/milestone-002/emulator.log),
-and [source manifest](evidence/milestone-002/source.sha256).
+Receipts: [tests](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-002/test.log),
+[sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-002/sanitizers.log),
+[all emulator modes](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-002/emulator.log),
+and [source manifest](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-002/source.sha256).
+
+Historical check: use this checkpoint’s tested source and archived evidence
+snapshot, as described in the [evidence index](evidence/README.md).
 
 ```sh
 sha256sum -c docs/evidence/milestone-002/source.sha256
@@ -189,7 +198,7 @@ The first extra compiler sanitizer run hit the five-second timeout on a
 4,096-element initializer. Investigation found real quadratic state retention
 in the IR verifier. No sanitizer violation was observed in that failing run;
 it was a timeout. The failed and preliminary receipts remain in
-[pre-resource-fix](evidence/milestone-003/pre-resource-fix/).
+[pre-resource-fix](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/pre-resource-fix).
 
 Retaining snapshots at basic-block entries corrected that straight-line case.
 Matched release measurements fell from roughly 4.3 GiB peak RSS to 10.5 MiB.
@@ -201,15 +210,15 @@ with blocks times live slot facts; no global resource bound is claimed.
 LeakSanitizer alone remains disabled under the tracing environment.
 
 Final receipts:
-- [Source, IR, kernel and default oracle](evidence/milestone-003/test.log)
-- [Stress oracle](evidence/milestone-003/semantics-stress.log)
-- [Baseline comparisons](evidence/milestone-003/equivalence.log)
-- [Compiler sanitizers](evidence/milestone-003/compiler-sanitizers.log)
-- [IR sanitizers](evidence/milestone-003/ir-sanitizers.log)
-- [Hosted kernel sanitizers](evidence/milestone-003/kernel-sanitizers.log)
-- [All actual CPU gates](evidence/milestone-003/emulator.log)
-- [Linked image/trap metadata](evidence/milestone-003/image-metadata/)
-- [Final implementation hashes](evidence/milestone-003/source.sha256)
+- [Source, IR, kernel and default oracle](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/test.log)
+- [Stress oracle](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/semantics-stress.log)
+- [Baseline comparisons](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/equivalence.log)
+- [Compiler sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/compiler-sanitizers.log)
+- [IR sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/ir-sanitizers.log)
+- [Hosted kernel sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/kernel-sanitizers.log)
+- [All actual CPU gates](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/emulator.log)
+- [Linked image/trap metadata](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/image-metadata)
+- [Final implementation hashes](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-003/source.sha256)
 
 This remains one controlled user domain, not general process isolation or
 preemption. Source ownership/const/privacy analysis and bootstrap hardware code
@@ -251,16 +260,16 @@ window. The normal image was restored after fault injection. User domains remain
 bounded and sequential, without preemption, SMP or a general process API.
 
 Receipts:
-- [Aggregate](evidence/milestone-004/test.log)
-- [Oracle stress](evidence/milestone-004/semantics-stress.log)
-- [Compiler sanitizer](evidence/milestone-004/compiler-sanitizers.log)
-- [IR sanitizer](evidence/milestone-004/ir-sanitizers.log)
-- [Host I/O sanitizers](evidence/milestone-004/host-io-sanitizers.log)
-- [Hosted kernel sanitizers](evidence/milestone-004/kernel-sanitizers.log)
-- [All CPU gates](evidence/milestone-004/emulator.log)
-- [Core example](evidence/milestone-004/core-example.log)
-- [Linked-image metadata](evidence/milestone-004/image-metadata/)
-- [Implementation hashes](evidence/milestone-004/source.sha256)
+- [Aggregate](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/test.log)
+- [Oracle stress](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/semantics-stress.log)
+- [Compiler sanitizer](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/compiler-sanitizers.log)
+- [IR sanitizer](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/ir-sanitizers.log)
+- [Host I/O sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/host-io-sanitizers.log)
+- [Hosted kernel sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/kernel-sanitizers.log)
+- [All CPU gates](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/emulator.log)
+- [Core example](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/core-example.log)
+- [Linked-image metadata](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/image-metadata)
+- [Implementation hashes](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-004/source.sha256)
 
 This is the first small freestanding core module, not libc/stdlib completeness.
 No full language-safety proof, production process model, self-hosting or physical
@@ -285,23 +294,23 @@ in this harness; FPU/SIMD/TLS lifecycle, SMP, arbitrary programs and a general
 scheduler/process API are not implemented. This is not Framework hardware support.
 
 Final receipts:
-- [make test](evidence/milestone-005/test.log): 207 source, 74 class, 132 direct IR,
+- [make test](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-005/test.log): 207 source, 74 class, 132 direct IR,
   72 module, 11 depth, 13 source-reader and 22 output-writer tests; hosted kernel
   policy and transcript tests; seven oracle harness tests and 630 default cases.
-- [Independent stress oracle](evidence/milestone-005/semantics-stress.log): 1,526
+- [Independent stress oracle](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-005/semantics-stress.log): 1,526
   cases, seed404, pinned exact release binary. Default and stress sets overlap;
   do not add their counts as disjoint coverage.
-- [Compiler/IR ASan+UBSan](evidence/milestone-005/compiler-sanitizers.log): 207
+- [Compiler/IR ASan+UBSan](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-005/compiler-sanitizers.log): 207
   source, 74 class, 72 module, 11 depth and 132 IR cases. Sanitized compiler SHA
   `060095244309c4db5bc04a19de53b39d36c264363ce0f3ede7488e05985b2032`;
   IR binary SHA `5462faf7ae5c3defadf6b15dbd01550a25e20d8a79f26471f4fd823be615cadd`.
-- [Host I/O sanitizers](evidence/milestone-005/host-io-sanitizers.log) and
-  [kernel sanitizers](evidence/milestone-005/kernel-sanitizers.log).
-- [make smoke-all](evidence/milestone-005/emulator.log): all 28 actual QEMU gates,
+- [Host I/O sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-005/host-io-sanitizers.log) and
+  [kernel sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-005/kernel-sanitizers.log).
+- [make smoke-all](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-005/emulator.log): all 28 actual QEMU gates,
   preserving the old 19 and adding nine timer/preemption/adversarial modes.
-- [Normal image restored](evidence/milestone-005/normal-restored.log),
-  [image metadata](evidence/milestone-005/image-metadata/), and
-  [source identity](evidence/milestone-005/source.sha256).
+- [Normal image restored](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-005/normal-restored.log),
+  [image metadata](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-005/image-metadata), and
+  [source identity](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-005/source.sha256).
 
 Sanitizers use address and undefined-behavior instrumentation; LeakSanitizer is
 explicitly disabled for the tracing environment, so no leak-check claim is made.
@@ -332,22 +341,22 @@ ACPI discovery, physical Framework boot, device enumeration or general allocatio
 from all firmware memory. Firmware assumptions and resource limits are explicit.
 
 Final receipts:
-- [make test](evidence/milestone-006/test.log): 207 original source, 74 methods,
+- [make test](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-006/test.log): 207 original source, 74 methods,
   59 value-call, 206 IR and four exhaustive-dispatch compile checks; 72 module,
   11 depth, 13 reader and 22 writer cases; kernel policies; 124 UEFI policies;
   UEFI transcript eight positive/148 negative controls; seven oracle self-tests
   and 630 default cases.
-- [Independent stress oracle](evidence/milestone-006/semantics-stress.log): 1,526
+- [Independent stress oracle](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-006/semantics-stress.log): 1,526
   scalar cases with seed404. Default/stress fixed cases overlap.
-- [Compiler/IR sanitizers](evidence/milestone-006/compiler-sanitizers.log),
-  [host I/O sanitizers](evidence/milestone-006/host-io-sanitizers.log), and
-  [BIOS/UEFI policy sanitizers](evidence/milestone-006/kernel-sanitizers.log).
-- [make smoke-all](evidence/milestone-006/emulator.log): all 36 actual emulator
+- [Compiler/IR sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-006/compiler-sanitizers.log),
+  [host I/O sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-006/host-io-sanitizers.log), and
+  [BIOS/UEFI policy sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-006/kernel-sanitizers.log).
+- [make smoke-all](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-006/emulator.log): all 36 actual emulator
   gates, comprising 28 preserved BIOS gates and eight OVMF gates. PE/PIC image
   validation includes 14 malformed-image controls.
-- [Restored normal BIOS/UEFI boots](evidence/milestone-006/normal-restored.log),
-  [image metadata](evidence/milestone-006/image-metadata/) and
-  [source hashes](evidence/milestone-006/source.sha256).
+- [Restored normal BIOS/UEFI boots](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-006/normal-restored.log),
+  [image metadata](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-006/image-metadata) and
+  [source hashes](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-006/source.sha256).
 
 The sanitized compiler hash is
 `ab8ad95501780fdc268d0e1511b323cfeb9f0d9884814ab245a1803c8c77f63b`;
@@ -384,26 +393,26 @@ revoked-window fault. This does not perform AML, SMP startup, PCI/device-driver
 activation or Framework qualification.
 
 Evidence:
-- [Aggregate](evidence/milestone-007/test.log): 207 original source, 74 methods,
+- [Aggregate](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-007/test.log): 207 original source, 74 methods,
   59 value calls, 84 integer cases, 216 IR and six exhaustive-dispatch checks;
   72 modules, 11 depth, 13 reader and 22 writer cases; kernel policy suites.
   Division host checks ran explicitly after the aggregate and are now included
   in the Makefile's test-division dependency.
-- [Integer oracle](evidence/milestone-007/integer-oracle-independent.log): 1,510
+- [Integer oracle](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-007/integer-oracle-independent.log): 1,510
   native cases with 181 exact trap-site checks. Independent reviewer seed8731
   additionally covered 1,792 cases/213 traps on release and sanitizer binaries;
   sets overlap and must not be summed as disjoint coverage.
-- [Scalar stress](evidence/milestone-007/semantics-stress.log): 1,526 cases,
+- [Scalar stress](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-007/semantics-stress.log): 1,526 cases,
   supplementing seven harness self-tests and 630 default scalar cases.
-- [Compiler/IR sanitizers](evidence/milestone-007/compiler-sanitizers.log),
-  [host I/O sanitizers](evidence/milestone-007/host-io-sanitizers.log), and
-  [kernel/UEFI/ACPI/division sanitizers](evidence/milestone-007/kernel-sanitizers.log).
-- [Actual emulator aggregate](evidence/milestone-007/emulator.log): 52 unique
+- [Compiler/IR sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-007/compiler-sanitizers.log),
+  [host I/O sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-007/host-io-sanitizers.log), and
+  [kernel/UEFI/ACPI/division sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-007/kernel-sanitizers.log).
+- [Actual emulator aggregate](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-007/emulator.log): 52 unique
   modes (28 previous BIOS + eight UEFI + eleven ACPI + five division), plus a
   repeated normal BIOS confirmation. No aggregate count treats the repeat as
   a new mode. Normal BIOS/UEFI artifacts are restored by the wrappers.
-- [Image metadata](evidence/milestone-007/image-metadata/) and
-  [source identities](evidence/milestone-007/source.sha256).
+- [Image metadata](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-007/image-metadata) and
+  [source identities](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-007/source.sha256).
 
 ACPI policy testing includes 16,475 cases; transcript controls are eleven positive
 and 217 negative. Division metadata controls are three positive/30 negative and
@@ -437,24 +446,24 @@ no BAR sizing, bus-master enable, device commands or host hardware changes occur
 MCFG alone is not generic resource reservation or Framework qualification.
 
 Final receipts:
-- [make test](evidence/milestone-008/test.log): existing 207 source/74 methods/
+- [make test](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-008/test.log): existing 207 source/74 methods/
   59 value/84 signed cases; 95 unsigned, 385 IR and ten exhaustive-dispatch checks;
   72 modules/11 depth/13 reader/22 writer cases plus all hosted kernel policies.
 - Unsigned default oracle: 4,219 cases, 501 exact trap sites and 67 rejection
-  fixtures, included in aggregate and sanitizer receipts. [Stress](evidence/milestone-008/unsigned-stress.log)
+  fixtures, included in aggregate and sanitizer receipts. [Stress](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-008/unsigned-stress.log)
   covers 8,959 cases/1,044 traps; independent reviewer seed covers 6,665/766 on
   release and sanitized compiler. These overlap; counts are not additive.
 - Signed oracle remains 1,510/181; scalar harness seven tests/default630 and
-  [stress1,526](evidence/milestone-008/semantics-stress.log) remain separate.
-- [Compiler/IR sanitizers](evidence/milestone-008/compiler-sanitizers.log),
-  [host I/O sanitizers](evidence/milestone-008/host-io-sanitizers.log), and
-  [kernel sanitizers](evidence/milestone-008/kernel-sanitizers.log).
-- [Emulator aggregate](evidence/milestone-008/emulator.log): all 66 distinct modes,
+  [stress1,526](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-008/semantics-stress.log) remain separate.
+- [Compiler/IR sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-008/compiler-sanitizers.log),
+  [host I/O sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-008/host-io-sanitizers.log), and
+  [kernel sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-008/kernel-sanitizers.log).
+- [Emulator aggregate](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-008/emulator.log): all 66 distinct modes,
   preserving 52 and adding ten PCI plus four protected unsigned modes. Repeated
   normal confirmations are not additional distinct modes. Wrappers restore
   normal BIOS and UEFI artifacts.
-- [Image metadata](evidence/milestone-008/image-metadata/) and
-  [source manifest](evidence/milestone-008/source.sha256).
+- [Image metadata](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-008/image-metadata) and
+  [source manifest](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-008/source.sha256).
 
 PCI hosted policy has 71,054 checks; transcript controls are ten positive/289
 negative. Unsigned image controls are nine/34, transcript four/197, plus four
@@ -490,20 +499,20 @@ SYSENTER paths are disabled and adversarially tested. Execution remains sequenti
 and integer-only; UEFI timers, arbitrary processes, IPC and drivers remain absent.
 
 Final receipts:
-- [Aggregate](evidence/milestone-009/test.log): 117 template, 393 IR and ten
+- [Aggregate](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-009/test.log): 117 template, 393 IR and ten
   exhaustive-dispatch cases plus existing source/module/host-I/O and kernel suites.
 - Existing signed1,510/181 and unsigned4,219/501/67-rejection oracles remain in
-  aggregate and [compiler/IR sanitizer](evidence/milestone-009/compiler-sanitizers.log)
+  aggregate and [compiler/IR sanitizer](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-009/compiler-sanitizers.log)
   receipts. Independent template review adds seven scope/identity cases on release
   and sanitizer; alternative suites overlap and are not additive coverage.
-- Scalar harness7/default630 and [stress1,526](evidence/milestone-009/semantics-stress.log).
-- [Host I/O sanitizers](evidence/milestone-009/host-io-sanitizers.log) and
-  [kernel policies/sanitizers](evidence/milestone-009/kernel-sanitizers.log).
-- [Actual emulator aggregate](evidence/milestone-009/emulator.log): all 80 distinct
+- Scalar harness7/default630 and [stress1,526](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-009/semantics-stress.log).
+- [Host I/O sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-009/host-io-sanitizers.log) and
+  [kernel policies/sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-009/kernel-sanitizers.log).
+- [Actual emulator aggregate](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-009/emulator.log): all 80 distinct
   modes, preserving 66 and adding fourteen UEFI runtime modes. Repeated normal
   confirmations are not new modes. Normal artifacts are restored by wrappers.
-- [Image metadata](evidence/milestone-009/image-metadata/) and
-  [source identities](evidence/milestone-009/source.sha256).
+- [Image metadata](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-009/image-metadata) and
+  [source identities](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-009/source.sha256).
 
 Runtime hosted checks include 1,274 layout/table/corruption/reuse cases, immutable
 layout authority tests, three positive/64 negative image controls and fourteen
@@ -545,30 +554,30 @@ versions/transactions/sites, duplicate and late replies are tested. This does
 not suspend an arbitrary instruction/stack or provide non-yielding-service timeouts.
 
 Evidence and execution provenance:
-- [Fresh parent aggregate](evidence/milestone-010/test.log): 216 container cases
+- [Fresh parent aggregate](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-010/test.log): 216 container cases
   (55 exact bounds/order sites, 96 rejections), 463 IR, ten exhaustive-dispatch
   checks and 18 native receiver-array IR probes/ten exact sites, plus all prior
   source/template/module/I/O suites and current hosted kernel checks.
-- [Compiler/IR sanitizers](evidence/milestone-010/compiler-sanitizers.log),
-  [host I/O sanitizers](evidence/milestone-010/host-io-sanitizers.log), and preserved
-  [kernel sanitizer records](evidence/milestone-010/kernel-gates/).
+- [Compiler/IR sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-010/compiler-sanitizers.log),
+  [host I/O sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-010/host-io-sanitizers.log), and preserved
+  [kernel sanitizer records](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-010/kernel-gates).
 - Existing signed1,510/181, unsigned4,219/501/67-rejection and scalar7/630 checks
-  remain separate. [Scalar stress](evidence/milestone-010/semantics-stress.log)
+  remain separate. [Scalar stress](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-010/semantics-stress.log)
   has 1,526 cases. Alternative seeds overlap and must not be summed.
-- [Complete final kernel run](evidence/milestone-010/kernel-gates/results.json):
+- [Complete final kernel run](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-010/kernel-gates/results.json):
   all 95 distinct modes (80 preserved + fifteen IPC), with per-mode logs/metadata,
   commands, tools and source-input identities in the same directory. The run
   used the exact frozen compiler. Independent review repeated all fifteen new
   IPC modes. This retained run is not relabeled as a new parent invocation.
-- [Parent receipt validation](evidence/milestone-010/receipt-validation.log)
+- [Parent receipt validation](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-010/receipt-validation.log)
   checked all retained file hashes and 139 captured source/build inputs before
   adding Makefile test/smoke IPC wiring. The source manifest was captured during
   the run, not asserted to be a pre-run snapshot; unchanged executable/test code
   was verified at completion and again at handover.
-- [Fresh parent BIOS/IPC spot checks](evidence/milestone-010/parent-spot-checks.log)
+- [Fresh parent BIOS/IPC spot checks](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-010/parent-spot-checks.log)
   repeated normal BIOS, IPC success and actual service fault/restart after the
   full run; no executable/test source changed. Normal artifacts are restored.
-- [Final source manifest](evidence/milestone-010/source.sha256).
+- [Final source manifest](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-010/source.sha256).
 
 IPC policy covers 26,120 rejected envelopes and 262,144 six-operation sequences
 against an independent state model. Image controls retain runtime3/64 plus
@@ -604,26 +613,26 @@ Replies retain first-terminal-wins semantics. Budget units are verified interrup
 not time. General scheduling, SMP and arbitrary non-yielding clients remain absent.
 
 Final evidence:
-- [Fresh parent aggregate](evidence/milestone-011/test.log): 161 composition cases
+- [Fresh parent aggregate](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-011/test.log): 161 composition cases
   (16 exact-site traps/78 rejections), 529 IR, ten exhaustive-dispatch controls,
   18 previous native IR checks plus eight composition-native cases, and all prior
   source/library/module/I/O suites. Independent review also ran a 64-case
   constructor ABI matrix on release and sanitizer candidates.
-- [Compiler/IR sanitizers](evidence/milestone-011/compiler-sanitizers.log),
-  [host I/O sanitizers](evidence/milestone-011/host-io-sanitizers.log),
-  scalar harness7/default630 and [stress1,526](evidence/milestone-011/semantics-stress.log).
+- [Compiler/IR sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-011/compiler-sanitizers.log),
+  [host I/O sanitizers](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-011/host-io-sanitizers.log),
+  scalar harness7/default630 and [stress1,526](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-011/semantics-stress.log).
   Signed and unsigned numeric oracles remain separate overlapping coverage.
-- [Complete final kernel run](evidence/milestone-011/kernel-gates/results.json):
+- [Complete final kernel run](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-011/kernel-gates/results.json):
   all 110 distinct modes (37 BIOS + 73 UEFI), preserving 95 and adding fifteen
   service-budget modes. Source inputs were hashed before the first build and
   rechecked after the last gate; all 170 matched. Per-mode command/serial logs,
   available metadata, tools and pre/post manifests are retained in that directory.
-- [Parent hash/source validation](evidence/milestone-011/receipt-validation.log)
+- [Parent hash/source validation](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-011/receipt-validation.log)
   checked every retained receipt and the 170 live inputs before parent reruns.
-  [Fresh parent spots](evidence/milestone-011/parent-spot-checks.log) repeated normal
+  [Fresh parent spots](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-011/parent-spot-checks.log) repeated normal
   BIOS, budget recovery and the corrected pending-interrupt drain. This does not
   relabel the full retained run as a duplicate parent invocation.
-- [Final source manifest](evidence/milestone-011/source.sha256).
+- [Final source manifest](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-011/source.sha256).
 
 Hosted service-budget checks include 6,726 admission/context/table cases, image
 controls four positive/38 negative and final transcript controls fifteen positive/
@@ -661,31 +670,31 @@ result alongside prior Value/container behavior: 3,379 bytes within the unchange
 
 Evidence and provenance:
 
-- [Fresh parent make test](evidence/milestone-012/parent-make-test.log): all aggregate
+- [Fresh parent make test](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/parent-make-test.log): all aggregate
   compiler, image, hosted kernel, metadata, transcript and scalar harness gates.
-- [Compiler author and independent evidence index](evidence/milestone-012/compiler-review/README.md):
+- [Compiler author and independent evidence index](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/compiler-review/README.md):
   full release/sanitizer regression runs, independent alternate-seed and ABI tests,
   exact artifacts, earlier unsuccessful attempts and instrumentation limits.
-- Fresh parent sanitized [decimal196](evidence/milestone-012/parent-sanitized-decimal_values.log),
-  [combined107](evidence/milestone-012/parent-sanitized-enum_composition.log),
-  [composition161](evidence/milestone-012/parent-sanitized-composed_values.log), and
-  [IR592 and host I/O13/22](evidence/milestone-012/parent-ir-io-sanitized.log) pass.
-- Independent scalar harness logs retain [nine self-tests](evidence/milestone-012/parent-oracle-selftests.log),
-  [630 default](evidence/milestone-012/parent-oracle-default.log) and
-  [1,526 stress](evidence/milestone-012/parent-oracle-stress.log) cases. These cover
+- Fresh parent sanitized [decimal196](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/parent-sanitized-decimal_values.log),
+  [combined107](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/parent-sanitized-enum_composition.log),
+  [composition161](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/parent-sanitized-composed_values.log), and
+  [IR592 and host I/O13/22](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/parent-ir-io-sanitized.log) pass.
+- Independent scalar harness logs retain [nine self-tests](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/parent-oracle-selftests.log),
+  [630 default](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/parent-oracle-default.log) and
+  [1,526 stress](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/parent-oracle-stress.log) cases. These cover
   existing scalar semantics; alternate seeds and reruns are not disjoint totals.
-- [Complete retained kernel run](evidence/milestone-012/kernel-gates/README.txt):
+- [Complete retained kernel run](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/kernel-gates/README.txt):
   all 122 distinct modes, 37 BIOS + 85 UEFI, from 08:56:24 through 09:07:52 UTC.
   All 110 historical modes and twelve new dispatcher modes passed. Commands,
   serial logs, available metadata, tools and pre/post input hashes are retained.
-- [Parent receipt validation](evidence/milestone-012/receipt-validation.log) checked
+- [Parent receipt validation](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/receipt-validation.log) checked
   344 receipt hashes and all 186 live executable/build/test inputs against both
   pre-run and post-run captures, plus the exact release compiler hash.
-- [Fresh parent emulator spots](evidence/milestone-012/parent-spot-checks.log): normal
+- [Fresh parent emulator spots](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/parent-spot-checks.log): normal
   BIOS, normal dispatcher, service-budget recovery and pending-interrupt drain.
   Normal UEFI image restored afterward. This is not a second complete 122-mode run.
-- [Final source identity](evidence/milestone-012/source.sha256) and
-  [compiler binaries](evidence/milestone-012/compiler-binaries.sha256).
+- [Final source identity](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/source.sha256) and
+  [compiler binaries](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-012/compiler-binaries.sha256).
 
 Independent review repeated all twelve new actual dispatcher modes. Hosted checks
 include 6,039 layout cases, 9,540 rejected envelopes, 248,832 exhaustive five-step
@@ -727,33 +736,33 @@ enum, copied method result and composition behavior.
 
 Evidence and provenance:
 
-- [Fresh parent make test](evidence/milestone-013/parent-make-test.log) passed the
+- [Fresh parent make test](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/parent-make-test.log) passed the
   full aggregate including newly wired user-phase hosted/image/transcript tests.
-- [Compiler author and independent evidence](evidence/milestone-013/compiler-review/README.md)
+- [Compiler author and independent evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/compiler-review/README.md)
   retains full release/ASan/UBSan aggregates, exact binary/source hashes, mathematical
   oracles, alternate seeds, additional constructor ABI checks and failed/interim
   development attempts. Parent validated all 38 indexed receipt hashes.
-- [Fresh parent sanitized tools](evidence/milestone-013/parent-sanitized-tools.log)
+- [Fresh parent sanitized tools](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/parent-sanitized-tools.log)
   passed the u8 numeric sweep, byte codec, packed-value suite, direct IR 846 and
   host source/output adapters 13/22. Fatal sanitizer settings and hashes are recorded.
-- Existing scalar regression passed [nine self-tests](evidence/milestone-013/parent-oracle-selftests.log),
-  [630 default](evidence/milestone-013/parent-oracle-default.log) and
-  [1,526 stress](evidence/milestone-013/parent-oracle-stress.log) cases on the exact pin.
-- [Complete retained actual kernel run](evidence/milestone-013/kernel-gates/README.txt)
+- Existing scalar regression passed [nine self-tests](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/parent-oracle-selftests.log),
+  [630 default](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/parent-oracle-default.log) and
+  [1,526 stress](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/parent-oracle-stress.log) cases on the exact pin.
+- [Complete retained actual kernel run](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/kernel-gates/README.txt)
   passed 139 distinct modes:37 BIOS+102 UEFI,09:53:41–10:07:46 UTC. All 122 previous
   modes and 17 new controlled-user-phase modes passed on the final M013 compiler.
   The 202 executable/test/build inputs were captured before the first build and
   matched afterward. Commands, per-mode serial logs, available metadata, tools,
   pre/post manifests and distinct results are retained.
-- [Parent receipt validation](evidence/milestone-013/receipt-validation.log) checked
+- [Parent receipt validation](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/receipt-validation.log) checked
   all 396 kernel receipt hashes,202 live inputs,139 unique successful mode records
   and the exact compiler hash, then rechecked inputs after fresh parent tests.
-- [Fresh parent emulator spots](evidence/milestone-013/parent-spot-checks.log)
+- [Fresh parent emulator spots](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/parent-spot-checks.log)
   repeated normal BIOS, request and completion non-yielding client budgets, and
   pending interrupt drain at retirement. Normal UEFI image restored afterward.
   These selected reruns are not represented as a second complete 139-mode execution.
-- [Final source manifest](evidence/milestone-013/source.sha256) and
-  [binary identity](evidence/milestone-013/compiler-binaries.sha256).
+- [Final source manifest](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/source.sha256) and
+  [binary identity](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-013/compiler-binaries.sha256).
 
 Independent kernel review repeated all 17 new modes on the preceding immutable
 M012 compiler pin. The separate final 139 run establishes their integration with
@@ -800,34 +809,34 @@ runs without enlarging the existing 4 KiB RX profile or dropping historical chec
 
 Evidence and provenance:
 
-- [Fresh parent make test](evidence/milestone-014/parent-make-test.log) passed the
+- [Fresh parent make test](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/parent-make-test.log) passed the
   complete aggregate, including storage host-model, BAR and span targets.
-- [Compiler evidence index](evidence/milestone-014/compiler-review/README.md)
+- [Compiler evidence index](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/compiler-review/README.md)
   preserves author and independent runs, exact pins, initial lifetime-join
   reproduction, corrected rejection and all failed/interim attempts.
-- [Fresh parent sanitized tools](evidence/milestone-014/parent-sanitized-tools.log)
+- [Fresh parent sanitized tools](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/parent-sanitized-tools.log)
   passed readonly-span execution/rejection tests, all 950 direct IR cases and
   host source/output adapters. Instrumentation is on host tools, not emitted code.
-- Independent scalar regression passed [nine self-tests](evidence/milestone-014/parent-oracle-selftests.log),
-  [630 default](evidence/milestone-014/parent-oracle-default.log) and
-  [1,526 stress](evidence/milestone-014/parent-oracle-stress.log) cases on the exact pin.
-- [Complete retained final run](evidence/milestone-014/kernel-gates/README.txt)
+- Independent scalar regression passed [nine self-tests](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/parent-oracle-selftests.log),
+  [630 default](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/parent-oracle-default.log) and
+  [1,526 stress](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/parent-oracle-stress.log) cases on the exact pin.
+- [Complete retained final run](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/kernel-gates/README.txt)
   passed 147 distinct modes from 11:45:08 through 12:00:43 UTC: 37 BIOS, 102
   historical UEFI, one span mode and seven BAR modes. All 225 executable/build/test
   inputs, including the four storage-model Python files, were hashed before the
   first build and matched afterward. Independent review separately repeated all
   eight new modes on the same corrected compiler.
-- [Parent receipt validation](evidence/milestone-014/receipt-validation.log)
+- [Parent receipt validation](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/receipt-validation.log)
   checked 498 original local receipt hashes, all 225 live inputs, 147 unique
   successful mode records and 36 compiler-review receipts.
-- [Fresh parent actual spots](evidence/milestone-014/parent-spot-checks.log)
+- [Fresh parent actual spots](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/parent-spot-checks.log)
   repeated normal BIOS, protected span, stock BAR-state refusal, clean read and
   revoked-window fault. Selected reruns are not a second complete 147-mode run.
-  [Retained parent BAR records](evidence/milestone-014/parent-bar-spots/retained-sha256.json)
+  [Retained parent BAR records](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/parent-bar-spots/retained-sha256.json)
   preserve metadata/serial/debug/trace and explicitly list omitted generated or
   third-party artifacts by hash and local audit path. Normal images were restored.
-- [Final source manifest](evidence/milestone-014/source.sha256) and
-  [binary identities](evidence/milestone-014/compiler-binaries.sha256).
+- [Final source manifest](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/source.sha256) and
+  [binary identities](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/compiler-binaries.sha256).
 
 The independent compiler runs passed 91 native span cases, including 25 exact
 bounds traps, 69 normal rejections and 64 additional mixed-argument ABI cases on
@@ -854,7 +863,7 @@ NVMe-driver omissions and exact-endpoint MEMORY-only platform policy. Initial
 BME must already be clear; no clearing/reset operation is added. Other endpoints
 keep upstream behavior. Official source/dependency hashes, the three-file patch,
 notices, build receipts, consumed-input hashes and trace controls are retained in
-[supporting evidence](evidence/milestone-014/supporting/SHA256.json). QEMU's PCI
+[supporting evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/supporting/SHA256.json). QEMU's PCI
 attribute probe did transiently enable and restore BME, so no claim of 'BME was
 never enabled' is made. The relevant claim is no NVMe initialization from cold
 reset and the validated inactive handoff.
@@ -886,7 +895,7 @@ The source distribution omits eight third-party VARS files and 21 generated
 ELF/payload/EFI products while retaining hashes and original local audit copies.
 The original-local and worker-distribution manifests are historical provenance;
 the parent kernel-gates SHA256.json covers retained source/evidence files. See
-[PARENT-DISTRIBUTION.txt](evidence/milestone-014/kernel-gates/PARENT-DISTRIBUTION.txt).
+[PARENT-DISTRIBUTION.txt](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/kernel-gates/PARENT-DISTRIBUTION.txt).
 Original worker filtered archive SHA256:
 `96cb40a9615f042e3e5d9aa5b4b90fa639b7fc8a06589337c601dd014412663a`;
 supporting archive SHA256:
@@ -926,7 +935,7 @@ Parent verification independently checked all708 original receipt hashes, reran
 make test, and executed four fresh actual IVRS modes: architectural-default
 refusal, read success, write fault and revoked-read fault. These spots are not a
 second full158 run. Normal images were restored. Parent results are in
-[evidence/milestone-015/parent/results.json](evidence/milestone-015/parent/results.json).
+[evidence/milestone-015/parent/results.json](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-015/parent/results.json).
 The release compiler remains SHA256
 `2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8`.
 
@@ -979,7 +988,7 @@ HPET/PIT/IOAPIC reset ordering explains that sequence by inference, not an
 instrumented call stack. No rerun erased the failure, no blanket event whitelist
 was introduced, and no claim of globally clean interrupt state follows. Named
 amdvi_mmio_write absence alone is insufficient because valid writes use the
-generic producer. See the [independent report](evidence/milestone-015/kernel-support/independent-review/review.md).
+generic producer. See the [independent report](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-015/kernel-support/independent-review/review.md).
 
 ### Distribution and remaining limits
 
@@ -1007,8 +1016,8 @@ Verified locally2026-10-03. The final exact-source run passed162 modes (37 BIOS,
 matched pre/post hashes. Parent independently checked720 raw receipt hashes,
 reran make test and1,526 seed404 semantic cases, then freshly ran pin-cancel,
 pin-fault and normal UEFI profiles. Normal images were restored. These spots are
-not a second full162 run. See [parent results](evidence/milestone-016/parent/results.json)
-and [kernel receipts](evidence/milestone-016/kernel-gates/results.json).
+not a second full162 run. See [parent results](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-016/parent/results.json)
+and [kernel receipts](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-016/kernel-gates/results.json).
 
 ### Representation-only compiler change
 
@@ -1041,7 +1050,7 @@ accommodation then completed in67.21s at1,662,392KiB RSS. It retained -O1, fatal
 ASan/UBSan and frame pointers; compiler/fact-model/host-I/O builds retained -g.
 All runtime gates executed and passed. Integrated replay used exact-source pinned
 instrumented binaries and reran the affected suites. This is not an assertion
-that the original full-debug build passed. [Compiler evidence](evidence/milestone-016/compiler-facts/README.md)
+that the original full-debug build passed. [Compiler evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-016/compiler-facts/README.md)
 records flags, source identities, partial failures and distribution omissions.
 No mutable-byte-view candidate was integrated.
 
@@ -1125,8 +1134,8 @@ although terminal logs showed PASS; these remain historical unknown-status recor
 not inferred successful exits. Later known-status verification is recorded
 separately. Parent verified429 curated evidence hashes, reran make test and freshly
 executed runtime-span, runtime-pin-fault and normal UEFI profiles. Images restored.
-See [parent results](evidence/milestone-017/parent/results.json) and
-[UTF8 evidence](evidence/milestone-017/utf8/README.md).
+See [parent results](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-017/parent/results.json) and
+[UTF8 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-017/utf8/README.md).
 
 No fresh full162 emulator run was performed for this pure-library change. M016
 remains the historical full-suite checkpoint for unchanged runtime implementation.
@@ -1173,8 +1182,8 @@ was corrected with its original metadata retained historically.
 
 Parent independently checked97 curated receipt hashes and246 unchanged inputs,
 reran make test, then freshly executed runtime-span, runtime-pin-fault and normal
-UEFI profiles. Normal images restored. [Parent results](evidence/milestone-018/parent/results.json)
-and [integration evidence](evidence/milestone-018/utf8-encoding/README.md) distinguish
+UEFI profiles. Normal images restored. [Parent results](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-018/parent/results.json)
+and [integration evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-018/utf8-encoding/README.md) distinguish
 author, independent and parent outcomes. No fresh full162 suite was run for this
 library-only delta; M016 remains the historical complete kernel checkpoint.
 Original binary/output audits are archived outside distributed text evidence with
@@ -1241,10 +1250,10 @@ mountability, clean log, replay, read/write support or storage-capacity assuranc
 
 ### Evidence and preservation
 
-[Coordinating evidence](evidence/milestone-019/parent/README.md),
-[full kernel evidence](evidence/milestone-019/kernel-gates/README.txt),
-[kernel supporting review](evidence/milestone-019/kernel-support/) and
-[XFS evidence](evidence/milestone-019/xfs-geometry/) preserve the bounded text
+[Coordinating evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-019/parent/README.md),
+[full kernel evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-019/kernel-gates/README.txt),
+[kernel supporting review](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-019/kernel-support) and
+[XFS evidence](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-019/xfs-geometry) preserve the bounded text
 receipts. Original generated binaries/images are retained locally and omitted
 from source with exact hashes/reasons; original manifests remain distinguishable
 from source-included manifests. An initial staging-layout mismatch was rejected
@@ -1346,7 +1355,7 @@ identified in the unchanged candidate verification record with its own exit/log;
 none is relabeled as a pass. The unsupported assignment-expression fixture and
 other early focused logs also remain preserved.
 
-[M020 evidence](evidence/milestone-020/README.md) includes byte-preserved candidate
+[M020 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-020/README.md) includes byte-preserved candidate
 and independent receipts, exact parent logs/statuses and source/external manifests,
 source-delta provenance, copied-file hashes and an explicit omission ledger. The
 original evidence ZIP contains 152 hash-listed payload members plus its manifest
@@ -1428,7 +1437,7 @@ implementation/test/fixture bytes remain the reviewed ones. This is three fresh
 selected profiles, not a fresh full 166-mode run. M019 remains the historical
 full-suite checkpoint for unchanged kernel implementation.
 
-[M021 evidence](evidence/milestone-021/README.md) provides exact copied-file mapping,
+[M021 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-021/README.md) provides exact copied-file mapping,
 byte hashes, parent statuses/input manifests, independent review, original failed
 receipts and capped-build exceptions. Generated assembly/binaries/archives and
 sentinel binary outputs remain unchanged outside source with exact omission
@@ -1535,7 +1544,7 @@ be guarded. Hashes provide artifact identity, not signed execution attestation.
 
 ### Curated evidence and distribution boundary
 
-[M022 evidence](evidence/milestone-022/README.md) maps each copied receipt to its
+[M022 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-022/README.md) maps each copied receipt to its
 original bytes/hash, retains every eligible trace and every failure, and inventories
 omitted generated assembly/binaries/archives/sentinel outputs retained externally.
 Build logs are mapped to build-receipts so the source archive's build exclusion

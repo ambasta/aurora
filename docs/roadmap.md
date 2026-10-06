@@ -266,7 +266,7 @@ adversarial, resource and sanitizer gates. Value transport is not a lexer/parser
 owned-string layer or native toolchain. Generic methods, references/resources,
 whole-program resource guarantees, active DMA, XFS mountability and physical
 hardware retain their separate contracts. The isolated mutable-byte candidate
-remains unaccepted. See [M022 evidence](evidence/milestone-022/README.md).
+remains unaccepted. See [M022 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-022/README.md).
 
 
 ## Verified bounded self-hosting consumer: ASCII token scanner

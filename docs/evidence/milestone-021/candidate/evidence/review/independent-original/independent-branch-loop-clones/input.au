@@ -1,1 +1,0 @@
-module review;template<Scalar T>auto transform(T a,T b)->T{T x=a;bool again=true;while(again){if(x<b){x=x+b;}again=false;}return x;}auto test()->i64{if(transform<i64>(10,20)!=30){return 1;}if(transform<u8>(10u8,20u8)!=30u8){return 2;}if(transform<u64>(10u64,20u64)!=30u64){return 3;}return 42;}

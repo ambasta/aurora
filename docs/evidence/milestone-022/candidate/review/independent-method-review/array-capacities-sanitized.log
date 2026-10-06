@@ -1,5 +1,0 @@
-PASS i64 capacities1..64
-PASS u64 capacities1..64
-PASS u8 capacities1..64
-PASS bool capacities1..64
-PASS256 independent array exchange capacity cases

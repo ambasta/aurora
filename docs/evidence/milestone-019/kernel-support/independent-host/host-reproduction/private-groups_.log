@@ -1,8 +1,0 @@
-/tmp/aurora-amd310-independent-review/host-reproduction/denied-groups_.cpp: In function ‘auto leak(aurora::memory::DormantTables&)’:
-/tmp/aurora-amd310-independent-review/host-reproduction/denied-groups_.cpp:2:56: error: ‘std::array<std::optional<aurora::memory::PinHandle>, 3> aurora::memory::DormantTables::groups_’ is private within this context
-    2 | auto leak(aurora::memory::DormantTables& t) { return t.groups_; }
-      |                                                        ^~~~~~~
-In file included from /tmp/aurora-amd310-independent-review/host-reproduction/denied-groups_.cpp:1:
-/workspace/scratch/48c5de6446f8/aurora-dma-tables-candidate/normative/include/dormant-tables.hpp:29:44: note: declared private here
-   29 |     std::array<std::optional<PinHandle>,3> groups_{};
-      |                                            ^~~~~~~
