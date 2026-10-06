@@ -80,3 +80,16 @@ The user accepts a long-term project and wants tested milestone updates, materia
 decisions and blockers. Preserve work in the repository and leave a precise next
 step. Do not call the full language, distribution or AMD support complete until
 the relevant acceptance gates have actually passed.
+
+
+## Current bounded library checkpoint: ASCII token scanner
+
+`std.token_scan` now implements a bounded final-window readonly ASCII scanner with
+copied reports and no escaped source view. The fresh complete root release native
+graph and a separate focused fatal host compiler/lexer sanitizer gate passed
+independent review. Preserve the exact scope, original failed diagnostic fixture
+run, fresh corrected replay and dated sanitizer-scope amendment in
+[the results](docs/token-scan-results.md). Generated Aurora assembly is unsanitized;
+leak checks and complete compiler sanitizer regression are not claimed.
+Further parser/text consumers, owned strings and self-hosting need separate
+contracts; no new compiler semantics, kernel or hardware qualification is implied.

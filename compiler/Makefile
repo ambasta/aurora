@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -99,7 +99,7 @@ export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_G
 .PHONY: aurora-test-context
 all test test-modules test-storage test-initialization-facts test-utf8 test-utf8-encoding \
     test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads \
-    test-readonly-windows test-short-circuit: aurora-test-context
+    test-readonly-windows test-short-circuit test-token-scan: aurora-test-context
 aurora-test-context:
 	python3 -B ../scripts/compiler_contract.py check --repo-root "$(abspath ..)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -267,5 +267,13 @@ test-short-circuit: $(OUT)
 	"$$work/ir-tests"; \
 	python3 -B -O ../tests/compiler/short_circuit_ir_native.py "$$work/ir-tests" --artifacts "$$work/native"; \
 	printf 'PASS short-circuit Make recipe: %s\n' "$$work"
+
+.PHONY: test-token-scan
+test: test-token-scan
+test-token-scan: $(OUT)
+	@set -eu; \
+	work="$$(mktemp -d "$(dir $(abspath $(OUT)))token-scan.XXXXXXXX")"; \
+	CXX="$(CXX)" CXXFLAGS="$(CXXFLAGS)" python3 -B -O ../tests/compiler/token_scan.py --compiler "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"; \
+	printf 'PASS token scanner Make recipe: %s\n' "$$work"
 
 endif # controlled outer dispatcher / original inner graph

@@ -1,5 +1,20 @@
 # Completeness and acceptance matrix
 
+## Verified bounded ASCII token scanner — 2026-10-06
+
+The Aurora-authored `std.token_scan` library consumes readonly final byte windows
+and returns copied token kinds, coordinates, consumption and skipped-LF counts.
+The [frozen contract](token-scan-contract.md) fixes C-locale ASCII classification,
+opaque `//` comments, ten paired operators, recoverable unsupported-byte progress
+and masked invalid windows. The input owner is bounded at 4096 bytes.
+The **full root release native aggregate and separate focused fatal host scanner
+gate passed independent review**. See [results and scope](token-scan-results.md).
+The host compiler and lexer adapter were instrumented; generated Aurora assembly
+was not, leak checks were disabled, and no full compiler sanitizer regression is
+claimed. The compiler, parser and kernel are unchanged;
+this is neither self-hosting nor a complete standard library. Existing verified
+checkpoint claims below retain their original source and scope.
+
 ## Local developer command shortcuts — 2026-10-06
 
 The [local development guide](local-development.md) documents thin normal BIOS
