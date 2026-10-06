@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+cxx="${CXX:-g++}"
+for tool in "$cxx" make as ld objcopy nm python3; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 2; }; done
+export CXX="$cxx"
 mkdir -p build
-for tool in g++ make as ld objcopy nm python3; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 2; }; done
 compiler="${AURORAC:-build/aurorac}"
 if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi
 command -v "$compiler" >/dev/null || { echo "Missing compiler: $compiler" >&2; exit 2; }
@@ -92,7 +94,7 @@ case "${KERNEL_USER_PROBE_MODE:-0}" in
     *) echo 'Invalid controlled user probe mode' >&2; exit 2;;
 esac
 for source in main interrupts protection user-program address-spaces apic scheduler; do
-g++ -std=c++23 -Wall -Wextra -Werror -O2 -ffreestanding -fno-exceptions -fno-rtti \
+"$cxx" -std=c++23 -Wall -Wextra -Werror -O2 -ffreestanding -fno-exceptions -fno-rtti \
     -fno-stack-protector -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables \
     -Ibuild -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns "${extra[@]}" -c "kernel/$source.cpp" -o "build/kernel-$source.o"
 done

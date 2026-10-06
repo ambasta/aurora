@@ -1,5 +1,21 @@
 # Completeness and acceptance matrix
 
+## Local developer command shortcuts — 2026-10-06
+
+The [local development guide](local-development.md) documents thin normal BIOS
+and UEFI QEMU launch wrappers, compiler-only test entry, discoverable Make help
+and separate UEFI build target. Standalone wrappers reject inherited test contexts;
+Make validates active contexts before launch aliases can run. Existing build, smoke validation and shared
+compiler-test mechanisms remain authoritative. Both image builders honor `CXX`
+and check tools up front; this does not make every inherited host test portable.
+These are developer-command changes, with no new kernel/language capability or
+physical-hardware qualification. The exact v3 source passed 17 normal and 17
+optimized synthetic tests, the complete compiler-only suite, and two actual
+normal BIOS/UEFI boots. See [the focused results](local-development-results.md)
+for source identities, preserved failed/blocked attempts and scope limits. The
+full root native graph and complete emulator matrix were not rerun for this
+change; historical results below retain their original scope.
+
 ## Current developer-test tooling candidate — 2026-10-05
 
 The [shared test contract](developer-test-contract.md) adds build-once local
