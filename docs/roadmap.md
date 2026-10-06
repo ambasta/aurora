@@ -267,3 +267,18 @@ owned-string layer or native toolchain. Generic methods, references/resources,
 whole-program resource guarantees, active DMA, XFS mountability and physical
 hardware retain their separate contracts. The isolated mutable-byte candidate
 remains unaccepted. See [M022 evidence](evidence/milestone-022/README.md).
+
+
+## Verified bounded self-hosting consumer: ASCII token scanner
+
+`std.token_scan` now has a frozen independent design review and an Aurora-authored
+implementation for final readonly byte windows. The copied report names the next
+lexical token or recoverable error without storing source authority. See the
+[contract](token-scan-contract.md) for exact ASCII behavior, finite limits and
+required oracles/regressions. The fresh complete root release native graph and
+separate focused fatal host ASan/UBSan scanner gate passed independent review.
+See [scoped results](token-scan-results.md), including the preserved initial
+diagnostic-expectation failure. Generated Aurora is not sanitizer-instrumented;
+complete compiler sanitizer regression and leak checking are not claimed. This
+does not replace the host lexer or implement a parser, strings or a native compiler. The previous value-transport milestones remain prerequisites rather
+than tokenization evidence.

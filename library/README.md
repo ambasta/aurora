@@ -323,3 +323,27 @@ corrected actual Make gates pass 5,548 cases/333,671 complete u64 observations p
 aggregate and final integration seal remain required before acceptance.
 The entire supplied catalog is checked; the module performs no source retrieval,
 version-range solving, recipe execution, installation, trust or filesystem operation.
+
+
+## Verified bounded ASCII next-token scanner
+
+`std.token_scan` implements an Aurora-authored readonly final-window scanner for
+the host lexer's explicit C-locale ASCII profile. `std::next_token` returns an
+independent `TokenResult` with lexical kind, supplied-span-relative coordinates,
+consumed-byte count and skipped-LF count. Opaque `//` comments can contain arbitrary
+bytes. Recoverable unsupported bytes consume one byte after trivia; invalid
+windows expose no coordinates. No source borrow escapes and no heap is required.
+
+The [frozen contract](../docs/token-scan-contract.md) describes the exact grammar,
+public-report shape checks and acceptance requirements. The
+[example](../examples/token_scan.au) observes identifier, operator-pair, digit-word
+and EOF reports and retains a copied result after owner mutation. The focused
+entry is `make -C compiler test-token-scan`; `make test` includes it under the
+shared build-once compiler contract. A fresh full root release native aggregate
+and separate focused fatal host ASan/UBSan scanner gate passed independent review.
+See the [qualification results](../docs/token-scan-results.md) for the preserved
+initial diagnostic-expectation failure, exact scope and evidence. Generated Aurora
+assembly is not sanitizer-instrumented; no complete compiler sanitizer run or
+leak-clean result is claimed.
+This adds no parser integration, numeric validation, strings, heap or native
+self-hosting compiler and does not change any kernel qualification.
