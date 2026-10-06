@@ -46,7 +46,15 @@ The intended pipeline is source modules → typed syntax → ownership/effect ch
 
 Compile-time computation is deterministic and resource-bounded. It cannot read arbitrary host files, access the network, or acquire credentials. Build inputs and permitted tools must be declared. Diagnostics should identify the resource or borrow involved, the conflicting use, and the point that established it.
 
-The bootstrap uses modern C++-recognizable declarations and emits GNU x86-64 assembly for scalars, local scalar-field class values and fixed scalar arrays. It checks local integer ownership, signed arithmetic overflow and array bounds, supports restricted while loops, and generates limited type-size/field-count reflection metadata. The old fn/let source syntax is not retained. Independent review and a fresh aggregate build passed for this expansion; the verification record contains the receipts. The new implementation separates frontend parsing, trusted semantic/lifetime analysis, typed IR, IR validation and x86-64 lowering. Only an immutable validated module reaches the backend. The IR verifier checks operand types, initialization, control-flow/frame invariants and array bounds-token identity/dominance; it does not independently re-prove source ownership, const or privacy checks. Checked arithmetic remains explicit in IR. No optimizer, general effect system or soundness proof is present. See [compiler phase contracts](../compiler/ARCHITECTURE.md). Corrected-source aggregate integration, semantic-oracle runs and sanitizer gates passed; earlier receipts apply only to their snapshots. Self-hosting follows semantic stability and differential tests, rather than becoming evidence of correctness by itself.
+The current C++23 bootstrap uses a bounded frontend, typed IR and an x86-64
+assembly backend. Modules, copied inline class values, bounded templates,
+checked scalars and readonly byte views use explicit validation boundaries.
+Only an immutable validated module reaches the backend. The IR verifier checks
+types, initialization, control-flow/frame invariants and bounds-token dominance;
+source ownership, constness and privacy remain the semantic analyzer's
+responsibility. There is no optimizer, general effect system or soundness proof.
+See the [implemented language reference](../compiler/README.md) and
+[compiler phase contracts](../compiler/ARCHITECTURE.md).
 
 ## Tradeoffs and alternatives
 
@@ -60,12 +68,30 @@ The C-like performance goal requires equivalent-C benchmarks with matched algori
 
 ## Current boundary and next reading
 
-The current trusted bootstrap uses E820-validated frames, IDT/GDT/TSS and guarded stacks, W^X/NX/WP mappings, and three separately owned CR3 domains with leased user stacks. Compiled Aurora programs, including an imported std.core call, run in those bounded domains. Foreign-code/data denial, hardware-root validation, inactive teardown, stale handles, zeroing/reuse, allocation rollback and kernel-root restoration are exercised. Only a bounded scalar return or validated compiler trap can finish a controlled run; unexpected kernel-origin or transition events remain fatal. All 19 configured emulator gates passed on the final module-capable compiler.
+The trusted C++/assembly bootstrap owns physical pages, protected address spaces,
+traps, interrupts and authority. Separately compiled Aurora fixtures run in
+bounded user domains with checked return/fault handling, stale-handle rejection,
+page scrubbing and kernel-root restoration. BIOS and UEFI have distinct boot and
+execution paths.
 
-This is sequential controlled execution, not a scheduler, SMP, a general loader/process lifecycle or a native syscall/runtime contract. The allocator and hardware code remain trusted C++/assembly bootstrap components. No physical AMD qualification or complete memory-safety proof follows. Consult the [verification record](verification.md) for exact source, receipts and limitations.
+The UEFI test system adds copied request/reply IPC, interrupt-count budgets,
+service/client recovery and a two-client dispatcher. Its next-client and
+interrupt-budget decisions call small copied-value Aurora policies; authority
+checks and state commits remain in trusted code. Read-only firmware/device
+profiles and dormant IOMMU table models precede active drivers and DMA isolation.
+These are bounded mechanisms, with no general process API, SMP or qualified
+physical platform. See the [kernel contracts](../kernel/README.md).
 
-The compiler now resolves a bounded module graph from explicit roots with exports, namespaces and defining-module identities. Reflection views enforce ordinary module visibility. A narrow Linux host adapter pins source/output directory authority, rejects symlink escapes, captures file bytes and atomically replaces an output leaf under its documented assumptions. It does not provide a whole-repository atomic snapshot or protection from a privileged host. The initial Aurora-authored std.core module is a real dependency of protected user programs; most runtime/standard-library facilities remain requirements.
+The compiler loads bounded module graphs from explicit roots with export and
+visibility checks. A Linux host adapter pins source/output directory authority,
+rejects symlink escapes and atomically replaces output under its documented
+assumptions. The Aurora-authored library supplies working freestanding value and
+byte operations; general ownership, allocation and runtime services remain open.
 
-See [language design](language.md), [device contract](device-contract.md), and [roadmap](roadmap.md).
+For current status, use the [completeness matrix](completeness-matrix.md).
+[Verification history](verification.md) identifies the source and environment of
+each tested checkpoint. The [language design](language.md),
+[device contract](device-contract.md) and [roadmap](roadmap.md) describe the next
+layers of the system.
 
 For context, [seL4's project overview](https://sel4.systems/About/) describes a high-assurance microkernel with formal verification. It is a useful reference point for the assurance ambition; Aurora neither reuses those proofs nor inherits their guarantees.
