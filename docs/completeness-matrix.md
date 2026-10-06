@@ -1,5 +1,18 @@
 # Completeness and acceptance matrix
 
+## UEFI host portability correction — 2026-10-06
+
+The bootstrap now supplies compiler-required freestanding memory primitives,
+selects a PE-capable linker independently of native ELF `ld`, and discovers
+combined or matching split OVMF firmware without changing installed templates.
+Actual Gentoo GCC 16 builds reproduced the missing memory calls; the correction
+passed focused image and normal/ACPI/protection-fault emulator gates. GCC 14
+normal UEFI remains checked, and the complete GCC 14 native aggregate passed
+independent terminal review. The full native graph was not rerun on GCC 16.
+See the concise [host matrix and rerun command](local-development.md#repeating-host-build-checks).
+Clang's bootstrap builds, but image builds still fail on GCC-only flags. These
+are bounded host/firmware checks, not all-host or physical-machine qualification.
+
 ## Verified bounded ASCII token scanner — 2026-10-06
 
 The Aurora-authored `std.token_scan` library consumes readonly final byte windows

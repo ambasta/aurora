@@ -11,9 +11,13 @@ Serial output is printed after QEMU exits. The existing smoke runner validates i
 
 Overrides (environment, one executable/path each):
   CXX        GNU C++23 compiler (default: g++)
+  UEFI_LD    GNU PE linker with i386pep (auto-detected when omitted)
   QEMU       QEMU executable (default: qemu-system-x86_64)
   QEMU_DATA  Optional QEMU firmware/data directory
-  OVMF       Combined OVMF ROM for uefi (default: /usr/share/ovmf/OVMF.fd)
+  OVMF       Explicit combined OVMF ROM (otherwise discover installed firmware)
+  OVMF_CODE  Split firmware code, with OVMF_VARS from the same build
+  OVMF_VARS  Split variable-store template (changes are discarded)
+  OVMF_DIR   Search only this directory for a supported firmware pair/ROM
 
 Examples:
   ./scripts/kernel-run.sh
@@ -48,11 +52,8 @@ if [[ -n "${QEMU_DATA:-}" && ! -d "$QEMU_DATA" ]]; then
     exit 2
 fi
 if [[ "$mode" == uefi ]]; then
-    firmware="${OVMF:-/usr/share/ovmf/OVMF.fd}"
-    if [[ ! -f "$firmware" || ! -r "$firmware" ]]; then
-        echo 'Missing OVMF firmware: set OVMF to a readable combined OVMF.fd ROM (not a split CODE/VARS pair).' >&2
-        exit 2
-    fi
+    source ./scripts/uefi-firmware.sh
+    uefi_firmware_select
     echo 'Running normal UEFI boot self-tests in QEMU (30-second limit).'
     exec ./scripts/kernel-uefi-smoke.sh normal
 fi

@@ -17,7 +17,7 @@ make help
 make                         # compiler + BIOS image, without QEMU
 make kernel-uefi             # separate UEFI loader/payload, without QEMU
 make run                     # normal BIOS build and verified QEMU boot
-OVMF=/path/to/OVMF.fd make run-uefi
+make run-uefi                # discovers installed non-Secure-Boot firmware
 ./scripts/compiler-test.sh   # fresh compiler, complete compiler-only tests
 make test                    # fresh compiler, complete native aggregate
 ```
@@ -39,8 +39,7 @@ The convenience wrappers are **standalone entrypoints**. They reject a nonempty
 inherited `AURORA_TEST_CONTEXT` before dispatch, even if a context might be valid;
 they do not join or override an existing supervised run. Start them outside that
 run. When a context is present, Make validates it before the `run`, `run-uefi`
-or `kernel-uefi` recipe can proceed (`kernel-uefi` through its compiler
-prerequisite). The wrappers still reject an inherited context after that check.
+or `kernel-uefi` recipe can proceed. The wrappers still reject an inherited context after that check.
 No shortcut promises unsupervised execution using an active sealed compiler.
 
 ## Dependencies and overrides
@@ -50,19 +49,20 @@ GNU C++ with C++23 support, GNU Make, GNU binutils (`as`, `ld`, `objcopy`,
 `objdump`, `nm`, `readelf`), Python 3 and Bash. The complete native graph also
 uses GNU coreutils and ripgrep. QEMU boots additionally need GNU `timeout`,
 QEMU system x86-64 and its matching PC firmware/data files. UEFI needs a
-readable **combined OVMF ROM**, commonly named `OVMF.fd`.
+readable x86-64 OVMF firmware: a combined ROM or a matching CODE/VARS pair.
 
 The scripts do not download or install tools. Missing dependencies fail with a
 nonzero status. The run wrapper checks QEMU, timeout and requested firmware
 paths before building; both image builders check their required tools before
-creating output directories. A tool being present does not establish that its
+creating output directories. UEFI also checks PE-linker support before compiling. A tool being present does not establish that its
 version or configuration is qualified.
 
 ```sh
 CXX=g++-16 make
 CXX=g++-16 ./scripts/compiler-test.sh
 make run CXX=g++-16 QEMU=/path/to/qemu-system-x86_64
-make run-uefi OVMF=/path/to/OVMF.fd QEMU_DATA=/path/to/qemu/share
+make run-uefi OVMF_DIR=/path/to/firmware QEMU_DATA=/path/to/qemu/share
+make run-uefi OVMF_CODE=/path/to/OVMF_CODE.fd OVMF_VARS=/path/to/OVMF_VARS.fd
 ```
 
 `CXX` selects one GNU compiler executable, not a command containing flags or a
@@ -71,18 +71,66 @@ wrapper. The supervised test contract also rejects whitespace in the selected
 both image builders. Some inherited hosted-kernel tests still invoke `g++` from
 `PATH`; `CXX` does not replace every host compiler invocation in the full graph.
 GNU binutils are selected through `PATH`. See the [host-toolchain boot contract](../kernel/README.md#host-toolchain-boot-layout)
-for required capabilities, including `ld`'s ELF and PE/COFF backends.
+for required capabilities. UEFI needs GNU `ld`'s `i386pep` PE/COFF backend in
+addition to the native ELF linker. `UEFI_LD` selects that PE linker explicitly;
+otherwise the builder checks native `ld`, then `x86_64-w64-mingw32-ld`.
+On Gentoo, `sys-devel/binutils[multitarget]` or `dev-util/mingw64-toolchain`
+provides the additional target. Missing support fails with a dependency error,
+not a request to replace the system compiler. For example:
+
+```sh
+make kernel-uefi UEFI_LD=x86_64-w64-mingw32-ld
+```
 
 `QEMU` selects one executable; quote shell values containing spaces. QEMU,
 firmware and data paths with spaces are forwarded as single arguments.
 `QEMU_DATA` optionally selects its matching
 firmware/data directory (`-L`); it is useful for nonstandard installations.
-`OVMF` defaults to `/usr/share/ovmf/OVMF.fd`, but distribution paths differ.
-The normal UEFI runner uses `-bios` with a combined ROM. A split
-`OVMF_CODE.fd`/`OVMF_VARS.fd` pair is not a supported substitute for this command;
-no automatic firmware conversion, download or persistent variable-store setup
-is performed. Firmware paths supplied to these commands are interpreted from
-the repository root unless absolute.
+With no override, UEFI searches conventional Debian/Ubuntu, Gentoo, Fedora and
+Arch firmware directories for a matching non-Secure-Boot x86-64 pair, then a
+combined ROM. `OVMF_DIR` searches only the specified directory. `OVMF` selects an
+explicit combined ROM; alternatively set both `OVMF_CODE` and `OVMF_VARS` from the
+same firmware build. Conflicting selectors and invalid paths fail before building.
+Raw `.fd` files and split `.qcow2` files are supported. Automatic discovery only
+selects named matching pairs; it never substitutes a Secure Boot image.
+
+Combined ROMs use `-bios`. Split firmware uses read-only CODE pflash and a
+disposable QEMU snapshot of the VARS template; installed files are never changed.
+No firmware downloads, conversions or persistent variable store are performed.
+Firmware paths are interpreted from the repository root unless absolute. These
+path conventions are discovery support, not qualification of every distribution.
+
+## Repeating host build checks
+
+Run the same build-only check on each x86-64 Linux host:
+
+```sh
+CXX=g++ ./scripts/host-build-check.sh
+CXX=g++ UEFI_LD=x86_64-w64-mingw32-ld ./scripts/host-build-check.sh
+```
+
+It checks dependencies, prints compiler/linker versions, refreshes the bootstrap
+compiler and runs the existing BIOS/UEFI builders, image validators, hosted UEFI
+and command-routing tests. Any failed gate stops the check. It does not download
+tools, start QEMU or replace the full `make test` graph. Use a separate checkout
+per host/toolchain; QEMU/firmware checks are a separate step. The standalone
+check rejects inherited compiler pins, output selectors, Make control flags and
+fault-injection settings so they cannot silently reduce or change the run.
+
+Checked on 2026-10-06:
+- Debian 13: GCC 14.2 and binutils 2.44; complete `make test` native aggregate,
+  compiler/BIOS/UEFI host-build check and normal split-firmware boot.
+- Gentoo stage3 20261004: GCC 16.2.1_p20260926, binutils 2.47 and an explicit
+  Gentoo-packaged PE linker 2.46.0.20260210; compiler, BIOS and UEFI builds;
+  normal combined/split firmware, ACPI and write/execute-protection fault boots.
+- Gentoo with Clang 22.1.8: bootstrap compiler builds; BIOS/UEFI image builds are
+  unsupported and fail on GCC-only flags. The full native test driver remains GNU-only.
+
+The Gentoo checks use an isolated Gentoo userland on the same Linux kernel as
+the Debian host. They establish host-toolchain behavior, not a third distribution,
+physical hardware support or complete emulator-matrix qualification. Assembly
+memory primitives supply the freestanding calls emitted by GCC 16; no warning
+or image-validation check is disabled.
 
 ## What the run commands do
 
@@ -124,7 +172,8 @@ language, kernel, hardware or broad-host qualification claims.
 
 ## Testing these shortcuts
 
-`make test-developer-commands` runs the normal and optimized Python checks.
+`make test-developer-commands` runs the normal and optimized command-routing and
+firmware-selection Python checks.
 `python3 -B tests/developer-commands.py` checks command routing, argument rejection,
 dependency failures, inherited-context rejection, environment selectors and Make aliases in disposable fake-tool
 fixtures. It never builds Aurora or starts real QEMU, and is not native/emulator
@@ -138,7 +187,7 @@ actual compiler-only and normal BIOS/UEFI checks, preserved failures and limits.
 
 - Missing executable: install/select that dependency on the host, then retry.
   Use `QEMU` and `CXX` for nondefault executable names.
-- Firmware missing: set `OVMF` to an installed combined ROM; check `QEMU_DATA`
+- Firmware missing: set `OVMF_DIR`, `OVMF`, or both `OVMF_CODE`/`OVMF_VARS`; check `QEMU_DATA`
   belongs to the selected QEMU installation if PC BIOS lookup fails.
 - Fault-control rejection: unset the named variable, or intentionally use the
   underlying smoke script for that fault mode.
