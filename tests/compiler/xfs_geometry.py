@@ -9,7 +9,7 @@ predicates), including all zero facts on failure. Signals, timeouts, diagnostics
 and compiler/tool failures fail the gate and retain unique source/command receipts.
 The instrumented compiler does not make generated Aurora code ASan-instrumented.
 
-Run: python3 tests/compiler/xfs_geometry.py /path/to/aurorac
+Run: python3 tests/compiler/xfs_geometry.py /path/to/aurorac --compiler-sha256 EXPECTED_SHA256
 Controls: python3 -O tests/compiler/xfs_geometry.py --self-test-only
 """
 from __future__ import annotations
@@ -29,11 +29,15 @@ import sys
 import tempfile
 import time
 
+sys.dont_write_bytecode = True
+
 from storage_binary import crc32c_reference, VECTORS
 from unsigned_oracle import Case, Observation, require, validate_values
 from utf8 import Suite as BoundedSuite
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'scripts'))
+from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 U64 = (1 << 64) - 1
 U32 = (1 << 32) - 1
 MAX_SOURCE = 65536
@@ -894,7 +898,7 @@ def main():
     parser.add_argument("compiler", nargs="?", type=Path)
     parser.add_argument("--artifacts", type=Path)
     parser.add_argument("--sanitized-compiler", action="store_true")
-    parser.add_argument("--compiler-sha256", help="optional exact compiler pin; every run records and enforces stable actual bytes")
+    add_identity_arguments(parser)
     parser.add_argument("--self-test-only", action="store_true")
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--random-count", type=int, default=48)
@@ -903,6 +907,12 @@ def main():
     parser.add_argument("--mutation-controls", action="store_true", help="also test bounded mutated copies of the module")
     parser.add_argument("--mutations-only", action="store_true", help="diagnostic mutation run; omits the complete acceptance gate")
     args = parser.parse_args()
+    validate_identity_selection(args, preflight=args.self_test_only)
+    if not args.self_test_only:
+        require(args.compiler is not None, "compiler required")
+        compiler = args.compiler.resolve(strict=True)
+        identity = resolve_identity(args, compiler, ROOT)
+        expected_pin = identity.sha256
     require(0 <= args.random_count <= 128, "seeded case budget")
     require(5 <= args.timeout <= 90, "native timeout bound")
     require(sha(ROOT / "docs/xfs-geometry-proposal.md") == PROPOSAL_SHA, "approved proposal identity")
@@ -910,13 +920,6 @@ def main():
     self_tests(real)
     if args.self_test_only:
         return
-    require(args.compiler is not None, "compiler required")
-    compiler = args.compiler.resolve()
-    expected_pin = sha(compiler)
-    if args.compiler_sha256 is not None:
-        require(len(args.compiler_sha256) == 64 and all(char in "0123456789abcdef" for char in args.compiler_sha256),
-                "compiler SHA256 must be64 lowercase hex digits")
-        require(expected_pin == args.compiler_sha256, "explicit compiler identity mismatch")
     if args.sanitized_compiler:
         require(os.environ.get("ASAN_OPTIONS") in (
             "detect_leaks=0:halt_on_error=1",
@@ -932,7 +935,7 @@ def main():
                        "docs/xfs-geometry-proposal.md", "library/fs/xfs_geometry.au", "library/fs/xfs_probe.au",
                        "library/std/binary.au", "library/std/checksum.au", "library/std/bit.au")
     input_hashes = {path: sha(ROOT / path) for path in relevant_inputs}
-    manifest = {"compiler": str(compiler), "compiler_sha256": sha(compiler),
+    manifest = {"compiler": str(compiler), "compiler_sha256": sha(compiler), "compiler_identity": identity.record(),
                 "explicit_compiler_pin": args.compiler_sha256, "input_sha256": input_hashes,
                 "test_sha256": sha(Path(__file__)), "module_sha256": sha(ROOT / "library/fs/xfs_geometry.au"),
                 "probe_sha256": sha(ROOT / "library/fs/xfs_probe.au"), "proposal_sha256": PROPOSAL_SHA,
@@ -959,6 +962,7 @@ def main():
                 suite.check_headers(cases[start:start + MAX_BATCH])
         semantics = semantic_cases(suite, real) if not args.case_filter and not args.mutations_only else {"omitted": "diagnostic selection"}
         mutations = mutation_controls(suite, real) if args.mutation_controls or args.mutations_only else {"not_run": True}
+        identity.verify()
         manifest.update(status="passed", headers=suite.count, raw_observations=suite.scalar_count,
                         families=dict(suite.families), batches=suite.batches, semantic_controls=semantics, mutation_controls=mutations)
     except Exception as error:

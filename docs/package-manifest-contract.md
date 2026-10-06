@@ -1,5 +1,10 @@
 # Bounded declarative package manifest candidate
 
+Current tooling: use the [shared developer-test contract](developer-test-contract.md).
+Historical source/compiler pins and verification below retain their original
+checkpoint meaning. Ordinary developer tests fresh-build current source without
+a historical default pin; explicitly pinned acceptance is a separate mode.
+
 Status at author-source freeze: the final focused oracle and actual Make replay
 passed independent review. A fresh combined-source aggregate and final seal remain
 required before acceptance; see the evidence index for the separately sealed result.
@@ -152,7 +157,7 @@ The [module](../library/package/manifest.au) and
 [frozen contract](../evidence/package-manifest/contract-before-implementation.md)
 is a required test input; its SHA256 is
 `5aa8786a1afc3fac793deccb1e4bb11ae2d6497ab10093b0545c72aa39dc7103`.
-With the pinned compiler at build/aurorac, run:
+For current-source developer verification, run:
 
 ```
 make test-package-manifest
@@ -162,10 +167,13 @@ make test
 The focused target runs the independent harness under Python -B -O. Its default
 whole-candidate cap is 256 MiB; the aggregate target explicitly chooses 1024 MiB.
 An external aggregate supervisor must additionally account for retained sibling
-workspaces and growth reserve. `PACKAGE_MANIFEST_COMPILER` selects the compiler
-path, without disabling its exact pin. `PACKAGE_MANIFEST_TEST_FLAGS` can select a
-fresh contained --artifacts directory. Development --quick/--self-test-only modes
-do not satisfy the full acceptance gate.
+workspaces and growth reserve. The [shared test contract](developer-test-contract.md)
+supplies one fresh run-owned compiler and validated developer receipt, or an
+explicitly pinned acceptance compiler. `PACKAGE_MANIFEST_COMPILER` cannot silently
+override the fresh-build path. `PACKAGE_MANIFEST_TEST_FLAGS` may select a fresh
+contained artifact directory on a focused developer invocation. Full aggregates
+and acceptance reject these overrides; quick/self-test-only modes do not satisfy
+the full native acceptance gate.
 
 The source-local [evidence index](../evidence/package-manifest/README.md) records
 completed checks, failures and exact checkpoint status without relabeling earlier
@@ -174,15 +182,14 @@ change; the inherited aggregate still exercises compiler and hosted kernel tests
 
 ## Explicit compiler-integration pin
 
-The runner now accepts --compiler-sha256 as an explicit expected 64-character
-lowercase hexadecimal digest. Its default remains the historical accepted M022
-pin. The binary must match before the designated artifact directory is created
-or any native test output is produced. PACKAGE_MANIFEST_COMPILER_SHA256 passes
-that expected digest through the Make target; it does not bypass verification.
-A new compiler integration must record and review its expected pin independently,
-then deliberately supply it. Wrong/malformed pins and baseline-default behavior
-have independent rejection/compatibility checks. The format/oracle and frozen
-pre-implementation contract are unchanged.
+The native runner requires exactly one `--compiler-sha256` explicit expected
+64-character lowercase hexadecimal digest or `--developer-build-receipt` for a
+validated local fresh build. It has no historical default expected pin. An explicit
+pin must match before artifact/native output creation. A focused Make invocation
+can still supply `PACKAGE_MANIFEST_COMPILER_SHA256`; complete root pinned testing
+uses `make test-acceptance ACCEPTANCE_COMPILER_SHA256=...` under the shared contract.
+An observed hash does not constitute independent review. The format/oracle and
+frozen pre-implementation contract are unchanged, as are historical receipts.
 
 
 ## Current bounded resource-configuration checks

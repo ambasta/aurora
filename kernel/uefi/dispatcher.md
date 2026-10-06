@@ -129,3 +129,12 @@ specifies rejection, idle cursor preservation, continuous pending fairness and t
 remaining native/ABI/QEMU acceptance gates. Three new local policy-fault modes
 raise this candidate dispatcher suite to15 modes; historical12-mode receipts above
 remain unchanged and do not qualify the candidate.
+
+## Provisional emulator clock qualification
+
+The 15 current dispatcher modes are included in the explicit 51-mode UEFI clock
+candidate. The historical warmed-TCG compiled-hit failure described above remains
+preserved, as does the later unresolved retirement exhaustion. The million-loop
+fixture, original compiled-hit gates, exact three-tick exhaustion and strict
+ordered-IPC/drain checks are unchanged. Fresh qualification is pending under the
+[clock contract](../../docs/kernel-emulator-clock-contract.md).

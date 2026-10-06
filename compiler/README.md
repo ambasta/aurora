@@ -9,6 +9,15 @@ build/aurorac examples/kernel.au -o build/kernel-language.s
 as --64 build/kernel-language.s -o build/kernel-language.o
 ```
 
+`make -C compiler test` creates one run-owned read-only compiler from current
+source and runs the complete compiler-only graph against those bytes. It does
+not reuse the ordinary `build/aurorac` or require a historical release pin, and
+it is not the root full native aggregate. The root `make test` and explicitly
+pinned `make test-acceptance` routes, receipt requirements and supported GNU build
+controls are specified in [the shared test contract](../docs/developer-test-contract.md).
+This tooling candidate is under review and unqualified; source/synthetic checks
+are not real fresh-compiler, native, ASan/emulator or broad-host acceptance.
+
 ## Current syntax
 
 ```text

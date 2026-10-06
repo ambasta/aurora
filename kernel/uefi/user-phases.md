@@ -115,3 +115,13 @@ Initial adapter compilation caught an inconsistent auto declaration and an unuse
 function warning; the failed build output is preserved separately from successful
 gates. Receipt review narrowed the wrong-root injection to client 0 before final
 acceptance so an earlier peer interrupt cannot change that negative gate's origin.
+
+## Provisional emulator clock qualification
+
+The 17 user-phase modes are included in the explicit 51-mode UEFI clock candidate.
+The original retirement aggregate failed when its finite service exhausted 128
+interrupts; a traced success did not resolve that failure. The proposed scheduling
+contract preserves budgets 128/3, both context countdowns, compiled service hits,
+real old-owner pending drains and every disposal/rebind/cleanup gate. No changed
+clock qualification is claimed. See the
+[clock contract](../../docs/kernel-emulator-clock-contract.md).

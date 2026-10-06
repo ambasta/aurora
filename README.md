@@ -13,7 +13,7 @@ operations. These are design targets, not current guarantees.
 ## Build and test
 
 Requirements: x86-64 Linux, GNU C++ with C++23 support, GNU Make, GNU binutils,
-Python 3, Bash, and QEMU system x86 for the actual emulator gates.
+Python 3, Bash, ripgrep, and QEMU system x86 for the actual emulator gates.
 
 ```sh
 make
@@ -22,11 +22,27 @@ SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
 
-The native acceptance gates currently retain older reference-compiler hash
-defaults. Combined checkpoint runs supply explicit independently reviewed pins;
-plain `make test` is not yet a portable developer-test contract across legitimate
-host GCC builds. A separate tooling correction must address that gap without
-weakening externally pinned release/acceptance receipts.
+`make test` now builds current compiler source once into a unique run-owned
+read-only executable, records local build provenance and routes the complete
+native graph through the same bytes. It does not require a fixed historical
+compiler hash. For independently pinned native acceptance, use
+`make test-acceptance ACCEPTANCE_COMPILER_SHA256="$REVIEWED_SHA256"`; optionally
+add `ACCEPTANCE_COMPILER=/absolute/path/to/reviewed/aurorac` for a byte-identical
+private prebuilt copy, labeled `externally-pinned-prebuilt` without a fresh-source
+claim. `make -C compiler test` is complete only for compiler scope.
+
+The exact PR26-based revision-5 workflow has passed full public developer and
+externally pinned prebuilt native runs on the reviewed GNU/Linux GCC 14 host.
+Independent review accepted the developer result through a separately preserved
+composite audit and the prebuilt result through its passed original terminal.
+See [workflow results](docs/developer-test-workflow-results.md) for identities,
+the original developer audit failure, zero prebuilt rebuilds and scope limits.
+Gentoo `make test`, new sanitizer/emulator runs and broad-host qualification remain
+separate. Require a newly completed matching `run.json`, not Make exit zero,
+a dry run, preflight or partial test. Full aggregates and acceptance reject
+coverage-reducing test overrides. See [the shared contract](docs/developer-test-contract.md)
+for supported GNU flags, explicit pins, provenance and limits. Historical
+checkpoint results below apply only to their identified sources.
 
 `make smoke-all` configures 177 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. The four new IPC transaction fault profiles are authored but not yet qualified; the earlier 173-mode checkpoint remains historical. It also runs three dedicated BIOS capacity probes (a full 127-sector read and two failing controls). `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
@@ -47,8 +63,20 @@ or consume a generation. Composite operations preserve already committed earlier
 transitions; they do not promise rollback. The [reviewed contract](docs/kernel-ipc-transition-contract.md)
 specifies the finite truth table, two stack contexts and four new real fault modes.
 Source authoring is not native or emulator acceptance. The standalone focused
-`test-ipc-transaction` target currently requires an explicit reviewed compiler
-identity, pending reconciliation with the separate portable test workflow.
+`test-ipc-transaction` target now uses the same supervised fresh-build receipt or
+explicit externally reviewed compiler identity as the other portable native gates.
+This six-consumer integration remains source-only and has not inherited acceptance
+from the earlier five-consumer tooling checkpoint.
+
+## Provisional UEFI clock qualification
+
+Exactly 51 service-budget, dispatcher and user-phase modes now have a closed
+instruction-clock command contract prepared for review. The other 126 modes,
+three BIOS capacity probes and both normal restoration boots retain the original
+clock. Budgets, guest source and strict validators are unchanged. The original
+IPC aggregate remains failed at retirement; a later traced success is inconclusive.
+Source-only clock checks and fresh combined native/emulator qualification remain
+pending. See [the clock contract](docs/kernel-emulator-clock-contract.md).
 
 ## Verified Aurora two-slot scheduling policy
 

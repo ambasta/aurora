@@ -4,6 +4,62 @@ Receipts are historical snapshots. A source manifest applies only to its own
 checkpoint, not a later tree with different code. Milestone001 belongs to commit
 `4ae3f1f475a3f61d8a1534a82ac5d7d532677c7e`.
 
+## Accepted PR27 test-tooling checkpoint — 2026-10-05
+
+The [developer-test contract](developer-test-contract.md) separates a fresh
+current-source developer compiler from a caller-supplied independently reviewed
+acceptance pin. `make test` builds once and routes the root native graph through
+the same read-only compiler bytes. `make test-acceptance` requires
+`ACCEPTANCE_COMPILER_SHA256`; optional `ACCEPTANCE_COMPILER` selects an explicitly
+pinned prebuilt private copy without a fresh-source provenance claim. A newly
+completed matching `run.json` and actual native-stage result are required;
+Make exit zero, dry runs, skipped/replaced recipes, preflight and focused runs
+cannot establish root native acceptance. Compiler-entry `test` has complete
+compiler-only scope. Actual emulator gates remain separate.
+
+Status: **PR27 developer-test tooling accepted**, merged into main
+`772b9c8a6291aa3cc656b409ce0263f73d45b034`, tree
+`62a2728942d9c36df16bd00189260f6a94cb847e`, on 2026-10-05 at 22:52:33 UTC.
+The PR26-based revision-5 implementation has independently reviewed full public
+developer and externally pinned prebuilt native results on the identified
+GNU/Linux GCC 14 host. Those executions used the 572-file tested source;
+the later 574-file results overlay preserves implementation bytes and is not a
+new native execution. See [workflow results](developer-test-workflow-results.md)
+for exact source/result scopes and the preserved developer audit failure.
+
+Acceptance of that five-consumer tooling checkpoint does not qualify the
+reconstructed six-consumer IPC/clock integration below. Earlier D/P focused
+kernel-budget evidence remains explicitly PR25-only. Gentoo, new sanitizer/emulator
+runs and broad-host qualification remain separate. Existing checkpoint evidence
+below keeps its original source scope.
+
+## Provisional IPC/tooling/clock preparation — 2026-10-05
+
+The new [clock contract](kernel-emulator-clock-contract.md) selects exactly 51 UEFI
+timer modes for fixed instruction-derived virtual time; 126 other production
+modes, three BIOS capacity probes and two normal restoration boots retain their
+original clocks. The original IPC aggregate is still failed at mode 163,
+`user-retire-pending`, after 162 partial passes. Its normal restorations remain
+preserved, and the later single traced exit 33 is inconclusive with no acceptance
+credit. No guest source, budgets 128/3 or original strict validator is changed.
+
+The reconstructed six-consumer IPC/clock integration remains unaccepted and
+unqualified; accepted PR27 tooling results do not transfer to it.
+
+The reconstructed source with manifest
+`e6c08e72e9764615043b4ef7c5a726c5a5dda12c6f1de9f8735ec0fe8b6230b7`
+passed the four admitted compiler-free clock controls on 2026-10-06. The four
+command supervisors exited 0. These controls covered launcher syntax, ordinary
+and optimized eight-method suites, and the exact retirement/default command
+plans. Independent terminal-closure review is still pending. Combined native,
+ABI/linked-image review and actual 177-mode qualification remain pending.
+
+This publication composition changes only the two status/clock documents from
+that tested source, including the caveats and this status note. These documentation
+changes receive separate review; the four control results are not new-source
+execution credit. Historical native tooling and emulator results below retain
+their identified source scopes.
+
 ## Bring-up checkpoint — 2026-10-02
 
 This checkpoint establishes only the small scalar compiler and emulator boot path.
@@ -1571,7 +1627,7 @@ The successful acceptance chain is entirely fresh and same-root:
   eleven IVRS modes. All four new policy fault modes returned the required exit35.
   The output-fault image matched all five independently reviewed linked members
   before QEMU and exercised the ordinary defensive decoder.
-- Two additional fresh normal BIOS/UEFI boots each returned exit33. Final normal
+- Two additional fresh normal BIOS/UEFI boots each returned exit 33. Final normal
   images, source/runtime/control identity, complete evidence sealing and owned
   process cleanup passed independent review.
 - The full native build remains in a verified 21,429-member preservation archive.

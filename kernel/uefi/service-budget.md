@@ -152,3 +152,11 @@ The four policy modes include actual pre-commit fail-stop checks; the output mod
 also passes the linked-image guard. See the
 [exact evidence index](../../docs/evidence/kernel-budget-policy/README.md).
 Earlier failed/interrupted attempts remain separate and supply no mode credit.
+
+## Provisional emulator clock qualification
+
+The 19 budget modes are included in the explicit 51-mode UEFI clock candidate.
+Budgets 128/3, compiled-service interruption, context/DF checks, exact exhaustion,
+pending drains and all negative reasons remain unchanged. New qualification is
+pending; historical passing receipts do not establish the changed clock. See the
+[clock contract](../../docs/kernel-emulator-clock-contract.md).

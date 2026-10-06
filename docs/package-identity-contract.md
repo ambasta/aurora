@@ -1,5 +1,10 @@
 # Bounded package identity token candidate
 
+Current tooling: use the [shared developer-test contract](developer-test-contract.md).
+Historical source/compiler pins and verification below retain their original
+checkpoint meaning. Ordinary developer tests fresh-build current source without
+a historical default pin; explicitly pinned acceptance is a separate mode.
+
 Status: implemented library-only candidate. Independent oracle/source review and
 the focused Make recipe passed; parent aggregate and acceptance remain pending.
 The first freestanding native example returns 42.
@@ -93,17 +98,20 @@ All 230 binaries per run passed undefined-symbol and ELF interpreter/dependency
 audits. Production source was unchanged between the runs. The independent source
 review found no production defect. See the [evidence record](../evidence/package-identity/README.md).
 
-Reproduce with the accepted compiler present at build/aurorac:
+Run the current full focused developer gate with a fresh compiler:
 
 ```
 make test-package-identity
 ```
 
-The default full target runs Python with -B -O and records a fresh bounded artifact
-directory. `PACKAGE_IDENTITY_COMPILER` selects the compiler path but its exact pin
-is still enforced. `PACKAGE_IDENTITY_TEST_FLAGS` can supply a fresh --artifacts
-path inside the candidate. `--quick` and `--self-test-only` are development modes,
-not substitutes for the default full gate. The frozen format contract in
+The default focused target runs Python with -B -O and records a fresh bounded
+artifact directory using the supervisor's compiler and validated developer-build
+receipt. For an explicitly reviewed prebuilt, use the shared acceptance selectors;
+`PACKAGE_IDENTITY_COMPILER` cannot silently override a fresh-build path.
+`PACKAGE_IDENTITY_TEST_FLAGS` can supply a fresh artifact path inside the candidate
+only on a focused developer invocation. `--quick` and `--self-test-only` are
+development modes, not substitutes for the default full gate or root aggregate.
+Full aggregates and acceptance reject test-flag overrides. The frozen format contract in
 `evidence/package-identity/contract-before-implementation.md` is a required test
 input and must be retained when integrating the source delta.
 
@@ -134,15 +142,14 @@ an explicit cap argument to the same harness and record it in their manifests.
 
 ## Explicit compiler-integration pin
 
-The runner now accepts --compiler-sha256 as an explicit expected 64-character
-lowercase hexadecimal digest. Its default remains the historical accepted M022
-pin. The binary must match before the designated artifact directory is created
-or any native test output is produced. PACKAGE_IDENTITY_COMPILER_SHA256 passes
-that expected digest through the Make target; it does not bypass verification.
-A new compiler integration must record and review its expected pin independently,
-then deliberately supply it. Wrong/malformed pins and baseline-default behavior
-have independent rejection/compatibility checks. The format/oracle and frozen
-pre-implementation contract are unchanged.
+The native runner requires exactly one `--compiler-sha256` explicit expected
+64-character lowercase hexadecimal digest or `--developer-build-receipt` for a
+validated local fresh build. It has no historical default expected pin. An explicit
+pin must match before artifact/native output creation. A focused Make invocation
+can still supply `PACKAGE_IDENTITY_COMPILER_SHA256`; complete root pinned testing
+uses `make test-acceptance ACCEPTANCE_COMPILER_SHA256=...` under the shared contract.
+An observed hash does not constitute independent review. The format/oracle and
+frozen pre-implementation contract are unchanged, as are historical receipts.
 
 
 ## Current bounded resource-configuration checks

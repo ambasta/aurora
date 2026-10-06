@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded genuine IPC producer, classified decoder, copy and hostile adapter gates.
 
-Execution requires separate admission and an explicitly supplied compiler pin.
+Execution requires separate admission and one explicit pin or checked developer receipt.
 Fatal ASan/UBSan disables LeakSanitizer for the verified executor ptrace restriction.
 --check-cap-only is compiler-free configuration validation, never acceptance.
 """
@@ -15,9 +15,12 @@ import random
 import shutil
 import struct
 import subprocess
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 MAX = (1 << 64) - 1
 # Independent literal relation: operation -> phase -> state*2+scrubbed.
 # No production branch, enum, invariant table or decoder is used as an oracle.
@@ -259,12 +262,13 @@ def symbol_map(data):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--compiler', default=str(ROOT / 'build/aurorac'))
-    parser.add_argument('--compiler-sha256', help='required for execution: independently reviewed exact SHA256; no default or self-derived pin')
+    add_identity_arguments(parser)
     parser.add_argument('--output')
     parser.add_argument('--candidate-cap-mib', type=int, default=128, help='whole-candidate cap 128..1024 MiB; increases require explicit aggregate admission')
     parser.add_argument('--check-cap-only', action='store_true', help='compiler-free configuration check; no acceptance receipt')
     parser.add_argument('--sanitize', action='store_true', default=os.environ.get('SANITIZE') == '1', help='fatal hosted ASan/UBSan; generated Aurora assembly remains uninstrumented')
     args = parser.parse_args()
+    validate_identity_selection(args, preflight=args.check_cap_only)
     cap_bytes = candidate_cap(args.candidate_cap_mib)
     cap_self_test()
     if args.check_cap_only:
@@ -272,10 +276,8 @@ def main():
             candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap_bytes,
             focused_default_mib=128, maximum_cap_mib=1024), sort_keys=True))
         return
-    need(args.compiler_sha256 is not None, '--compiler-sha256 is required for execution')
-    need(len(args.compiler_sha256) == 64 and all(c in '0123456789abcdef' for c in args.compiler_sha256), 'Invalid compiler pin')
-    compiler = Path(args.compiler).resolve()
-    need(sha(compiler) == args.compiler_sha256, 'Compiler pin mismatch')
+    compiler = Path(args.compiler).resolve(strict=True)
+    identity = resolve_identity(args, compiler, ROOT)
     guard(args.candidate_cap_mib)
     out = Path(args.output).resolve() if args.output else ROOT / 'build/kernel-ipc-transition-native' / str(time.time_ns())
     need(out.is_relative_to(ROOT), 'Output must remain inside the bounded candidate')
@@ -291,7 +293,7 @@ def main():
     pins = {name: sha(ROOT / name) for name in members}
     finite = [oracle(*values) for values in contexts()]
     need(len(finite) == 288 and finite.count(1) == 273 and sum(word > 1 for word in finite) == 15, 'Literal relation cardinality changed')
-    (out / 'inputs.json').write_text(json.dumps(dict(compiler_sha256=args.compiler_sha256, source_pins=pins,
+    (out / 'inputs.json').write_text(json.dumps(dict(compiler_identity=identity.record(), compiler_sha256=identity.sha256, source_pins=pins,
         candidate_cap_mib=args.candidate_cap_mib, sanitize=args.sanitize), indent=2) + '\n')
     assembly, obj, binary = out / 'language.s', out / 'language.o', out / 'observe'
     cap = args.candidate_cap_mib
@@ -323,10 +325,11 @@ def main():
     for name, artifact in (('native', binary), ('adapter', adapter), ('copy', copy_binary)):
         run(['objdump', '-drwC', str(artifact)], out, name + '-disassembly', cap)
         run(['readelf', '-sW', str(artifact)], out, name + '-symbols', cap)
-    need(sha(compiler) == args.compiler_sha256, 'Compiler changed during test')
+    need(sha(compiler) == identity.sha256, 'Compiler changed during test')
     need(pins == {name: sha(ROOT / name) for name in pins}, 'Source changed during test')
     guard(cap)
-    summary = dict(status='passed', compiler_sha256=sha(compiler), source_pins=pins, cases=counts,
+    identity.verify()
+    summary = dict(status='passed', compiler_identity=identity.record(), compiler_sha256=sha(compiler), source_pins=pins, cases=counts,
         candidate_cap_mib=cap, cap_bytes=cap_bytes, sanitize=args.sanitize,
         candidate_allocated_bytes=allocated(), free_bytes=shutil.disk_usage(ROOT).free,
         limits='Hosted observations only; no QEMU, whole-language safety proof, whole-kernel stack or acceptance claim. Generated assembly is not sanitizer-instrumented. LeakSanitizer is disabled for the executor ptrace restriction; no leak-clean claim.')

@@ -24,7 +24,8 @@ import time
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
-COMPILER_SHA256 = 'e1953ce8446973194a66ba579809c37459466f746f491a53a98b1c910ef4110e'
+sys.path.insert(0, str(ROOT / 'scripts'))
+from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 CONTRACT_SHA256 = '79af6fe35314b1dd17a6f1115c8269754866018e39061c5ad1cba6161634887f'
 CAP = 128 << 20
 MAX_CAP = 1024 << 20
@@ -46,6 +47,17 @@ def require(ok, message):
         raise AssertionError(message)
 
 
+def cap_self_test():
+    for mib in (128, 512, 513, 1023, 1024):
+        require(candidate_cap(mib) == mib << 20, 'candidate cap boundary conversion')
+    for mib in (-1, 0, 127, 1025, 1 << 30, True, 512.0, '1024', None):
+        try:
+            candidate_cap(mib)
+        except AssertionError:
+            continue
+        raise AssertionError('invalid candidate cap accepted')
+
+
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -65,17 +77,6 @@ def candidate_cap(mib):
     require(type(mib) is int and 128 <= mib <= 1024,
             'candidate cap must be an integer between 128 and 1024 MiB; increases require explicit aggregate admission')
     return mib << 20
-
-
-def cap_self_test():
-    for mib in (128, 512, 513, 1023, 1024):
-        require(candidate_cap(mib) == mib << 20, 'candidate cap boundary conversion')
-    for mib in (-1, 0, 127, 1025, 1 << 30, True, 512.0, '1024', None):
-        try:
-            candidate_cap(mib)
-        except AssertionError:
-            continue
-        raise AssertionError('invalid candidate cap accepted')
 
 
 def signed(value):
@@ -568,9 +569,10 @@ def main():
     parser.add_argument('--quick', '--smoke', dest='smoke', action='store_true', help='development subset, never the full acceptance gate')
     parser.add_argument('--self-test-only', action='store_true')
     parser.add_argument('--candidate-cap-mib', type=int, default=128, help='whole-candidate storage cap 128..1024 MiB; default 128; increases require explicit aggregate admission')
-    parser.add_argument('--compiler-sha256', default=COMPILER_SHA256, help='explicit expected compiler SHA256; default preserves accepted M022 pin')
     parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
+    add_identity_arguments(parser)
     args = parser.parse_args()
+    validate_identity_selection(args, preflight=args.self_test_only or args.check_cap_only)
     cap = candidate_cap(args.candidate_cap_mib)
     if args.check_cap_only:
         cap_self_test()
@@ -578,13 +580,13 @@ def main():
             candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap,
             focused_default_mib=128, maximum_cap_mib=1024), sort_keys=True))
         return
+    if not args.self_test_only:
+        compiler = args.compiler.resolve(strict=True)
+        identity = resolve_identity(args, compiler, ROOT)
     self_test()
     if args.self_test_only:
         print('PASS independent regex/integer oracle and observation negative self-tests')
         return
-    compiler = args.compiler.resolve(strict=True)
-    require(re.fullmatch(r'[0-9a-f]{64}', args.compiler_sha256) is not None, 'expected compiler SHA256 must be 64 lowercase hex characters')
-    require(sha(compiler) == args.compiler_sha256, 'exact expected compiler SHA256 required')
     artifacts = artifact_path(args.artifact_root or ROOT/f'build/package-identity-{os.getpid()}')
     require(artifacts.parent.is_dir() and not artifacts.exists(), 'fresh artifact root with existing parent required')
     runner = Runner(compiler, artifacts, cap)
@@ -594,7 +596,7 @@ def main():
     pins = {str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p): sha(p) for p in
             [compiler, ROOT/'library/package/identity.au', ROOT/'library/std/array.au', Path(__file__).resolve(),
              frozen, Path(sys.executable).resolve(strict=True), *runner.tools.values()]}
-    report = dict(status='running', compiler_sha256_before=sha(compiler), pins=pins,
+    report = dict(status='running', compiler_identity=identity.record(), compiler_sha256_before=sha(compiler), pins=pins,
                   contract_document_sha256=sha(ROOT/'docs/package-identity-contract.md'),
                   authored_contract_sha256=sha(frozen),
                   tool_paths={name: str(path) for name, path in runner.tools.items()},
@@ -624,6 +626,7 @@ def main():
         for number, (label, source, words) in enumerate(negative_cases()):
             runner.reject(number, label, source, words)
         require(pins == {p: sha(ROOT/p) for p in pins}, 'compiler/library/test inputs changed during execution')
+        identity.verify()
         report['status'] = 'passed'
     except Exception as exc:
         report.update(status='failed', error=str(exc))
@@ -634,7 +637,7 @@ def main():
                       process_count=runner.process_count, finished_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
         (artifacts/'manifest.json').write_text(json.dumps(report, indent=2)+'\n')
     print(f'PASS package identity: {len(cases)} native cases, {report["complete_u64_observations"]} complete u64 observations, '
-          f'{2*report["rejection_cases"]} rejection runs; pinned compiler unchanged', flush=True)
+          f'{2*report["rejection_cases"]} rejection runs; selected compiler identity unchanged', flush=True)
 
 
 if __name__ == '__main__':

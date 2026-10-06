@@ -23,6 +23,39 @@ for the transition, next state and payload-treatment selection, while actual
 identity, storage and commit authority remain in trusted C++/assembly. An unused
 module or comparison against the old C++ decision does not meet the gate.
 
+## Accepted-base portable workflow integration
+
+The current local source candidate reconciles the reviewed final PR27 tooling
+and documentation overlay with the IPC source. PR27 merged at
+2026-10-05 22:52:33 UTC as main `772b9c8a6291aa3cc656b409ce0263f73d45b034`,
+tree `62a2728942d9c36df16bd00189260f6a94cb847e`. The 574-file source was
+historically identified by manifest
+`cad13bfbf84ff657b97ac9c4d44f4423d9238fe524119cb4727ad43eb4cf581c`.
+After the environment reset, its published file content and modes were independently
+Git-verified under recovery manifest
+`aa0e772957f2248bde3b369f4fc9dd3092a6faf0a4d392792dde176a553e81dd`;
+exact historical PR27 manifest bytes were not restored. This is a fresh
+reconstruction, with no presumed equality to the lost provisional integration.
+The original PR26/IPC ancestry and failed/interrupted receipts retain their scope.
+Independent review and the exact final source/runner binding remain explicit gates;
+this integration itself is source-only and has not been qualified or published.
+
+`make test-ipc-transaction` uses the shared fresh-build compiler receipt or an
+explicit externally reviewed pin. IPC is the sixth native cap consumer, with a
+128 MiB focused default and 1024 MiB explicit aggregate ceiling. Direct shell
+invocation requires supplied `AURORAC` and exactly one identity argument pair,
+`--compiler-sha256 DIGEST` or `--developer-build-receipt FILE`. It never rebuilds
+the supplied compiler or treats an observed self-hash as approval. The standalone
+runner's `--check-cap-only` route remains compiler-free and cannot issue native
+acceptance. Full native/model/sanitizer and emulator gates remain unrun for this
+integration; prior five-consumer tooling results do not qualify it. See the
+[developer-test contract](developer-test-contract.md).
+
+The provisional 51-mode UEFI clock qualification is source preparation only;
+the 126 other modes, capacity probes and normal restoration boots retain their
+original clock. See [emulator clock contract](kernel-emulator-clock-contract.md)
+for the preserved wall-time failure, exact argv binding and pending requalification.
+
 ## Public copied API
 
 `kernel.ipc_transition` exports an inline `TransactionSnapshot` holding three
