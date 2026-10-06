@@ -1,6 +1,6 @@
 # Copied Aurora IPC transaction transition candidate
 
-## Dependency and observable gate, before source implementation
+## Historical dependency and observable gate, before source implementation
 
 This candidate starts from accepted PR26 main
 `3ac216b64caf8b769147f1864aa8389011f0112b`, tree
@@ -37,8 +37,16 @@ Git-verified under recovery manifest
 exact historical PR27 manifest bytes were not restored. This is a fresh
 reconstruction, with no presumed equality to the lost provisional integration.
 The original PR26/IPC ancestry and failed/interrupted receipts retain their scope.
-Independent review and the exact final source/runner binding remain explicit gates;
-this integration itself is source-only and has not been qualified or published.
+The reconstructed 586-file source was published as draft PR28 head
+`073c8aeb8af49a38ead95a809cf5c5d595d97dd1`, tree
+`93ac7b4ed0a846ccc56fbfa305180d4bc7d6fde6`. Its tested manifest is
+`2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf`.
+Fresh full public developer D and pinned-prebuilt P release native workflows now
+have independent terminal/provenance and retained-corpus approval. PR28 remains
+draft and full IPC/kernel acceptance remains incomplete; see
+[native results and remaining gates](kernel-ipc-transition-integration-results.md).
+This subsequent documentation-only status overlay claims no execution of a new
+documentation source manifest.
 
 `make test-ipc-transaction` uses the shared fresh-build compiler receipt or an
 explicit externally reviewed pin. IPC is the sixth native cap consumer, with a
@@ -47,14 +55,24 @@ invocation requires supplied `AURORAC` and exactly one identity argument pair,
 `--compiler-sha256 DIGEST` or `--developer-build-receipt FILE`. It never rebuilds
 the supplied compiler or treats an observed self-hash as approval. The standalone
 runner's `--check-cap-only` route remains compiler-free and cannot issue native
-acceptance. Full native/model/sanitizer and emulator gates remain unrun for this
-integration; prior five-consumer tooling results do not qualify it. See the
-[developer-test contract](developer-test-contract.md).
+acceptance. Both complete D/P default graphs now pass all six actual native
+consumers with 1024 MiB sampled storage caps. Finite hosted model evidence is
+accepted only within its recorded limits: the 6,726-check service-budget host
+gate has no Mailbox/Dispatcher use or IPC/RR restart exercise. The five-entrypoint
+fatal ASan/UBSan supplement completed with five passed rows and original supervisor
+exit 0; independent terminal/corpus/linkage acceptance is still pending. Fresh
+emulator qualification remains pending; prior five-consumer tooling results
+remain historical. See the [developer-test contract](developer-test-contract.md).
 
-The provisional 51-mode UEFI clock qualification is source preparation only;
-the 126 other modes, capacity probes and normal restoration boots retain their
-original clock. See [emulator clock contract](kernel-emulator-clock-contract.md)
-for the preserved wall-time failure, exact argv binding and pending requalification.
+The provisional 51-mode UEFI clock source/argv controls have closed independent
+review, alongside bounded static review of 26 constructed images and conditional
+timer instruction analysis. The two supplemental input images have construction
+approval, but their separate linked review is platform-blocked and unaccepted.
+The 126 other modes, capacity probes and normal restoration boots retain their
+original clock. QEMU 10.0.13 has been restored with a passed version-only probe;
+runtime timing-premise review and fresh 177+3+2 guest qualification remain pending.
+See [emulator clock contract](kernel-emulator-clock-contract.md) for exact scope
+and the preserved wall-time failure. No new guest boot is claimed.
 
 ## Public copied API
 

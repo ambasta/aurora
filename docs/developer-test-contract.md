@@ -1,6 +1,20 @@
 # Developer test-build and explicit acceptance contract
 
-## Accepted-base IPC integration: source only
+## Current IPC native status — 2026-10-06
+
+Fresh full public developer D and pinned-prebuilt P release workflows on the
+586-file manifest `2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf`
+have independent terminal/provenance and retained-corpus approval. D built current
+source once; P recorded `externally-pinned-prebuilt` with zero bootstrap builds.
+All six actual 1024 MiB sampled-storage-cap consumers passed. These results do
+not establish sanitizer, guest-boot, broad-host or full IPC/kernel acceptance;
+the hosted service-budget gate does not exercise IPC/RR restart. See
+[exact results and limits](kernel-ipc-transition-integration-results.md).
+The following reconstruction and PR27 five-consumer records are historical;
+neither supplies substitute credit for the new runs. This status overlay changes
+documentation only and does not claim execution of its new source manifest.
+
+## Historical accepted-base IPC source reconciliation
 
 This candidate reconciles the 578-file IPC source, historically identified by
 manifest `531af7f09e4b7a3456e8e99df1e6f21a5edd7e7fe18455513d850faca825310c`,
@@ -307,8 +321,14 @@ exhaustive model, source-drift guards and fatal sanitizer paths are retained.
 New shell/metadata tests mock commands and cannot claim native acceptance.
 All six cap variables enter the existing both-entry developer/pinned-prebuilt
 mocked rejection controls. The retired executable-Make-expression observation
-stays retired and uncredited. Complete freshly admitted native and emulator
-qualification is still required after source review and a separate final freeze.
+stays retired and uncredited. Future changes to executable source still require
+source review, a separate final freeze and freshly admitted complete native and
+emulator qualification. For the exact 586-file `2b4da219…` source, full D/P native
+qualification is complete. The five-entrypoint fatal ASan/UBSan supplement has
+completed with five passed rows and original supervisor exit 0, but independent
+terminal/corpus/linkage acceptance remains pending. The missing input-image linked
+review, exact runtime timing premises and fresh 177+3+2 guest qualification also
+remain open. Documentation-only status changes do not imply a native rerun.
 
 ## Native-free emulator clock contract gate
 
@@ -318,7 +338,15 @@ It is also a prerequisite of the root `make test` aggregate and validates the
 immutable test context when nested inside a supervised run. This compiler-free
 target does not enter compiler-consuming dispatch, select/build a compiler,
 build an image or launch QEMU. Source/argv controls cannot qualify an emulator
-run. The target is authored but remains unexecuted for this reconstruction.
+run. Launcher syntax, both complete eight-method Python suites inside the public
+Make target, and retirement/normal plans passed in the separately admitted
+compiler-free stage on source manifest
+`e6c08e72e9764615043b4ef7c5a726c5a5dda12c6f1de9f8735ec0fe8b6230b7`.
+The target also completed within the independently accepted full D/P workflows
+on the later 586-file `2b4da219…` source, whose earlier clock-stage delta was
+documentation only. These controls establish no guest-boot result. See
+[integration results](kernel-ipc-transition-integration-results.md) for exact
+source and receipt identities.
 
 ## Earlier PR25-only focused evidence
 

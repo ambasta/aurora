@@ -1,0 +1,545 @@
+{
+  "D": {
+    "actual_original_exit": 0,
+    "bootstrap_builds": 1,
+    "compiler_context_sha256": "2e9d535d083b3579ca4fa33bb2b009c01215124f5ae067c5fa26b9edfa149110",
+    "corpus_review": "D_corpus_report",
+    "external_expected_sha256_in_product": null,
+    "independent_approval": "D_approval",
+    "origin": "fresh-source-build",
+    "original_session": 37204,
+    "product_run_sha256": "8ebc4d16633bb461c92d8f4695b1f642fe8b7b86e5742801dfeb56afcc928e39",
+    "public_command": "/usr/bin/make --jobs=1 test",
+    "run_id": "ipc-developer-full-001",
+    "terminal_review": "D_report",
+    "terminal_sha256": "4075601769c99a6b6fb8f90bf79f5dac0ac5959cb0b50c2deee831c5031502a3"
+  },
+  "P": {
+    "actual_original_exit": 0,
+    "bootstrap_builds": 0,
+    "compiler_context_sha256": "3120d0202d49f09d087ef2348453e63977222768ddc9e7fbddf2873732a089bd",
+    "corpus_review": "P_corpus_report",
+    "distinct_immutable_input_and_run_owned_compiler": true,
+    "independent_approval": "P_approval",
+    "origin": "externally-pinned-prebuilt",
+    "original_session": 2804,
+    "product_run_sha256": "1169f762ef75bf169d2b86cb3e7006900baed1093445b8f5f11d4c22df13c903",
+    "public_command": "/usr/bin/make --jobs=1 test-acceptance ACCEPTANCE_COMPILER=/workspace/scratch/48c5de6446f8/recovery-ipc-pinned-workflow-preparation-v2-20261006/inputs/aurorac ACCEPTANCE_COMPILER_SHA256=66bb719d0ad1622e97b7e448a724d153bb370080f0ce4aa1e5a0b6b322a4a298",
+    "terminal_review": "P_report",
+    "terminal_sha256": "00ee5b98512bba0f64a36791f00451e61d7647a966264687816bbc54bac48d56"
+  },
+  "SAN": {
+    "ASAN_OPTIONS": "detect_leaks=0:halt_on_error=1:abort_on_error=1",
+    "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+    "actual_original_supervisor_exit": 0,
+    "compiler_sha256": "66bb719d0ad1622e97b7e448a724d153bb370080f0ce4aa1e5a0b6b322a4a298",
+    "independent_acceptance": "pending",
+    "instrumentation_scope": "Hosted C++ only; release compiler and generated assembly uninstrumented.",
+    "leak_clean_claim": false,
+    "native_complete": false,
+    "observed_supervisor_completion_utc": "2026-10-06T05:37:15Z",
+    "original_completion": {
+      "bytes": 2051,
+      "path": "recovery-ipc-sanitizer-closed-handoff-20261006/PROCESS-COMPLETION.json",
+      "sha256": "70e62321d0a3e652424ef7a033e0445161d4832ed100e74022ebfef149ba0efd"
+    },
+    "original_supervisor_session": 14420,
+    "review_status": "Independent terminal/corpus/linkage audit active; no approval inferred.",
+    "rows": [
+      {
+        "label": "ipc-native-fatal",
+        "receipt_path": "recovery-ipc-sanitizer-stage-20261006/build/bounded-native-workloads/sanitizer-five/ipc-native-fatal.json",
+        "receipt_sha256": "92e0b93a59fc175062f56dcdb74ebc48df55e88479245e29872d470f7b70ba95",
+        "returncode": 0,
+        "status": "passed"
+      },
+      {
+        "label": "ipc-hosted-fatal",
+        "receipt_path": "recovery-ipc-sanitizer-stage-20261006/build/bounded-native-workloads/sanitizer-five/ipc-hosted-fatal.json",
+        "receipt_sha256": "82badc7c1ef82c0ce7ac65a4f07ef410a50f69b73f1bcb9a9cd4f0bfe7b02122",
+        "returncode": 0,
+        "status": "passed"
+      },
+      {
+        "label": "dispatch-hosted-fatal",
+        "receipt_path": "recovery-ipc-sanitizer-stage-20261006/build/bounded-native-workloads/sanitizer-five/dispatch-hosted-fatal.json",
+        "receipt_sha256": "e90c0b07ede2126d6054de002368ae1f5c60ea2dc28c7acb16ec2f78150a7bd8",
+        "returncode": 0,
+        "status": "passed"
+      },
+      {
+        "label": "user-disposal-hosted-fatal",
+        "receipt_path": "recovery-ipc-sanitizer-stage-20261006/build/bounded-native-workloads/sanitizer-five/user-disposal-hosted-fatal.json",
+        "receipt_sha256": "93b73d453701535031c6bb6173082682460710ed2fcd35867e9a50733282abc3",
+        "returncode": 0,
+        "status": "passed"
+      },
+      {
+        "label": "budget-hosted-fatal",
+        "receipt_path": "recovery-ipc-sanitizer-stage-20261006/build/bounded-native-workloads/sanitizer-five/budget-hosted-fatal.json",
+        "receipt_sha256": "d0fe8fe22e1858039bfea0ebfea5bc5f9d5faf81ac494fccc24f6e087384e7fb",
+        "returncode": 0,
+        "status": "passed"
+      }
+    ],
+    "run_id": "ipc-sanitizer-five-001",
+    "service_budget_scope": "6726 APIC/context/authority checks; no Mailbox/Dispatcher IPC or RR restart exercise.",
+    "source_bootstrap_builds": 0,
+    "source_manifest_sha256": "2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf",
+    "status": "completed_with_passed_rows_acceptance_pending",
+    "terminal": {
+      "bytes": 20134,
+      "path": "recovery-ipc-sanitizer-preparation-v2-20261006/aggregate-harness-review/runs/ipc-sanitizer-five-001/terminal.json",
+      "sha256": "6b69bd0378e222c560dfcf6109d0dfc978b94d88f850830c1f7522a2a0c0dc09"
+    }
+  },
+  "compiler_sha256": "66bb719d0ad1622e97b7e448a724d153bb370080f0ce4aa1e5a0b6b322a4a298",
+  "durability": {
+    "D_audits": {
+      "archive_bytes": 992050,
+      "archive_sha256": "953189777ab5314bc4004aab67d25cc1817b28d124ea1f0b9b4ef96081ed9418",
+      "completed_utc": "2026-10-06T03:13:04.705500+00:00",
+      "file_name": "aurora-ipc-full-developer-final-audits-and-next-preparation-20261006-001.tar.gz",
+      "library_file_id": "libfile_325cacc75af48191a5b9c76a38048f71",
+      "receipt": {
+        "bytes": 783,
+        "path": "recovery-ipc-full-D-audits-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+        "sha256": "3160df9065aa7f6c09fd9442a97db2ee984c53fc789347ca9a9ce01a4333c888"
+      },
+      "scope": "Closed joined D audits and unreviewed provisional P/SAN source checkpoints. No P/SAN selection or execution occurs in this backup.",
+      "version": 0
+    },
+    "D_raw": {
+      "archive_bytes": 95691118,
+      "archive_sha256": "e91939336b86966c03c052c565616ab2df20ce048e4556f56af8edbfe6ae9b09",
+      "completed_utc": "2026-10-06T03:02:17.747279+00:00",
+      "file_name": "aurora-ipc-full-developer-closed-raw-evidence-20261006-001.tar.gz",
+      "library_file_id": "libfile_249d0c71c6108191b0ea4dea793cec36",
+      "receipt": {
+        "bytes": 777,
+        "path": "recovery-ipc-full-D-raw-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+        "sha256": "7d3d2295d7834dda014d73232b547547d79ceab7755524f949bf502a50d4d64c"
+      },
+      "scope": "Complete existing closed D source/generated/raw corpora/control/publication evidence. Independent final audits remain separate; intentional producer cleanup not recreated; P/sanitizer/boot gates excluded.",
+      "version": 0
+    },
+    "P_audits": {
+      "archive_bytes": 1218777,
+      "archive_sha256": "05421b7d2fe8c3ffec298afb83948cfe27c1fa8bb48a202b131d867967901631",
+      "completed_utc": "2026-10-06T04:57:40.354199+00:00",
+      "file_name": "aurora-ipc-full-pinned-final-audits-20261006-001.tar.gz",
+      "library_file_id": "libfile_138832ce944081918e6bf45c48803744",
+      "receipt": {
+        "bytes": 788,
+        "path": "recovery-ipc-full-P-audits-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+        "sha256": "cb6e31c0bf912295d9ec33096fdeaca21e21993cc4de065c4fd37af0835a7b92"
+      },
+      "scope": "Closed independent joined P terminal/provenance and retained-corpus/hosted-linkage reviews with exact raw-backup receipt. Native P scope only; SAN, separately blocked input linked review, runtime boots and full kernel acceptance remain separate.",
+      "version": 0
+    },
+    "P_raw": {
+      "archive_bytes": 89957668,
+      "archive_sha256": "b509b50882d40386dfcddb84f59fea695991c2a253628d137eeeeddc384ed654",
+      "completed_utc": "2026-10-06T04:49:28.412676+00:00",
+      "file_name": "aurora-ipc-full-pinned-closed-raw-evidence-20261006-001.tar.gz",
+      "library_file_id": "libfile_fdfd286bfc24819184745d8d774b4e81",
+      "receipt": {
+        "bytes": 979,
+        "path": "recovery-ipc-full-P-raw-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+        "sha256": "2abf37f61d8b4d8fa4df43ed2df7a8a59ef0f5f1cf55a22da43899984c5a4342"
+      },
+      "scope": "Complete closed fresh P source/generated tree and public receipts, P preparation/admissions, independent controls review and original completion/argv/network-exception record. Prior durable D/source receipt references retained; future P terminal/corpus audits pending. No sanitizer/QEMU or blocked linked-review credit.",
+      "version": 0
+    }
+  },
+  "native_limits": [
+    "Counts include repeated vectors; D and P are separate workflows over overlapping coverage, not additive unique cases.",
+    "Service-budget 6726 hosted checks instantiate neither Mailbox nor Dispatcher and call neither IPC nor RR; no restart exercise.",
+    "1150 successful package-identity products were deliberately deleted; their recorded hashes are not restored bytes.",
+    "Hosted model summaries are aggregate observations, not retained per-step traces.",
+    "P host closure joins prior D full-byte pass, exact capture equality and current metadata/membership/executable checks; no fresh full-host-byte or continuous attestation claim.",
+    "7200-second deadlines are polled owned-command limits; preflight, blocking checks, cleanup and final hashing can lie outside them.",
+    "Sampled resources/namespaces are not hard quotas, aggregate RSS bounds or exhaustive descendant attestation."
+  ],
+  "other_closed_scopes": {
+    "clock_controls": {
+      "actual_outer_commands": [
+        {
+          "argv": [
+            "/usr/bin/timeout",
+            "--signal=TERM",
+            "--kill-after=5s",
+            "10s",
+            "/usr/bin/env",
+            "-i",
+            "PATH=/usr/bin:/bin",
+            "LC_ALL=C",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "/usr/bin/bash",
+            "-n",
+            "scripts/kernel-uefi-smoke.sh"
+          ],
+          "cwd": "/workspace/scratch/48c5de6446f8/aurora-ipc-clock-recovered-candidate-20261005",
+          "expected_exit": 0,
+          "label": "launcher-syntax"
+        },
+        {
+          "argv": [
+            "/usr/bin/timeout",
+            "--signal=TERM",
+            "--kill-after=5s",
+            "300s",
+            "/usr/bin/env",
+            "-i",
+            "PATH=/usr/bin:/bin",
+            "LC_ALL=C",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "/usr/bin/make",
+            "--no-print-directory",
+            "-j1",
+            "test-emulator-clock"
+          ],
+          "cwd": "/workspace/scratch/48c5de6446f8/aurora-ipc-clock-recovered-candidate-20261005",
+          "expected_exit": 0,
+          "label": "public-clock-contract-normal-and-optimized"
+        },
+        {
+          "argv": [
+            "/usr/bin/timeout",
+            "--signal=TERM",
+            "--kill-after=5s",
+            "10s",
+            "/usr/bin/env",
+            "-i",
+            "PATH=/usr/bin:/bin",
+            "LC_ALL=C",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "/usr/bin/bash",
+            "scripts/kernel-uefi-smoke.sh",
+            "--clock-plan",
+            "user-retire-pending"
+          ],
+          "cwd": "/workspace/scratch/48c5de6446f8/aurora-ipc-clock-recovered-candidate-20261005",
+          "expected_exit": 0,
+          "label": "retirement-command-plan"
+        },
+        {
+          "argv": [
+            "/usr/bin/timeout",
+            "--signal=TERM",
+            "--kill-after=5s",
+            "10s",
+            "/usr/bin/env",
+            "-i",
+            "PATH=/usr/bin:/bin",
+            "LC_ALL=C",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "/usr/bin/bash",
+            "scripts/kernel-uefi-smoke.sh",
+            "--clock-plan"
+          ],
+          "cwd": "/workspace/scratch/48c5de6446f8/aurora-ipc-clock-recovered-candidate-20261005",
+          "expected_exit": 0,
+          "label": "default-normal-command-plan"
+        }
+      ],
+      "command_plans": 2,
+      "later_2b4_delta": "Documentation only; no new clock-control execution inferred.",
+      "optimized_methods": 8,
+      "ordinary_methods": 8,
+      "python_modes_are_recipes_in_one_public_make_row": true,
+      "source_manifest_sha256": "e6c08e72e9764615043b4ef7c5a726c5a5dda12c6f1de9f8735ec0fe8b6230b7"
+    },
+    "image_construction": {
+      "commands": 54,
+      "guest_boots": 0,
+      "preserved_variants": 26
+    },
+    "linked_26_static": "Accepted only under the report's explicit stack, mapping, instruction and bootstrap assumptions; no runtime credit.",
+    "portable_controls": {
+      "cap_cases_each_python_mode": 192,
+      "methods_each_python_mode": 76,
+      "native_executed": false
+    },
+    "supplemental_input_construction": {
+      "commands": 6,
+      "guest_boots": 0,
+      "linked_review": "platform-blocked and UNACCEPTED; not inspected or continued for this overlay",
+      "preserved_input_variants": 2
+    },
+    "timer_22_conditional": "Conditional fixed0 instruction envelope; exact runtime APIC/MMIO/IRET/delivery premises still require review."
+  },
+  "per_workflow_default_graph": {
+    "actual_native_consumers": 6,
+    "cap_configuration_cases_each_python_mode": 192,
+    "cap_configuration_is_native_execution": false,
+    "cap_mib_per_native_consumer": 1024,
+    "cap_semantics": "Configured sampled storage guards; not aggregate RSS limits or filesystem quotas.",
+    "compiler_contract_methods_each_python_mode": 76,
+    "compiler_direct_recipe_commands": 39,
+    "compound_gates": 5,
+    "retained_recipe_echo_records": 83,
+    "root_prerequisites_including_context": 34
+  },
+  "per_workflow_family_results": {
+    "ipc_transition": {
+      "copy_repetitions_of_one_probe": 4096,
+      "decoder_rows": 401488,
+      "finite_accepted": 15,
+      "finite_contexts": 288,
+      "finite_refused": 273,
+      "policy_rows": 114613,
+      "rejection_runs": 32,
+      "sanitize": false
+    },
+    "kernel_budget": {
+      "decoder_rows": 815301,
+      "policy_rows": 104120
+    },
+    "package_graph": {
+      "cases": 5548,
+      "rejection_runs": 60,
+      "u64_observations": 333671
+    },
+    "package_identity": {
+      "cases": 5503,
+      "rejection_runs": 40,
+      "u64_observations": 199213
+    },
+    "package_manifest": {
+      "cases": 20022,
+      "rejection_runs": 58,
+      "u64_observations": 1827671
+    },
+    "round_robin": {
+      "copy_repetitions": 4096,
+      "decoder_rows": 1051016,
+      "policy_rows": 17672
+    }
+  },
+  "qemu": {
+    "archive_sha256": "c16513c2eeded321f18f23043470306a4699a938fd68bead3554dc42475a3c26",
+    "canonical_physical_entries": 213,
+    "canonical_version_only_probe_exit": 0,
+    "debian_version": "1:10.0.13+ds-0+deb13u1",
+    "excluded_optional_dependencies": [
+      "libbrlapi.so.0.8",
+      "libusbredirparser.so.1",
+      "libcacard.so.0"
+    ],
+    "executable_sha256": "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067",
+    "guest_boots": 0,
+    "historical_pins_restored": 146,
+    "library_file_id": "libfile_6dfe2257f48c8191801063086795fa9b",
+    "runtime_env_is_new_not_historically_byte_matched": true,
+    "runtime_timing_premise_review": "pending",
+    "version": "10.0.13",
+    "version_probe_invocations": 1
+  },
+  "reference_resolution": "Paths identify preserved workspace-relative records, not files committed here. Native raw and audit archives have separate exact Library locators above. This index reads their closed receipts; it does not claim a new archive download or independent re-audit.",
+  "references": {
+    "D_approval": {
+      "bytes": 1766,
+      "path": "recovery-ipc-full-D-terminal-review-20261006/APPROVAL.json",
+      "sha256": "66f348acb10119562d86cf2d4bf0dbafb28442e6f081f6f96338f8e8953e825d"
+    },
+    "D_audits_durability": {
+      "bytes": 783,
+      "path": "recovery-ipc-full-D-audits-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+      "sha256": "3160df9065aa7f6c09fd9442a97db2ee984c53fc789347ca9a9ce01a4333c888"
+    },
+    "D_corpus_report": {
+      "bytes": 15150,
+      "path": "recovery-ipc-full-D-corpus-review-20261006/REPORT.md",
+      "sha256": "6430eb0ae31086350570c1ac632e90cd7a882d1d542660ad3202e29c172d17e1"
+    },
+    "D_corpus_seal": {
+      "bytes": 4301,
+      "path": "recovery-ipc-full-D-corpus-review-20261006/SEAL.json",
+      "sha256": "6b22201c9cda5af6d8e7c4977364e46a3c3bfb060ab3fcaabcd047da11489dea"
+    },
+    "D_raw_durability": {
+      "bytes": 777,
+      "path": "recovery-ipc-full-D-raw-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+      "sha256": "7d3d2295d7834dda014d73232b547547d79ceab7755524f949bf502a50d4d64c"
+    },
+    "D_report": {
+      "bytes": 14951,
+      "path": "recovery-ipc-full-D-terminal-review-20261006/REPORT.md",
+      "sha256": "c60e8814410cc97e99948212a50eb8c0ff712e14689fa7d3b98df94fcbc2b4a8"
+    },
+    "D_seal": {
+      "bytes": 1961,
+      "path": "recovery-ipc-full-D-terminal-review-20261006/SEAL.json",
+      "sha256": "eb4f87800ace3ad6e0489587fd06976f75e614c0d2a7a75491af9677519bcce9"
+    },
+    "P_approval": {
+      "bytes": 2622,
+      "path": "recovery-ipc-full-P-terminal-review-20261006/APPROVAL.json",
+      "sha256": "c2c390873f1c55f869395fc9ff88fefa900fce20c64463a009981d118539297e"
+    },
+    "P_audits_durability": {
+      "bytes": 788,
+      "path": "recovery-ipc-full-P-audits-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+      "sha256": "cb6e31c0bf912295d9ec33096fdeaca21e21993cc4de065c4fd37af0835a7b92"
+    },
+    "P_corpus_report": {
+      "bytes": 18623,
+      "path": "recovery-ipc-full-P-corpus-review-20261006/REPORT.md",
+      "sha256": "8ce41f9f32eccbe2a85202367cd688fad623c779acc354bbe2e3cc47e11337f6"
+    },
+    "P_corpus_seal": {
+      "bytes": 6174,
+      "path": "recovery-ipc-full-P-corpus-review-20261006/SEAL.json",
+      "sha256": "88ae8cd45bb587a10e61c62344390d2cb691af45b5169c7d1f3402ae986f6752"
+    },
+    "P_raw_durability": {
+      "bytes": 979,
+      "path": "recovery-ipc-full-P-raw-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+      "sha256": "2abf37f61d8b4d8fa4df43ed2df7a8a59ef0f5f1cf55a22da43899984c5a4342"
+    },
+    "P_report": {
+      "bytes": 18589,
+      "path": "recovery-ipc-full-P-terminal-review-20261006/REPORT.md",
+      "sha256": "63a6877c7fb274008640ee82d28140634de3b70805628684648bb0292eaa2964"
+    },
+    "P_seal": {
+      "bytes": 1659,
+      "path": "recovery-ipc-full-P-terminal-review-20261006/SEAL.json",
+      "sha256": "a1d0381e1217200fc53a6d5928b157e75fd7537beb9771839842ab2149a29990"
+    },
+    "SAN_evidence_seal": {
+      "bytes": 890,
+      "path": "recovery-ipc-sanitizer-preparation-v2-20261006/aggregate-harness-review/runs/ipc-sanitizer-five-001/evidence-seal.json",
+      "sha256": "7e1ca385644a29261874c3936dec824f67e7aac8a95b87c493025d0a6a6f8140"
+    },
+    "SAN_input_selection": {
+      "bytes": 3195,
+      "path": "recovery-ipc-sanitizer-preparation-v2-20261006/aggregate-harness-review/ROOT-PIN-SELECTION.json",
+      "sha256": "bde3a96113b621d4ccc4f8a84b115da7fa57d9bf54b387e616e4687350b4ff65"
+    },
+    "SAN_original_completion": {
+      "bytes": 2051,
+      "path": "recovery-ipc-sanitizer-closed-handoff-20261006/PROCESS-COMPLETION.json",
+      "sha256": "70e62321d0a3e652424ef7a033e0445161d4832ed100e74022ebfef149ba0efd"
+    },
+    "SAN_prepared_commands": {
+      "bytes": 1703,
+      "path": "recovery-ipc-sanitizer-preparation-v2-20261006/native-commands.json",
+      "sha256": "5c4ea1ca73222a474a3d694c7575ae46335fec8277f32395859f43488aff39e3"
+    },
+    "SAN_terminal": {
+      "bytes": 20134,
+      "path": "recovery-ipc-sanitizer-preparation-v2-20261006/aggregate-harness-review/runs/ipc-sanitizer-five-001/terminal.json",
+      "sha256": "6b69bd0378e222c560dfcf6109d0dfc978b94d88f850830c1f7522a2a0c0dc09"
+    },
+    "clock_controls_report": {
+      "bytes": 8453,
+      "path": "recovery-ipc-clock-controls-terminal-review-20261006/REPORT.md",
+      "sha256": "3326f2f200232e07d70872fdcecc9ac576f8055f9bf417944c48170f41fa4dd1"
+    },
+    "clock_controls_seal": {
+      "bytes": 1541,
+      "path": "recovery-ipc-clock-controls-terminal-review-20261006/SEAL.json",
+      "sha256": "76a3fbf961cda2e4b0ff2e4ee9f59c03c6e3784faa2bb3328be6e39cb0816f57"
+    },
+    "clock_controls_terminal": {
+      "bytes": 487611,
+      "path": "recovery-ipc-clock-controls-20261005-run001/terminal.json",
+      "sha256": "5dc40776e6cc03650132ab3f1fcf64e372c5165f745a315156fa47746dec15ea"
+    },
+    "images_26_report": {
+      "bytes": 9860,
+      "path": "recovery-ipc-image-stage-terminal-review-20261006/REPORT.md",
+      "sha256": "37610ce400b150cdb0001a2f9becb336f8fc46c818c5d7928aad84c984a36162"
+    },
+    "images_26_seal": {
+      "bytes": 1899,
+      "path": "recovery-ipc-image-stage-terminal-review-20261006/FINAL-SEAL.json",
+      "sha256": "a2a7590def8d5737e51ee5376dd703326a6fec4359bb2ec1f9fca66f1b2622a1"
+    },
+    "inputs_2_construction_report": {
+      "bytes": 12684,
+      "path": "recovery-ipc-input-guard-terminal-review-20261006/REPORT.md",
+      "sha256": "efb5fc3538bd7e5f95bb7b8eac5aa369f645eccbc203d39b583189b167744ae4"
+    },
+    "inputs_2_construction_seal": {
+      "bytes": 1688,
+      "path": "recovery-ipc-input-guard-terminal-review-20261006/FINAL-SEAL.json",
+      "sha256": "8ca4b978551c842842c4d5945236084b713e1e628622ab7ff1b77cc9d4da2db1"
+    },
+    "linked_26_static_report": {
+      "bytes": 24193,
+      "path": "recovery-ipc-linked-stack-review-20261006/REPORT.md",
+      "sha256": "8bbc728dedae1fc969557bc72229cdddfa630baa98f21442cc35954800afdb0a"
+    },
+    "linked_26_static_seal": {
+      "bytes": 9582,
+      "path": "recovery-ipc-linked-stack-review-20261006/FINAL-SEAL.json",
+      "sha256": "d1e329cf1df01ca66a27a3965999c3fe7dff8d38601a5e5b20d7db63cd5fb296"
+    },
+    "portable_controls_report": {
+      "bytes": 8966,
+      "path": "recovery-ipc-portable-controls-terminal-review-20261006/REPORT.md",
+      "sha256": "e97a71bcdbe7ab41ea2fe061f742fc64b3ed588322ceba57de771dd5ded160a1"
+    },
+    "portable_controls_seal": {
+      "bytes": 1520,
+      "path": "recovery-ipc-portable-controls-terminal-review-20261006/SEAL.json",
+      "sha256": "0481f662f102f02bd7e5ed7c9a9c3a28aa37f153eac382ef81278d899d617ba5"
+    },
+    "qemu_acquisition": {
+      "bytes": 1589,
+      "path": "recovery-qemu-exact-20261006T0442/provenance/acquisition-summary.json",
+      "sha256": "5a765da321614b9f2b8219fa92075967bd9545d93506b726299f53c92908ecf4"
+    },
+    "qemu_durability": {
+      "bytes": 880,
+      "path": "recovery-qemu-exact-20261006T0442/library-roundtrip-verification.json",
+      "sha256": "17c2b77e63f8cf668f3564dac0be46d47517588436b163d58b65a134f7c39ef7"
+    },
+    "qemu_version_closure": {
+      "bytes": 2620,
+      "path": "recovery-qemu-activation-20261006T0458/canonical-closure-receipt.json",
+      "sha256": "bfa38d5c7cffb235c3dce01a1329bde0f975d84b6201dfb46675a53fced20a78"
+    },
+    "timer_conditional_report": {
+      "bytes": 19322,
+      "path": "recovery-ipc-timer-instruction-review-20261006/REPORT.md",
+      "sha256": "2c1b8a77535df884c85d86531005f1d1449b9bcd315a1ef87c71b59b8ce699d3"
+    },
+    "timer_conditional_seal": {
+      "bytes": 5668,
+      "path": "recovery-ipc-timer-instruction-review-20261006/FINAL-SEAL.json",
+      "sha256": "e9991144688f00dbd304e1b70624730b300a1cedb1c798c48a89f628f6eb0b8e"
+    }
+  },
+  "remaining": {
+    "SAN": "Exact five-entrypoint fatal ASan/UBSan run completed with all five rows passed and original supervisor 14420 exit 0; native_complete=false. Independent terminal/corpus/linkage acceptance pending. Compiler/generated assembly uninstrumented; detect_leaks=0 gives no leak-clean result.",
+    "combined_OVMF": "No closed historical combined-OVMF recovery/durability receipt is joined in this record. Distinct CODE/VARS images cannot replace that input.",
+    "emulator": "Fresh full 177 production modes, three BIOS capacity probes, two actual normal restoration boots pending.",
+    "no_claim": [
+      "CI success",
+      "ready for review or merge",
+      "full IPC/kernel acceptance",
+      "full Linux compatibility",
+      "Gentoo make-test",
+      "broad-host portability",
+      "physical-device qualification",
+      "whole-kernel or language-wide safety",
+      "performance equivalence"
+    ],
+    "preserved_failure": "Original wall-clock aggregate failed user-retire-pending at mode 163 after 162 partial passes. Later single traced success is inconclusive and spent; no prefix/retry credit."
+  },
+  "schema": "aurora-ipc-native-status-v1",
+  "scope": "Accepted exact D/P release native workflows; incomplete IPC/kernel qualification; documentation composition requires separate review.",
+  "source": {
+    "accepted_main": "772b9c8a6291aa3cc656b409ce0263f73d45b034",
+    "documentation_overlay_executed": false,
+    "tested_draft_head": "073c8aeb8af49a38ead95a809cf5c5d595d97dd1",
+    "tested_draft_tree": "93ac7b4ed0a846ccc56fbfa305180d4bc7d6fde6",
+    "tested_file_count": 586,
+    "tested_manifest_sha256": "2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf"
+  },
+  "status_at_utc": "2026-10-06T05:44:22Z"
+}

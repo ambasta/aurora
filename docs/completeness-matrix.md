@@ -1,30 +1,42 @@
 # Completeness and acceptance matrix
 
-## Unverified copied IPC transaction policy candidate
+## Native-reviewed copied IPC transition candidate — 2026-10-06
 
-The operational six-operation Mailbox decision, next state and payload-effect
-selection are being moved into Aurora using accepted copied class/enum features.
-Identity, participant liveness, rights, exact transaction/generation matching,
-payload storage and mutation remain trusted bootstrap responsibilities. Bind and
-revoke are unchanged. Per-call refusals preserve every mailbox byte and generation;
-composite accepted prefixes remain committed. The [contract](kernel-ipc-transition-contract.md)
-requires independent native/model/fatal-sanitizer, both-stack ABI and linked-image
-reviews, a fresh full aggregate, 177 production emulator modes, three capacity
-probes and two normal restoration boots. None is claimed passed by source authoring.
-No new general service, scheduler, unsafe language ingress or physical-device
-qualification is introduced.
+All six operational Mailbox transitions now use the copied Aurora policy, while
+identity, rights, exact transaction/generation matching, payload storage and commit
+remain trusted bootstrap responsibilities. Bind/revoke are unchanged. Individual
+refusals preserve mailbox bytes and generation; committed composite prefixes stay
+committed. Fresh complete public D and P default release native workflows on the
+586-file `2b4da219…` source have independent terminal/provenance and corpus approval,
+including six actual 1024 MiB sampled-storage-cap consumers. D built current source
+once; P used a distinct externally pinned prebuilt copy with zero bootstrap builds.
+
+This is finite native evidence, not full IPC/kernel acceptance. The hosted
+6,726-check service-budget gate has no Mailbox/Dispatcher IPC or RR restart
+exercise. The five-entrypoint fatal ASan/UBSan supplement completed with all five
+rows passed and original supervisor exit 0; independent terminal/corpus/linkage
+acceptance is pending, with `native_complete=false`, compiler/generated assembly
+uninstrumented and leak checking disabled. The 26-image bounded static review
+and conditional timer review retain their assumptions; the two supplemental
+input images have a platform-blocked, unaccepted linked review. All 177 production
+emulator modes, three capacity probes and two actual normal restoration boots are
+still required. PR28 remains draft over accepted PR27. This later documentation
+overlay claims no new execution. See the [contract](kernel-ipc-transition-contract.md)
+and [exact results and limits](kernel-ipc-transition-integration-results.md).
 
 ## Provisional UEFI clock qualification
 
-The explicit 51-mode UEFI instruction-clock contract is implemented as source
-preparation, with 126 other modes, three capacity probes and both normal restoration
-boots retaining their original clock. The original retirement aggregate failure
-and inconclusive traced success remain separate evidence. No fresh 177-mode pass
-is claimed. All guest budgets/validators and distinct generated-image, native,
-compiled/context/pending/exhaustion obligations remain. See
-[the pending clock contract](kernel-emulator-clock-contract.md).
+The explicit 51-mode instruction-clock source/argv controls have passed their
+ordinary/optimized eight-method suites and retirement/normal plans. The 126 other
+production modes, three capacity probes and both normal restoration boots retain
+their original clock. The original mode-163 retirement failure after 162 partial
+passes and inconclusive traced success remain preserved. QEMU 10.0.13 has been
+restored and durably verified, with one passed version-only probe and no guest boot.
+Exact runtime timing-premise review and fresh 177+3+2 qualification remain pending;
+all budgets, loops, strict validators and distinct pending/context/exhaustion
+obligations remain. See [the clock contract](kernel-emulator-clock-contract.md).
 
-## Current developer-test tooling candidate — 2026-10-05
+## Prior five-consumer developer-test workflow — 2026-10-05
 
 The [shared test contract](developer-test-contract.md) adds build-once local
 developer provenance and an explicit externally pinned native acceptance route.

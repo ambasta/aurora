@@ -53,7 +53,7 @@ Do not write it to a physical disk or replace a host bootloader.
 See [kernel instructions](kernel/README.md) and [verification](docs/verification.md)
 for tools, exact commands, evidence and limitations.
 
-## Unverified Aurora IPC transition candidate
+## Native-reviewed Aurora IPC transition candidate
 
 The next kernel increment moves all six real Mailbox lifecycle decisions to a
 pure copied Aurora class/enum policy. Checked host adapters retain identities,
@@ -65,8 +65,15 @@ specifies the finite truth table, two stack contexts and four new real fault mod
 Source authoring is not native or emulator acceptance. The standalone focused
 `test-ipc-transaction` target now uses the same supervised fresh-build receipt or
 explicit externally reviewed compiler identity as the other portable native gates.
-This six-consumer integration remains source-only and has not inherited acceptance
-from the earlier five-consumer tooling checkpoint.
+Fresh full public developer and externally pinned prebuilt release native workflows
+now have independent approval for the 586-file `2b4da219…` source, including all
+six actual cap consumers. This later documentation-only update is not a new test
+run. Full IPC/kernel acceptance remains incomplete. The five-entrypoint fatal
+ASan/UBSan supplement completed with all five rows passed and original supervisor
+exit 0, but independent acceptance is pending. The linked review of both input
+images and fresh 177+3+2 guest qualification remain open.
+The 6,726-check hosted service-budget gate does not exercise IPC/RR restart.
+See [exact native results and limits](docs/kernel-ipc-transition-integration-results.md).
 
 ## Provisional UEFI clock qualification
 
@@ -75,8 +82,11 @@ instruction-clock command contract prepared for review. The other 126 modes,
 three BIOS capacity probes and both normal restoration boots retain the original
 clock. Budgets, guest source and strict validators are unchanged. The original
 IPC aggregate remains failed at retirement; a later traced success is inconclusive.
-Source-only clock checks and fresh combined native/emulator qualification remain
-pending. See [the clock contract](docs/kernel-emulator-clock-contract.md).
+Compiler-free clock controls and the exact D/P native workflows have now passed;
+bounded linked-image and conditional instruction reviews retain their stated
+assumptions. QEMU 10.0.13 is restored with a passed version-only probe, but exact
+runtime timing-premise review and fresh guest qualification remain pending.
+See [the clock contract](docs/kernel-emulator-clock-contract.md).
 
 ## Verified Aurora two-slot scheduling policy
 
