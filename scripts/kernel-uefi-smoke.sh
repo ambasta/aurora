@@ -21,10 +21,12 @@ case "$mode" in
 esac
 log="build/uefi/$mode.log"
 set +e
+# Keep QEMU off the terminal: timeout's background process group would be
+# stopped by SIGTTOU when -serial stdio changes a terminal's mode.
 timeout 30 "$qemu" "${args[@]}" -machine q35 -accel tcg -cpu "$cpu" -smp "$cpus" -m 128M \
     "${UEFI_FIRMWARE_ARGS[@]}" -drive format=raw,file=fat:ro:build/uefi/esp,snapshot=on \
     -nic none -display none -serial stdio -monitor none -no-reboot \
-    -device isa-debug-exit,iobase=0xf4,iosize=0x04 >"$log" 2>&1
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04 </dev/null >"$log" 2>&1
 status=$?
 set -e
 cat "$log"
