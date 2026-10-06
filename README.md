@@ -44,7 +44,7 @@ coverage-reducing test overrides. See [the shared contract](docs/developer-test-
 for supported GNU flags, explicit pins, provenance and limits. Historical
 checkpoint results below apply only to their identified sources.
 
-`make smoke-all` configures 177 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. The four new IPC transaction fault profiles are authored but not yet qualified; the earlier 173-mode checkpoint remains historical. It also runs three dedicated BIOS capacity probes (a full 127-sector read and two failing controls). `make smoke-scheduling` runs the nine scheduling gates alone, and
+`make smoke-all` configures 177 unique normal/adversarial BIOS, UEFI, ACPI, PCI and checked-arithmetic gates. All four new IPC transaction fault profiles passed in the scoped 182-boot runtime checkpoint; the separate input-linked review remains unaccepted. The earlier 173-mode checkpoint remains historical. It also runs three dedicated BIOS capacity probes (a full 127-sector read and two failing controls). `make smoke-scheduling` runs the nine scheduling gates alone, and
 `make smoke-uefi` runs the eight OVMF gates (set OVMF to the firmware path).
 Missing QEMU is a blocked test, not a pass. The raw `build/aurora.img` is a
 disposable emulator image, **not an installer for a physical machine**.
@@ -53,40 +53,39 @@ Do not write it to a physical disk or replace a host bootloader.
 See [kernel instructions](kernel/README.md) and [verification](docs/verification.md)
 for tools, exact commands, evidence and limitations.
 
-## Native-reviewed Aurora IPC transition candidate
+## Runtime-reviewed Aurora IPC transition candidate
 
-The next kernel increment moves all six real Mailbox lifecycle decisions to a
-pure copied Aurora class/enum policy. Checked host adapters retain identities,
-rights, generations, transaction matching, actual payload storage and atomic
-commit. A refused or malformed individual transition cannot mutate any mailbox
-or consume a generation. Composite operations preserve already committed earlier
-transitions; they do not promise rollback. The [reviewed contract](docs/kernel-ipc-transition-contract.md)
-specifies the finite truth table, two stack contexts and four new real fault modes.
-Source authoring is not native or emulator acceptance. The standalone focused
-`test-ipc-transaction` target now uses the same supervised fresh-build receipt or
-explicit externally reviewed compiler identity as the other portable native gates.
-Fresh full public developer and externally pinned prebuilt release native workflows
-now have independent approval for the 586-file `2b4da219…` source, including all
-six actual cap consumers. This later documentation-only update is not a new test
-run. Full IPC/kernel acceptance remains incomplete. The five-entrypoint fatal
-ASan/UBSan supplement completed with all five rows passed and original supervisor
-exit 0, but independent acceptance is pending. The linked review of both input
-images and fresh 177+3+2 guest qualification remain open.
-The 6,726-check hosted service-budget gate does not exercise IPC/RR restart.
-See [exact native results and limits](docs/kernel-ipc-transition-integration-results.md).
+All six real Mailbox lifecycle decisions now use a copied Aurora class/enum
+policy. Trusted host adapters retain identities, rights, generations, transaction
+matching, payload storage and commits. Refused or malformed individual calls
+preserve mailbox bytes and generations; composite operations preserve committed
+prefixes without rollback. See the [contract](docs/kernel-ipc-transition-contract.md).
 
-## Provisional UEFI clock qualification
+The exact 586-file `2b4da219…` source has independently accepted full developer
+and pinned-prebuilt native runs, a separately scoped five-entrypoint fatal
+ASan/UBSan supplement, and **177 production emulator modes + three capacity
+probes + two actual normal restoration boots**. The original runtime supervisor
+exited 0; independent terminal and raw-corpus reviews passed. Normal IPC returns
+42; dispatch returns 42/73/42 in order 0,1,0. All four request/cancellation
+corruption modes reject at their intended pre-commit boundaries.
 
-Exactly 51 service-budget, dispatcher and user-phase modes now have a closed
-instruction-clock command contract prepared for review. The other 126 modes,
-three BIOS capacity probes and both normal restoration boots retain the original
-clock. Budgets, guest source and strict validators are unchanged. The original
-IPC aggregate remains failed at retirement; a later traced success is inconclusive.
-Compiler-free clock controls and the exact D/P native workflows have now passed;
-bounded linked-image and conditional instruction reviews retain their stated
-assumptions. QEMU 10.0.13 is restored with a passed version-only probe, but exact
-runtime timing-premise review and fresh guest qualification remain pending.
-See [the clock contract](docs/kernel-emulator-clock-contract.md).
+PR28 remains **draft and unaccepted overall**: the two input-guard linked reviews
+are still platform-blocked and unaccepted. Runtime passes do not replace them.
+The hosted 6,726-check service-budget model does not exercise IPC/RR restart;
+actual guest lifecycle results are separately identified in the
+[results and receipt index](docs/kernel-ipc-transition-integration-results.md).
+This documentation-only update is not a new executable-source test run.
+
+## Scoped UEFI instruction-clock qualification
+
+Exactly 51 service-budget, dispatcher and user-phase modes passed with the fixed
+instruction clock. The other 126 production modes, three capacity probes and
+both normal restoration boots retained the original clock. Budgets, guest loops
+and strict validators were unchanged. The exact restored QEMU 10.0.13 and
+historical combined OVMF image were used. The earlier wall-clock retirement
+failure remains unresolved stress evidence; the new instruction-clock success
+does not explain or repair it. See the [clock contract](docs/kernel-emulator-clock-contract.md)
+for the qualified runtime, stack, namespace and resource limits.
 
 ## Verified Aurora two-slot scheduling policy
 

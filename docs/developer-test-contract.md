@@ -8,8 +8,11 @@ have independent terminal/provenance and retained-corpus approval. D built curre
 source once; P recorded `externally-pinned-prebuilt` with zero bootstrap builds.
 All six actual 1024 MiB sampled-storage-cap consumers passed. These results do
 not establish sanitizer, guest-boot, broad-host or full IPC/kernel acceptance;
-the hosted service-budget gate does not exercise IPC/RR restart. See
-[exact results and limits](kernel-ipc-transition-integration-results.md).
+the hosted service-budget gate does not exercise IPC/RR restart. Separately, the
+five-entrypoint fatal sanitizer supplement and all 177+3+2 actual runtime boots
+now have scoped independent acceptance on that same 586-file source. Their
+evidence does not close the blocked input-guard linked gate or qualify a new
+documentation-only source. See [exact results and limits](kernel-ipc-transition-integration-results.md).
 The following reconstruction and PR27 five-consumer records are historical;
 neither supplies substitute credit for the new runs. This status overlay changes
 documentation only and does not claim execution of its new source manifest.

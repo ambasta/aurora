@@ -59,20 +59,21 @@ acceptance. Both complete D/P default graphs now pass all six actual native
 consumers with 1024 MiB sampled storage caps. Finite hosted model evidence is
 accepted only within its recorded limits: the 6,726-check service-budget host
 gate has no Mailbox/Dispatcher use or IPC/RR restart exercise. The five-entrypoint
-fatal ASan/UBSan supplement completed with five passed rows and original supervisor
-exit 0; independent terminal/corpus/linkage acceptance is still pending. Fresh
-emulator qualification remains pending; prior five-consumer tooling results
-remain historical. See the [developer-test contract](developer-test-contract.md).
+fatal ASan/UBSan supplement now has independent scoped acceptance. The complete
+177+3+2 runtime regression on that same 586-file source also passed and has
+independent terminal/control and raw-corpus acceptance. Prior five-consumer
+results retain their historical scope. See the [results and limits](kernel-ipc-transition-integration-results.md)
+and [developer-test contract](developer-test-contract.md).
 
-The provisional 51-mode UEFI clock source/argv controls have closed independent
-review, alongside bounded static review of 26 constructed images and conditional
-timer instruction analysis. The two supplemental input images have construction
-approval, but their separate linked review is platform-blocked and unaccepted.
-The 126 other modes, capacity probes and normal restoration boots retain their
-original clock. QEMU 10.0.13 has been restored with a passed version-only probe;
-runtime timing-premise review and fresh 177+3+2 guest qualification remain pending.
-See [emulator clock contract](kernel-emulator-clock-contract.md) for exact scope
-and the preserved wall-time failure. No new guest boot is claimed.
+The exact 51-mode UEFI instruction-clock family and all 126 original-clock modes
+passed, followed by three original-clock capacity probes and two actual normal
+restoration boots. QEMU 10.0.13 and the exact historical combined OVMF image were
+bound to the admitted run. The 26-image static and conditional timing reviews
+retain their assumptions. Both supplemental input-guard linked reviews remain
+platform-blocked and unaccepted; their runtime passes are not substitutes. Full
+IPC/kernel acceptance and merge qualification remain incomplete. The original
+wall-clock retirement failure remains preserved and unexplained. See the
+[clock contract](kernel-emulator-clock-contract.md).
 
 ## Public copied API
 

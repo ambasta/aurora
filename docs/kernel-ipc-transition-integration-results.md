@@ -1,8 +1,9 @@
-# IPC transition native results and remaining integration gates
+# IPC transition native and runtime results
 
 As of 2026-10-06, the exact full public developer **D** and pinned-prebuilt **P**
-release native workflows have independent terminal/provenance and retained-corpus
-approval. This is native acceptance of the tested candidate, not full IPC/kernel
+release native workflows, the separate fatal sanitizer supplement and the full
+182-boot runtime regression have independent scoped acceptance. The two input-guard
+linked reviews remain blocked and unaccepted, so this is not full IPC/kernel
 acceptance. PR28 remains draft; accepted main remains PR27
 `772b9c8a6291aa3cc656b409ce0263f73d45b034`.
 
@@ -68,7 +69,8 @@ committed composite prefixes remain committed; no aggregate rollback is promised
 The **6,726-check service-budget host gate instantiates neither Mailbox nor
 Dispatcher and calls neither IPC nor round robin**. Its APIC/context/authority
 checks do not demonstrate IPC cancellation or restart. Whole-root linkage does
-not close that behavioral gap. Actual service-budget runtime evidence remains due.
+not close that behavioral gap. The separately reviewed actual guest lifecycle
+results below supply runtime evidence without relabeling this hosted model.
 
 ## Other closed evidence, each with its own scope
 
@@ -95,22 +97,80 @@ not close that behavioral gap. Actual service-budget runtime evidence remains du
   separate linked-image review is **platform-blocked and UNACCEPTED**. This status
   overlay neither inspected nor continued that review or its quarantined helper.
 
-## Restored QEMU identity is not guest qualification
+## Completed 177+3+2 runtime regression — 2026-10-06
 
-Historical QEMU unavailability in the earlier static reports describes their
-review time. QEMU **10.0.13** (`Debian 1:10.0.13+ds-0+deb13u1`) has now been
-restored and durably read back: 146 historical executable/library/firmware pins,
-main executable SHA256
-`d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067`.
-Canonical activation verified 213 physical entries and one version-only probe
-returned exit 0 at 2026-10-06 05:02:24 UTC. Its closure receipt is
-`bfa38d5c7cffb235c3dce01a1329bde0f975d84b6201dfb46675a53fced20a78`.
-No guest or firmware boot occurred. The runtime environment file is newly
-constructed, not historically byte-matched. Optional braille, USB redirection
-and smartcard modules/dependencies are absent and excluded. Exact runtime timing
-premises, firmware/launcher bindings and guest qualification remain pending.
-These QEMU receipts do not close recovery or durable backup of the historical
-combined OVMF image; distinct CODE/VARS images cannot substitute for it.
+One newly admitted run completed all 177 production modes, three BIOS capacity
+probes and two additional normal restoration boots. Original supervisor session
+13448 exited 0; terminal completion is 2026-10-06 10:32:21.906857 UTC. Independent
+terminal/control and guest-corpus reviews passed, and the parent accepted their
+scoped result. No failed prefix or diagnostic attempt supplies credit.
+
+| Evidence | SHA256 |
+|---|---|
+| Actual terminal | `95bdf3904e3abf9705c8bebec64e971036867fea397eaa2ea44e472e14f58339` |
+| Independent runtime approval | `9516ab78fa562aa7f39de2604854276bee3f800377862f2bb5a60a3f0baeb16d` |
+| Terminal/control report | `bd9e61fb85d78e3faab13adb0ce5b97f6c75a8157d0ab2848ff90d27f2ba6e54` |
+| Raw-corpus report | `04d3dc5b98d3d6142e01565655f9dc1d3d46abf07bba910f4fcdbb01e3c9de4b` |
+| Run seal: 1,299 files and 84 directories | `99c1a041e8b234873c7d34a822c7d681261bbc78eaddf253cae2dc616ffc2694` |
+
+All 182 complete QEMU arrays and expected statuses matched: 54 exits of 33 and
+128 intended exits of 35. Exactly 51 timer-family modes used
+`-icount shift=0,align=off,sleep=off`; 126 other production modes and all five
+capacity/restoration boots kept the original clock. No guest loop, 128/3 budget
+or strict validator was weakened. Both normal restoration boots actually ran.
+
+Normal IPC returned and consumed 42; dispatch returned 42/73/42 in client order
+0,1,0. Mixed dispatch preserved an already committed reply while cancelling its
+peer. Cancellation consumption, service restart, retirement and rebinding passed.
+The request input/output faults stopped after a valid envelope and before submit;
+the cancellation input/output faults stopped after delivery, authenticated service
+bounds failure and supervisor restoration, before cancel commit. All four matched
+output-image guards passed before their guest launches. Input-mode runtime passes
+do not replace the blocked linked reviews.
+
+The independent timer recount covered 141 armed runs, 3,652 charged ticks,
+14 kernel drains and nine context samples. Nine modes retained genuine three-tick
+exhaustion; context and pending-drain requirements stayed distinct. Retirement's
+instruction-clock service runs recorded 78 compiled ticks, including the required
+old-owner drain before disposal/rebind and preserved peer completion. These are
+observations, not new acceptance thresholds or performance measurements. They do
+not explain or repair the historical wall-clock failure.
+
+The run used exact restored QEMU 10.0.13 (`Debian 1:10.0.13+ds-0+deb13u1`),
+executable SHA256 `d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067`,
+and the historical 4 MiB combined OVMF image, SHA256
+`14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db`.
+Firmware came directly from authenticated package bytes, not CODE/VARS
+concatenation. Effective argv, clean environment, absent default configuration
+and excluded optional modules remain bound. The earlier version-only probe was
+not a guest result; the separately admitted run supplies the new guest evidence.
+
+All 181 supervised commands used the observed-owned-leader namespace branch,
+with recorded actual exits and empty cleanup remaining/signals. The reduced
+terminal-source-assumed branch was unused in this run. These are sampled
+observations, not lifetime or descendant-wide namespace proofs. Source/runtime
+identity, canonical lease closure and all 1,383 sealed entries were verified.
+The running allocation sample peaked at 1,658,089,472 bytes; a later preterminal
+sample was 1,658,368,000 bytes. Neither is a whole-lifecycle physical peak.
+The 4 GiB plan retained its 64 MiB terminal reserve and separately charged
+64 MiB unlinked-snapshot engineering allowance; no hard physical quota is claimed.
+
+Raw and final-audit evidence have private Library receipts with exact full
+readback. These locators do not grant access to other readers:
+
+| Archive | Library file | Bytes | SHA256 |
+|---|---|---:|---|
+| Closed raw source/run evidence | `libfile_74fddefa6d688191a1f6516dbf7f308e` | 10,399,397 | `df3feae7d7b2ec24b12cfe47575d6d61625717cc9e574c52e885ea6804bfc8cc` |
+| Final independent audits | `libfile_54992a2480c08191bed106e9775635b7` | 92,249 | `f0d2484992251ac7f7e0cb7f8dfc26ecd530cd09a2915c644d7b31abf451ca19` |
+
+The raw readback verified 2,451 original regular files, 153 directories and its
+manifest; the audit readback verified all 21 members. Exact receipt and report
+paths/hashes are in the [index](evidence/ipc-transition-policy/receipts.json).
+The earlier full-run preflight failed because its new comparator omitted SAN's
+sealed absent `tmp` sentinel; all native bytes/modes were unchanged. That failure
+remains preserved. A narrowly reviewed successor and one ten-method mocked
+control passed before the new preflight and sole actual runtime run.
+
 
 ## Preserved failures, remaining gates and evidence limits
 
@@ -126,14 +186,18 @@ separately selected copy of the accepted D compiler. All five rows passed; origi
 supervisor session **14420** returned actual exit **0**, observed at 2026-10-06
 05:37:15 UTC. Terminal SHA256 is
 `6b69bd0378e222c560dfcf6109d0dfc978b94d88f850830c1f7522a2a0c0dc09`.
-Independent terminal/corpus/linkage review remains active and **acceptance is
-pending**. This is a completed bounded supplement, with `native_complete=false`,
-not a new full native aggregate. The release compiler and generated assembly are
-uninstrumented, and `detect_leaks=0` cannot establish leak cleanliness. Fresh full **177 production
-emulator modes + three BIOS capacity probes + two actual normal restoration boots**
-remain pending. All 51 selected instruction-clock modes, 126 original-clock
-production modes and five capacity/restoration exclusions retain their exact
-command and strict validator obligations. No budget, loop or validator is weakened.
+Independent sanitizer review accepted its 140 scoped checks, approval
+`a250ffba5445a31f8f445d8b242a90f799e80e6a82d4f21af86d3f5432488019`.
+It remains `native_complete=false`, not another full aggregate. The release
+compiler and generated assembly are uninstrumented; `detect_leaks=0` gives no
+leak-clean result. The tiny copy wrapper contains ASan initialization/registration
+only, without operation-level load/store or UBSan handler instrumentation.
+
+The required remaining technical gate is the **platform-blocked, unaccepted
+linked review of both input-guard images**. Runtime acceptance does not waive it.
+PR28 remains draft and `overall_merge_qualified=false`. This docs-only successor
+of `d6891c9d6a09dd154df9e11a7a2d7e800e617252` preserves executable inputs; it is
+not relabeled as the executed 586-file manifest.
 
 Successful package-identity assembly/object/executable products were deliberately
 deleted by the unchanged producer: 1,150 files per workflow remain absent, with

@@ -515,6 +515,11 @@
     }
   },
   "remaining": {
+    "input_guard_linked_gate": "platform-blocked-unaccepted for both input images; runtime passes do not substitute",
+    "overall_merge_qualified": false,
+    "preserved_wall_clock_failure": "user-retire-pending mode163 failed after162 passes; later traced success inconclusive; new instruction-clock pass does not explain or repair it"
+  },
+  "remaining_at_native_snapshot": {
     "SAN": "Exact five-entrypoint fatal ASan/UBSan run completed with all five rows passed and original supervisor 14420 exit 0; native_complete=false. Independent terminal/corpus/linkage acceptance pending. Compiler/generated assembly uninstrumented; detect_leaks=0 gives no leak-clean result.",
     "combined_OVMF": "No closed historical combined-OVMF recovery/durability receipt is joined in this record. Distinct CODE/VARS images cannot replace that input.",
     "emulator": "Fresh full 177 production modes, three BIOS capacity probes, two actual normal restoration boots pending.",
@@ -531,8 +536,98 @@
     ],
     "preserved_failure": "Original wall-clock aggregate failed user-retire-pending at mode 163 after 162 partial passes. Later single traced success is inconclusive and spent; no prefix/retry credit."
   },
+  "runtime_update_20261006": {
+    "actual_boots": 182,
+    "actual_original_supervisor_exit": 0,
+    "approval": {
+      "path": "recovery-ipc-emulator-runtime-terminal-review-20261006/APPROVAL.json",
+      "sha256": "9516ab78fa562aa7f39de2604854276bee3f800377862f2bb5a60a3f0baeb16d"
+    },
+    "audit_durability_receipt": {
+      "path": "recovery-ipc-runtime-final-audit-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+      "sha256": "8e114442193f910d549562d899171863a5ee3db9a3b92a4356d2f614c45122f6"
+    },
+    "audit_library": {
+      "archive_bytes": 92249,
+      "archive_sha256": "f0d2484992251ac7f7e0cb7f8dfc26ecd530cd09a2915c644d7b31abf451ca19",
+      "file_id": "file_0000000025988208bbb2fef603cdb718",
+      "library_file_id": "libfile_54992a2480c08191bed106e9775635b7",
+      "members_verified": 21
+    },
+    "capacity_probes": 3,
+    "closed_lease": {
+      "path": "recovery-ipc-emulator-inventory-control-preparation-20261006/ownership/closed-lease-emulator-ipc-clock-inventory-emulator-001.json",
+      "sha256": "b6033c979c82e51bcb4ba0ceb9ca1b1d07f96fe16ba4adf9a5aba48f30fcff9e"
+    },
+    "combined_ovmf_sha256": "14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db",
+    "compiler_sha256": "66bb719d0ad1622e97b7e448a724d153bb370080f0ce4aa1e5a0b6b322a4a298",
+    "completed_utc": "2026-10-06T10:32:21.906857+00:00",
+    "corpus_report": {
+      "path": "recovery-ipc-runtime-corpus-review-20261006/REPORT.md",
+      "sha256": "04d3dc5b98d3d6142e01565655f9dc1d3d46abf07bba910f4fcdbb01e3c9de4b"
+    },
+    "corpus_review_seal": {
+      "path": "recovery-ipc-runtime-corpus-review-20261006/FINAL-SEAL.json",
+      "sha256": "116d7a99e4fc78534d76cd4936116f2e5c0b552136b04506a955af921036bd47"
+    },
+    "expected_exit_33": 54,
+    "expected_exit_35": 128,
+    "fixed_instruction_clock_boots": 51,
+    "input_guard_linked_gate": "platform-blocked-unaccepted",
+    "namespace_model": "All181 supervised units used observed-owned-leader-at-spawn; no lifetime/descendant proof; terminal-source-assumed branch unused",
+    "no_new_executable_source_test_claim_for_docs": true,
+    "normal_restoration_boots": 2,
+    "original_clock_boots": 131,
+    "original_supervisor_session": 13448,
+    "overall_merge_qualified": false,
+    "prior_docs_only_commit": "d6891c9d6a09dd154df9e11a7a2d7e800e617252",
+    "prior_docs_only_source_manifest_sha256": "99dc8633d45d2f2a90f7eef55051178a9c75aca71cb67c183550d9f5a1ec352b",
+    "production_modes": 177,
+    "raw_durability_receipt": {
+      "path": "recovery-ipc-emulator-raw-checkpoint-20261006-001/DURABILITY-RECEIPT.json",
+      "sha256": "7fa0add2e32d0c1612d3db769264a2e55aa109560c81309912b3a062dfb73ed6"
+    },
+    "raw_library": {
+      "archive_bytes": 10399397,
+      "archive_sha256": "df3feae7d7b2ec24b12cfe47575d6d61625717cc9e574c52e885ea6804bfc8cc",
+      "file_id": "file_000000003e8c820896133ff5d22d9f5e",
+      "library_file_id": "libfile_74fddefa6d688191a1f6516dbf7f308e",
+      "verified_archive_members": 2605
+    },
+    "run_seal": {
+      "path": "recovery-ipc-emulator-inventory-control-preparation-20261006/review/runs/ipc-clock-inventory-emulator-001/SHA256.json",
+      "sha256": "99c1a041e8b234873c7d34a822c7d681261bbc78eaddf253cae2dc616ffc2694"
+    },
+    "sampled_resource_bytes": {
+      "later_preterminal": 1658368000,
+      "running_peak": 1658089472,
+      "whole_lifecycle_physical_peak_measured": false
+    },
+    "sanitizer_approval": {
+      "path": "recovery-ipc-sanitizer-terminal-review-20261006/APPROVAL.json",
+      "sha256": "a250ffba5445a31f8f445d8b242a90f799e80e6a82d4f21af86d3f5432488019"
+    },
+    "sealed_directories": 84,
+    "sealed_regular_files": 1299,
+    "source_file_count": 586,
+    "source_manifest_sha256": "2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf",
+    "status": "independently-accepted-scoped-runtime-regression",
+    "terminal": {
+      "path": "recovery-ipc-emulator-inventory-control-preparation-20261006/review/runs/ipc-clock-inventory-emulator-001/results.json",
+      "sha256": "95bdf3904e3abf9705c8bebec64e971036867fea397eaa2ea44e472e14f58339"
+    },
+    "terminal_report": {
+      "path": "recovery-ipc-emulator-runtime-terminal-review-20261006/REPORT.md",
+      "sha256": "bd9e61fb85d78e3faab13adb0ce5b97f6c75a8157d0ab2848ff90d27f2ba6e54"
+    },
+    "terminal_review_seal": {
+      "path": "recovery-ipc-emulator-runtime-terminal-review-20261006/SEAL.json",
+      "sha256": "12eb43bba99756a164c243f4562f65349f9f2a4710a61f254ebf34c968f05254"
+    },
+    "tested_source_commit": "073c8aeb8af49a38ead95a809cf5c5d595d97dd1"
+  },
   "schema": "aurora-ipc-native-status-v1",
-  "scope": "Accepted exact D/P release native workflows; incomplete IPC/kernel qualification; documentation composition requires separate review.",
+  "scope": "Historical native snapshot at status_at_utc, plus separately accepted current runtime_update_20261006; full IPC/kernel and merge acceptance remain incomplete.",
   "source": {
     "accepted_main": "772b9c8a6291aa3cc656b409ce0263f73d45b034",
     "documentation_overlay_executed": false,

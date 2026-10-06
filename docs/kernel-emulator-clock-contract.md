@@ -1,13 +1,15 @@
-# Provisional UEFI emulator clock qualification
+# Scoped UEFI emulator clock qualification
 
 ## Status and preserved failure
 
-**Compiler-free clock controls and exact D/P native workflows have passed;
-fresh guest qualification remains pending.** The source/argv controls, 54-command
-26-image construction, bounded linked review and conditional timer instruction
-review have closed reports. Two supplemental IPC input images also have closed
-construction/terminal evidence, but their separate linked review is platform-blocked
-and unaccepted. None of these results establishes a guest boot or clock repair.
+**The exact 182-boot runtime regression has passed independent terminal and
+raw-corpus review.** All 177 production modes, three capacity probes and two
+actual normal restoration boots completed on the tested 586-file `2b4da219…`
+source. The 51 instruction-clock modes and 131 original-clock boots were checked
+against complete admitted argv, expected statuses and strict traces. Native and
+scoped sanitizer acceptance remain separate. Both supplemental input-guard
+linked reviews are still platform-blocked and unaccepted, so overall IPC/kernel
+acceptance remains incomplete. See [integration results](kernel-ipc-transition-integration-results.md).
 
 The tooling base remains accepted PR27 main
 `772b9c8a6291aa3cc656b409ce0263f73d45b034`, tree
@@ -91,11 +93,12 @@ closed at 2026-10-06 05:02:24 UTC, exit 0, reporting QEMU 10.0.13
 braille/USB-redirection/smartcard dependencies and modules are absent and excluded;
 the runtime environment file is new, not historically byte-matched. See the
 [receipt index](evidence/ipc-transition-policy/receipts.json). This establishes
-identity and loader/version viability only. Exact runtime APIC/MMIO/interrupt/
-IRET timing premises, firmware/launcher binding and fresh execution admission
-remain required.
+identity and loader/version viability only. A later independently reviewed exact-runtime
+APIC/MMIO/interrupt/IRET companion and fresh admission bound the completed
+182-boot run, including combined OVMF SHA256 `14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db`,
+clean environment, absent default QEMU configuration and excluded optional modules.
 
-The changed execution model remains part of the proposed qualification identity.
+The changed execution model remains part of the exact qualification identity.
 `budget-smp` deliberately keeps `-smp 2` and its original pre-timer admission
 rejection. Retirement's one-CPU envelope does not apply to that control. Other
 selected modes retain one guest CPU.
@@ -167,9 +170,10 @@ A fresh 22-driver emitted-instruction review now conditionally covers the
 countdowns, ordinary/resume tails and forced-pending loops against exact newly
 constructed image identities. The separate 26-image linked review addresses its
 bounded stack, mapping, authority and output-guard scope. Both retain their stated
-assumptions; the exact-runtime APIC/MMIO/IRET/delivery premises still require
-qualification. Shared source or the restored version string cannot establish
-runtime interrupts, timing margins, strict traces or the full 51-mode outcome.
+assumptions. The later exact-runtime premise companion and actual 51-mode family
+results are separately reviewed. Raw recount found 141 armed runs, 3,652 charged
+ticks, 14 kernel drains and nine context samples. These observations do not turn
+conditional instruction arithmetic into a general timing or performance guarantee.
 
 ## Source controls and remaining acceptance
 
@@ -202,16 +206,11 @@ establish runtime preemption or replace actual firmware boots.
 The clock-control stage used manifest
 `e6c08e72e9764615043b4ef7c5a726c5a5dda12c6f1de9f8735ec0fe8b6230b7`;
 the later native-tested `2b4da219…` source differs only in documentation. Complete
-D/P native workflows now have independent acceptance. The completed five-row
-fatal ASan/UBSan supplement still awaits independent terminal/corpus/linkage
-acceptance; the platform-blocked two-input-image linked review and exact-runtime
-timing premises remain separate. Before claiming guest qualification, close the missing
-reviews and exact source/tool/command/resource binding, then separately admit a
-complete fresh 177-mode emulator run, three capacity probes and two actual normal
-restoration boots. All prior caps, owned-process cleanup, failed-build retention
-and evidence ancestry requirements remain. The pinned external launcher adapter
-must be rebuilt and independently inverse-transform/guard-placement reviewed; its `cpus=1` insertion anchor is
-preserved. Both fixed-clock output guards and both original-clock IPC output
-guards must remain effective. Old source digests/mode-order-only digests cannot
-authorize the changed argv. No partial-prefix reuse, larger budget, selective
-retry, performance equivalence, physical hardware or full-177 passing claim follows.
+D/P native workflows and the separate five-row fatal ASan/UBSan supplement now
+have independent scoped acceptance. The complete fresh 177+3+2 runtime run is
+also independently accepted, with no prefix reuse. Its reviewed adapter, exact
+source/tool/command bindings, four preboot output guards and owned-process closure
+remain part of that result. The two-input-image linked review is still blocked
+and unaccepted. All 128/3 budgets, loops and strict validators remain unchanged;
+no selective retry, larger budget, physical-hardware or performance-equivalence
+claim follows. The original wall-clock failure remains unresolved stress evidence.

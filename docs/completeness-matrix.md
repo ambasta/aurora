@@ -1,40 +1,33 @@
 # Completeness and acceptance matrix
 
-## Native-reviewed copied IPC transition candidate — 2026-10-06
+## Runtime-reviewed copied IPC transition candidate — 2026-10-06
 
-All six operational Mailbox transitions now use the copied Aurora policy, while
-identity, rights, exact transaction/generation matching, payload storage and commit
-remain trusted bootstrap responsibilities. Bind/revoke are unchanged. Individual
-refusals preserve mailbox bytes and generation; committed composite prefixes stay
-committed. Fresh complete public D and P default release native workflows on the
-586-file `2b4da219…` source have independent terminal/provenance and corpus approval,
-including six actual 1024 MiB sampled-storage-cap consumers. D built current source
-once; P used a distinct externally pinned prebuilt copy with zero bootstrap builds.
+All six operational Mailbox transitions use the copied Aurora policy. Trusted
+bootstrap code retains identity, rights, transactions/generations, payload storage
+and commits; bind/revoke are unchanged. Individual refusals preserve records and
+generations, and already committed composite prefixes remain committed.
 
-This is finite native evidence, not full IPC/kernel acceptance. The hosted
-6,726-check service-budget gate has no Mailbox/Dispatcher IPC or RR restart
-exercise. The five-entrypoint fatal ASan/UBSan supplement completed with all five
-rows passed and original supervisor exit 0; independent terminal/corpus/linkage
-acceptance is pending, with `native_complete=false`, compiler/generated assembly
-uninstrumented and leak checking disabled. The 26-image bounded static review
-and conditional timer review retain their assumptions; the two supplemental
-input images have a platform-blocked, unaccepted linked review. All 177 production
-emulator modes, three capacity probes and two actual normal restoration boots are
-still required. PR28 remains draft over accepted PR27. This later documentation
-overlay claims no new execution. See the [contract](kernel-ipc-transition-contract.md)
-and [exact results and limits](kernel-ipc-transition-integration-results.md).
+The executed 586-file `2b4da219…` source has independent acceptance for full public
+D/P release native workflows, six actual native cap consumers, the separately
+scoped five-entrypoint fatal ASan/UBSan supplement, and all **182 actual boots**:
+177 production modes, three BIOS capacity probes and two additional normal
+restoration boots. Terminal/control and raw-corpus reviews passed, with exact
+source/runtime preservation and closed owned execution. See the
+[results](kernel-ipc-transition-integration-results.md) and [contract](kernel-ipc-transition-contract.md).
 
-## Provisional UEFI clock qualification
+The 51-mode timer family passed under its exact instruction-clock contract; 126
+other production modes and all five capacity/restoration boots retained their
+original clock. Nine genuine three-tick exhaustion modes, context samples and
+pending drains remain distinct obligations. The old wall-clock retirement failure
+and inconclusive traced attempt retain their original scope, with no prefix credit.
 
-The explicit 51-mode instruction-clock source/argv controls have passed their
-ordinary/optimized eight-method suites and retirement/normal plans. The 126 other
-production modes, three capacity probes and both normal restoration boots retain
-their original clock. The original mode-163 retirement failure after 162 partial
-passes and inconclusive traced success remain preserved. QEMU 10.0.13 has been
-restored and durably verified, with one passed version-only probe and no guest boot.
-Exact runtime timing-premise review and fresh 177+3+2 qualification remain pending;
-all budgets, loops, strict validators and distinct pending/context/exhaustion
-obligations remain. See [the clock contract](kernel-emulator-clock-contract.md).
+**Full IPC/kernel acceptance remains incomplete.** Both supplemental input-guard
+linked reviews remain platform-blocked and unaccepted; runtime results do not
+waive them. The 26-image stack/link review remains conditional on its exact bytes
+and assumptions. SAN excludes generated-assembly/compiler instrumentation and
+leak checking. The hosted service-budget model still has no IPC/RR restart
+coverage; actual guest results are separately credited. PR28 stays draft. This
+later docs/evidence-only source is not relabeled as the executed 586-file source.
 
 ## Prior five-consumer developer-test workflow — 2026-10-05
 
