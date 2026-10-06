@@ -4,7 +4,32 @@ Receipts are historical snapshots. A source manifest applies only to its own
 checkpoint, not a later tree with different code. Milestone001 belongs to commit
 `4ae3f1f475a3f61d8a1534a82ac5d7d532677c7e`.
 
-## Current test-tooling candidate — 2026-10-05
+## Checkpoint index
+
+For current capabilities, start with the [project overview](../README.md) and
+[completeness matrix](completeness-matrix.md). This record keeps the detailed
+milestone history; later changes have their own results rather than extending an
+older run's coverage.
+
+- [ASCII token scanner](token-scan-results.md): native aggregate and focused host sanitizers
+- [Local developer commands](local-development-results.md): compiler-only and normal boot checks
+- [Developer-test workflows](developer-test-workflow-results.md): fresh and pinned native routes
+- [Two-slot scheduling and short-circuit evaluation](kernel-round-robin-integration-results.md)
+- [Function overloads](function-overloads-integration-results.md)
+- [Readonly byte windows](readonly-windows-integration-results.md)
+- [Interrupt-budget policy](#aurora-interrupt-budget-policy-checkpoint--2026-10-05)
+- [Milestones 001–022 and XFS root lookup](#bring-up-checkpoint--2026-10-02): chronological records below
+
+Reproduction commands are in [local development](local-development.md) and the
+[developer-test contract](developer-test-contract.md); component-specific commands,
+source identities and failures remain in the linked results. Test counts describe
+their recorded source, compiler and environment, not every later revision.
+
+## Initial test-tooling candidate — 2026-10-05
+
+This historical source-only candidate was subsequently qualified in the
+[developer-test workflow results](developer-test-workflow-results.md). The original
+candidate status below is preserved as part of the development history.
 
 The [developer-test contract](developer-test-contract.md) separates a fresh
 current-source developer compiler from a caller-supplied independently reviewed
