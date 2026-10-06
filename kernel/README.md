@@ -8,6 +8,10 @@ are a disposable bring-up seam, not a permanent platform ABI.
 
 ## Build and verify
 
+For the shortest normal-boot commands and tool overrides, see
+[local development](../docs/local-development.md): `make run` and `make run-uefi`
+build and verify bounded, headless boot self-tests.
+
 From the repository root:
 
     ./scripts/kernel-build.sh

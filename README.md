@@ -16,11 +16,18 @@ Requirements: x86-64 Linux, GNU C++ with C++23 support, GNU Make, GNU binutils,
 Python 3, Bash, ripgrep, and QEMU system x86 for the actual emulator gates.
 
 ```sh
-make
+make help
+make run                     # normal BIOS QEMU boot, then exit
+OVMF=/path/to/OVMF.fd make run-uefi
+./scripts/compiler-test.sh    # complete compiler-only suite
 make test
 SANITIZE=1 ./scripts/kernel-tests.sh
 make smoke-all
 ```
+
+See [local development](docs/local-development.md) for build-only commands,
+dependencies, compiler/QEMU/firmware overrides, logs and troubleshooting. The run
+commands are bounded headless boot self-tests, not an interactive desktop or shell.
 
 `make test` now builds current compiler source once into a unique run-owned
 read-only executable, records local build provenance and routes the complete

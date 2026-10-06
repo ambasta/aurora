@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+cxx="${CXX:-g++}"
+for tool in "$cxx" make as ld objcopy objdump nm readelf python3; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 2; }; done
+export CXX="$cxx"
 mkdir -p build/uefi/esp/EFI/BOOT
 compiler="${AURORAC:-build/aurorac}"
 if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi
@@ -89,10 +92,10 @@ fi
 "$compiler" --module-root kernel/policies examples/kernel.au -o build/uefi/language.s
 as --64 build/uefi/language.s -o build/uefi/language.o
 as --64 kernel/uefi/payload-entry.S -o build/uefi/payload-entry.o
-g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/payload.cpp -o build/uefi/payload.o
-g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/acpi.cpp -o build/uefi/acpi.o
-g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/pci.cpp -o build/uefi/pci.o
-g++ "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -Ibuild/uefi -c kernel/uefi/runtime.cpp -o build/uefi/runtime.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/payload.cpp -o build/uefi/payload.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/acpi.cpp -o build/uefi/acpi.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/pci.cpp -o build/uefi/pci.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -Ibuild/uefi -c kernel/uefi/runtime.cpp -o build/uefi/runtime.o
 ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 build/uefi/payload-entry.o build/uefi/payload.o build/uefi/acpi.o build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" build/uefi/language.o -o build/uefi/payload.elf
 objcopy -O binary build/uefi/payload.elf build/uefi/payload.bin
 if [[ "${UEFI_MODE:-normal}" == runtime-table-* ]]; then
@@ -133,7 +136,7 @@ Path('build/uefi/embed.S').write_text('.section .rodata.payload,"a"\n.global uef
 PY
 as --64 build/uefi/embed.S -o build/uefi/embed.o
 as --64 kernel/uefi/transition.S -o build/uefi/transition.o
-g++ "${flags[@]}" "${extra[@]}" -fpie -maccumulate-outgoing-args -Ibuild/uefi -c kernel/uefi/loader.cpp -o build/uefi/loader.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -maccumulate-outgoing-args -Ibuild/uefi -c kernel/uefi/loader.cpp -o build/uefi/loader.o
 for name in loader embed transition; do objcopy --remove-section=.comment --remove-section=.note.GNU-stack "build/uefi/$name.o" "build/uefi/$name-pe.o"; done
 ld -mi386pep --subsystem 10 --entry=aurora_efi_entry --image-base=0x100000 --enable-reloc-section --no-insert-timestamp build/uefi/loader-pe.o build/uefi/embed-pe.o build/uefi/transition-pe.o -o build/uefi/esp/EFI/BOOT/BOOTX64.EFI
 printf 'Built UEFI PE32+ loader and independent payload\n'
