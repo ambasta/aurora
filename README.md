@@ -63,10 +63,10 @@ Boot the self-test payload with QEMU system x86-64 and GNU `timeout`:
 
 ```sh
 make run
-OVMF=/path/to/OVMF.fd make run-uefi
+make run-uefi
 ```
 
-The UEFI command requires a combined OVMF ROM. Both commands run headless,
+UEFI discovers an installed combined ROM or matching CODE/VARS pair. Both commands run headless,
 validate serial output and exit. Images are disposable emulator inputs; do not
 write them to a physical disk or replace your bootloader.
 

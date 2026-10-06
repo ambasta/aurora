@@ -30,7 +30,7 @@ class DeveloperCommands(unittest.TestCase):
         self.record = self.home / "calls"
         self.env = {"PATH": str(self.bin), "HOME": str(self.home),
                     "CALLS": str(self.record), "LC_ALL": "C"}
-        for name in ("kernel-run.sh", "compiler-test.sh", "kernel-build.sh", "kernel-uefi-build.sh"):
+        for name in ("kernel-run.sh", "compiler-test.sh", "kernel-build.sh", "kernel-uefi-build.sh", "uefi-firmware.sh", "uefi-linker.sh", "host-build-check.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
         for name in ("bash", "dirname", "cat", "mkdir", "printf"):
@@ -40,6 +40,7 @@ class DeveloperCommands(unittest.TestCase):
         for name in ("qemu-system-x86_64", "timeout", "g++", "python3",
                      "as", "ld", "objcopy", "objdump", "nm", "readelf"):
             self.tool(name, "exit 93\n")
+        self.tool("ld", 'printf "Supported emulations:\n i386pep\n"\n')
         self.tool("make", 'printf "make|%s|%s|%s|%s\\n" "$PWD" "$*" "${CXX-}" "${CXXFLAGS-}" >> "$CALLS"\nexit "${FAKE_STATUS:-0}"\n')
         for name, label in (("kernel-smoke.sh", "bios"), ("kernel-uefi-smoke.sh", "uefi")):
             self.script(self.scripts / name,
@@ -148,6 +149,34 @@ class DeveloperCommands(unittest.TestCase):
         self.assertIn("Missing dependency: readelf", self.run_script("kernel-uefi-build.sh", expected=2))
         self.assert_no_work()
 
+    def test_uefi_missing_pe_linker_fails_before_outputs(self):
+        self.tool("ld", 'printf "Supported emulations:\n elf_x86_64\n"\n')
+        self.assertIn("i386pep", self.run_script("kernel-uefi-build.sh", expected=2))
+        self.assert_no_work()
+
+    def test_make_uefi_checks_linker_before_compiler_build(self):
+        self.tool("ld", 'printf "Supported emulations:\n elf_x86_64\n"\n')
+        result = subprocess.run([MAKE, "kernel-uefi"], cwd=self.repo, env=self.env,
+                                text=True, capture_output=True, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Missing UEFI PE linker", result.stderr)
+        self.assert_no_work()
+
+    def test_explicit_uefi_linker_never_falls_back(self):
+        self.assertIn("UEFI_LD", self.run_script("kernel-uefi-build.sh",
+            env={"UEFI_LD": "no-such-linker"}, expected=2))
+        self.tool("elf-only", 'printf "Supported emulations:\n elf_x86_64\n"\n')
+        self.run_script("kernel-uefi-build.sh", env={"UEFI_LD": "elf-only"}, expected=2)
+        self.assert_no_work()
+
+    def test_uefi_cross_linker_fallback_and_explicit_path(self):
+        self.tool("ld", 'printf "Supported emulations:\n elf_x86_64\n"\n')
+        self.tool("x86_64-w64-mingw32-ld", 'printf "Supported emulations:\n i386pep\n"\n')
+        self.run_script("kernel-uefi-build.sh", env={"FAKE_STATUS": "79"}, expected=79)
+        chosen = str(self.tool("selected PE linker", 'printf "Supported emulations:\n i386pep\n"\n'))
+        self.run_script("kernel-uefi-build.sh", env={"UEFI_LD": chosen, "FAKE_STATUS": "79"}, expected=79)
+        self.assertEqual(len(self.calls()), 2)
+
     def test_image_builders_export_selected_cxx_to_compiler_make(self):
         cxx = str(self.tool("g++-16", "exit 93\n"))
         (self.bin / "g++").unlink()
@@ -176,6 +205,36 @@ class DeveloperCommands(unittest.TestCase):
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(self.calls(), [f"uefi|{self.repo}|normal|g++-16|{qemu}|{firmware}|{data}"])
+
+    def test_host_check_routes_existing_gates_with_selected_tools(self):
+        cxx = str(self.tool("selected-cxx", 'echo "selected C++"\n'))
+        self.tool("as", 'echo "selected assembler"\n')
+        pe = str(self.tool("selected PE", 'printf "Supported emulations:\n i386pep\n"\n'))
+        self.run_script("host-build-check.sh", env={"CXX": cxx, "UEFI_LD": pe})
+        self.assertEqual([line.split("|")[2] for line in self.calls()],
+                         ["-C compiler --always-make", "kernel", "kernel-uefi", "test-uefi", "test-developer-commands"])
+        self.assertTrue(all(line.split("|")[3] == cxx for line in self.calls()))
+
+    def test_host_check_stops_on_first_failed_gate(self):
+        self.tool("g++", 'echo "selected C++"\n'); self.tool("as", 'echo "assembler"\n')
+        self.run_script("host-build-check.sh", env={"FAKE_STATUS": "79"}, expected=79)
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_host_check_rejects_pins_faults_and_make_bypasses(self):
+        for name, value in (("AURORAC", "/stale/aurorac"), ("OUT", "/another/compiler"),
+                            ("MAKEFLAGS", "n"), ("MFLAGS", "-i"), ("GNUMAKEFLAGS", "-n"),
+                            ("MAKEFILES", "injected.mk"), ("MAKEOVERRIDES", "CXX=other"),
+                            ("KERNEL_TEST_FAULT", "1"), ("KERNEL_USER_PROBE_MODE", "1"),
+                            ("UEFI_MODE", "bad-table")):
+            with self.subTest(name=name):
+                self.assertIn("Unset " + name, self.run_script("host-build-check.sh", env={name: value}, expected=2))
+        self.assert_no_work()
+
+    def test_host_check_missing_linker_or_active_context_starts_no_build(self):
+        self.run_script("host-build-check.sh", env={"UEFI_LD": "missing-linker"}, expected=2)
+        self.run_script("host-build-check.sh", env={"AURORA_TEST_CONTEXT": "active"}, expected=2)
+        self.run_script("host-build-check.sh", "unexpected", expected=2)
+        self.assert_no_work()
 
     def test_direct_shortcuts_reject_inherited_context_before_work(self):
         env = {"AURORA_TEST_CONTEXT": "/invalid/context.json", "AURORAC": "/selected/aurorac"}

@@ -106,7 +106,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-pin-ledger test-uefi-pins smoke-uefi-pins test-dormant-tables test-uefi-tables smoke-uefi-tables \
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
     test-boot-capacity smoke-boot-capacity test-compiler-contract test-round-robin test-native-cap-contracts \
-    run run-uefi test-developer-commands: aurora-test-context
+    run run-uefi kernel-uefi test-developer-commands: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -121,7 +121,7 @@ all: compiler kernel
 
 # Developer shortcuts reuse the existing build and validated smoke mechanisms.
 # Export these selectors so both environment and make NAME=value syntax work.
-export QEMU QEMU_DATA OVMF
+export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
 .PHONY: help run run-uefi kernel-uefi test-developer-commands
 help:
 	@printf '%s\n' \
@@ -135,7 +135,7 @@ help:
 	  'make test-developer-commands  Check shortcuts with fake tools only' \
 	  '' \
 	  'Run commands are bounded headless boot self-tests, not an interactive OS.' \
-	  'Overrides: CXX, QEMU, QEMU_DATA, OVMF (combined OVMF ROM).' \
+	  'Overrides: CXX, UEFI_LD, QEMU, QEMU_DATA, OVMF or OVMF_CODE/OVMF_VARS, OVMF_DIR.' \
 	  'See docs/local-development.md for dependencies, scripts and test scope.'
 
 run:
@@ -144,13 +144,15 @@ run:
 run-uefi:
 	./scripts/kernel-run.sh uefi
 
-kernel-uefi: compiler
+kernel-uefi:
 	./scripts/kernel-uefi-build.sh
 
 # Synthetic shortcut checks remain outside the native aggregate.
 test-developer-commands:
 	python3 -B tests/developer-commands.py
 	python3 -B -O tests/developer-commands.py
+	python3 -B tests/uefi-firmware.py
+	python3 -B -O tests/uefi-firmware.py
 
 ifneq ($(strip $(AURORA_TEST_CONTEXT)),)
 # The supervisor owns the selected compiler; never rebuild it here.

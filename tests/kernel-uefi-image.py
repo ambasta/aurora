@@ -101,7 +101,7 @@ def main():
     pe_path=BUILD/'esp/EFI/BOOT/BOOTX64.EFI'
     data=pe_path.read_bytes(); binary=(BUILD/'payload.bin').read_bytes(); elf=(BUILD/'payload.elf').read_bytes()
     nt,opt,sections=pe_validate(data,binary); elf_validate(elf,binary)
-    names=['payload','payload-entry','language','acpi','pci','runtime']
+    names=['payload','payload-entry','language','acpi','pci','runtime','memory']
     symbols=subprocess.check_output(['nm','-a',str(BUILD/'payload.elf')],text=True)
     if 'uefi_runtime_enter' in symbols: names+=['runtime-entry','runtime-exceptions']
     if 'uefi_service_drain_begin' in symbols:
@@ -115,6 +115,7 @@ def main():
         relocations=subprocess.check_output(['readelf','-rW',str(BUILD/f'{name}.o')],text=True)
         types=set(re.findall(r'R_X86_64_\w+',relocations))
         need(types<= {'R_X86_64_PC32','R_X86_64_PLT32'},f'Non-PIC object relocation in {name}: {types}')
+        if name == 'memory': need(not types, 'Freestanding memory primitives must not call or relocate helpers')
     need(not subprocess.check_output(['nm','-u',str(BUILD/'payload.elf')],text=True).strip(),'Unresolved payload symbol')
     negatives=[]
     def mutate(at,value,width):
