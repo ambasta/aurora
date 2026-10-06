@@ -1,4 +1,0 @@
-PASS: all retained receipt hashes checked; all170 executable/test/build inputs match captured pre-run manifest.
-PASS:110 distinct final emulator modes and frozen compiler identity match.
-Retained full run is distinguished from fresh parent aggregate and spot checks.
-Original failed development receipts remain separately labeled.

@@ -1,9 +1,0 @@
-Working directory: /workspace/scratch/48c5de6446f8/aurora-storage-next
-
-python3 -O tests/compiler/storage_binary.py --self-test-only
-python3 -O tests/compiler/storage_binary.py /tmp/aurora-m014-compiler-corrected --keep-going
-python3 -O tests/compiler/storage_binary.py /tmp/aurora-m014-compiler-corrected --seed 20261003 --random-count 16 --keep-going
-ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 python3 -O tests/compiler/storage_binary.py /tmp/aurora-m014-compiler-corrected-sanitized --keep-going
-
-Baseline suites: each COMMAND recorded in author-baseline-{release,sanitized}.log; subprocess wrapper stops on first nonzero exit. Instrumented aggregate used ASAN_OPTIONS=detect_leaks=0:halt_on_error=1.
-Native example exact commands/compiler hashes/exit statuses: author-example.json.

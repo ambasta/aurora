@@ -1,1 +1,0 @@
-module review;class Cell{public:u8 value;Cell(u8 x):value(x){}auto set(u8 x)->u8{value=x;return value;}};template<Value T>auto mutate(T x)->i64{x.value=1u8;return 42;}auto test()->i64{Cell a=Cell(42u8);return mutate<Cell>(a);}

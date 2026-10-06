@@ -1,7 +1,0 @@
-{
-  "label": "cannot return borrowed local bytes",
-  "source_sha256": "5df6f372f68cc31874a1745ab9fdd0f286e5a93f2e1fee3fa329679e59af1c15",
-  "compiler_sha256": "14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980",
-  "status": "failed",
-  "error": "unexpected rejection diagnostic"
-}

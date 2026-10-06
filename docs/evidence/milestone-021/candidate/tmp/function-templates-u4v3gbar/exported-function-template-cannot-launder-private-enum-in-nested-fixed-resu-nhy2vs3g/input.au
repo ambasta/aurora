@@ -1,1 +1,0 @@
-module app;import hidden;auto test()->i64{return 42;}

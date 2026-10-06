@@ -1,3 +1,0 @@
-PASS optimized compiler identity guard
-PASS optimized fixture identity guard
-PASS optimized exact-length guard

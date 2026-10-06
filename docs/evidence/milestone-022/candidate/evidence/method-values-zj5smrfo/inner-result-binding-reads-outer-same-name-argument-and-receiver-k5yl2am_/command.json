@@ -1,8 +1,0 @@
-[
-  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/build/aurorac",
-  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/inner-result-binding-reads-outer-same-name-argument-and-receiver-k5yl2am_/input.au",
-  "-o",
-  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/inner-result-binding-reads-outer-same-name-argument-and-receiver-k5yl2am_/compiled.s",
-  "--module-root",
-  "/workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/library"
-]

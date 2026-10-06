@@ -1,4 +1,0 @@
-PASS 17 hex transport rejection controls and exact raw/transport hashes
-PASS XFS schema/CRC/transport/full-width harness controls (active under Python -O)
-PASS XFS geometry batch 1: 1 headers, 43 raw observations
-PASS XFS geometry: {"headers": 1, "raw_observations": 43, "artifacts": "/workspace/scratch/48c5de6446f8/aurora-xfs-geometry-delta-review/optional-pin"}

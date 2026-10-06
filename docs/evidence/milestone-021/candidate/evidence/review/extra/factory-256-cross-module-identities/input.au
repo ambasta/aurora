@@ -1,1 +1,0 @@
-module review;import left;import right;auto test()->i64{if(left()==right()){return 1;}return 42;}

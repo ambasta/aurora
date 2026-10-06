@@ -4,7 +4,7 @@ Milestone020 closes a composition gap in the existing inline class-value subset.
 Independent review, complete release/fatal ASan/UBSan compiler gates, fresh parent
 `make test` and three existing UEFI integration profiles passed. M019 remains the
 historical full 166-mode kernel run; no fresh full suite is claimed here.
-[Verification](../docs/verification.md) and [M020 evidence](../docs/evidence/milestone-020/README.md)
+[Verification](../docs/verification.md) and [M020 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-020/README.md)
 identify the exact compiler pins, inputs, finite coverage and preserved failures.
 
 ## Concrete surface

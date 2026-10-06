@@ -1,7 +1,0 @@
-{
-  "status": "integrated focused release/instrumented geometry and old-storage targets passed; parent combined acceptance pending",
-  "protected_input_count": 90,
-  "old_probe_sha256": "9474dceea9c3dda66d5566396480e88979c6ea28c8d857b944f24e2e70603284",
-  "main_tree_scope": "Compiler/library/test inputs only; authorized concurrent kernel changes excluded",
-  "integrated_receipt": "integrated/result.json"
-}

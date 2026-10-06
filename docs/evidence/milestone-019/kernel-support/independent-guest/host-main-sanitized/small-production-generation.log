@@ -1,5 +1,0 @@
-In file included from tests/../kernel/dormant-tables.hpp:2,
-                 from tests/kernel-dormant-api.cpp:1:
-tests/../kernel/pin-ledger.hpp:14:2: error: #error "A small pin generation limit is only available in explicit test builds"
-   14 | #error "A small pin generation limit is only available in explicit test builds"
-      |  ^~~~~

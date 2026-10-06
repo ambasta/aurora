@@ -36,7 +36,7 @@ limit covers regular files, not captured stdout/stderr pipes. Leak detection is
 disabled because the environment traces processes. Generated Aurora machine code
 uses its native checks and is not itself ASan-instrumented.
 
-[Integrated receipts](evidence/milestone-015/storage-library/integrated/results.json)
+[Integrated receipts](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-015/storage-library/integrated/results.json)
 record actual exit codes, source identities and executable hashes. The neighboring
 isolated author and independent records retain the prior review's commands and
 paths unchanged. The public constructors remain ordinary reports, and a good
@@ -59,6 +59,6 @@ it now strictly decodes the unchanged canonical hex transport and checks the
 original raw512-byte identity. The binary was preserved outside the versioned
 tree, with no new mkfs invocation. The original receipts remain historical.
 Focused normal/-O decoder controls and15 native observations on both compiler
-pins passed; independent review also passed17,604 corner checks in each mode; see `evidence/milestone-015/storage-library/transport` and the
+pins passed; independent review also passed17,604 corner checks in each mode; see [`evidence/milestone-015/storage-library/transport`](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-015/storage-library/transport) and the
 transport update in `offline-xfs-fixture.md`. Compiler and Aurora library source
 remain byte-identical to the independently reviewed implementation.

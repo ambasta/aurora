@@ -360,7 +360,7 @@ separately. M019's full 166 modes remain historical. No new IR/ABI, deduction,
 overloads, generic methods, function capacity parameters, recursive expansion,
 heap/resource/reference generics, complete library, self-hosting or physical
 hardware support follows. See [contract](../compiler/FUNCTION-TEMPLATES.md) and
-[evidence](evidence/milestone-021/README.md).
+[evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-021/README.md).
 
 ## Verified milestone022: copied ordinary method parameters
 
@@ -388,7 +388,7 @@ isolated input replay and full 28/28 stress pass. The abandoned bare-array parse
 exception was reverted; parser.hpp is byte-identical M021. No ownership/reference/
 generic-method, global resource bound, Rust-equivalent safety, physical-hardware
 or equivalent-C performance claim is added. See [contract](../compiler/METHOD-VALUES.md)
-and [evidence](evidence/milestone-022/README.md).
+and [evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-022/README.md).
 
 ## XFS-only local-root lookup checkpoint after milestone022
 

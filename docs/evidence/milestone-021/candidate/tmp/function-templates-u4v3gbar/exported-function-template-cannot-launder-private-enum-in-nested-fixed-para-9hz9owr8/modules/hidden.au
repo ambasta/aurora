@@ -1,1 +1,0 @@
-export module hidden;import std.utility;enum class Hidden{ready};export template<Value T>auto bad(std::pair<Hidden,T> x)->T{return missing;}

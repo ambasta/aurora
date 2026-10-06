@@ -1,3 +1,0 @@
-PASS: actual PageLease pin ownership, whole-frame scrub, live/stale domains, shared pool, bounded exhaustion, partial rollback, permanent quarantine and reconstruction guards
-PASS: actual PageLease pin ownership, whole-frame scrub, live/stale domains, shared pool, bounded exhaustion, partial rollback, permanent quarantine and reconstruction guards, generation bound 3
-PASS: production pin API has no publication, completion or uncertainty injection; test configuration fails closed

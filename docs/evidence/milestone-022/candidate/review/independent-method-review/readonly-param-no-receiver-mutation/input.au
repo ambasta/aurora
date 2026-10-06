@@ -1,1 +1,0 @@
-module review;class Box{i64 n;public:Box(i64 v):n(v){}auto get()const->i64{return n;}auto add(i64 v)->i64{n=n+v;return n;}auto take(Box a,i64 n,Box b)const->i64{return a.get()+b.get()+n;}auto copied(Box a)const->Box{return a;}};class Reader{public:Reader(){}auto inspect(Box b)const->i64{return b.add(0);}};auto answer()->i64{Box b=Box(42);Reader r=Reader();return r.inspect(b);}

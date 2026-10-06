@@ -1,1 +1,0 @@
-qemu-system-x86_64: -qmp unix:/tmp/aurora-msix-trace-control/attempt2/qmp.sock,server=on,wait=off: Failed to create Unix socket: Operation not permitted

@@ -1,1 +1,0 @@
-module review;template<Value T>class Tag{public:Tag(){} };template<Value T>auto wrap()->i64{return size_of(Tag<T>)+34;}auto test()->i64{return wrap<Tag<Tag<Tag<i64>>>>();}

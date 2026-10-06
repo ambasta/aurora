@@ -1,2 +1,0 @@
-exported function template cannot launder private class in fixed parameter: saved output: exported function template cannot launder private class in fixed parameter: saved output: expected compiler exit 1, got 0: b''
-Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m021-function-candidate/tmp/function-templates-u4v3gbar/exported-function-template-cannot-launder-private-class-in-fixed-parameter-21_llzwv

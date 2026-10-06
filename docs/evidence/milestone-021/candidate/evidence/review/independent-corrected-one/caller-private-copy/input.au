@@ -1,1 +1,0 @@
-module review;import generic;class Cell{public:u8 value;Cell(u8 x):value(x){}auto set(u8 x)->u8{value=x;return value;}};auto test()->i64{Cell a=Cell(42u8);Cell b=copy<Cell>(a);return i64(b.value);}

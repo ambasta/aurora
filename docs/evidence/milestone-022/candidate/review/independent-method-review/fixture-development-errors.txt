@@ -1,6 +1,0 @@
-Independent fixture authoring errors, not compiler defects:
-1. First generic-module fixture used `module lib.box; export template...` rather than required `export module lib.box;`. Compiler correctly rejected: export declarations require an export module interface (found 'template'). Corrected module fixture declarations.
-2. Fixtures used reserved method name `read`; compiler correctly rejected: duplicate or reserved class member: read. Renamed to `inspect` so intended privacy/mutability/nominal checks execute.
-3. Nominal mismatch fixture expected generic phrase 'type mismatch'; compiler correctly diagnosed 'expected Box<i64>, got Box<u64>'. Tightened fixture to the actual nominal diagnostic.
-4. A shadow probe initially expected a root-declared std::array to shadow an imported std::array. Existing module rules instead reject these declarations eagerly as ambiguous. Corrected to separate imported qualified-self success and ambiguity-rejection fixtures; no implementation defect.
-5. A temporary bare-self parser experiment was rolled back by the implementer in favor of the existing qualified injected self spelling. Its intermediate binary results are not final evidence. Frozen array-self probes now require bare array to remain reserved and qualified std::array to work without new parser grammar.
