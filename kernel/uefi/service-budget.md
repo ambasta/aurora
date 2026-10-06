@@ -153,10 +153,19 @@ also passes the linked-image guard. See the
 [exact evidence index](../../docs/evidence/kernel-budget-policy/README.md).
 Earlier failed/interrupted attempts remain separate and supply no mode credit.
 
-## Provisional emulator clock qualification
+## Historical provisional emulator clock qualification
 
 The 19 budget modes are included in the explicit 51-mode UEFI clock candidate.
 Budgets 128/3, compiled-service interruption, context/DF checks, exact exhaustion,
 pending drains and all negative reasons remain unchanged. New qualification is
 pending; historical passing receipts do not establish the changed clock. See the
 [clock contract](../../docs/kernel-emulator-clock-contract.md).
+
+### Integration status addendum — 2026-10-06
+
+The provisional status above is historical. The prior 586-file `2b4da219…`
+source subsequently passed separately reviewed native, sanitizer, all 28 bounded
+static image and 177+3+2 actual boot gates. The fresh current-main composition
+remains unqualified; its current memory primitives and linked layout require new
+review and native/runtime integration. The wall-clock failure is still unresolved.
+See the [source-specific results and remaining gates](../../docs/kernel-ipc-transition-integration-results.md).

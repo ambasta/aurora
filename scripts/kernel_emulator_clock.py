@@ -142,8 +142,28 @@ def validate_clock_options(family, mode, declared_profile, argv):
     return profile
 
 
-def expected_uefi_argv(mode, qemu, firmware, data):
-    """Independent canonical copy of the unchanged common-launcher contract."""
+def expected_firmware_argv(firmware, code, variables):
+    """Bind resolved paths independently of the shell helper's produced argv.
+
+    This pure command check does not establish firmware existence or identity.
+    Runtime selection checks files; explicit --clock-plan paths may not exist.
+    """
+    if any(type(path) is not str or "\0" in path for path in (firmware, code, variables)):
+        raise ValueError("Firmware paths must be strings without NUL")
+    if firmware and not code and not variables:
+        return ["-bios", firmware]
+    if not firmware and code and variables and code != variables:
+        code_format = "qcow2" if code.endswith(".qcow2") else "raw"
+        vars_format = "qcow2" if variables.endswith(".qcow2") else "raw"
+        return ["-drive", "if=pflash,unit=0,format=" + code_format +
+                ",readonly=on,file=" + code.replace(",", ",,"),
+                "-drive", "if=pflash,unit=1,format=" + vars_format +
+                ",snapshot=on,file=" + variables.replace(",", ",,")]
+    raise ValueError("Expected one combined firmware path or two separate CODE/VARS paths")
+
+
+def expected_uefi_argv(mode, qemu, firmware, data, code="", variables=""):
+    """Independent canonical copy of the closed common-launcher contract."""
     profile = clock_profile(uefi_family(mode), mode)
     argv = [qemu]
     if data:
@@ -163,16 +183,17 @@ def expected_uefi_argv(mode, qemu, firmware, data):
     cpu = "qemu64,vendor=GenuineIntel,+sep" if mode == "runtime-sysenter" else "qemu64"
     cpus = "2" if mode in ("acpi-two", "budget-smp") else "1"
     argv += ["-machine", "q35", "-accel", "tcg", "-cpu", cpu, "-smp", cpus, "-m", "128M",
-             "-bios", firmware, "-drive", "format=raw,file=fat:ro:build/uefi/esp,snapshot=on",
+             *expected_firmware_argv(firmware, code, variables),
+             "-drive", "format=raw,file=fat:ro:build/uefi/esp,snapshot=on",
              "-nic", "none", "-display", "none", "-serial", "stdio", "-monitor", "none",
              "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]
     return argv
 
 
-def uefi_clock_receipt(mode, declared_profile, argv, qemu, firmware, data):
+def uefi_clock_receipt(mode, declared_profile, argv, qemu, firmware, data, code="", variables=""):
     family = uefi_family(mode)
     profile = validate_clock_options(family, mode, declared_profile, argv)
-    if argv != expected_uefi_argv(mode, qemu, firmware, data):
+    if argv != expected_uefi_argv(mode, qemu, firmware, data, code, variables):
         raise ValueError("Effective UEFI argv differs from closed command contract")
     return dict(schema="aurora-emulator-clock-command-v1", family=family, mode=mode,
                 clock_profile=profile, mode_clock_sha256=mode_clock_sha256(),
@@ -185,12 +206,12 @@ def main(args):
     if len(args) == 2 and args[0] == "profile":
         print(clock_profile(uefi_family(args[1]), args[1]))
         return
-    if len(args) >= 8 and args[0] == "verify" and args[6] == "--":
-        _, mode, profile, qemu, firmware, data, _, *argv = args
-        print(json.dumps(uefi_clock_receipt(mode, profile, argv, qemu, firmware, data),
+    if len(args) >= 10 and args[0] == "verify" and args[8] == "--":
+        _, mode, profile, qemu, firmware, code, variables, data, _, *argv = args
+        print(json.dumps(uefi_clock_receipt(mode, profile, argv, qemu, firmware, data, code, variables),
                          sort_keys=True, indent=2))
         return
-    raise ValueError("Expected profile MODE or verify MODE PROFILE QEMU OVMF DATA -- QEMU_ARGV")
+    raise ValueError("Expected profile MODE or verify MODE PROFILE QEMU OVMF CODE VARS DATA -- QEMU_ARGV")
 
 
 if __name__ == "__main__":

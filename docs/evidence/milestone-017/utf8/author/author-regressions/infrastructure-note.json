@@ -1,8 +1,0 @@
-{
-  "event": "exec-server transport disconnected; recovery timed out; session47157 registry unavailable after recovery",
-  "source_hash_unchanged": true,
-  "compiler_hash_unchanged": true,
-  "log_outcomes": "all four regression logs contain terminal PASS",
-  "outer_shell_exit": "unavailable, not inferred",
-  "rerun": false
-}

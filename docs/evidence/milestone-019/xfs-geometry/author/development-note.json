@@ -1,5 +1,0 @@
-{
-  "initial_smoke": "The handwritten first smoke omitted required direct import fs.xfs_probe; compiler exit1 diagnostic class type requires a direct visible import: fs::XfsGeometryReport. Adding the import compiled successfully without any library correction.",
-  "provenance": "This note transcribes the original tool result; the initial on-disk smoke source was subsequently edited, not claimed as an independently retained failed source. The source generator is outside the distributed tree at /tmp/implement_xfs_geometry.py.",
-  "other_failures": "Runner diagnostic-expectation mismatch and initial sparse-alignment mutation witness are preserved in original archive and consolidated receipts; neither required a library correction."
-}

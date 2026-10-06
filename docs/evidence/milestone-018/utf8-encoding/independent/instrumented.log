@@ -1,3 +1,0 @@
-PASS active Python -O controls
-PASS instrumented all 1112064 scalars plus 2048 surrogates
-{"mode": "instrumented", "compiler_sha256": "805567b1cac1e535d0951b4ddbc02b598d9bb546bea718f7afb74d482dab94bf", "library_sha256": "a9448bed52974ca1e690b9a10e86a5f879c5b24f475a12ab1ec079e4e97bc646", "cases": 1122439, "success": 1112064, "invalid": 10375, "output_sha256": "5332739f104327df82132036f84db047e999fdcd146d35202f2b4f65b06e7b0b", "native_sha256": "88627324ffe1d377f09ed2b298ced0891cda40ff0d92a35014a70651183d4d0e", "assembly_sha256": "bfbbc56408ae205249b8814c61034ec10c32ffa7db0973d8f844dc28636450df", "limits": "Each <=8192 native cases, 10/11s CPU,30s wall,128MiB AS,8MiB file; compiler512MiB except instrumented AS uncapped; stderr must be empty"}

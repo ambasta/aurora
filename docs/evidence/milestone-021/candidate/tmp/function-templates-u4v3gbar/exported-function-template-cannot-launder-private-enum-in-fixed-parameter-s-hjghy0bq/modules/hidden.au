@@ -1,1 +1,0 @@
-export module hidden;import std.utility;enum class Hidden{ready};export template<Value T>auto bad(Hidden secret,T x)->T{return x;}

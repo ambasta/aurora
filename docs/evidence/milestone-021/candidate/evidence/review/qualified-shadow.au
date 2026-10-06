@@ -1,8 +1,0 @@
-module probe;
-namespace T { class Hidden { public: Hidden() {} }; }
-template<Value U>class Box { public: Box() {} };
-template<Value T>auto exploit()->i64 {
-    const Box<T::Hidden> value=Box<T::Hidden>();
-    return 42;
-}
-auto test()->i64{return exploit<i64>();}

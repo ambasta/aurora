@@ -1,8 +1,0 @@
-make: Entering directory '/workspace/scratch/48c5de6446f8/aurora-xfs-geometry-next/compiler'
-python3 -O ../tests/compiler/xfs_geometry.py /tmp/aurora-resource-main-compiler-frozen --mutation-controls --compiler-sha256 14cbaa33b69b81240b5828b6893f4c150eeaa9a11d95a83726d32e417c1f8980 --case-filter preserved --artifacts /workspace/scratch/48c5de6446f8/aurora-xfs-geometry-delta-review/make-recipe
-PASS 17 hex transport rejection controls and exact raw/transport hashes
-PASS XFS schema/CRC/transport/full-width harness controls (active under Python -O)
-PASS XFS geometry batch 1: 1 headers, 43 raw observations
-PASS XFS mutation controls: 51 detected regressions; 24 source-audited redundant guards
-PASS XFS geometry: {"headers": 1, "raw_observations": 43, "artifacts": "/workspace/scratch/48c5de6446f8/aurora-xfs-geometry-delta-review/make-recipe"}
-make: Leaving directory '/workspace/scratch/48c5de6446f8/aurora-xfs-geometry-next/compiler'

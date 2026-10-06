@@ -174,10 +174,19 @@ and completed both normal restoration boots; independent review replayed the
 stack and image checks. The old focused output-fault rejection was constant-folded;
 its result remains historical and is not relabeled as dynamic decoder coverage.
 
-## Later provisional emulator clock candidate
+## Historical provisional emulator clock candidate
 
 The verified checkpoint above retains its historical clock and source identity.
 A later explicit 51-mode UEFI instruction-clock scheduling contract is prepared,
 with unchanged Aurora policy, budgets 128/3 and strict validators. Its independent
 source review and fresh full qualification remain pending; the original retirement
 wall-time failure is preserved. See [the clock contract](kernel-emulator-clock-contract.md).
+
+### Integration status addendum — 2026-10-06
+
+The provisional status above is historical. The prior 586-file `2b4da219…`
+source subsequently passed separately reviewed native, sanitizer, all 28 bounded
+static image and 177+3+2 actual boot gates. The fresh current-main composition
+remains unqualified; its current memory primitives and linked layout require new
+review and native/runtime integration. The wall-clock failure is still unresolved.
+See the [source-specific results and remaining gates](kernel-ipc-transition-integration-results.md).

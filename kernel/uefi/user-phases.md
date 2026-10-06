@@ -116,7 +116,7 @@ function warning; the failed build output is preserved separately from successfu
 gates. Receipt review narrowed the wrong-root injection to client 0 before final
 acceptance so an earlier peer interrupt cannot change that negative gate's origin.
 
-## Provisional emulator clock qualification
+## Historical provisional emulator clock qualification
 
 The 17 user-phase modes are included in the explicit 51-mode UEFI clock candidate.
 The original retirement aggregate failed when its finite service exhausted 128
@@ -125,3 +125,12 @@ contract preserves budgets 128/3, both context countdowns, compiled service hits
 real old-owner pending drains and every disposal/rebind/cleanup gate. No changed
 clock qualification is claimed. See the
 [clock contract](../../docs/kernel-emulator-clock-contract.md).
+
+### Integration status addendum — 2026-10-06
+
+The provisional status above is historical. The prior 586-file `2b4da219…`
+source subsequently passed separately reviewed native, sanitizer, all 28 bounded
+static image and 177+3+2 actual boot gates. The fresh current-main composition
+remains unqualified; its current memory primitives and linked layout require new
+review and native/runtime integration. The wall-clock failure is still unresolved.
+See the [source-specific results and remaining gates](../../docs/kernel-ipc-transition-integration-results.md).

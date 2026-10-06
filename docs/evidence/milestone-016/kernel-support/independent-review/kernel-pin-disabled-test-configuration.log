@@ -1,4 +1,0 @@
-In file included from <stdin>:1:
-kernel/pin-ledger.hpp:11:2: error: #error "Pin test interfaces require explicit AURORA_PIN_LEDGER_TESTING=1"
-   11 | #error "Pin test interfaces require explicit AURORA_PIN_LEDGER_TESTING=1"
-      |  ^~~~~

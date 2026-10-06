@@ -106,7 +106,8 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-uefi-bar test-uefi-span smoke-uefi-bar smoke-uefi-span test-uefi-ivrs smoke-uefi-ivrs \
     test-pin-ledger test-uefi-pins smoke-uefi-pins test-dormant-tables test-uefi-tables smoke-uefi-tables \
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
-    test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-native-cap-contracts: aurora-test-context
+    test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-native-cap-contracts \
+    run run-uefi kernel-uefi test-developer-commands: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -118,6 +119,41 @@ AURORAC ?= build/aurorac
 .PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-scheduling smoke-uefi test-uefi test-acpi test-division smoke-acpi smoke-division test-pci test-unsigned smoke-pci smoke-unsigned test-uefi-runtime smoke-uefi-runtime test-uefi-ipc smoke-uefi-ipc test-uefi-budget smoke-uefi-budget test-uefi-dispatch smoke-uefi-dispatch test-uefi-user-phases smoke-uefi-user-phases smoke-all
 
 all: compiler kernel
+
+# Developer shortcuts reuse the existing build and validated smoke mechanisms.
+# Export these selectors so both environment and make NAME=value syntax work.
+export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
+.PHONY: help run run-uefi kernel-uefi test-developer-commands
+help:
+	@printf '%s\n' \
+	  'make                  Build the compiler and BIOS kernel image' \
+	  'make kernel-uefi      Build the separate UEFI loader/payload' \
+	  'make run              Build and verify one normal BIOS QEMU boot' \
+	  'make run-uefi         Build and verify one normal UEFI QEMU boot' \
+	  'make test-compiler    Run the compiler-only suite (fresh compiler)' \
+	  'make test             Run the full native suite (fresh compiler)' \
+	  'make smoke-all        Run the existing full emulator suite' \
+	  'make test-developer-commands  Check shortcuts with fake tools only' \
+	  '' \
+	  'Run commands are bounded headless boot self-tests, not an interactive OS.' \
+	  'Overrides: CXX, UEFI_LD, QEMU, QEMU_DATA, OVMF or OVMF_CODE/OVMF_VARS, OVMF_DIR.' \
+	  'See docs/local-development.md for dependencies, scripts and test scope.'
+
+run:
+	./scripts/kernel-run.sh bios
+
+run-uefi:
+	./scripts/kernel-run.sh uefi
+
+kernel-uefi:
+	./scripts/kernel-uefi-build.sh
+
+# Synthetic shortcut checks remain outside the native aggregate.
+test-developer-commands:
+	python3 -B tests/developer-commands.py
+	python3 -B -O tests/developer-commands.py
+	python3 -B tests/uefi-firmware.py
+	python3 -B -O tests/uefi-firmware.py
 
 ifneq ($(strip $(AURORA_TEST_CONTEXT)),)
 # The supervisor owns the selected compiler; never rebuild it here.

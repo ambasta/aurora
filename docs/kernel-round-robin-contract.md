@@ -295,7 +295,7 @@ members immediately before QEMU. All three new dispatcher-policy modes exited
 35 at the expected copied-selection failure after both client submissions, with
 no successful selection/service/timer event credited.
 
-## Later provisional emulator clock candidate
+## Historical provisional emulator clock candidate
 
 The historical round-robin checkpoint does not qualify the later combined IPC/
 tooling/clock candidate. Exactly51 UEFI timer modes have a new explicit scheduling
@@ -303,3 +303,12 @@ contract; the other 126 modes, three capacity probes and two normal restoration
 boots retain their original clock. All original ordered dispatch, compiled/context
 hit, exhaustion and drain requirements remain. See
 [the pending clock contract](kernel-emulator-clock-contract.md).
+
+### Integration status addendum — 2026-10-06
+
+The provisional status above is historical. The prior 586-file `2b4da219…`
+source subsequently passed separately reviewed native, sanitizer, all 28 bounded
+static image and 177+3+2 actual boot gates. The fresh current-main composition
+remains unqualified; its current memory primitives and linked layout require new
+review and native/runtime integration. The wall-clock failure is still unresolved.
+See the [source-specific results and remaining gates](kernel-ipc-transition-integration-results.md).

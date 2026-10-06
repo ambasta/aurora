@@ -875,7 +875,14 @@ class Controls(unittest.TestCase):
         self.assertIn('IPC_TRANSACTION_COMPILER', c.SELECTORS)
         self.assertIn('IPC_TRANSACTION_COMPILER_SHA256', c.PINS)
         self.assertIn('test: test-ipc-transaction', root_make)
-        self.assertIn('test-ipc-transaction test-native-cap-contracts: aurora-test-context', root_make)
+        context_targets = set()
+        for line in root_make.replace('\\\n', ' ').splitlines():
+            targets, separator, prerequisite = line.partition(':')
+            if separator and prerequisite.strip() == 'aurora-test-context':
+                context_targets.update(targets.split())
+        self.assertTrue({'test-ipc-transaction', 'test-native-cap-contracts',
+                         'test-emulator-clock', 'run', 'run-uefi', 'kernel-uefi',
+                         'test-developer-commands'} <= context_targets)
 
     def test_six_consumer_driver_is_not_filtered(self):
         spec = importlib.util.spec_from_file_location('synthetic_cap_driver', ROOT / 'tests/native-cap-contracts.py')

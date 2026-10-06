@@ -1,2 +1,0 @@
-PASS resource-driver control always-fail
-PASS resource-driver control wrong-output

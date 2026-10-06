@@ -1,1 +1,0 @@
-export module hidden;import std.utility;class Hidden{u8 value;public:Hidden(u8 n):value(n){}auto get()const->u8{return value;}auto set(u8 n)->u8{value=n;return value;}};export template<Value T>auto bad(T x)->Hidden{const Hidden result=Hidden(42u8);return result;}

@@ -70,6 +70,6 @@ The token/source-range example combines fixed byte storage with copied value
 projections. Release/fatal host ASan/UBSan targets, independent review/replay and
 parent aggregate/selected UEFI integration passed; see
 [function-template contract](../compiler/FUNCTION-TEMPLATES.md) and
-[M021 evidence](evidence/milestone-021/README.md). This advances reusable core value
+[M021 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-021/README.md). This advances reusable core value
 operations only. Heap ownership, returned references, generic recursion, complete
 text/collections, native runtime and self-hosting still need the gates above.

@@ -1,2 +1,0 @@
-PASS 17 hex transport rejection controls and exact raw/transport hashes
-PASS XFS schema/CRC/transport/full-width harness controls (active under Python -O)

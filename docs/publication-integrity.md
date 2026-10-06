@@ -38,5 +38,5 @@ partially uploaded normalized delta.
 This main-tree snapshot preserves the original evidence bytes. Remote repair is
 a separate publication action; preparing a corrected tree does not establish that
 it has been uploaded. The original source archives remain the byte-exact authority
-for the tested historical checkpoints. See evidence/milestone-014/publication-audit
+for the tested historical checkpoints. See [evidence/milestone-014/publication-audit](https://github.com/ambasta/aurora/tree/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-014/publication-audit)
 for the audit report and independent test reruns.

@@ -1,1 +1,0 @@
-export module lib.api;class Secret{public:Secret(){}};export class Api{public:Api(){}auto use(Secret s)const->i64{return 42;}};

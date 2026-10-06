@@ -1,6 +1,31 @@
 # Scoped UEFI emulator clock qualification
 
-## Status and preserved failure
+## Current integration addendum — 2026-10-06
+
+The old 586-file `2b4da219…` source has separately accepted 177+3+2 runtime boots
+and bounded static review of all 28 images; the same-reviewer reconsideration closed
+the two-input-image static gate. Its interrupted predecessor remains unaccepted.
+The fresh composition on main `25d76b1799c2a29d21b175b6b720c7a256e97b9e` has no
+execution acceptance. Current `memory.S`, linked addresses, source/tool bindings
+and native/runtime behavior require fresh qualification; old bounds do not carry
+over. See the [dated results addendum](kernel-ipc-transition-integration-results.md).
+The wall-clock retirement failure is still unresolved stress evidence.
+
+The current firmware/clock join preserves the 51 fixed/126 original production
+partition. A plan accepts nonexistent explicit combined or complete CODE/VARS
+paths; runtime still requires readable, nonempty files. Directory/automatic plans
+use real discovery and fail if unresolved, with no fixed Debian default.
+Selectors must remain complete and nonconflicting; identical files are rejected.
+Independent command validation reconstructs the full argv, including readonly
+CODE, snapshot VARS, each image's raw/qcow2 format and comma escaping.
+The current 13 clock and 15 firmware test methods are authored, **not executed**.
+Fresh full 177+3+2 qualification will explicitly select the historical combined
+OVMF for common UEFI modes, preserving separate BAR/IVRS fixture selection.
+A separately proposed split-firmware gate covers normal, `budget-smp` and normal
+restoration, including unchanged pristine VARS and strict serial/argv checks;
+it is not a completed run or expansion of the full matrix.
+
+## Historical clock status before input-review reconsideration
 
 **The exact 182-boot runtime regression has passed independent terminal and
 raw-corpus review.** All 177 production modes, three capacity probes and two
@@ -195,13 +220,18 @@ Independent terminal review accepted launcher syntax, all eight methods in each
 Python mode, and both complete plans. No compiler, native test, image or guest
 boot ran in that stage.
 
-`--clock-plan [mode]` prints the validated command receipt with no firmware
-availability check, build, guest execution or receipt-file write. The native-free
-tests exercise all 177 mode identities, every one of the 140 UEFI build-mode
-command paths with/without QEMU data, all five exclusions, duplicate/unknown/empty
-selections and hostile declaration/argv pairs. Byte pins preserve the separate
-BIOS/BAR/IVRS/capacity launchers and original three timer validators. They cannot
-establish runtime preemption or replace actual firmware boots.
+`--clock-plan [mode]` prints the validated command receipt without building,
+launching a guest or writing a receipt file. Under the current join only explicit
+combined or complete split selections skip file-availability checks; directory
+and automatic plans require successful discovery. The new focused suite methods
+remain unexecuted, as stated in the addendum above.
+
+The historical eight-method native-free suite exercised all 177 mode identities,
+every one of the 140 UEFI build-mode command paths with/without QEMU data, all
+five exclusions, duplicate/unknown/empty selections and hostile declaration/argv
+pairs. Byte pins preserve the separate BIOS/BAR/IVRS/capacity launchers and original
+three timer validators. These controls cannot establish runtime preemption or
+replace actual firmware boots.
 
 The clock-control stage used manifest
 `e6c08e72e9764615043b4ef7c5a726c5a5dda12c6f1de9f8735ec0fe8b6230b7`;
@@ -210,7 +240,9 @@ D/P native workflows and the separate five-row fatal ASan/UBSan supplement now
 have independent scoped acceptance. The complete fresh 177+3+2 runtime run is
 also independently accepted, with no prefix reuse. Its reviewed adapter, exact
 source/tool/command bindings, four preboot output guards and owned-process closure
-remain part of that result. The two-input-image linked review is still blocked
-and unaccepted. All 128/3 budgets, loops and strict validators remain unchanged;
+remain part of that old result. The later reconsidered two-input-image review
+closed its separate static gate, as recorded in the addendum above. The fresh
+current-main composition remains unqualified. All 128/3 budgets, loops and strict
+validators remain unchanged;
 no selective retry, larger budget, physical-hardware or performance-equivalence
 claim follows. The original wall-clock failure remains unresolved stress evidence.

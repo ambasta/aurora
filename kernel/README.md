@@ -8,6 +8,10 @@ are a disposable bring-up seam, not a permanent platform ABI.
 
 ## Build and verify
 
+For the shortest normal-boot commands and tool overrides, see
+[local development](../docs/local-development.md): `make run` and `make run-uefi`
+build and verify bounded, headless boot self-tests.
+
 From the repository root:
 
     ./scripts/kernel-build.sh
@@ -799,3 +803,12 @@ cancellation boundaries: `ipc-policy-request-input`, `ipc-policy-request-output`
 phase or actual producer result, not live state. Normal IPC/dispatcher/restart
 behavior, full-width payloads, isolated BIOS root and all existing gates remain
 required. Source changes alone do not qualify these profiles or this policy.
+
+### IPC integration status — 2026-10-06
+
+The earlier 586-file `2b4da219…` source has separately accepted full D/P native,
+five-entrypoint fatal sanitizer, 28 bounded static image and 177+3+2 actual boot
+results. The same-reviewer reconsideration closed the two-input-image static
+gate; the interrupted attempt remains unaccepted. This fresh current-main
+composition is unqualified and needs new linked review and native/runtime
+integration. See the [dated results](../docs/kernel-ipc-transition-integration-results.md).

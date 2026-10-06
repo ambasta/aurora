@@ -11,15 +11,23 @@ Aurora-generated code after firmware services have ended.
 ```
 ./scripts/kernel-uefi-build.sh
 SANITIZE=1 ./scripts/kernel-uefi-tests.sh
-OVMF=/path/to/OVMF.fd ./scripts/kernel-uefi-all.sh
+./scripts/kernel-uefi-all.sh
 ```
 
 The build uses the existing g++, GNU as/ld/objcopy/nm/readelf, Python3 and Bash.
-GNU ld's i386pep backend emits PE32+ EFI subsystem10 with DIR64 relocation; a
-cross compiler is not required. QEMU system x86 and OVMF are additional test
-requirements. QEMU runs q35/TCG/qemu64, one CPU,128MiB RAM, the combined OVMF ROM,
+GNU ld's i386pep backend emits PE32+ EFI subsystem10 with DIR64 relocation.
+Some native linkers omit that backend; select a capable PE linker with `UEFI_LD`
+(see [dependencies](../../docs/local-development.md#dependencies-and-overrides)).
+A separate cross C++ compiler is not required. The loader and payload include
+small assembly `memcpy`, `memset`, `memmove` and `memcmp` implementations for
+compiler-generated freestanding calls. These are trusted bootstrap code, not
+Aurora-language C compatibility. QEMU system x86 and OVMF are additional test
+requirements. QEMU runs q35/TCG/qemu64, one CPU,128MiB RAM, selected OVMF firmware,
 and a FAT directory with a temporary snapshot overlay. The source directory is
 read-only, the overlay is discarded, and no host disk or firmware is changed.
+Firmware discovery and explicit combined or split CODE/VARS overrides are
+documented in [local development](../../docs/local-development.md#dependencies-and-overrides).
+Split VARS changes are discarded through a QEMU snapshot.
 QEMU_DATA and LD_LIBRARY_PATH can select locally extracted dependencies; AURORAC
 can pin a previously built compiler. All modes restore the normal UEFI image
 when they finish; they do not rebuild or overwrite the BIOS disk image.

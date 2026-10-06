@@ -1,1 +1,0 @@
-module review;import generic;class Unrelated{public:Unrelated(){} };auto test()->i64{return inspect<i64>(0);}

@@ -1,7 +1,0 @@
-make -C compiler
-make[1]: Entering directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
-make[1]: Nothing to be done for 'all'.
-make[1]: Leaving directory '/workspace/scratch/48c5de6446f8/aurora/compiler'
-python3 tests/semantics/run.py build/aurorac --seed 404 --cases 1024
-seed=404 generated=1024 compiler_sha256=753845632fa5361f7262266c5b74b75927393403cf86c1d84a3ba34bc86ebf53
-PASS 1526 cases {"bounds": 229, "overflow": 205, "rejected": 199, "value": 893}

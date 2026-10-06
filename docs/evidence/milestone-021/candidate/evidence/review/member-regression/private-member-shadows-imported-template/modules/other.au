@@ -1,1 +1,0 @@
-export module other;export template<Scalar U>auto helper(U x)->U{return x;}

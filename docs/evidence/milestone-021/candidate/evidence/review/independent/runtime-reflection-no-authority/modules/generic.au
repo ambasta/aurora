@@ -1,1 +1,0 @@
-export module generic;export template<Value T>auto inspect()->i64{if(reflect_size(type_id(T))!=0){return 1;}return 42;}

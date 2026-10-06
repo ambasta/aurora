@@ -1,1 +1,0 @@
-module review;class Box{public:Box(){}auto loop(Box b)const->i64{return helper(b);}};auto helper(Box b)->i64{return b.loop(b);}auto answer()->i64{Box b=Box();return b.loop(b);}

@@ -1,9 +1,0 @@
-module review;
-template<Scalar U> auto helper(U x)->U{return x;}
-template<Scalar T> class Box {
-public:
-    Box(){}
-    auto helper(i64 x)const->i64{return x;}
-    auto get()const->i64{return helper(42);}
-};
-auto test()->i64{return 42;}

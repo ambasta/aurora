@@ -1,3 +1,0 @@
-COMMAND: python3 tests/semantics/run.py /tmp/aurora-m007-oracle-aurorac
-seed=20261002 generated=128 compiler_sha256=6bed4b61d50cb2f40f2b1f6f4564172daade95336df852f80938c3f0726998b1
-PASS 630 cases {"bounds": 50, "overflow": 96, "rejected": 199, "value": 285}

@@ -1,7 +1,0 @@
-COMMAND: python3 tests/semantics/test_runner.py
-84e14fc5e81ac6b18abb974d5d3a5c84d68e5ba99323bd04f686ac69ba443808  /tmp/aurora-m011-compiler-candidate
-.......
-----------------------------------------------------------------------
-Ran 7 tests in 0.008s
-
-OK

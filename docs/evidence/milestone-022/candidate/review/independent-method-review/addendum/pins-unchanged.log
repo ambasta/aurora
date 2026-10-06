@@ -1,3 +1,0 @@
-build/san/method-values-ir-tests: OK
-tests/compiler/method_values_ir.cpp: OK
-tests/compiler/method_values_abi.py: OK

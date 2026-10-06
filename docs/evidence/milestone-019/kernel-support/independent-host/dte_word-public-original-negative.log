@@ -1,4 +1,0 @@
-/tmp/aurora-amd310-independent-review/dte_word-public-original-negative.cpp: In function ‘auto leak(aurora::memory::DormantTables&)’:
-/tmp/aurora-amd310-independent-review/dte_word-public-original-negative.cpp:2:55: error: cannot convert ‘aurora::memory::DormantTables::dte_word’ from type ‘uint64_t (aurora::memory::DormantTables::)(std::size_t, std::size_t) const’ {aka ‘long unsigned int (aurora::memory::DormantTables::)(long unsigned int, long unsigned int) const’} to type ‘long unsigned int (aurora::memory::DormantTables::*)(long unsigned int, long unsigned int) const’
-    2 | auto leak(aurora::memory::DormantTables& t) {return t.dte_word;}
-      |                                                       ^~~~~~~~

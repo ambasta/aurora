@@ -7,8 +7,10 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,13 +56,15 @@ def wrapper_modes(name):
     return match[1].split()
 
 
-def shell_plan(*modes, data="", extra_env=None):
-    env = dict(os.environ, QEMU="/nonexistent clock test/qemu", OVMF="/nonexistent firmware.fd",
+def shell_plan(*modes, data="", extra_env=None, root=ROOT, plan=True):
+    env = {name: value for name, value in os.environ.items() if not name.startswith("OVMF")}
+    env.update(QEMU="/nonexistent clock test/qemu", OVMF="/nonexistent firmware.fd",
                QEMU_DATA=data, PYTHONDONTWRITEBYTECODE="1")
     if extra_env:
         env.update(extra_env)
-    return subprocess.run(["bash", str(ROOT / "scripts/kernel-uefi-smoke.sh"), "--clock-plan", *modes],
-                          cwd=ROOT, env=env, capture_output=True, text=True, timeout=10)
+    command = ["bash", str(root / "scripts/kernel-uefi-smoke.sh")]
+    return subprocess.run(command + (["--clock-plan"] if plan else []) + list(modes),
+                          cwd=root, env=env, capture_output=True, text=True, timeout=10)
 
 
 class ClockContractTests(unittest.TestCase):
@@ -177,6 +181,130 @@ class ClockContractTests(unittest.TestCase):
                         argv + ["-no-reboot"], argv[1:], ["other-qemu", *argv[1:]]):
                 with self.assertRaises(ValueError):
                     CLOCK.uefi_clock_receipt(mode, profile, bad, "qemu", "firmware", "data")
+
+    def test_split_firmware_paths_formats_and_comma_escaping(self):
+        for code_ext, code_format in (("fd", "raw"), ("qcow2", "qcow2")):
+            for vars_ext, vars_format in (("fd", "raw"), ("qcow2", "qcow2")):
+                code = "/nonexistent code, drive=other." + code_ext
+                variables = "/nonexistent vars,, template." + vars_ext
+                firmware_args = [
+                    "-drive", "if=pflash,unit=0,format=" + code_format +
+                    ",readonly=on,file=/nonexistent code,, drive=other." + code_ext,
+                    "-drive", "if=pflash,unit=1,format=" + vars_format +
+                    ",snapshot=on,file=/nonexistent vars,,,, template." + vars_ext,
+                ]
+                self.assertEqual(CLOCK.expected_firmware_argv("", code, variables), firmware_args)
+                for mode in ("normal", "budget-smp"):
+                    with self.subTest(mode=mode, code_ext=code_ext, vars_ext=vars_ext):
+                        result = shell_plan(mode, data="/nonexistent data files", extra_env={
+                            "OVMF": "", "OVMF_CODE": code, "OVMF_VARS": variables})
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        receipt = json.loads(result.stdout)
+                        argv = receipt["argv"]
+                        first = argv.index("-drive")
+                        self.assertEqual(argv[first:first + 4], firmware_args)
+                        self.assertEqual(argv.count("-drive"), 3)
+                        self.assertNotIn("-bios", argv)
+                        self.assertEqual(receipt["clock_profile"], CLOCK.clock_profile("uefi", mode))
+                        self.assertEqual(receipt["timeout_argv"], ["timeout", "30", *argv])
+
+    def test_split_firmware_hostile_argv_cannot_bypass_binding(self):
+        code = "/code, firmware.qcow2"
+        variables = "/vars,, template.fd"
+        for mode in ("normal", "budget", "runtime-sysenter", "pci-bridge"):
+            profile = CLOCK.clock_profile(CLOCK.uefi_family(mode), mode)
+            argv = CLOCK.expected_uefi_argv(mode, "qemu", "", "data", code, variables)
+            first = argv.index("-drive")
+            self.assertEqual(CLOCK.uefi_clock_receipt(
+                mode, profile, argv, "qemu", "", "data", code, variables)["argv"], argv)
+            corruptions = []
+            for offset, before, after in (
+                (1, "readonly=on,", ""), (3, "snapshot=on,", ""),
+                (1, "unit=0", "unit=1"), (3, "unit=1", "unit=0"),
+                (1, "format=qcow2", "format=raw"), (3, "format=raw", "format=qcow2"),
+                (1, "readonly=on", "snapshot=on"), (3, "snapshot=on", "readonly=on"),
+                (1, "code,, firmware", "code, firmware"),
+                (3, "vars,,,, template", "vars,, template"),
+                (1, "code,, firmware", "other,, firmware"),
+                (3, "vars,,,, template", "other,,,, template"),
+                (3, "snapshot=on", "snapshot=on,readonly=on"),
+            ):
+                bad = argv[:]
+                self.assertIn(before, bad[first + offset])
+                bad[first + offset] = bad[first + offset].replace(before, after)
+                corruptions.append(bad)
+            swapped = argv[:]
+            swapped[first + 1], swapped[first + 3] = swapped[first + 3], swapped[first + 1]
+            corruptions += [swapped, argv[:first] + argv[first + 2:],
+                            argv + argv[first:first + 4], argv + ["-bios", "other.fd"],
+                            argv + ["-snapshot"], argv + ["-blockdev", "driver=file"],
+                            argv + ["-icount", "auto"], argv + ["-readconfig", "other.conf"]]
+            for bad in corruptions:
+                with self.assertRaises(ValueError, msg=repr(bad)):
+                    CLOCK.uefi_clock_receipt(mode, profile, bad, "qemu", "", "data", code, variables)
+            # A correct clock label and argv cannot hide altered semantic inputs.
+            for firmware, other_code, other_vars in (("other.fd", code, variables),
+                    ("", code + ".fd", variables), ("", code, variables + ".qcow2")):
+                with self.assertRaises(ValueError):
+                    CLOCK.uefi_clock_receipt(mode, profile, argv, "qemu", firmware, "data", other_code, other_vars)
+
+    def test_firmware_contract_rejects_conflicting_partial_and_invalid_paths(self):
+        for paths in (("", "", ""), ("combined", "code", "vars"),
+                      ("combined", "code", ""), ("combined", "", "vars"),
+                      ("", "code", ""), ("", "", "vars"), ("", "same", "same"),
+                      (None, "", ""), ("", [], "vars"), ("", "code", 42),
+                      ("bad\0path", "", ""), ("", "bad\0code", "vars")):
+            with self.assertRaises(ValueError):
+                CLOCK.expected_firmware_argv(*paths)
+        self.assertEqual(CLOCK.expected_firmware_argv("combined, firmware.fd", "", ""),
+                         ["-bios", "combined, firmware.fd"])
+
+    def test_plans_and_invalid_modes_never_build_execute_qemu_or_write(self):
+        with tempfile.TemporaryDirectory(prefix="aurora-clock-plan-") as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            for name in ("kernel-uefi-smoke.sh", "kernel_emulator_clock.py", "uefi-firmware.sh"):
+                shutil.copy2(ROOT / "scripts" / name, root / "scripts" / name)
+            sentinel = '#!/usr/bin/env bash\nprintf reached >> unexpected-execution\nexit 99\n'
+            for target in (root / "qemu", root / "scripts/kernel-uefi-build.sh"):
+                target.write_text(sentinel)
+                target.chmod(0o755)
+            env = {"QEMU": str(root / "qemu"), "OVMF": str(root / "missing.fd")}
+            def snapshot():
+                return {str(path.relative_to(root)): (
+                    path.stat().st_mode,
+                    hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None)
+                    for path in root.rglob("*")}
+            before = snapshot()
+            for mode in ((), ("normal",), ("budget-smp",)):
+                result = shell_plan(*mode, root=root, extra_env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            split = dict(env, OVMF="", OVMF_CODE=str(root / "missing-code.qcow2"),
+                         OVMF_VARS=str(root / "missing-vars.fd"))
+            result = shell_plan("budget", root=root, extra_env=split)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for plan in (False, True):
+                for modes in (("",), ("future",), ("normal", "extra")):
+                    result = shell_plan(*modes, root=root, extra_env=env, plan=plan)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertEqual(result.stdout, "")
+            self.assertEqual(snapshot(), before)
+
+    def test_plan_firmware_selector_errors_and_unresolved_directory(self):
+        with tempfile.TemporaryDirectory(prefix="aurora-clock-firmware-") as directory:
+            for extra in ({"OVMF_CODE": "code", "OVMF_VARS": "vars"},
+                          {"OVMF_DIR": directory},
+                          {"OVMF": "", "OVMF_CODE": "code"},
+                          {"OVMF": "", "OVMF_VARS": "vars"},
+                          {"OVMF": "", "OVMF_CODE": "same", "OVMF_VARS": "same"},
+                          {"OVMF": "", "OVMF_CODE": "code", "OVMF_VARS": "vars", "OVMF_DIR": directory}):
+                result = shell_plan("normal", extra_env=extra)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stdout, "")
+            result = shell_plan("budget", extra_env={"OVMF": "", "OVMF_DIR": directory})
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("Clock plan unresolved", result.stderr)
 
     def test_shell_rejects_unknown_empty_and_extra_selections(self):
         for modes in (("",), ("budget-new",), ("dispatch-new",), ("user-new",),

@@ -6,10 +6,14 @@ if [[ "${1-}" == --clock-plan ]]; then clock_plan=true; shift; fi
 if (( $# > 1 )); then echo 'Expected one exact UEFI mode' >&2; exit 2; fi
 mode="${1-normal}"
 clock_profile="$(python3 scripts/kernel_emulator_clock.py profile "$mode")"
-firmware="${OVMF:-/usr/share/ovmf/OVMF.fd}"
+source ./scripts/uefi-firmware.sh
+if [[ "$clock_plan" == true ]]; then
+    uefi_firmware_select --plan
+else
+    uefi_firmware_select
+fi
 qemu="${QEMU:-qemu-system-x86_64}"
 if [[ "$clock_plan" == false ]]; then
-    [[ -r "$firmware" ]] || { echo 'BLOCKED: OVMF firmware missing' >&2; exit 2; }
     command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing' >&2; exit 2; }
     UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh
     if [[ "$mode" != normal ]]; then trap './scripts/kernel-uefi-build.sh >/dev/null' EXIT; fi
@@ -31,11 +35,12 @@ case "$clock_profile" in
  *) echo 'Unknown emulator clock profile' >&2; exit 2 ;;
 esac
 qemu_argv=("$qemu" "${args[@]}" -machine q35 -accel tcg -cpu "$cpu" -smp "$cpus" -m 128M \
-    -bios "$firmware" -drive format=raw,file=fat:ro:build/uefi/esp,snapshot=on \
+    "${UEFI_FIRMWARE_ARGS[@]}" -drive format=raw,file=fat:ro:build/uefi/esp,snapshot=on \
     -nic none -display none -serial stdio -monitor none -no-reboot \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04)
 clock_check=(python3 scripts/kernel_emulator_clock.py verify "$mode" "$clock_profile"
-    "$qemu" "$firmware" "${QEMU_DATA:-}" -- "${qemu_argv[@]}")
+    "$qemu" "$UEFI_FIRMWARE_COMBINED" "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS"
+    "${QEMU_DATA:-}" -- "${qemu_argv[@]}")
 if [[ "$clock_plan" == true ]]; then
     "${clock_check[@]}"
     exit 0

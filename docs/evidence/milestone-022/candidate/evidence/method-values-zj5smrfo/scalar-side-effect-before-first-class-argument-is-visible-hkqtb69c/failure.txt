@@ -1,2 +1,0 @@
-scalar side effect before first class argument is visible: scalar side effect before first class argument is visible: compiler exit 1: b'aurorac: duplicate or reserved class member: read\n'
-Preserved reproduction: /workspace/scratch/48c5de6446f8/aurora-m022-method-candidate/evidence/method-values-zj5smrfo/scalar-side-effect-before-first-class-argument-is-visible-hkqtb69c

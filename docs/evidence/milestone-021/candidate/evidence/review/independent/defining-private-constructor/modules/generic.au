@@ -1,1 +1,0 @@
-export module generic;class Locked{Locked(){} };export template<Value T>auto inspect(T x)->i64{const Locked z=Locked();return 42;}

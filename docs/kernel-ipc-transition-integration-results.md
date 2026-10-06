@@ -1,5 +1,45 @@
 # IPC transition native and runtime results
 
+## Current-main integration and input-review addendum — 2026-10-06
+
+**The prior IPC checkpoint's scoped gates are complete; this fresh current-main
+composition is unqualified.** The 586-file source manifest
+`2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf`
+has separately accepted full developer D and pinned-prebuilt P native workflows,
+five fatal sanitizer entrypoints, bounded linked review of 28 images (26+2), and
+182 actual boots (177 production + 3 capacity + 2 normal restoration).
+
+The same original reviewer completed a fresh reconsidered review of the two
+original input-guard images, and its bounded static scope was accepted. Report
+SHA256 is `4e019368228111796dc4d45e7c8af5af2e73ab3a88d6f19418fda70790506014`;
+`JOIN-28.json` adds these two images to the unchanged prior 26-image review.
+The interrupted review/error remains historical and unaccepted, with no credit
+transferred from its partial output. The fresh review's corrected CFG assertion
+was a reviewer-method limitation, not a product defect. The exact durability
+receipt is `6d2b84745c63d0abb714262dbb5098a5ecf593d61a0efea512751110a53c07ff`;
+its private Library archive is `libfile_05e518f97ad48191bff467a59b3c13aa`, SHA256
+`bd5c29e3266c5ffb77eb8aff9c88316620e4cdecc055bf2b6dde76ae9e0c9558`.
+Full references and the unchanged earlier snapshots are in the
+[receipt index](evidence/ipc-transition-policy/receipts.json).
+
+This integration composes published PR28 head
+`28921dff57e671c3a9d3c25c6c3af371be51fe74` onto accepted main
+`25d76b1799c2a29d21b175b6b720c7a256e97b9e`. It changes executable source as well
+as documentation. Old ABI/stack/mapping addresses, image identities and test
+receipts do not qualify the combined graph, including main's `memory.S` changes.
+Independent source/linked review and fresh native, sanitizer and runtime
+integration remain required before merge qualification. No current-source
+execution is claimed. The original wall-clock retirement failure remains
+unresolved stress evidence; the fixed-clock pass does not explain or repair it.
+Main's PR33 full GCC 14 native and focused GCC 16 boot results retain their
+separate scope; neither Clang kernel nor full Gentoo native acceptance is claimed.
+
+## Prior published status — before input-review reconsideration
+
+The following status and execution records identify the older PR27-based
+checkpoint. Blocked/pending statements in that snapshot are superseded only by
+the dated addendum above; they are not the status of this current-main composition.
+
 As of 2026-10-06, the exact full public developer **D** and pinned-prebuilt **P**
 release native workflows, the separate fatal sanitizer supplement and the full
 182-boot runtime regression have independent scoped acceptance. The two input-guard
@@ -172,7 +212,7 @@ remains preserved. A narrowly reviewed successor and one ten-method mocked
 control passed before the new preflight and sole actual runtime run.
 
 
-## Preserved failures, remaining gates and evidence limits
+## Preserved failures, prior remaining gates and evidence limits
 
 The original wall-clock aggregate remains **failed at mode 163,
 `user-retire-pending`, after 162 partial passes**. The later single traced success
@@ -193,8 +233,9 @@ compiler and generated assembly are uninstrumented; `detect_leaks=0` gives no
 leak-clean result. The tiny copy wrapper contains ASan initialization/registration
 only, without operation-level load/store or UBSan handler instrumentation.
 
-The required remaining technical gate is the **platform-blocked, unaccepted
-linked review of both input-guard images**. Runtime acceptance does not waive it.
+At this prior published snapshot, the remaining technical gate was the
+**platform-blocked, unaccepted linked review of both input-guard images**. The
+dated addendum above records its separate closure; runtime acceptance did not waive it.
 PR28 remains draft and `overall_merge_qualified=false`. This docs-only successor
 of `d6891c9d6a09dd154df9e11a7a2d7e800e617252` preserves executable inputs; it is
 not relabeled as the executed 586-file manifest.

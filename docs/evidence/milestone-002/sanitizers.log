@@ -1,3 +1,0 @@
-PASS: physical-page ownership, invalid inputs, exhaustion, reuse, 10000 model steps
-PASS: 511 identity mappings, W^X/domain/default-deny policy, malformed/overlapping firmware grants
-PASS: smoke validators, 13 success cases and 89 failure regressions (no QEMU required)

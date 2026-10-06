@@ -4,7 +4,7 @@ Milestone021 implements namespace-level function templates with one or two
 `Scalar` or `Value` type parameters and explicit concrete call arguments.
 Complete release/fatal host ASan/UBSan compiler gates, independent review/replay,
 fresh parent aggregate and three existing UEFI integration profiles passed.
-[Verification](../docs/verification.md) and [M021 evidence](../docs/evidence/milestone-021/README.md)
+[Verification](../docs/verification.md) and [M021 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-021/README.md)
 identify exact inputs, pins, corrected defects and limits. No new IR instruction,
 runtime generic representation, calling convention, heap, reference/span API or
 foreign ABI is introduced.

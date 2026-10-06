@@ -1,4 +1,0 @@
-INFO integer oracle compiler=/tmp/aurora-m013-gate-a-compiler sha256=2f2718048eaaca6f19c99785755238eb15f4c3cea57be4def51bb6c9ae9a6dac
-INFO integer oracle std.integer sha256=b08857ab2d164c1b78be50b05fcc4277ef84ae736e1bc0f09668082433fd5a54
-PASS integer oracle self-tests: full-width output, wrong values, wrong signals, exact UD2 sites
-PASS integer oracle: 1510 native cases, 181 exact-site traps; seed=7043, random-count=32; elapsed=4.08s

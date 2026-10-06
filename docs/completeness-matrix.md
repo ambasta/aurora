@@ -1,35 +1,64 @@
 # Completeness and acceptance matrix
 
-## Runtime-reviewed copied IPC transition candidate — 2026-10-06
+## IPC current-main integration candidate — 2026-10-06
 
-All six operational Mailbox transitions use the copied Aurora policy. Trusted
-bootstrap code retains identity, rights, transactions/generations, payload storage
-and commits; bind/revoke are unchanged. Individual refusals preserve records and
-generations, and already committed composite prefixes remain committed.
+The six Mailbox operations use a copied Aurora transition decision; trusted
+C++/assembly retains identity, authority, payload storage and commit. The prior
+586-file `2b4da219…` checkpoint has independently accepted full D/P native,
+five-entrypoint fatal sanitizer, 28-image bounded static and 177+3+2 actual boot
+results. The formerly blocked two-input-image review is now separately accepted;
+the interrupted attempt stays unaccepted. See [results and receipts](kernel-ipc-transition-integration-results.md).
+This fresh composition on accepted main `25d76b1799c2a29d21b175b6b720c7a256e97b9e`
+is **unqualified**: current `memory.S`, link layout and source need fresh review
+and native/runtime integration. The original wall-clock retirement failure remains
+unresolved; the instruction-clock pass is not a causal repair. Main's separately
+qualified scanner, host and developer-workflow results below retain their scope.
 
-The executed 586-file `2b4da219…` source has independent acceptance for full public
-D/P release native workflows, six actual native cap consumers, the separately
-scoped five-entrypoint fatal ASan/UBSan supplement, and all **182 actual boots**:
-177 production modes, three BIOS capacity probes and two additional normal
-restoration boots. Terminal/control and raw-corpus reviews passed, with exact
-source/runtime preservation and closed owned execution. See the
-[results](kernel-ipc-transition-integration-results.md) and [contract](kernel-ipc-transition-contract.md).
+## UEFI host portability correction — 2026-10-06
 
-The 51-mode timer family passed under its exact instruction-clock contract; 126
-other production modes and all five capacity/restoration boots retained their
-original clock. Nine genuine three-tick exhaustion modes, context samples and
-pending drains remain distinct obligations. The old wall-clock retirement failure
-and inconclusive traced attempt retain their original scope, with no prefix credit.
+The bootstrap now supplies compiler-required freestanding memory primitives,
+selects a PE-capable linker independently of native ELF `ld`, and discovers
+combined or matching split OVMF firmware without changing installed templates.
+Actual Gentoo GCC 16 builds reproduced the missing memory calls; the correction
+passed focused image and normal/ACPI/protection-fault emulator gates. GCC 14
+normal UEFI remains checked, and the complete GCC 14 native aggregate passed
+independent terminal review. The full native graph was not rerun on GCC 16.
+See the concise [host matrix and rerun command](local-development.md#repeating-host-build-checks).
+Clang's bootstrap builds, but image builds still fail on GCC-only flags. These
+are bounded host/firmware checks, not all-host or physical-machine qualification.
 
-**Full IPC/kernel acceptance remains incomplete.** Both supplemental input-guard
-linked reviews remain platform-blocked and unaccepted; runtime results do not
-waive them. The 26-image stack/link review remains conditional on its exact bytes
-and assumptions. SAN excludes generated-assembly/compiler instrumentation and
-leak checking. The hosted service-budget model still has no IPC/RR restart
-coverage; actual guest results are separately credited. PR28 stays draft. This
-later docs/evidence-only source is not relabeled as the executed 586-file source.
+## Verified bounded ASCII token scanner — 2026-10-06
 
-## Prior five-consumer developer-test workflow — 2026-10-05
+The Aurora-authored `std.token_scan` library consumes readonly final byte windows
+and returns copied token kinds, coordinates, consumption and skipped-LF counts.
+The [frozen contract](token-scan-contract.md) fixes C-locale ASCII classification,
+opaque `//` comments, ten paired operators, recoverable unsupported-byte progress
+and masked invalid windows. The input owner is bounded at 4096 bytes.
+The **full root release native aggregate and separate focused fatal host scanner
+gate passed independent review**. See [results and scope](token-scan-results.md).
+The host compiler and lexer adapter were instrumented; generated Aurora assembly
+was not, leak checks were disabled, and no full compiler sanitizer regression is
+claimed. The compiler, parser and kernel are unchanged;
+this is neither self-hosting nor a complete standard library. Existing verified
+checkpoint claims below retain their original source and scope.
+
+## Local developer command shortcuts — 2026-10-06
+
+The [local development guide](local-development.md) documents thin normal BIOS
+and UEFI QEMU launch wrappers, compiler-only test entry, discoverable Make help
+and separate UEFI build target. Standalone wrappers reject inherited test contexts;
+Make validates active contexts before launch aliases can run. Existing build, smoke validation and shared
+compiler-test mechanisms remain authoritative. Both image builders honor `CXX`
+and check tools up front; this does not make every inherited host test portable.
+These are developer-command changes, with no new kernel/language capability or
+physical-hardware qualification. The exact v3 source passed 17 normal and 17
+optimized synthetic tests, the complete compiler-only suite, and two actual
+normal BIOS/UEFI boots. See [the focused results](local-development-results.md)
+for source identities, preserved failed/blocked attempts and scope limits. The
+full root native graph and complete emulator matrix were not rerun for this
+change; historical results below retain their original scope.
+
+## Current developer-test tooling candidate — 2026-10-05
 
 The [shared test contract](developer-test-contract.md) adds build-once local
 developer provenance and an explicit externally pinned native acceptance route.
@@ -114,7 +143,7 @@ This is a requirements map, not a completion percentage. Snapshot: 2026-10-04, v
 | Tooling/self-hosting | Host compiler/build/test harness; no native self-hosting | Native toolchain/packages/debugger/profiler; build compiler/system using the native core/runtime/library, inspect target dependencies and compare multi-stage outputs |
 | Boot/CPU | Separate OVMF-tested relocatable UEFI loader/payload with bounded final-map handoff, own stack/mappings and Aurora execution; Sequential protected user domains now run on UEFI; bounded UEFI run budgets and controlled client recovery are implemented. Emulator-only BIOS loader, explicit 4 KiB permissioned identity mappings, serial result, IDT/GDT/TSS/guarded IST, NXE/WP and fail-stop paths verified in QEMU | Native or UEFI boot contract; validated memory map, exception recovery, per-CPU state, feature detection, real-machine logs |
 | Memory/process isolation | Partial trusted C++ bootstrap: E820 usable-map validation and bounded 128-page arena, move-only generation/epoch tickets; controlled ring-3 probe plus new separately compiled user fixtures, bounded scalar return and validated compiler-fault containment in three owned CR3 domains with leased stacks, tested foreign-access denial, root restoration, scrubbed reuse and stale-handle checks; bounded integer-only BIOS preemption plus milestone009 sequential UEFI domains with explicit layout authority, private backing and guarded entry stacks; no general process model | Physical/virtual allocation, user isolation, capabilities, revocation and resource accounting; cross-domain access/forgery tests fail safely |
-| Scheduler/SMP/IPC | Bounded QEMU xAPIC single-CPU integer-context preemption, fixed tasks/slice budgets, pending-IRQ drain; staged copied-scalar request/reply IPC on UEFI with incarnation-bound grants and cancellation/restart; UEFI role/phase/transaction-bound client and service interrupt-count budgets with disposal, mapping retirement, scrub and rebinding; Aurora owns the copied two-slot next-eligible policy, with authority and commit still in trusted bootstrap code; no SMP, arbitrary suspended IPC, calibrated time or general scheduler | Preemptive scheduling, multiprocessor synchronization, timers and bounded IPC; fairness, interrupt storms, starvation and restart tests |
+| Scheduler/SMP/IPC | Bounded QEMU xAPIC single-CPU integer-context preemption, fixed tasks/slice budgets, pending-IRQ drain; staged copied-scalar request/reply IPC on UEFI with incarnation-bound grants and cancellation/restart; UEFI role/phase/transaction-bound client and service interrupt-count budgets with disposal, mapping retirement, scrub and rebinding; Aurora owns the copied two-slot next-eligible and six-operation IPC transition policies, with authority and commit still in trusted bootstrap code; current-main IPC integration is unqualified as recorded above; no SMP, arbitrary suspended IPC, calibrated time or general scheduler | Preemptive scheduling, multiprocessor synchronization, timers and bounded IPC; fairness, interrupt storms, starvation and restart tests |
 | Platform/power | Bounded post-firmware RSDP/XSDT/MADT discovery through a revocable R-NX window, tested in OVMF; read-only q35 MCFG/PCI function inventory through revocable UC mappings; milestone014 adds explicit validated read-only BAR/profile authority with revoked-window tests and a pinned clean-firmware fixture; no AML, device activation/IOMMU driver stack or physical-platform power support | Discovery, DMA isolation, interrupt routing, suspend/resume, shutdown and thermal policy; malformed tables, stale DMA and transition-failure tests |
 | Storage/network/input | No target driver/filesystem/network/input implementation; native NVMe object/extent filesystem and XFS on-disk backend are specified in [storage requirements](../storage/design/requirements.md); host-only durability model and traceability tests pass, not mount support | Real drivers and services, persistence/recovery, networking and input; corruption, unplug, exhaustion and restart tests on named devices |
 | AMD display | Not implemented; no framebuffer acceptance result | Boot framebuffer then native display separately; modesetting, hotplug and resume tested on named GPU/connector tuples |
@@ -345,7 +374,7 @@ separately. M019's full 166 modes remain historical. No new IR/ABI, deduction,
 overloads, generic methods, function capacity parameters, recursive expansion,
 heap/resource/reference generics, complete library, self-hosting or physical
 hardware support follows. See [contract](../compiler/FUNCTION-TEMPLATES.md) and
-[evidence](evidence/milestone-021/README.md).
+[evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-021/README.md).
 
 ## Verified milestone022: copied ordinary method parameters
 
@@ -373,7 +402,7 @@ isolated input replay and full 28/28 stress pass. The abandoned bare-array parse
 exception was reverted; parser.hpp is byte-identical M021. No ownership/reference/
 generic-method, global resource bound, Rust-equivalent safety, physical-hardware
 or equivalent-C performance claim is added. See [contract](../compiler/METHOD-VALUES.md)
-and [evidence](evidence/milestone-022/README.md).
+and [evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-022/README.md).
 
 ## XFS-only local-root lookup checkpoint after milestone022
 

@@ -1,1 +1,0 @@
-module review;import b;auto test()->i64{return ordinary();}

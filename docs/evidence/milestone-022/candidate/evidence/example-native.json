@@ -1,7 +1,0 @@
-{
-  "returncode": 0,
-  "stdout_hex": "2a00000000000000",
-  "stderr": "",
-  "value": 42,
-  "source_sha256": "78a7c48661b77e237645cb27b1f4e6386ca0a9f58f6871cbc27db29c9e052ab1"
-}

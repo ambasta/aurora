@@ -1,6 +1,21 @@
 # Developer test-build and explicit acceptance contract
 
-## Current IPC native status — 2026-10-06
+## Current-main IPC integration addendum — 2026-10-06
+
+This combined source on accepted main `25d76b1799c2a29d21b175b6b720c7a256e97b9e`
+remains unqualified. The prior 586-file `2b4da219…` checkpoint separately passed
+full D/P native, five-entrypoint fatal sanitizer, bounded linked review of all
+28 images and 177+3+2 actual runtime boots. The original reviewer completed the
+missing two-input-image review in a fresh reconsideration; its accepted result
+does not give credit to the interrupted attempt or to this later source.
+Current `memory.S` and linked layout require fresh source/static review, followed
+by newly admitted complete native, sanitizer and runtime integration. Main's
+scanner, portable controls and host workflows keep their own recorded scope;
+PR33 established full GCC 14 native and focused GCC 16 image/boot results,
+not Clang kernel or full Gentoo native acceptance. See [exact results and
+remaining gates](kernel-ipc-transition-integration-results.md).
+
+## Historical PR28 native status — before input-review reconsideration
 
 Fresh full public developer D and pinned-prebuilt P release workflows on the
 586-file manifest `2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf`
@@ -326,14 +341,18 @@ All six cap variables enter the existing both-entry developer/pinned-prebuilt
 mocked rejection controls. The retired executable-Make-expression observation
 stays retired and uncredited. Future changes to executable source still require
 source review, a separate final freeze and freshly admitted complete native and
-emulator qualification. For the exact 586-file `2b4da219…` source, full D/P native
-qualification is complete. The five-entrypoint fatal ASan/UBSan supplement has
-completed with five passed rows and original supervisor exit 0, but independent
-terminal/corpus/linkage acceptance remains pending. The missing input-image linked
-review, exact runtime timing premises and fresh 177+3+2 guest qualification also
-remain open. Documentation-only status changes do not imply a native rerun.
+emulator qualification. The exact older 586-file `2b4da219…` source now has
+separate full D/P native, five-entrypoint fatal ASan/UBSan, runtime-premise,
+28-image bounded static and 177+3+2 guest acceptance, recorded in the dated
+addendum. The fresh current-main composition changes executable source and
+requires new qualification; none of those receipts establishes a rerun here.
 
 ## Native-free emulator clock contract gate
+
+Current-main addendum (2026-10-06): the composed clock and firmware suites now
+contain 13 and 15 methods respectively, authored but not executed. Both ordinary
+and optimized focused runs and complete native routing remain required. The
+historical eight-method result below is not coverage of the added firmware join.
 
 `make test-emulator-clock` runs `tests/kernel-emulator-clock.py` in ordinary and
 optimized (`python3 -O`) Python, with `PYTHONDONTWRITEBYTECODE=1` for both recipes.

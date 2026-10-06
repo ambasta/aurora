@@ -1,1 +1,0 @@
-module audit;class Value{public:i64 value;};class Receiver{public:Receiver(){}auto inspect(Value source)const->i64{return source.value;}};auto answer()->i64{Value source=Value{.value=42};Receiver receiver=Receiver();return receiver.inspect(source);}

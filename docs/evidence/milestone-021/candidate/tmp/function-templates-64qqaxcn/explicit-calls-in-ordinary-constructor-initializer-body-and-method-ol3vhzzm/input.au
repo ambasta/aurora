@@ -1,1 +1,0 @@
-module app;template<Value T>auto copy(T value)->T{const T result=value;return result;}class Ordinary{u8 value;public:Ordinary(u8 x):value(copy<u8>(x)){copy<i64>(0);}auto get()const->u8{return copy<u8>(value);}};auto test()->i64{Ordinary value=Ordinary(42u8);return i64(value.get());}

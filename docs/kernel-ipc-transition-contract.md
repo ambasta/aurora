@@ -1,5 +1,19 @@
 # Copied Aurora IPC transaction transition candidate
 
+## Current-main integration addendum — 2026-10-06
+
+This source composes published PR28 head `28921dff57e671c3a9d3c25c6c3af371be51fe74`
+onto accepted main `25d76b1799c2a29d21b175b6b720c7a256e97b9e`. The earlier
+586-file `2b4da219…` source completed independently accepted D/P native,
+five-entrypoint fatal sanitizer, 28-image bounded static and 177+3+2 runtime gates.
+The same-reviewer reconsideration closed the two-input-image static gate; the
+interrupted review remains unaccepted. Those reports are source-specific.
+The fresh combined source is **unqualified** and needs independent source/linked
+review, including current `memory.S` and linked layout, then newly admitted native,
+sanitizer and runtime integration. The historical sections below retain the
+original dependency, qualification sequence and failures. See [dated results and
+remaining integration gates](kernel-ipc-transition-integration-results.md).
+
 ## Historical dependency and observable gate, before source implementation
 
 This candidate starts from accepted PR26 main
@@ -23,9 +37,9 @@ for the transition, next state and payload-treatment selection, while actual
 identity, storage and commit authority remain in trusted C++/assembly. An unused
 module or comparison against the old C++ decision does not meet the gate.
 
-## Accepted-base portable workflow integration
+## Historical PR27-base portable workflow integration
 
-The current local source candidate reconciles the reviewed final PR27 tooling
+The historical source candidate reconciled the reviewed final PR27 tooling
 and documentation overlay with the IPC source. PR27 merged at
 2026-10-05 22:52:33 UTC as main `772b9c8a6291aa3cc656b409ce0263f73d45b034`,
 tree `62a2728942d9c36df16bd00189260f6a94cb847e`. The 574-file source was
@@ -69,9 +83,10 @@ The exact 51-mode UEFI instruction-clock family and all 126 original-clock modes
 passed, followed by three original-clock capacity probes and two actual normal
 restoration boots. QEMU 10.0.13 and the exact historical combined OVMF image were
 bound to the admitted run. The 26-image static and conditional timing reviews
-retain their assumptions. Both supplemental input-guard linked reviews remain
-platform-blocked and unaccepted; their runtime passes are not substitutes. Full
-IPC/kernel acceptance and merge qualification remain incomplete. The original
+retain their assumptions. At that published snapshot both supplemental input-guard
+linked reviews were platform-blocked and unaccepted; their runtime passes were not
+substitutes. The dated addendum records the separate static closure and the fresh
+current-main integration gates. The original
 wall-clock retirement failure remains preserved and unexplained. See the
 [clock contract](kernel-emulator-clock-contract.md).
 
