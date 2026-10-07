@@ -43,6 +43,23 @@ strings and cap-runner ASTs were preserved. This is focused correction coverage,
 not a new full aggregate or emulator qualification. See the
 [scope and exact verification](developer-test-contract.md#per-invocation-output-budgets).
 
+## Focused developer core registration — 2026-10-07
+
+The Meson developer path adds seven complete existing frontend/class/value,
+signed/unsigned integer and module/depth runners. Together with initialization-
+facts they form `core`; `dev` combines core with four whole byte/storage runners,
+including the already-merged binary-writer test.
+Selection changes scheduling only: existing cases, full-width observations,
+trap/diagnostic checks and the explicit full Make qualification graph remain.
+Ordinary edits use dependency-selected checks, including separate focused tests
+for components not registered in Meson. This registration does not claim new
+language capability, broader safety proof, kernel or hardware qualification.
+After composing the merged console, writer, output-budget/style and frontend
+increments, all twelve tests passed with two workers in 20.71 seconds on GCC 14.2.
+An unchanged subsequent build ran no compiler or linker command. The initial
+PR38-based eleven-test result remains separately recorded. See
+[coverage, measurements and commands](meson-bootstrap.md).
+
 ## Bounded owned binary writer candidate — 2026-10-07
 
 `std.binary_writer` adds an Aurora-authored `BinaryWriter64`: a private owned

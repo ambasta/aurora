@@ -14,7 +14,7 @@ aurorac = executable('aurorac', 'compiler/main.cpp', native: true, install: fals
 if build_machine.system() != 'linux' or build_machine.cpu_family() != 'x86_64'
   error('The bootstrap test prototype currently requires an x86-64 Linux build machine.')
 endif
-foreach tool : ['as', 'ld', 'nm']
+foreach tool : ['as', 'ld', 'nm', 'objdump']
   find_program(tool, native: true)
 endforeach
 
