@@ -6,7 +6,7 @@ The compiler scanner can now retain exact whitespace and line-comment trivia
 alongside canonical tokens and their immutable source snapshot. Legacy `lex`
 uses that same scanner without retaining trivia. This supports a future
 compiler-owned Aurora formatter without introducing a parallel lexer/parser.
-Reconstruction passed for all 73 repository sources and 256 generated inputs,
+Reconstruction passed for the 73-file pre-composition source corpus and 256 generated inputs,
 alongside adversarial trivia and canonical-template-token checks. The 27 diagnostic
 cases, 793 existing frontend checks and 26 baseline assembly comparisons passed.
 Independent review accepted this bounded increment. See the
@@ -20,7 +20,7 @@ reuse module, type/lifetime and verified-IR checks without assembly output. Firs
 errors preserve text compatibility and imported-file provenance; unknown semantic
 ranges remain explicit. A fresh GCC 14.2 warning-clean build, focused lexer/parser
 tests and 27 CLI cases passed. All 793 existing checks in six targeted frontend
-suites passed, and all 26 examples emitted byte-identical assembly against the
+suites passed, and 26 representative examples emitted byte-identical assembly against the
 reviewed baseline compiler. Independent source and retained-evidence review accepted this bounded increment. See the [bounded contract](../compiler/DIAGNOSTICS.md). Trivia retention,
 formatting, LSP position conversion and document updates are still separate work.
 
@@ -42,6 +42,23 @@ Ruff/clang-format configuration and explicit style commands. Generated fixture
 strings and cap-runner ASTs were preserved. This is focused correction coverage,
 not a new full aggregate or emulator qualification. See the
 [scope and exact verification](developer-test-contract.md#per-invocation-output-budgets).
+
+## Focused developer core registration — 2026-10-07
+
+The Meson developer path adds seven complete existing frontend/class/value,
+signed/unsigned integer and module/depth runners. Together with initialization-
+facts they form `core`; `dev` combines core with four whole byte/storage runners,
+including the already-merged binary-writer test.
+Selection changes scheduling only: existing cases, full-width observations,
+trap/diagnostic checks and the explicit full Make qualification graph remain.
+Ordinary edits use dependency-selected checks, including separate focused tests
+for components not registered in Meson. This registration does not claim new
+language capability, broader safety proof, kernel or hardware qualification.
+After composing the merged console, writer, output-budget/style and frontend
+increments, all twelve tests passed with two workers in 20.71 seconds on GCC 14.2.
+An unchanged subsequent build ran no compiler or linker command. The initial
+PR38-based eleven-test result remains separately recorded. See
+[coverage, measurements and commands](meson-bootstrap.md).
 
 ## Bounded owned binary writer candidate — 2026-10-07
 

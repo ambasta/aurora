@@ -36,11 +36,18 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 2. Implement running mechanisms, not unused scaffolding presented as functionality.
 3. Add positive, negative, regression and adversarial tests. Check metadata against
    actual generated layout/behavior. Fail closed for unsupported syntax/semantics.
-4. Run make test under the shared build-once compiler contract and actual emulator
-   gates for kernel-affecting changes. For independently pinned native acceptance,
-   use make test-acceptance with an externally reviewed ACCEPTANCE_COMPILER_SHA256.
-   Require a newly completed matching run.json; Make exit zero alone is not evidence.
-   Fault injection gates must fail as intended and restore a normal image afterward.
+4. For ordinary edits, run dependency-selected checks: use the named Meson core,
+   bytes or dev suites for covered compiler/library changes, and the relevant
+   focused checks for other components. Inspect the changed code's dependencies;
+   add a missing focused safety test rather than relying on unrelated suites.
+   Leaf documentation edits need content/link review, not a fresh full native run.
+   Use make test explicitly for full native qualification under the shared
+   build-once compiler contract, plus actual emulator gates for kernel-affecting
+   qualification. For independently pinned native acceptance, use make
+   test-acceptance with an externally reviewed ACCEPTANCE_COMPILER_SHA256.
+   Full qualification requires a newly completed matching run.json; Make exit zero
+   alone is not evidence. Fault gates must fail as intended and restore a normal
+   image afterward. Focused passes never replace an explicitly required full gate.
 5. Review changes independently before considering a milestone verified. Record
    reproduced defects and fixes, commands, source revision, tool versions and limits.
 6. Update implementation docs and the completeness matrix in the same change.
@@ -50,6 +57,10 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 
 ## Validation
 
+- meson test -C build/meson --suite core --num-processes 2: focused frontend,
+  class/value, integer, module/depth and initialization checks, incrementally built
+- meson test -C build/meson --suite bytes --num-processes 2: complete byte/storage runners
+- meson test -C build/meson --suite dev --num-processes 2: both focused suites
 - make test: fresh current-source compiler once, then the complete root native graph
 - make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>: explicitly
   pinned root native graph; optional ACCEPTANCE_COMPILER selects a reviewed prebuilt

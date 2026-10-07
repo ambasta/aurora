@@ -94,7 +94,7 @@ EOF errors. Every prefix of an array/expression sample also gets parser coverage
 
 A separate 23.72-second replay passed 793 checks from the existing core compiler,
 classes, scalar templates, nested values, modules and bounded-depth suites. All
-26 repository examples compiled successfully with both the candidate and reviewed
+26 examples from that tested source snapshot compiled successfully with both the candidate and reviewed
 baseline compiler and emitted byte-identical assembly without path normalization.
 The kernel example used its required `kernel/policies` module root. Five negative
 fixtures additionally preserved identical legacy stderr/status and existing output

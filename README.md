@@ -78,7 +78,7 @@ for its focused validation and limits.
 See [local development](docs/local-development.md) for dependencies, compiler and
 firmware options, build-only commands and troubleshooting. `make help` lists the
 entrypoints. Host/toolchain qualification is recorded with each tested result.
-For incremental compiler builds and focused parallel byte/storage tests, use the
+For incremental compiler builds and focused parallel core/byte/storage tests, use the
 optional [Meson/Ninja bootstrap](docs/meson-bootstrap.md).
 
 ## Explore the project
@@ -103,13 +103,20 @@ formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
 
 ```sh
+meson test -C build/meson --suite dev --num-processes 2  # focused incremental feedback
 ./scripts/compiler-test.sh    # complete compiler-only suite
 make test                     # complete native aggregate; no QEMU
 make smoke-all                # complete emulator matrix; QEMU and firmware required
 ```
 
-Ordinary tests build the current compiler once; no historical binary pin is
-needed. A completed matching run record determines native test coverage;
+Configure the [Meson build](docs/meson-bootstrap.md) first, then choose `core`,
+`bytes` or individual tests according to the changed dependencies. Other components
+still use their focused checks. Leaf documentation edits need content/link review;
+full native qualification is an explicit broader gate, not a prerequisite for every edit.
+
+Make's compiler-consuming tests build the current compiler once per invocation;
+Meson reuses an unchanged build. No historical binary pin is needed for either
+developer path. A completed matching run record determines full native test coverage;
 compiler-only or focused checks do not cover the full system. See the
 [developer-test contract](docs/developer-test-contract.md) for result interpretation,
 explicit acceptance pins and sanitizer controls, and the

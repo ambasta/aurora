@@ -26,15 +26,15 @@ exact reconstruction, bounds, token equivalence, EOF, CRLF/tabs, comment-at-EOF,
 all non-LF byte values in a comment, structured rejection, canonical `>>`, and
 256 deterministic generated scanner inputs. Optional filename arguments extend
 reconstruction checks to a corpus. The fresh warning-clean GCC 14.2 gate passed
-all 73 repository `.au` sources and all generated/adversarial cases. The 27
+all 73 `.au` sources in the frozen pre-composition candidate and all generated/adversarial cases. The 27
 structured-diagnostic cases and 793 existing frontend checks also passed. All
-26 examples emitted byte-identical assembly against the accepted diagnostics
+26 examples from that candidate emitted byte-identical assembly against the accepted diagnostics
 compiler; five legacy rejection/output-preservation pairs were unchanged. Total
 bounded gate time was 73.03 seconds. Source and compiler pins were unchanged.
 Independent review accepted this bounded increment; no full native aggregate, sanitizer or QEMU
 qualification is claimed.
 
 The permanent compiler Make recipe checks 40 explicitly scoped example and
-`library/std` inputs. The separate acceptance gate supplied all 73 repository
-`.au` files from its source manifest, including kernel/package/filesystem inputs.
+`library/std` inputs. The separate acceptance gate supplied all 73 `.au` files from that tested candidate
+source manifest, including kernel/package/filesystem inputs.
 These are distinct, measured corpus scopes; neither scans generated build output.

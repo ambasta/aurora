@@ -1,7 +1,7 @@
-# Incremental bootstrap prototype
+# Incremental developer tests
 
 This is a focused developer path alongside Make. It builds the native C++23
-`aurorac` once per changed compiler input and runs three existing byte/storage
+`aurorac` once per changed compiler input and runs existing core and byte/storage
 scripts directly. It does not enter `compiler_contract.py`, create a fresh
 compiler per test invocation, or change any existing Make or firmware command.
 
@@ -16,7 +16,7 @@ Choose a compiler when configuring a new build directory:
 ```sh
 CXX=g++ meson setup build/meson --backend=ninja
 meson compile -C build/meson -j 2
-meson test -C build/meson --suite bytes --num-processes 2 --print-errorlogs
+meson test -C build/meson --suite dev --num-processes 2 --print-errorlogs
 ```
 
 Use a separate build directory to compare a different compiler or flags. No
@@ -31,33 +31,83 @@ target, `library/std/bytes.au` and `library/std/binary.au` as inputs. Those modu
 currently import no other modules; future imports must be added to this dependency declaration
 until the compiler can emit dependency files itself.
 
-## Tests and scope
+## Choose the checks for the change
 
-The `bytes` suite has three named tests, with their existing default case counts:
+The default developer feedback set is `dev`, comprising `core` and `bytes`.
+All registered tests currently belong to `dev`, so an unfiltered `meson test`
+runs the same set. Use two workers initially to bound concurrent compiler/test
+memory. The warm `core` design target is under two minutes on the measured host;
+this is a feedback budget, not a portable timing guarantee. Cold bootstrap builds
+and broader qualification are separate costs. Each Python test has a 300-second
+timeout, while initialization-facts has a 120-second timeout.
+
+```sh
+meson test -C build/meson --suite core --num-processes 2 --print-errorlogs
+meson test -C build/meson --suite bytes --num-processes 2 --print-errorlogs
+meson test -C build/meson modules source-depth --num-processes 2 --print-errorlogs
+```
+
+Choose by actual dependencies: compiler frontend/class/integer/module changes
+start with `core`; `std.bytes`, `std.binary` or `std.binary_writer` changes start with `bytes`.
+Run the affected component's additional tests for surfaces not registered here,
+including templates, overloads, readonly windows, short-circuit joins, text and
+packages. A focused pass does not imply those other surfaces were exercised.
+Run `dev` when both covered areas change or a wider quick pass is useful.
+For leaf documentation edits, review content, commands and links; do not rebuild
+the compiler or require the full native aggregate without a relevant reason.
+
+## Named coverage
+
+The `core` suite keeps eight complete existing tests, without sampling their cases:
+
+- `frontend`: parsing, scalar/array/class basics, ownership and borrow rejections,
+  reflection, initialization, stack/depth boundaries and exact SIGILL checks
+- `classes`: constructors, receiver mutability, privacy, method calls and cycles
+- `value-calls`: copied class arguments/results, nominal/visibility rejection,
+  evaluation order, alias isolation and wide-value boundaries
+- `signed-integers`: division/remainder boundaries and traps, evaluation order,
+  integer algorithms, overflow and access rejection
+- `unsigned-integers`: full-width arithmetic, comparison, shifts, conversion,
+  overflow traps and mixed-type/literal rejection
+- `modules`: imports, defining-module lookup, visibility/reflection isolation,
+  cycles, file/path/resource limits and rejected source/output aliases
+- `source-depth`: every existing oversized nesting/AST rejection, with unchanged
+  source and absent output on failure
+- `initialization-facts`: the existing C++ model fixture, also in `compiler`
+
+These registrations preserve the runners' native full-width result checks,
+exact SIGILL expectations and diagnostic/output-preservation checks. No runner
+or oracle was changed, and no exhaustive matrix was replaced with first-N cases.
+
+The `bytes` suite has four named tests, with their existing default case counts:
 
 - `byte-codec`: owned byte encodings, layouts, rejections and the storage example
+- `binary-writer`: owned record writes, unchanged-on-failure bytes, copied values,
+  reader interoperation, exact bounds traps and rejection cases
 - `packed-values`: copied values, bounds traps and rejection cases
 - `storage-binary`: readonly readers, CRC32C and offline XFS header cases
 
-The `compiler` suite contains the existing initialization-facts C++ model test.
-`meson test -C build/meson` runs all four registered tests. Select an individual
-test by name, or use `--suite bytes` for the byte/storage feedback loop. Test
+`meson test -C build/meson` runs all twelve registered tests. Select an individual
+test by name, or use a named suite for the relevant feedback loop. Test
 invocations always rerun the selected tests; a successful previous run is never
 used as a cache of current correctness. A library-only edit does not require
 rebuilding the native compiler, but a selected test run reads the edited library.
-The existing Python oracles still compile their small C++ signal observer once
-per test process and compile/assemble generated Aurora cases. The no-compilation
+The byte/storage Python oracles still compile their small C++ signal observer once
+per test process. Python runners compile/assemble generated Aurora cases. The no-compilation
 claim applies to an unchanged `meson compile`, not to these executable tests.
 
-Tests run in parallel by default. Each byte/storage script already owns a unique
-temporary directory; Meson places those below `build/meson/tests` by setting
-`TMPDIR`. The source tree and other build directories are not output destinations.
+Tests run in parallel by default. Each Python script already owns unique
+temporary directories; Meson places those below `build/meson/tests` by setting
+`TMPDIR`, `TMP` and `TEMP`. Module symlinks, FIFOs, alias checks and oversized-source
+fixtures are all contained in those private directories. The source tree and
+other build directories are not output destinations. The C++ model writes no files.
 Meson's normal test logs are in `build/meson/meson-logs`. Existing temporary-output
 cleanup remains unchanged; these focused logs are not the historical native
 acceptance receipts and do not preserve every generated binary.
 
-Only these targets are migrated. The existing full native, sanitizer, firmware,
-QEMU and independently pinned qualification workflows remain separate. A pass
+Only these targets are migrated. Use `make test` explicitly for the complete
+native qualification graph and its matching run receipt. Existing sanitizer,
+firmware, QEMU and independently pinned qualification workflows remain separate. A pass
 here is focused developer evidence, not full-system or hardware qualification.
 
 ## Implementation references
@@ -66,6 +116,69 @@ here is focused developer evidence, not full-system or hardware qualification.
 - [Meson generated sources](https://mesonbuild.com/Generating-sources.html)
 - [Meson unit tests and suites](https://mesonbuild.com/Unit-tests.html)
 - [Meson custom-target dependency options](https://mesonbuild.com/Reference-manual_functions.html#custom_target)
+
+## Final joined developer suite — 2026-10-07
+
+The twelve-test graph was then checked on the exact 644-file source tree merged
+as `46743cd15ff462e03dfab93279808ab68f1fed74`, including console, binary writer,
+output-budget/style, structured diagnostics and lossless-lexer work. The selected
+compiler, library and runner files matched that tree; this increment changed only
+Meson routing and documentation. A fresh Meson compiler build had SHA256
+`993c94564d6bf5d66693491e871e07e148e1a75180cedf82f0f9ef1ee4e6003d`.
+
+- All twelve `dev` tests passed with two workers in 20.71 seconds wall, using the
+  same recorded GNU/Linux toolchain. Frontend/classes began 4.0 milliseconds apart
+  and overlapped for 1.38 seconds.
+- Core counts remained 207 frontend, 74 class, 59 value-call, 84 signed-integer,
+  95 unsigned-integer, 72 module and 11 depth cases, plus the initialization model's
+  7,405,472 checks. Byte/storage counts remained unchanged. The additional complete
+  writer runner passed 278 native cases, eight rejections, three exact bounds traps
+  and its executable example in 2.44 seconds.
+- Reconfiguration and the changed-input build took 0.89 and 35.48 seconds,
+  respectively. The final unchanged compile took 0.38 seconds and reported no work.
+  Compiler digest, size, modification time and Ninja's build log remained unchanged
+  across the test invocation and final no-op.
+- The complete controlled check finished in 58.42 seconds. Peak sampled owned
+  allocation was 29.49 MiB, including both source snapshots and retained evidence;
+  minimum observed free disk was 16.66 GiB and available memory was 7.09 GiB.
+  Maximum build-child RSS was 703 MiB. These are observations, not portable limits.
+  All 644 source files stayed unchanged during the run; only measured-result
+  documentation was updated afterward.
+
+The diagnostics/lossless lexer dedicated harnesses and newer unregistered features
+still have separate focused gates. This run does not replace those or the complete
+native, sanitizer, emulator or hardware qualification workflows.
+
+## Initial developer suite — 2026-10-07
+
+The initial eleven-test result below predates the additional `binary-writer`
+registration, which reuses the complete existing PR40 runner without alteration.
+
+The core registration was tested against merged PR38 source
+`54fff77cf2b1cdc796f3fe0929002bd9fca18628`, with the same GCC 14.2.0, GNU binutils
+2.44, Python 3.12, Meson 1.12.1 and Ninja toolchain used below. Only scheduling
+and documentation changed; compiler, library and all existing runner bytes were
+unchanged. One actual `dev` invocation at two workers passed all eleven tests
+in 22.09 seconds wall. This was not a separate core-only timing run.
+
+- New core runners passed 207 frontend, 74 class, 59 value-call, 84 signed-integer,
+  95 unsigned-integer, 72 module and 11 depth cases. Initialization-facts passed
+  its existing 7,405,472 model checks. These counts describe different test kinds,
+  not a combined safety-proof count.
+- The three byte/storage runners retained the default counts recorded below.
+- Frontend and classes started 6.5 milliseconds apart and overlapped for 2.23
+  seconds. Meson's test log records each command, result, duration and environment.
+- A fresh build took 33.46 seconds; a repeated source-depth test took 0.72 seconds;
+  the final unchanged compile took 0.36 seconds and reported `no work to do`.
+  Compiler SHA256, size and modification time, and Ninja's build log were unchanged
+  across both test invocations and the final compile.
+- Setup, build, listing, tests and no-op validation completed in 58.57 seconds.
+  Peak sampled owned-directory allocation was 16.67 MiB, including source, build
+  and temporary outputs. Cold-build maximum child RSS was 699 MiB; this is not a
+  sum of concurrent process memory. All source inputs remained unchanged.
+
+These are focused single-host measurements. There was no full native aggregate,
+sanitizer rerun, QEMU gate or new hardware qualification in this increment.
 
 ## Measured validation — 2026-10-07
 
