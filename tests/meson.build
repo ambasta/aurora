@@ -25,6 +25,7 @@ foreach entry : [
     ['block-io', 'compiler/block_io.py', 'bytes'],
     ['sector-window', 'compiler/sector_window.py', 'bytes'],
     ['xfs-sector', 'compiler/xfs_sector.py', 'bytes'],
+    ['xfs-file', 'compiler/xfs_file.py', 'bytes'],
     ['packed-values', 'compiler/packed_values.py', 'bytes'],
     ['sector-values', 'compiler/sector_values.py', 'bytes'],
     ['storage-binary', 'compiler/storage_binary.py', 'bytes'],

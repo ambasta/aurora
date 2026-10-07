@@ -1,5 +1,18 @@
 # Completeness and acceptance matrix
 
+## Bounded XFS written-file sector candidate — 2026-10-07
+
+A narrow v3 single-written-extent consumer reads all 34 sectors of the preserved
+17,003-byte historical fixture through the shared copied sector-window API and
+zeros bytes past EOF in its final sector. All 267 cases/eight rejections pass in
+normal and optimized Python, with complete geometry/root dependencies and three
+selected Meson runners. [The contract and results](xfs-file-contract.md) preserve
+the corrected import-admission failure, exact arithmetic coverage and supplied
+source/window limits. Independent source and retained-evidence review accepted
+the focused results. No mount,
+allocation-ownership, full aggregate or new compiler qualification is added.
+
+
 ## Call-scoped readonly sector-window candidate — 2026-10-07
 
 One `storage::read_sector_window` function copies a requested sector from a

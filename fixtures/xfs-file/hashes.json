@@ -1,0 +1,32 @@
+[
+  {
+    "name": "superblock.hex",
+    "bytes": 512,
+    "decoded_sha256": "b3ce9d495c5f91596385c4481322b09a684437560897967416ecb5069e29f237",
+    "transport_sha256": "3ab0a775e79630cf73462b8a5c9fc371fb3f3e4ae2860e3bd99b3f1d79b0a574"
+  },
+  {
+    "name": "root.hex",
+    "bytes": 512,
+    "decoded_sha256": "4d1bb74d3d1d1c4fb95f4720dd841a94a1f81d19c02d3f7700df172efb9cdcad",
+    "transport_sha256": "55d7efa2ad18e906145cb648682d2f145d681cb32d4a684a5d8ef97a7820468c"
+  },
+  {
+    "name": "written-inode.hex",
+    "bytes": 512,
+    "decoded_sha256": "39858ab68e2df643a9d7133895df019cc56efc2a0cea7ab57166571620be9029",
+    "transport_sha256": "aed881be73b050dbc392c732a9e5bba825fc21387d02000e5ebe25d4bc28f35e"
+  },
+  {
+    "name": "written-extent-0.hex",
+    "bytes": 20480,
+    "decoded_sha256": "a85a602f970ca9c8e1874782e76d83ae0d884f6e62367e6d21daf9bbf3dd4031",
+    "transport_sha256": "c31effb2768cfe74285c8fa5beff96155cb9c86b33cb8b24eecced8ab1dd8804"
+  },
+  {
+    "name": "written.txt",
+    "bytes": 17003,
+    "decoded_sha256": "1e245b1841f9c93c29c90b553e41e65671773b921d12ca65345f6b3fd6fca5ea",
+    "transport_sha256": "1e245b1841f9c93c29c90b553e41e65671773b921d12ca65345f6b3fd6fca5ea"
+  }
+]
