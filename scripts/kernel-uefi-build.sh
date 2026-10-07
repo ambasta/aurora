@@ -13,6 +13,7 @@ flags=(-std=c++23 -O2 -fstack-usage -Wall -Wextra -Werror -ffreestanding -fno-ex
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ console) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_CONSOLE) ;;
  ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-pair|ivrs-alias|ivrs-reserved|ivrs-scope|ivrs-capability|ivrs-range|ivrs-missing)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2 -DAURORA_UEFI_IVRS)
    flag="${UEFI_MODE#ivrs-}"; extra+=("-DAURORA_IVRS_${flag^^}") ;;
@@ -91,7 +92,15 @@ if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "$
  as --64 --defsym AURORA_RELATIVE_ONLY=1 kernel/exceptions.S -o build/uefi/runtime-exceptions.o
  runtime_objects+=(build/uefi/runtime-entry.o build/uefi/runtime-exceptions.o)
 fi
-"$compiler" --module-root kernel/policies examples/kernel.au -o build/uefi/language.s
+console_objects=()
+language_entry=examples/kernel.au
+if [[ "${UEFI_MODE:-normal}" == console ]]; then
+    language_entry=examples/kernel-console.au
+    as --64 kernel/uefi/console-entry.S -o build/uefi/console-entry.o
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/console.cpp -o build/uefi/console.o
+    console_objects+=(build/uefi/console-entry.o build/uefi/console.o)
+fi
+"$compiler" --module-root kernel/policies "$language_entry" -o build/uefi/language.s
 as --64 build/uefi/language.s -o build/uefi/language.o
 as --64 kernel/uefi/payload-entry.S -o build/uefi/payload-entry.o
 as --64 kernel/uefi/memory.S -o build/uefi/memory.o
@@ -99,7 +108,10 @@ as --64 kernel/uefi/memory.S -o build/uefi/memory.o
 "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/acpi.cpp -o build/uefi/acpi.o
 "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/pci.cpp -o build/uefi/pci.o
 "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -Ibuild/uefi -c kernel/uefi/runtime.cpp -o build/uefi/runtime.o
-ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 build/uefi/payload-entry.o build/uefi/memory.o build/uefi/payload.o build/uefi/acpi.o build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" build/uefi/language.o -o build/uefi/payload.elf
+ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 \
+    build/uefi/payload-entry.o build/uefi/memory.o build/uefi/payload.o build/uefi/acpi.o \
+    build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" "${console_objects[@]}" \
+    build/uefi/language.o -o build/uefi/payload.elf
 objcopy -O binary build/uefi/payload.elf build/uefi/payload.bin
 if [[ "${UEFI_MODE:-normal}" == runtime-table-* ]]; then
     python3 tests/kernel-uefi-tables-stack.py build/uefi "build/uefi/table-stack/$UEFI_MODE"
@@ -114,6 +126,18 @@ for line in subprocess.check_output(['nm','-a','build/uefi/payload.elf'],text=Tr
 if symbols['uefi_payload_entry']!=0: raise SystemExit('Entry must start payload')
 if subprocess.check_output(['nm','-u','build/uefi/payload.elf'],text=True).strip(): raise SystemExit('Unresolved payload reference')
 p=Path('build/uefi/payload.bin')
+console_metadata = Path('build/uefi/console-poll-metadata.json')
+if 'uefi_console_poll_begin' in symbols:
+    begin, end = symbols['uefi_console_poll_begin'], symbols['uefi_console_poll_end']
+    if not 0 < begin < end < symbols['__payload_text_end'] or p.read_bytes()[begin:end] != bytes.fromhex('fbf4fa'):
+        raise SystemExit('Invalid exact console wait site')
+    if 'uefi_runtime_enter' in symbols or 'aurora_kernel_budget_tick' in symbols:
+        raise SystemExit('Console must not contain user runtime or service budget fixtures')
+    console_metadata.write_text(json.dumps(dict(wait_begin=begin, wait_end=end,
+        text_end=symbols['__payload_text_end'], frame_bytes=176, interrupt=symbols['uefi_console_interrupt'],
+        dispatch=symbols['uefi_console_interrupt_dispatch'], polling_count=1250000, uart_irq=0), indent=2)+'\n')
+else:
+    console_metadata.unlink(missing_ok=True)
 Path('build/uefi/uefi-payload.hpp').write_text('namespace aurora::uefi {\n'+f'inline constexpr unsigned long long payload_size={p.stat().st_size};\n'+''.join(f'inline constexpr unsigned long long {name}={symbols["__"+name]};\n' for name in ['payload_text_end','payload_read_end','payload_memory_end'])+'}\n')
 bar_faults={}
 for mode,name,opcode in [('bar-write','uefi_bar_write_probe',bytes.fromhex('c70000000000')),('bar-revoked','uefi_bar_revoked_probe',bytes.fromhex('8b00'))]:

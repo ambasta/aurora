@@ -33,7 +33,6 @@ WRAPPERS = {
 # Byte identity preserves actual unchanged argv and strict validation, not just
 # names in our map. New legitimate changes need a separately reviewed contract.
 UNCHANGED = {
-    "scripts/kernel-smoke.sh": "2eb8f221e04eb3f750fb54d58376b586a37224d9d8345d9e9c8dc2bfc6cc14c6",
     "scripts/kernel-uefi-bar-run.py": "0308965405a2fc10fe32cd0253f2c6732b6ef73f16984fe38351251985de2f15",
     "scripts/kernel-uefi-ivrs-run.py": "b40859a34534387507c4663b252492c1a92cc9e5f393b9477b9b76ae620f3b1b",
     "tests/kernel-boot-capacity.py": "a50b6cb2d0bb3b43f50afa3d8d8059c4504dbe633510eb43b8a1ab16c54c257b",
@@ -41,6 +40,12 @@ UNCHANGED = {
     "tests/kernel-uefi-dispatch-smoke.py": "506ff383b107ad1f4f05297c54e5179a73bcc05978a91f9429a389b5888f97f9",
     "tests/kernel-uefi-user-phases-smoke.py": "8b85959a9f15aa872200fd552ae1fc08ec29da16b396922c05ebd97919e6e1ee",
 }
+
+
+# The BIOS console commit added an early opt-in rejection guard. Its closed
+# whole-file provenance and the unchanged executable smoke body are independent.
+BIOS_SMOKE_SHA256 = 'afaa3d384615bd6df8751b8f189e7656eb95a41839d86cf0347669a568fd628e'
+BIOS_SMOKE_BODY_SHA256 = 'a2b4912ce3e0a77c9b0429770e551eb25df2edc4829be3a94178815be22ce1ad'
 
 
 def wrapper_modes(name):
@@ -322,6 +327,24 @@ class ClockContractTests(unittest.TestCase):
             receipt = json.loads(result.stdout)
             self.assertEqual(receipt["clock_profile"], CLOCK.clock_profile("uefi", mode))
 
+    def test_bios_console_guard_precedes_any_build(self):
+        with tempfile.TemporaryDirectory(prefix='aurora-bios-clock-guard-') as temp:
+            root = Path(temp)
+            scripts = root / 'scripts'; scripts.mkdir()
+            shutil.copy2(ROOT / 'scripts/kernel-smoke.sh', scripts / 'kernel-smoke.sh')
+            builder = scripts / 'kernel-build.sh'
+            builder.write_text('#!/bin/sh\nprintf called > build-called\nexit 91\n')
+            builder.chmod(0o755)
+            for value, expected in (('1', 2), ('0', 91), (None, 91)):
+                marker = root / 'build-called'; marker.unlink(missing_ok=True)
+                env = dict(os.environ); env.pop('KERNEL_CONSOLE', None)
+                if value is not None:
+                    env['KERNEL_CONSOLE'] = value
+                result = subprocess.run(['bash', str(scripts / 'kernel-smoke.sh'), 'normal'],
+                                        cwd=root, env=env, capture_output=True, timeout=5)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual(marker.exists(), expected == 91)
+
     def test_both_normal_restorations_and_three_capacity_probes(self):
         self.assertEqual(CLOCK.AUXILIARY_CLOCKS, {
             ("bios-capacity", "full-127"): CLOCK.ORIGINAL,
@@ -337,6 +360,10 @@ class ClockContractTests(unittest.TestCase):
         self.assertEqual(json.loads(default.stdout), json.loads(explicit.stdout))
         self.assertNotIn("-icount", json.loads(default.stdout)["argv"])
         # BIOS default/restoration and capacity paths are preserved byte-for-byte.
+        smoke = (ROOT / 'scripts/kernel-smoke.sh').read_bytes()
+        self.assertEqual(hashlib.sha256(smoke).hexdigest(), BIOS_SMOKE_SHA256)
+        body = smoke[smoke.index(b'mode="${1:-normal}"\n'):]
+        self.assertEqual(hashlib.sha256(body).hexdigest(), BIOS_SMOKE_BODY_SHA256)
         for path, digest in UNCHANGED.items():
             self.assertEqual(hashlib.sha256((ROOT / path).read_bytes()).hexdigest(), digest, path)
         capacity = ast.parse((ROOT / "tests/kernel-boot-capacity.py").read_text())

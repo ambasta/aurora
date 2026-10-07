@@ -13,7 +13,8 @@ The commands are exact, lowercase ASCII words:
 
 There are no arguments, memory inspection, memory writes, process creation,
 filesystem commands, keyboard/GPU support or physical-machine qualification.
-The UEFI payload has no interactive profile yet. Do not write these images to a
+The opt-in UEFI timer-polled profile is described in the [new console contract](uefi-console.md);
+its focused emulator qualification is recorded in the [results](uefi-console-results.md). Do not write these images to a
 physical disk or change a host bootloader.
 
 ## Input and trust boundary
@@ -80,3 +81,12 @@ The tested compiler SHA-256 is
 QEMU 10.0.13 uses software emulation, the `pc` machine, `qemu64`, one CPU and
 32 MiB RAM. This checkpoint does not qualify UEFI interaction, other host/firmware
 combinations or physical hardware. Sanitizers cover the hosted C++ adapter only.
+
+## Shared receive-error correction
+
+Both console transports now share presentation and a console-only UART wrapper.
+Every LSR read, including output polling, latches receive errors. RX-only flushing
+invalidates stale data-ready state; delimiter-adjacent errors also reject the next
+line. A dropped pasted delimiter requires a later explicit newline for recovery.
+The shared injection tests and focused BIOS/UEFI interaction replays passed with
+the final page-probing compiler; see the [fresh results](uefi-console-results.md).

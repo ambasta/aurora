@@ -4,37 +4,18 @@ bool timer_ready{},timer_armed{},timer_draining{},timer_exhausted{};
 U64 timer_epoch{},timer_owner_epoch{};
 unsigned timer_initial{},timer_remaining{},timer_ticks{},timer_resumes{},timer_drains{},timer_context_hits{},timer_compiled_hits{};
 std::optional<user::DomainHandle> timer_owner;
-auto timer_read(unsigned offset) -> std::uint32_t { return *reinterpret_cast<volatile std::uint32_t*>(LocalApicAdmission::virtual_address+offset); }
-auto timer_write(unsigned offset,std::uint32_t value) -> void {
-    *reinterpret_cast<volatile std::uint32_t*>(LocalApicAdmission::virtual_address+offset)=value;
-    static_cast<void>(timer_read(0x20));
+auto timer_read(unsigned offset) -> std::uint32_t { return LocalApicTimerIo::read(offset); }
+auto read_msr(std::uint32_t index) -> U64 {
+    std::uint32_t low, high;
+    asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(index));
+    return (U64{high} << 32) | low;
 }
-auto read_msr(std::uint32_t index) -> U64 { std::uint32_t low,high; asm volatile("rdmsr":"=a"(low),"=d"(high):"c"(index)); return (U64{high}<<32)|low; }
-auto irq_off() -> bool { U64 flags; asm volatile("pushfq; pop %0":"=r"(flags)); return (flags&0x200)==0; }
-auto timer_quiet(unsigned bank,bool permit) -> bool {
-    for (unsigned part=0;part<8;++part) {
-        const auto allowed=permit && part==timer_vector/32 ? 1U<<(timer_vector%32) : 0;
-        if (timer_read(bank+part*16)&~allowed) return false;
-    }
-    return true;
-}
-auto timer_pending() -> bool { return (timer_read(0x200+(timer_vector/32)*16)&(1U<<(timer_vector%32)))!=0; }
-auto timer_stop() -> bool {
-    if (!timer_ready || !irq_off()) return false;
-    timer_write(0x320,0x10000|timer_vector); timer_write(0x380,0);
-    return timer_read(0x390)==0 && (timer_read(0x320)&0x700ff)==(0x10000|timer_vector);
-}
-auto timer_arm() -> bool {
-    if (!timer_ready || !irq_off() || timer_draining || !timer_quiet(0x100,false) || !timer_quiet(0x200,false)) return false;
-    timer_write(0x320,timer_vector); timer_write(0x380,20000);
-    return (timer_read(0x320)&0x700ff)==timer_vector;
-}
-auto timer_acknowledge() -> bool {
-    if (!timer_ready || !irq_off() || !(timer_read(0x100+(timer_vector/32)*16)&(1U<<(timer_vector%32)))
-        || !timer_quiet(0x100,true) || !timer_quiet(0x200,true) || !timer_stop()) return false;
-    timer_write(0xb0,0);
-    return timer_quiet(0x100,false);
-}
+auto irq_off() -> bool { return LocalApicTimerIo::irq_off(); }
+auto timer_quiet(unsigned bank, bool permit) -> bool { return LocalApicTimerIo::quiet(bank, permit); }
+auto timer_pending() -> bool { return LocalApicTimerIo::pending(); }
+auto timer_stop() -> bool { return timer_ready && LocalApicTimerIo::stop(); }
+auto timer_arm() -> bool { return timer_ready && !timer_draining && LocalApicTimerIo::arm(20000); }
+auto timer_acknowledge() -> bool { return timer_ready && LocalApicTimerIo::acknowledge(); }
 extern const std::byte service_drain_begin asm("uefi_service_drain_begin");
 extern const std::byte service_drain_end asm("uefi_service_drain_end");
 __attribute__((noinline)) auto timer_drain() -> bool {
@@ -93,14 +74,7 @@ auto initialize_service_timer() -> void {
 #endif
     require(tables.verify(arena,*handoff,&*interrupt_admission),"timer mapping tree");
     require(interrupt_admission->matches_registers(timer_read(0x20),timer_read(0x30)),"timer hardware identity");
-    const auto version=timer_read(0x30);
-    asm volatile("outb %0,$0x21; outb %0,$0xa1"::"a"(std::uint8_t{0xff}):"memory");
-    timer_write(0x320,0x10000|timer_vector); timer_write(0x380,0);
-    for (const unsigned offset:{0x330U,0x340U,0x350U,0x360U,0x370U}) timer_write(offset,0x10000);
-    if (((version>>16)&255)>=6) timer_write(0x2f0,0x10000);
-    timer_write(0x80,0); timer_write(0xf0,0x1ff); timer_write(0x3e0,3);
-    require(timer_read(0x80)==0 && (timer_read(0xf0)&0x1ff)==0x1ff && (timer_read(0x3e0)&0xb)==3
-        && timer_quiet(0x100,false) && timer_quiet(0x200,false),"timer initial quiescence");
+    require(LocalApicTimerIo::initialize(timer_read(0x30)), "timer initial quiescence");
     timer_ready=true;
     Serial::text("AURORA_UEFI_TIMER_READY: physical="); Serial::number(LocalApicAdmission::physical_address);
     Serial::text(" virtual="); Serial::number(LocalApicAdmission::virtual_address); Serial::text(" id="); Serial::number(timer_read(0x20)>>24);

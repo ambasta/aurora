@@ -17,6 +17,19 @@ passed the new 110-case/five-rejection runner in both modes; independent review
 accepted the composition and evidence. Dependency suites were not rerun on that compiler. No mount, file
 read, kernel or full-aggregate claim is added.
 
+## UEFI timer-polled serial console — 2026-10-07
+
+`make console-uefi` opens a normal-payload serial prompt using the shared bounded
+editor and Aurora command policy. Admitted LAPIC wakes sample the UART, with UART
+interrupts disabled. Shared error handling rejects affected input across output
+polling and lost delimiters. Final-compiler hosted/fatal sanitizer, linked probe/stack
+review, real BIOS/UEFI interaction, user timer-origin/pending controls and normal
+restorations passed. UEFI responses measured 3.12–20.77 ms; idle used 0.01 CPU seconds
+over 0.600105 seconds. The [contract](uefi-console.md) and [results](uefi-console-results.md)
+preserve the latency failure, warning cleanup and separate review-wait timeout.
+This is focused QEMU qualification, not physical AMD support or a full boot matrix.
+
+
 ## Generated x86 stack probing — 2026-10-07
 
 Function-frame and outgoing-record reservations now step at most 4096 bytes and

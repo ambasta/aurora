@@ -2,6 +2,9 @@
 #include "tables.hpp"
 #include "acpi.hpp"
 #include "runtime.hpp"
+#ifdef AURORA_UEFI_CONSOLE
+#include "console.hpp"
+#endif
 #include "../console.hpp"
 #include "../pages.hpp"
 using aurora::hardware::Serial;
@@ -89,5 +92,8 @@ auto payload_main(U64 arena,U64 size) -> void {
     if (!pool.release(*page) || pool.used()!=0) fail("owned page release");
     if (language_value()!=42) fail("compiled language result");
     Serial::text("AURORA_UEFI_LANGUAGE_OK: value=42\r\nAURORA_UEFI_OK\r\n");
+#ifdef AURORA_UEFI_CONSOLE
+    aurora::uefi::run_console(arena, h);
+#endif
     aurora::hardware::Io::write(0xf4,0x10); for (;;) asm volatile("cli; hlt");
 }

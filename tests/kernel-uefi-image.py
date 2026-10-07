@@ -112,6 +112,12 @@ def main(require_ipc=False):
     names=['payload','payload-entry','language','acpi','pci','runtime','memory']
     symbols=subprocess.check_output(['nm','-a',str(BUILD/'payload.elf')],text=True)
     if 'uefi_runtime_enter' in symbols: names+=['runtime-entry','runtime-exceptions']
+    if 'uefi_console_interrupt' in symbols:
+        names += ['console', 'console-entry']
+        need('uefi_runtime_enter' not in symbols, 'Console linked a user runtime')
+        console_calls = subprocess.check_output(['objdump', '-drwC', str(BUILD/'console.o')], text=True)
+        for entry in ('aurora_console_byte', 'aurora_console_command'):
+            need(policy_call_present(console_calls, entry), 'Console must call the actual Aurora policy: '+entry)
     if 'uefi_service_drain_begin' in symbols:
         policy_relocations=subprocess.check_output(['objdump','-drwC',str(BUILD/'runtime.o')],text=True)
         need(budget_call_present(policy_relocations),

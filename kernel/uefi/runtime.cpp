@@ -23,6 +23,7 @@
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #include "acpi.hpp"
 #include "budget-transport.hpp"
+#include "apic-timer-io.hpp"
 #include "uefi-user-images.hpp"
 #endif
 #endif

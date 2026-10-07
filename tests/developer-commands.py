@@ -36,6 +36,8 @@ class DeveloperCommands(unittest.TestCase):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
         shutil.copy2(ROOT / "scripts/kernel-console.sh", self.scripts / "kernel-console.sh")
+        for name in ('kernel-uefi-console.sh', 'kernel_uefi_console_clock.py', 'kernel_emulator_clock.py'):
+            shutil.copy2(ROOT / 'scripts' / name, self.scripts / name)
         for name in ("bash", "dirname", "cat", "mkdir", "printf"):
             resolved = shutil.which(name)
             self.assertIsNotNone(resolved, name)
@@ -176,6 +178,34 @@ class DeveloperCommands(unittest.TestCase):
         for name in ("KERNEL_TEST_SCHEDULE", "KERNEL_USER_PROBE_MODE", "KERNEL_CONSOLE", "AURORA_TEST_CONTEXT"):
             self.run_script("kernel-console.sh", env={name: "1"}, expected=2)
         self.run_script("kernel-console.sh", "extra", expected=2)
+        self.assert_no_work()
+
+    def test_uefi_console_uses_original_clock_and_preserves_status(self):
+        self.script(self.scripts / 'kernel-uefi-build.sh',
+                    'mkdir -p build/uefi\nprintf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\n')
+        self.env['REAL_PYTHON'] = sys.executable
+        self.tool('python3', 'exec "$REAL_PYTHON" -B "$@"\n')
+        self.tool('timeout', 'printf "timeout|%s\\n" "$*" >> "$CALLS"\nexit "$FAKE_STATUS"\n')
+        firmware = self.firmware()
+        for status, expected in ((33, 0), (35, 35), (124, 124)):
+            self.run_script('kernel-uefi-console.sh', env={'FAKE_STATUS': str(status), 'OVMF': firmware},
+                            expected=expected)
+        self.assertEqual(len(self.calls()), 6)
+        for build, command in zip(self.calls()[::2], self.calls()[1::2]):
+            self.assertEqual(build, 'build|console')
+            self.assertTrue(command.startswith('timeout|--foreground --kill-after=2 300 qemu-system-x86_64 '))
+            self.assertIn('-machine q35 -accel tcg', command)
+            self.assertNotIn('-icount', command)
+        receipt = json.loads((self.repo / 'build/uefi/console.clock.json').read_text())
+        self.assertEqual(receipt['clock_profile'], 'tcg-original-clock')
+        self.assertEqual(receipt['command_template'], 'normal')
+        self.assertEqual(receipt['execution_status'], 'not-established-by-command-receipt')
+
+    def test_uefi_console_rejects_mixed_controls_before_build(self):
+        for name in ('KERNEL_TEST_SCHEDULE', 'KERNEL_USER_PROBE_MODE', 'KERNEL_CONSOLE', 'UEFI_MODE',
+                     'UEFI_CONSOLE_HANDOFF', 'AURORA_TEST_CONTEXT'):
+            self.run_script('kernel-uefi-console.sh', env={name: '1'}, expected=2)
+        self.run_script('kernel-uefi-console.sh', 'extra', expected=2)
         self.assert_no_work()
 
     def test_empty_fault_environment_is_not_an_injection(self):
