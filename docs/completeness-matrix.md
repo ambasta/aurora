@@ -113,17 +113,23 @@ No publication API, DMA isolation, command submission, disk read, filesystem mou
 or performance claim is added. Real IOMMU and publication-lifecycle qualification
 remain prerequisites to activation.
 
-## Bounded XFS written-file sector candidate — 2026-10-07
+## Bounded XFS inline-extent checkpoint — 2026-10-07
 
-A narrow v3 single-written-extent consumer reads all 34 sectors of the preserved
-17,003-byte historical fixture through the shared copied sector-window API and
-zeros bytes past EOF in its final sector. All 267 cases/eight rejections pass in
-normal and optimized Python, with complete geometry/root dependencies and three
-selected Meson runners. [The contract and results](xfs-file-contract.md) preserve
-the corrected import-admission failure, exact arithmetic coverage and supplied
-source/window limits. Independent source and retained-evidence review accepted
-the focused results. No mount,
-allocation-ownership, full aggregate or new compiler qualification is added.
+The readonly file-sector API supports 0..21 inline records, sparse holes and
+unwritten zero reads, with complete logical-order and physical-range validation
+before selection. Both native Python modes passed 841 cases / 11 rejections,
+including the authentic 34-sector written and 65-sector sparse files. Synthetic
+within-EOF unwritten fixtures remain clearly labelled. Complete focused
+geometry/root and selected storage dependencies also passed. Independent source
+and retained-evidence review accepted the implementation and bounded final claims.
+Trailing preallocation, empty files, Btrees and attributes remain unsupported.
+The [contract and results](xfs-file-contract.md) preserve exact scope and pins.
+No mount, allocation-ownership, compiler rebuild or full aggregate is claimed.
+
+The earlier PR59 single-written-extent implementation passed 267 cases/eight
+rejections and its focused dependencies. Those independently reviewed results
+remain [historical](xfs-file-contract.md#historical-pr59-single-written-extent-validation--2026-10-07)
+and do not qualify the changed implementation above.
 
 
 ## Call-scoped readonly sector-window candidate — 2026-10-07

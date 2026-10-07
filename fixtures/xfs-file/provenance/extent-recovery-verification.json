@@ -1,0 +1,30 @@
+{
+  "operation": "read-only streaming revalidation of recovered historical fixture",
+  "logical_bytes": 335544320,
+  "image_sha256": "a763f544b8ef8ad2015ce1e23e82b9204310c3c5de0da82aafd9db6b6b74def1",
+  "slice_count": 11,
+  "matched_slice_bytes": {
+    "superblock.hex": 512,
+    "root.hex": 512,
+    "written-inode.hex": 512,
+    "written-extent-0.hex": 20480,
+    "empty-inode.hex": 512,
+    "reserve-inode.hex": 512,
+    "reserve-extent-0.hex": 8192,
+    "sparse-inode.hex": 512,
+    "sparse-extent-0.hex": 4096,
+    "sparse-extent-1.hex": 4096,
+    "sparse-extent-2.hex": 4096
+  },
+  "no_expanded_image_mount_device_or_producer_execution": true,
+  "new_unchanged_fixture_files": [
+    "empty-inode.hex",
+    "reserve-inode.hex",
+    "sparse-inode.hex",
+    "sparse-extent-0.hex",
+    "sparse-extent-1.hex",
+    "sparse-extent-2.hex",
+    "sparse.txt"
+  ],
+  "limits": "Historical bytes matched the preserved image and capture record; not independent producer authentication."
+}
