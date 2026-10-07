@@ -1,5 +1,22 @@
 # Completeness and acceptance matrix
 
+## Generated x86 stack probing — 2026-10-07
+
+Function-frame and outgoing-record reservations now step at most 4096 bytes and
+immediately write-probe each endpoint, including tails. Sizes, hidden ABI slots,
+integer registers and checked-operation traps are preserved. Fresh focused
+checks passed after source recovery: 47 probe cases, 67 sector IR and 51 method
+IR checks; handwritten ABI/source checks in both Python modes; eight regression
+suites; and 15 isolated guard cases in each mode. Independent source and retained
+machine-code review passed. A separate PR52 join passed both new storage
+consumers in both Python modes and their five dependency runners. The
+[contract and exact results](../compiler/STACK-GUARDS.md)
+preserve the earlier resource stop and evidence-loss limits. Existing guard
+mappings are required; recursion bounds, bootstrap C++/assembly, kernel admission,
+performance and full aggregate/emulator qualification remain separate.
+
+
+
 ## Checked one-sector I/O candidate — 2026-10-07
 
 A concrete sector-I/O contract adds geometry, copied full-sector reports,
@@ -43,7 +60,8 @@ A joined PR49 Meson build then passed all 17 existing dev tests, including the
 RAM/package additions, and formatter compatibility passed 81 corpus sources and
 30 CLI cases. The original qualified-name audit failure and read-only correction
 are retained. These are not runtime stack guards or automatic kernel admission;
-the emitter currently has no per-page stack probes. No kernel, device, filesystem,
+that checkpoint's emitter had no per-page stack probes; the later
+[probing increment](../compiler/STACK-GUARDS.md) is qualified separately. No kernel, device, filesystem,
 sanitizer or full native-aggregate qualification is added.
 
 

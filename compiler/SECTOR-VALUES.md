@@ -66,8 +66,11 @@ eight-byte call alignment adjustment add further runtime stack usage. Every
 nested live call retains its callers' storage. Ordinary-function recursion has
 no finite whole-program stack bound. The 65,536-byte source-frame limit is a
 compiler resource bound, not a runtime stack guard or a kernel admission rule.
-The current emitter does not probe each intervening page when reserving stack
-storage; guard pages alone do not prove that large reservations cannot skip one.
+The original sector checkpoint's emitter did not probe intervening pages when
+reserving stack storage. The later [stack-probing increment](STACK-GUARDS.md)
+has separate hosted qualification and retains the same frame/record extents;
+guard mappings, kernel admission and complete mixed-call stack budgets remain
+separate requirements.
 Representative finite call-chain measurements and their exact fixture identity
 must accompany native acceptance. Kernel use requires separate review against
 its smaller stack budget and existing protected-image/guard contracts. No kernel

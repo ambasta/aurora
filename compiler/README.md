@@ -119,6 +119,14 @@ values[0] = 11;
 
 U8 elements occupy one byte each; all earlier element types, including bool, occupy eight. Typed loads/stores, checked strides and reflected array sizes use that exact representation. Array length is statically capped to prevent layout overflow; combined local storage in a function is capped at 65536 bytes, including class/scalar/array slots. This limit is a compiler resource bound, not a promise that every target stack has that much space: expression temporaries and call depth need additional stack, and stack exhaustion remains possible.
 
+Generated x86 frames and outgoing value records are reserved in steps of at most
+4096 bytes, immediately write-touching each new stack pointer, including the
+final remainder. ABI layout is unchanged. This requires an existing no-access
+guard of at least 4096 bytes and a valid starting stack; it creates no mappings,
+bounds no recursion and adds no recoverable trap category. The
+[focused hosted guard checks](STACK-GUARDS.md) passed on x86-64 Linux. Bootstrap
+C++/assembly protection, kernel admission and kernel qualification are separate.
+
 Builtin arrays cannot currently be borrowed, returned, passed directly to functions or nested. Private class array storage is supported through the fixed-container contract; class snapshots/results copy its leaves. Arrays of class/owned/reference values are rejected. No raw pointer, slice, unchecked indexing, cast or `any` escape hatch is provided.
 
 ## Working reflection

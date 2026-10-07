@@ -177,6 +177,9 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	$(dir $(OUT))initialization-facts-tests
 	$(IR_TEST_BUILD_PREFIX) $(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/ir_tests.cpp -o $(dir $(OUT))ir-tests
 	$(dir $(OUT))ir-tests
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/stack_probes.cpp -o $(dir $(OUT))stack-probe-tests
+	$(dir $(OUT))stack-probe-tests
+	python3 -B -O ../tests/compiler/sector_values_abi.py $(abspath $(dir $(OUT))stack-probe-tests) --stack-guards
 	CXX="$(CXX)" python3 ../tests/compiler/ir_exhaustive.py $(abspath $(dir $(OUT))ir-tests)
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_values_ir.cpp -o $(dir $(OUT))method-values-ir-tests
 	$(dir $(OUT))method-values-ir-tests
