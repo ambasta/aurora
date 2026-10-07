@@ -1,5 +1,22 @@
 # Completeness and acceptance matrix
 
+## XFS sector-header consumer candidate — 2026-10-07
+
+A checked copied-sector consumer preserves I/O failures, runs the existing XFS
+geometry validator and compares its claimed sector count with supplied source
+capacity. The real preserved header read through the one-sector RAM backend must
+be rejected as too large. Public facts are masked on failure; constructed source
+values do not establish an actual multi-sector backend.
+
+The [contract](xfs-sector-contract.md) defines the focused native gate and the
+separate 1–8-sector borrowed-window prerequisite. Source review and both Python
+modes passed 110 consumer cases/five rejections. The complete geometry dependency
+and block-I/O/owned-sector regressions passed on the unchanged PR51 compiler,
+with independent final evidence review. A separate PR53 probe-compiler replay
+passed the new 110-case/five-rejection runner in both modes; independent review
+accepted the composition and evidence. Dependency suites were not rerun on that compiler. No mount, file
+read, kernel or full-aggregate claim is added.
+
 ## Generated x86 stack probing — 2026-10-07
 
 Function-frame and outgoing-record reservations now step at most 4096 bytes and
