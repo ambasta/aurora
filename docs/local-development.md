@@ -122,7 +122,8 @@ and command-routing tests. Any failed gate stops the check. It does not download
 tools, start QEMU or replace the full `make test` graph. Use a separate checkout
 per host/toolchain; QEMU/firmware checks are a separate step. The standalone
 check rejects inherited compiler pins, output selectors, Make control flags and
-fault-injection settings so they cannot silently reduce or change the run.
+interactive or fault-injection settings so they cannot silently reduce or change
+the run.
 
 Checked on 2026-10-06:
 - Debian 13: GCC 14.2 and binutils 2.44; complete `make test` native aggregate,

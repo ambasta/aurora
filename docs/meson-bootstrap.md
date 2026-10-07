@@ -35,8 +35,8 @@ until the compiler can emit dependency files itself.
 
 The default developer feedback set is `dev`, comprising `core`, `bytes` and the
 explicitly partial semantic `packages` suite. An unfiltered `meson test` runs the
-same 24 tests. Use two workers initially to bound concurrent compiler/test
-memory. The warm `core` design target is under two minutes on the measured host;
+same 26 tests (11 core, 12 bytes and 3 packages). Use two workers initially to
+bound concurrent compiler/test memory. The warm `core` design target is under two minutes on the measured host;
 this is a feedback budget, not a portable timing guarantee. Cold bootstrap builds
 and broader qualification are separate costs. Each Python test has a 300-second
 timeout, while initialization-facts has a 120-second timeout.
