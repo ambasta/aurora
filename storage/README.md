@@ -14,6 +14,11 @@ not a disk driver, durable storage engine, mount implementation or hardware proo
 It models a bounded transaction and checks deliberately broken persistence
 protocols. See [parent checks](design/evidence/parent-final-verification.txt).
 
-Current next work is checked endian/CRC32C parsing and a narrowly scoped XFS
-header-integrity probe, alongside kernel DMA/IOMMU and NVMe prerequisites.
+The Aurora library now provides checked endian/CRC32C parsing, narrow offline
+XFS header/root probes and owned sector buffers. A bounded
+[sector-I/O candidate](../docs/block-io-contract.md) adds one copied RAM sector,
+checked write failures and explicit unsupported durability. Focused native
+validation passed; independent final source and evidence review accepted this
+focused scope. Kernel
+DMA/IOMMU, NVMe and actual filesystem I/O remain prerequisites.
 No user disk is opened, mounted, repaired or formatted by these tests.

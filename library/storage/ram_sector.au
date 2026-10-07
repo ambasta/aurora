@@ -1,0 +1,63 @@
+export module storage.ram_sector;
+import storage.block;
+import storage.sector;
+import storage.block_io;
+
+export namespace storage {
+    class RamSectorDevice {
+        builtin::array<u8, 512> elements;
+        bool locked;
+    public:
+        RamSectorDevice() : elements{}, locked(false) {}
+
+        auto geometry() const -> SectorGeometry {
+            const SectorGeometry result = SectorGeometry(1u64, !locked);
+            return result;
+        }
+
+        auto read_sector(i64 index) const -> SectorReadResult {
+            if (index < 0 || index >= 1) {
+                const Sector512 zero = Sector512();
+                const SectorReadResult failure = SectorReadResult(SectorIoStatus::out_of_range, zero);
+                return failure;
+            }
+            Sector512 sector = Sector512();
+            i64 offset = 0;
+            while (offset < 512) {
+                sector.write_byte(offset, elements[offset]);
+                offset = offset + 1;
+            }
+            const SectorReadResult result = SectorReadResult(SectorIoStatus::success, sector);
+            return result;
+        }
+
+        auto write_sector(i64 index, Sector512 sector) -> SectorIoStatus {
+            if (index < 0 || index >= 1) {
+                return SectorIoStatus::out_of_range;
+            }
+            if (locked) {
+                return SectorIoStatus::read_only;
+            }
+            i64 offset = 0;
+            while (offset < 512) {
+                const BlockByteResult byte = sector.read_byte(offset);
+                elements[offset] = byte.value_or(0u8);
+                offset = offset + 1;
+            }
+            return SectorIoStatus::success;
+        }
+
+        auto make_read_only() -> SectorIoStatus {
+            locked = true;
+            return SectorIoStatus::success;
+        }
+
+        auto flush(SectorFlushMode mode) const -> SectorFlushStatus {
+            if (mode == SectorFlushMode::durable) {
+                return SectorFlushStatus::unsupported;
+            }
+            return SectorFlushStatus::volatile_complete;
+        }
+    };
+
+}
