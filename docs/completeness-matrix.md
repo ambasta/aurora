@@ -446,6 +446,12 @@ Clang's bootstrap builds, but image builds still fail on GCC-only flags. These
 are bounded host/firmware checks, not all-host or physical-machine qualification.
 The current host-build runner also rejects inherited interactive BIOS console
 controls before work, preserving its normal-image scope.
+A fresh PR61 (`ead198439`) Gentoo GCC 16.2.1/binutils 2.47 host gate passed on
+2026-10-07: compiler, normal BIOS/UEFI images, existing focused host checks and
+all four frontend/class/integer sanity runners. Independent retained-evidence
+review accepted the gate. This adds no fresh guest boot or full GCC 16 native
+aggregate; the [host matrix](local-development.md#repeating-host-build-checks)
+records the exact tested scope.
 
 ## Verified bounded ASCII token scanner — 2026-10-06
 
