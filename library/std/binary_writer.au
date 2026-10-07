@@ -1,0 +1,143 @@
+export module std.binary_writer;
+import std.bytes;
+
+export namespace std {
+    enum class ByteWriteStatus { success, out_of_range, value_out_of_range };
+
+    class BinaryWriter64 {
+        builtin::array<u8, 64> elements;
+    public:
+        BinaryWriter64() : elements{} {}
+
+        auto size() const -> i64 {
+            return 64;
+        }
+
+        auto at(i64 offset) const -> u8 {
+            return elements[offset];
+        }
+
+        auto write_u8(i64 offset, u8 value) -> ByteWriteStatus {
+            if (offset < 0) {
+                return ByteWriteStatus::out_of_range;
+            }
+            if (offset >= 64) {
+                return ByteWriteStatus::out_of_range;
+            }
+            elements[offset] = value;
+            return ByteWriteStatus::success;
+        }
+
+        auto write_le16(i64 offset, u64 value) -> ByteWriteStatus {
+            if (offset < 0) {
+                return ByteWriteStatus::out_of_range;
+            }
+            if (offset > 62) {
+                return ByteWriteStatus::out_of_range;
+            }
+            const Encode16Result encoded = encode_le16(value);
+            if (encoded.status() != ByteCodecStatus::success) {
+                return ByteWriteStatus::value_out_of_range;
+            }
+            const Bytes2 bytes = encoded.bytes_or_zero();
+            i64 index = 0;
+            while (index < 2) {
+                elements[offset + index] = bytes.at(index);
+                index = index + 1;
+            }
+            return ByteWriteStatus::success;
+        }
+
+        auto write_be16(i64 offset, u64 value) -> ByteWriteStatus {
+            if (offset < 0) {
+                return ByteWriteStatus::out_of_range;
+            }
+            if (offset > 62) {
+                return ByteWriteStatus::out_of_range;
+            }
+            const Encode16Result encoded = encode_be16(value);
+            if (encoded.status() != ByteCodecStatus::success) {
+                return ByteWriteStatus::value_out_of_range;
+            }
+            const Bytes2 bytes = encoded.bytes_or_zero();
+            i64 index = 0;
+            while (index < 2) {
+                elements[offset + index] = bytes.at(index);
+                index = index + 1;
+            }
+            return ByteWriteStatus::success;
+        }
+
+        auto write_le32(i64 offset, u64 value) -> ByteWriteStatus {
+            if (offset < 0) {
+                return ByteWriteStatus::out_of_range;
+            }
+            if (offset > 60) {
+                return ByteWriteStatus::out_of_range;
+            }
+            const Encode32Result encoded = encode_le32(value);
+            if (encoded.status() != ByteCodecStatus::success) {
+                return ByteWriteStatus::value_out_of_range;
+            }
+            const Bytes4 bytes = encoded.bytes_or_zero();
+            i64 index = 0;
+            while (index < 4) {
+                elements[offset + index] = bytes.at(index);
+                index = index + 1;
+            }
+            return ByteWriteStatus::success;
+        }
+
+        auto write_be32(i64 offset, u64 value) -> ByteWriteStatus {
+            if (offset < 0) {
+                return ByteWriteStatus::out_of_range;
+            }
+            if (offset > 60) {
+                return ByteWriteStatus::out_of_range;
+            }
+            const Encode32Result encoded = encode_be32(value);
+            if (encoded.status() != ByteCodecStatus::success) {
+                return ByteWriteStatus::value_out_of_range;
+            }
+            const Bytes4 bytes = encoded.bytes_or_zero();
+            i64 index = 0;
+            while (index < 4) {
+                elements[offset + index] = bytes.at(index);
+                index = index + 1;
+            }
+            return ByteWriteStatus::success;
+        }
+
+        auto write_le64(i64 offset, u64 value) -> ByteWriteStatus {
+            if (offset < 0) {
+                return ByteWriteStatus::out_of_range;
+            }
+            if (offset > 56) {
+                return ByteWriteStatus::out_of_range;
+            }
+            const Bytes8 bytes = encode_le64(value);
+            i64 index = 0;
+            while (index < 8) {
+                elements[offset + index] = bytes.at(index);
+                index = index + 1;
+            }
+            return ByteWriteStatus::success;
+        }
+
+        auto write_be64(i64 offset, u64 value) -> ByteWriteStatus {
+            if (offset < 0) {
+                return ByteWriteStatus::out_of_range;
+            }
+            if (offset > 56) {
+                return ByteWriteStatus::out_of_range;
+            }
+            const Bytes8 bytes = encode_be64(value);
+            i64 index = 0;
+            while (index < 8) {
+                elements[offset + index] = bytes.at(index);
+                index = index + 1;
+            }
+            return ByteWriteStatus::success;
+        }
+    };
+}
