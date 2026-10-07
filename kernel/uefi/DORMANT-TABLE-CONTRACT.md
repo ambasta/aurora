@@ -110,3 +110,14 @@ reserve. Parent aggregate and readback/quarantine/normal spot verification passe
 Source archive integrity is checked separately from functional acceptance. The initial two privacy probes that failed for the wrong
 C++ reason remain historical evidence; corrected probes use valid member pointers
 and positive public-mutant controls, independently rerun before guest integration.
+
+
+## Separate architectural translation oracle
+
+The hosted [Mode 0/1 oracle](../../docs/iommu-translation-oracle.md) now provides
+test-only fixtures for noncanonical architectural semantics that this profile
+cannot represent. It reads copied constructor bytes and independent fixtures;
+it grants no publication authority. Independent source review accepted that
+separate increment. Its [focused hosted gates](../../docs/iommu-translation-oracle-results.md)
+passed normally and under fatal sanitizers, with independent retained-evidence
+and final claim review accepted.

@@ -1,5 +1,20 @@
 # Completeness and acceptance matrix
 
+## Test-only IOMMU translation oracle candidate — 2026-10-07
+
+A separate hosted AMD 3.10 Mode 0/1 oracle interprets copied bytes without a
+production encoder or canonical-policy validator. The [contract](iommu-translation-oracle.md)
+defines requester-length, upper-address, leaf-presence, cumulative-rights and
+meaningful-fault-field fixtures, actual-constructor comparison and deliberate
+mutants in the existing dormant runner. Independent source review accepted the
+candidate. Both focused hosted modes passed 147 architectural checks, 65,555
+constructor comparisons and thirteen deliberate mutants each, with the existing
+dormant dependency gates. The [results](iommu-translation-oracle-results.md) preserve
+the initial compile-warning failure. Independent retained-evidence and final
+claim review accepted this bounded checkpoint.
+No kernel image, device activation, DMA isolation, event ring or completion
+mechanism is added.
+
 ## Initial compiler-owned language server candidate — 2026-10-07
 
 An optional C++23 stdio server reuses the shared checked frontend and immutable
