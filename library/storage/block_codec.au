@@ -1,0 +1,26 @@
+export module storage.block_codec;
+import storage.block;
+import std.binary_writer;
+
+export namespace storage {
+    auto block_from_writer(std::BinaryWriter64 writer) -> Block64 {
+        Block64 block = Block64();
+        i64 offset = 0;
+        while (offset < 64) {
+            block.write_byte(offset, writer.at(offset));
+            offset = offset + 1;
+        }
+        return block;
+    }
+
+    auto writer_from_block(Block64 block) -> std::BinaryWriter64 {
+        std::BinaryWriter64 writer = std::BinaryWriter64();
+        i64 offset = 0;
+        while (offset < 64) {
+            const BlockByteResult byte = block.read_byte(offset);
+            writer.write_u8(offset, byte.value_or(0u8));
+            offset = offset + 1;
+        }
+        return writer;
+    }
+}

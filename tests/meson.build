@@ -20,6 +20,8 @@ foreach entry : [
     ['source-depth', 'modules/robustness.py', 'core'],
     ['byte-codec', 'compiler/byte_codec.py', 'bytes'],
     ['binary-writer', 'compiler/binary_writer.py', 'bytes'],
+    ['block-value', 'compiler/block_value.py', 'bytes'],
+    ['ram-blocks', 'compiler/ram_blocks.py', 'bytes'],
     ['packed-values', 'compiler/packed_values.py', 'bytes'],
     ['storage-binary', 'compiler/storage_binary.py', 'bytes'],
 ]
