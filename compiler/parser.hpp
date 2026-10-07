@@ -445,7 +445,9 @@ class Parser {
             s->kind = "let";
             const bool immutable = eat("const");
             s->type = type();
-            s->name = ident().text;
+            const auto binding = ident();
+            s->name = binding.text;
+            s->bindingSpan = binding.span;
             s->mutableValue = !immutable;
             need("=");
             s->expr = expr();

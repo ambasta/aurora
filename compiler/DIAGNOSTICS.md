@@ -49,7 +49,10 @@ The envelope contains `schemaVersion: 1`, `success` and a `diagnostics` array.
 Each diagnostic has `code`, `severity`, `message`, `path`, and `range`. The range
 contains `start` and `end`, each with `offset`, `line` and `column` as defined
 above. Unlocated errors have null `path` and `range`. Only the first failure is
-reported; there is no recovery or multi-error claim.
+reported; there is no recovery or multi-error claim. The opt-in
+[semantic lint mode](LINT.md) can return multiple warnings after successful whole-
+graph validation. Severity defaults to `error`; warning-only JSON has `success:
+true`. Ordinary `aurorac --check` does not enable lint.
 
 Codes are explicit stable families, not inferred from message strings:
 
@@ -59,6 +62,7 @@ Codes are explicit stable families, not inferred from message strings:
 - AU3001: semantic, lifetime or verified-IR rejection
 - AU4001: module loading or resolution rejection, including source I/O
 - AU5001: invalid command-line invocation
+- AU6001: opt-in unread scalar/enum local warning; see [exact scope](LINT.md)
 - AU9001: unexpected host exception
 - AU0000: unclassified internal legacy error, assigned a stage family by the shared frontend
 

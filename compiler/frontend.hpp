@@ -9,10 +9,12 @@ class CheckedSource {
 public:
     ir::ValidatedModule module;
     std::set<host::Identity> sourceIdentities;
+    std::vector<Diagnostic> lintDiagnostics;
 };
 inline CheckedSource checkSource(const std::filesystem::path &input,
                                  const std::vector<std::filesystem::path> &roots = {},
-                                 const SourceOverlays &overlays = {}) {
+                                 const SourceOverlays &overlays = {},
+                                 AnalysisMode mode = AnalysisMode::Check) {
     auto stage = DiagnosticCode::Module;
     try {
         ModuleLoader loader(roots, overlays);
@@ -21,8 +23,9 @@ inline CheckedSource checkSource(const std::filesystem::path &input,
         ModuleResolver resolver(std::move(graph));
         auto resolved = resolver.resolve();
         stage = DiagnosticCode::Semantic;
-        SemanticAnalyzer analyzer(std::move(resolved));
-        return {analyzer.analyze(), std::move(identities)};
+        SemanticAnalyzer analyzer(std::move(resolved), mode);
+        auto module = analyzer.analyze();
+        return {std::move(module), std::move(identities), analyzer.takeLintDiagnostics()};
     } catch (const Error &error) {
         throw error.withDefaultCode(stage);
     }

@@ -78,11 +78,14 @@ int main(int argc, char **argv) {
             throw argumentError(
                 "--check and --lint are separate modes; --module-root requires --lint; JSON requires a check mode");
         if (lint) {
-            // Semantic lint currently is exactly the compiler's check-only API.
-            // It does not format source or claim additional semantic lint rules.
-            aurora::checkSource(input, roots);
+            const auto checked = aurora::checkSource(input, roots, {}, aurora::AnalysisMode::Lint);
             if (json)
-                aurora::writeDiagnosticsJson(std::cerr, {});
+                aurora::writeDiagnosticsJson(std::cerr, checked.lintDiagnostics);
+            else
+                for (const auto &diagnostic : checked.lintDiagnostics)
+                    std::cerr << diagnostic.span.source->path << ':' << diagnostic.span.begin.line << ':'
+                              << diagnostic.span.begin.column << ": " << aurora::diagnosticSeverity(diagnostic.severity)
+                              << ' ' << aurora::diagnosticCode(diagnostic.code) << ": " << diagnostic.message << '\n';
             return 0;
         }
         std::string contents;

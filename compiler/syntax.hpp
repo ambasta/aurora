@@ -28,6 +28,8 @@ class Statement {
     std::string kind, name, fieldName;
     Token token;
     Type type = Type::I64;
+    // Lexical provenance of a declaration's identifier, not its type/const token.
+    SourceSpan bindingSpan;
     bool mutableValue = false;
     ExpressionPtr expr, target;
     std::vector<std::shared_ptr<Statement>> body, other;
