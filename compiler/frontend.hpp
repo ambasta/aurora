@@ -11,10 +11,11 @@ public:
     std::set<host::Identity> sourceIdentities;
 };
 inline CheckedSource checkSource(const std::filesystem::path &input,
-                                 const std::vector<std::filesystem::path> &roots = {}) {
+                                 const std::vector<std::filesystem::path> &roots = {},
+                                 const SourceOverlays &overlays = {}) {
     auto stage = DiagnosticCode::Module;
     try {
-        ModuleLoader loader(roots);
+        ModuleLoader loader(roots, overlays);
         auto graph = loader.load(input);
         auto identities = graph.sourceIdentities;
         ModuleResolver resolver(std::move(graph));

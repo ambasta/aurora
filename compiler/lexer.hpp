@@ -25,10 +25,13 @@ public:
 };
 // One scanner serves the compiler and lossless tooling. The parser consumes only
 // tokens; trivia ranges retain the exact intervening source bytes for tools.
-inline LexedSource
-lexSource(const std::string &s, std::string path = {}, TriviaRetention retention = TriviaRetention::Keep) {
+inline LexedSource lexSource(std::shared_ptr<const SourceText> source,
+                             TriviaRetention retention = TriviaRetention::Keep) {
+    if (!source)
+        throw Error(DiagnosticCode::Internal, "source snapshot must not be null");
     LexedSource out;
-    out.source = std::make_shared<const SourceText>(std::move(path), s);
+    out.source = std::move(source);
+    const auto &s = out.source->text;
     int line = 1;
     std::size_t lineStart = 0;
     std::size_t index = 0;
@@ -96,6 +99,13 @@ lexSource(const std::string &s, std::string path = {}, TriviaRetention retention
     }
     out.tokens.emplace_back("<eof>", span(position()));
     return out;
+}
+inline LexedSource
+lexSource(const std::string &s, std::string path = {}, TriviaRetention retention = TriviaRetention::Keep) {
+    return lexSource(std::make_shared<const SourceText>(std::move(path), s), retention);
+}
+inline std::vector<Token> lex(std::shared_ptr<const SourceText> source) {
+    return lexSource(std::move(source), TriviaRetention::Discard).tokens;
 }
 inline std::vector<Token> lex(const std::string &s, std::string path = {}) {
     return lexSource(s, std::move(path), TriviaRetention::Discard).tokens;
