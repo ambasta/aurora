@@ -119,6 +119,20 @@ The milestone013 numeric and packed-representation gates are verified in the
 recorded checkpoint. This is not a general text/runtime API, and no equivalent-C
 performance claim is made.
 
+## Owned 16- and 64-bit storage-field codecs
+
+`std.bytes` extends its 32-bit codec with checked owned `Bytes2` / `Bytes8` values
+and LE/BE16/64 encode/decode functions. Sixteen-bit encoding returns a recoverable
+`Encode16Result`, rejecting values above 65535 and masking failure bytes to zero.
+All u64 inputs fit the 64-bit encoding, which returns `Bytes8` directly. Decoding
+accepts every two- or eight-byte pattern. Bytes stay private and copies independent.
+
+The [contract](../compiler/BYTES.md#owned-storage-field-codec-extension)
+and [wire-record example](examples/storage_codec.au) describe the bounded API.
+Focused native checks, independent review and a fresh complete `make test` passed
+on the source identified in the contract. No general writer, mutable span,
+filesystem write or new language feature is implied.
+
 ## Borrowed binary reader candidate
 
 `import std.binary;` supplies ByteReadStatus, ByteReadResult, read_le32 and

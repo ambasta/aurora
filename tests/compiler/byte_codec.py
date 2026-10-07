@@ -11,7 +11,7 @@ import hashlib
 import random
 import tempfile
 
-from unsigned_oracle import Case, NativeRunner, Rejection, require
+from unsigned_oracle import Case, NativeRunner, Rejection, command, require, validate_values
 
 
 def codec_cases(seed, count):
@@ -59,6 +59,123 @@ def codec_cases(seed, count):
     """, 0xFFFFFFFF, imports=("std.bytes",))
 
 
+def storage_codec_cases(seed, count):
+    rng = random.Random(seed)
+    for width in (16, 64):
+        size = width // 8
+        maximum = (1 << width) - 1
+        values = [0, 1, 42, 127, 128, 255, 256, 0x1234, 0x8000, 65535]
+        if width == 16:
+            values += [65536, 1 << 32, (1 << 64) - 1]
+        else:
+            values += [1 << 32, 1 << 63, 0x0123456789ABCDEF, maximum]
+        values += [rng.randrange(1 << width) for _ in range(count)]
+        for value in values:
+            for endian, opposite in (("le", "be"), ("be", "le")):
+                valid = value <= maximum
+                if width == 16:
+                    setup = (
+                        f"const std::Encode16Result report=std::encode_{endian}16({value}u64);"
+                        f"if(report.status()!=std::ByteCodecStatus::{'success' if valid else 'out_of_range'})"
+                        "{return 0u64;}const std::Bytes2 bytes=report.bytes_or_zero();"
+                    )
+                else:
+                    setup = f"const std::Bytes8 bytes=std::encode_{endian}64({value}u64);"
+                ordered = (value if valid else 0).to_bytes(
+                    size, "little" if endian == "le" else "big")
+                # Compare every encoded byte against Python's independent wire model.
+                checks = "".join(f"if(bytes.at({i})!={byte}u8){{return 0u64;}}"
+                                 for i, byte in enumerate(ordered))
+                yield Case(f"{endian}{width} bytes and status {value}", setup + checks + "return 42u64;",
+                           42, imports=("std.bytes",))
+                if valid:
+                    yield Case(f"{endian}{width} roundtrip {value}",
+                               setup + f"return std::decode_{endian}{width}(bytes);", value,
+                               imports=("std.bytes",))
+                    reversed_value = int.from_bytes(ordered, "big" if endian == "le" else "little")
+                    yield Case(f"{endian}{width} cross decode {value}",
+                               setup + f"return std::decode_{opposite}{width}(bytes);", reversed_value,
+                               imports=("std.bytes",))
+
+        patterns = [bytes(size), bytes([255]) * size,
+                    bytes([128]) + bytes(size - 1), bytes(size - 1) + bytes([128]),
+                    bytes(range(1, size + 1))]
+        patterns += [bytes(rng.randrange(256) for _ in range(size)) for _ in range(count)]
+        for index, pattern in enumerate(patterns):
+            setup = f"std::Bytes{size} bytes=std::Bytes{size}();"
+            setup += "".join(f"bytes.set({i},{byte}u8);" for i, byte in enumerate(pattern))
+            for endian in ("le", "be"):
+                # Decode independently assembled bytes; do not rely on encode/decode agreement.
+                yield Case(f"{endian}{width} independent input {index}",
+                           setup + f"return std::decode_{endian}{width}(bytes);",
+                           int.from_bytes(pattern, "little" if endian == "le" else "big"),
+                           imports=("std.bytes",))
+        yield Case(f"Bytes{size} zero initialization", f"""
+            const std::Bytes{size} bytes=std::Bytes{size}();
+            return std::decode_le{width}(bytes);
+        """, 0, imports=("std.bytes",))
+        yield Case(f"Bytes{size} copied function value and result", f"""
+            std::Bytes{size} original=std::Bytes{size}();
+            if(original.set(0,42u8)!=42u8){{return 0u64;}}
+            original.set({size-1},128u8);
+            std::Bytes{size} copy=identity(original);
+            original.set(0,1u8);copy.set({size-1},0u8);
+            if(original.at({size-1})!=128u8){{return 0u64;}}
+            return std::decode_le{width}(copy);
+        """, 42, imports=("std.bytes",),
+            prelude=f"auto identity(std::Bytes{size} value)->std::Bytes{size}{{return value;}}")
+        for endian in ("le", "be"):
+            value = 0x1234 if width == 16 else 0x0123456789ABCDEF
+            setup = (f"const std::Encode16Result report=std::encode_{endian}16({value}u64);"
+                     "const std::Bytes2 bytes=report.bytes_or_zero();" if width == 16 else
+                     f"const std::Bytes8 bytes=std::encode_{endian}64({value}u64);")
+            elements = ",".join(f"bytes.at({i})" for i in range(size))
+            yield Case(f"{endian}{width} owned encoding to readonly reader", setup +
+                       f"const builtin::array<u8,{size}> wire={{{elements}}};"
+                       f"const std::ByteReadResult read=std::read_{endian}{width}(borrow_bytes(wire),0);"
+                       "if(read.status()!=std::ByteReadStatus::success){return 0u64;}"
+                       "return read.value_or(0u64);", value, imports=("std.bytes", "std.binary"))
+
+    yield Case("16-bit failure masks all nonzero public payload bytes", """
+        std::Bytes2 source=std::Bytes2();source.set(0,255u8);source.set(1,255u8);
+        const std::Encode16Result report=std::Encode16Result(std::ByteCodecStatus::out_of_range,source);
+        const std::Bytes2 copy=report.bytes_or_zero();return std::decode_le16(copy);
+    """, 0, imports=("std.bytes",))
+    yield Case("16-bit report constructor and accessors copy independently", """
+        std::Bytes2 source=std::Bytes2();source.set(0,42u8);source.set(1,128u8);
+        const std::Encode16Result report=std::Encode16Result(std::ByteCodecStatus::success,source);
+        source.set(0,1u8);std::Bytes2 copy=report.bytes_or_zero();copy.set(1,0u8);
+        const std::Bytes2 saved=report.bytes_or_zero();return std::decode_le16(saved);
+    """, 0x802A, imports=("std.bytes",))
+    yield Case("64-bit encoded results and copies are independent", """
+        std::Bytes8 original=std::encode_le64(9223372036854775850u64);
+        std::Bytes8 copy=original;original.set(0,1u8);copy.set(7,0u8);
+        if(original.at(7)!=128u8){return 0u64;}return std::decode_le64(copy);
+    """, 42, imports=("std.bytes",))
+
+
+def storage_rejections():
+    bodies = [
+        "const std::Encode16Result result=std::encode_le16(42u64);"
+        "const std::Bytes2 bytes=result.payload;return 0u64;",
+        "const std::Encode16Result result=std::encode_le16(42);return 0u64;",
+        "const std::Bytes8 bytes=std::encode_be64(42);return 0u64;",
+        "const std::Bytes4 bytes=std::Bytes4();return std::decode_le16(bytes);",
+        "const std::Bytes4 bytes=std::Bytes4();return std::decode_be64(bytes);",
+        "const std::Bytes8 bytes=std::encode_le64(42u64);"
+        "const std::Bytes8 copy=bytes.bytes_or_zero();return 0u64;",
+    ]
+    for size in (2, 8):
+        bodies += [
+            f"std::Bytes{size} bytes=std::Bytes{size}();return u64(bytes.elements[0]);",
+            f"const std::Bytes{size} bytes=std::Bytes{size}();bytes.set(0,1u8);return 0u64;",
+            f"std::Bytes{size} bytes=std::Bytes{size}();bytes.set(0,256u64);return 0u64;",
+        ]
+    for index, body in enumerate(bodies):
+        yield Rejection(f"storage codec visibility/type rejection {index}",
+                        "module test;import std.bytes;auto test()->u64{" + body + "}")
+
+
 def layout_cases():
     for capacity in (1, 3, 4, 7, 8, 9, 64):
         yield Case(f"compact wrapper capacity {capacity}", f"""
@@ -72,10 +189,17 @@ def layout_cases():
             return u64(copy.at({capacity-1}));
         """, 255, imports=("std.array",))
     yield Case("codec representation and nominal metadata", """
+        static_assert(size_of(std::Bytes2)==2);
         static_assert(size_of(std::Bytes4)==4);
+        static_assert(size_of(std::Bytes8)==8);
+        static_assert(size_of(std::Encode16Result)==16);
         static_assert(size_of(std::Encode32Result)==16);
+        static_assert(field_count(std::Bytes2)==0);
         static_assert(field_count(std::Bytes4)==0);
+        static_assert(field_count(std::Bytes8)==0);
+        if(reflect_size(type_id(std::Bytes2))!=2){return 0u64;}
         if(reflect_size(type_id(std::Bytes4))!=4){return 0u64;}
+        if(reflect_size(type_id(std::Bytes8))!=8){return 0u64;}
         return 42u64;
     """, 42, imports=("std.bytes",))
     definitions = """
@@ -124,8 +248,9 @@ def main():
     compiler=args.compiler.resolve()
     print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()} seed={args.seed}",flush=True)
     cases=list(codec_cases(args.seed,args.random_count))
+    cases+=list(storage_codec_cases(args.seed,args.random_count))
     if not args.without_layout:cases+=list(layout_cases())
-    rejected=list(rejections())
+    rejected=list(rejections()) + list(storage_rejections())
     with tempfile.TemporaryDirectory(prefix="aurora-byte-codec-") as temporary:
         runner=NativeRunner(Path(temporary),compiler,5)
         # Small batches keep generated source and native output bounded. Cases with
@@ -140,8 +265,14 @@ def main():
                 if len(batch)==24:runner.cases(batch);batch=[]
         if batch:runner.cases(batch)
         for case in rejected:runner.rejection(case)
+        root=Path(__file__).resolve().parents[2]
+        example=root / "library/examples/storage_codec.au"
+        assembly=Path(temporary) / "storage-codec-example.s"
+        command([compiler,"--module-root",root / "library",example,"-o",assembly])
+        observed,_=runner.assemble(assembly.read_text(),["main"])
+        validate_values(observed,[Case("storage codec example","",42,result_type="i64")])
     print(f"PASS byte codec: {len(cases)} native cases, {len(rejected)} rejections; "
-          f"packed_layout={'excluded (numeric gate only)' if args.without_layout else 'included'}")
+          f"storage_example=passed; packed_layout={'excluded (numeric gate only)' if args.without_layout else 'included'}")
 
 
 if __name__=="__main__":main()
