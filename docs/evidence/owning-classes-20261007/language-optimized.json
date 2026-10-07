@@ -1,0 +1,9 @@
+{
+  "mode": "native",
+  "compiled_programs": 17,
+  "source_rejections": 29,
+  "native_cases": 22,
+  "exact_bounds_traps": 2,
+  "native_checks_not_run": 0,
+  "compiler_sha256": "3653897d2c9780eaec83dc29eb156529bb167de334cad7dd72c2e7dd09985b90"
+}

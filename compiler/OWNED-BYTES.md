@@ -30,10 +30,12 @@ a class, or inspect it through reflection. The region parameter is borrowed for
 synchronous calls. Its granting host must outlive every associated owner.
 
 A resource-aware ordinary function has exactly one ByteRegion parameter, first.
-The remaining parameters are scalar/enum values or OwnedBytes; its result is a
-scalar/enum value or OwnedBytes. The existing six-parameter limit still applies.
-Resource signatures do not support methods, overloads, templates, class values or
-spans. Owning parameters are deliberately mutable bindings, unlike the existing
+The remaining parameters are scalar/enum values, OwnedBytes or bounded move-only
+classes; its result is scalar/enum or one of those owning types. The existing
+six-parameter limit still applies. The [owning-class extension](OWNING-CLASSES.md)
+defines private direct fields, owning constructors and borrowed methods. Other
+resource signatures do not support methods, overloads, templates, copied classes
+or spans. Owning parameters are deliberately mutable bindings, unlike the existing
 readonly scalar/copied-class parameters. Source region identity cannot change.
 
 `region.try_allocate(length)` requires an i64 byte count and initializes a typed
@@ -83,8 +85,10 @@ resources remains a separate runtime boundary.
 
 ## Independent typed-IR boundary
 
-Region spills reserve eight bytes; owner spills reserve 32 bytes. Both are
-non-scalar, disjoint from every scalar, class, array and span reservation. Only
+Region spills reserve eight bytes; standalone owner spills reserve 32 bytes. Both
+are non-scalar, disjoint from every scalar, class, array and span reservation.
+The owning-class extension separately reserves opaque descriptors inside the
+canonical class extent, with no overlapping standalone owner spills. Only
 entry-prefix parameter binding can introduce region authority. Metadata describing
 storage never grants an active lifetime or allocation capability.
 

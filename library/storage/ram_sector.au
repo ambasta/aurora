@@ -6,45 +6,82 @@ import storage.block_io;
 
 export namespace storage {
     class RamSectorDevice {
-        Sector512 payload;
+        builtin::OwnedBytes payload;
         bool locked;
     public:
-        RamSectorDevice(Sector512 initial) : payload(initial), locked(false) {}
+        RamSectorDevice(builtin::ByteRegion region, builtin::OwnedBytes initial) : payload(move(initial)), locked(false)
+            {
+        }
+
+        auto status() const -> SectorIoStatus {
+            if (!payload.ok() || payload.size() % 512 != 0) {
+                return SectorIoStatus::invalid_source;
+            }
+            return SectorIoStatus::success;
+        }
 
         auto geometry() const -> SectorGeometry {
-            const SectorGeometry result = SectorGeometry(1u64, !locked);
+            if (status() != SectorIoStatus::success) {
+                const SectorGeometry invalid = SectorGeometry(0u64, false);
+                return invalid;
+            }
+            const SectorGeometry result = SectorGeometry(u64(payload.size() / 512), !locked);
             return result;
         }
 
         auto read_sector(i64 index) const -> SectorReadResult {
-            if (index < 0 || index >= 1) {
+            if (status() != SectorIoStatus::success) {
+                const Sector512 zero = Sector512();
+                const SectorReadResult failure = SectorReadResult(SectorIoStatus::invalid_source, zero);
+                return failure;
+            }
+            if (index < 0 || index >= payload.size() / 512) {
                 const Sector512 zero = Sector512();
                 const SectorReadResult failure = SectorReadResult(SectorIoStatus::out_of_range, zero);
                 return failure;
             }
-            const Sector512 sector = payload;
+            // Validate the sector index before multiplication or payload access.
+            const i64 begin = index * 512;
+            Sector512 sector = Sector512();
+            i64 offset = 0;
+            while (offset < 512) {
+                sector.write_byte(offset, payload.at(begin + offset));
+                offset = offset + 1;
+            }
             const SectorReadResult result = SectorReadResult(SectorIoStatus::success, sector);
             return result;
         }
 
         auto write_sector(i64 index, Sector512 sector) -> SectorIoStatus {
-            if (index < 0 || index >= 1) {
+            if (status() != SectorIoStatus::success) {
+                return SectorIoStatus::invalid_source;
+            }
+            if (index < 0 || index >= payload.size() / 512) {
                 return SectorIoStatus::out_of_range;
             }
             if (locked) {
                 return SectorIoStatus::read_only;
             }
-            payload = sector;
+            const i64 begin = index * 512;
+            i64 offset = 0;
+            while (offset < 512) {
+                const std::ByteReadResult byte = sector.read_byte(offset);
+                payload.set(begin + offset, u8(byte.value_or(0u64)));
+                offset = offset + 1;
+            }
             return SectorIoStatus::success;
         }
 
         auto make_read_only() -> SectorIoStatus {
+            if (status() != SectorIoStatus::success) {
+                return SectorIoStatus::invalid_source;
+            }
             locked = true;
             return SectorIoStatus::success;
         }
 
         auto flush(SectorFlushMode mode) const -> SectorFlushStatus {
-            if (mode == SectorFlushMode::durable) {
+            if (status() != SectorIoStatus::success || mode == SectorFlushMode::durable) {
                 return SectorFlushStatus::unsupported;
             }
             return SectorFlushStatus::volatile_complete;

@@ -1,0 +1,7 @@
+{
+  "programs": 15,
+  "native_cases": 29,
+  "exact_bounds_traps": 4,
+  "source_rejections": 29,
+  "compiler_sha256": "13f2350c8c57da1cfcc938a8c1772a9042f5ab45a2a0f65580dfe81c928a61ce"
+}

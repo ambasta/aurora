@@ -8,7 +8,11 @@
 
 namespace aurora::ir {
 // Operations describe language semantics, never target-register names or assembly text.
-enum class Unary { CheckedNegate, LogicalNot, BitNot };
+enum class Unary {
+    CheckedNegate,
+    LogicalNot,
+    BitNot
+};
 enum class Binary {
     CheckedAdd,
     CheckedSubtract,
@@ -21,10 +25,20 @@ enum class Binary {
     ShiftLeft,
     ShiftRight
 };
-enum class Comparison { Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual };
-enum class Query { Size, PublicFieldCount };
+enum class Comparison {
+    Equal,
+    NotEqual,
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual
+};
+enum class Query {
+    Size,
+    PublicFieldCount
+};
 class Constant {
-  public:
+public:
     // U64 payloads preserve all 64 bits via std::bit_cast<std::int64_t>.
     // U8 payloads are canonical integers in 0..255, including in 64-bit value registers.
     std::int64_t value;
@@ -32,105 +46,108 @@ class Constant {
 };
 // An enum value names a declared case of one exact nominal enum.
 class EnumConstant {
-  public:
+public:
     Type type;
     int caseIndex;
 };
 class Load {
-  public:
+public:
     int offset;
     Type type;
 };
 class Store {
-  public:
+public:
     int offset;
     Type type;
 };
 class Push {};
 class Pop {};
 class UnaryValue {
-  public:
+public:
     Unary operation;
     Type operandType;
-    UnaryValue(Unary value, Type type) : operation(value), operandType(std::move(type)) {}
+    UnaryValue(Unary value, Type type) : operation(value), operandType(std::move(type)) {
+    }
     // Keep the pre-u8 IR spelling while making operand width explicit for consumers.
     explicit UnaryValue(Unary value)
-        : UnaryValue(value, value == Unary::LogicalNot ? Type::Bool
-                            : value == Unary::BitNot   ? Type::U64
-                                                       : Type::I64) {}
+        : UnaryValue(value,
+                     value == Unary::LogicalNot ? Type::Bool
+                     : value == Unary::BitNot   ? Type::U64
+                                                : Type::I64) {
+    }
 };
 class BinaryValue {
-  public:
+public:
     Binary operation;
     // Both operands and result share this type except shifts, whose count is i64.
     Type operandType = Type::I64;
 };
 class Convert {
-  public:
+public:
     // Checked conversion between distinct i64, u64 and u8 values; never a
     // capability or bit reinterpretation. Widening a canonical u8 cannot fail.
     Type sourceType;
     Type resultType;
 };
 class Compare {
-  public:
+public:
     Comparison operation;
     Type operandType;
 };
 class BoundsGuard {
-  public:
+public:
     int offset;
     int length;
     Type elementType;
 };
 class IndexLoad {
-  public:
+public:
     int offset;
     int length;
     Type elementType;
 };
 class IndexStore {
-  public:
+public:
     int offset;
     int length;
     Type elementType;
 };
 class BorrowHandle {
-  public:
+public:
     int ownerOffset;
     Type referenceType;
 };
 // Value-call storage is explicit and cannot inhabit the scalar value stack.
 // Scalar positions use zero; class positions name independent readonly snapshots.
 class AggregateCall {
-  public:
+public:
     std::string callee;
     std::vector<int> objectArguments;
-    int resultOffset; // zero for scalar results, exact pristine object base otherwise
+    int resultOffset;                    // zero for scalar results, exact pristine object base otherwise
     std::vector<int> spanArguments = {}; // zero except readonly capability positions
 };
 class Call {
-  public:
+public:
     std::string callee;
 };
 // Readonly byte spans have typed, non-scalar spills. Only an active fully
 // initialized local byte array or an existing readonly capability can mint one.
 // The base addresses pointer storage; the next word holds the bounded length.
 class BeginArray {
-  public:
+public:
     int offset;
 };
 class EndArray {
-  public:
+public:
     int offset;
 };
 class BorrowSpan {
-  public:
+public:
     int arrayOffset;
     int resultOffset;
 };
 class ReborrowSpan {
-  public:
+public:
     int sourceOffset;
     int resultOffset;
 };
@@ -138,24 +155,24 @@ class ReborrowSpan {
 // stack and the current i64 count; preserves the current scalar count. Runtime
 // bounds are checked before loading/adjusting the parent payload address.
 class Subspan {
-  public:
+public:
     int sourceOffset;
     int resultOffset;
 };
 class EndSpan {
-  public:
+public:
     int offset;
 };
 class SpanLength {
-  public:
+public:
     int offset;
 };
 class SpanLoad {
-  public:
+public:
     int offset;
 };
 class BindSpanParameter {
-  public:
+public:
     int index;
     int offset;
 };
@@ -178,18 +195,22 @@ public:
 class BytesOk {
 public:
     int offset;
+    int fieldIndex = -1; // -1: standalone owner; otherwise direct field at object root
 };
 class BytesLength {
 public:
     int offset;
+    int fieldIndex = -1; // -1: standalone owner; otherwise direct field at object root
 };
 class BytesLoad {
 public:
-    int offset; // current i64 index -> copied u8, checked fail-stop access
+    int offset;          // current i64 index -> copied u8, checked fail-stop access
+    int fieldIndex = -1; // -1: standalone owner; otherwise direct field at object root
 };
 class BytesStore {
 public:
-    int offset; // saved i64 index and current u8 -> bool; false never writes
+    int offset;          // saved i64 index and current u8 -> bool; false never writes
+    int fieldIndex = -1; // -1: standalone owner; otherwise direct field at object root
 };
 class EndBytes {
 public:
@@ -209,8 +230,30 @@ class ResourceCall {
 public:
     std::string callee;
     int regionOffset;
-    std::vector<int> ownerArguments; // one entry per parameter, zero except owners
-    int resultOffset;                // pristine owner slot for owner result, otherwise zero
+    std::vector<int> ownerArguments; // owners or readonly constructor class snapshots; zero otherwise
+    int resultOffset;                // pristine bytes/object root for owning result, otherwise zero
+    int receiverOffset = 0;          // positive only for an owning constructor
+};
+class InitializeBytesField {
+public:
+    int objectOffset; // zero only: bound constructor receiver
+    int fieldIndex;
+    int sourceOffset; // consumed standalone owner
+};
+class MoveObject {
+public:
+    int sourceOffset;
+    int resultOffset;
+};
+class BindOwnedObjectParameter {
+public:
+    int index;
+    int offset;
+    std::string className;
+};
+class ReturnOwnedObject {
+public:
+    int offset;
 };
 class ReturnBytes {
 public:
@@ -219,22 +262,22 @@ public:
 // Receiver capabilities are deliberately not scalar Values. Only these operations
 // can address the hidden receiver, and a call consumes a synchronous reborrow.
 class BeginObject {
-  public:
+public:
     int offset;
 };
 class EndObject {
-  public:
+public:
     int offset;
 };
 // Whole values and logical class fields copy by nominal identity. Scalar leaf
 // stores cannot mint the evidence that an embedded class value is complete.
 class CopyObject {
-  public:
+public:
     int sourceOffset;
     int resultOffset;
 };
 class ObjectFieldCopy {
-  public:
+public:
     int sourceOffset; // zero projects the bound, fully initialized receiver
     int fieldIndex;
     int resultOffset;
@@ -248,18 +291,18 @@ public:
     int sourceOffset;
 };
 class InitializeObjectField {
-  public:
+public:
     int objectOffset; // currently zero only: bound constructor receiver
     int fieldIndex;
     int sourceOffset;
 };
 class ReceiverLoad {
-  public:
+public:
     int fieldIndex;
     Type type;
 };
 class ReceiverStore {
-  public:
+public:
     int fieldIndex;
     Type type;
 };
@@ -267,53 +310,53 @@ class ReceiverStore {
 // A bounds guard leaves the signed index in the value register with verifier-only
 // nominal field evidence; indexed stores consume its saved stack value.
 class ReceiverArrayZero {
-  public:
+public:
     int fieldIndex;
 };
 class ReceiverBoundsGuard {
-  public:
+public:
     int fieldIndex;
 };
 class ReceiverIndexLoad {
-  public:
+public:
     int fieldIndex;
 };
 class ReceiverIndexStore {
-  public:
+public:
     int fieldIndex;
 };
 class MethodCall {
-  public:
+public:
     std::string callee;
     int receiverOffset;                    // zero forwards this; positive names an ObjectSlot base
     std::vector<int> objectArguments = {}; // readonly copied snapshots; scalar entries are zero
-    int resultOffset = 0; // pristine class result destination; zero for scalar results
-    int receiverFieldIndex = -1; // -1 selects the root; otherwise one logical owned class field
+    int resultOffset = 0;                  // pristine class result destination; zero for scalar results
+    int receiverFieldIndex = -1;           // -1 selects the root; otherwise one logical owned class field
 };
 class MetadataQuery {
-  public:
+public:
     Query query;
     int moduleScope = 0;
 };
 class Label {
-  public:
+public:
     int id;
 };
 class Jump {
-  public:
+public:
     int target;
 };
 class BranchFalse {
-  public:
+public:
     int target;
 };
 class Return {};
 class ReturnObject {
-  public:
+public:
     int offset;
 };
 class BindObjectParameter {
-  public:
+public:
     int index;
     int offset;
     std::string className;
@@ -325,7 +368,7 @@ class BindObjectParameter {
 // establish this contract; these entry points are not a foreign-language ABI.
 // Verified returns preserve canonicality without truncating or reinterpreting it.
 class BindParameter {
-  public:
+public:
     int index;
     int offset;
     Type type;
@@ -387,27 +430,32 @@ using Instruction = std::variant<Constant,
                                  BindRegionParameter,
                                  BindBytesParameter,
                                  ResourceCall,
-                                 ReturnBytes>;
+                                 ReturnBytes,
+                                 InitializeBytesField,
+                                 MoveObject,
+                                 BindOwnedObjectParameter,
+                                 ReturnOwnedObject>;
 class ObjectSlot {
-  public:
+public:
     std::string className;
     bool mutableValue;
 };
 class Receiver {
-  public:
+public:
     std::string className;
     bool mutableValue;
     bool constructor;
 };
 class Function {
-  public:
+public:
     std::string name;
     int moduleScope = 0;
     Type result;
     std::vector<Type> parameters;
     std::map<int, Type> slots;
     // Scalar leaves live at base minus their canonical byte offset and have
-    // matching typed slots. Empty classes reserve a word but expose no payload.
+    // matching typed slots. Resource descriptors are non-scalar subranges.
+    // Empty copyable classes reserve a word but expose no payload.
     std::map<int, ObjectSlot> objectSlots;
     // Local u8 arrays declare exact byte extents, with one matching scalar slot
     // per element. Capability spills reserve 16 disjoint bytes and no scalar slot.
@@ -420,7 +468,7 @@ class Function {
     std::vector<Instruction> code;
 };
 class Descriptor {
-  public:
+public:
     std::int64_t size;
     std::int64_t publicFields;
 };
@@ -428,15 +476,26 @@ class Descriptor {
 // storage and value-call copies. Arrays expose one field and a contiguous range.
 // A non-array class field names its nominal child in elementType and its complete
 // flattened scalar range in firstLeaf/length (including zero for empty children).
+// A direct OwnedBytes field has length zero and reserves a separate descriptor.
 class ClassField {
-  public:
+public:
     Type elementType;
     int firstLeaf;
     int length;
     bool array;
 };
+// Move-only identity is derived from logical shape, never caller-supplied metadata.
+inline bool owningClass(const std::map<std::string, std::vector<ClassField>> &fields, const std::string &name) {
+    const auto found = fields.find(name);
+    if (found == fields.end())
+        return false;
+    for (const auto &field : found->second)
+        if (field.elementType.isBytes())
+            return true;
+    return false;
+}
 class ClassStorage {
-  public:
+public:
     std::vector<int> leafOffsets;
     std::vector<int> fieldOffsets;
     int sizeBytes = 0;
@@ -445,7 +504,7 @@ class ClassStorage {
     bool operator==(const ClassStorage &) const = default;
 };
 class Module {
-  public:
+public:
     std::vector<Function> functions;
     std::map<std::string, std::vector<Type>> classLayouts;
     // Missing entries are normalized to legacy one-leaf scalar fields.
@@ -461,10 +520,13 @@ class ValidatedModule;
 ValidatedModule validate(Module module);
 class ValidatedModule {
     Module module;
-    explicit ValidatedModule(Module value) : module(std::move(value)) {}
+    explicit ValidatedModule(Module value) : module(std::move(value)) {
+    }
     friend ValidatedModule validate(Module module);
 
-  public:
-    const Module &get() const { return module; }
+public:
+    const Module &get() const {
+        return module;
+    }
 };
 } // namespace aurora::ir

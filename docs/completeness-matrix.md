@@ -1,5 +1,31 @@
 # Completeness and acceptance matrix
 
+## Runtime-capacity RAM sector device — 2026-10-07
+
+RamSectorDevice now owns one runtime-sized byte allocation through a private
+OwnedBytes field. Its sector count comes from successful aligned allocation
+length; failed or partial-sector backing is explicitly invalid. Sector512 and
+read results remain copied values. Explicit device moves replace implicit device
+copies. Both Python modes passed 57 block-I/O cases, 18 strict rejection fixtures,
+six example invocations, and 121 XFS consumer cases/five rejections. All 167
+prepared consumer programs retain exact assembly through final diagnostic and
+formatting corrections. The [I/O contract](block-io-contract.md) records bounds,
+zero-capacity behavior and hosted runtime limits. No second backend, resize,
+filesystem mount, kernel allocator or durability support is introduced.
+
+## Bounded owning-class candidate — 2026-10-07
+
+Private direct OwnedBytes fields infer move-only classes. Explicit constructor,
+local and ordinary function transfers preserve region ownership; borrowed methods
+read/write fields without exposing a pointer or view. Canonical descriptor storage,
+copy barriers and reverse normal cleanup are independently checked at typed IR.
+The [bounded contract](../compiler/OWNING-CLASSES.md) records supported syntax and
+exclusions. Both modes passed 22 new native cases, two exact traps and 29 rejects;
+independent IR passed 17 accepted/89 rejected cases, and ten handwritten ABI cases
+plus three deliberately rejected mutants passed in both modes. The [focused composite](owning-classes-results.md)
+preserves diagnostic compatibility corrections and exact assembly identities.
+No full native aggregate, kernel allocation or general resource-class milestone is claimed.
+
 ## Public smoke entrypoint repair candidate — 2026-10-07
 
 The [entrypoint contract](smoke-entrypoint-repair.md) makes missing BAR fixture
