@@ -1,5 +1,25 @@
 # Completeness and acceptance matrix
 
+## Owned sector-sized values: focused candidate — 2026-10-07
+
+Private 512-byte arrays and complete copied status/payload reports now pass the
+focused hosted gates, with separate byte, non-byte, total-leaf and 520-byte
+padded-storage caps. Seventeen native cases, 21 rejections and six exact bounds
+traps passed in both Python modes, plus 67 direct-IR checks, 21 handwritten ABI
+cases, eleven existing regression suites and 28 byte-identical old-example
+assembly comparisons. The [results](sector-values-results.md) preserve the
+fixture warning, insufficient initial artifact estimate, controller sampling
+failure and bounded continuations. Independent final artifact review passed.
+The [contract](../compiler/SECTOR-VALUES.md) records the measured 3,120-byte
+six-report argument record and finite 9,984-byte combined-method fixture chain.
+A joined PR49 Meson build then passed all 17 existing dev tests, including the
+RAM/package additions, and formatter compatibility passed 81 corpus sources and
+30 CLI cases. The original qualified-name audit failure and read-only correction
+are retained. These are not runtime stack guards or automatic kernel admission;
+the emitter currently has no per-page stack probes. No kernel, device, filesystem,
+sanitizer or full native-aggregate qualification is added.
+
+
 ## Four-record RAM block API — 2026-10-07
 
 The Aurora-authored `RamBlockStore` holds four fixed 64-byte record blocks and

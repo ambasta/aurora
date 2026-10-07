@@ -156,4 +156,15 @@ inline bool scalar(Type t) {
 }
 inline bool scalarValue(const Type &type) { return scalar(type) || type.isEnum(); }
 
+// Sector-sized owned byte storage does not widen general scalar-array templates.
+inline constexpr int maximumClassByteArrayLength = 512;
+inline constexpr int maximumClassScalarArrayLength = 64;
+inline constexpr int maximumCopiedByteLeaves = 512;
+inline constexpr int maximumCopiedNonByteLeaves = 64;
+inline constexpr int maximumCopiedClassLeaves = 513;
+inline constexpr int maximumCopiedClassBytes = 520;
+inline int maximumClassArrayLength(const Type &element) {
+    return element == Type::U8 ? maximumClassByteArrayLength : maximumClassScalarArrayLength;
+}
+
 } // namespace aurora

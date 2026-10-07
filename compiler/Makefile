@@ -162,6 +162,7 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 -B ../tests/compiler/block_value.py $(abspath $(OUT))
 	python3 -B ../tests/compiler/ram_blocks.py $(abspath $(OUT))
 	python3 ../tests/compiler/packed_values.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/sector_values.py $(abspath $(OUT))
 	python3 ../tests/compiler/readonly_spans.py $(abspath $(OUT))
 	python3 -O ../tests/compiler/storage_binary.py $(abspath $(OUT))
 	python3 -O ../tests/compiler/xfs_geometry.py $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS) --mutation-controls $(XFS_GEOMETRY_TEST_FLAGS)
@@ -178,6 +179,9 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_values_ir.cpp -o $(dir $(OUT))method-values-ir-tests
 	$(dir $(OUT))method-values-ir-tests
 	python3 -O ../tests/compiler/method_values_abi.py $(abspath $(dir $(OUT))method-values-ir-tests)
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/sector_values_ir.cpp -o $(dir $(OUT))sector-values-ir-tests
+	$(dir $(OUT))sector-values-ir-tests
+	python3 -B -O ../tests/compiler/sector_values_abi.py $(abspath $(dir $(OUT))sector-values-ir-tests)
 	python3 ../tests/modules/run.py $(abspath $(OUT))
 	python3 ../tests/modules/robustness.py $(abspath $(OUT))
 	$(CXX) $(CXXFLAGS) -pthread -I. ../tests/modules/host_sources_tests.cpp -o $(dir $(OUT))host-source-tests

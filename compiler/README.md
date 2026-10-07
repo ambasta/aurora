@@ -101,6 +101,10 @@ Numeric/bool fields use `i64`, `u64`, `u8` or `bool` and have unique names. Priv
 
 U8 leaves occupy one byte; all earlier scalar storage, including bool and enums, remains eight bytes. Canonical class layouts record natural field alignment, explicit byte offsets and tail padding separately from logical leaf counts. Empty standalone classes retain eight bytes; nested empty children preserve their zero-payload logical completion rule. All layouts without u8 retain their earlier representation. This is an internal layout, not a C or C++ ABI promise. The current development contract and pending acceptance are in [BYTES.md](BYTES.md). Private fields participate in size but are excluded from field-count reflection and cannot be read by external member syntax. Methods of the declaring class can access private fields.
 
+The [sector-sized value candidate](SECTOR-VALUES.md) admits private
+512-byte arrays and copied 520-byte status/payload reports under explicit byte,
+non-byte, total-leaf and canonical-storage limits. Its focused results are recorded separately.
+
 ## Fixed-size arrays
 
 ```text

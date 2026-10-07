@@ -239,13 +239,10 @@ def boundary_cases(suite):
                    f"const {inner} copy=result.first;"
                    f"static_assert(size_of({outer})=={leaves});return i64(copy.at({capacity-1}))+i64(result.second);",
                    helpers=f"auto identity({outer} value)->{outer}{{return value;}}")
-        if leaves <= 64:
-            suite.check(f"nested generic flattened leaf boundary {leaves}", source)
-        else:
-            suite.reject("nested generic flattened leaf boundary 65", source, error=("64", "leaf", "leaves"))
-            suite.reject("unused local nested generic cannot exceed 64 leaves",
-                         p(f"{inner} bytes={inner}();{outer} value={outer}(bytes,2u8);return 42;"),
-                         error=("64", "leaf", "leaves"))
+        suite.check(f"nested generic copied byte leaves {leaves}", source)
+        if leaves == 65:
+            suite.check("unused local nested generic admits 65 byte leaves",
+                        p(f"{inner} bytes={inner}();{outer} value={outer}(bytes,2u8);return 42;"))
     for capacity in (0, 65, -1, 9223372036854775808):
         suite.reject(f"nested inner array capacity {capacity} rejected", p(
             f"static_assert(size_of(std::pair<std::array<u8,{capacity}>,u8>)>0);return 42;"))

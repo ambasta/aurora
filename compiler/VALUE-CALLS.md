@@ -1,5 +1,9 @@
 # Inline values across function boundaries
 
+The [sector-sized value candidate](SECTOR-VALUES.md) narrowly extends
+byte-array and copied-value limits below; its acceptance is separate from all
+historical results recorded here. Non-byte and template-capacity bounds remain.
+
 This candidate extends ordinary functions with by-value class parameters/results.
 The original scalar-field boundary now also transports private scalar-array fields
 and bounded composed values, copying all leaves independently. The developing

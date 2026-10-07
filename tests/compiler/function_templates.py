@@ -338,11 +338,7 @@ def boundary_cases(suite):
             f"{outer} value=std::make_pair<{inner},u8>(bytes,2u8);"
             f"const {outer} returned=copy<{outer}>(value);const {inner} saved=returned.first;"
             f"return i64(saved.at({capacity-1}))+i64(returned.second);", COPY)
-        if leaves <= 64:
-            suite.check(f"function-template class result flattened leaves {leaves}", source)
-        else:
-            suite.reject("function-template class result flattened leaves 65", source,
-                         error=("64", "leaf", "leaves"))
+        suite.check(f"function-template copied byte result flattened leaves {leaves}", source)
     for count in (6, 7):
         parameters = ",".join(f"T a{i}" for i in range(count))
         arguments = ",".join("7" for _ in range(count))

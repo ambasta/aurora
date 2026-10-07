@@ -326,11 +326,11 @@ def maximum_leaf_cases(suite):
                 "Mixed64 copied=identity(original);copied.set(0,255u8);"
                 "if(original.at(0)!=0u8){return 12u64;}return answer;",
                 expected=MAX_U64, definitions=definitions, helpers=helpers)
-    suite.reject("65 scalar leaves cannot cross a value-call boundary",
+    suite.check("65 mixed byte/scalar leaves now cross a value-call boundary",
                  f"Mixed64 original=Mixed64(255u8,{MAX_U64}u64,true,128u8);"
                  "Mixed64 copy=identity(original);return copy.word();",
-                 definitions.replace("array<u8,60>", "array<u8,61>"),
-                 "auto identity(Mixed64 value)->Mixed64{return value;}")
+                 expected=MAX_U64, definitions=definitions.replace("array<u8,60>", "array<u8,61>"),
+                 helpers="auto identity(Mixed64 value)->Mixed64{return value;}")
 
 
 def empty_cases(suite):
@@ -451,7 +451,7 @@ def rejection_cases(suite):
                 "Cell source=Cell(42u8);Receiver receiver=Receiver();Cell result=receiver.take(source);"
                 "source.set(0u8);return u64(result.get());",
                 definitions=CELL + "class Receiver{public:Receiver(){}auto take(Cell a)const->Cell{return a;}};")
-    for capacity in (0, 65):
+    for capacity in (0, 513):
         suite.reject(f"packed array capacity {capacity} remains unsupported", "return 42u64;",
                      byte_storage("Bad", capacity))
 

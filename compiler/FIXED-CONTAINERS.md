@@ -1,5 +1,9 @@
 # Bounded fixed containers with private array storage
 
+The [sector-sized value candidate](SECTOR-VALUES.md) narrowly extends
+byte-array and copied-value limits below; its acceptance is separate from all
+historical results recorded here. Non-byte and template-capacity bounds remain.
+
 The current candidate provides a real Aurora `std::array<T,N>` value container.
 Import `std.array` through an explicit module root. T is i64, u64, u8 or bool in the current development candidate; N is an
 explicit decimal capacity literal from 1 through 64. This is an initialized fixed
