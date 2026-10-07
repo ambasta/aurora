@@ -1,5 +1,18 @@
 # Completeness and acceptance matrix
 
+## Opt-in BIOS serial console candidate — 2026-10-07
+
+A separate `make console` profile keeps the existing boot self-tests and then
+opens a 64-byte ASCII prompt with `help`, `status` and `exit`. Aurora classifies
+copied input and commands; trusted C++/assembly owns bounded storage, UART and
+IRQ4/PIC transport. It sleeps while idle and rejects oversized or malformed lines
+through their delimiter. Default BIOS/UEFI runs remain self-tests. Focused hosted,
+sanitizer and private-PTY emulator checks passed, followed by a fresh normal BIOS
+rebuild/boot without console symbols. Independent source and retained-evidence
+review accepted this focused prototype. This is not a full native aggregate or
+full emulator-matrix result. See the
+[bounded contract and focused results](kernel-console-contract.md).
+
 ## Incremental bootstrap prototype — 2026-10-07
 
 An optional Meson/Ninja graph builds the native C++23 compiler, one existing C++

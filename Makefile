@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-acceptance test-compiler test-image test-semantics test-semantics-stress test-unsigned test-uefi-span test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-round-robin test-ipc-transaction test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-acceptance test-compiler test-image test-semantics test-semantics-stress test-unsigned test-uefi-span test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-round-robin test-console test-ipc-transaction test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -107,7 +107,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-pin-ledger test-uefi-pins smoke-uefi-pins test-dormant-tables test-uefi-tables smoke-uefi-tables \
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
     test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-native-cap-contracts \
-    run run-uefi kernel-uefi test-developer-commands: aurora-test-context
+    run run-uefi console kernel-uefi test-console test-developer-commands: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -123,19 +123,20 @@ all: compiler kernel
 # Developer shortcuts reuse the existing build and validated smoke mechanisms.
 # Export these selectors so both environment and make NAME=value syntax work.
 export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
-.PHONY: help run run-uefi kernel-uefi test-developer-commands
+.PHONY: help run run-uefi console kernel-uefi test-developer-commands
 help:
 	@printf '%s\n' \
 	  'make                  Build the compiler and BIOS kernel image' \
 	  'make kernel-uefi      Build the separate UEFI loader/payload' \
 	  'make run              Build and verify one normal BIOS QEMU boot' \
 	  'make run-uefi         Build and verify one normal UEFI QEMU boot' \
+	  'make console          Open an opt-in BIOS serial console in QEMU' \
 	  'make test-compiler    Run the compiler-only suite (fresh compiler)' \
 	  'make test             Run the full native suite (fresh compiler)' \
 	  'make smoke-all        Run the existing full emulator suite' \
 	  'make test-developer-commands  Check shortcuts with fake tools only' \
 	  '' \
-	  'Run commands are bounded headless boot self-tests, not an interactive OS.' \
+	  'run/run-uefi are bounded boot self-tests; console is an experimental serial prompt.' \
 	  'Overrides: CXX, UEFI_LD, QEMU, QEMU_DATA, OVMF or OVMF_CODE/OVMF_VARS, OVMF_DIR.' \
 	  'See docs/local-development.md for dependencies, scripts and test scope.'
 
@@ -144,6 +145,9 @@ run:
 
 run-uefi:
 	./scripts/kernel-run.sh uefi
+
+console:
+	./scripts/kernel-console.sh
 
 kernel-uefi:
 	./scripts/kernel-uefi-build.sh
@@ -212,7 +216,11 @@ test-uefi-dispatch:
 test-uefi-user-phases:
 	./scripts/kernel-uefi-user-phases-tests.sh
 
-test: test-round-robin test-dormant-tables test-uefi-tables test-pin-ledger test-uefi-pins test-storage-model test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases test-uefi-bar test-uefi-span test-uefi-ivrs test-semantics
+test: test-console test-round-robin test-dormant-tables test-uefi-tables test-pin-ledger test-uefi-pins test-storage-model test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases test-uefi-bar test-uefi-span test-uefi-ivrs test-semantics
+
+.PHONY: test-console
+test-console: compiler
+	AURORAC="$(AURORAC)" ./scripts/kernel-console-tests.sh
 
 # QEMU is intentionally a separate acceptance gate, never silently skipped.
 smoke:

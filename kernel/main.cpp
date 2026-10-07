@@ -12,6 +12,9 @@
 auto user_program(std::uint64_t entry) -> std::uint64_t asm("aurora_user_program");
 #include "console.hpp"
 #include "scheduler.hpp"
+#ifdef AURORA_INTERACTIVE_CONSOLE
+#include "interactive-console.hpp"
+#endif
 
 namespace {
 constinit aurora::memory::PhysicalPages pages;
@@ -362,6 +365,9 @@ auto kernel_main() -> void {
     Serial::text("\r\n");
     if (value == 42) {
         Serial::text("AURORA_BOOT_OK\r\n");
+#ifdef AURORA_INTERACTIVE_CONSOLE
+        aurora::console::Interactive::run();
+#endif
         aurora::hardware::Io::write(0xf4, 0x10);
     } else {
         Serial::text("AURORA_BOOT_FAIL\r\n");

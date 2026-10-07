@@ -12,6 +12,12 @@ For the shortest normal-boot commands and tool overrides, see
 [local development](../docs/local-development.md): `make run` and `make run-uefi`
 build and verify bounded, headless boot self-tests.
 
+The separate opt-in `make console` profile opens a bounded BIOS serial prompt
+with `help`, `status` and `exit`. It uses a 64-byte ASCII line editor and sleeps
+on UART interrupts while idle. See the [console contract](../docs/kernel-console-contract.md)
+for its trust boundary, focused checks and deliberate limits. UEFI remains a
+self-test profile; this console is not a desktop or general process shell.
+
 From the repository root:
 
     ./scripts/kernel-build.sh

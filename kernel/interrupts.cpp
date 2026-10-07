@@ -8,6 +8,9 @@ auto timer_interrupt() -> void asm("aurora_timer_interrupt");
 auto program_return() -> void asm("aurora_program_return");
 auto user_return() -> void asm("aurora_user_return");
 auto unexpected() -> void asm("aurora_unexpected_interrupt");
+#ifdef AURORA_INTERACTIVE_CONSOLE
+auto serial_interrupt() -> void asm("aurora_serial_interrupt");
+#endif
 
 // Trusted x86 descriptor encoding is byte-explicit; no packed object layout ABI.
 namespace {
@@ -36,9 +39,14 @@ auto aurora::hardware::Interrupts::initialize() -> void {
     asm volatile("lgdt %0" : : "m"(gdtr) : "memory");
     asm volatile("ltr %0" : : "r"(static_cast<std::uint16_t>(40)) : "memory");
     for (std::size_t vector = 0; vector < 256; ++vector) {
-        const auto address = vector == 64 ? reinterpret_cast<std::uint64_t>(&timer_interrupt) : vector < 32 ? vectors[vector] : vector == 128
-            ? reinterpret_cast<std::uint64_t>(&user_return) : vector == 129
-            ? reinterpret_cast<std::uint64_t>(&program_return) : reinterpret_cast<std::uint64_t>(&unexpected);
+        auto address = reinterpret_cast<std::uint64_t>(&unexpected);
+        if (vector < 32) { address = vectors[vector]; }
+        if (vector == 64) { address = reinterpret_cast<std::uint64_t>(&timer_interrupt); }
+        if (vector == 128) { address = reinterpret_cast<std::uint64_t>(&user_return); }
+        if (vector == 129) { address = reinterpret_cast<std::uint64_t>(&program_return); }
+#ifdef AURORA_INTERACTIVE_CONSOLE
+        if (vector == 36) { address = reinterpret_cast<std::uint64_t>(&serial_interrupt); }
+#endif
         const auto slot = vector * 16;
         idt[slot] = address; idt[slot + 1] = address >> 8;
         idt[slot + 2] = 8; idt[slot + 3] = 0;

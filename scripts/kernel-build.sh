@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+console_profile="${KERNEL_CONSOLE:-0}"
+case "$console_profile" in
+    0|1) ;;
+    *) echo 'KERNEL_CONSOLE must be 0 or 1' >&2; exit 2 ;;
+esac
+if [[ "$console_profile" == 1 ]]; then
+    for name in "${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE; do
+        [[ -n "$name" ]] || continue
+        if [[ -n "${!name:-}" ]]; then
+            echo "Interactive console cannot inherit $name; unset fault and scheduling controls." >&2
+            exit 2
+        fi
+    done
+fi
 cxx="${CXX:-g++}"
 for tool in "$cxx" make as ld objcopy nm python3; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 2; }; done
 export CXX="$cxx"
@@ -24,7 +38,9 @@ fi
 if [[ "$unsigned_fixture" != none && ( "$division_fixture" != none || "${KERNEL_TEST_SCHEDULE:-0}" == 1 ) ]]; then
     echo 'Unsigned fixtures require the uncombined sequential user-program gate' >&2; exit 2
 fi
-"$compiler" --module-root kernel/policies examples/kernel-bios.au -o build/kernel-language.s
+language_input=examples/kernel-bios.au
+if [[ "$console_profile" == 1 ]]; then language_input=examples/kernel-console.au; fi
+"$compiler" --module-root kernel/policies "$language_input" -o build/kernel-language.s
 as --64 build/kernel-language.s -o build/kernel-language.o
 as --32 kernel/boot.S -o build/boot.o
 ./scripts/kernel-boot-link.sh build/boot.o build/boot.bin
@@ -73,6 +89,12 @@ done
 python3 tests/kernel-user-image.py --division-fixture "$division_fixture" --unsigned-fixture "$unsigned_fixture"
 as --64 build/kernel-user-images.S -o build/kernel-user-images.o
 extra=()
+console_objects=()
+if [[ "$console_profile" == 1 ]]; then
+    extra+=(-DAURORA_INTERACTIVE_CONSOLE)
+    as --64 kernel/serial-input.S -o build/serial-input.o
+    console_objects=(build/serial-input.o)
+fi
 if [[ "$division_fixture" != none ]]; then extra+=("-DAURORA_DIVISION_FIXTURE=\"$division_fixture\""); fi
 case "$division_fixture" in
     zero|remainder-zero) extra+=(-DAURORA_TEST_DIVISION_ZERO) ;;
@@ -99,7 +121,10 @@ for source in main interrupts protection user-program address-spaces apic schedu
     -Ibuild -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns "${extra[@]}" -c "kernel/$source.cpp" -o "build/kernel-$source.o"
 done
 ld -nostdlib -z max-page-size=0x1000 -T kernel/link.ld \
-    build/kernel-apic.o build/kernel-scheduler.o build/start.o build/exceptions.o build/user.o build/kernel-user-program.o build/kernel-address-spaces.o build/kernel-user-images.o build/kernel-protection.o build/kernel-interrupts.o build/kernel-main.o build/kernel-language.o -o build/kernel.elf
+    build/kernel-apic.o build/kernel-scheduler.o build/start.o build/exceptions.o build/user.o \
+    build/kernel-user-program.o build/kernel-address-spaces.o build/kernel-user-images.o \
+    build/kernel-protection.o build/kernel-interrupts.o build/kernel-main.o build/kernel-language.o \
+    "${console_objects[@]}" -o build/kernel.elf
 objcopy -O binary build/kernel.elf build/kernel.bin
 python3 tests/kernel-image.py
 printf 'Built build/aurora.img (raw emulator disk) and build/kernel.elf\n'
