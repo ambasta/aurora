@@ -1,0 +1,171 @@
+[
+  {
+    "argv": [
+      "/tmp/aurora-xfs-offline-tools/root/usr/sbin/mkfs.xfs",
+      "-N",
+      "-f",
+      "-K",
+      "-b",
+      "size=4096",
+      "-s",
+      "size=512",
+      "-i",
+      "size=512,nrext64=1",
+      "-m",
+      "crc=1,finobt=1,reflink=1,bigtime=1,inobtcount=1",
+      "-d",
+      "agcount=4",
+      "-l",
+      "size=64m",
+      "-L",
+      "AUR_EXTENT",
+      "-p",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/prototype.txt",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img"
+    ],
+    "image_bytes": 335544320,
+    "image_allocated_before": 0,
+    "time_start": 1791117241.6797898,
+    "exit_code": 0,
+    "image_allocated_after": 0
+  },
+  {
+    "argv": [
+      "/tmp/aurora-xfs-offline-tools/root/usr/sbin/mkfs.xfs",
+      "-f",
+      "-K",
+      "-b",
+      "size=4096",
+      "-s",
+      "size=512",
+      "-i",
+      "size=512,nrext64=1",
+      "-m",
+      "crc=1,finobt=1,reflink=1,bigtime=1,inobtcount=1",
+      "-d",
+      "agcount=4",
+      "-l",
+      "size=64m",
+      "-L",
+      "AUR_EXTENT",
+      "-p",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/prototype.txt",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img"
+    ],
+    "image_bytes": 335544320,
+    "image_allocated_before": 0,
+    "time_start": 1791117241.6859405,
+    "exit_code": 0,
+    "image_allocated_after": 67457024
+  },
+  {
+    "argv": [
+      "/tmp/aurora-xfs-offline-tools/root/usr/sbin/xfs_db",
+      "-r",
+      "-f",
+      "-c",
+      "sb 0",
+      "-c",
+      "p",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img"
+    ],
+    "image_bytes": 335544320,
+    "image_allocated_before": 67457024,
+    "time_start": 1791117242.402298,
+    "exit_code": 0,
+    "image_allocated_after": 67461120
+  },
+  {
+    "argv": [
+      "/tmp/aurora-xfs-offline-tools/root/usr/sbin/xfs_db",
+      "-r",
+      "-f",
+      "-c",
+      "inode 128",
+      "-c",
+      "p",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img"
+    ],
+    "image_bytes": 335544320,
+    "image_allocated_before": 67461120,
+    "time_start": 1791117242.4225314,
+    "exit_code": 0,
+    "image_allocated_after": 67461120
+  },
+  {
+    "argv": [
+      "/tmp/aurora-xfs-offline-tools/root/usr/sbin/xfs_db",
+      "-r",
+      "-f",
+      "-c",
+      "inode 131",
+      "-c",
+      "p",
+      "-c",
+      "bmap -d",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img"
+    ],
+    "image_bytes": 335544320,
+    "image_allocated_before": 67461120,
+    "time_start": 1791117242.4341588,
+    "exit_code": 0,
+    "image_allocated_after": 67461120
+  },
+  {
+    "argv": [
+      "/tmp/aurora-xfs-offline-tools/root/usr/sbin/xfs_db",
+      "-r",
+      "-f",
+      "-c",
+      "inode 132",
+      "-c",
+      "p",
+      "-c",
+      "bmap -d",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img"
+    ],
+    "image_bytes": 335544320,
+    "image_allocated_before": 67461120,
+    "time_start": 1791117242.4475439,
+    "exit_code": 0,
+    "image_allocated_after": 67461120
+  },
+  {
+    "argv": [
+      "/tmp/aurora-xfs-offline-tools/root/usr/sbin/xfs_db",
+      "-r",
+      "-f",
+      "-c",
+      "inode 133",
+      "-c",
+      "p",
+      "-c",
+      "bmap -d",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img"
+    ],
+    "image_bytes": 335544320,
+    "image_allocated_before": 67461120,
+    "time_start": 1791117242.4576578,
+    "exit_code": 0,
+    "image_allocated_after": 67461120
+  },
+  {
+    "argv": [
+      "/tmp/aurora-xfs-offline-tools/root/usr/sbin/xfs_db",
+      "-r",
+      "-f",
+      "-c",
+      "inode 134",
+      "-c",
+      "p",
+      "-c",
+      "bmap -d",
+      "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img"
+    ],
+    "image_bytes": 335544320,
+    "image_allocated_before": 67461120,
+    "time_start": 1791117242.467061,
+    "exit_code": 0,
+    "image_allocated_after": 67461120
+  }
+]

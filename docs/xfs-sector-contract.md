@@ -90,11 +90,12 @@ independent owned result and boundary/copy tests. It provides window bytes, not
 a full-device handle or source-capacity provenance. Its verification is separate
 from the historical XFS consumer results below.
 
-A complete small-file read also needs genuine child-inode and file-data fixtures,
-a checked inode-to-sector request plan, v3 regular-file validation and the
-supported extent-mapping subset. Existing recovered fixtures contain only two
-superblocks and two root inodes. A new disposable mkfs image and readonly
-extraction can provide missing bytes; existing checks do not establish them.
+The separate [written-file sector reader](xfs-file-contract.md) now composes
+this prerequisite with a recovered genuine child inode and all data sectors of
+a 17,003-byte file. Its narrow v3/single-written-extent profile, full physical
+bounds and caller-supplied window provenance have their own focused gate.
+The historical header-consumer results on this page alone do not establish
+that file-data behavior or a general filesystem mount.
 
 ## Validation
 

@@ -1,0 +1,14 @@
+{
+  "status": "verified successful fixture compacted",
+  "original_path": "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img",
+  "original_logical_bytes": 335544320,
+  "original_allocated_bytes": 67461120,
+  "original_mode": "0o600",
+  "original_sha256": "a763f544b8ef8ad2015ce1e23e82b9204310c3c5de0da82aafd9db6b6b74def1",
+  "archive_path": "/workspace/scratch/48c5de6446f8/aurora-xfs-extents-pr15-20261004/extent-development/fixtures/extents.img.gz",
+  "archive_bytes": 329279,
+  "archive_sha256": "b296caa7feb25ab0fdddb92dad370c9e3612546229a892989085218329ebe328",
+  "restore": "Verify compressed SHA, create a fresh regular file, stream decompressed bytes preserving zero runs as holes (for example gzip -dc ARCHIVE | cp --sparse=always /dev/stdin FRESH_FILE), set original0600 mode, and verify logical bytecount/SHA before use. Never restore over an existing path or to a device.",
+  "task_allocation_before": 74121216,
+  "task_allocation_after": 6995968
+}
