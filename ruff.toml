@@ -1,0 +1,20 @@
+# Python host tooling only. This does not parse or format Aurora source strings.
+required-version = "==0.16.7"
+target-version = "py310"
+line-length = 120
+indent-width = 4
+preview = false
+extend-exclude = ["build", "evidence"]
+force-exclude = true
+
+[lint]
+# Keep initial adoption focused on readability; do not mix semantic lint fixes
+# or import reordering into the formatting change.
+select = ["E501", "E701", "E702", "E703"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+skip-magic-trailing-comma = false
+docstring-code-format = false
