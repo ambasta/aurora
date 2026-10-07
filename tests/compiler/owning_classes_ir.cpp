@@ -4,6 +4,7 @@
 #include "x86.hpp"
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <string>
 
 using namespace aurora;
@@ -219,6 +220,51 @@ Module method(bool write = false) {
     module.functions = {function};
     return module;
 }
+Module resizingField(bool borrowed = false, int fieldIndex = 1, std::int64_t requested = 65) {
+    auto module = shapes();
+    auto function = borrowed ? IRFunction{} : ordinary("owning_resize", Type::Bool);
+    if (borrowed) {
+        function.name = "owning_resize_method";
+        function.result = Type::Bool;
+        function.receiver = Receiver{"Parcel", true, false};
+    }
+    append(function, {Constant{requested, Type::I64}, BytesResize{borrowed ? 0 : 96, fieldIndex}});
+    if (!borrowed)
+        append(function, {EndObject{96}});
+    append(function, {Return{}});
+    module.functions = {function};
+    return module;
+}
+
+Module resizeBoundary(const std::string &mode) {
+    if (mode == "resize-move") {
+        auto module = moving(true);
+        before<MoveObject>(module.functions[0], {Constant{65, Type::I64}, BytesResize{96, 1}});
+        return module;
+    }
+    const int field = mode == "resize-odd" || mode == "resize-even" ? 3 : 1;
+    const int depth = mode == "resize-odd" ? 1 : mode == "resize-even" ? 2 : 0;
+    auto module = resizingField(true, field);
+    auto &function = module.functions[0];
+    function.result = Type::I64;
+    function.code.clear();
+    for (int index = 0; index < depth; ++index)
+        append(function, {Constant{4294967313LL + index, Type::I64}, Push{}});
+    append(function,
+           {Constant{mode == "resize-failed" ? 2048 : 65, Type::I64},
+            BytesResize{0, field},
+            BranchFalse{1},
+            BytesLength{0, field},
+            Jump{2},
+            Label{1},
+            Constant{-1000, Type::I64},
+            Label{2}});
+    for (int index = 0; index < depth; ++index)
+        append(function, {BinaryValue{Binary::CheckedAdd, Type::I64}});
+    append(function, {Return{}});
+    return module;
+}
+
 Module descriptorOnly(bool pair = false) {
     auto module = shapes();
     const std::string name = pair ? "Pair" : "Only";
@@ -565,6 +611,228 @@ void ownershipTests() {
         before<Return>(m.functions[0], {ReturnBytes{0}});
     });
 }
+void resizeFieldTests() {
+    for (bool borrowed : {false, true}) {
+        const std::string root = borrowed ? "borrowed receiver" : "owning parameter";
+        for (int field : {1, 3}) {
+            for (std::int64_t requested : {std::numeric_limits<std::int64_t>::min(),
+                                           std::int64_t{-1},
+                                           std::int64_t{0},
+                                           std::int64_t{65},
+                                           std::numeric_limits<std::int64_t>::max()}) {
+                accept(root + " resize retains direct field " + std::to_string(field) + " for request " +
+                           std::to_string(requested),
+                       resizingField(borrowed, field, requested));
+            }
+        }
+        reject(root + " resize rejects const root", resizingField(borrowed), [=](Module &m) {
+            if (borrowed)
+                m.functions[0].receiver->mutableValue = false;
+            else
+                m.functions[0].objectSlots[96].mutableValue = false;
+        });
+        for (int field : {-2, -1, 0, 2, 4, 5, std::numeric_limits<int>::max()}) {
+            reject(root + " resize rejects nonresource selector " + std::to_string(field),
+                   resizingField(borrowed),
+                   [=](Module &m) {
+                       op<BytesResize>(m).fieldIndex = field;
+                   });
+        }
+        reject(root + " resize rejects negative root", resizingField(borrowed), [](Module &m) {
+            op<BytesResize>(m).offset = -8;
+        });
+        for (const auto &type : {Type::Bool, Type::U8, Type::U64}) {
+            reject(root + " resize requires current i64 rather than " + typeName(type),
+                   resizingField(borrowed),
+                   [=](Module &m) {
+                       op<Constant>(m).value = 1;
+                       op<Constant>(m).type = type;
+                   });
+        }
+        reject(root + " resize rejects nominal enum length", resizingField(borrowed), [](Module &m) {
+            m.enumCases["Length"] = 1;
+            auto &f = m.functions[0];
+            f.code[at<Constant>(f)] = EnumConstant{Type::enumeration("Length"), 0};
+        });
+        reject(root + " resize requires a current length", resizingField(borrowed), [](Module &m) {
+            remove<Constant>(m.functions[0]);
+        });
+        reject(root + " resize bool cannot be another length", resizingField(borrowed), [=](Module &m) {
+            auto &f = m.functions[0];
+            f.code.insert(f.code.begin() + at<BytesResize>(f) + 1, BytesResize{borrowed ? 0 : 96, 1});
+        });
+        reject(root + " resize result is bool", resizingField(borrowed), [](Module &m) {
+            m.functions[0].result = Type::I64;
+        });
+        reject(root + " resize does not consume saved length", resizingField(borrowed), [](Module &m) {
+            before<BytesResize>(m.functions[0], {Push{}});
+        });
+        reject(root + " resize does not create a saved operand", resizingField(borrowed), [](Module &m) {
+            before<Return>(m.functions[0], {Pop{}});
+        });
+
+        auto stack = resizingField(borrowed);
+        auto &f = stack.functions[0];
+        f.frameBytes = 416;
+        f.slots[344] = Type::I64;
+        f.slots[352] = Type::U64;
+        f.slots[360] = Type::U8;
+        f.slots[368] = Type::Bool;
+        f.slots[376] = Type::Bool;
+        before<BytesResize>(f,
+                            {Push{},
+                             Constant{7, Type::U64},
+                             Push{},
+                             Constant{255, Type::U8},
+                             Push{},
+                             Constant{1, Type::Bool},
+                             Push{},
+                             Constant{513, Type::I64}});
+        before<Return>(f,
+                       {Store{376, Type::Bool},
+                        Pop{},
+                        Store{368, Type::Bool},
+                        Pop{},
+                        Store{360, Type::U8},
+                        Pop{},
+                        Store{352, Type::U64},
+                        Pop{},
+                        Store{344, Type::I64},
+                        Load{376, Type::Bool}});
+        accept(root + " resize preserves exact heterogeneous operand stack", stack);
+    }
+    auto local = constructed();
+    before<BytesLength>(local.functions[0],
+                        {Constant{65, Type::I64}, BytesResize{96, 1}, Constant{0, Type::I64}, BytesResize{96, 3}});
+    accept("constructed local can resize both descriptors and remain queryable", local);
+    auto moved = moving();
+    before<BytesLength>(moved.functions[0], {Constant{65, Type::I64}, BytesResize{184, 3}});
+    accept("moved destination can resize and retain both descriptors", moved);
+    auto returned = moving(true);
+    before<ReturnOwnedObject>(returned.functions[0], {Constant{65, Type::I64}, BytesResize{184, 1}});
+    accept("resized field retains whole-object return authority", returned);
+    auto call = called();
+    before<ResourceCall>(call.functions[0], {Constant{65, Type::I64}, BytesResize{96, 1}});
+    accept("resized field retains resource-call authority and staged arguments", call);
+    before<ReturnOwnedObject>(call.functions[0], {Constant{0, Type::I64}, BytesResize{272, 3}});
+    accept("resource-call result can resize before whole-object return", call);
+
+    for (int offset : {0, 8, 16, 40, 48, 56, 64, 72, 80, 88, 95, 97, 176, 184, 272, 304, 416}) {
+        reject("field resize requires exact live root " + std::to_string(offset), resizingField(), [=](Module &m) {
+            op<BytesResize>(m).offset = offset;
+        });
+    }
+    reject("field resize cannot bypass inactive object lifetime", constructed(), [](Module &m) {
+        before<BeginObject>(m.functions[0], {Constant{65, Type::I64}, BytesResize{96, 1}});
+    });
+    reject("field resize cannot initialize pristine root", constructed(), [](Module &m) {
+        before<ResourceCall>(m.functions[0], {Constant{65, Type::I64}, BytesResize{96, 1}});
+    });
+    reject("field resize cannot use consumed root", resizingField(), [](Module &m) {
+        before<BytesResize>(m.functions[0], {BeginObject{184}, MoveObject{96, 184}});
+    });
+    reject("field resize cannot use ended root", resizingField(), [](Module &m) {
+        before<BytesResize>(m.functions[0], {EndObject{96}});
+    });
+    reject("field resize cannot revive consumed root after destination cleanup", resizingField(), [](Module &m) {
+        before<BytesResize>(m.functions[0], {BeginObject{184}, MoveObject{96, 184}, EndObject{184}});
+    });
+    reject("field resize cannot revive restarted pristine local", local, [](Module &m) {
+        before<BytesResize>(m.functions[0], {EndObject{96}, BeginObject{96}});
+    });
+    reject("field resize cannot bypass resource-call consumption", called(false), [](Module &m) {
+        before<EndObject>(m.functions[0], {Constant{65, Type::I64}, BytesResize{96, 1}});
+    });
+    for (std::int64_t requested : {std::int64_t{-1}, std::int64_t{0}, std::int64_t{65}}) {
+        reject("field resize retains cleanup obligation for request " + std::to_string(requested),
+               resizingField(false, 1, requested),
+               [](Module &m) {
+                   remove<EndObject>(m.functions[0]);
+               });
+    }
+    auto ctor = shapes();
+    ctor.functions = {constructor()};
+    reject("constructor cannot resize uninitialized field", ctor, [](Module &m) {
+        before<InitializeBytesField>(m.functions[0], {Constant{65, Type::I64}, BytesResize{0, 1}});
+    });
+    reject("constructor cannot resize initialized field in partial root", ctor, [](Module &m) {
+        before<InitializeBytesField>(m.functions[0], {Constant{65, Type::I64}, BytesResize{0, 1}}, 1);
+    });
+    reject("constructor cannot resize receiver before constructor returns", ctor, [](Module &m) {
+        before<EndBytes>(m.functions[0], {Constant{65, Type::I64}, BytesResize{0, 1}});
+    });
+    reject("copied child cannot impersonate resize descriptor", copiedChild(), [](Module &m) {
+        before<MethodCall>(m.functions[0], {Constant{65, Type::I64}, BytesResize{96, 1}});
+    });
+    reject("copyable object cannot become resize owner", copiedChild(), [](Module &m) {
+        before<MethodCall>(m.functions[0], {Constant{65, Type::I64}, BytesResize{368, 0}});
+    });
+    reject("resize cannot make owning root copyable", resizingField(), [](Module &m) {
+        before<EndObject>(m.functions[0], {BeginObject{184}, CopyObject{96, 184}});
+    });
+    reject("resize cannot permit copied owning return", returned, [](Module &m) {
+        auto &f = m.functions[0];
+        f.code[at<ReturnOwnedObject>(f)] = ReturnObject{184};
+    });
+    reject("resize cannot extract field with standalone move", resizingField(), [](Module &m) {
+        before<EndObject>(m.functions[0], {BeginBytes{304}, MoveBytes{88, 304}});
+    });
+    reject("borrowed resize cannot extract receiver as owner", resizingField(true), [](Module &m) {
+        before<Return>(m.functions[0], {ReturnBytes{0}});
+    });
+    reject("borrowed resize cannot extract field via scalar load", resizingField(true), [](Module &m) {
+        before<Return>(m.functions[0], {ReceiverLoad{1, Type::U64}});
+    });
+
+    auto branch = resizingField();
+    auto &f = branch.functions[0];
+    f.code.erase(f.code.begin() + at<Constant>(f), f.code.end());
+    append(f,
+           {BytesOk{96, 1},
+            BranchFalse{1},
+            Constant{65, Type::I64},
+            BytesResize{96, 1},
+            Jump{2},
+            Label{1},
+            Constant{0, Type::Bool},
+            Label{2},
+            EndObject{96},
+            Return{}});
+    accept("conditional field resize preserves every ownership token at join", branch);
+    auto both = branch;
+    before<Constant>(both.functions[0], {Constant{0, Type::I64}, BytesResize{96, 3}}, 1);
+    accept("distinct field resize sites preserve whole-root ownership at join", both);
+    reject("conditional field resize cannot hide root consumption", branch, [](Module &m) {
+        before<Jump>(m.functions[0], {BeginObject{184}, MoveObject{96, 184}, EndObject{184}});
+    });
+    reject("field resize false does not discharge cleanup", branch, [](Module &m) {
+        auto &f = m.functions[0];
+        f.code.erase(f.code.begin() + at<EndObject>(f), f.code.end());
+        append(f,
+               {BranchFalse{3},
+                EndObject{96},
+                Constant{1, Type::Bool},
+                Return{},
+                Label{3},
+                Constant{0, Type::Bool},
+                Return{}});
+    });
+    auto loop = constructed();
+    before<BytesLength>(loop.functions[0],
+                        {Label{1},
+                         Constant{65, Type::I64},
+                         BytesResize{96, 1},
+                         BranchFalse{2},
+                         Constant{0, Type::I64},
+                         BytesResize{96, 3},
+                         Jump{1},
+                         Label{2}});
+    accept("loop resize of two fields preserves original ownership across backedge", loop);
+    reject("loop field resize cannot hide root consumption", loop, [](Module &m) {
+        before<Jump>(m.functions[0], {BeginObject{184}, MoveObject{96, 184}, EndObject{184}});
+    });
+}
+
 void constructorTests() {
     accept("six-position owning constructor", constructed());
     accept("constructor calls and cleanup preserve odd operand depth", constructed(1));
@@ -649,21 +917,27 @@ int main(int argc, char **argv) {
         if (argc == 3 && std::string(argv[1]) == "--emit-abi") {
             const std::string mode = argv[2];
             require(mode == "construct" || mode == "six" || mode == "method" || mode == "copied" || mode == "move" ||
-                        mode == "construct-odd" || mode == "construct-even",
+                        mode == "construct-odd" || mode == "construct-even" || mode == "resize-first" ||
+                        mode == "resize-odd" || mode == "resize-even" || mode == "resize-failed" ||
+                        mode == "resize-move",
                     "unknown ABI fixture mode");
-            auto module = mode == "construct-odd"    ? constructed(1)
-                          : mode == "construct-even" ? constructed(2)
-                          : mode == "construct"      ? constructed()
-                          : mode == "six"            ? called()
-                          : mode == "method"         ? method(true)
-                          : mode == "copied"         ? copiedChild()
-                                                     : moving(true);
+            auto module = mode.starts_with("resize-") ? resizeBoundary(mode)
+                          : mode == "construct-odd"   ? constructed(1)
+                          : mode == "construct-even"  ? constructed(2)
+                          : mode == "construct"       ? constructed()
+                          : mode == "six"             ? called()
+                          : mode == "method"          ? method(true)
+                          : mode == "copied"          ? copiedChild()
+                                                      : moving(true);
             std::cout << X86Emitter{}.emit(validate(std::move(module)));
             return 0;
         }
-        require(argc == 1, "usage: owning_classes_ir [--emit-abi construct|six|method|copied|move]");
+        require(argc == 1,
+                "usage: owning_classes_ir [--emit-abi construct|construct-odd|construct-even|six|method|copied|move|"
+                "resize-first|resize-odd|resize-even|resize-failed|resize-move]");
         layoutTests();
         ownershipTests();
+        resizeFieldTests();
         constructorTests();
         controlTests();
         childTests();

@@ -2,7 +2,8 @@
 
 This checkpoint adds one allocation/lifetime prerequisite. Independent source
 review and the [focused native composite](../docs/owned-bytes-results.md) passed. It does not replace the fixed-record BinaryBuffer64 or
-Sector512 APIs, and is not a growable collection or a kernel physical allocator.
+Sector512 APIs. The resize extension below has passed [focused checks](../docs/owned-bytes-resize-results.md); it adds
+no element collection, borrowed payload view or kernel physical allocator.
 
 ## Source contract
 
@@ -62,6 +63,59 @@ argument, or an owning return. A const owner may be read and dropped but cannot
 be moved or written. Implicit copies, owner assignment, discarded owner results,
 raw addresses, integer/capability conversions and borrowed payload views are absent.
 
+## Failure-safe replacement resize
+
+`owner.try_resize(length)` accepts exactly one i64 and returns bool. The receiver
+must be a mutable initialized standalone owner or a direct private OwnedBytes field
+of a live mutable owning class. Borrowed mutable methods may resize their own field;
+no new region authority or payload view is exposed. Its length operand is evaluated
+once before receiver ownership is rechecked. An expression that consumes the
+receiver or its containing object is rejected; consuming another owner during length
+evaluation is allowed.
+Completed operand side effects are not rolled back when resizing returns false.
+
+A canonical failed allocation returns false unchanged, even for length zero.
+A valid live owner with unchanged length returns true without allocating/freeing,
+changing identity or changing any metric, including after ID exhaustion. This fast
+path remains inside the validating runtime helper: forged/stale descriptors always
+fail-stop before the length request is considered. Const or consumed bindings are
+rejected by source and typed-IR validation.
+
+Every changed-size success builds a replacement allocation, preserves the first
+`min(old_length, new_length)` bytes, initializes every new byte to zero, then commits
+a fresh nonzero, never-reused allocation identity and releases the old block exactly
+once. Shrinking discards the suffix permanently: a later regrow produces zeroes in
+that extension. Shrinking to zero creates a successful empty owner with its own
+metadata and identity. Local/function moves after resizing preserve the latest
+identity. Normal cleanup still belongs to the original binding lifetime.
+
+Negative length, unrepresentable header-plus-payload size, final logical quota
+exhaustion, identity/counter exhaustion and host allocation failure return false
+with the old descriptor, bytes and all committed accounting unchanged. Shrink and
+zero requests may fail too: their replacement metadata needs a host allocation and
+a new identity. No retry promise or allocation failure-cause enum is introduced.
+
+The region quota charges final committed payload, checked as
+`new_length <= quota - (used - old_length)`. This allows growth to the quota even
+when old and replacement blocks coexist temporarily. At most one staging block is
+allocated per call; transient payload is at most `used + new_length`, mathematically
+at most twice the region quota. Metadata, allocator overhead and other host memory
+are outside this bound. The logical quota therefore does not bound instantaneous
+physical memory. There is no concurrent or reentrant use of the adapter.
+
+Replacement staging is not a second live logical owner. Successful replacement
+increments the successful-allocation and release observations, updates both last
+IDs and committed used/peak-used payload, and leaves live/peak-live owner counts
+unchanged. The old block is freed after the descriptor/registry commit. All fallible
+work finishes before that nonthrowing commit; no C++ exception crosses generated
+frames. Same-size and failed requests change none of these observations.
+
+The `BytesResize` instruction consumes current i64 and returns bool, leaving saved
+scalar operands and the unique logical verifier token intact. Runtime allocation
+identity and verifier binding authority remain separate. The existing reserved
+runtime symbol boundary and compiler-owned private linkage apply to the helper
+`__au_runtime_bytes_resize`; source cannot call it directly or forge its descriptor.
+
 ## Normal lifetimes and control flow
 
 Each local declaration or owning parameter has a binding lifetime separate from
@@ -76,10 +130,10 @@ stack. Loop-local allocations close on every completed iteration, allowing quota
 reuse. Continuing if branches and short-circuit logical paths must agree exactly
 on ownership state; conditional consumption is rejected. A returning branch does
 not constrain a continuing sibling. Loop conditions cannot transfer outer owners,
-even if the body always returns; content-only read/set operations remain allowed.
+even if the body always returns; read, set and resize operations remain allowed.
 
 No arbitrary user destructor, exception unwinding, break/continue extension,
-allocation resize, region reset/revocation or concurrent access is introduced.
+region reset/revocation or concurrent access is introduced.
 Fail-stop traps do not run cleanup. Process/service reclamation of abandoned
 resources remains a separate runtime boundary.
 
@@ -92,7 +146,7 @@ canonical class extent, with no overlapping standalone owner spills. Only
 entry-prefix parameter binding can introduce region authority. Metadata describing
 storage never grants an active lifetime or allocation capability.
 
-Dedicated operations begin, allocate, move, access, end, bind, call and return
+Dedicated operations begin, allocate, resize, move, access, end, bind, call and return
 owners. Validation tracks binding creation sites, pristine/live/consumed state,
 internally minted ownership tokens and exact region origins. Moves preserve a
 token and leave their source consumed. Allocation/call results require pristine
@@ -114,7 +168,8 @@ region, zero allocation/length/success. Payload pointers live only in the truste
 adapter's registry. Runtime IDs and verifier identity tokens are different facts.
 
 The single-thread adapter uses actual runtime `malloc`-compatible storage for a
-header plus requested bytes. It checks size addition and quota subtraction before
+header plus requested bytes, including replacement resize staging. It checks size
+addition and quota subtraction before
 allocation, initializes payload, then commits the registry, counters and ID. Each
 region accounts payload bytes; host metadata/allocator overhead is outside that
 quota. Failure preserves existing payloads, ownership and committed accounting.
@@ -122,7 +177,8 @@ Successful allocations and regions receive nonzero IDs that never wrap or reuse.
 
 Adapter helpers are nonthrowing. They validate region, allocation identity and
 canonical descriptor shape before access/release, and bounds before payload
-access. Stale and cross-region descriptors fail closed. Unique live ownership is
+access. Stale and cross-region descriptors fail closed, including pre-resize descriptors
+whose old lengths later recur. Unique live ownership is
 enforced by source/IR validation; the adapter does not defend against malicious
 trusted host code cloning a currently valid descriptor. Its raw host pointers and
 allocator callbacks are trusted bootstrap machinery, never an Aurora source API.
@@ -134,7 +190,7 @@ region close refuses while allocations remain. No general external owner ABI,
 program startup, C compatibility or native kernel allocation is claimed.
 
 Every Aurora function definition in a resource-bearing graph is local, including
-scalar helpers. Thus a source helper named malloc, free, memset or abort cannot
+scalar helpers. Thus a source helper named malloc, free, memcpy, memset or abort cannot
 interpose the trusted adapter dependencies. This linkage rule is derived from
 validated signatures and lifetime IR; no source/IR flag can disable it. The test
 bridge uses the source/IR-reserved runtime prefix. Fixed generated reflection

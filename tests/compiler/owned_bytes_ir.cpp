@@ -79,6 +79,19 @@ Module allocated(std::int64_t length = 17) {
     return moduleWith(std::move(function));
 }
 
+Module resized(std::int64_t requested = 65, std::int64_t initial = 17) {
+    auto function = frame("bytes_resize", Type::Bool);
+    append(function,
+           {BeginBytes{40},
+            Constant{initial, Type::I64},
+            AllocateBytes{8, 40},
+            Constant{requested, Type::I64},
+            BytesResize{40},
+            EndBytes{40},
+            Return{}});
+    return moduleWith(std::move(function));
+}
+
 Module moved(bool readonlyDestination = false) {
     auto function = frame();
     function.byteSlots[72] = !readonlyDestination;
@@ -269,6 +282,7 @@ void signatureTests() {
                                    "__au_runtime_bytes_allocate",
                                    "__au_runtime_bytes_at",
                                    "__au_runtime_bytes_set",
+                                   "__au_runtime_bytes_resize",
                                    "__au_runtime_bytes_drop",
                                    "__au_runtime_bytes_end",
                                    "__au_runtime_bytes_test_bridge",
@@ -616,6 +630,231 @@ void moveAndAccessTests() {
     reject("set result is bool rather than u8", store, [](Module &module) {
         module.functions[0].result = Type::U8;
     });
+}
+
+void resizeTests() {
+    for (const std::int64_t requested : {std::numeric_limits<std::int64_t>::min(),
+                                         std::int64_t{-1},
+                                         std::int64_t{0},
+                                         std::int64_t{1},
+                                         std::int64_t{17},
+                                         std::int64_t{65},
+                                         std::int64_t{513},
+                                         std::int64_t{4097},
+                                         std::numeric_limits<std::int64_t>::max()}) {
+        accept("resize keeps runtime request statically live " + std::to_string(requested), resized(requested));
+    }
+    accept("resize of canonical failed allocation remains a live binding", resized(1, -1));
+    accept("resize of successful empty owner remains a live binding", resized(65, 0));
+    auto parameter = owningParameter();
+    insertBefore<BytesLength>(parameter.functions[0], {Constant{65, Type::I64}, BytesResize{40}});
+    accept("mutable owning parameter can resize and remain queryable", parameter);
+    auto transferred = ownerReturn();
+    insertBefore<ReturnBytes>(transferred.functions[0], {Constant{65, Type::I64}, BytesResize{40}});
+    accept("resized owner retains authority for an owning return", transferred);
+    auto movedResult = moved();
+    insertBefore<MoveBytes>(movedResult.functions[0],
+                            {Constant{65, Type::I64}, BytesResize{40}, Constant{42, Type::I64}});
+    accept("resized owner retains authority for an explicit move", movedResult);
+    auto call = resourceCall();
+    insertBefore<ResourceCall>(call.functions[0], {Constant{65, Type::I64}, BytesResize{40}});
+    accept("resize preserves origin authority and pre-staged scalar call arguments", call);
+    auto returnedCall = factoryCall();
+    insertBefore<BytesLength>(returnedCall.functions[0], {Constant{65, Type::I64}, BytesResize{40}});
+    accept("owner received from resource call can resize", returnedCall);
+
+    reject("resize requires mutable receiver", resized(), [](Module &module) {
+        module.functions[0].byteSlots[40] = false;
+    });
+    reject("even same-size resize cannot use readonly receiver", resized(17), [](Module &module) {
+        module.functions[0].byteSlots[40] = false;
+    });
+    reject("resize requires active receiver lifetime", resized(), [](Module &module) {
+        operation<BytesResize>(module).offset = 72;
+    });
+    reject("resize cannot fabricate ownership in pristine lifetime", resized(), [](Module &module) {
+        eraseOperation<AllocateBytes>(module.functions[0]);
+    });
+    reject("resize cannot revive ended owner", resized(), [](Module &module) {
+        insertBefore<BytesResize>(module.functions[0], {EndBytes{40}});
+    });
+    reject("resize cannot use consumed receiver after size evaluation", resized(), [](Module &module) {
+        insertBefore<BytesResize>(module.functions[0], {BeginBytes{72}, MoveBytes{40, 72}});
+    });
+    reject("resize cannot revive a moved owner after destination cleanup", resized(), [](Module &module) {
+        insertBefore<BytesResize>(module.functions[0], {BeginBytes{72}, MoveBytes{40, 72}, EndBytes{72}});
+    });
+    reject("resize cannot revive a recreated pristine binding", resized(), [](Module &module) {
+        insertBefore<BytesResize>(module.functions[0], {EndBytes{40}, BeginBytes{40}});
+    });
+    reject("resize cannot bypass resource call argument consumption", resourceCall(false), [](Module &module) {
+        insertBefore<EndBytes>(module.functions[0], {Constant{65, Type::I64}, BytesResize{40}});
+    });
+    for (const int offset : {-8, 0, 8, 16, 24, 32, 39, 41, 176}) {
+        reject("resize requires exact owner spill " + std::to_string(offset), resized(), [=](Module &module) {
+            operation<BytesResize>(module).offset = offset;
+        });
+    }
+    for (const int field : {-2, 0, 1, 3, std::numeric_limits<int>::max()}) {
+        reject(
+            "standalone resize cannot forge a field selector " + std::to_string(field), resized(), [=](Module &module) {
+                operation<BytesResize>(module).fieldIndex = field;
+            });
+    }
+    reject("initialized ordinary scalar is not resize authority", resized(), [](Module &module) {
+        module.functions[0].slots[144] = Type::I64;
+        insertBefore<BytesResize>(module.functions[0], {Store{144, Type::I64}});
+        operation<BytesResize>(module).offset = 144;
+    });
+    for (const auto &type : {Type::Bool, Type::U8, Type::U64}) {
+        reject("resize length cannot be " + typeName(type), resized(), [=](Module &module) {
+            operation<Constant>(module, 1).type = type;
+            operation<Constant>(module, 1).value = 1;
+        });
+    }
+    reject("resize length cannot be a nominal enum", resized(), [](Module &module) {
+        module.enumCases["Length"] = 1;
+        auto &function = module.functions[0];
+        function.code[position<Constant>(function, 1)] = EnumConstant{Type::enumeration("Length"), 0};
+    });
+    reject("resize requires current length rather than stale allocation operand", resized(), [](Module &module) {
+        eraseOperation<Constant>(module.functions[0], 1);
+    });
+    reject("resize saved i64 cannot substitute for current length", resized(), [](Module &module) {
+        insertBefore<BytesResize>(module.functions[0], {Push{}, Constant{1, Type::Bool}});
+    });
+    reject("resize bool result cannot act as the next resize length", resized(), [](Module &module) {
+        insertBefore<EndBytes>(module.functions[0], {BytesResize{40}});
+    });
+    for (const auto &type : {Type::I64, Type::U8, Type::U64}) {
+        reject("resize result is bool rather than " + typeName(type), resized(), [=](Module &module) {
+            module.functions[0].result = type;
+        });
+    }
+    reject("resize cannot erase the owner cleanup obligation", resized(), [](Module &module) {
+        eraseOperation<EndBytes>(module.functions[0]);
+    });
+    reject("failed resize request cannot erase cleanup obligation", resized(-1), [](Module &module) {
+        eraseOperation<EndBytes>(module.functions[0]);
+    });
+    reject("resize does not make its owner a pristine allocation destination", resized(), [](Module &module) {
+        insertBefore<EndBytes>(module.functions[0], {Constant{1, Type::I64}, AllocateBytes{8, 40}});
+    });
+    reject("resize does not make its owner a pristine move destination", resized(), [](Module &module) {
+        insertBefore<BytesResize>(
+            module.functions[0],
+            {BeginBytes{72}, Constant{1, Type::I64}, AllocateBytes{8, 72}, Constant{65, Type::I64}});
+        insertBefore<EndBytes>(module.functions[0], {MoveBytes{72, 40}});
+    });
+    for (int depth : {0, 1, 2, 3, 4}) {
+        auto saved = resized();
+        auto &function = saved.functions[0];
+        function.result = Type::I64;
+        for (int index = 0; index < depth; ++index) {
+            insertBefore<Constant>(function, {Constant{1099511627793LL + index, Type::I64}, Push{}}, 1);
+        }
+        insertBefore<EndBytes>(function, {BytesLength{40}});
+        for (int index = 0; index < depth; ++index) {
+            insertBefore<EndBytes>(function, {BinaryValue{Binary::CheckedAdd, Type::I64}});
+        }
+        accept("resize preserves pending operand depth " + std::to_string(depth), saved);
+    }
+    auto typedStack = resized();
+    auto &typed = typedStack.functions[0];
+    typed.slots = {{144, Type::I64}, {152, Type::U64}, {160, Type::U8}, {168, Type::Bool}, {176, Type::Bool}};
+    insertBefore<BytesResize>(typed,
+                              {Push{},
+                               Constant{7, Type::U64},
+                               Push{},
+                               Constant{255, Type::U8},
+                               Push{},
+                               Constant{1, Type::Bool},
+                               Push{},
+                               Constant{513, Type::I64}});
+    insertBefore<EndBytes>(typed,
+                           {Store{176, Type::Bool},
+                            Pop{},
+                            Store{168, Type::Bool},
+                            Pop{},
+                            Store{160, Type::U8},
+                            Pop{},
+                            Store{152, Type::U64},
+                            Pop{},
+                            Store{144, Type::I64},
+                            Load{176, Type::Bool}});
+    accept("resize preserves exact heterogeneous operand stack and produces current bool", typedStack);
+    reject("resize does not secretly consume a saved operand", resized(), [](Module &module) {
+        insertBefore<BytesResize>(module.functions[0], {Push{}});
+    });
+    reject("resize does not secretly create a saved operand", resized(), [](Module &module) {
+        insertBefore<EndBytes>(module.functions[0], {Pop{}});
+    });
+
+    auto branch = resized();
+    auto &branched = branch.functions[0];
+    const auto size_operand = position<Constant>(branched, 1);
+    branched.code.erase(branched.code.begin() + size_operand, branched.code.end());
+    append(branched,
+           {BytesOk{40},
+            BranchFalse{1},
+            Constant{65, Type::I64},
+            BytesResize{40},
+            Jump{2},
+            Label{1},
+            Constant{0, Type::Bool},
+            Label{2},
+            EndBytes{40},
+            Return{}});
+    accept("short-circuit resize preserves exactly the original ownership token at join", branch);
+    auto bothBranches = branch;
+    insertBefore<Constant>(bothBranches.functions[0], {Constant{0, Type::I64}, BytesResize{40}}, 2);
+    accept("distinct resize sites preserve one shared ownership token", bothBranches);
+    reject(
+        "conditional resize cannot hide conditional owner consumption",
+        branch,
+        [](Module &module) {
+            insertBefore<Jump>(module.functions[0], {BeginBytes{72}, MoveBytes{40, 72}, EndBytes{72}});
+        },
+        "control-flow join");
+    reject(
+        "conditional resize cannot hide conditional owner lifetime restart",
+        branch,
+        [](Module &module) {
+            insertBefore<Jump>(
+                module.functions[0],
+                {EndBytes{40}, BeginBytes{40}, Constant{17, Type::I64}, AllocateBytes{8, 40}, Constant{1, Type::Bool}});
+        },
+        "control-flow join");
+    reject("resize result false does not discharge the original owner", branch, [](Module &module) {
+        auto &function = module.functions[0];
+        function.code.erase(function.code.begin() + position<EndBytes>(function), function.code.end());
+        append(function,
+               {BranchFalse{3},
+                EndBytes{40},
+                Constant{1, Type::Bool},
+                Return{},
+                Label{3},
+                Constant{0, Type::Bool},
+                Return{}});
+    });
+    auto loop = allocated();
+    insertBefore<BytesLength>(loop.functions[0],
+                              {Label{1},
+                               Constant{65, Type::I64},
+                               BytesResize{40},
+                               BranchFalse{2},
+                               Constant{0, Type::I64},
+                               BytesResize{40},
+                               Jump{1},
+                               Label{2}});
+    accept("resize in loop condition and body preserves outer owner across backedge", loop);
+    reject(
+        "loop resize does not permit conditional outer ownership transfer",
+        loop,
+        [](Module &module) {
+            insertBefore<Jump>(module.functions[0], {BeginBytes{72}, MoveBytes{40, 72}, EndBytes{72}});
+        },
+        "control-flow join");
 }
 
 void cleanupAndReturnTests() {
@@ -1253,7 +1492,7 @@ void loopAndLogicalTests() {
 
 void emittedSymbolTests() {
     auto addScalarHelpers = [](Module &module) {
-        for (const std::string name : {"malloc", "free", "memset", "abort", "fputs", "fflush", "printf"}) {
+        for (const std::string name : {"malloc", "free", "memcpy", "memset", "abort", "fputs", "fflush", "printf"}) {
             IRFunction helper;
             helper.name = name;
             helper.result = Type::I64;
@@ -1307,6 +1546,7 @@ void directTests() {
     bindingTests();
     allocationTests();
     moveAndAccessTests();
+    resizeTests();
     cleanupAndReturnTests();
     resourceCallTests();
     scalarForgeryTests();

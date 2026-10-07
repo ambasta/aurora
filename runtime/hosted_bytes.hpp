@@ -92,6 +92,7 @@ extern "C" {
 void __au_runtime_bytes_allocate(std::uint64_t region, std::int64_t length, NativeOwner *output) noexcept;
 std::uint64_t __au_runtime_bytes_at(const NativeOwner *owner, std::int64_t index) noexcept;
 std::uint64_t __au_runtime_bytes_set(NativeOwner *owner, std::int64_t index, std::uint64_t value) noexcept;
+std::uint64_t __au_runtime_bytes_resize(NativeOwner *owner, std::int64_t length) noexcept;
 void __au_runtime_bytes_drop(NativeOwner *owner) noexcept;
 }
 

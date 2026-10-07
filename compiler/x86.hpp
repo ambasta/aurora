@@ -541,6 +541,11 @@ class X86Emitter {
                     const auto owner = bytesOwnerAddress(operation.offset, operation.fieldIndex);
                     line("leaq " + owner + ", %rdi");
                     call("__au_runtime_bytes_set");
+                } else if constexpr (std::is_same_v<Op, ir::BytesResize>) {
+                    line("movq %rax, %rsi");
+                    const auto owner = bytesOwnerAddress(operation.offset, operation.fieldIndex);
+                    line("leaq " + owner + ", %rdi");
+                    call("__au_runtime_bytes_resize");
                 } else if constexpr (std::is_same_v<Op, ir::EndBytes>) {
                     // Cleanup may occur with a return value or other expression
                     // operands outstanding. Preserve both value and stack parity.

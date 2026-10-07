@@ -49,10 +49,14 @@ owners may be read and dropped, but cannot be moved or written.
 
 Methods borrow the receiver synchronously. Existing scalar/enum and copied-class
 parameters/results remain supported. Methods can read payload.ok(), size() and
-at(index); mutable methods can call payload.set(index, value). Scalar arguments
+at(index); mutable methods can call payload.set(index, value) and
+payload.try_resize(length). Resize preserves the field's ownership token and region,
+with failure-safe replacement behavior from the owned-byte contract. Scalar arguments
 are evaluated before checking that the resolved receiver and containing object
 are still live. Consuming that root in a nested argument rejects. The borrowed
-receiver does not grant new allocation authority or expose its descriptor.
+receiver does not grant new region authority or expose its descriptor. Resizing uses
+the existing field's region. RamSectorDevice intentionally exposes no resize method;
+its private backing preserves the whole-sector invariant.
 
 No implicit owning copy, owner extraction, resource-field replacement, whole
 owning reassignment, explicit owning method parameter/result, temporary receiver,
@@ -93,7 +97,7 @@ never an interior offset or exposed hidden address.
 
 Tokens retain region provenance through local moves. Call results use internally
 minted site/field identities. Ordinary receiver access carries only symbolic
-borrowed provenance; it cannot allocate, move a field, end the receiver or return
+borrowed provenance; it cannot allocate a separate owner, move a field, end the receiver or return
 ownership. Every consumed-root access rejects, including scalar fields.
 
 The private x86 convention keeps R11 as the resource argument-record address and

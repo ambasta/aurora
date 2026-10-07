@@ -481,7 +481,7 @@ class Suite:
             ),
         )
         self.run(snapshot, 1, 0, 0, 42, 1, 1, release_order=[1])
-        collisions = ["malloc", "free", "memset", "abort", "fputs", "fflush", "printf"]
+        collisions = ["malloc", "free", "memset", "abort", "fputs", "fflush", "printf", "memcpy"]
         definitions = "".join(
             f"auto {name}(i64 x)->i64{{return x+{index};}}" for index, name in enumerate(collisions, 1)
         )
@@ -490,9 +490,9 @@ class Suite:
             program(
                 f"""
             {OWNER} a = region.try_allocate(65);
-            if (!a.ok() || !a.set(0,42u8)) {{ return -1; }}
+            if (!a.ok() || !a.set(0,42u8) || !a.try_resize(66)) {{ return -1; }}
             return i64(a.at(0)) + malloc(1) + free(1) + memset(1) + abort(1)
-                   + fputs(1) + fflush(1) + printf(1);
+                   + fputs(1) + fflush(1) + printf(1) + memcpy(1);
         """,
                 definitions,
             ),
@@ -503,7 +503,7 @@ class Suite:
                 f".local {name}\n" in emitted and f".globl {name}\n" not in emitted,
                 f"host dependency can be interposed by source helper {name}",
             )
-        self.run(collision, 65, 0, 0, 77, 1, 1, release_order=[1])
+        self.run(collision, 66, 0, 0, 86, 2, 1, release_order=[1, 2])
         readonly = self.compile(
             "const-owner",
             program(f"""
@@ -513,6 +513,161 @@ class Suite:
         """),
         )
         self.run(readonly, 1, 0, 0, 1, 1, 1)
+
+        resize = self.compile(
+            "resize-cycle-two-owners",
+            program(f"""
+            {OWNER} a = region.try_allocate(n);
+            {OWNER} b = region.try_allocate(2);
+            if (!a.ok() || !b.ok() || !b.set(0, 213u8)) {{ return -1; }}
+            i64 i = 0;
+            while (i < n) {{ a.set(i, u8((i * 17 + 3) % 256)); i = i + 1; }}
+            if (!a.try_resize(n + 3) || a.size() != n + 3 || !a.ok()) {{ return -2; }}
+            i = 0;
+            while (i < n) {{
+                if (a.at(i) != u8((i * 17 + 3) % 256)) {{ return -3; }}
+                i = i + 1;
+            }}
+            while (i < n + 3) {{ if (a.at(i) != 0u8) {{ return -4; }} i = i + 1; }}
+            if (!a.try_resize(n / 2) || a.size() != n / 2) {{ return -5; }}
+            i = 0;
+            while (i < n / 2) {{
+                if (a.at(i) != u8((i * 17 + 3) % 256)) {{ return -6; }}
+                i = i + 1;
+            }}
+            if (!a.try_resize(0) || !a.ok() || a.size() != 0 || a.set(0, 1u8)) {{ return -7; }}
+            if (!a.try_resize(n) || a.size() != n || !a.ok()) {{ return -8; }}
+            i = 0;
+            while (i < n) {{ if (a.at(i) != 0u8) {{ return -9; }} i = i + 1; }}
+            if (b.at(0) != 213u8 || b.at(1) != 0u8 || b.size() != 2) {{ return -10; }}
+            return 42;
+        """),
+        )
+        for length in (0, 1, 65, 513, 4097):
+            order = [1, 3, 2, 4] if length == 0 else [1, 3, 4, 2, 5] if length == 1 else [1, 3, 4, 5, 2, 6]
+            self.run(resize, length + 5, length, 0, 42, len(order), 2, release_order=order)
+
+        preserved = self.compile(
+            "resize-failure-preservation",
+            program(f"""
+            {OWNER} a = region.try_allocate(3);
+            {OWNER} b = region.try_allocate(2);
+            a.set(0, 17u8); a.set(1, 33u8); a.set(2, 99u8); b.set(0, 91u8);
+            bool changed = a.try_resize(n);
+            if (changed != (n == 3)) {{ return -1; }}
+            if (!a.ok() || a.size() != 3 || a.at(0) != 17u8 || a.at(1) != 33u8 || a.at(2) != 99u8) {{ return -2; }}
+            if (!b.ok() || b.size() != 2 || b.at(0) != 91u8 || b.at(1) != 0u8) {{ return -3; }}
+            return 42;
+        """),
+        )
+        for length in (-1, -(1 << 63), 4, (1 << 63) - 1):
+            self.run(preserved, 5, length, 0, 42, 2, 2, release_order=[2, 1])
+        for length in (0, 1, 3, 4):
+            self.run(preserved, 6, length, 0, 42, 2, 2, fail_after=2, release_order=[2, 1])
+
+        failed_resize = self.compile(
+            "resize-failed-owner",
+            program(f"""
+            {OWNER} a = region.try_allocate(-1);
+            if (a.try_resize(n) || a.ok() || a.size() != 0) {{ return -1; }}
+            {OWNER} b = move(a);
+            if (b.try_resize(0) || b.ok()) {{ return -2; }}
+            return 42;
+        """),
+        )
+        for length in (-1, 0, 65):
+            self.run(failed_resize, 128, length, 0, 42, 0, 0)
+
+        resized_transfer = self.compile(
+            "resize-local-function-transfer",
+            program(
+                f"""
+            {OWNER} original = region.try_allocate(2);
+            original.set(0, 41u8); original.set(1, 77u8);
+            {OWNER} local = move(original);
+            {OWNER} result = grow(region, move(local), n);
+            if (!result.ok() || result.size() != n || result.at(0) != 41u8) {{ return -1; }}
+            if (n > 1 && result.at(1) != 77u8) {{ return -2; }}
+            if (n > 2 && result.at(n - 1) != 0u8) {{ return -3; }}
+            return 42;
+        """,
+                f"""
+            auto grow({REGION} r, {OWNER} input, i64 count)->{OWNER}{{
+                input.try_resize(count);
+                return move(input);
+            }}
+        """,
+            ),
+        )
+        for length in (1, 2, 65, 513):
+            count = 1 if length == 2 else 2
+            self.run(resized_transfer, max(2, length), length, 0, 42, count, 1, release_order=list(range(1, count + 1)))
+
+        stack = self.compile(
+            "resize-expression-stack",
+            program(
+                f"""
+            {OWNER} a = region.try_allocate(1);
+            return 7 + score(a.size(), a.try_resize(n), a.size()) +
+                   (9 + score(a.size(), a.try_resize(n + 1), a.size()));
+        """,
+                "auto score(i64 before, bool success, i64 after)->i64 {"
+                "if (!success) {return -1000;} return before * 100 + after;}",
+            ),
+        )
+        self.run(stack, 4, 3, 0, 423, 3, 1, release_order=[1, 2, 3])
+
+        sibling_argument = self.compile(
+            "resize-argument-consumes-sibling",
+            program(
+                f"""
+            {OWNER} a = region.try_allocate(1);
+            {OWNER} b = region.try_allocate(n);
+            a.set(0, 199u8);
+            if (!a.try_resize(consume(region, move(b)))) {{ return -1; }}
+            if (a.size() != n || a.at(0) != 199u8 || a.at(n - 1) != 0u8) {{ return -2; }}
+            return 42;
+        """,
+                f"auto consume({REGION} r,{OWNER} b)->i64{{return b.size();}}",
+            ),
+        )
+        self.run(sibling_argument, 66, 65, 0, 42, 3, 2, release_order=[2, 1, 3])
+
+        loop_resize = self.compile(
+            "resize-loop-and-short-circuit",
+            program(f"""
+            {OWNER} a = region.try_allocate(1);
+            i64 i = 0;
+            while (i < n && a.try_resize(i + 2)) {{ i = i + 1; }}
+            if (flag == 0 && a.try_resize(-1)) {{ return -1; }}
+            if (flag != 0 || a.try_resize(a.size())) {{ return i * 100 + a.size(); }}
+            return -2;
+        """),
+        )
+        self.run(loop_resize, 5, 4, 0, 405, 5, 1, release_order=[1, 2, 3, 4, 5])
+        self.run(loop_resize, 5, 4, 1, 203, 3, 1, fail_after=3, release_order=[1, 2, 3])
+        self.run(loop_resize, 1, 0, 0, 1, 1, 1, release_order=[1])
+        branch_resize = self.compile(
+            "resize-branch-keeps-authority",
+            program(f"""
+            {OWNER} a = region.try_allocate(1);
+            if (flag == 0) {{ a.try_resize(2); }} else {{ a.try_resize(3); }}
+            a.set(0, 42u8);
+            return i64(a.at(0)) + a.size();
+        """),
+        )
+        self.run(branch_resize, 3, 0, 0, 44, 2, 1, release_order=[1, 2])
+        self.run(branch_resize, 3, 0, 1, 45, 2, 1, release_order=[1, 2])
+        resized_bounds = self.compile(
+            "resize-shrunk-bounds",
+            program(f"""
+            {OWNER} a = region.try_allocate(4);
+            if (!a.try_resize(n)) {{ return -1; }}
+            return i64(a.at(flag));
+        """),
+        )
+        for length, index in ((0, 0), (1, 1), (2, -1)):
+            self.trap(resized_bounds, 4, length, index)
 
         consume = f"auto consume({REGION} r,{OWNER} b)->i64{{return 0;}}"
         declarations = f"{OWNER} a = region.try_allocate(1);"
@@ -529,6 +684,14 @@ class Suite:
             "at-consuming-index": "return i64(a.at(consume(region,move(a))));",
             "set-consuming-index": "a.set(consume(region,move(a)),1u8); return 0;",
             "set-consuming-value": "a.set(0,u8(consume(region,move(a)))); return 0;",
+            "resize-consuming-length": "a.try_resize(consume(region,move(a))); return 0;",
+            "resize-after-move": f"{OWNER} b=move(a); a.try_resize(2); return 0;",
+            "resize-u64-length": "a.try_resize(2u64); return 0;",
+            "resize-u8-length": "a.try_resize(2u8); return 0;",
+            "resize-bool-length": "a.try_resize(true); return 0;",
+            "resize-missing-length": "a.try_resize(); return 0;",
+            "resize-extra-length": "a.try_resize(1,2); return 0;",
+            "resize-bool-result": "i64 bad_size=a.try_resize(2); return bad_size;",
             "scalar-conversion": "return i64(a);",
             "borrow-view": "const builtin::span<const u8> s=borrow_bytes(a); return 0;",
             "reflect-owner": f"return size_of({OWNER});",
@@ -538,6 +701,7 @@ class Suite:
         }
         for name, body in bad.items():
             self.reject(name, program(declarations + body, consume))
+        self.reject("const-resize", program(f"const {OWNER} a=region.try_allocate(1);a.try_resize(2);return 0;"))
         self.reject("const-write", program(f"const {OWNER} a=region.try_allocate(1);a.set(0,1u8);return 0;"))
         self.reject("const-move", program(f"const {OWNER} a=region.try_allocate(1);{OWNER} b=move(a);return 0;"))
         self.reject("owner-field", f"module bad;class C{{private:{OWNER} b;}};auto f()->i64{{return 0;}}")

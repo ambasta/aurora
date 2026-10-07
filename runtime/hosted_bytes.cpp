@@ -160,6 +160,63 @@ public:
         return 1;
     }
 
+    static std::uint64_t resize(NativeOwner *owner, std::int64_t length) noexcept {
+        Region *target = nullptr;
+        auto *record = allocation(owner, target);
+        // Validate even same-size and invalid requests. A canonical failed
+        // owner is never revived, including by an empty request.
+        if (record == nullptr || length < 0) {
+            return 0;
+        }
+        if (length == record->length) {
+            return 1;
+        }
+        const auto count = static_cast<std::uint64_t>(length);
+        const auto old_count = static_cast<std::uint64_t>(record->length);
+        const auto other_used = target->metrics_.used - old_count;
+        if (allocation_ids_exhausted || count > std::numeric_limits<std::size_t>::max() - sizeof(Region::Allocation) ||
+            count > target->metrics_.quota - other_used ||
+            target->metrics_.successful_allocations == std::numeric_limits<std::uint64_t>::max() ||
+            target->metrics_.releases == std::numeric_limits<std::uint64_t>::max()) {
+            return 0;
+        }
+
+        auto **link = &target->allocations_;
+        while (*link != record) {
+            link = &(*link)->next;
+        }
+        const auto size = sizeof(Region::Allocation) + static_cast<std::size_t>(count);
+        void *memory = target->allocator_.allocate(target->allocator_.context, size);
+        if (memory == nullptr) {
+            return 0;
+        }
+        auto *payload = static_cast<unsigned char *>(memory) + sizeof(Region::Allocation);
+        auto *replacement = ::new (memory) Region::Allocation{next_allocation_id, length, payload, record->next};
+        const auto prefix = static_cast<std::size_t>(count < old_count ? count : old_count);
+        std::memcpy(replacement->payload, record->payload, prefix);
+        std::memset(replacement->payload + prefix, 0, static_cast<std::size_t>(count) - prefix);
+
+        // One allocation owns both metadata and bytes. All fallible work is
+        // over: commit final logical quota, fresh identity and replacement as
+        // one nonthrowing operation, then retire the old block exactly once.
+        // Old+new storage coexist transiently; payload quota is not a bound on
+        // instantaneous host storage. Live-owner counts do not include staging.
+        *link = replacement;
+        target->metrics_.used = other_used + count;
+        ++target->metrics_.successful_allocations;
+        ++target->metrics_.releases;
+        if (target->metrics_.used > target->metrics_.peak_used) {
+            target->metrics_.peak_used = target->metrics_.used;
+        }
+        target->metrics_.last_allocation_id = replacement->id;
+        target->metrics_.last_released_id = record->id;
+        commit_id(next_allocation_id, allocation_ids_exhausted);
+        *owner = NativeOwner{target->id_, replacement->id, length, 1};
+        record->~Allocation();
+        target->allocator_.deallocate(target->allocator_.context, record);
+        return 1;
+    }
+
     static void drop(NativeOwner *owner) noexcept {
         if (owner == nullptr) {
             invariant_trap();
@@ -257,6 +314,10 @@ extern "C" std::uint64_t __au_runtime_bytes_set(NativeOwner *owner, std::int64_t
 
 extern "C" void __au_runtime_bytes_drop(NativeOwner *owner) noexcept {
     RuntimeAccess::drop(owner);
+}
+
+extern "C" std::uint64_t __au_runtime_bytes_resize(NativeOwner *owner, std::int64_t length) noexcept {
+    return RuntimeAccess::resize(owner, length);
 }
 
 #if defined(AURORA_HOSTED_BYTES_TESTING)

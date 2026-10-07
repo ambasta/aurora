@@ -4,6 +4,8 @@
 The direct-IR fixture is compiled separately. This runner checks handwritten
 entry records, transferred descriptor clearing, padding/canaries, callee-saved
 registers, runtime-helper alignment, mixed positions and exact release order.
+Resize cases also check literal field addresses, preserved prefixes, zero extension,
+unchanged siblings and failed requests, plus odd/even saved scalar stacks.
 """
 
 from __future__ import annotations
@@ -85,23 +87,87 @@ static void valid_result(const unsigned char *p, Region &region) {
 static void drop(unsigned char *p) {
     NativeOwner owner{}; std::memcpy(&owner,p,32); std::memset(p,0,32); __au_runtime_bytes_drop(&owner);
 }
+static void seed_parcel(unsigned char *p) {
+    for (int base : {8,48}) {
+        NativeOwner owner{}; std::memcpy(&owner,p+base,32);
+        for (std::int64_t i = 0; i < owner.length; ++i)
+            check(__au_runtime_bytes_set(&owner,i,base+i) == 1,"seed copied payload bytes");
+    }
+}
+static void resized_parcel(const unsigned char *p, const unsigned char *before, int field, Region &region,
+                           unsigned char poison) {
+    check(p[0] == 197 && get(p+40) == 123456789 && p[80] == 223,"resize preserves scalar bytes");
+    padding(p,poison);
+    for (int base : {8,48}) {
+        const int initial = base == 8 ? 3 : 5;
+        check(get(p+base) == region.id() && get(p+base+24) == 1,"resize preserves region and success");
+        check(get(p+base+16) == static_cast<unsigned>(base == field ? 65 : initial),
+              "resize targets exact descriptor length");
+        if (base == field)
+            check(get(p+base+8) != get(before+base+8),"changed-size resize replaces allocation identity");
+        else
+            check(std::memcmp(p+base,before+base,32) == 0,"resize leaves sibling descriptor unchanged");
+        NativeOwner owner{}; std::memcpy(&owner,p+base,32);
+        for (std::int64_t i = 0; i < initial; ++i)
+            check(__au_runtime_bytes_at(&owner,i) == static_cast<unsigned>(base+i),
+                  "resize preserves both payload prefixes");
+        if (base == field)
+            for (std::int64_t i = initial; i < 65; ++i)
+                check(__au_runtime_bytes_at(&owner,i) == 0,"resize zeroes every extension byte");
+    }
+}
 int main(int argc, char **argv) {
     check(argc == 2,"one fixture mode"); const std::string mode = argv[1];
+    const bool resize = mode.starts_with("resize-");
+    const bool resize_move = mode == "resize-move";
+    const bool resize_method = resize && !resize_move;
+    const int resize_field = mode == "resize-odd" || mode == "resize-even" ? 48 : 8;
     Trace trace; Region region(1024, Allocator{&trace, Trace::allocate, Trace::release});
     alignas(16) std::array<unsigned char, 208> input;
     alignas(16) std::array<unsigned char, 112> output;
     input.fill(0xab); output.fill(0xcd);
     unsigned char *record = input.data()+8, *result = output.data()+8;
-    put(record,region.id());
-    if (mode == "move" || mode == "six") init_parcel(record+8,region,0);
+    // Ordinary resource entry records start with authority. Borrowed methods
+    // receive the object directly, so no record header may overwrite padding.
+    if (mode != "method" && !resize_method) put(record,region.id());
+    if (mode == "move" || mode == "six" || resize_move) init_parcel(record+8,region,0);
     if (mode == "six") init_parcel(record+96,region,1);
-    if (mode == "method") init_parcel(record,region,0);
+    if (mode == "method" || resize_method) {
+        init_parcel(record,region,0);
+        padding(record,0xab);
+    }
+    if (resize) seed_parcel(resize_move ? record+8 : record);
     const auto input_before = input;
     const auto answer = __au_runtime_bytes_test_entry(record,result);
     if (mode.starts_with("construct"))
         check(answer == (mode == "construct" ? 8 : 42),"constructor lengths and cleanup preserve result");
     else if (mode == "copied") check(answer == 42,"owning receiver with copied args and result");
-    else if (mode == "method") {
+    else if (resize_method) {
+        if (mode == "resize-failed") {
+            check(answer == static_cast<std::uint64_t>(-1000),"failed resize result");
+            check(input == input_before,"failed resize preserves every input byte");
+            for (int base : {8,48}) {
+                NativeOwner owner{}; std::memcpy(&owner,record+base,32);
+                for (std::int64_t i = 0; i < owner.length; ++i)
+                    check(__au_runtime_bytes_at(&owner,i) == static_cast<unsigned>(base+i),
+                          "failed resize preserves both payloads");
+            }
+        } else {
+            const std::uint64_t saved = mode == "resize-odd" ? 4294967313ULL
+                                      : mode == "resize-even" ? 8589934627ULL : 0;
+            check(answer == 65 + saved,"resize result and saved scalar stack");
+            resized_parcel(record,input_before.data()+8,resize_field,region,0xab);
+            for (std::size_t i = 0; i < input.size(); ++i)
+                if (i < static_cast<std::size_t>(8+resize_field+8) ||
+                    i >= static_cast<std::size_t>(8+resize_field+24))
+                    check(input[i] == input_before[i],"resize only changes selected identity and length words");
+        }
+        drop(record+48); drop(record+8);
+    } else if (resize_move) {
+        consumed(record+8,0);
+        resized_parcel(result,input_before.data()+16,8,region,0xcd);
+        drop(result+48); drop(result+8);
+    } else if (mode == "method") {
         check(answer == 1,"borrowed payload write result");
         check(input == input_before,"borrowed method does not alter descriptor/scalar/padding bytes");
         NativeOwner owner{}; std::memcpy(&owner,record+8,32);
@@ -116,12 +182,16 @@ int main(int argc, char **argv) {
         drop(result+48); drop(result+8);
     }
     for (int i = 0; i < 8; ++i) check(input[i] == 0xab && output[i] == 0xcd,"left canary");
-    const int input_extent = mode == "six" ? 184 : mode == "move" ? 96 : mode == "method" ? 88 : 8;
+    const int input_extent = mode == "six" ? 184 : mode == "move" || resize_move ? 96
+                                                : mode == "method" || resize_method ? 88 : 8;
     for (std::size_t i = 8 + input_extent; i < input.size(); ++i) check(input[i] == 0xab,"right input canary");
     for (std::size_t i = 96; i < output.size(); ++i) check(output[i] == 0xcd,"right result canary");
-    if (mode.starts_with("construct") || mode == "method" || mode == "copied")
+    if (mode.starts_with("construct") || mode == "method" || mode == "copied" || resize_method)
         for (auto byte : output) check(byte == 0xcd,"scalar result does not write hidden destination");
-    std::vector<std::size_t> expected = mode == "copied" ? std::vector<std::size_t>{1}
+    std::vector<std::size_t> expected = resize && mode != "resize-failed"
+                                          ? (resize_field == 8 ? std::vector<std::size_t>{1,2,3}
+                                                               : std::vector<std::size_t>{2,3,1})
+                                     : mode == "copied" ? std::vector<std::size_t>{1}
                                      : mode == "six" ? std::vector<std::size_t>{5,4,3,2,1}
                                                        : std::vector<std::size_t>{2,1};
     check(trace.released == expected,"exact reverse release order, no duplicate release");
@@ -139,16 +209,17 @@ ALIGN = "movq %rsp,%r9\nandq $15,%r9\ncmpq $8,%r9\njne .Lowning_abi_fail\n"
 
 
 def bridge(mode):
-    target = "owning_method" if mode == "method" else "owning_entry"
+    resize_method = mode.startswith("resize-") and mode != "resize-move"
+    target = "owning_resize_method" if resize_method else "owning_method" if mode == "method" else "owning_entry"
     text = "\n.text\n.globl __au_runtime_bytes_test_entry\n__au_runtime_bytes_test_entry:\n"
     text += "pushq %rbp\npushq %rbx\npushq %r12\npushq %r13\npushq %r14\npushq %r15\nsubq $8,%rsp\n"
     text += "movq $111,%rbp\nmovq $222,%rbx\nmovq $333,%r12\nmovq $444,%r13\nmovq $555,%r14\nmovq $666,%r15\n"
-    text += "movq %rdi,%r10\n" if mode == "method" else "movq %rdi,%r11\nmovq %rsi,%r10\n"
+    text += "movq %rdi,%r10\n" if mode == "method" or resize_method else "movq %rdi,%r11\nmovq %rsi,%r10\n"
     text += f"call {target}\n"
     for register, value in [("rbp", 111), ("rbx", 222), ("r12", 333), ("r13", 444), ("r14", 555), ("r15", 666)]:
         text += f"cmpq ${value},%{register}\njne .Lowning_abi_fail\n"
     text += "addq $8,%rsp\npopq %r15\npopq %r14\npopq %r13\npopq %r12\npopq %rbx\npopq %rbp\nret\n"
-    for name in ("allocate", "drop", "at", "set"):
+    for name in ("allocate", "drop", "at", "set", "resize"):
         text += f"owning_abi_{name}:\n{ALIGN}jmp __au_runtime_bytes_{name}\n"
     return text + '.Lowning_abi_fail:\nud2\n.section .note.GNU-stack,"",@progbits\n'
 
@@ -281,7 +352,20 @@ def main():
                 directory / "runtime.o",
             ]
         )
-        for mode in ("move", "construct", "construct-odd", "construct-even", "six", "method", "copied"):
+        for mode in (
+            "move",
+            "construct",
+            "construct-odd",
+            "construct-even",
+            "six",
+            "method",
+            "copied",
+            "resize-first",
+            "resize-odd",
+            "resize-even",
+            "resize-failed",
+            "resize-move",
+        ):
             assembly = command([args.fixture.resolve(), "--emit-abi", mode]).decode()
             for handwritten in (False, True) if mode in ("construct", "six", "copied") else (False,):
                 candidate = assembly
@@ -306,7 +390,7 @@ def main():
                     )
                     require(replaced == 1, "exactly one private emitted target replaced")
                 candidate = re.sub(
-                    r"call __au_runtime_bytes_(allocate|drop|at|set)\b", r"call owning_abi_\1", candidate
+                    r"call __au_runtime_bytes_(allocate|drop|at|set|resize)\b", r"call owning_abi_\1", candidate
                 )
                 stem = f"{mode}-{int(handwritten)}"
                 source = directory / (stem + ".s")
@@ -314,7 +398,14 @@ def main():
                 executable = directory / (stem + ".elf")
                 command([*cxx, "-no-pie", directory / "driver.o", directory / "runtime.o", source, "-o", executable])
                 symbols = command(["nm", executable]).decode()
-                for symbol in ["owning_method"] if mode == "method" else ["owning_entry"]:
+                entry_symbol = (
+                    "owning_resize_method"
+                    if mode.startswith("resize-") and mode != "resize-move"
+                    else "owning_method"
+                    if mode == "method"
+                    else "owning_entry"
+                )
+                for symbol in [entry_symbol]:
                     require(re.search(rf"\bt {symbol}$", symbols, re.M), "resource entry retains private binding")
                 output = command([executable, mode]).decode()
                 (directory / (stem + ".observation")).write_text(output)
@@ -344,6 +435,17 @@ def main():
         reversed_drops = construct.replace(left, "REVERSE_DROP_SENTINEL").replace(right, left)
         reversed_drops = reversed_drops.replace("REVERSE_DROP_SENTINEL", right)
         mutants.append(("drop-order", "construct", reversed_drops, "exact reverse release order"))
+        resize = (directory / "resize-first-0.s").read_text()
+        original = "    leaq 8(%r10), %rdi"
+        require(resize.count(original) == 1, "one borrowed resize descriptor address")
+        mutants.append(
+            (
+                "resize-field-offset",
+                "resize-first",
+                resize.replace(original, "    leaq 48(%r10), %rdi"),
+                "resize result and saved scalar stack",
+            )
+        )
         for name, mode, candidate, diagnostic in mutants:
             source = directory / ("mutant-" + name + ".s")
             executable = directory / ("mutant-" + name + ".elf")
@@ -354,7 +456,7 @@ def main():
             (directory / ("mutant-" + name + ".observation")).write_text(observed)
             require(result.returncode == 90 and diagnostic in observed, f"{name}: exact host oracle rejects mutant")
             print(f"PASS owning class ABI rejected mutant {name}", flush=True)
-    print(f"PASS owning class ABI: {count} literal-layout hosted boundary cases and 3 rejected mutants")
+    print(f"PASS owning class ABI: {count} literal-layout hosted boundary cases and {len(mutants)} rejected mutants")
 
 
 if __name__ == "__main__":

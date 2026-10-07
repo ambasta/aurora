@@ -616,9 +616,9 @@ class SemanticAnalyzer {
                 emit(ir::BytesLength{receiverOffset, receiverFieldIndex});
                 return Type::I64;
             }
-            if (name == "at" || name == "set") {
-                arity(value, name == "at" ? 2 : 3);
-                if (name == "set" && !mutableReceiver)
+            if (name == "at" || name == "set" || name == "try_resize") {
+                arity(value, name == "set" ? 3 : 2);
+                if (name != "at" && !mutableReceiver)
                     fail(value->token, "cannot write a const byte owner");
                 match(expression(value->args[1]), Type::I64, value->token);
                 if (name == "set") {
@@ -630,6 +630,10 @@ class SemanticAnalyzer {
                 if (name == "at") {
                     emit(ir::BytesLoad{receiverOffset, receiverFieldIndex});
                     return Type::U8;
+                }
+                if (name == "try_resize") {
+                    emit(ir::BytesResize{receiverOffset, receiverFieldIndex});
+                    return Type::Bool;
                 }
                 emit(ir::BytesStore{receiverOffset, receiverFieldIndex});
                 return Type::Bool;

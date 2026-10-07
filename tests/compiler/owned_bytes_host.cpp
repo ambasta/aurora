@@ -2,6 +2,7 @@
 // by this test's sanitizers. Run only after the completed-source review gate.
 #include "../../runtime/hosted_bytes.hpp"
 
+#include <array>
 #include <cerrno>
 #include <csignal>
 #include <cstdio>
@@ -24,6 +25,7 @@ static_assert(noexcept(__au_runtime_bytes_allocate(0, 0, nullptr)));
 static_assert(noexcept(__au_runtime_bytes_at(nullptr, 0)));
 static_assert(noexcept(__au_runtime_bytes_set(nullptr, 0, 0)));
 static_assert(noexcept(__au_runtime_bytes_drop(nullptr)));
+static_assert(noexcept(__au_runtime_bytes_resize(nullptr, 0)));
 
 namespace {
 
@@ -42,6 +44,11 @@ bool cleared(const NativeOwner &owner) {
     return owner.region == 0 && owner.allocation == 0 && owner.length == 0 && owner.success == 0;
 }
 
+bool same_owner(const NativeOwner &left, const NativeOwner &right) {
+    return left.region == right.region && left.allocation == right.allocation && left.length == right.length &&
+           left.success == right.success;
+}
+
 void require_failed(const NativeOwner &owner, const Region &region) {
     require(owner.region == region.id() && owner.allocation == 0 && owner.length == 0 && owner.success == 0,
             "allocation failure has the exact canonical shape");
@@ -53,6 +60,21 @@ void require_live(const NativeOwner &owner, const Region &region, std::int64_t l
 }
 
 struct AllocationTrace {
+    struct Event {
+        bool allocation;
+        std::uintptr_t address;
+        std::uint64_t live_before;
+    };
+    std::array<Event, 512> events{};
+    std::size_t event_count = 0;
+    std::uint64_t peak_live = 0;
+    std::uintptr_t last_allocated = 0;
+
+    void record(bool allocation, void *address) noexcept {
+        require(event_count < events.size(), "allocator event trace stays within its fixed capacity");
+        events[event_count++] = Event{allocation, reinterpret_cast<std::uintptr_t>(address), live};
+    }
+
     std::uint64_t calls = 0;
     std::uint64_t frees = 0;
     std::uint64_t live = 0;
@@ -67,11 +89,17 @@ struct AllocationTrace {
         trace.fail_next = false;
         // The huge-length test must not ask ASan or the host to reserve exabytes.
         if (injected_failure || size > 65536) {
+            trace.record(true, nullptr);
             return nullptr;
         }
         void *result = std::malloc(size);
+        trace.record(true, result);
         if (result != nullptr) {
+            trace.last_allocated = reinterpret_cast<std::uintptr_t>(result);
             ++trace.live;
+            if (trace.live > trace.peak_live) {
+                trace.peak_live = trace.live;
+            }
             std::memset(result, 0xa5, size);
         }
         return result;
@@ -79,7 +107,9 @@ struct AllocationTrace {
 
     static void deallocate(void *context, void *address) noexcept {
         auto &trace = *static_cast<AllocationTrace *>(context);
+        trace.record(false, address);
         ++trace.frees;
+        require(trace.live != 0, "native free cannot underflow live allocation accounting");
         --trace.live;
         std::free(address);
     }
@@ -149,6 +179,52 @@ template <typename Action> void invariant(const char *label, Action action) {
 
 template <typename Action> void bounds(const char *label, Action action) {
     expect_trap(label, "aurora owned bytes: bounds\n", action);
+}
+
+template <typename Action> void isolated_success(const char *label, Action action) {
+    int descriptors[2];
+    require(pipe(descriptors) == 0, "create successful isolation result pipe");
+    std::fflush(nullptr);
+    const pid_t child = fork();
+    require(child >= 0, "fork successful isolated identity fixture");
+    if (child == 0) {
+        close(descriptors[0]);
+        alarm(10);
+        checks = 0;
+        traps = 0;
+        action();
+        const std::uint64_t totals[] = {checks, traps};
+        const auto count = write(descriptors[1], totals, sizeof(totals));
+        close(descriptors[1]);
+        std::_Exit(count == static_cast<ssize_t>(sizeof(totals)) ? 0 : 93);
+    }
+    close(descriptors[1]);
+    std::uint64_t totals[2]{};
+    std::size_t used = 0;
+    while (used < sizeof(totals)) {
+        const auto count =
+            read(descriptors[0], reinterpret_cast<unsigned char *>(totals) + used, sizeof(totals) - used);
+        if (count < 0 && errno == EINTR) {
+            continue;
+        }
+        require(count >= 0, "read successful isolated fixture totals");
+        if (count == 0) {
+            break;
+        }
+        used += static_cast<std::size_t>(count);
+    }
+    close(descriptors[0]);
+    int status = 0;
+    pid_t waited;
+    do {
+        waited = waitpid(child, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+    require(waited == child, "reap successful isolated identity fixture");
+    require(WIFEXITED(status) && WEXITSTATUS(status) == 0 && used == sizeof(totals),
+            "isolated identity fixture completed all assertions and returned its totals");
+    checks += totals[0];
+    traps += totals[1];
+    std::printf("PASS owned bytes host isolated success: %s\n", label);
 }
 
 void runtime_lengths_and_initialization() {
@@ -318,6 +394,322 @@ void failure_atomicity_and_quota_reuse() {
     __au_runtime_bytes_drop(&huge);
 }
 
+void resize_replacement_and_preservation() {
+    for (const std::int64_t initial : {0, 1, 65, 513, 4097}) {
+        AllocationTrace trace;
+        Region region(4105, trace.allocator());
+        NativeOwner first;
+        NativeOwner resized;
+        NativeOwner last;
+        __au_runtime_bytes_allocate(region.id(), 3, &first);
+        auto first_address = trace.last_allocated;
+        __au_runtime_bytes_allocate(region.id(), initial, &resized);
+        auto resized_address = trace.last_allocated;
+        const auto header_size = trace.last_size - static_cast<std::size_t>(initial);
+        __au_runtime_bytes_allocate(region.id(), 5, &last);
+        auto last_address = trace.last_allocated;
+        const auto first_descriptor = first;
+        const auto last_descriptor = last;
+        std::array<unsigned char, 4097> expected{};
+        for (std::int64_t index = 0; index < initial; ++index) {
+            expected[static_cast<std::size_t>(index)] = static_cast<unsigned char>((index * 37 + 153) & 255);
+            require(__au_runtime_bytes_set(&resized, index, expected[static_cast<std::size_t>(index)]) == 1,
+                    "seed every original resize byte");
+        }
+        for (std::int64_t index = 0; index < 3; ++index) {
+            require(__au_runtime_bytes_set(&first, index, 71 + index) == 1, "seed first independent owner");
+        }
+        for (std::int64_t index = 0; index < 5; ++index) {
+            require(__au_runtime_bytes_set(&last, index, 181 + index) == 1, "seed last independent owner");
+        }
+        // Replacement includes growing at final quota while all three native
+        // allocations are live, shrinking, zero metadata and regrowing.
+        for (const std::int64_t requested : {initial,
+                                             std::int64_t{4097},
+                                             std::int64_t{65},
+                                             std::int64_t{0},
+                                             std::int64_t{513},
+                                             std::int64_t{1},
+                                             std::int64_t{1}}) {
+            const auto descriptor = resized;
+            const auto metrics = region.metrics();
+            const auto calls = trace.calls;
+            const auto frees = trace.frees;
+            const auto event_count = trace.event_count;
+            if (requested == resized.length) {
+                trace.fail_next = true;
+                require(__au_runtime_bytes_resize(&resized, requested) == 1, "same-size resize returns true");
+                require(same_owner(resized, descriptor) && region.metrics() == metrics,
+                        "same-size resize leaves every descriptor word and committed observation unchanged");
+                require(trace.calls == calls && trace.frees == frees && trace.event_count == event_count &&
+                            trace.fail_next,
+                        "same-size resize does not even consume an injected native allocation failure");
+                trace.fail_next = false;
+            } else {
+                require(__au_runtime_bytes_resize(&resized, requested) == 1, "valid changed-size resize succeeds");
+                require_live(resized, region, requested);
+                require(resized.allocation == metrics.last_allocation_id + 1,
+                        "changed-size resize commits the next fresh allocation identity");
+                require(trace.calls == calls + 1 && trace.frees == frees + 1 && trace.live == 3,
+                        "resize makes exactly one replacement and releases exactly one old header");
+                require(trace.last_size == header_size + static_cast<std::size_t>(requested),
+                        "resize allocates exactly one header plus the requested payload");
+                require(trace.event_count == event_count + 2 && trace.events[event_count].allocation &&
+                            trace.events[event_count].address != 0 && trace.events[event_count].live_before == 3 &&
+                            !trace.events[event_count + 1].allocation &&
+                            trace.events[event_count + 1].address == resized_address &&
+                            trace.events[event_count + 1].live_before == 4,
+                        "replacement allocation precedes freeing the exact old header with other owners live");
+                require(trace.events[event_count].address != resized_address &&
+                            trace.events[event_count].address != first_address &&
+                            trace.events[event_count].address != last_address,
+                        "replacement is distinct from every still-live native allocation");
+                resized_address = trace.last_allocated;
+                auto expected_metrics = metrics;
+                expected_metrics.used = static_cast<std::uint64_t>(requested) + 8;
+                if (expected_metrics.used > expected_metrics.peak_used) {
+                    expected_metrics.peak_used = expected_metrics.used;
+                }
+                ++expected_metrics.successful_allocations;
+                ++expected_metrics.releases;
+                expected_metrics.last_allocation_id = resized.allocation;
+                expected_metrics.last_released_id = descriptor.allocation;
+                require(region.metrics() == expected_metrics,
+                        "resize changes only committed payload, success/release counts and replacement identities");
+                for (std::int64_t index = requested; index < descriptor.length; ++index) {
+                    expected[static_cast<std::size_t>(index)] = 0;
+                }
+            }
+            for (std::int64_t index = 0; index < requested; ++index) {
+                require(__au_runtime_bytes_at(&resized, index) == expected[static_cast<std::size_t>(index)],
+                        "resize preserves the prefix and zeroes each newly exposed byte including after regrowth");
+            }
+            require(same_owner(first, first_descriptor) && same_owner(last, last_descriptor),
+                    "resize never rewrites an unrelated owner descriptor");
+            for (std::int64_t index = 0; index < 3; ++index) {
+                require(__au_runtime_bytes_at(&first, index) == 71 + static_cast<std::uint64_t>(index),
+                        "first independent payload survives every resize");
+            }
+            for (std::int64_t index = 0; index < 5; ++index) {
+                require(__au_runtime_bytes_at(&last, index) == 181 + static_cast<std::uint64_t>(index),
+                        "last independent payload survives every resize");
+            }
+        }
+        require(trace.peak_live == 4 && region.metrics().peak_live_allocations == 3 &&
+                    region.metrics().peak_used == 4105,
+                "transient replacement storage never inflates committed live or payload peaks");
+        // Exercise replacement at both registry ends as well as the middle.
+        auto replace_edge = [&](NativeOwner &edge, std::int64_t length, std::uintptr_t &address) {
+            const auto before = edge;
+            const auto events = trace.event_count;
+            require(__au_runtime_bytes_resize(&edge, length) == 1, "resize a registry end with peers still live");
+            require_live(edge, region, length);
+            require(edge.allocation > before.allocation && trace.event_count == events + 2 &&
+                        trace.events[events].allocation && !trace.events[events + 1].allocation &&
+                        trace.events[events + 1].address == address && trace.live == 3,
+                    "registry-end replacement frees exactly its prior header after allocating");
+            address = trace.last_allocated;
+        };
+        replace_edge(last, 4, last_address);
+        replace_edge(first, 2, first_address);
+        require(__au_runtime_bytes_at(&first, 0) == 71 && __au_runtime_bytes_at(&first, 1) == 72 &&
+                    __au_runtime_bytes_at(&last, 0) == 181 && __au_runtime_bytes_at(&last, 3) == 184 &&
+                    __au_runtime_bytes_at(&resized, 0) == expected[0],
+                "replacing registry head and tail preserves all three payloads and links");
+        const auto event_count = trace.event_count;
+        __au_runtime_bytes_drop(&last);
+        __au_runtime_bytes_drop(&resized);
+        __au_runtime_bytes_drop(&first);
+        require(trace.event_count == event_count + 3 && !trace.events[event_count].allocation &&
+                    trace.events[event_count].address == last_address &&
+                    trace.events[event_count + 1].address == resized_address &&
+                    trace.events[event_count + 2].address == first_address,
+                "normal cleanup frees exactly the surviving allocations in requested order");
+        require(trace.calls == trace.frees && trace.live == 0 && region.metrics().used == 0,
+                "all replacement and original native allocations close exactly once");
+    }
+}
+
+void resize_failure_atomicity() {
+    AllocationTrace trace;
+    Region region(70, trace.allocator());
+    NativeOwner owner;
+    NativeOwner other;
+    __au_runtime_bytes_allocate(region.id(), 65, &owner);
+    __au_runtime_bytes_allocate(region.id(), 5, &other);
+    for (std::int64_t index = 0; index < 65; ++index) {
+        require(__au_runtime_bytes_set(&owner, index, 128 + index) == 1, "seed resize-failure sentinel bytes");
+    }
+    require(__au_runtime_bytes_set(&other, 4, 247) == 1, "seed other resize-failure owner");
+    const auto descriptor = owner;
+    const auto other_descriptor = other;
+    const auto metrics = region.metrics();
+    auto unchanged = [&] {
+        require(same_owner(owner, descriptor) && same_owner(other, other_descriptor) && region.metrics() == metrics,
+                "failed resize preserves both exact descriptors and every committed observation");
+        require(trace.live == 2 && trace.frees == 0, "failed resize never frees either native allocation");
+        for (std::int64_t index = 0; index < 65; ++index) {
+            require(__au_runtime_bytes_at(&owner, index) == 128 + static_cast<std::uint64_t>(index),
+                    "failed resize preserves all old bytes");
+        }
+        require(__au_runtime_bytes_at(&other, 4) == 247, "failed resize preserves independent bytes");
+    };
+    for (const std::int64_t length : {std::int64_t{-1},
+                                      std::numeric_limits<std::int64_t>::min(),
+                                      std::int64_t{66},
+                                      std::int64_t{70},
+                                      std::numeric_limits<std::int64_t>::max()}) {
+        const auto calls = trace.calls;
+        const auto events = trace.event_count;
+        require(__au_runtime_bytes_resize(&owner, length) == 0, "negative and final-quota resize return false");
+        require(trace.calls == calls && trace.event_count == events,
+                "negative and final-quota resize reject before native allocation");
+        unchanged();
+    }
+    for (const std::int64_t length : {0, 1, 64}) {
+        const auto calls = trace.calls;
+        trace.fail_next = true;
+        require(__au_runtime_bytes_resize(&owner, length) == 0,
+                "shrinking and zero resize can fail their replacement metadata allocation");
+        require(trace.calls == calls + 1 && !trace.fail_next,
+                "shrinking failure attempts exactly one replacement allocation");
+        unchanged();
+    }
+    NativeOwner failed;
+    __au_runtime_bytes_allocate(region.id(), -1, &failed);
+    const auto failed_descriptor = failed;
+    const auto calls = trace.calls;
+    for (const std::int64_t length : {-1, 0, 1, 65}) {
+        require(__au_runtime_bytes_resize(&failed, length) == 0, "canonical failed owner cannot be revived by resize");
+        require(same_owner(failed, failed_descriptor) && region.metrics() == metrics && trace.calls == calls,
+                "canonical failed resize preserves descriptor and committed accounting without allocating");
+    }
+    __au_runtime_bytes_drop(&failed);
+    require(__au_runtime_bytes_resize(&owner, 64) == 1, "shrinking retry can reuse final logical quota");
+    require(owner.allocation == metrics.last_allocation_id + 1, "every preceding resize failure consumed no ID");
+    require(region.metrics().used == 69, "successful shrinking releases exactly the payload difference");
+    const auto after_shrink = owner;
+    const auto shrink_metrics = region.metrics();
+    trace.fail_next = true;
+    require(__au_runtime_bytes_resize(&owner, 65) == 0, "positive growth can fail native allocation at final quota");
+    require(same_owner(owner, after_shrink) && region.metrics() == shrink_metrics && trace.live == 2,
+            "positive growth failure leaves old ownership and every observation committed as before");
+    for (std::int64_t index = 0; index < 64; ++index) {
+        require(__au_runtime_bytes_at(&owner, index) == 128 + static_cast<std::uint64_t>(index),
+                "growth failure preserves the complete shrunken payload");
+    }
+    require(__au_runtime_bytes_resize(&owner, 65) == 1 && __au_runtime_bytes_at(&owner, 64) == 0,
+            "retry grows at final quota and never resurrects a truncated byte");
+    __au_runtime_bytes_drop(&owner);
+    __au_runtime_bytes_drop(&other);
+
+    AllocationTrace large_trace;
+    Region large(std::numeric_limits<std::uint64_t>::max(), large_trace.allocator());
+    NativeOwner huge;
+    __au_runtime_bytes_allocate(large.id(), 1, &huge);
+    require(__au_runtime_bytes_set(&huge, 0, 219) == 1, "seed huge-resize survivor");
+    const auto huge_before = huge;
+    const auto large_metrics = large.metrics();
+    const auto large_calls = large_trace.calls;
+    const auto header_size = large_trace.last_size - 1;
+    require(__au_runtime_bytes_resize(&huge, std::numeric_limits<std::int64_t>::max()) == 0,
+            "unrepresentable or host-exhausted huge resize fails without wrapping");
+    require(same_owner(huge, huge_before) && large.metrics() == large_metrics && large_trace.frees == 0 &&
+                __au_runtime_bytes_at(&huge, 0) == 219,
+            "huge resize failure preserves complete descriptor, payload and committed accounting");
+    if (static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) >
+        std::numeric_limits<std::size_t>::max() - header_size) {
+        require(large_trace.calls == large_calls, "unrepresentable resize layout rejects before native allocator");
+    } else {
+        require(large_trace.calls == large_calls + 1, "representable huge resize reaches rejecting trusted host");
+    }
+    __au_runtime_bytes_drop(&huge);
+}
+
+void resize_descriptor_validation() {
+    AllocationTrace trace;
+    Region region(16, trace.allocator());
+    Region other(16);
+    NativeOwner owner;
+    __au_runtime_bytes_allocate(region.id(), 4, &owner);
+    const auto original = owner;
+    require(__au_runtime_bytes_set(&owner, 0, 201) == 1, "seed stale resize descriptor fixture");
+    require(__au_runtime_bytes_resize(&owner, 2) == 1, "shrink replaces identity before stale checks");
+    const auto shrunken = owner;
+    require(__au_runtime_bytes_resize(&owner, 4) == 1, "regrow creates a third identity at the old length");
+    for (auto stale : {original, shrunken}) {
+        invariant("stale pre-resize owner cannot read after regrow", [=] {
+            __au_runtime_bytes_at(&stale, 0);
+        });
+        invariant("stale pre-resize owner cannot write after regrow", [=]() mutable {
+            __au_runtime_bytes_set(&stale, 0, 7);
+        });
+        invariant("stale pre-resize owner cannot release after regrow", [=]() mutable {
+            __au_runtime_bytes_drop(&stale);
+        });
+        for (const std::int64_t length : {std::int64_t{-1}, stale.length, std::int64_t{0}}) {
+            invariant("stale resize validates before negative, same-size or zero request", [=]() mutable {
+                __au_runtime_bytes_resize(&stale, length);
+            });
+        }
+    }
+    for (int field = 0; field < 7; ++field) {
+        auto forged = owner;
+        switch (field) {
+        case 0:
+            forged.region = other.id();
+            break;
+        case 1:
+            forged.allocation = 0;
+            break;
+        case 2:
+            forged.length = -1;
+            break;
+        case 3:
+            forged.length = 3;
+            break;
+        case 4:
+            forged.success = 2;
+            break;
+        case 5:
+            forged.success = 0;
+            break;
+        case 6:
+            forged.region = 0;
+            break;
+        }
+        for (const std::int64_t length : {std::int64_t{-1}, forged.length}) {
+            invariant("forged resize descriptor validates before request shortcut", [=]() mutable {
+                __au_runtime_bytes_resize(&forged, length);
+            });
+        }
+    }
+    invariant("pristine resize cannot fabricate a region", [] {
+        NativeOwner pristine;
+        __au_runtime_bytes_resize(&pristine, 0);
+    });
+    invariant("null resize descriptor validates before negative request", [] {
+        __au_runtime_bytes_resize(nullptr, -1);
+    });
+    NativeOwner failed;
+    __au_runtime_bytes_allocate(region.id(), -1, &failed);
+    invariant("failed resize still rejects forged length", [=]() mutable {
+        failed.length = 1;
+        __au_runtime_bytes_resize(&failed, 0);
+    });
+    require(__au_runtime_bytes_at(&owner, 0) == 201 && __au_runtime_bytes_at(&owner, 2) == 0,
+            "all isolated descriptor traps leave the current live replacement usable");
+    __au_runtime_bytes_drop(&owner);
+    require(region.close(), "replacement cleanup permits closing its region");
+    invariant("canonical failed resize rejects a closed grant", [=]() mutable {
+        __au_runtime_bytes_resize(&failed, 0);
+    });
+    invariant("stale replacement resize rejects a closed grant", [=]() mutable {
+        auto stale = shrunken;
+        __au_runtime_bytes_resize(&stale, stale.length);
+    });
+}
+
 void region_lifetime_and_failures() {
     Region first(1);
     Region second(1);
@@ -482,10 +874,41 @@ void region_lifetime_and_failures() {
 
 #if defined(AURORA_HOSTED_BYTES_TESTING)
 void nonwrapping_identity_limits() {
+    // Keep the original allocate-final-ID regression independently of the
+    // resize-final-ID path. The successful child cannot exhaust parent IDs.
+    isolated_success("direct allocation may still consume the final identity", [] {
+        testing::advance_next_ids(std::numeric_limits<std::uint64_t>::max(), std::numeric_limits<std::uint64_t>::max());
+        AllocationTrace trace;
+        Region region(1, trace.allocator());
+        NativeOwner failed;
+        trace.fail_next = true;
+        __au_runtime_bytes_allocate(region.id(), 1, &failed);
+        require_failed(failed, region);
+        __au_runtime_bytes_drop(&failed);
+        NativeOwner owner;
+        __au_runtime_bytes_allocate(region.id(), 1, &owner);
+        require_live(owner, region, 1);
+        require(owner.allocation == std::numeric_limits<std::uint64_t>::max(),
+                "direct allocation after host failure consumes the final nonzero identity");
+        require(__au_runtime_bytes_set(&owner, 0, 233) == 1, "direct final identity owns writable bytes");
+        const auto metrics = region.metrics();
+        const auto calls = trace.calls;
+        __au_runtime_bytes_allocate(region.id(), 0, &failed);
+        require_failed(failed, region);
+        require(region.metrics() == metrics && trace.calls == calls && __au_runtime_bytes_at(&owner, 0) == 233,
+                "direct allocation exhaustion leaves final owner and accounting untouched");
+        __au_runtime_bytes_drop(&failed);
+        __au_runtime_bytes_drop(&owner);
+        __au_runtime_bytes_allocate(region.id(), 0, &failed);
+        require_failed(failed, region);
+        require(trace.calls == calls, "directly allocated final identity cannot be reused after drop");
+        __au_runtime_bytes_drop(&failed);
+        require(region.close(), "direct final-identity region still closes normally");
+    });
     invariant("test seam refuses identity rewind", [] {
         testing::advance_next_ids(1, 1);
     });
-    testing::advance_next_ids(std::numeric_limits<std::uint64_t>::max(), std::numeric_limits<std::uint64_t>::max());
+    testing::advance_next_ids(std::numeric_limits<std::uint64_t>::max(), std::numeric_limits<std::uint64_t>::max() - 2);
     AllocationTrace trace;
     Region last_region(2, trace.allocator());
     require(last_region.id() == std::numeric_limits<std::uint64_t>::max(), "final nonzero region ID is usable");
@@ -494,19 +917,66 @@ void nonwrapping_identity_limits() {
     __au_runtime_bytes_allocate(last_region.id(), 1, &failed);
     require_failed(failed, last_region);
     __au_runtime_bytes_drop(&failed);
+    NativeOwner final_empty;
+    __au_runtime_bytes_allocate(last_region.id(), 0, &final_empty);
+    require_live(final_empty, last_region, 0);
+    require(final_empty.allocation == std::numeric_limits<std::uint64_t>::max() - 2,
+            "failed host allocation kept the first of the final three identities");
     NativeOwner final_owner;
     __au_runtime_bytes_allocate(last_region.id(), 1, &final_owner);
     require_live(final_owner, last_region, 1);
-    require(final_owner.allocation == std::numeric_limits<std::uint64_t>::max(), "failed host request kept final ID");
-    require(__au_runtime_bytes_set(&final_owner, 0, 233) == 1, "last identity can own real initialized bytes");
+    require(final_owner.allocation == std::numeric_limits<std::uint64_t>::max() - 1,
+            "failed host allocation kept the penultimate identity");
+    require(__au_runtime_bytes_set(&final_owner, 0, 233) == 1, "penultimate identity owns real initialized bytes");
+    const auto before_resize = final_owner;
+    const auto before_resize_metrics = last_region.metrics();
+    trace.fail_next = true;
+    require(__au_runtime_bytes_resize(&final_owner, 2) == 0, "host failure leaves final resize identity available");
+    require(same_owner(final_owner, before_resize) && last_region.metrics() == before_resize_metrics &&
+                __au_runtime_bytes_at(&final_owner, 0) == 233 && trace.frees == 0,
+            "failed resize before identity exhaustion preserves every committed fact");
+    require(__au_runtime_bytes_resize(&final_owner, 2) == 1, "resize may consume the final nonzero identity");
+    require_live(final_owner, last_region, 2);
+    require(final_owner.allocation == std::numeric_limits<std::uint64_t>::max() &&
+                __au_runtime_bytes_at(&final_owner, 0) == 233 && __au_runtime_bytes_at(&final_owner, 1) == 0,
+            "final resize identity preserves old byte and zero-initializes extension");
+    const auto descriptor = final_owner;
     const auto metrics = last_region.metrics();
     const auto calls = trace.calls;
+    const auto frees = trace.frees;
+    trace.fail_next = true;
+    require(__au_runtime_bytes_resize(&final_owner, 2) == 1,
+            "same-size resize still succeeds after all allocation identities are exhausted");
+    require(same_owner(final_owner, descriptor) && last_region.metrics() == metrics && trace.calls == calls &&
+                trace.frees == frees && trace.fail_next,
+            "exhausted same-size resize preserves identity, metrics and unused host-failure injection");
+    const auto empty_descriptor = final_empty;
+    require(__au_runtime_bytes_resize(&final_empty, 0) == 1 && same_owner(final_empty, empty_descriptor) &&
+                last_region.metrics() == metrics && trace.calls == calls && trace.frees == frees && trace.fail_next,
+            "successful empty same-size resize also bypasses exhausted IDs and host allocation");
+    trace.fail_next = false;
+    require(__au_runtime_bytes_resize(&final_empty, 1) == 0 && same_owner(final_empty, empty_descriptor) &&
+                last_region.metrics() == metrics && trace.calls == calls && trace.frees == frees,
+            "exhausted identities cannot revive empty payload by resizing");
+    for (const std::int64_t length : {-1, 0, 1, 3}) {
+        require(__au_runtime_bytes_resize(&final_owner, length) == 0,
+                "exhausted identities reject changed-size requests including shrink and metadata-only zero");
+        require(same_owner(final_owner, descriptor) && last_region.metrics() == metrics && trace.calls == calls &&
+                    trace.frees == frees && __au_runtime_bytes_at(&final_owner, 0) == 233 &&
+                    __au_runtime_bytes_at(&final_owner, 1) == 0,
+                "exhausted resize never wraps identity, calls allocator, frees or mutates either byte");
+    }
+    invariant("stale resize validates even after identity exhaustion", [=]() mutable {
+        auto stale = before_resize;
+        __au_runtime_bytes_resize(&stale, -1);
+    });
     __au_runtime_bytes_allocate(last_region.id(), 0, &failed);
     require_failed(failed, last_region);
     require(last_region.metrics() == metrics && trace.calls == calls, "exhausted IDs never wrap or allocate");
     require(__au_runtime_bytes_at(&final_owner, 0) == 233, "ID exhaustion leaves existing bytes unchanged");
     __au_runtime_bytes_drop(&failed);
     __au_runtime_bytes_drop(&final_owner);
+    __au_runtime_bytes_drop(&final_empty);
     __au_runtime_bytes_allocate(last_region.id(), 0, &failed);
     require_failed(failed, last_region);
     require(trace.calls == calls, "released final ID is never reused");
@@ -526,6 +996,9 @@ void nonwrapping_identity_limits() {
 int main() {
     runtime_lengths_and_initialization();
     failure_atomicity_and_quota_reuse();
+    resize_replacement_and_preservation();
+    resize_failure_atomicity();
+    resize_descriptor_validation();
     region_lifetime_and_failures();
 #if defined(AURORA_HOSTED_BYTES_TESTING)
     nonwrapping_identity_limits();
