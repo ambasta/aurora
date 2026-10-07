@@ -182,6 +182,14 @@ class ObjectFieldCopy {
     int fieldIndex;
     int resultOffset;
 };
+// Replaces an already complete direct owned class field. The source is a
+// distinct complete local value; no subobject capability escapes this operation.
+class AssignObjectField {
+public:
+    int objectOffset; // zero addresses the bound nonconstructor receiver
+    int fieldIndex;
+    int sourceOffset;
+};
 class InitializeObjectField {
   public:
     int objectOffset; // currently zero only: bound constructor receiver
@@ -223,6 +231,7 @@ class MethodCall {
     int receiverOffset;                    // zero forwards this; positive names an ObjectSlot base
     std::vector<int> objectArguments = {}; // readonly copied snapshots; scalar entries are zero
     int resultOffset = 0; // pristine class result destination; zero for scalar results
+    int receiverFieldIndex = -1; // -1 selects the root; otherwise one logical owned class field
 };
 class MetadataQuery {
   public:
@@ -264,15 +273,52 @@ class BindParameter {
     int offset;
     Type type;
 };
-using Instruction =
-    std::variant<Constant, EnumConstant, Load, Store, Push, Pop, UnaryValue, BinaryValue, Convert,
-                 Compare, BoundsGuard, IndexLoad, IndexStore, BorrowHandle, Call, AggregateCall,
-                 BeginObject, EndObject, CopyObject, ObjectFieldCopy, InitializeObjectField,
-                 ReceiverLoad, ReceiverStore, ReceiverArrayZero, ReceiverBoundsGuard,
-                 ReceiverIndexLoad, ReceiverIndexStore, MethodCall, MetadataQuery, Label, Jump,
-                 BranchFalse, Return, ReturnObject, BindParameter, BindObjectParameter, BeginArray,
-                 EndArray, BorrowSpan, ReborrowSpan, Subspan, EndSpan, SpanLength, SpanLoad,
-                 BindSpanParameter>;
+using Instruction = std::variant<Constant,
+                                 EnumConstant,
+                                 Load,
+                                 Store,
+                                 Push,
+                                 Pop,
+                                 UnaryValue,
+                                 BinaryValue,
+                                 Convert,
+                                 Compare,
+                                 BoundsGuard,
+                                 IndexLoad,
+                                 IndexStore,
+                                 BorrowHandle,
+                                 Call,
+                                 AggregateCall,
+                                 BeginObject,
+                                 EndObject,
+                                 CopyObject,
+                                 ObjectFieldCopy,
+                                 AssignObjectField,
+                                 InitializeObjectField,
+                                 ReceiverLoad,
+                                 ReceiverStore,
+                                 ReceiverArrayZero,
+                                 ReceiverBoundsGuard,
+                                 ReceiverIndexLoad,
+                                 ReceiverIndexStore,
+                                 MethodCall,
+                                 MetadataQuery,
+                                 Label,
+                                 Jump,
+                                 BranchFalse,
+                                 Return,
+                                 ReturnObject,
+                                 BindParameter,
+                                 BindObjectParameter,
+                                 BeginArray,
+                                 EndArray,
+                                 BorrowSpan,
+                                 ReborrowSpan,
+                                 Subspan,
+                                 EndSpan,
+                                 SpanLength,
+                                 SpanLoad,
+                                 BindSpanParameter>;
 class ObjectSlot {
   public:
     std::string className;

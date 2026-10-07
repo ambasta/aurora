@@ -238,3 +238,9 @@ checks syntax, formatting and bounded style rules without resolving imports.
 semantic lint rules are claimed. See [modes, bounds and preservation guarantees](FORMAT.md).
 `make test-formatter` is the focused gate, separate from full compiler/native
 acceptance.
+
+## Direct owned-field mutation candidate
+
+One direct owned class field can be replaced from a complete named value or
+receive a synchronous const/mutable method call, subject to root mutability and
+visibility. See [the exact subset and focused acceptance](OWNED-FIELD-MUTATION.md).

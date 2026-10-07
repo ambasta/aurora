@@ -53,8 +53,9 @@ unqualified name. The projection creates a complete independent value. Mutating
 the extracted copy cannot change the containing object. Ordinary by-value
 function arguments and results also copy all scalar leaves of composed values.
 
-Chained field mutation, whole nested-field assignment after initialization,
-escaping subobject references, nested receiver calls,
+The [direct owned-field extension](OWNED-FIELD-MUTATION.md) adds complete direct
+class-field replacement and synchronous direct child method receivers. Deeper
+chained field mutation, escaping subobject references,
 resource fields, heap storage and inheritance remain unsupported. Constructors
 accept class arguments. Methods accept scalar/enum and copied class parameters
 and may return a complete copied class into a fresh typed local under the

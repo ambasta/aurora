@@ -695,7 +695,7 @@ def main():
         print(f"INFO function templates compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
         for relative in ("tests/compiler/function_templates.py", "library/std/utility.au", "library/std/array.au"):
             print(f"INFO function templates {relative} sha256={hashlib.sha256((ROOT/relative).read_bytes()).hexdigest()}", flush=True)
-    temporary_root = ROOT / "tmp"
+    temporary_root = Path(tempfile.gettempdir())
     temporary_root.mkdir(exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="function-templates-", dir=temporary_root))
     clean = False

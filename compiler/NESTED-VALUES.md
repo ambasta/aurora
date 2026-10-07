@@ -23,8 +23,9 @@ and source-range example is in `examples/nested_token_values.au`.
 
 Every existing class rule still applies: class-valued constructor arguments and
 results require complete named local values, public class-field projections
-produce independent fresh-local copies, and class-valued fields cannot be
-reassigned or called through as chained receivers. Array storage remains private;
+produce independent fresh-local copies, and the [direct owned-field extension](OWNED-FIELD-MUTATION.md) permits complete
+direct class-field replacement and synchronous child method receivers. Deeper
+chained receivers remain unsupported. Array storage remains private;
 `size()`, checked copied `at()`, and mutable `set()` retain their original APIs.
 
 ## Independent bounds

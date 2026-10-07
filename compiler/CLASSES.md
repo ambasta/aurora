@@ -108,7 +108,9 @@ these tests is not a proof of general Rust-like lifetimes or full language safet
 by-value class parameters and exact nominal class-field copies. Composed classes
 are acyclic, at most four class levels and 64 scalar leaves. Public class fields
 (and private fields inside their declaring class) project into fresh independent
-locals. Class-field reassignment and chained mutation remain rejected. Empty
+locals. The [direct owned-field extension](OWNED-FIELD-MUTATION.md) admits
+complete direct class-field replacement and synchronous child method receivers;
+deeper chained mutation remains rejected. Empty
 nested fields require logical initialization even without payload leaves. Ordinary method copied class boundaries are specified separately in
 [METHOD-VALUES.md](METHOD-VALUES.md).
 

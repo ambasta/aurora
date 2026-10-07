@@ -14,6 +14,7 @@ foreach entry : [
     ['frontend', 'compiler/run.py', 'core'],
     ['classes', 'compiler/classes.py', 'core'],
     ['value-calls', 'compiler/value_calls.py', 'core'],
+    ['owned-mutation', 'compiler/owned_mutation.py', 'core'],
     ['signed-integers', 'compiler/integers.py', 'core'],
     ['unsigned-integers', 'compiler/unsigned.py', 'core'],
     ['modules', 'modules/run.py', 'core'],
@@ -54,6 +55,25 @@ test(
     initialization_facts,
     suite: ['dev', 'core', 'compiler'],
     timeout: 120,
+)
+
+owned_mutation_ir = executable(
+    'owned-mutation-ir',
+    'compiler/owned_mutation_ir.cpp',
+    include_directories: include_directories('../compiler'),
+    native: true,
+    install: false,
+)
+test('owned-mutation-ir', owned_mutation_ir, suite: ['dev', 'core', 'compiler'], timeout: 120)
+test(
+    'owned-mutation-abi',
+    python,
+    args: ['-B', '-O', files('compiler/owned_mutation_abi.py'), owned_mutation_ir],
+    depends: owned_mutation_ir,
+    suite: ['dev', 'core', 'compiler'],
+    env: oracle_env,
+    workdir: meson.current_build_dir(),
+    timeout: 180,
 )
 
 sector_values_ir = executable(

@@ -477,8 +477,8 @@ def rejection_cases(suite):
         "auto copy(std::array source)const->std::array{return source;}};}"))
     suite.reject("generic methods remain unsupported",p("return 42;",
         "class Receiver{public:Receiver(){}template<Value T>auto copy(T x)const->T{return x;}};"))
-    suite.reject("class field reassignment remains unsupported",p(
-        "Counter source=Counter(42);Holder value=Holder(source);value.item=source;return 42;",COUNTER+
+    suite.reject("readonly class field reassignment remains rejected",p(
+        "Counter source=Counter(42);const Holder value=Holder(source);value.item=source;return 42;",COUNTER+
         "class Holder{public:Counter item;Holder(Counter x):item(x){} };"))
     suite.reject("direct receiver class field return remains unsupported",p("return 42;",COUNTER+
         "class Holder{Counter item;public:Holder(Counter x):item(x){}auto copy(Counter ignored)const->Counter{return item;}};"))
@@ -606,7 +606,7 @@ def main():
         for relative in ("tests/compiler/method_values.py","library/std/array.au"):
             print(f"INFO method values {relative} sha256={hashlib.sha256((ROOT/relative).read_bytes()).hexdigest()}",flush=True)
     # Only this run's successful artifacts are deleted. Historical evidence is untouched.
-    evidence=ROOT/"evidence"
+    evidence=Path(tempfile.gettempdir())
     evidence.mkdir(exist_ok=True)
     directory=Path(tempfile.mkdtemp(prefix="method-values-",dir=evidence))
     clean=False

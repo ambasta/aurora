@@ -40,9 +40,11 @@ initialization, readonly snapshots, empty body, field-declaration-order
 initializers, and no receiver access during initialization. Any call-graph cycle
 containing a method or constructor is still rejected.
 
-No temporary/chained receiver or class argument, direct returned call expression,
-reference, resource/span method parameter, generic method, overload, class-field
-reassignment or new template-body grammar is added. Use a named local for an
+The [direct owned-field extension](OWNED-FIELD-MUTATION.md) separately permits
+one owned class field as receiver and complete direct field replacement.
+No temporary/deeper-chained receiver or class argument, direct returned call expression,
+reference, resource/span method parameter, generic method, overload or new
+template-body grammar is added. Use a named local for an
 intermediate projection/result. This is bounded value transport, not a general
 heap/lifetime or optional/expected implementation.
 

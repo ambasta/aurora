@@ -405,13 +405,39 @@ class SemanticAnalyzer {
         const bool implicit = value->op == "implicit_method_call";
         if (implicit && lookupLocal(value->token) >= 0)
             fail(value->token, "local binding shadows method and is not callable");
-        int receiver = -1;
+        int receiver = -1, receiverOffset = 0, receiverFieldIndex = -1;
+        Type type = implicit ? Type(currentFunction->receiverClass) : Type::I64;
+        bool mutableReceiver = implicit && !currentFunction->receiverConst;
         if (!implicit) {
-            if (value->args[0]->op != "name")
-                fail(value->token, "method receiver requires a class local");
-            receiver = source(value->args[0]);
+            const auto &target = value->args[0];
+            const Field *member = nullptr;
+            if (target->op == "name") {
+                if (lookupLocal(target->token) < 0)
+                    member = receiverField(target->token);
+                if (!member) {
+                    receiver = source(target);
+                    receiverOffset = offset(receiver);
+                    type = locals[receiver].type;
+                    mutableReceiver = locals[receiver].mut;
+                } else {
+                    mutableReceiver = !currentFunction->receiverConst;
+                }
+            } else if (target->op == "member" && target->args[0]->op == "name") {
+                receiver = source(target->args[0]);
+                receiverOffset = offset(receiver);
+                mutableReceiver = locals[receiver].mut;
+                member = &field(locals[receiver].type, target->token);
+            } else {
+                fail(value->token, "method receiver requires a class local or direct owned class field");
+            }
+            if (member) {
+                if (!member->type.isClass())
+                    fail(target->token, "nested method receiver requires an owned class field");
+                requireVisibleType(member->type, target->token);
+                type = member->type;
+                receiverFieldIndex = member->index;
+            }
         }
-        const auto type = implicit ? Type(currentFunction->receiverClass) : locals[receiver].type;
         if (type.isSpan()) {
             if (resultBinding || implicit)
                 fail(value->token, "span operation requires a named live span");
@@ -440,8 +466,6 @@ class SemanticAnalyzer {
             fail(value->token, "class-returning method requires a typed local initializer");
         if (resultBinding)
             match(callee.result, resultBinding->type, value->token);
-        const bool mutableReceiver =
-            implicit ? !currentFunction->receiverConst : locals[receiver].mut;
         if (!callee.receiverConst && !mutableReceiver)
             fail(value->token, "mutable method requires a mutable receiver");
         const std::size_t first = implicit ? 0 : 1;
@@ -473,8 +497,8 @@ class SemanticAnalyzer {
         if (resultBinding)
             destination = offset(add(resultBinding->name, resultBinding->type,
                                      resultBinding->mutableValue, resultBinding->token));
-        emit(ir::MethodCall{callee.name, implicit ? 0 : offset(receiver),
-                            packed ? arguments : std::vector<int>{}, destination});
+        emit(ir::MethodCall{
+            callee.name, receiverOffset, packed ? arguments : std::vector<int>{}, destination, receiverFieldIndex});
         for (int snapshot : snapshots)
             emit(ir::EndObject{snapshot});
         return callee.result;
@@ -954,6 +978,13 @@ class SemanticAnalyzer {
         scopes.pop_back();
         return terminal;
     }
+    void assignClassField(int receiverOffset, const Field &member, ExpressionPtr value) {
+        if (value->op != "name")
+            fail(value->token, "class field assignment requires a complete local name");
+        const int original = source(value);
+        match(locals[original].type, member.type, value->token);
+        emit(ir::AssignObjectField{receiverOffset, member.index, offset(original)});
+    }
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);
         const auto expression = statement->expr;
@@ -1234,7 +1265,11 @@ class SemanticAnalyzer {
             if (!locals[local].mut)
                 fail(s->token, "field assignment requires a mutable class local");
             const auto &member = field(locals[local].type, Token(s->fieldName, s->token.line));
-            if (member.type.isArray() || member.type.isClass())
+            if (member.type.isClass()) {
+                assignClassField(offset(local), member, s->expr);
+                return false;
+            }
+            if (member.type.isArray())
                 fail(s->token, "whole aggregate field assignment is unsupported");
             match(expression(s->expr), member.type, s->token);
             emit(ir::Store{fieldOffset(local, member), member.type});
@@ -1246,7 +1281,11 @@ class SemanticAnalyzer {
                 if (const auto *member = receiverField(target)) {
                     if (currentFunction->receiverConst)
                         fail(target, "const method cannot write receiver fields");
-                    if (member->type.isArray() || member->type.isClass())
+                    if (member->type.isClass()) {
+                        assignClassField(0, *member, s->expr);
+                        return false;
+                    }
+                    if (member->type.isArray())
                         fail(target, "whole aggregate field assignment is unsupported");
                     match(expression(s->expr), member->type, target);
                     emit(ir::ReceiverStore{member->index, member->type});

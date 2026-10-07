@@ -298,9 +298,10 @@ def boundary_cases(suite):
 def rejection_cases(suite):
     valid = ("std::array<u8,3> bytes=std::array<u8,3>();"
              "std::pair<std::array<u8,3>,u8> value=std::pair<std::array<u8,3>,u8>(bytes,42u8);")
+    suite.check("nested const method call", p(valid + "return i64(value.first.at(0));"), expected=0)
+    suite.check("whole nested-field replacement", p(valid + "bytes.set(0,42u8);value.first=bytes;"
+                "bytes.set(0,0u8);return i64(value.first.at(0));"))
     for name, body in (
-        ("nested call chaining", "return i64(value.first.at(0));"),
-        ("whole nested-field replacement", "value.first=bytes;return 42;"),
         ("nested resource borrowing", "const ref<i64> r=borrow(value.first);return 42;"),
         ("nested resource move", "own<i64> r=move(value.first);return 42;"),
         ("private inner array storage remains private", "const std::array<u8,3> copy=value.first;return i64(copy.elements[0]);"),
@@ -494,7 +495,7 @@ def main():
         for relative in ("tests/compiler/nested_values.py", "examples/nested_token_values.au",
                          "library/std/utility.au", "library/std/array.au"):
             print(f"INFO nested values {relative} sha256={hashlib.sha256((ROOT/relative).read_bytes()).hexdigest()}", flush=True)
-    temporary_root = ROOT / "tmp"
+    temporary_root = Path(tempfile.gettempdir())
     temporary_root.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="nested-values-", dir=temporary_root) as temporary:
         suite = Suite(Path(temporary), compiler, args.keep_going)

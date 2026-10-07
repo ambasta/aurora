@@ -604,6 +604,28 @@ inline void verifyFunction(Function &function,
                 logicalComplete(base);
                 return object;
             };
+            auto completeClassField = [&](int base, int index, bool mutableAccess) -> const ClassField & {
+                require(base >= 0, "invalid owned field root offset");
+                const ClassField *field = nullptr;
+                if (base == 0) {
+                    field = &receiverShape(index);
+                    require(!function.receiver->constructor,
+                            "constructor cannot access owned field during initialization");
+                    require(!mutableAccess || function.receiver->mutableValue,
+                            "const receiver cannot supply mutable owned field");
+                    require(state.receiverClassesInitialized.contains(index),
+                            "receiver nested class field not initialized");
+                } else {
+                    const auto &root = completeObject(base);
+                    require(!mutableAccess || root.mutableValue, "const object cannot supply mutable owned field");
+                    require(classFields.contains(root.className) && index >= 0 &&
+                                static_cast<std::size_t>(index) < classFields.at(root.className).size(),
+                            "owned field logical index out of range");
+                    field = &classFields.at(root.className)[index];
+                }
+                require(!field->array && field->elementType.isClass(), "owned field operation requires class field");
+                return *field;
+            };
             auto copyTarget = [&](int base, const std::string &name) {
                 require(function.objectSlots.contains(base), "copy requires exact object slot");
                 require(state.activeObjects.contains(base), "copy object outside active lifetime");
@@ -1006,6 +1028,16 @@ inline void verifyFunction(Function &function,
                                 "projection requires class field");
                         copyTarget(operation.resultOffset, field->elementType.className);
                         state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, AssignObjectField>) {
+                        require(operation.objectOffset != operation.sourceOffset,
+                                "class field assignment source aliases root");
+                        const auto &field = completeClassField(operation.objectOffset, operation.fieldIndex, true);
+                        const auto &source = completeObject(operation.sourceOffset);
+                        require(source.className == field.elementType.className,
+                                "class field assignment nominal class mismatch");
+                        // Both values were already complete; replacement cannot mint
+                        // initialization evidence or create a separately live subobject.
+                        state.current.reset();
                     } else if constexpr (std::is_same_v<Op, InitializeObjectField>) {
                         require(operation.objectOffset == 0,
                                 "class field initialization requires bound constructor receiver");
@@ -1125,7 +1157,14 @@ inline void verifyFunction(Function &function,
                             }
                         }
                         require(operation.receiverOffset >= 0, "invalid method receiver offset");
-                        if (operation.receiverOffset == 0) {
+                        require(operation.receiverFieldIndex >= -1, "invalid method receiver field index");
+                        if (operation.receiverFieldIndex >= 0) {
+                            require(!receiver.constructor, "nested receiver cannot call constructor");
+                            const auto &field = completeClassField(
+                                operation.receiverOffset, operation.receiverFieldIndex, receiver.mutableValue);
+                            require(field.elementType.className == receiver.className,
+                                    "nested method receiver nominal class mismatch");
+                        } else if (operation.receiverOffset == 0) {
                             require(function.receiver.has_value(),
                                     "forwarding without bound receiver");
                             require(!function.receiver->constructor && !receiver.constructor,
