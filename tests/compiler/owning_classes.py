@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 import tempfile
 
-from owned_bytes import OWNER, REGION, Suite, command, program
+from owned_bytes import OWNER, REGION, ROOT, Suite, command, program
 from unsigned_oracle import require
 
 ENTRY = "__au_v_m1_11owned_bytes_n0__d5entry"
@@ -50,6 +50,11 @@ CREATE = f"{OWNER} bytes = region.try_allocate(n); Box box = Box(region, move(by
 CONSUME = f"auto consume({REGION} region, Box box) -> i64 {{ return box.size(); }}"
 BOUNCE = f"auto bounce({REGION} region, Box box) -> Box {{ return move(box); }}"
 
+RESIZABLE_BOX = BOX.replace(
+    "    auto ok() const -> bool",
+    "    auto try_resize(i64 count) -> bool { return payload.try_resize(count); }\n    auto ok() const -> bool",
+)
+
 
 class OwningSuite(Suite):
     def __init__(self, compiler, directory, compile_only):
@@ -65,7 +70,7 @@ class OwningSuite(Suite):
         input_path = folder / "input.au"
         assembly = folder / "output.s"
         input_path.write_text(source)
-        result = command([self.compiler, input_path, "-o", assembly])
+        result = command([self.compiler, *self.module_args, input_path, "-o", assembly])
         require(result.returncode == 0, f"{name}: compile failed: {result.stderr.decode()}")
         text = assembly.read_text()
         require(f".local {ENTRY}\n" in text, f"{name}: missing private entry")
@@ -141,6 +146,218 @@ class OwningSuite(Suite):
         )
         (folder / "declaration.json").write_bytes(result.stdout)
         self.rejections += 1
+
+    def resize_cases(self):
+        cycle = self.compile(
+            "field-resize-cycle-and-transfer",
+            program(
+                CREATE
+                + """
+                if (!box.ok() || !box.check()) { return -1; }
+                i64 index = 0;
+                while (index < n) { box.set(index, u8((index * 17 + 3) % 256)); index = index + 1; }
+                if (!box.try_resize(n + 3) || box.size() != n + 3 || !box.check()) { return -2; }
+                index = 0;
+                while (index < n) {
+                    if (box.at(index) != u8((index * 17 + 3) % 256)) { return -3; }
+                    index = index + 1;
+                }
+                while (index < n + 3) { if (box.at(index) != 0u8) { return -4; } index = index + 1; }
+                if (!box.try_resize(1)) { return -5; }
+                if ((n == 0 && box.at(0) != 0u8) || (n > 0 && box.at(0) != 3u8)) { return -5; }
+                if (!box.try_resize(0) || !box.ok() || box.size() != 0 || box.set(0, 1u8)) { return -6; }
+                if (!box.try_resize(n) || box.size() != n || !box.check()) { return -7; }
+                index = 0;
+                while (index < n) { if (box.at(index) != 0u8) { return -8; } index = index + 1; }
+                Box moved = bounce(region, move(box));
+                if (!moved.check()) { return -9; }
+                return moved.size();
+                """,
+                RESIZABLE_BOX + BOUNCE,
+            ),
+        )
+        for length in (0, 1, 65, 513, 4097):
+            count = 4 if length == 0 else 5
+            self.run(cycle, length + 3, length, 0, length, count, 1, release_order=list(range(1, count + 1)))
+
+        preserved = self.compile(
+            "field-resize-failure-preservation",
+            program(
+                CREATE
+                + """
+                box.set(0, 17u8); box.set(1, 33u8); box.set(2, 99u8);
+                bool changed = box.try_resize(flag);
+                if (changed != (flag == n)) { return -1; }
+                if (!box.ok() || box.size() != n || !box.check()) { return -2; }
+                if (box.at(0) != 17u8 || box.at(1) != 33u8 || box.at(2) != 99u8) { return -3; }
+                return 42;
+                """,
+                RESIZABLE_BOX,
+            ),
+        )
+        for length in (-1, -(1 << 63), 4, (1 << 63) - 1):
+            self.run(preserved, 3, 3, length, 42, 1, 1, release_order=[1])
+        for length in (0, 1, 3, 4):
+            self.run(preserved, 4, 3, length, 42, 1, 1, fail_after=1, release_order=[1])
+
+        failed = self.compile(
+            "field-resize-inert-owner",
+            program(
+                CREATE + "if (box.try_resize(flag) || box.ok() || box.size() != 0 || !box.check()) { return -1; } "
+                "Box moved = move(box); if (moved.try_resize(0) || moved.ok()) { return -2; } return 42;",
+                RESIZABLE_BOX,
+            ),
+        )
+        for length in (-1, 0, 65):
+            self.run(failed, 128, -1, length, 42, 0, 0)
+        self.run(failed, 128, 3, 65, 42, 0, 0, fail_after=0)
+
+        pair_helpers = PAIR.replace(
+            "    auto size() const -> i64",
+            "    auto resize_first(i64 count) -> bool { return first.try_resize(count); }\n"
+            "    auto resize_second(i64 count) -> bool { return second.try_resize(count); }\n"
+            "    auto first_size() const -> i64 { return first.size(); }\n"
+            "    auto second_size() const -> i64 { return second.size(); }\n"
+            "    auto first_at(i64 index) const -> u8 { return first.at(index); }\n"
+            "    auto second_at(i64 index) const -> u8 { return second.at(index); }\n"
+            "    auto size() const -> i64",
+        )
+        pair = self.compile(
+            "field-resize-exact-second-selector",
+            program(
+                f"{OWNER} a = region.try_allocate(3); {OWNER} b = region.try_allocate(2); "
+                """
+                a.set(0, 17u8); a.set(2, 99u8); b.set(0, 33u8); b.set(1, 55u8);
+                Pair pair = Pair(region, move(a), move(b));
+                if (!pair.resize_second(n) || pair.second_size() != n || pair.first_size() != 3) { return -1; }
+                if (pair.first_at(0) != 17u8 || pair.first_at(2) != 99u8 ||
+                    pair.second_at(0) != 33u8 || pair.second_at(1) != 55u8) { return -2; }
+                i64 index = 2;
+                while (index < n) { if (pair.second_at(index) != 0u8) { return -3; } index = index + 1; }
+                if (!pair.resize_first(1) || pair.first_size() != 1 || pair.first_at(0) != 17u8 ||
+                    pair.second_size() != n || pair.second_at(1) != 55u8) { return -4; }
+                return pair.size();
+                """,
+                pair_helpers,
+            ),
+        )
+        for length in (3, 65, 513):
+            self.run(pair, length + 3, length, 0, length + 20, 4, 2, release_order=[2, 1, 3, 4])
+
+        stack = self.compile(
+            "field-resize-expression-stack",
+            program(
+                CREATE + "return 7 + score(box.size(), box.try_resize(3), box.size()) + "
+                "(9 + score(box.size(), box.try_resize(4), box.size()));",
+                RESIZABLE_BOX + "auto score(i64 before, bool success, i64 after)->i64 {"
+                "if (!success) {return -1000;} return before * 100 + after;}",
+            ),
+        )
+        self.run(stack, 4, 1, 0, 423, 3, 1, release_order=[1, 2, 3])
+
+        shadow = self.compile(
+            "field-resize-result-shadows-root",
+            program(
+                CREATE + "{ const bool box = box.try_resize(2); if (!box) { return -1; } } return box.size();",
+                RESIZABLE_BOX,
+            ),
+        )
+        self.run(shadow, 2, 1, 0, 2, 2, 1, release_order=[1, 2])
+
+        sibling = self.compile(
+            "field-resize-length-consumes-sibling",
+            program(
+                CREATE + f"{OWNER} extra = region.try_allocate(65); Box sibling = Box(region, move(extra), 23u8); "
+                "box.set(0, 199u8); if (!box.try_resize(consume(region, move(sibling)))) { return -1; } "
+                "if (box.size() != 65 || box.at(0) != 199u8 || box.at(64) != 0u8) { return -2; } return 42;",
+                RESIZABLE_BOX + CONSUME,
+            ),
+        )
+        self.run(sibling, 66, 1, 0, 42, 3, 2, release_order=[2, 1, 3])
+
+        bounds = self.compile(
+            "field-resize-shrunk-bounds",
+            program(CREATE + "if (!box.try_resize(flag)) { return -1; } return i64(box.at(flag));", RESIZABLE_BOX),
+        )
+        self.trap(bounds, 3, 3, 0)
+        self.trap(bounds, 3, 3, 1)
+
+        for name, body in {
+            "field-resize-receiver-consumed-length": "box.try_resize(consume(region, move(box))); return 0;",
+            "field-resize-after-move": "Box moved = move(box); box.try_resize(2); return 0;",
+            "field-resize-private-access": "box.payload.try_resize(2); return 0;",
+        }.items():
+            self.reject(name, program(CREATE + body, RESIZABLE_BOX + CONSUME))
+        self.reject(
+            "field-resize-const-owner",
+            program(
+                f"{OWNER} bytes = region.try_allocate(1); const Box box = Box(region, move(bytes), 23u8); "
+                "box.try_resize(2); return 0;",
+                RESIZABLE_BOX,
+            ),
+        )
+        self.reject(
+            "field-resize-const-method",
+            program("return 0;", RESIZABLE_BOX.replace("try_resize(i64 count) ->", "try_resize(i64 count) const ->")),
+        )
+        for name, arguments in {
+            "u64": "2u64",
+            "u8": "2u8",
+            "bool": "true",
+            "missing": "",
+            "extra": "1, 2",
+        }.items():
+            self.reject(
+                "field-resize-" + name + "-length",
+                program(
+                    "return 0;", RESIZABLE_BOX.replace("payload.try_resize(count)", f"payload.try_resize({arguments})")
+                ),
+            )
+        self.reject(
+            "field-resize-bool-result",
+            program(
+                "return 0;",
+                RESIZABLE_BOX.replace(
+                    "auto try_resize(i64 count) -> bool { return payload.try_resize(count); }",
+                    "auto bad_result(i64 count) -> i64 { i64 bad_size = payload.try_resize(count); return bad_size; }",
+                ),
+            ),
+        )
+
+        # Raw byte owners may resize before transfer, but the device still requires
+        # whole-sector backing and must not expose resizing through either API.
+        saved_module_args = self.module_args
+        self.module_args = ["--module-root", ROOT / "library"]
+        try:
+            imports = (
+                "import std.binary; import std.binary_buffer; import storage.sector; "
+                "import storage.block_io; import storage.ram_sector;"
+            )
+            setup = (
+                f"{OWNER} bytes = region.try_allocate(512); "
+                "storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));"
+            )
+            for name, action in {
+                "ram-device-resize-unexposed": "device.try_resize(513);",
+                "ram-device-payload-resize-private": "device.payload.try_resize(513);",
+            }.items():
+                self.reject(name, program(setup + action + "return 0;", imports))
+            unaligned = self.compile(
+                "resized-backing-retains-whole-sector-invariant",
+                program(
+                    f"{OWNER} bytes = region.try_allocate(512); "
+                    "if (!bytes.try_resize(n)) { return -1; } "
+                    "storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes)); "
+                    "const storage::SectorGeometry geometry = device.geometry(); "
+                    "if (device.status() != storage::SectorIoStatus::invalid_source || "
+                    "geometry.sector_count() != 0u64 || geometry.can_write()) { return -2; } return 42;",
+                    imports,
+                ),
+            )
+            for length in (1, 511, 513, 1023):
+                self.run(unaligned, max(512, length), length, 0, 42, 2, 1, release_order=[1, 2])
+        finally:
+            self.module_args = saved_module_args
 
     def cases(self):
         dynamic = self.compile(
@@ -425,6 +642,7 @@ class OwningSuite(Suite):
             program("return 0;", f"class Bad {{{OWNER} b;public:Bad({REGION} r,{OWNER} a):b(a){{}}}};"),
         )
         self.imported_diagnostic_locations()
+        self.resize_cases()
         return {
             "mode": "compile-only" if self.compile_only else "native",
             "compiled_programs": self.programs,

@@ -275,4 +275,8 @@ resource under explicit host-granted region authority, private checked access an
 normal-scope cleanup. The [focused results](../docs/owned-bytes-results.md) record
 source review, native execution and sanitizer limits. It does not widen the
 existing scalar-only own/ref/mutref prototype or provide general resource classes,
-resizing, payload views, kernel allocation or a public foreign ABI.
+payload views, kernel allocation or a public foreign ABI. The failure-safe
+`try_resize(i64)` extension is specified in the same contract, with replacement
+identity, prefix preservation, zero-filled growth and final-logical-quota semantics.
+Its focused qualification is recorded separately in
+[resize results](../docs/owned-bytes-resize-results.md).

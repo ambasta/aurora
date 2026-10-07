@@ -1,5 +1,22 @@
 # Completeness and acceptance matrix
 
+## Failure-safe owned-byte resize candidate — 2026-10-07
+
+The [resize contract](../compiler/OWNED-BYTES.md#failure-safe-replacement-resize)
+extends the existing mutable owner with `try_resize(i64) -> bool`. Changed sizes
+use fresh replacement identity, preserved prefix and zero-filled extension;
+recoverable failure preserves prior bytes, descriptor and committed quota.
+Shrinking/empty replacement can fail, and the logical quota does not bound transient
+host memory. Direct private owning fields reuse the existing mutable-root checks;
+RamSectorDevice exposes no resize. Both Python modes passed 56 byte-owner native
+cases/seven exact traps and 49 owning-class cases/four traps. Independent IR passed
+86/308 and 47/165 accepted/rejected cases; both ABI modes passed 15 boundaries/four
+mutants. The host passed 53,969 checks/68 traps normally and under fatal ASan/UBSan
+without leak checks. Independent source review and the
+[resize results](owned-bytes-resize-results.md) preserve both fixture corrections,
+selected dependencies and unchanged PR73 assembly scope. No
+payload views, generic collections, kernel allocation or full-native claim follows.
+
 ## Runtime-capacity RAM sector device — 2026-10-07
 
 RamSectorDevice now owns one runtime-sized byte allocation through a private

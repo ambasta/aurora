@@ -212,6 +212,11 @@ public:
     int offset;          // saved i64 index and current u8 -> bool; false never writes
     int fieldIndex = -1; // -1: standalone owner; otherwise direct field at object root
 };
+class BytesResize {
+public:
+    int offset;          // current i64 length -> bool; preserves binding/token on either result
+    int fieldIndex = -1; // -1: standalone owner; otherwise direct field at object root
+};
 class EndBytes {
 public:
     int offset; // closes pristine, moved or live binding; preserves scalar state
@@ -426,6 +431,7 @@ using Instruction = std::variant<Constant,
                                  BytesLength,
                                  BytesLoad,
                                  BytesStore,
+                                 BytesResize,
                                  EndBytes,
                                  BindRegionParameter,
                                  BindBytesParameter,

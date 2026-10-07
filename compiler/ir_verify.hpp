@@ -1278,6 +1278,10 @@ inline void verifyFunction(Function &function,
                         current(Type::U8);
                         require(pop().type == Type::I64, "owned byte store index requires i64");
                         state.current = Value{Type::Bool, {}};
+                    } else if constexpr (std::is_same_v<Op, BytesResize>) {
+                        accessBytes(operation.offset, operation.fieldIndex, true);
+                        current(Type::I64);
+                        state.current = Value{Type::Bool, {}};
                     } else if constexpr (std::is_same_v<Op, EndBytes>) {
                         byteBinding(operation.offset);
                         state.activeBytes.erase(operation.offset);
