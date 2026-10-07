@@ -2,6 +2,7 @@
 """Independent private-ABI tests for owned 512-byte Blocks and 520-byte Reports.
 
 Usage: sector_values_abi.py PREBUILT_SECTOR_VALUES_IR [--work-dir DIR]
+       sector_values_abi.py PREBUILT_STACK_PROBES --stack-guards [--work-dir DIR]
 The fixture builds direct IR, never Aurora source. Every native execution has a
 handwritten boundary side; protocol bytes and offsets below do not call any
 production layout helper. Stack measurements inspect emitted fixture assembly,
@@ -11,6 +12,8 @@ not runtime high-water instrumentation or arbitrary-program resource bounds.
 import argparse
 import hashlib
 import json
+import os
+import platform
 from pathlib import Path
 import re
 import resource
@@ -251,6 +254,14 @@ def measure_stack(assembly):
         require(measured_in == [expected_in], f'{kind}: incoming prologue reservation {measured_in}')
         require(measured_target == [expected_in], f'{kind}: target prologue reservation {measured_target}')
         require(measured_out == [expected_out, record, 8], f'{kind}: outgoing stack reservations {measured_out}')
+        # Every allocation in these exact fixtures is below 4096 bytes, so the
+        # independent extents above remain single steps. Even such small steps
+        # need an endpoint probe before a later reservation can accumulate.
+        for text, sizes in ((incoming, [expected_in]), (target, [expected_in]),
+                            (outgoing, [expected_out, record])):
+            for size in sizes:
+                require(f'subq ${size}, %rsp\n    orq $0, (%rsp)\n' in text,
+                        f'{kind}: missing immediate {size}-byte endpoint probe')
         require(f'addq ${record}, %rsp' in outgoing, f'{kind}: packed argument cleanup')
         require('addq $8, %rsp' in outgoing, f'{kind}: odd-stack alignment cleanup')
         saves = {
@@ -319,10 +330,98 @@ def native_cases(assembly, work):
     return count
 
 
+def label_guard_probes(assembly):
+    """Add only symbol metadata at real emitted probes; never change instructions."""
+    expected = {
+        **{f'guard_frame_{size}': [4096] * (size // 4096) + ([size % 4096] if size % 4096 else [])
+           for size in (4080, 4096, 4112, 8192, 65536)},
+        'guard_target': [32],
+        'guard_call_even': [32, 16],
+        'guard_call_odd': [32, 16],
+        'guard_recursive': [512],
+    }
+    labeled = assembly
+    for symbol, reservations in expected.items():
+        original = body(assembly, symbol)
+        lines = original.splitlines(keepends=True)
+        require(lines[:2] == ['    pushq %rbp\n', '    movq %rsp, %rbp\n'],
+                f'{symbol}: frame-pointer preamble changed')
+        actual = [int(value) for value in re.findall(r'^    subq \$(\d+), %rsp$', original, re.M)]
+        require(actual == reservations + ([8] if symbol == 'guard_call_odd' else []),
+                f'{symbol}: independent reservation sizes changed: {actual}')
+        modified = []
+        probes = 0
+        for index, line in enumerate(lines):
+            if line == '    orq $0, (%rsp)\n':
+                require(probes < len(reservations) and index > 0 and
+                        lines[index - 1] == f'    subq ${reservations[probes]}, %rsp\n',
+                        f'{symbol}: probe is not the immediate expected reservation endpoint')
+                probes += 1
+                label = f'guard_probe_{symbol}_{probes}'
+                modified.extend([f'.globl {label}\n', f'{label}:\n'])
+            modified.append(line)
+        require(probes == len(reservations), f'{symbol}: missing or extra real emitted probe')
+        if symbol.startswith('guard_frame_'):
+            size = int(symbol.removeprefix('guard_frame_'))
+            at = 2 + 2 * len(reservations)
+            require(lines[at:at + 3] == ['    movabsq $42, %rax\n', f'    movq %rax, -{size}(%rbp)\n',
+                                       f'    movq -{size}(%rbp), %rax\n'],
+                    f'{symbol}: bottom-slot store/load must follow completed frame reservation')
+        labeled = replace(labeled, symbol, ''.join(modified))
+    stripped = re.sub(r'(?m)^\.globl (guard_probe_\w+)\n\1:\n', '', labeled)
+    require(stripped == assembly, 'guard labeling changed emitted instructions or other metadata')
+    require('    pushq %rax\n    subq $16, %rsp\n    orq $0, (%rsp)\n' in
+            body(assembly, 'guard_call_odd'), 'odd live operand must precede record reservation')
+    require('    subq $8, %rsp\n    call guard_target\n    addq $8, %rsp\n' in
+            body(assembly, 'guard_call_odd'), 'odd operand call alignment changed')
+    return labeled
+
+
+def stack_guard_cases(fixture, work):
+    # Fail closed before generating/building anything on an unsupported host.
+    require(platform.system() == 'Linux' and platform.machine() == 'x86_64' and
+            os.sysconf('SC_PAGE_SIZE') == 4096, 'stack guards require x86-64 Linux with 4096-byte pages')
+    assembly = run([fixture, '--emit-guard-fixtures']).decode()
+    require(0 < len(assembly.encode()) < 128 * 1024, 'unexpected guard-fixture assembly extent')
+    (work / 'guard-emitted.s').write_text(assembly)
+    (work / 'guard-labeled.s').write_text(label_guard_probes(assembly))
+    sources = Path(__file__).resolve().parent
+    # One executable is shared by the finite cases, not the large sector corpus.
+    # Existing run() supplies each subprocess's timeout and core0 soft/hard cap;
+    # the externally admitted native lane still owns its existing artifact caps.
+    run(['gcc', '-std=c11', '-O2', '-Wall', '-Wextra', '-Wpedantic', '-Werror',
+         '-fno-omit-frame-pointer', '-fno-stack-protector', '-no-pie', '-Wl,-z,now',
+         '-Wl,-z,noexecstack', sources / 'stack_guards.c', sources / 'stack_guards.S',
+         work / 'guard-labeled.s', '-o', work / 'stack-guards'])
+    cases = (
+        'fit-subpage', 'fit-page', 'fit-tail', 'fit-two-page', 'fit-max',
+        'guard-page', 'guard-tail', 'guard-two-page', 'guard-max',
+        'fit-cumulative-even', 'fit-cumulative-odd', 'guard-cumulative-even', 'guard-cumulative-odd',
+        'fit-recursion', 'guard-recursion',
+    )
+    for name in cases:
+        run([work / 'stack-guards', name])
+        print('PASS stack guard', name, flush=True)
+    print(f'PASS stack guards: {len(cases)} disposable-child cases; probe PC/address, alternate stack, '
+          'full landing canaries and return/register restoration checked', flush=True)
+
+
+def sector_abi_cases(fixture, work):
+    assembly = run([fixture, '--emit-abi']).decode()
+    (work / 'fixture.s').write_text(assembly)
+    measurements = measure_stack(assembly)
+    (work / 'stack-measurements.json').write_text(json.dumps(measurements, indent=2) + '\n')
+    print('Emitted stack measurements: ' + json.dumps(measurements, sort_keys=True), flush=True)
+    count = native_cases(assembly, work)
+    print(f'PASS sector ABI: {count} independent native cases; all payload bytes and status checked', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('fixture', type=Path)
     parser.add_argument('--work-dir', type=Path)
+    parser.add_argument('--stack-guards', action='store_true',
+                        help='run only disposable-child stack guards using PREBUILT_STACK_PROBES')
     args = parser.parse_args()
     fixture = args.fixture.resolve()
     work = args.work_dir.resolve() if args.work_dir else Path(tempfile.mkdtemp(prefix='aurora-sector-abi-'))
@@ -330,15 +429,12 @@ def main():
     print(f'fixture sha256={hashlib.sha256(fixture.read_bytes()).hexdigest()}', flush=True)
     print(f'work directory: {work}', flush=True)
     try:
-        assembly = run([fixture, '--emit-abi']).decode()
-        (work / 'fixture.s').write_text(assembly)
-        measurements = measure_stack(assembly)
-        (work / 'stack-measurements.json').write_text(json.dumps(measurements, indent=2) + '\n')
-        print('Emitted stack measurements: ' + json.dumps(measurements, sort_keys=True), flush=True)
-        count = native_cases(assembly, work)
-        print(f'PASS sector ABI: {count} independent native cases; all payload bytes and status checked', flush=True)
+        if args.stack_guards:
+            stack_guard_cases(fixture, work)
+        else:
+            sector_abi_cases(fixture, work)
     except Exception:
-        print(f'FAIL: retained sector ABI artifacts in {work}', flush=True)
+        print(f'FAIL: retained ABI artifacts in {work}', flush=True)
         raise
     else:
         if not args.work_dir:

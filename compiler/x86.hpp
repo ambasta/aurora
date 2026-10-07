@@ -68,6 +68,23 @@ class X86Emitter {
         return ".Lau" + std::to_string(functionIndex) + "_" + std::to_string(id);
     }
     std::string returnLabel() { return ".Lreturn" + std::to_string(functionIndex); }
+    void reserveStack(int bytes) {
+        // Verified frames and call records are nonnegative multiples of 16.
+        // Touch every new page and the final remainder before another downward
+        // adjustment. The qword is wholly inside this new reservation, at RSP,
+        // never in a red zone. No argument or hidden-capability GPR is clobbered.
+        // Flags are dead at both callers, as with their previous SUB instruction.
+        if (bytes == 0) {
+            line("subq $0, %rsp");
+            return;
+        }
+        while (bytes > 0) {
+            const int step = std::min(bytes, 4096);
+            line("subq $" + std::to_string(step) + ", %rsp");
+            line("orq $0, (%rsp)");
+            bytes -= step;
+        }
+    }
     void push() {
         line("pushq %rax");
         ++stackDepth;
@@ -124,7 +141,7 @@ class X86Emitter {
                 pop(argumentRegisters[index - 1]);
         const int recordBytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
         if (recordBytes)
-            line("subq $" + std::to_string(recordBytes) + ", %rsp");
+            reserveStack(recordBytes);
         // Clear only representation gaps. Verified payload copies initialize
         // their own bytes; old all-word objects need no redundant zero stores.
         for (std::size_t index = 0; index < target.parameters.size(); ++index) {
@@ -629,7 +646,7 @@ class X86Emitter {
             // alignment; every historical mode retains its original layout.
             const int frameBytes = function.frameBytes +
                                    (combinedMethod ? 32 : function.receiver || aggregate ? 16 : 0);
-            line("subq $" + std::to_string(frameBytes) + ", %rsp");
+            reserveStack(frameBytes);
             if (function.receiver)
                 line("movq %r10, " + address(receiverSaveOffset));
             if (packedArguments)
