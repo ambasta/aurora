@@ -28,3 +28,20 @@ ram_record_assembly = custom_target(
     build_by_default: true,
     install: false,
 )
+
+sector_record_assembly = custom_target(
+    'sector-record-example',
+    input: 'sector_record.au',
+    output: 'sector_record.s',
+    command: [aurorac, '--module-root', meson.project_source_root() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+    depend_files: files(
+      '../storage/sector.au',
+      '../storage/block.au',
+      '../storage/block_codec.au',
+      '../std/binary_writer.au',
+      '../std/bytes.au',
+      '../std/binary.au',
+    ),
+    build_by_default: true,
+    install: false,
+)

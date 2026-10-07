@@ -1,0 +1,60 @@
+export module storage.sector;
+import storage.block;
+
+export namespace storage {
+    class Sector512 {
+        builtin::array<u8, 512> elements;
+    public:
+        Sector512() : elements{} {}
+
+        auto size() const -> i64 {
+            return 512;
+        }
+
+        auto read_byte(i64 offset) const -> BlockByteResult {
+            if (offset < 0 || offset >= 512) {
+                const BlockByteResult failure = BlockByteResult(BlockStatus::out_of_range, 0u8);
+                return failure;
+            }
+            const BlockByteResult result = BlockByteResult(BlockStatus::success, elements[offset]);
+            return result;
+        }
+
+        auto write_byte(i64 offset, u8 value) -> BlockStatus {
+            if (offset < 0 || offset >= 512) {
+                return BlockStatus::out_of_range;
+            }
+            elements[offset] = value;
+            return BlockStatus::success;
+        }
+
+        auto read_window(i64 offset) const -> BlockReadResult {
+            if (offset < 0 || offset > 448) {
+                const Block64 zero = Block64();
+                const BlockReadResult failure = BlockReadResult(BlockStatus::out_of_range, zero);
+                return failure;
+            }
+            Block64 block = Block64();
+            i64 index = 0;
+            while (index < 64) {
+                block.write_byte(index, elements[offset + index]);
+                index = index + 1;
+            }
+            const BlockReadResult result = BlockReadResult(BlockStatus::success, block);
+            return result;
+        }
+
+        auto write_window(i64 offset, Block64 block) -> BlockStatus {
+            if (offset < 0 || offset > 448) {
+                return BlockStatus::out_of_range;
+            }
+            i64 index = 0;
+            while (index < 64) {
+                const BlockByteResult byte = block.read_byte(index);
+                elements[offset + index] = byte.value_or(0u8);
+                index = index + 1;
+            }
+            return BlockStatus::success;
+        }
+    };
+}

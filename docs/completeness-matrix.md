@@ -1,5 +1,18 @@
 # Completeness and acceptance matrix
 
+## Owned sector library candidate — 2026-10-07
+
+`storage::Sector512` owns a zeroed 512-byte array and exposes checked byte access
+and independent copied 64-byte record windows. Whole-range preflight preserves
+every byte on invalid writes. The [contract](sector-contract.md) composes the
+existing block conversions, writer and readers instead of duplicating endian
+logic. All 43 native cases, nine rejections and a header/trailer record example
+passed in normal and optimized Python modes, including all 512 byte positions
+and all 449 window offsets. Five complete dependency runners also passed.
+The two fixture corrections and fresh replay after source recovery are documented.
+No compiler extension, device, durability, filesystem mount, kernel admission
+or full-aggregate claim is added.
+
 ## Owned sector-sized values: focused candidate — 2026-10-07
 
 Private 512-byte arrays and complete copied status/payload reports now pass the
