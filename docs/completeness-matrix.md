@@ -1,5 +1,15 @@
 # Completeness and acceptance matrix
 
+## Incremental bootstrap prototype — 2026-10-07
+
+An optional Meson/Ninja graph builds the native C++23 compiler, one existing C++
+fixture and Aurora storage-codec example assembly. A named `bytes` suite runs the three
+existing byte/storage scripts directly in isolated temporary outputs. This leaves
+Make and all firmware workflows unchanged. On GCC 14/Meson 1.12.1, an unchanged
+rebuild ran no compiler commands; header and library edits rebuilt only their
+dependent targets. All three bytes scripts passed twice with observed parallel
+overlap, and the C++ fixture passed. See [measurements and limits](meson-bootstrap.md).
+
 ## Verified owned storage-field codecs — 2026-10-07
 
 `std.bytes` adds owned two/eight-byte values and explicit LE/BE16/64 encoding and
