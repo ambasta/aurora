@@ -146,8 +146,10 @@ inline void verifyFunction(Function &function,
                 "constructor result must remain scalar");
         require(type.isClass() && type == Type(type.className), "invalid value boundary type");
         require(classLayouts.contains(type.className), "unknown value boundary class");
-        require(classLayouts.at(type.className).size() <= 64,
-                "value boundary class exceeds 64 scalar fields");
+        require(copiedClassLeavesSupported(classLayouts.at(type.className)),
+                "value boundary class exceeds 64 scalar fields excluding u8, 512 u8 leaves or 513 total leaves");
+        require(storage.at(type.className).reservedBytes <= maximumCopiedClassBytes,
+                "value boundary class storage exceeds 520 bytes");
     };
     boundaryType(function.result, false);
     require(function.parameters.size() <= 6, "too many parameters");
@@ -1393,7 +1395,7 @@ inline ValidatedModule validate(Module module) {
                                           module.classLayouts.contains(field.elementType.className),
                                       "invalid nominal nested class field");
                 const auto &childLayout = module.classLayouts.at(field.elementType.className);
-                verification::require(field.length >= 0 && field.length <= 64 &&
+                verification::require(field.length >= 0 && field.length <= maximumCopiedClassLeaves &&
                                           static_cast<std::size_t>(field.length) ==
                                               childLayout.size(),
                                       "nested class field length mismatch");
@@ -1407,7 +1409,8 @@ inline ValidatedModule validate(Module module) {
                     (field.array
                          ? scalar(field.elementType)
                          : verification::scalarValueType(field.elementType, module.enumCases)) &&
-                        field.length >= 1 && field.length <= (field.array ? 64 : 1),
+                        field.length >= 1 &&
+                        field.length <= (field.array ? maximumClassArrayLength(field.elementType) : 1),
                     "invalid logical class field shape");
                 verification::require(nextLeaf + static_cast<std::size_t>(field.length) <=
                                           layout.size(),
@@ -1420,8 +1423,9 @@ inline ValidatedModule validate(Module module) {
         }
         verification::require(nextLeaf == layout.size(),
                               "logical class fields do not cover complete layout");
-        verification::require(!composed || layout.size() <= 64,
-                              "composed class exceeds 64 scalar leaves");
+        verification::require(!composed || copiedClassLeavesSupported(layout),
+                              "composed class exceeds 64 scalar leaves excluding u8, "
+                              "512 u8 leaves or 513 total leaves");
     }
     // The graph walk is bounded before recursion, including zero-leaf cycles.
     // Leaf vectors alone cannot establish the logical shape or nesting depth.
@@ -1448,6 +1452,13 @@ inline ValidatedModule validate(Module module) {
         depth(name, 1);
     const auto canonicalStorage =
         computeClassStorageLayouts(module.classLayouts, module.classFields);
+    for (const auto &[name, fields] : module.classFields) {
+        const bool composed = std::any_of(fields.begin(), fields.end(), [](const ClassField &field) {
+            return field.elementType.isClass();
+        });
+        verification::require(!composed || canonicalStorage.at(name).reservedBytes <= maximumCopiedClassBytes,
+                              "composed class storage exceeds 520 bytes");
+    }
     verification::require(module.classStorage.empty() || module.classStorage == canonicalStorage,
                           "noncanonical class storage metadata");
     module.classStorage = canonicalStorage;

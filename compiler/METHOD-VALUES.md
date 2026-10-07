@@ -1,5 +1,9 @@
 # Copied ordinary method parameters (verified milestone022)
 
+The [sector-sized value candidate](SECTOR-VALUES.md) narrowly extends
+byte-array and copied-value limits below; its acceptance is separate from all
+historical results recorded here. Non-byte and template-capacity bounds remain.
+
 Status: complete release/fatal host ASan/UBSan compiler targets, independent
 frozen-source review, parent adoption/rebuild, fresh aggregate and all 166 existing
 emulator modes passed. Separate normal BIOS/UEFI boots restored both images.

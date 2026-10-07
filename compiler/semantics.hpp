@@ -67,9 +67,6 @@ class SemanticAnalyzer {
             return classDefinition(type, token).id;
         return static_cast<int>(type.kind) + 1;
     }
-    std::int64_t classWords(const ClassDefinition &definition) const {
-        return static_cast<std::int64_t>(classLeaves.at(definition.name).size());
-    }
     void buildClassLayout(const std::string &name, int nesting = 1) {
         const auto found = classNames.find(name);
         if (found == classNames.end())
@@ -100,11 +97,12 @@ class SemanticAnalyzer {
                 depth = std::max(depth, 1 + classDepths.at(member.type.className));
             } else if (member.type.isArray()) {
                 needsConstructor = true;
-                if (member.publicAccess || member.type.length < 1 || member.type.length > 64 ||
+                if (member.publicAccess || member.type.length < 1 ||
+                    member.type.length > maximumClassArrayLength(Type(member.type.elementKind)) ||
                     !scalar(Type(member.type.elementKind)) ||
                     !member.type.elementParameter.empty() || !member.type.lengthParameter.empty())
                     fail(member.token, "class array fields require private concrete scalar "
-                                       "storage of length 1 to 64");
+                                       "storage of length 1 to 64, or 1 to 512 for u8");
                 typeId(member.type, member.token);
                 leaves.insert(leaves.end(), member.type.length, Type(member.type.elementKind));
             } else {
@@ -118,11 +116,12 @@ class SemanticAnalyzer {
                 static_cast<int>(leaves.size()) - firstLeaf, member.type.isArray()});
             if (leaves.size() > maxFrameSlots)
                 fail(definition.token, "class layout exceeds 65536 bytes");
-            if (composed && leaves.size() > 64)
-                fail(definition.token, "composed classes are limited to 64 scalar leaves");
+            if (composed && !ir::copiedClassLeavesSupported(leaves))
+                fail(definition.token, "composed classes are limited to 64 non-byte scalar leaves, "
+                                       "512 u8 leaves and 513 total leaves");
         }
-        if (composed && (depth > 4 || leaves.size() > 64))
-            fail(definition.token, "composed class exceeds depth four or 64 scalar leaves");
+        if (composed && depth > 4)
+            fail(definition.token, "composed class exceeds depth four");
         if (needsConstructor &&
             std::none_of(definition.methods.begin(), definition.methods.end(),
                          [](const Function &method) { return method.constructor; }))
@@ -1349,6 +1348,12 @@ class SemanticAnalyzer {
         for (const auto &definition : classes)
             buildClassLayout(definition.name);
         classStorage = ir::computeClassStorageLayouts(classLeaves, classShapes);
+        for (const auto &definition : classes) {
+            const bool composed = std::any_of(definition.fields.begin(), definition.fields.end(),
+                                             [](const Field &member) { return member.type.isClass(); });
+            if (composed && classStorage.at(definition.name).reservedBytes > maximumCopiedClassBytes)
+                fail(definition.token, "composed class storage exceeds 520 bytes");
+        }
         for (auto &definition : classes)
             for (auto &member : definition.fields)
                 member.offset = classStorage.at(definition.name).fieldOffsets.at(member.index);
@@ -1369,10 +1374,15 @@ class SemanticAnalyzer {
                                  "methods require scalar, enum or class parameters");
             }
             auto checkBoundaryType = [&](const Type &type) {
-                if (type.isClass() &&
-                    classWords(classDefinition(type, sourceFunctions[i].token)) > 64)
+                if (!type.isClass())
+                    return;
+                const auto &name = classDefinition(type, sourceFunctions[i].token).name;
+                if (!ir::copiedClassLeavesSupported(classLeaves.at(name)))
                     fail(sourceFunctions[i].token, "function-boundary classes are limited to 64 "
-                                                   "scalar fields or flattened leaf words");
+                                                   "scalar fields excluding u8, 512 u8 leaves and "
+                                                   "513 total leaves");
+                if (classStorage.at(name).reservedBytes > maximumCopiedClassBytes)
+                    fail(sourceFunctions[i].token, "function-boundary class storage exceeds 520 bytes");
             };
             checkBoundaryType(sourceFunctions[i].result);
             for (const auto &parameter : sourceFunctions[i].params)

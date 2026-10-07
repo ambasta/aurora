@@ -8,6 +8,13 @@ namespace aurora::ir {
 // storage slots. Numeric range and occupied storage width are distinct contracts.
 inline int storageWidth(const Type &type) { return type == Type::U8 ? 1 : 8; }
 inline int storageAlignment(const Type &type) { return storageWidth(type); }
+inline bool copiedClassLeavesSupported(const std::vector<Type> &leaves) {
+    if (leaves.size() > maximumCopiedClassLeaves)
+        return false;
+    const auto bytes = std::count(leaves.begin(), leaves.end(), Type::U8);
+    return bytes <= maximumCopiedByteLeaves &&
+           leaves.size() - static_cast<std::size_t>(bytes) <= maximumCopiedNonByteLeaves;
+}
 inline int roundedStorage(int bytes) {
     if (bytes < 0 || bytes > 65536)
         throw Error("IR: storage extent exceeds 65536 bytes");
@@ -59,7 +66,7 @@ computeClassStorageLayouts(const std::map<std::string, std::vector<Type>> &leave
             } else {
                 if (!(field.array ? scalar(field.elementType) : scalarValue(field.elementType)) ||
                     field.length < 1 || (!field.array && field.length != 1) ||
-                    (field.array && field.length > 64))
+                    (field.array && field.length > maximumClassArrayLength(field.elementType)))
                     throw Error("IR: invalid scalar field storage shape");
                 align(storageAlignment(field.elementType));
                 layout.fieldOffsets.push_back(cursor);

@@ -1,5 +1,9 @@
 # Bounded inline value composition
 
+The [sector-sized value candidate](SECTOR-VALUES.md) narrowly extends
+byte-array and copied-value limits below; its acceptance is separate from all
+historical results recorded here. Non-byte and template-capacity bounds remain.
+
 This is the milestone011 implementation contract. Exact verified source and
 integration evidence are recorded in ../docs/verification.md; this contract is
 not a proof of whole-language safety.

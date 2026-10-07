@@ -676,8 +676,10 @@ class Parser {
                         if (publicAccess)
                             fail("array fields must be private");
                         if (fieldType.lengthParameter.empty() &&
-                            (fieldType.length < 1 || fieldType.length > 64))
-                            fail("class array field capacity must be between 1 and 64");
+                            (fieldType.length < 1 ||
+                             fieldType.length > maximumClassArrayLength(Type(fieldType.elementKind))))
+                            fail("class array field capacity must be between 1 and " +
+                                 std::to_string(maximumClassArrayLength(Type(fieldType.elementKind))));
                     } else if (!scalarOrParameter(fieldType) && !fieldType.isClass())
                         fail("class fields require scalar, class or private fixed-array storage");
                     need(";");

@@ -23,6 +23,7 @@ foreach entry : [
     ['block-value', 'compiler/block_value.py', 'bytes'],
     ['ram-blocks', 'compiler/ram_blocks.py', 'bytes'],
     ['packed-values', 'compiler/packed_values.py', 'bytes'],
+    ['sector-values', 'compiler/sector_values.py', 'bytes'],
     ['storage-binary', 'compiler/storage_binary.py', 'bytes'],
 ]
     test(
@@ -50,6 +51,25 @@ test(
     initialization_facts,
     suite: ['dev', 'core', 'compiler'],
     timeout: 120,
+)
+
+sector_values_ir = executable(
+    'sector-values-ir',
+    'compiler/sector_values_ir.cpp',
+    include_directories: include_directories('../compiler'),
+    native: true,
+    install: false,
+)
+test('sector-values-ir', sector_values_ir, suite: ['dev', 'bytes', 'compiler'], timeout: 120)
+test(
+    'sector-values-abi',
+    python,
+    args: ['-B', '-O', files('compiler/sector_values_abi.py'), sector_values_ir],
+    depends: sector_values_ir,
+    suite: ['dev', 'bytes', 'compiler'],
+    env: oracle_env,
+    workdir: meson.current_build_dir(),
+    timeout: 180,
 )
 
 # Named semantic selections, explicitly partial; Meson/Ninja builds aurorac.

@@ -1,0 +1,349 @@
+#!/usr/bin/env python3
+"""Independent private-ABI tests for owned 512-byte Blocks and 520-byte Reports.
+
+Usage: sector_values_abi.py PREBUILT_SECTOR_VALUES_IR [--work-dir DIR]
+The fixture builds direct IR, never Aurora source. Every native execution has a
+handwritten boundary side; protocol bytes and offsets below do not call any
+production layout helper. Stack measurements inspect emitted fixture assembly,
+not runtime high-water instrumentation or arbitrary-program resource bounds.
+"""
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import resource
+import shutil
+import subprocess
+import tempfile
+
+
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+def run(command, expected_exit=0):
+    completed = subprocess.run(
+        [str(part) for part in command],
+        capture_output=True,
+        timeout=60,
+        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
+    )
+    require(
+        completed.returncode == expected_exit,
+        f'{command}: exit {completed.returncode}, stdout={completed.stdout!r}, stderr={completed.stderr!r}',
+    )
+    return completed.stdout
+
+
+def report(record):
+    status = (0x1100000000000000 + record).to_bytes(8, 'little')
+    payload = bytes((byte * 37 + record * 53 + (byte // 256) * 17) % 256 for byte in range(512))
+    return status + payload
+
+
+# Literal wire contract: status at 0, nested Block at 8, next Report at 520.
+# Six canonical reservations total 3120, already aligned to 16. There is no
+# additional return record. Result storage is independently pointed to.
+RECORD = b''.join(report(record) for record in range(6))
+RESULT = report(5)
+BLOCK = RESULT[8:520]
+require(len(RECORD) == 3120 and len(RESULT) == 520 and len(BLOCK) == 512, 'literal protocol lengths')
+
+ALIGN = '''movq %rsp, %rcx
+andq $15, %rcx
+cmpq $8, %rcx
+jne .Labi_fail
+'''
+POISON = '''movq $-101, %rdi
+movq $-102, %rsi
+movq $-103, %rdx
+movq $-104, %rcx
+movq $-105, %r8
+movq $-106, %r9
+movq $-107, %rax
+movq $-108, %r10
+movq $-109, %r11
+'''
+
+
+def data(name, contents):
+    return name + ':\n.byte ' + ','.join(str(byte) for byte in contents) + '\n'
+
+
+def body(assembly, symbol):
+    pattern = rf'(?m)^{re.escape(symbol)}:\n([\s\S]*?)^\.size {re.escape(symbol)},[^\n]*\n'
+    matches = re.findall(pattern, assembly)
+    require(len(matches) == 1, f'exactly one fixture body {symbol}')
+    return matches[0]
+
+
+def replace(assembly, symbol, replacement):
+    original = body(assembly, symbol)
+    return assembly.replace(f'{symbol}:\n{original}.size {symbol},',
+                            f'{symbol}:\n{replacement}.size {symbol},', 1)
+
+
+def compare_bytes(pointer, expected, size, label):
+    return f'''xorq %rcx, %rcx
+.Lcompare_{label}:
+movzbq ({pointer},%rcx), %rsi
+cmpb {expected}(%rcx), %sil
+jne .Labi_fail
+incq %rcx
+cmpq ${size}, %rcx
+jne .Lcompare_{label}
+'''
+
+
+def disjoint(first, first_size, second, second_size, label):
+    return f'''leaq {first_size}({first}), %r8
+cmpq {second}, %r8
+jbe .Ldisjoint_{label}
+leaq {second_size}({second}), %r9
+cmpq {first}, %r9
+ja .Labi_fail
+.Ldisjoint_{label}:
+'''
+
+
+def canaries():
+    code = ''
+    for name, value in [('record_left', 0x5252525252525252), ('record_right', 0x5353535353535353),
+                        ('result_left', 0x6161616161616161), ('result_right', 0x6262626262626262),
+                        ('receiver_left', 0x7171717171717171), ('receiver_right', 0x7272727272727272)]:
+        code += f'movabsq ${value:#x}, %rsi\ncmpq %rsi, {name}\njne .Labi_fail\n'
+    return code
+
+
+def incoming_setup(kind):
+    code = POISON + 'leaq input_record, %r11\n'
+    if kind == 'method':
+        code += 'leaq receiver, %r10\nleaq result, %rax\n'
+    else:
+        code += 'leaq result, %r10\n'
+    return code + f'call sector_in_{kind}\n'
+
+
+def result_check(size):
+    return ('leaq result, %rdx\n' + compare_bytes('%rdx', 'expected_result', size, 'result')
+            + canaries() + 'movq $42, %rax\n')
+
+
+def independent_target(kind, corrupt=False):
+    size = 512 if kind == 'block' else 520
+    record_size = 512 if kind == 'block' else 3120
+    record_from_rbp = 1560 if kind == 'block' else 6792
+    result_register = '%rax' if kind == 'method' else '%r10'
+    code = ALIGN + f'movq {result_register}, %rdx\n'
+    code += f'''testq $7, %rdx
+jnz .Labi_fail
+leaq 16(%rsp), %rsi
+cmpq %rsi, %r11
+jne .Labi_fail
+leaq -{record_from_rbp}(%rbp), %rsi
+cmpq %rsi, %r11
+jne .Labi_fail
+cmpq $1, {record_size}(%r11)
+jne .Labi_fail
+'''
+    code += disjoint('%rdx', size, '%r11', record_size, 'result_record')
+    if kind == 'method':
+        code += 'cmpq $1000, (%r10)\njne .Labi_fail\n'
+        code += disjoint('%rdx', size, '%r10', 8, 'result_receiver')
+        code += disjoint('%r10', 8, '%r11', record_size, 'receiver_record')
+    code += compare_bytes('%r11', 'expected_record', record_size, 'outgoing')
+    code += f'''xorq %rcx, %rcx
+.Lwrite_result:
+movzbq expected_result(%rcx), %rsi
+movb %sil, (%rdx,%rcx)
+incq %rcx
+cmpq ${size}, %rcx
+jne .Lwrite_result
+'''
+    if corrupt:
+        code += f'xorb $1, {size - 1}(%rdx)\n'
+    return code + 'movq $-111, %r10\nmovq $-112, %r11\nxorq %rax, %rax\nret\n'
+
+
+def overwrite_original():
+    return ALIGN + '''xorq %rcx, %rcx
+.Loverwrite_original:
+movb $165, input_record(%rcx)
+incq %rcx
+cmpq $3120, %rcx
+jne .Loverwrite_original
+movq $-111, %r10
+movq $-112, %r11
+movq $-113, %rax
+ret
+'''
+
+
+def native_test(work, number, name, assembly, entry, replacements=None, input_record=RECORD,
+                expected_result=RESULT, expected=42, expected_exit=0):
+    case = work / f'{number:02d}-{name}'
+    case.mkdir()
+    code = assembly
+    for symbol, replacement in (replacements or {}).items():
+        code = replace(code, symbol, replacement)
+    code += '\n.text\n.globl _start\n_start:\n' + entry
+    code += f'''cmpq ${expected}, %rax
+jne .Labi_fail
+movq $60, %rax
+xorq %rdi, %rdi
+syscall
+.Labi_fail:
+movq $60, %rax
+movq $91, %rdi
+syscall
+.data
+.balign 16
+receiver_left: .quad 0x7171717171717171
+receiver: .quad 1000
+receiver_right: .quad 0x7272727272727272
+record_left: .quad 0x5252525252525252
+'''
+    code += data('input_record', input_record)
+    code += 'record_right: .quad 0x5353535353535353\n'
+    code += data('expected_record', BLOCK if len(input_record) == 512 else RECORD)
+    code += data('expected_result', expected_result)
+    code += f'''result_left: .quad 0x6161616161616161
+result: .fill {len(expected_result)},1,204
+result_right: .quad 0x6262626262626262
+.section .note.GNU-stack,"",@progbits
+'''
+    (case / 'program.s').write_text(code)
+    run(['as', '--64', case / 'program.s', '-o', case / 'program.o'])
+    symbols = run(['nm', case / 'program.o']).decode()
+    for kind in ['function', 'constructor', 'method', 'block']:
+        for prefix in ['sector_in_', 'sector_out_', 'sector_target_']:
+            symbol = prefix + kind
+            require(re.search(rf'\bt {symbol}$', symbols, re.M), f'{name}: {symbol} lost private binding')
+    run(['ld', '-o', case / 'program', case / 'program.o'])
+    run([case / 'program'], expected_exit=expected_exit)
+    print('PASS sector ABI', name, flush=True)
+
+
+def measure_stack(assembly):
+    measurements = {
+        'method': 'Exact static analysis of emitted controlled fixtures; not runtime high-water instrumentation.',
+        'origin': 'Bytes below the initial aligned _start stack pointer, including its call return address.',
+        'no_general_program_bound': True,
+        'modes': {},
+    }
+    require('subq $0, %rsp' in body(assembly, 'sector_clobber'), 'generated clobber has zero source frame')
+    for kind in ['function', 'constructor', 'method', 'block']:
+        source_in = 512 if kind == 'block' else 3120
+        source_out = 1024 if kind == 'block' else 3648
+        record = 512 if kind == 'block' else 3120
+        expected_in = source_in + (32 if kind == 'method' else 16)
+        expected_out = source_out + 16
+        incoming = body(assembly, 'sector_in_' + kind)
+        target = body(assembly, 'sector_target_' + kind)
+        outgoing = body(assembly, 'sector_out_' + kind)
+        reservations = lambda text: [int(value) for value in re.findall(r'subq \$(\d+), %rsp', text)]
+        measured_in = reservations(incoming)
+        measured_target = reservations(target)
+        measured_out = reservations(outgoing)
+        require(measured_in == [expected_in], f'{kind}: incoming prologue reservation {measured_in}')
+        require(measured_target == [expected_in], f'{kind}: target prologue reservation {measured_target}')
+        require(measured_out == [expected_out, record, 8], f'{kind}: outgoing stack reservations {measured_out}')
+        require(f'addq ${record}, %rsp' in outgoing, f'{kind}: packed argument cleanup')
+        require('addq $8, %rsp' in outgoing, f'{kind}: odd-stack alignment cleanup')
+        saves = {
+            'function': [('r11', 3128), ('r10', 3136)],
+            'constructor': [('r10', 3128), ('r11', 3136)],
+            'method': [('r10', 3128), ('r11', 3136), ('rax', 3144)],
+            'block': [('r11', 520), ('r10', 528)],
+        }[kind]
+        for register, offset in saves:
+            require(f'movq %{register}, -{offset}(%rbp)' in incoming, f'{kind}: exact hidden save {register}')
+        # Both generated and handwritten target callees have a return address;
+        # only the generated target additionally pushes rbp and reserves its frame.
+        handwritten_peak = 16 + measured_out[0] + 8 + measured_out[1] + measured_out[2] + 8
+        generated_peak = handwritten_peak + 8 + measured_target[0]
+        incoming_peak = 16 + measured_in[0] + (0 if kind == 'block' else 16)
+        measurements['modes'][kind] = {
+            'incoming_source_frame_bytes': source_in,
+            'incoming_prologue_reserved_bytes': measured_in[0],
+            'incoming_hidden_reserved_bytes': measured_in[0] - source_in,
+            'outgoing_source_frame_bytes': source_out,
+            'outgoing_prologue_reserved_bytes': measured_out[0],
+            'packed_argument_record_bytes': measured_out[1],
+            'live_scalar_operand_bytes_at_call': 8,
+            'odd_depth_alignment_bytes': measured_out[2],
+            'incoming_generated_chain_peak_bytes': incoming_peak,
+            'outgoing_handwritten_target_chain_peak_bytes': handwritten_peak,
+            'outgoing_generated_target_chain_peak_bytes': generated_peak,
+            'additional_return_record_bytes': 0,
+        }
+    return measurements
+
+
+def native_cases(assembly, work):
+    count = 0
+
+    def test(name, entry, **options):
+        nonlocal count
+        native_test(work, count, name, assembly, entry, **options)
+        count += 1
+
+    for kind in ['function', 'constructor', 'method']:
+        test('incoming-six-reports-' + kind, incoming_setup(kind) + result_check(520))
+        test('incoming-owned-snapshots-' + kind, incoming_setup(kind) + result_check(520),
+             replacements={'sector_clobber': overwrite_original()})
+        outgoing = POISON + 'leaq input_record, %r11\n' + f'call sector_out_{kind}\n' + canaries()
+        test('outgoing-six-reports-' + kind, outgoing, expected=43,
+             replacements={'sector_target_' + kind: independent_target(kind)})
+        bad_payload = bytearray(RECORD)
+        bad_payload[3 * 520 + 8 + 511] ^= 1
+        test('control-last-byte-input-' + kind, incoming_setup(kind) + result_check(520),
+             input_record=bad_payload, expected_exit=91)
+        bad_status = bytearray(RECORD)
+        bad_status[4 * 520 + 7] ^= 1
+        test('control-high-status-byte-' + kind, incoming_setup(kind) + result_check(520),
+             input_record=bad_status, expected_exit=91)
+        test('control-last-byte-result-' + kind, outgoing, expected=43, expected_exit=91,
+             replacements={'sector_target_' + kind: independent_target(kind, corrupt=True)})
+    test('incoming-512-byte-block', incoming_setup('block') + result_check(512),
+         input_record=BLOCK, expected_result=BLOCK)
+    outgoing_block = POISON + 'leaq input_record, %r11\ncall sector_out_block\n' + canaries()
+    test('outgoing-512-byte-block', outgoing_block, expected=43, input_record=BLOCK, expected_result=BLOCK,
+         replacements={'sector_target_block': independent_target('block')})
+    test('control-last-byte-block-result', outgoing_block, expected=43, expected_exit=91,
+         input_record=BLOCK, expected_result=BLOCK,
+         replacements={'sector_target_block': independent_target('block', corrupt=True)})
+    return count
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('fixture', type=Path)
+    parser.add_argument('--work-dir', type=Path)
+    args = parser.parse_args()
+    fixture = args.fixture.resolve()
+    work = args.work_dir.resolve() if args.work_dir else Path(tempfile.mkdtemp(prefix='aurora-sector-abi-'))
+    work.mkdir(parents=True, exist_ok=True)
+    print(f'fixture sha256={hashlib.sha256(fixture.read_bytes()).hexdigest()}', flush=True)
+    print(f'work directory: {work}', flush=True)
+    try:
+        assembly = run([fixture, '--emit-abi']).decode()
+        (work / 'fixture.s').write_text(assembly)
+        measurements = measure_stack(assembly)
+        (work / 'stack-measurements.json').write_text(json.dumps(measurements, indent=2) + '\n')
+        print('Emitted stack measurements: ' + json.dumps(measurements, sort_keys=True), flush=True)
+        count = native_cases(assembly, work)
+        print(f'PASS sector ABI: {count} independent native cases; all payload bytes and status checked', flush=True)
+    except Exception:
+        print(f'FAIL: retained sector ABI artifacts in {work}', flush=True)
+        raise
+    else:
+        if not args.work_dir:
+            shutil.rmtree(work)
+
+
+if __name__ == '__main__':
+    main()
