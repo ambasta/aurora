@@ -1,5 +1,22 @@
 # Completeness and acceptance matrix
 
+## Shared LSP document formatting candidate — 2026-10-07
+
+The optional language server now routes whole-document formatting through the
+existing compiler-owned formatter. It uses the latest accepted open snapshot,
+reauthorizes the existing local file, and returns one complete UTF-16 edit or
+an empty result without source writes. Canonical options, malformed source,
+closed/URI-mismatched buffers and bounded-output failures fail explicitly.
+The [contract](../compiler/lsp/README.md#document-formatting) describes protocol,
+comment-preservation and client-side version limits. Independent source review
+accepted the candidate. A fresh warning-clean build passed 49 helper checks
+and 118 actual-server protocol cases in each Python mode. The unchanged
+formatter passed 84 corpus sources and 128 seeded trivia variants; its 30 CLI
+cases passed in each Python mode. The [focused results](lsp-formatting-results.md)
+record exact inputs and bounds. Independent retained-evidence and final-claim
+review accepted this bounded checkpoint. No new parser, semantic
+feature, editor UI, full native aggregate or kernel qualification is claimed.
+
 ## Test-only IOMMU translation oracle candidate — 2026-10-07
 
 A separate hosted AMD 3.10 Mode 0/1 oracle interprets copied bytes without a

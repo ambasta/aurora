@@ -220,6 +220,47 @@ class Session {
         documents.erase(found);
         refresh();
     }
+    void formatting(const Json &id, const Json &params) {
+        try {
+            const auto &identifier = field(params, "textDocument");
+            const auto uri = stringField(identifier, "uri");
+            const auto found = documents.find(pathFromUri(uri));
+            if (found == documents.end() || found->second.uri != uri)
+                throw ProtocolError("formatting requires the open document URI");
+            const auto &options = field(params, "options");
+            const auto &tabSize = field(options, "tabSize");
+            if (!options.is_object() || options.size() != 2 || !tabSize.is_number_integer() || tabSize != 4 ||
+                !field(options, "insertSpaces").is_boolean() || field(options, "insertSpaces") != true)
+                throw ProtocolError("formatting supports only tabSize=4 and insertSpaces=true options");
+            // LSP FormattingParams has no version field. Sequential dispatch
+            // pins this current version throughout formatting and its response.
+            const auto &document = found->second;
+            try {
+                auto text = formatDocument(found->first, *document.snapshot);
+                Json edits = Json::array();
+                if (text != document.snapshot->text) {
+                    const auto end = utf16Position(document.snapshot->text, document.snapshot->text.size(), true);
+                    edits.push_back({{"range", {{"start", positionJson({})}, {"end", positionJson(end)}}},
+                                     {"newText", std::move(text)}});
+                }
+                result(id, std::move(edits));
+            } catch (const Error &failure) {
+                send({{"jsonrpc", "2.0"},
+                      {"id", id},
+                      {"error",
+                       {{"code", -32803},
+                        {"message", "Aurora formatting failed"},
+                        {"data",
+                         {{"uri", document.uri},
+                          {"version", document.version},
+                          {"diagnostic", diagnosticJson(failure.diagnostic)}}}}}});
+            }
+        } catch (const ProtocolError &failure) {
+            error(id, -32602, failure.what());
+        } catch (const std::exception &) {
+            error(id, -32603, "Formatter failed internally");
+        }
+    }
     std::optional<int> handle(const Json &message) {
         const bool request = message.is_object() && message.contains("id");
         const auto &id = field(message, "id");
@@ -250,7 +291,9 @@ class Session {
                 initialized = true;
                 result(id,
                        {{"capabilities",
-                         {{"positionEncoding", "utf-16"}, {"textDocumentSync", {{"openClose", true}, {"change", 1}}}}},
+                         {{"positionEncoding", "utf-16"},
+                          {"textDocumentSync", {{"openClose", true}, {"change", 1}}},
+                          {"documentFormattingProvider", true}}},
                         {"serverInfo", {{"name", "aurora-lsp"}, {"version", "0.1"}}}});
             }
             return {};
@@ -271,6 +314,10 @@ class Session {
             }
             shutdown = true;
             result(id, nullptr);
+            return {};
+        }
+        if (request && method == "textDocument/formatting") {
+            formatting(id, params);
             return {};
         }
         if (request) {

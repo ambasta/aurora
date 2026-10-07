@@ -41,7 +41,8 @@ units (`main.cpp` and `check.cpp`). No JSON dependency is added to `aurorac`.
 Standard output contains only Content-Length-framed UTF-8 JSON-RPC messages.
 Errors and bounded logs go to stderr. Supported operations are `initialize`,
 `initialized`, `shutdown`, `exit`, `textDocument/didOpen`, full-content
-`didChange`, `didClose`, and `textDocument/publishDiagnostics`.
+`didChange`, `didClose`, `textDocument/publishDiagnostics`, and
+`textDocument/formatting`.
 
 The server advertises full sync and UTF-16 only. Each change must contain exactly
 one complete replacement and a strictly greater signed 32-bit version. Duplicate
@@ -95,13 +96,57 @@ error uses LSP's mandatory range at the root's start, explicitly marked
 `[location unavailable]` and `data.rangeKnown=false`. That range is not a claim of
 precise compiler provenance.
 
-No completion, rename, hover, semantic tokens, formatting, code actions,
+No completion, rename, hover, semantic tokens, range/on-type formatting, code actions,
 incremental parsing, background cancellation or disk watcher is advertised.
-The standalone compiler formatter remains separate. Disk changes are noticed on
-the next accepted document update. Checks are synchronous: permitted but expensive
+Document formatting uses the same standalone formatter implementation. Disk
+changes are noticed on the next accepted document update; formatting separately
+reauthorizes its named source before using the accepted editor snapshot. Checks are synchronous: permitted but expensive
 compiler inputs can delay later requests, and total compiler CPU is not bounded.
 Cancellation notifications are ignored and cannot interrupt a running check;
 the protocol tests verify that they leave document state unchanged.
+
+## Document formatting
+
+`documentFormattingProvider: true` advertises whole-document formatting. A
+`textDocument/formatting` request requires the exact URI of an open document and
+an options object containing exactly `tabSize: 4` and `insertSpaces: true`.
+Other indentation choices, optional whitespace flags and extension properties
+are rejected with `InvalidParams` (-32602). No option is silently honored or
+ignored. This deliberately narrow policy preserves the shared formatter's
+four-space layout, 120-byte soft target and exact comment bytes. Editors that
+send additional options must omit them for this bounded implementation.
+
+The standard request carries a `TextDocumentIdentifier`, without a version.
+The synchronous server uses the most recently accepted full-sync snapshot and
+keeps that version unchanged until it sends the response. Stale changes do not
+replace it. Closed, never-opened or differently spelled URIs are rejected with
+`InvalidParams`; formatting does not reopen a document or fall back to disk.
+LSP `TextEdit` has no version guard: a client must discard a response if its own
+buffer changed after the request. No custom versioned request is required.
+
+The shared no-symlink regular-file policy is checked again at request time;
+missing or newly inaccessible files fail even when their text is cached. The
+accepted snapshot is passed directly to `format::source`, using the compiler's
+lossless lexer, parser, token/comment-anchor checks, reparse and second-pass
+idempotence guard. Formatting is syntax-only: missing imports, semantic errors
+and existing diagnostic publications do not block it or change its result.
+No additional semantic check or import resolution runs for the request.
+
+Changed text returns exactly one whole-document edit from `(0, 0)` to the
+original snapshot's UTF-16 EOF, with correct CRLF/CR/LF and non-BMP accounting.
+Unchanged text returns `[]`. Whitespace follows the standalone formatter:
+non-comment layout uses LF and a final newline; line-comment CR, tabs and
+trailing spaces remain verbatim. No style warning is printed into protocol
+stdout or silently used to rewrite a comment. The response neither applies the
+edit to the server snapshot nor writes a file; only a later accepted `didChange`
+updates that snapshot.
+
+Unsupported/malformed source, failed source admission, output expansion above
+1 MiB or an invariant failure returns `RequestFailed` (-32803), with no result
+or partial edit. Error data contains the accepted URI/version and the original
+compiler diagnostic rendered in UTF-16. Unexpected internal failures return
+`InternalError` (-32603). Input/output, transport and snapshot storage bounds
+are unchanged. Formatting is synchronous and cancellation cannot interrupt it.
 
 ## Fixed limits
 
@@ -120,9 +165,16 @@ proof. The existing compiler resource limitations still apply.
 JSON or the compiler frontend. `tests/lsp-protocol.py` drives the actual binary:
 lifecycle, malformed framing/JSON, versions, Unicode, unsaved root/import edits,
 clearing across importers, no disk mutation and policy/storage limits. It is a
-protocol test client, not a build scheduler. The reconstructed source passed
-these checks fresh in both normal and optimized Python; earlier workspace
-evidence was not reused. See the [results](../../docs/lsp-results.md).
+protocol test client, not a build scheduler. Its formatting transcripts additionally
+cover canonical options, unsaved text, whole-document ranges, comments,
+idempotence, syntax-only operation, stale/closed state, source admission,
+readonly bytes and exact input/output bounds. The initial diagnostic-only
+source passed its original checks fresh in both normal and optimized Python;
+earlier workspace evidence was not reused. The new formatting transcripts now
+pass in both modes against the fresh binary, along with all 84 current formatter
+corpus sources. See the initial
+[diagnostic results](../../docs/lsp-results.md) and the focused
+[formatting results](../../docs/lsp-formatting-results.md).
 
 No full native aggregate, new compiler semantic qualification, sanitizer,
 emulator, physical hardware or production-security pass is implied.

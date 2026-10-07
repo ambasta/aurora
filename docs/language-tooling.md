@@ -105,8 +105,9 @@ exact-byte fixtures outside bulk rewrites.
 
 The initial optional [stdio adapter](../compiler/lsp/README.md) now covers
 initialize/shutdown, full-sync document state and first-error diagnostics.
-Formatting requests, active cancellation and the semantic editor features below
-remain separate gates; none is advertised by this first slice.
+Whole-document formatting now delegates to the same compiler formatter for the
+current accepted snapshot. Active cancellation and the semantic editor features
+below remain separate gates and are not advertised.
 
 Add a bounded stdio JSON-RPC/LSP adapter for initialize/shutdown, document
 open/change/close, diagnostics and document formatting. Full-document changes
@@ -117,5 +118,7 @@ available. Keep protocol output on stdout and logs on stderr.
 Gate: transcript tests against shared frontend results, UTF-8 byte to negotiated
 LSP-position conversion, non-ASCII comment positions, CRLF, stale versions,
 cancellation, malformed/oversized messages, bounded queues and workspace-root
-confinement. Formatting returns edits for the exact requested document version.
+confinement. Standard formatting requests have no version field; edits refer to the accepted
+snapshot at synchronous request handling, and clients must discard them after
+a newer local edit.
 No external command execution or network access is required to analyze a file.

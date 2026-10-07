@@ -2,7 +2,9 @@
 
 The first `aurora-fmt` increment shares the compiler's lossless lexer, parser,
 source snapshots and diagnostic ranges. It is a bootstrap C++ executable; it is
-not a Python grammar or a claim of a self-hosted formatter or language server.
+not a Python grammar or a claim of a self-hosted formatter. The optional
+[language server](lsp/README.md#document-formatting) calls this same implementation
+for whole-document edits; no formatter or parser is duplicated.
 
 Build and run from the repository root:
 

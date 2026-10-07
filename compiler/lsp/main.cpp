@@ -14,7 +14,7 @@ int main(int argc, char **argv) {
                 roots.push_back(std::filesystem::absolute(root).lexically_normal());
             } else if (argument == "--help" && argc == 2) {
                 std::cerr << "usage: aurora-lsp [--module-root PATH]...\n"
-                             "Full-sync UTF-16 diagnostics over stdio. Existing local files only.\n";
+                             "Full-sync UTF-16 diagnostics and formatting over stdio. Existing local files only.\n";
                 return 0;
             } else
                 throw aurora::lsp::ProtocolError("usage: aurora-lsp [--module-root PATH]...");
