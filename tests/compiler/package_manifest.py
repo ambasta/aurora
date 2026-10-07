@@ -534,7 +534,7 @@ def main():
     parser.add_argument('--quick','--smoke',dest='smoke',action='store_true',help='development subset, not full acceptance')
     parser.add_argument('--self-test-only',action='store_true')
     parser.add_argument('--freeze-reference',type=Path)
-    parser.add_argument('--candidate-cap-mib',type=int,default=256,help='whole-candidate storage cap 256..1024 MiB; default 256; increases require explicit aggregate admission')
+    parser.add_argument('--candidate-cap-mib',type=int,default=256,help='per-invocation owned-output cap 256..1024 MiB; default 256; increases require explicit aggregate admission')
     parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
     add_identity_arguments(parser)
     args=parser.parse_args()
@@ -561,7 +561,7 @@ def main():
     require(artifacts.parent.is_dir() and not artifacts.exists(),'fresh artifact root with existing parent required')
     runner=Runner(compiler,artifacts,cap)
     runner.budget(65536);artifacts.mkdir()
-    inputs=[compiler,ROOT/'library/package/manifest.au',ROOT/'library/package/identity.au',ROOT/'library/std/array.au',Path(__file__).resolve(),ROOT/'scripts/package_native_runner.py',frozen,Path(sys.executable).resolve(strict=True),*runner.tools.values()]
+    inputs=[compiler,ROOT/'library/package/manifest.au',ROOT/'library/package/identity.au',ROOT/'library/std/array.au',Path(__file__).resolve(),ROOT/'scripts/package_native_runner.py',ROOT/'scripts/owned_outputs.py',frozen,Path(sys.executable).resolve(strict=True),*runner.tools.values()]
     runner.pins={p:sha(p) for p in inputs}
     report=dict(status='running',compiler_identity=identity.record(),pins={str(p):h for p,h in runner.pins.items()},tool_paths={name:str(path) for name,path in runner.tools.items()},
                 command=sys.argv,started_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),cap_bytes=cap,free_floor_bytes=FLOOR,

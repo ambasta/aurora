@@ -14,6 +14,8 @@ import sys
 import tarfile
 import time
 
+from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
+
 FLOOR, RESERVE, SOURCE_CAP = 1 << 30, 24 << 20, 64 << 10
 
 
@@ -48,13 +50,13 @@ class PackageRunner:
         self.host_tools=set(self.tools.values())|{Path(sys.executable).resolve(strict=True)}
 
     def measure(self):
-        allocated=self.root.lstat().st_blocks*512+sum(p.lstat().st_blocks*512 for p in self.root.rglob('*'))
+        allocated = allocated_bytes(self.artifacts)
         self.peak=max(self.peak,allocated)
-        return allocated,shutil.disk_usage(self.root).free
+        return allocated, free_bytes(self.artifacts)
 
     def budget(self,reserve=0):
         allocated,free=self.measure()
-        require(allocated+reserve<=self.cap,f'whole-candidate {self.cap} byte cap: {allocated} + reserve {reserve}')
+        require(allocated+reserve<=self.cap,f'owned-output {self.cap} byte cap: {allocated} + reserve {reserve}')
         require(free-reserve>=FLOOR,'1 GiB free floor including reserve')
         return allocated
 
@@ -85,7 +87,8 @@ class PackageRunner:
                     executable_hash_scope='suite-boundary' if host_scope else 'command')
         try:
             with (directory/(name+'.stdout')).open('wb') as out,(directory/(name+'.stderr')).open('wb') as err:
-                result=subprocess.run(list(map(str,args)),stdout=out,stderr=err,timeout=30,preexec_fn=limits)
+                result=subprocess.run(list(map(str,args)),stdout=out,stderr=err,timeout=30,preexec_fn=limits,
+                                      env=temporary_environment(self.artifacts))
             record['returncode']=result.returncode
             stderr=(directory/(name+'.stderr')).read_bytes()
             allowed=(0,1) if allow_rejection else (0,)
@@ -112,6 +115,7 @@ class PackageRunner:
         with tarfile.open(archive,'w:xz',preset=3) as output:
             for path in paths:
                 output.add(path,arcname=path.name,recursive=False)
+        self.budget()
         with tarfile.open(archive,'r:xz') as stored:
             members=stored.getmembers()
             require(len(members)==len(pins),'archive exact member count')
@@ -125,6 +129,7 @@ class PackageRunner:
                 require(hashlib.sha256(blob).hexdigest()==wanted['sha256'],'lossless archive verification '+member.name)
         receipt=dict(archive=archive.name,sha256=sha(archive),verified_members=pins)
         (archive.with_suffix('.verified.json')).write_text(json.dumps(receipt,indent=2)+'\n')
+        self.budget()
         for path in paths:path.unlink()
         directory.rmdir()
         self.budget()
@@ -218,7 +223,9 @@ def finalize_report(runner,report,compiler,artifacts):
         errors.append('compiler final hash: '+str(exc))
     try:
         allocated,free=runner.measure()
-        report.update(candidate_allocated_bytes=allocated,peak_candidate_allocated_bytes=runner.peak,global_free_bytes=free)
+        report.update(owned_output_allocated_bytes=allocated, peak_owned_output_allocated_bytes=runner.peak,
+                      output_root=str(runner.artifacts), accounting_scope='invocation outputs including tmp and archives',
+                      global_free_bytes=free)
     except BaseException as exc:
         errors.append('non-enforcing final resource measurement: '+str(exc))
     try:
@@ -230,7 +237,7 @@ def finalize_report(runner,report,compiler,artifacts):
         if report.get('status')!='failed':
             report.update(status='failed',error='run finalization failed')
     try:
-        (artifacts/'manifest.json').write_text(json.dumps(report,indent=2)+'\n')
+        write_checked_receipt(artifacts/'manifest.json', report, runner.budget)
     except BaseException as exc:
         errors.append('failed-run receipt write: '+str(exc))
         print('Manifest receipt write failed; original error remains primary: '+str(exc),file=sys.stderr)

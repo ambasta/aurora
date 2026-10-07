@@ -11,10 +11,12 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
 from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.dont_write_bytecode = True
 CONSUMERS = (
     ('tests/compiler/package_identity.py', 128, False),
     ('tests/compiler/package_manifest.py', 256, False),
@@ -50,29 +52,172 @@ def artifact_root(value):
 
 def accounting(module, native):
     cap, reserve, floor = 1024 << 20, 65536, 1 << 30
+    output = ROOT / 'build' / 'uncreated-accounting-control'
     if native:
         with mock.patch.object(module, 'allocated', return_value=cap - 1), \
-             mock.patch.object(module.shutil, 'disk_usage', return_value=SimpleNamespace(free=floor)):
-            module.guard(1024)
+             mock.patch.object(module, 'free_bytes', return_value=floor):
+            module.guard(output, 1024)
         with mock.patch.object(module, 'allocated', return_value=cap), \
-             mock.patch.object(module.shutil, 'disk_usage', return_value=SimpleNamespace(free=floor)):
-            rejected(lambda: module.guard(1024), 'allocation cap')
+             mock.patch.object(module, 'free_bytes', return_value=floor):
+            rejected(lambda: module.guard(output, 1024), 'allocation cap')
         with mock.patch.object(module, 'allocated', return_value=0), \
-             mock.patch.object(module.shutil, 'disk_usage', return_value=SimpleNamespace(free=floor - 1)):
-            rejected(lambda: module.guard(1024), 'free-space floor')
+             mock.patch.object(module, 'free_bytes', return_value=floor - 1):
+            rejected(lambda: module.guard(output, 1024), 'free-space floor')
+        with mock.patch.object(module, 'allocated', return_value=cap - reserve), \
+             mock.patch.object(module, 'free_bytes', return_value=floor + reserve):
+            rejected(lambda: module.guard(output, 1024, reserve), 'allocation cap')
         return
-    fake_root = SimpleNamespace(lstat=lambda: SimpleNamespace(st_blocks=(cap - reserve) // 512),
-                                rglob=lambda _pattern: [])
     runner = object.__new__(module.Runner)
-    runner.cap, runner.peak = cap, 0
-    runner.root = fake_root
-    with mock.patch.object(module, 'ROOT', fake_root), \
-         mock.patch.object(module.shutil, 'disk_usage', return_value=SimpleNamespace(free=floor + reserve)):
+    runner.cap, runner.peak, runner.artifacts = cap, 0, output
+    # Manifest/Graph inherit their accounting implementation from the shared runner.
+    implementation = sys.modules[module.Runner.budget.__module__]
+    with mock.patch.object(implementation, 'allocated_bytes', return_value=cap - reserve), \
+         mock.patch.object(implementation, 'free_bytes', return_value=floor + reserve):
         runner.budget(reserve)
-        rejected(lambda: runner.budget(reserve + 1), 'whole-candidate')
-    with mock.patch.object(module, 'ROOT', fake_root), \
-         mock.patch.object(module.shutil, 'disk_usage', return_value=SimpleNamespace(free=floor + reserve - 1)):
+        rejected(lambda: runner.budget(reserve + 1), 'owned-output')
+    with mock.patch.object(implementation, 'allocated_bytes', return_value=cap - reserve), \
+         mock.patch.object(implementation, 'free_bytes', return_value=floor + reserve - 1):
         rejected(lambda: runner.budget(reserve), 'free floor')
+
+
+def owned_output_checks(out):
+    """Real filesystem scope controls, using small caps rather than large allocation."""
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    import owned_outputs
+    import package_native_runner as transport
+
+    def load(name, path):
+        spec = importlib.util.spec_from_file_location(name, ROOT / path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    with tempfile.TemporaryDirectory(prefix='owned-controls-', dir=out) as temporary:
+        checkout = Path(temporary)
+        unrelated = checkout / 'unrelated-prior-artifact'
+        unrelated.write_bytes(b'history\n' * (256 << 10))
+        before = hashlib.sha256(unrelated.read_bytes()).hexdigest()
+        with (checkout / 'old-sparse-image').open('wb') as stream:
+            stream.truncate(700 << 20)
+        first, second = checkout / 'run-one', checkout / 'run-two'
+        cap = 256 << 10
+        for directory in (first, second):
+            directory.mkdir()
+            (directory / 'output').write_bytes(bytes(160 << 10))
+        require(owned_outputs.allocated_bytes(checkout) > cap, 'control checkout must exceed own-output cap')
+        require(owned_outputs.allocated_bytes(first, second) > cap, 'independent roots must exceed combined cap')
+        for index, (name, _, native) in enumerate(CONSUMERS):
+            module = load('scope_subject_' + str(index), name)
+            for directory in (first, second):
+                with mock.patch.object(module, 'ROOT', checkout):
+                    if native:
+                        with mock.patch.object(module, 'candidate_cap', return_value=cap):
+                            module.guard(directory, 128)
+                            rejected(lambda: module.guard(directory, 128, cap), 'allocation cap')
+                    else:
+                        runner = object.__new__(module.Runner)
+                        runner.root, runner.artifacts, runner.cap, runner.peak = checkout, directory, cap, 0
+                        require(runner.budget() == owned_outputs.allocated_bytes(directory), 'wrong owned root')
+                        rejected(lambda: runner.budget(cap), 'owned-output')
+            overflow = second / 'overflow'
+            overflow.write_bytes(bytes(cap))
+            if native:
+                with mock.patch.object(module, 'candidate_cap', return_value=cap):
+                    rejected(lambda: module.guard(second, 128), 'allocation cap')
+            else:
+                rejected(runner.budget, 'owned-output')
+            overflow.unlink()
+        xfs = load('owned_xfs_control', 'tests/compiler/xfs_root.py')
+        with mock.patch.object(xfs, 'ARTIFACTS', first), mock.patch.object(xfs, 'ROOT', checkout), \
+             mock.patch.object(xfs, 'CAP', cap):
+            xfs.budget()
+            rejected(lambda: xfs.budget(cap), 'owned output budget')
+
+        # Sparse files charge physical blocks, hardlinks charge their inode once,
+        # and links to files/directories outside owned roots never charge targets.
+        links = checkout / 'link-controls'
+        links.mkdir()
+        sparse = links / 'sparse'
+        with sparse.open('wb') as stream:
+            stream.truncate(700 << 20)
+        require(sparse.stat().st_size == 700 << 20, 'sparse fixture logical size')
+        require(owned_outputs.allocated_bytes(links) < cap, 'sparse logical bytes incorrectly charged')
+        payload = links / 'payload'
+        payload.write_bytes(bytes(65536))
+        os.link(payload, links / 'same-inode')
+        (links / 'outside-file').symlink_to(unrelated)
+        (links / 'outside-directory').symlink_to(first, target_is_directory=True)
+        (links / 'dangling').symlink_to(checkout / 'absent')
+        expected = sum(path.lstat().st_blocks * 512 for path in (links, sparse, payload,
+                       links / 'outside-file', links / 'outside-directory', links / 'dangling'))
+        require(owned_outputs.allocated_bytes(links) == expected, 'link scope or inode accounting changed')
+        os.link(payload, second / 'shared-inode')
+        require(owned_outputs.allocated_bytes(links, second) == expected +
+                owned_outputs.allocated_bytes(second) - payload.lstat().st_blocks * 512,
+                'hardlink across explicit roots double charged')
+        environment_before = dict(os.environ)
+        environment = owned_outputs.temporary_environment(first)
+        require(dict(os.environ) == environment_before, 'child temporary environment changed parent')
+        require(all(environment[name] == str(first / 'tmp') for name in ('TMPDIR', 'TMP', 'TEMP')),
+                'temporary files not routed into owned root')
+        (first / 'tmp' / 'retained-temp').write_bytes(bytes(cap))
+        require(owned_outputs.allocated_bytes(first) > cap, 'owned temporary growth escaped accounting')
+        (second / 'tmp').symlink_to(first / 'tmp', target_is_directory=True)
+        rejected(lambda: owned_outputs.temporary_environment(second), 'must not be a symlink')
+
+        # Archive bytes and originals coexist in the same budget. Stop before
+        # cleanup on overflow; cleanup failure retains the verified archive.
+        def compact_fixture(label):
+            artifacts = checkout / label
+            directory = artifacts / 'batch-000'
+            directory.mkdir(parents=True)
+            (directory / 'original').write_bytes(b'original bytes\n' * 128)
+            runner = object.__new__(transport.PackageRunner)
+            runner.artifacts, runner.cap, runner.peak = artifacts, 64 << 20, 0
+            return runner, directory
+
+        runner, directory = compact_fixture('archive-overflow')
+        archive = directory.with_suffix('.tar.xz')
+        real_budget = runner.budget
+        def reject_archive(reserve=0):
+            if archive.exists():
+                runner.cap = owned_outputs.allocated_bytes(runner.artifacts) - 1
+            return real_budget(reserve)
+        runner.budget = reject_archive
+        rejected(lambda: runner.compact(directory), 'owned-output')
+        require((directory / 'original').is_file() and archive.is_file(), 'overflow discarded original or archive')
+        runner, directory = compact_fixture('cleanup-failure')
+        archive = directory.with_suffix('.tar.xz')
+        with mock.patch.object(Path, 'unlink', side_effect=RuntimeError('injected cleanup failure')):
+            rejected(lambda: runner.compact(directory), 'injected cleanup failure')
+        require((directory / 'original').is_file() and archive.is_file(), 'cleanup failure lost retained bytes')
+        require(archive.with_suffix('.verified.json').is_file(), 'cleanup started without verified archive')
+        require(owned_outputs.allocated_bytes(runner.artifacts) > owned_outputs.allocated_bytes(directory),
+                'archive/receipt not charged with originals')
+        terminal = checkout / 'terminal-receipt'
+        terminal.mkdir()
+        receipt = terminal / 'manifest.json'
+        terminal_cap = owned_outputs.allocated_bytes(terminal) + 4096
+        def terminal_guard():
+            require(owned_outputs.allocated_bytes(terminal) <= terminal_cap, 'terminal owned-output overflow')
+        report = dict(status='passed', detail='receipt growth' * 4096)
+        terminal_guard()
+        rejected(lambda: owned_outputs.write_checked_receipt(receipt, report, terminal_guard),
+                 'terminal owned-output overflow')
+        require(json.loads(receipt.read_text())['status'] == 'failed', 'terminal overflow left passed receipt')
+        try:
+            try:
+                raise RuntimeError('original primary failure')
+            finally:
+                owned_outputs.write_checked_receipt(receipt, dict(status='failed', detail='x' * 65536),
+                                                   terminal_guard)
+        except RuntimeError as error:
+            require(str(error) == 'original primary failure', 'receipt budget masked primary failure')
+        else:
+            raise RuntimeError('primary failure suppressed')
+        require(hashlib.sha256(unrelated.read_bytes()).hexdigest() == before, 'unrelated history changed')
+    return len(CONSUMERS) + 1
 
 
 
@@ -184,9 +329,10 @@ def main():
     require(not out.exists(), 'fresh evidence directory required')
     require(shutil.disk_usage(ROOT).free >= 1 << 30, 'one GiB free floor before outputs')
     sources = [ROOT / name for name, _, _ in CONSUMERS] + [
-        Path(__file__).resolve(), ROOT / 'scripts/package_native_runner.py']
+        Path(__file__).resolve(), ROOT / 'scripts/package_native_runner.py', ROOT / 'scripts/owned_outputs.py']
     pins = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}
     out.mkdir(parents=True)
+    owned_scope_consumers = owned_output_checks(out)
     host_scope_controls = host_tool_checks(out)
     rows = []
     for index, (name, minimum, native) in enumerate(CONSUMERS):
@@ -253,7 +399,8 @@ def main():
             'configuration sources changed during checks')
     report = dict(status='configuration-contracts-verified', native_executed=False,
                   cli_cases=len(rows), host_scope_controls=host_scope_controls, consumers=len(CONSUMERS), optimization_modes=[0, 1],
-                  accounting='mocked cap/reserve/free-floor boundaries; no large allocation',
+                  owned_scope_consumers=owned_scope_consumers,
+                  accounting='mocked boundaries and real owned-root/link/sparse/overflow/archive/cleanup controls',
                   configuration_source_pins=pins, cases=rows)
     (out / 'configuration-results.json').write_text(json.dumps(report, indent=2) + '\n')
     print(f'CONFIGURATION CONTRACTS VERIFIED: {len(rows)} real entrypoint cases; no native acceptance claimed')

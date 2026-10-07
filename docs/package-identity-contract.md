@@ -83,7 +83,7 @@ survive owner mutation and scope exit. Only std.array is imported. GNU assembler
 linker and Python remain host bootstrap/test dependencies, never target runtime.
 Tests are finite execution evidence, not a memory-safety or performance proof.
 
-Candidate storage cap is initially 128 MiB with a 1 GiB filesystem free floor;
+Per-invocation owned-output storage cap is 128 MiB with a 1 GiB filesystem free floor;
 all failures are retained. No accepted-main mutation or publication is authorized.
 
 ## Focused verification record
@@ -128,17 +128,14 @@ rejects traversal components, rejects raw-path/ancestor symlinks before canonica
 resolution, and then checks canonical containment. Self-tests cover contained,
 traversal and outside paths. This fixes test infrastructure, not library behavior.
 
-The default candidate ceiling remains 128 MiB. A separately approved integration
-run can select `--candidate-cap-mib 1024` (accepted integer range 128..1024) because the
-inherited full regression build produces more than 128 MiB. The selected ceiling
-is recorded; the 1 GiB free floor and growth reserve remain enforced. Fresh parent
-aggregate and distinct review will establish the final revised-harness status.
-
-The top-level `make test` target selects `PACKAGE_IDENTITY_CAP_MIB=1024` for its
-package prerequisite automatically. Standalone `make test-package-identity`
-keeps the 128 MiB default. This prevents the full default aggregate from inheriting
-a focused-only cap after other test products have accumulated. Both routes pass
-an explicit cap argument to the same harness and record it in their manifests.
+The focused owned-output ceiling remains 128 MiB; the accepted override range
+is 128..1024 MiB. The top-level `make test` target still selects
+`PACKAGE_IDENTITY_CAP_MIB=1024`, while standalone `make test-package-identity`
+keeps its 128 MiB default. Both record the selected cap. Earlier integration
+runs increased the cap because whole-checkout accounting included unrelated
+regression products. Current accounting excludes those files and old runs;
+they remain protected by the one-GiB usable-free-space floor. See the current
+[output-budget scope](developer-test-contract.md#per-invocation-output-budgets).
 
 ## Explicit compiler-integration pin
 
@@ -154,10 +151,12 @@ frozen pre-implementation contract are unchanged, as are historical receipts.
 
 ## Current bounded resource-configuration checks
 
-The maximum selectable whole-candidate storage cap is 1024 MiB; focused defaults
+The maximum selectable per-invocation owned-output storage cap is 1024 MiB; focused defaults
 remain unchanged. Any increase still needs separate measured aggregate admission,
-including retained roots, growth reserve and the existing free-space floor. This
-does not change per-process address-space, per-file or source-size limits.
+including retained roots, growth reserve and the existing free-space floor. Retained
+roots affect free disk, not this invocation's cap; see the
+[shared output-budget scope](developer-test-contract.md#per-invocation-output-budgets).
+This does not change per-process address-space, per-file or source-size limits.
 `--check-cap-only` validates resource configuration without reading/running a
 compiler or creating a native acceptance receipt. Its configuration-only result
 cannot replace this contract's behavioral oracle and full acceptance gates.

@@ -16,6 +16,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / 'scripts'))
+from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
 from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 MAX = (1 << 64) - 1
 
@@ -46,14 +47,14 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def allocated():
-    return sum(p.stat().st_blocks * 512 for p in ROOT.rglob('*') if p.is_file())
+def allocated(output):
+    return allocated_bytes(output)
 
 
-def guard(cap):
+def guard(output, cap, reserve=0):
     cap_bytes = candidate_cap(cap)
-    need(allocated() < cap_bytes, 'Candidate allocation cap reached')
-    need(shutil.disk_usage(ROOT).free >= 1024 ** 3, 'One GiB free-space floor reached')
+    need(allocated(output) + reserve < cap_bytes, 'Owned-output allocation cap reached, including reserve')
+    need(free_bytes(output) - reserve >= 1024 ** 3, 'One GiB free-space floor reached, including reserve')
 
 
 def oracle(initial, remaining, used):
@@ -81,19 +82,21 @@ def decoder_oracle(encoded, initial, remaining, used):
     return encoded
 
 
-def run(command, folder, name, **kwargs):
+def run(command, folder, name, cap):
+    guard(folder, cap, 24 << 20)
     started = time.time()
-    result = subprocess.run(command, cwd=ROOT, timeout=120, capture_output=True, **kwargs)
+    result = subprocess.run(command, cwd=ROOT, timeout=120, capture_output=True, env=temporary_environment(folder))
     (folder / (name + '.stdout')).write_bytes(result.stdout)
     (folder / (name + '.stderr')).write_bytes(result.stderr)
     (folder / (name + '.json')).write_text(json.dumps(dict(command=list(map(str, command)),
         returncode=result.returncode, elapsed_seconds=time.time() - started), indent=2) + '\n')
     need(result.returncode == 0, name + ' failed; original outputs retained')
+    guard(folder, cap)
     return result
 
 
 def vector_gate(binary, out, name, vectors, model, cap, decode=False):
-    guard(cap)
+    guard(out, cap)
     inputs = out / (name + '.inputs.bin')
     expected = out / (name + '.expected.bin')
     width = 4 if decode else 3
@@ -104,20 +107,20 @@ def vector_gate(binary, out, name, vectors, model, cap, decode=False):
             want.write(struct.pack('<Q', model(*values)))
             count += 1
             if count % 16384 == 0:
-                guard(cap)
-    guard(cap)
+                guard(out, cap)
+    guard(out, cap)
     observed = out / (name + '.observed.bin')
     command = [str(binary)] + (['decode'] if decode else [])
     started = time.time()
     with inputs.open('rb') as source, observed.open('wb') as actual, (out / (name + '.stderr')).open('wb') as errors:
-        result = subprocess.run(command, stdin=source, stdout=actual, stderr=errors, timeout=120, cwd=ROOT)
+        result = subprocess.run(command, stdin=source, stdout=actual, stderr=errors, timeout=120, cwd=ROOT, env=temporary_environment(out))
     receipt = dict(command=command, returncode=result.returncode, cases=count,
         elapsed_seconds=time.time() - started, files={p.name: dict(bytes=p.stat().st_size, sha256=sha(p))
         for p in (inputs, expected, observed)})
     (out / (name + '.json')).write_text(json.dumps(receipt, indent=2) + '\n')
     need(result.returncode == 0, name + ' did not exit normally')
     need(observed.read_bytes() == expected.read_bytes(), name + ' native observations differ')
-    guard(cap)
+    guard(out, cap)
     return count
 
 
@@ -162,7 +165,7 @@ def decoder_vectors():
         yield oracle(3, 3, 0), value, 3, 0
 
 
-def rejection_gate(compiler, out):
+def rejection_gate(compiler, out, cap):
     bodies = {
         'private_field': ('import kernel.interrupt_budget;\nauto answer() -> u64 { const kernel::TickDecision d = kernel::interrupt_tick(3u64, 3u64, 0u64); return d.remaining_count; }', 'private class field is inaccessible'),
         'signed_input': ('import kernel.interrupt_budget;\nauto answer() -> u64 { const kernel::TickDecision d = kernel::interrupt_tick(3, 3u64, 0u64); return d.remaining(); }', 'expected u64, got i64'),
@@ -181,13 +184,16 @@ def rejection_gate(compiler, out):
             if existing:
                 output.write_bytes(sentinel)
             command = [str(compiler), '--module-root', str(ROOT / 'kernel/policies'), str(source), '-o', str(output)]
-            result = subprocess.run(command, cwd=ROOT, timeout=30, capture_output=True)
+            guard(out, cap, 24 << 20)
+            result = subprocess.run(command, cwd=ROOT, timeout=30, capture_output=True,
+                                    env=temporary_environment(out))
             (out / (label + '.stdout')).write_bytes(result.stdout)
             (out / (label + '.stderr')).write_bytes(result.stderr)
             receipt = dict(command=command, returncode=result.returncode, expected_diagnostic=diagnostic,
                 source_sha256=sha(source), output_exists=output.exists())
             receipts.append(receipt)
             (out / 'rejections.json').write_text(json.dumps(receipts, indent=2) + '\n')
+            guard(out, cap)
             need(result.returncode == 1 and diagnostic.encode() in result.stderr, label + ' wrong rejection')
             need(output.read_bytes() == sentinel if existing else not output.exists(), label + ' output changed')
     return len(receipts)
@@ -198,7 +204,7 @@ def main():
     parser.add_argument('--compiler', default=str(ROOT / 'build/aurorac'))
     add_identity_arguments(parser)
     parser.add_argument('--output')
-    parser.add_argument('--candidate-cap-mib', type=int, default=128, help='whole-candidate storage cap 128..1024 MiB; increases require explicit aggregate admission')
+    parser.add_argument('--candidate-cap-mib', type=int, default=128, help='per-invocation owned-output cap 128..1024 MiB; increases require explicit aggregate admission')
     parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
     args = parser.parse_args()
     validate_identity_selection(args, preflight=args.check_cap_only)
@@ -212,33 +218,36 @@ def main():
     cap_self_test()
     compiler = Path(args.compiler).resolve(strict=True)
     identity = resolve_identity(args, compiler, ROOT)
-    guard(args.candidate_cap_mib)
-    out = Path(args.output).resolve() if args.output else ROOT / 'build/kernel-budget-native' / str(time.time_ns())
+    out = Path(args.output).absolute() if args.output else ROOT / 'build/kernel-budget-native' / str(time.time_ns())
+    need(not any(path.is_symlink() for path in (out, *out.parents)), 'Output symlink denied')
+    need('..' not in out.parts, 'Output path traversal denied')
     need(not out.exists(), 'Use a fresh output directory; never overwrite failed evidence')
+    guard(out, args.candidate_cap_mib, 65536)
     out.mkdir(parents=True)
     pins = {str(p.relative_to(ROOT)): sha(p) for p in
         (ROOT / 'kernel/policies/kernel/interrupt_budget.au', ROOT / 'examples/kernel.au',
-         ROOT / 'kernel/uefi/budget-transport.hpp', Path(__file__), ROOT / 'tests/kernel-budget-native.cpp')}
+         ROOT / 'kernel/uefi/budget-transport.hpp', Path(__file__), ROOT / 'tests/kernel-budget-native.cpp', ROOT / 'scripts/owned_outputs.py')}
     assembly, binary = out / 'language.s', out / 'observe'
-    run([str(compiler), '--module-root', 'kernel/policies', 'examples/kernel.au', '-o', str(assembly)], out, 'compile')
+    run([str(compiler), '--module-root', 'kernel/policies', 'examples/kernel.au', '-o', str(assembly)], out, 'compile', args.candidate_cap_mib)
     run(['g++', '-std=c++23', '-O2', '-Wall', '-Wextra', '-Wpedantic', '-Werror', '-no-pie',
-         'tests/kernel-budget-native.cpp', str(assembly), '-o', str(binary)], out, 'link')
+         'tests/kernel-budget-native.cpp', str(assembly), '-o', str(binary)], out, 'link', args.candidate_cap_mib)
     counts = dict(policy=vector_gate(binary, out, 'policy', policy_vectors(), oracle, args.candidate_cap_mib),
         decoder=vector_gate(binary, out, 'decoder', decoder_vectors(), decoder_oracle, args.candidate_cap_mib, True))
-    counts['rejections'] = rejection_gate(compiler, out)
+    counts['rejections'] = rejection_gate(compiler, out, args.candidate_cap_mib)
     successful_words = {oracle(initial, initial - used, used) for initial in range(1, 129) for used in range(initial)}
     need(0 not in successful_words and len(successful_words) == 8256, 'Nonunique successful encoding')
-    run(['objdump', '-drwC', str(binary)], out, 'disassembly')
-    run(['readelf', '-sW', str(binary)], out, 'symbols')
+    run(['objdump', '-drwC', str(binary)], out, 'disassembly', args.candidate_cap_mib)
+    run(['readelf', '-sW', str(binary)], out, 'symbols', args.candidate_cap_mib)
     need(sha(compiler) == identity.sha256, 'Compiler changed during test')
     need(pins == {name: sha(ROOT / name) for name in pins}, 'Source changed during test')
-    guard(args.candidate_cap_mib)
+    guard(out, args.candidate_cap_mib)
     identity.verify()
     summary = dict(status='passed', compiler_identity=identity.record(), compiler_sha256=sha(compiler), source_pins=pins, cases=counts,
         candidate_cap_mib=args.candidate_cap_mib, cap_bytes=cap_bytes,
-        candidate_allocated_bytes=allocated(), free_bytes=shutil.disk_usage(ROOT).free,
+        owned_output_allocated_bytes=allocated(out), free_bytes=free_bytes(out),
+        output_root=str(out), accounting_scope='invocation outputs including tmp',
         limits='Hosted observation only; not a QEMU, source-safety proof, or kernel acceptance result.')
-    (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+    write_checked_receipt(out / 'summary.json', summary, lambda: guard(out, args.candidate_cap_mib))
     print(json.dumps(summary, indent=2))
 
 

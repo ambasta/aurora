@@ -19,7 +19,9 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "scripts"))
+from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
 from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 MAX = (1 << 64) - 1
 # Independent literal relation: operation -> phase -> state*2+scrubbed.
@@ -81,13 +83,14 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def allocated():
-    return sum(path.stat().st_blocks * 512 for path in ROOT.rglob('*') if path.is_file())
+def allocated(output):
+    return allocated_bytes(output)
 
 
-def guard(cap):
-    need(allocated() < candidate_cap(cap), 'Candidate allocation cap reached')
-    need(shutil.disk_usage(ROOT).free >= 1024 ** 3, 'One GiB free-space floor reached')
+def guard(output, cap, reserve=0):
+    cap_bytes = candidate_cap(cap)
+    need(allocated(output) + reserve < cap_bytes, 'Owned-output allocation cap reached, including reserve')
+    need(free_bytes(output) - reserve >= 1024 ** 3, 'One GiB free-space floor reached, including reserve')
 
 
 def contexts():
@@ -162,9 +165,9 @@ def decoder_vectors():
 
 
 def run(command, folder, name, cap, timeout=120, expect=0):
-    guard(cap)
+    guard(folder, cap, 24 << 20)
     started = time.time()
-    environment = dict(os.environ, ASAN_OPTIONS='detect_leaks=0:halt_on_error=1:abort_on_error=1',
+    environment = temporary_environment(folder, ASAN_OPTIONS='detect_leaks=0:halt_on_error=1:abort_on_error=1',
                        UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1')
     try:
         result = subprocess.run(command, cwd=ROOT, timeout=timeout, capture_output=True, env=environment)
@@ -179,7 +182,7 @@ def run(command, folder, name, cap, timeout=120, expect=0):
     (folder / (name + '.json')).write_text(json.dumps(dict(command=list(map(str, command)),
         returncode=result.returncode, elapsed_seconds=time.time() - started), indent=2) + '\n')
     need(result.returncode == expect, name + ' failed; original outputs retained')
-    guard(cap)
+    guard(folder, cap)
     return result
 
 
@@ -193,13 +196,13 @@ def vector_gate(binary, out, label, vectors, model, cap, decode=False):
             want.write(struct.pack('<QQQ', *result) if decode else struct.pack('<Q', result))
             count += 1
             if count % 16384 == 0:
-                guard(cap)
+                guard(out, cap)
     command = [str(binary)] + (['decode'] if decode else [])
     started = time.time()
     with inputs.open('rb') as source, observed.open('wb') as actual, (out / (label + '.stderr')).open('wb') as errors:
         try:
             result = subprocess.run(command, stdin=source, stdout=actual, stderr=errors, timeout=120, cwd=ROOT,
-                env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0:halt_on_error=1:abort_on_error=1',
+                env=temporary_environment(out, ASAN_OPTIONS='detect_leaks=0:halt_on_error=1:abort_on_error=1',
                          UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'))
         except subprocess.TimeoutExpired:
             (out / (label + '.json')).write_text(json.dumps(dict(command=command, cases=count, timeout=True,
@@ -210,7 +213,7 @@ def vector_gate(binary, out, label, vectors, model, cap, decode=False):
     (out / (label + '.json')).write_text(json.dumps(receipt, indent=2) + '\n')
     need(result.returncode == 0, label + ' failed')
     need(observed.read_bytes() == expected.read_bytes(), label + ' native observations differ')
-    guard(cap)
+    guard(out, cap)
     return count
 
 
@@ -264,7 +267,7 @@ def main():
     parser.add_argument('--compiler', default=str(ROOT / 'build/aurorac'))
     add_identity_arguments(parser)
     parser.add_argument('--output')
-    parser.add_argument('--candidate-cap-mib', type=int, default=128, help='whole-candidate cap 128..1024 MiB; increases require explicit aggregate admission')
+    parser.add_argument('--candidate-cap-mib', type=int, default=128, help='per-invocation owned-output cap 128..1024 MiB; increases require explicit aggregate admission')
     parser.add_argument('--check-cap-only', action='store_true', help='compiler-free configuration check; no acceptance receipt')
     parser.add_argument('--sanitize', action='store_true', default=os.environ.get('SANITIZE') == '1', help='fatal hosted ASan/UBSan; generated Aurora assembly remains uninstrumented')
     args = parser.parse_args()
@@ -278,12 +281,14 @@ def main():
         return
     compiler = Path(args.compiler).resolve(strict=True)
     identity = resolve_identity(args, compiler, ROOT)
-    guard(args.candidate_cap_mib)
-    out = Path(args.output).resolve() if args.output else ROOT / 'build/kernel-ipc-transition-native' / str(time.time_ns())
+    out = Path(args.output).absolute() if args.output else ROOT / 'build/kernel-ipc-transition-native' / str(time.time_ns())
     need(out.is_relative_to(ROOT), 'Output must remain inside the bounded candidate')
+    need(not any(path.is_symlink() for path in (out, *out.parents)), 'Output symlink denied')
+    need('..' not in out.parts, 'Output path traversal denied')
     need(not out.exists(), 'Use a fresh output directory; never overwrite failed evidence')
+    guard(out, args.candidate_cap_mib, 65536)
     out.mkdir(parents=True)
-    members = ('kernel/policies/kernel/ipc_transition.au', 'examples/kernel.au', 'kernel/ipc-transition-transport.hpp',
+    members = ('scripts/owned_outputs.py', 'kernel/policies/kernel/ipc_transition.au', 'examples/kernel.au', 'kernel/ipc-transition-transport.hpp',
                'kernel/ipc-policy.hpp', 'kernel/dispatch-policy.hpp', 'kernel/domain-policy.hpp',
                'kernel/round-robin-transport.hpp', 'tests/kernel-ipc-transition-native.cpp',
                'tests/kernel-ipc-transition-native.py', 'tests/kernel-ipc-transition-adapter.cpp',
@@ -327,13 +332,14 @@ def main():
         run(['readelf', '-sW', str(artifact)], out, name + '-symbols', cap)
     need(sha(compiler) == identity.sha256, 'Compiler changed during test')
     need(pins == {name: sha(ROOT / name) for name in pins}, 'Source changed during test')
-    guard(cap)
+    guard(out, cap)
     identity.verify()
     summary = dict(status='passed', compiler_identity=identity.record(), compiler_sha256=sha(compiler), source_pins=pins, cases=counts,
         candidate_cap_mib=cap, cap_bytes=cap_bytes, sanitize=args.sanitize,
-        candidate_allocated_bytes=allocated(), free_bytes=shutil.disk_usage(ROOT).free,
+        owned_output_allocated_bytes=allocated(out), free_bytes=free_bytes(out),
+        output_root=str(out), accounting_scope='invocation outputs including tmp',
         limits='Hosted observations only; no QEMU, whole-language safety proof, whole-kernel stack or acceptance claim. Generated assembly is not sanitizer-instrumented. LeakSanitizer is disabled for the executor ptrace restriction; no leak-clean claim.')
-    (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+    write_checked_receipt(out / 'summary.json', summary, lambda: guard(out, args.candidate_cap_mib))
     print(json.dumps(summary, indent=2))
 
 

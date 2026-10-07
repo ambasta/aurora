@@ -25,6 +25,7 @@ import time
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
+from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
 from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 CONTRACT_SHA256 = '79af6fe35314b1dd17a6f1115c8269754866018e39061c5ad1cba6161634887f'
 CAP = 128 << 20
@@ -442,11 +443,15 @@ class Runner:
         self.process_count = 0
         self.tools = {name: Path(shutil.which(name)).resolve(strict=True) for name in ('as', 'ld', 'nm', 'readelf')}
 
-    def budget(self, reserve=0):
-        allocated = ROOT.lstat().st_blocks*512 + sum(p.lstat().st_blocks*512 for p in ROOT.rglob('*'))
+    def measure(self):
+        allocated = allocated_bytes(self.artifacts)
         self.peak = max(self.peak, allocated)
-        require(allocated+reserve <= self.cap, f'whole-candidate {self.cap} byte cap: {allocated} + reserve {reserve}')
-        require(shutil.disk_usage(ROOT).free-reserve >= FLOOR, '1 GiB free floor including reserve')
+        return allocated, free_bytes(self.artifacts)
+
+    def budget(self, reserve=0):
+        allocated, free = self.measure()
+        require(allocated+reserve <= self.cap, f'owned-output {self.cap} byte cap: {allocated} + reserve {reserve}')
+        require(free-reserve >= FLOOR, '1 GiB free floor including reserve')
         return allocated
 
     def command(self, args, directory, name, *, compiler=False, allow_rejection=False):
@@ -466,7 +471,8 @@ class Runner:
         try:
             with (directory/(name+'.stdout')).open('wb') as out, (directory/(name+'.stderr')).open('wb') as err:
                 result = subprocess.run(list(map(str, args)), stdout=out, stderr=err,
-                                        timeout=30, preexec_fn=limits)
+                                        timeout=30, preexec_fn=limits,
+                                        env=temporary_environment(self.artifacts))
             record['returncode'] = result.returncode
             stderr = (directory/(name+'.stderr')).read_bytes()
             allowed = (0, 1) if allow_rejection else (0,)
@@ -527,7 +533,7 @@ class Runner:
             receipt.update(status='failed', error=str(exc))
             raise
         finally:
-            (directory/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
+            write_checked_receipt(directory/'receipt.json', receipt, self.budget)
         # Only successful, reproducible build products are deleted. The source,
         # command logs, native bytes, hashes and detailed receipt stay on disk.
         for name in ('compiled.s', 'entry.s', 'program.o', 'entry.o', 'program'):
@@ -559,7 +565,7 @@ class Runner:
                 receipt.update(status='failed', error=str(exc))
                 raise
             finally:
-                (directory/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
+                write_checked_receipt(directory/'receipt.json', receipt, self.budget)
 
 
 def main():
@@ -568,7 +574,7 @@ def main():
     parser.add_argument('--artifacts', '--artifact-root', dest='artifact_root', type=Path)
     parser.add_argument('--quick', '--smoke', dest='smoke', action='store_true', help='development subset, never the full acceptance gate')
     parser.add_argument('--self-test-only', action='store_true')
-    parser.add_argument('--candidate-cap-mib', type=int, default=128, help='whole-candidate storage cap 128..1024 MiB; default 128; increases require explicit aggregate admission')
+    parser.add_argument('--candidate-cap-mib', type=int, default=128, help='per-invocation owned-output cap 128..1024 MiB; default 128; increases require explicit aggregate admission')
     parser.add_argument('--check-cap-only', action='store_true', help='configuration-only cap checks; no compiler, native test or acceptance receipt')
     add_identity_arguments(parser)
     args = parser.parse_args()
@@ -595,7 +601,7 @@ def main():
     require(sha(frozen) == CONTRACT_SHA256, 'frozen pre-implementation contract byte identity')
     pins = {str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p): sha(p) for p in
             [compiler, ROOT/'library/package/identity.au', ROOT/'library/std/array.au', Path(__file__).resolve(),
-             frozen, Path(sys.executable).resolve(strict=True), *runner.tools.values()]}
+             frozen, ROOT/'scripts/owned_outputs.py', Path(sys.executable).resolve(strict=True), *runner.tools.values()]}
     report = dict(status='running', compiler_identity=identity.record(), compiler_sha256_before=sha(compiler), pins=pins,
                   contract_document_sha256=sha(ROOT/'docs/package-identity-contract.md'),
                   authored_contract_sha256=sha(frozen),
@@ -632,10 +638,27 @@ def main():
         report.update(status='failed', error=str(exc))
         raise
     finally:
-        report.update(compiler_sha256_after=sha(compiler), candidate_allocated_bytes=runner.budget(),
-                      peak_candidate_allocated_bytes=runner.peak, global_free_bytes=shutil.disk_usage(ROOT).free,
-                      process_count=runner.process_count, finished_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
-        (artifacts/'manifest.json').write_text(json.dumps(report, indent=2)+'\n')
+        active_error = sys.exc_info()[0] is not None
+        finalization_errors = []
+        try:
+            allocated, free = runner.measure()
+            report.update(compiler_sha256_after=sha(compiler), owned_output_allocated_bytes=allocated,
+                          peak_owned_output_allocated_bytes=runner.peak, global_free_bytes=free,
+                          output_root=str(artifacts), accounting_scope='invocation outputs including tmp')
+            runner.budget()
+        except Exception as exc:
+            finalization_errors.append(str(exc))
+            report.update(status='failed', finalization_errors=finalization_errors)
+        report.update(process_count=runner.process_count,
+                      finished_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+        try:
+            write_checked_receipt(artifacts/'manifest.json', report, runner.budget)
+        except Exception as exc:
+            if not active_error:
+                raise
+            print('Secondary receipt-write failure; primary failure preserved: ' + str(exc), file=sys.stderr)
+        if finalization_errors and not active_error:
+            raise AssertionError('run finalization failed: ' + '; '.join(finalization_errors))
     print(f'PASS package identity: {len(cases)} native cases, {report["complete_u64_observations"]} complete u64 observations, '
           f'{2*report["rejection_cases"]} rejection runs; selected compiler identity unchanged', flush=True)
 

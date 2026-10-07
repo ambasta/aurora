@@ -43,5 +43,5 @@ def main():
   report.update(status='passed',native_observations=len(expected),source_negative_controls=12)
   print('PASS API77 native observations,12 source negatives')
  except Exception as e:report['status']='failed';report['error']=str(e);raise
- finally:report['allocated_bytes']=r.allocated();(directory/'manifest.json').write_text(json.dumps(report,indent=2)+'\n')
+ finally:report['allocated_bytes']=r.allocated();r.write_checked_receipt(directory/'manifest.json', report, r.budget)
 if __name__=='__main__':main()

@@ -5,6 +5,7 @@ import argparse, hashlib, importlib, json, pathlib, random, resource, shutil, su
 from dataclasses import dataclass
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / 'scripts'))
+from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
 from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 ROOT = FIXTURES = ARTIFACTS = CANDIDATE = None
 geometry = None
@@ -23,11 +24,11 @@ def require(c,m):
 def sha(p): return hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
 def allocated():
  if ARTIFACTS is None or not ARTIFACTS.exists(): return 0
- return ARTIFACTS.lstat().st_blocks*512 + sum(p.lstat().st_blocks*512 for p in ARTIFACTS.rglob('*'))
+ return allocated_bytes(ARTIFACTS)
 def budget(reserve=0):
  require(ARTIFACTS is not None,'explicit artifact root required')
  require(allocated()+reserve<=CAP,'owned output budget including reserve')
- require(shutil.disk_usage(ARTIFACTS if ARTIFACTS.exists() else ARTIFACTS.parent).free-reserve>FLOOR,'global free floor including reserve')
+ require(free_bytes(ARTIFACTS)-reserve>FLOOR,'global free floor including reserve')
 def configure(args):
  global ROOT,FIXTURES,ARTIFACTS,CANDIDATE,geometry,MODULE_PATHS
  validate_identity_selection(args)
@@ -54,7 +55,7 @@ def configure(args):
  budget(65536);ARTIFACTS.mkdir()
  return identity
 def input_paths(extra=None):
- p=[*MODULE_PATHS.values(),pathlib.Path(__file__).resolve()]
+ p=[*MODULE_PATHS.values(),pathlib.Path(__file__).resolve(),ROOT/'scripts/owned_outputs.py']
  p += [ROOT/'tests/compiler'/(x+'.py') for x in DEPS]
  p += [FIXTURES/x for x in FIXTURE_SHA]
  if extra is not None:p.append(pathlib.Path(extra).resolve())
@@ -226,7 +227,7 @@ class Suite:
   record={'command':list(map(str,args)),'address_space_bytes':address,'cpu_soft_hard_seconds':[10,11],'regular_file_cap':8<<20,'output_growth_reserve':24<<20,'wall_seconds':self.timeout if native else 30}
   try:
    with (directory/(name+'.stdout')).open('wb') as out,(directory/(name+'.stderr')).open('wb') as err:
-    p=subprocess.run(list(map(str,args)),stdout=out,stderr=err,timeout=record['wall_seconds'],preexec_fn=limits)
+    p=subprocess.run(list(map(str,args)),stdout=out,stderr=err,timeout=record['wall_seconds'],preexec_fn=limits,env=temporary_environment(ARTIFACTS))
    record['returncode']=p.returncode
    require(p.returncode==0,f'{name}: expected exit0 got {p.returncode}: '+(directory/(name+'.stderr')).read_bytes()[:4096].decode(errors='replace'))
    require((directory/(name+'.stderr')).stat().st_size==0,name+' unexpected stderr');budget()
@@ -279,5 +280,5 @@ def main():
    suite.run(source,names,expected,ARTIFACTS/f'batch-{start//6:03}');print('PASS',start+len(batch),'/',len(corpus),flush=True)
   require(pins=={str(p):sha(p) for p in inputs},'run-stable all input pins');identity.verify();report['status']='passed'
  except Exception as e:report['status']='failed';report['error']=str(e);raise
- finally:report['allocated_bytes']=allocated();report['global_free_bytes']=shutil.disk_usage(ARTIFACTS).free;(ARTIFACTS/'manifest.json').write_text(json.dumps(report,indent=2)+'\n')
+ finally:report['allocated_bytes']=allocated();report['global_free_bytes']=free_bytes(ARTIFACTS);write_checked_receipt(ARTIFACTS/'manifest.json', report, budget)
 if __name__=='__main__':main()

@@ -144,7 +144,7 @@ with compiler/source/tool pins and a distinct source/integration reviewer indepe
 of both production and oracle authors. Preserve failures and their exact sources.
 No kernel changes means no new device/emulator gate or qualification claim.
 
-Initial whole focused candidate budget is 256 MiB, with conservative growth reserve
+The historical initial whole focused candidate budget is 256 MiB, with conservative growth reserve
 and a 1 GiB filesystem free floor. Aggregate may use up to 1024 MiB only after measured
 approval from the parent. Keep an early verified source archive and preserve all
 failed test artifacts. Only losslessly verified successful-output compaction is
@@ -165,7 +165,7 @@ make test
 ```
 
 The focused target runs the independent harness under Python -B -O. Its default
-whole-candidate cap is 256 MiB; the aggregate target explicitly chooses 1024 MiB.
+per-invocation owned-output cap is 256 MiB; the aggregate target explicitly chooses 1024 MiB.
 An external aggregate supervisor must additionally account for retained sibling
 workspaces and growth reserve. The [shared test contract](developer-test-contract.md)
 supplies one fresh run-owned compiler and validated developer receipt, or an
@@ -194,10 +194,12 @@ frozen pre-implementation contract are unchanged, as are historical receipts.
 
 ## Current bounded resource-configuration checks
 
-The maximum selectable whole-candidate storage cap is 1024 MiB; focused defaults
+The maximum selectable per-invocation owned-output storage cap is 1024 MiB; focused defaults
 remain unchanged. Any increase still needs separate measured aggregate admission,
-including retained roots, growth reserve and the existing free-space floor. This
-does not change per-process address-space, per-file or source-size limits.
+including retained roots, growth reserve and the existing free-space floor. Retained
+roots affect free disk, not this invocation's cap; see the
+[shared output-budget scope](developer-test-contract.md#per-invocation-output-budgets).
+This does not change per-process address-space, per-file or source-size limits.
 `--check-cap-only` validates resource configuration without reading/running a
 compiler or creating a native acceptance receipt. Its configuration-only result
 cannot replace this contract's behavioral oracle and full acceptance gates.
