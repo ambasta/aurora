@@ -73,6 +73,8 @@ write them to a physical disk or replace your bootloader.
 See [local development](docs/local-development.md) for dependencies, compiler and
 firmware options, build-only commands and troubleshooting. `make help` lists the
 entrypoints. Host/toolchain qualification is recorded with each tested result.
+For incremental compiler builds and focused parallel byte/storage tests, use the
+optional [Meson/Ninja bootstrap](docs/meson-bootstrap.md).
 
 ## Explore the project
 
