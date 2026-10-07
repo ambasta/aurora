@@ -313,4 +313,10 @@ test-formatter: $(FORMAT_OUT)
 	$(dir $(FORMAT_OUT))format-tests $$(find ../examples ../library ../kernel/policies ../tests/kernel-programs -name '*.au' -type f | LC_ALL=C sort)
 	python3 -B -O ../tests/compiler/format.py $(abspath $(FORMAT_OUT))
 
+.PHONY: test-lint
+test-lint: $(FORMAT_OUT) $(OUT)
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/lint.cpp -o $(dir $(FORMAT_OUT))lint-tests
+	python3 -B -O ../tests/compiler/lint.py $(abspath $(FORMAT_OUT)) $(abspath $(OUT)) \
+	    $(abspath $(dir $(FORMAT_OUT))lint-tests)
+
 endif # controlled outer dispatcher / original inner graph

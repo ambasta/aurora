@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <ostream>
@@ -38,7 +39,8 @@ enum class DiagnosticCode {
     Semantic,
     Module,
     CommandLine,
-    Internal
+    Internal,
+    UnreadLocal
 };
 inline std::string_view diagnosticCode(DiagnosticCode code) {
     switch (code) {
@@ -56,16 +58,26 @@ inline std::string_view diagnosticCode(DiagnosticCode code) {
         return "AU4001";
     case DiagnosticCode::CommandLine:
         return "AU5001";
+    case DiagnosticCode::UnreadLocal:
+        return "AU6001";
     case DiagnosticCode::Internal:
         return "AU9001";
     }
     return "AU9001";
+}
+enum class DiagnosticSeverity {
+    Error,
+    Warning
+};
+inline std::string_view diagnosticSeverity(DiagnosticSeverity severity) {
+    return severity == DiagnosticSeverity::Warning ? "warning" : "error";
 }
 class Diagnostic {
 public:
     DiagnosticCode code = DiagnosticCode::Unclassified;
     std::string message;
     SourceSpan span;
+    DiagnosticSeverity severity = DiagnosticSeverity::Error;
 };
 class Error : public std::runtime_error {
 public:
@@ -134,7 +146,10 @@ inline void writeJsonPosition(std::ostream &out, const SourcePosition &position)
         << '}';
 }
 inline void writeDiagnosticsJson(std::ostream &out, const std::vector<Diagnostic> &diagnostics) {
-    out << "{\"schemaVersion\":1,\"success\":" << (diagnostics.empty() ? "true" : "false") << ",\"diagnostics\":[";
+    const bool errors = std::any_of(diagnostics.begin(), diagnostics.end(), [](const auto &diagnostic) {
+        return diagnostic.severity == DiagnosticSeverity::Error;
+    });
+    out << "{\"schemaVersion\":1,\"success\":" << (errors ? "false" : "true") << ",\"diagnostics\":[";
     bool first = true;
     for (const auto &diagnostic : diagnostics) {
         if (!first)
@@ -142,7 +157,9 @@ inline void writeDiagnosticsJson(std::ostream &out, const std::vector<Diagnostic
         first = false;
         out << "{\"code\":";
         writeJsonString(out, diagnosticCode(diagnostic.code));
-        out << ",\"severity\":\"error\",\"message\":";
+        out << ",\"severity\":";
+        writeJsonString(out, diagnosticSeverity(diagnostic.severity));
+        out << ",\"message\":";
         writeJsonString(out, diagnostic.message);
         out << ",\"path\":";
         if (diagnostic.span.source)

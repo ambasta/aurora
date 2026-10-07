@@ -234,10 +234,11 @@ Default mode prints validated formatted source to stdout; diagnostics go to
 stderr. There is no in-place write mode. Never redirect stdout onto the input
 file, because the shell would truncate it before the formatter starts. `--check`
 checks syntax, formatting and bounded style rules without resolving imports.
-`--lint` separately runs the existing compiler semantic-check API; no additional
-semantic lint rules are claimed. See [modes, bounds and preservation guarantees](FORMAT.md).
-`make test-formatter` is the focused gate, separate from full compiler/native
-acceptance.
+`--lint` separately uses the shared compiler frontend and reports the bounded
+[AU6001 unread scalar/enum local rule](LINT.md). It never removes initializers or
+rewrites source; leading-underscore names opt out. See
+[modes, bounds and preservation guarantees](FORMAT.md). `make test-formatter` and
+`make test-lint` are focused gates, separate from full compiler/native acceptance.
 
 ## Direct owned-field mutation candidate
 

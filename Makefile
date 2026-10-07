@@ -461,10 +461,12 @@ test-emulator-clock:
 test: test-emulator-clock
 
 # Compiler-owned Aurora source formatter; focused checks, not native acceptance.
-.PHONY: formatter test-formatter
+.PHONY: formatter test-formatter test-lint
 formatter:
 	$(MAKE) -C compiler formatter
 test-formatter:
 	$(MAKE) -C compiler test-formatter
+test-lint:
+	$(MAKE) -C compiler test-lint
 
 endif # controlled outer dispatcher / original inner graph

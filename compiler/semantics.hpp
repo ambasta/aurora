@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 namespace aurora {
+enum class AnalysisMode { Check, Lint };
 class Local {
   public:
     std::string name;
@@ -37,6 +38,13 @@ class SemanticAnalyzer {
     int slot = 0, label = 0;
     Type result = Type::I64;
     const Function *currentFunction = nullptr;
+    AnalysisMode mode;
+    bool lintFunction = false;
+    // Syntactic reads are monotonic, unlike the ownership state copied at joins.
+    // Indices are the analyzer's resolved Local identities, never source names.
+    std::set<int> readLocals;
+    std::vector<std::pair<int, SourceSpan>> lintBindings;
+    std::vector<Diagnostic> lintDiagnostics;
 
     [[noreturn]] void fail(const Token &t, const std::string &m) {
         throw Error(DiagnosticCode::Semantic, "line " + std::to_string(t.line) + ": " + m, t.span);
@@ -211,6 +219,8 @@ class SemanticAnalyzer {
         int i = find(e->token);
         if (!locals[i].live)
             fail(e->token, "use after move of '" + e->token.text + "'");
+        if (lintFunction)
+            readLocals.insert(i);
         return i;
     }
     void arity(ExpressionPtr e, std::size_t n) {
@@ -1211,6 +1221,8 @@ class SemanticAnalyzer {
                     fail(s->token, "constructor does not match ownership type");
             }
             int i = add(s->name, s->type, s->mutableValue, s->token);
+            if (lintFunction && scalarValue(s->type) && !s->name.starts_with("_") && s->bindingSpan.source)
+                lintBindings.emplace_back(i, s->bindingSpan);
             locals[i].owner = owner;
             emit(ir::Store{offset(i), payloadType(locals[i].type)});
             return false;
@@ -1333,12 +1345,18 @@ class SemanticAnalyzer {
     }
 
   public:
-    explicit SemanticAnalyzer(Program program)
+    explicit SemanticAnalyzer(Program program, AnalysisMode analysisMode = AnalysisMode::Check)
         : sourceFunctions(std::move(program.functions)), classes(std::move(program.classes)),
-          enums(std::move(program.enums)), reflectionAccess(std::move(program.reflectionAccess)) {
+          enums(std::move(program.enums)), reflectionAccess(std::move(program.reflectionAccess)), mode(analysisMode) {
         for (const auto &definition : classes)
             for (const auto &method : definition.methods)
                 sourceFunctions.push_back(method);
+    }
+    std::vector<Diagnostic> takeLintDiagnostics() {
+        std::sort(lintDiagnostics.begin(), lintDiagnostics.end(), [](const auto &left, const auto &right) {
+            return left.span.begin.offset < right.span.begin.offset;
+        });
+        return std::move(lintDiagnostics);
     }
     ir::ValidatedModule analyze() {
         static const std::set<std::string> builtins = {"i64",
@@ -1436,6 +1454,12 @@ class SemanticAnalyzer {
         module.classStorage = classStorage;
         for (auto &function : sourceFunctions) {
             currentFunction = &function;
+            lintFunction = mode == AnalysisMode::Lint && function.moduleScope == 0 &&
+                           function.templateArguments.empty() && !function.constructor;
+            if (lintFunction && !function.receiverClass.empty())
+                lintFunction = classes.at(classNames.at(function.receiverClass)).templateArguments.empty();
+            readLocals.clear();
+            lintBindings.clear();
             locals.clear();
             scopes.clear();
             scopes.emplace_back();
@@ -1505,6 +1529,11 @@ class SemanticAnalyzer {
                 fail(function.token, "function must return on every path");
             lowered.frameBytes = ((slot * 8 + 15) / 16) * 16;
             module.functions.push_back(std::move(lowered));
+            for (const auto &[local, span] : lintBindings)
+                if (!readLocals.contains(local))
+                    lintDiagnostics.push_back({DiagnosticCode::UnreadLocal,
+                                               "local binding '" + locals[local].name + "' is never read", span,
+                                               DiagnosticSeverity::Warning});
         }
         for (int id = 1; id <= 5; ++id)
             module.descriptors[id] = ir::Descriptor{id == 2 ? 1 : 8, 0};

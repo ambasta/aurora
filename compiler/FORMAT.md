@@ -29,10 +29,11 @@ bounded to 1 MiB before append. A limit failure emits no formatted source.
   compiler parser. They do not resolve imports or check types/lifetimes. An
   unresolved name can still be formatted. `--check` reports whether canonical
   formatting differs plus the bounded style findings below; it emits no source.
-- `--lint` currently invokes exactly `checkSource`, the compiler's existing
-  module-resolution, semantic and verified-IR checks. It is the semantic-check
-  mode, not additional semantic lint rules. `--module-root DIR` is repeatable and
-  applies only to this mode. This mode does not run style checks or format source.
+- `--lint` invokes the compiler's shared module-resolution, semantic and verified-IR
+  checks, then reports the bounded [AU6001 unread-local rule](LINT.md). Warnings
+  apply to scalar/enum locals in root-module non-template functions and methods.
+  `--module-root DIR` is repeatable and applies only to this mode. This mode does
+  not run style checks or format source. Warnings exit 0 and never rewrite code.
 - `--check` and `--lint` cannot be combined. Run both when both are wanted.
 
 All diagnostics, including requested JSON, go to stderr. Stdout is reserved for
@@ -41,7 +42,8 @@ formatting difference or style finding, and 2 means an argument, input, compiler
 formatter-invariant or output error. Existing AU diagnostic families and imported
 source ranges remain intact. Format-check JSON adds `mode: "format-check"` and a
 `changed` boolean; its warnings have explicit AUF codes. Semantic-check JSON uses
-the compiler's existing schema. No schema promises LSP coordinates.
+the compiler's existing schema, with warning severity and success when no errors
+are present. No schema promises LSP coordinates.
 
 ## Layout and preservation contract
 

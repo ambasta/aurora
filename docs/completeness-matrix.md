@@ -1,5 +1,21 @@
 # Completeness and acceptance matrix
 
+## Compiler-owned semantic lint candidate — 2026-10-07
+
+The opt-in formatter `--lint` mode adds [AU6001 unread-local warnings](../compiler/LINT.md)
+using resolved local identities and exact parser-owned identifier spans. The
+bounded rule covers root-module scalar/enum locals in ordinary functions and
+non-template methods. It preserves all initializers and excludes templates,
+imports, parameters and capability/aggregate bindings. Leading underscores opt
+out. This is syntactic read analysis, not a path-sensitive dead-store proof.
+Independent source review accepted the bounded rule. Both Python modes passed
+62 lint cases and frontend/native-effect checks, with selected compiler regressions,
+shared formatter/LSP compatibility and identical assembly for all 29 examples.
+[Results](semantic-lint-results.md) retain the invalid reserved-name test fixture
+and corrected replay. Independent retained-evidence review accepted the checkpoint. Ordinary
+compiler and LSP checks are unchanged.
+
+
 ## Test-only IOMMU event/completion reference candidate — 2026-10-07
 
 The next test-only dependency distinguishes copied ordinary-memory faults from
