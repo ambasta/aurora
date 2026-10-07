@@ -321,6 +321,7 @@ class DeveloperCommands(unittest.TestCase):
                             ("MAKEFLAGS", "n"), ("MFLAGS", "-i"), ("GNUMAKEFLAGS", "-n"),
                             ("MAKEFILES", "injected.mk"), ("MAKEOVERRIDES", "CXX=other"),
                             ("KERNEL_TEST_FAULT", "1"), ("KERNEL_USER_PROBE_MODE", "1"),
+                            ("KERNEL_CONSOLE", "1"), ("KERNEL_CONSOLE", "0"),
                             ("UEFI_MODE", "bad-table")):
             with self.subTest(name=name):
                 self.assertIn("Unset " + name, self.run_script("host-build-check.sh", env={name: value}, expected=2))

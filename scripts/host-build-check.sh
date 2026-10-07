@@ -14,7 +14,7 @@ if [[ -n "${AURORA_TEST_CONTEXT:-}" ]]; then
 fi
 # This entrypoint checks fresh normal builds, never a stale pin or dry/ignored run.
 for name in AURORAC OUT MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES \
-            "${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE UEFI_MODE; do
+            "${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE; do
     [[ -n "$name" ]] || continue
     if [[ -n "${!name:-}" ]]; then
         echo "Unset $name before this standalone normal host build check." >&2

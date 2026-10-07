@@ -410,6 +410,8 @@ independent terminal review. The full native graph was not rerun on GCC 16.
 See the concise [host matrix and rerun command](local-development.md#repeating-host-build-checks).
 Clang's bootstrap builds, but image builds still fail on GCC-only flags. These
 are bounded host/firmware checks, not all-host or physical-machine qualification.
+The current host-build runner also rejects inherited interactive BIOS console
+controls before work, preserving its normal-image scope.
 
 ## Verified bounded ASCII token scanner — 2026-10-06
 
