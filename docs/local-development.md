@@ -174,6 +174,9 @@ UEFI success, and neither establishes physical AMD/Framework support.
 - `make test-compiler`: existing root compiler-test target; compiler scope only.
 - `make test`: full native aggregate. This does not run QEMU.
 - `make run` and `make run-uefi`: one normal emulator gate each.
+- `make smoke-console` and `make smoke-console-uefi`: automated BIOS/UEFI
+  console acceptance through the existing private-PTY test. Both also run in
+  `make smoke-all`. `make test-console` is native console-policy coverage only.
 - `make smoke`, `make smoke-fault`, `make smoke-page-fault` and `make smoke-all`:
   existing targeted/fault/full emulator gates. Use these directly for injected
   modes; the normal wrapper deliberately rejects fault controls.
@@ -190,15 +193,22 @@ language, kernel, hardware or broad-host qualification claims.
 
 ## Testing these shortcuts
 
-`make test-developer-commands` runs the normal and optimized command-routing and
-firmware-selection Python checks.
+`make test-developer-commands` runs the normal and optimized command-routing,
+console-smoke routing, BAR-runner routing and firmware-selection Python checks.
 `python3 -B tests/developer-commands.py` checks command routing, argument rejection,
 dependency failures, inherited-context rejection, environment selectors and Make aliases in disposable fake-tool
 fixtures. One case runs the real BIOS and UEFI smoke runners with a pseudo-terminal
 stdin and a fake QEMU that records whether it received that terminal.
 It never builds Aurora or starts real QEMU, and is not native/emulator
 acceptance. Run it under `python3 -B -O` too; the tests use `unittest` assertions.
-It remains separate from the existing compiler and native aggregate graphs.
+These checks remain separate from the existing compiler and native aggregate graphs.
+`tests/kernel-console-routing.py` records the exact BIOS/UEFI PTY entrypoint
+commands with fake builders and Python dispatch. It checks public Make routes,
+preflight rejection, primary failure propagation and normal-image restoration;
+failure-path cases run the real PTY entrypoint against fake failing/interrupted
+emulators and check propagation/restoration, child cleanup and the original-clock
+command.
+These synthetic tests do not qualify guest behavior.
 
 See [the focused verification record](local-development-results.md) for the
 actual compiler-only and normal BIOS/UEFI checks, preserved failures and limits.
@@ -227,3 +237,38 @@ Commands are `help`, `status` and `exit`; the session has a five-minute limit.
 The [console contract](kernel-console-contract.md) explains its 64-byte ASCII
 editor, interrupt-driven idle wait and emulator-only limits. `make run` and
 `make run-uefi` still complete automatically as before.
+
+## Automated console acceptance
+
+Run the bounded acceptance tests without typing into an interactive terminal:
+
+```sh
+make smoke-console
+make smoke-console-uefi OVMF_DIR=/path/to/firmware
+./scripts/kernel-console-smoke.sh bios
+./scripts/kernel-console-smoke.sh uefi
+```
+
+The standalone wrapper rejects inherited native-test context and nonempty
+`KERNEL_TEST_*`, `KERNEL_USER_PROBE_MODE`, `KERNEL_CONSOLE`, `UEFI_MODE` and
+`UEFI_CONSOLE_HANDOFF` controls. It checks QEMU, Python, the image-builder tools,
+requested QEMU data and, for UEFI, firmware and PE-linker selection before
+starting any build or restoration. Missing prerequisites fail rather than skip.
+
+The wrapper builds the console image (`KERNEL_CONSOLE=1` for BIOS,
+`UEFI_MODE=console` for UEFI) and invokes `tests/kernel-console-pty.py`, adding
+`--uefi` only for UEFI. That existing test owns the private PTY, 30-second
+deadline, exact boot transcript validation, editing/rejection/recovery probes,
+latency and idle-wait checks, clean exit-status check and UEFI original-clock
+receipt. The wrapper does not replace validators or add clock acceleration.
+
+After a console-image build starts, success, failure and handled interruption
+all attempt to rebuild that platform's normal image. The PTY driver handles
+SIGTERM by exiting through its cleanup, terminating and joining its detached
+QEMU process before the wrapper restores. A failed prerequisite
+does not trigger restoration. A test/build failure stays nonzero even if
+restoration succeeds; a restoration failure also makes an otherwise successful
+run fail. Logs and metrics remain in `build/kernel-console-pty.*` for BIOS or
+`build/uefi/kernel-console-pty.*` for UEFI, with the UEFI command receipt in
+`build/uefi/console-pty.clock.json`. Restoration builds an image; it is not an
+additional normal guest-boot gate.
