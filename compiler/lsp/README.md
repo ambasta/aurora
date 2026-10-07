@@ -96,6 +96,58 @@ error uses LSP's mandatory range at the root's start, explicitly marked
 `[location unavailable]` and `data.rangeKnown=false`. That range is not a claim of
 precise compiler provenance.
 
+## Opt-in semantic lint
+
+Initialize with `initializationOptions: {"lint": true}` to publish the shared
+compiler's [AU6001 unread-local warnings](../LINT.md). Omitted or null options,
+an empty object, and `{"lint": false}` retain the default first-error-only
+checking behavior. The options object supports only the boolean `lint` key.
+Other keys, non-object values and non-boolean values receive `InvalidParams`
+(-32602) before initialization; a corrected initialize request can be retried.
+The choice lasts for the session. Dynamic configuration is not implemented.
+Initialization options do not grant import roots or change source admission.
+
+The adapter calls `checkSource` once per open root, selecting
+`AnalysisMode::Lint` only when enabled. A complete successful graph yields
+root-module findings in declaration order. Any graph error suppresses that
+root's warnings and publishes the existing first error. Other independently
+valid open roots can still warn in the same refresh. Imported modules do not
+contribute warnings unless separately opened and checked as roots themselves.
+
+Warnings retain compiler code, message and exact identifier span and use LSP
+severity 2; errors remain severity 1. `data.firstErrorOnly` is false for warnings
+and true for errors, describing the compiler's first-error limit rather than a
+limit on the number of warnings. Byte spans use the existing UTF-16 conversion
+over the exact accepted snapshot. The current document version accompanies all
+publications for open documents.
+
+One URI's replacement publication contains at most 128 diagnostics. Errors
+come first and are never discarded for warnings; retained warnings follow in
+declaration order. If the complete result exceeds the limit, the final slot is
+an explicit server warning with code `aurora-lsp-diagnostics-limit`, source
+`aurora-lsp`, severity 2 and `data.omittedWarnings`. It uses the root's start
+with `rangeKnown=false` and a location-unavailable prefix. Thus 128 warnings
+fit exactly; 129 yield the first 127 plus a notice that two were omitted. The
+notice is a publication limit, not a compiler lint rule or a source error.
+Reports are never split into misleading partial replacement notifications.
+
+At most 32 first errors and 128 retained warnings are staged per URI. The
+128-record final bound, 4 KiB message prefix and 16 KiB incoming URI bound fit
+within 8 MiB even when JSON escaping expands each byte sixfold. Closed-import
+URIs are generated from admitted CLI roots and module paths; their lengths are
+not established by the incoming URI limit. The final encoded UTF-8 publication,
+including any generated URI, is checked against the byte budget before writing.
+An unexpected invariant violation ends the session without an over-limit frame.
+These publication bounds do not bound frontend CPU or its full finding vector.
+
+Accepted import updates refresh all open roots, clearing obsolete warnings on
+errors and restoring them when the graph is valid again. Stale or malformed
+changes never replace a snapshot or publish a new report. Closing a document
+removes its overlay and its standalone warnings; another root importing its
+disk contents does not keep those warnings alive. Source checks remain read-only.
+Leading underscores suppress AU6001 under the compiler's existing rule. There
+is no autofix, code action, initializer removal or lint-driven formatting.
+
 No completion, rename, hover, semantic tokens, range/on-type formatting, code actions,
 incremental parsing, background cancellation or disk watcher is advertised.
 Document formatting uses the same standalone formatter implementation. Disk
@@ -154,6 +206,7 @@ are unchanged. Formatting is synchronous and cancellation cannot interrupt it.
 - 8 MiB wire payload; JSON depth 64; 65,536 parser events; duplicate keys rejected
 - 32 open documents; 1 MiB each; 4 MiB total open snapshot bytes
 - 16 KiB URI; 1 KiB string request ID; 4 KiB diagnostic message prefix
+- 128 diagnostics per URI publication, with explicit warning truncation notice
 - Existing frontend bounds: 16 roots, 64 files, 1 MiB/file and 4 MiB/graph
 
 These application bounds are not a production-security or whole-process memory
@@ -175,6 +228,12 @@ pass in both modes against the fresh binary, along with all 84 current formatter
 corpus sources. See the initial
 [diagnostic results](../../docs/lsp-results.md) and the focused
 [formatting results](../../docs/lsp-formatting-results.md).
+
+Opt-in lint transcripts additionally cover initialization validation, default
+off, exact warning metadata, graph-error precedence, mixed independent roots,
+versioned import changes, closing, underscore suppression and publication limits.
+The [focused lint results](../../docs/lsp-lint-results.md) record the complete
+163-case replay in each Python mode and preserve its corrected test fixture.
 
 No full native aggregate, new compiler semantic qualification, sanitizer,
 emulator, physical hardware or production-security pass is implied.

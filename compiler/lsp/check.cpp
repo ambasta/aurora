@@ -3,15 +3,15 @@
 #include "../format.hpp"
 
 namespace aurora::lsp {
-std::optional<Diagnostic> checkDocument(const std::filesystem::path &path,
-                                        const std::vector<std::filesystem::path> &roots,
-                                        const Snapshots &snapshots) {
+std::vector<Diagnostic> checkDocument(const std::filesystem::path &path,
+                                      const std::vector<std::filesystem::path> &roots,
+                                      const Snapshots &snapshots,
+                                      bool lint) {
     try {
-        (void)checkSource(path, roots, snapshots);
+        return checkSource(path, roots, snapshots, lint ? AnalysisMode::Lint : AnalysisMode::Check).lintDiagnostics;
     } catch (const Error &error) {
-        return error.diagnostic;
+        return {error.diagnostic};
     }
-    return {};
 }
 std::string formatDocument(const std::filesystem::path &path, const SourceText &snapshot) {
     // Reauthorize the named file at request time, but never read disk bytes in

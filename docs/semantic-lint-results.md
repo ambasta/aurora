@@ -5,8 +5,8 @@
 The [bounded contract](../compiler/LINT.md) adds opt-in `AU6001` warnings for unread
 scalar/enum local bindings in root-module ordinary functions and non-template
 methods. It shares compiler name resolution and identifier spans. It does not
-remove initializers or change ordinary compilation, and it does not publish lint
-warnings through LSP yet. This is syntactic read analysis, not a path-sensitive
+remove initializers or change ordinary compilation. At this checkpoint it did
+not publish lint warnings through LSP. This is syntactic read analysis, not a path-sensitive
 dead-store proof.
 
 The base is PR65 main commit `51eddaba18142f618f41f59b2ccd08556c768ea3`, tree
@@ -98,6 +98,7 @@ These are focused compiler/tooling results, not a fresh complete native aggregat
 a sanitizer run, a kernel/emulator gate, physical hardware qualification or a
 proof of language safety. Templates, imported-module warnings, parameters and
 aggregate/capability local warnings remain outside this rule. Ordinary compiler
-checks and the LSP remain warning-free unless a later, explicit integration enables
-semantic lint. Warnings do not change runtime code generation or authorize an
+checks and the default LSP remain warning-free. The subsequent
+[explicit LSP integration](../compiler/lsp/README.md#opt-in-semantic-lint) has a
+separate focused gate. Warnings do not change runtime code generation or authorize an
 autofix.

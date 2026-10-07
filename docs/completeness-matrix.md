@@ -1,5 +1,21 @@
 # Completeness and acceptance matrix
 
+## Opt-in LSP semantic lint candidate — 2026-10-07
+
+The optional language server can select the existing compiler-owned lint mode
+through a strict initialization option, disabled by default. It publishes
+AU6001 with warning severity and exact UTF-16 identifier spans after each root's
+complete graph passes. Existing overlay/version refreshes clear obsolete
+warnings. The [contract](../compiler/lsp/README.md#opt-in-semantic-lint) describes
+configuration, imported-root scope and unchanged source-admission limits.
+Independent source and test-correction review accepted the bounded change.
+The focused gate passed 163 actual-server cases and 18,745 assertions in each
+Python mode, 49 helper checks and both 62-case lint dependency runs. The
+[results](lsp-lint-results.md) preserve a corrected CR-comment fixture failure.
+Independent retained-evidence review accepted this bounded checkpoint.
+No new parser, formatter behavior, autofix, editor UI, full native aggregate or
+kernel qualification is claimed.
+
 ## Compiler-owned semantic lint candidate — 2026-10-07
 
 The opt-in formatter `--lint` mode adds [AU6001 unread-local warnings](../compiler/LINT.md)
@@ -13,7 +29,7 @@ Independent source review accepted the bounded rule. Both Python modes passed
 shared formatter/LSP compatibility and identical assembly for all 29 examples.
 [Results](semantic-lint-results.md) retain the invalid reserved-name test fixture
 and corrected replay. Independent retained-evidence review accepted the checkpoint. Ordinary
-compiler and LSP checks are unchanged.
+compiler and default LSP checks are unchanged.
 
 
 ## Test-only IOMMU event/completion reference candidate — 2026-10-07

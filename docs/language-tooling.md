@@ -106,8 +106,10 @@ exact-byte fixtures outside bulk rewrites.
 The initial optional [stdio adapter](../compiler/lsp/README.md) now covers
 initialize/shutdown, full-sync document state and first-error diagnostics.
 Whole-document formatting now delegates to the same compiler formatter for the
-current accepted snapshot. Active cancellation and the semantic editor features
-below remain separate gates and are not advertised.
+current accepted snapshot. An explicit initialization option now routes the
+shared semantic-lint findings into versioned warning diagnostics. The default
+remains check-only. Active cancellation and the semantic editor features below
+remain separate gates and are not advertised.
 
 Add a bounded stdio JSON-RPC/LSP adapter for initialize/shutdown, document
 open/change/close, diagnostics and document formatting. Full-document changes

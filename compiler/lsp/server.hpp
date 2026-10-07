@@ -8,10 +8,12 @@
 
 namespace aurora::lsp {
 using Json = nlohmann::json;
-using Check = std::function<std::optional<Diagnostic>(const std::filesystem::path &, const Snapshots &)>;
+using Check = std::function<std::vector<Diagnostic>(const std::filesystem::path &, const Snapshots &, bool)>;
 inline constexpr std::size_t maxDocumentBytes = 1024 * 1024;
 inline constexpr std::size_t maxOpenBytes = 4 * 1024 * 1024;
 inline constexpr std::size_t maxDocuments = 32;
+inline constexpr std::size_t maxPublishedDiagnostics = 128;
+static_assert(maxDocuments < maxPublishedDiagnostics);
 
 inline Json parseMessage(const std::string &payload) {
     std::size_t events = 0;
@@ -77,17 +79,28 @@ inline std::string boundedMessage(std::string message) {
 inline Json diagnosticJson(const Diagnostic &diagnostic) {
     Position begin, end;
     const bool known = static_cast<bool>(diagnostic.span.source);
+    const bool warning = diagnostic.severity == DiagnosticSeverity::Warning;
     if (known) {
         const auto &text = diagnostic.span.source->text;
         begin = utf16Position(text, diagnostic.span.begin.offset);
         end = utf16Position(text, std::max(diagnostic.span.begin.offset, diagnostic.span.end.offset), true);
     }
     return {{"range", {{"start", positionJson(begin)}, {"end", positionJson(end)}}},
-            {"severity", 1},
+            {"severity", warning ? 2 : 1},
             {"code", diagnosticCode(diagnostic.code)},
             {"source", "aurora"},
             {"message", boundedMessage((known ? "" : "[location unavailable] ") + diagnostic.message)},
-            {"data", {{"rangeKnown", known}, {"firstErrorOnly", true}}}};
+            {"data", {{"rangeKnown", known}, {"firstErrorOnly", !warning}}}};
+}
+
+inline bool lintOption(const Json &params) {
+    const auto &options = field(params, "initializationOptions");
+    if (options.is_null())
+        return false;
+    if (!options.is_object() || options.size() > 1 ||
+        (!options.empty() && (!options.contains("lint") || !options["lint"].is_boolean())))
+        throw ProtocolError("initializationOptions supports only a boolean lint option");
+    return !options.empty() && options["lint"].get<bool>();
 }
 
 class Session {
@@ -102,6 +115,7 @@ class Session {
     std::ostream &logs;
     bool initialized = false;
     bool shutdown = false;
+    bool lint = false;
     std::size_t openBytes = 0;
     std::map<std::filesystem::path, Document> documents;
     std::set<std::string> published;
@@ -129,6 +143,7 @@ class Session {
         Snapshots snapshots;
         std::map<std::string, Json> diagnostics;
         std::map<std::string, std::int32_t> versions;
+        std::map<std::string, std::size_t> warningCounts, omittedWarnings;
         for (const auto &[path, document] : documents) {
             snapshots.emplace(path, document.snapshot);
             diagnostics[document.uri] = Json::array();
@@ -136,34 +151,80 @@ class Session {
         }
         for (const auto &[path, document] : documents) {
             (void)document;
-            std::optional<Diagnostic> found;
+            std::vector<Diagnostic> found;
             try {
-                found = check(path, snapshots);
+                found = check(path, snapshots, lint);
             } catch (const std::exception &) {
                 log("compiler check failed internally");
-                found = Diagnostic{DiagnosticCode::Internal, "compiler check failed internally", {}};
+                found = {{DiagnosticCode::Internal, "compiler check failed internally", {}}};
             }
-            if (!found)
-                continue;
-            const auto uri = sourceUri(*found, path);
-            auto &entries = diagnostics.try_emplace(uri, Json::array()).first->second;
-            const auto value = diagnosticJson(*found);
-            // Import wrappers add message context to the same source error. Its
-            // compiler code and exact location identify that one publication.
-            const bool duplicate = std::any_of(entries.begin(), entries.end(), [&](const auto &entry) {
-                return entry["code"] == value["code"] && entry["range"] == value["range"];
-            });
-            if (!duplicate)
-                entries.push_back(value);
+            for (const auto &diagnostic : found) {
+                const auto uri = sourceUri(diagnostic, path);
+                auto &entries = diagnostics.try_emplace(uri, Json::array()).first->second;
+                const bool warning = diagnostic.severity == DiagnosticSeverity::Warning;
+                // Compiler lint findings belong only to their independently
+                // checked root, so omitted root warnings cannot be duplicates
+                // projected by other importers. Avoid converting excess spans.
+                if (warning && warningCounts[uri] >= maxPublishedDiagnostics) {
+                    ++omittedWarnings[uri];
+                    continue;
+                }
+                const auto value = diagnosticJson(diagnostic);
+                // Import wrappers add message context to the same source error.
+                // Compiler identity and exact location identify one publication.
+                const bool duplicate = std::any_of(entries.begin(), entries.end(), [&](const auto &entry) {
+                    return entry["code"] == value["code"] && entry["range"] == value["range"] &&
+                           entry["severity"] == value["severity"];
+                });
+                if (!duplicate) {
+                    entries.push_back(value);
+                    if (warning)
+                        ++warningCounts[uri];
+                }
+            }
         }
         for (const auto &uri : published)
             diagnostics.try_emplace(uri, Json::array());
         published.clear();
         for (auto &[uri, entries] : diagnostics) {
-            Json params = {{"uri", uri}, {"diagnostics", entries}};
+            Json bounded = Json::array();
+            // At most one error per open root, at most 32 roots. Errors always
+            // survive the warning budget, including errors discovered later.
+            for (const auto &entry : entries)
+                if (entry["severity"] == 1)
+                    bounded.push_back(entry);
+            auto omitted = omittedWarnings[uri];
+            const bool truncated = omitted || entries.size() > maxPublishedDiagnostics;
+            const auto limit = maxPublishedDiagnostics - static_cast<std::size_t>(truncated);
+            for (const auto &entry : entries) {
+                if (entry["severity"] != 2)
+                    continue;
+                if (bounded.size() < limit)
+                    bounded.push_back(entry);
+                else
+                    ++omitted;
+            }
+            if (omitted)
+                bounded.push_back(
+                    {{"range", {{"start", positionJson({})}, {"end", positionJson({})}}},
+                     {"severity", 2},
+                     {"code", "aurora-lsp-diagnostics-limit"},
+                     {"source", "aurora-lsp"},
+                     {"message",
+                      "[location unavailable] Diagnostic publication truncated; " + std::to_string(omitted) +
+                          " warnings omitted."},
+                     {"data", {{"rangeKnown", false}, {"firstErrorOnly", false}, {"omittedWarnings", omitted}}}});
+            Json params = {{"uri", uri}, {"diagnostics", std::move(bounded)}};
             if (const auto version = versions.find(uri); version != versions.end())
                 params["version"] = version->second;
-            send({{"jsonrpc", "2.0"}, {"method", "textDocument/publishDiagnostics"}, {"params", std::move(params)}});
+            const Json message = {
+                {"jsonrpc", "2.0"}, {"method", "textDocument/publishDiagnostics"}, {"params", std::move(params)}};
+            const auto payload = message.dump(-1, ' ', false, Json::error_handler_t::replace);
+            // Count encoded UTF-8 bytes, not characters. This also checks
+            // generated closed-import URIs outside the incoming URI bound.
+            if (payload.size() > maxMessageBytes)
+                throw std::length_error("diagnostic publication exceeds wire limit");
+            writeFrame(output, payload);
             if (!entries.empty() || versions.contains(uri))
                 published.insert(uri);
         }
@@ -288,6 +349,12 @@ class Session {
             else if (!params.is_object())
                 error(id, -32602, "Invalid initialize parameters");
             else {
+                try {
+                    lint = lintOption(params);
+                } catch (const ProtocolError &failure) {
+                    error(id, -32602, failure.what());
+                    return {};
+                }
                 initialized = true;
                 result(id,
                        {{"capabilities",
