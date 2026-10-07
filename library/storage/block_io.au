@@ -4,7 +4,7 @@ import std.binary_buffer;
 import storage.sector;
 
 export namespace storage {
-    enum class SectorIoStatus { success, out_of_range, read_only };
+    enum class SectorIoStatus { success, out_of_range, read_only, invalid_source };
     enum class SectorFlushMode { visibility, durable };
     enum class SectorFlushStatus { volatile_complete, unsupported };
 
