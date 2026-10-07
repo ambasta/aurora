@@ -1,0 +1,2 @@
+option('lsp', type: 'boolean', value: false,
+       description: 'Build the optional compiler-owned language server (requires nlohmann_json)')

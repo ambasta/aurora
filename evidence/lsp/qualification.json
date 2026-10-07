@@ -1,0 +1,93 @@
+{
+  "build_flags": [
+    "-std=c++23",
+    "-O2",
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-Werror",
+    "-D_GLIBCXX_ASSERTIONS=1"
+  ],
+  "checks": {
+    "default_configuration_without_json": "passed",
+    "enabled_configuration_without_json": "rejected as intended",
+    "pinned_host_style": "Ruff 0.16.7 and clang-format 22.1.8; check passed",
+    "protocol_assertions_per_mode": 3402,
+    "protocol_process_cases_per_mode": 64,
+    "python_modes": [
+      "normal",
+      "optimized"
+    ],
+    "transport_position_units": 49
+  },
+  "compiled_translation_units": [
+    "compiler/lsp/main.cpp",
+    "compiler/lsp/check.cpp",
+    "tests/lsp-units.cpp"
+  ],
+  "compiler_source_snapshot": {
+    "compiler/diagnostics.hpp": "8de67687a6b08449e64cc3bf68487d8ab081dd5f38fcd2f7668ecfc310c2bc86",
+    "compiler/format.hpp": "052e9e1a52e27cd352a3bf9c85c88772cce14513ce11a70db3b2ac9fddf3f355",
+    "compiler/format_main.cpp": "9b8dcd44fc471b0d91194a46f9d724bbe27a4bb7025a1ebbcc6f8fc38ab7a5b8",
+    "compiler/frontend.hpp": "d42bca51681abe9c264e350feef1588dd28c96de603c627d3ebf25f0919f8563",
+    "compiler/host_sources.hpp": "ca6f557288b94db0bcd431efb086bba185390b9831543436d184c76263a06794",
+    "compiler/initialization_facts.hpp": "d36bd9d835def4b679001facbb7f68627296df8ab4c0c90119e506275b4e6d80",
+    "compiler/ir.hpp": "4cdfb4bf66e69362e9cd55746728114b0419cd18edf5fa45d18f41d8e2441a30",
+    "compiler/ir_layout.hpp": "eafc5ae0afc1010fdf07fb38a383b9f37420b9e5839592ec7d492986ce1ace4c",
+    "compiler/ir_verify.hpp": "0e4626ea3620324291697abee19d8d27e1ef185f52e7ff823035e62ad1ee5cf8",
+    "compiler/lexer.hpp": "fdf73056c463d45449c1caad4b7100be6689c601f951193aad75327103fa005d",
+    "compiler/lsp/check.cpp": "b55a75d076c4a511ae97f5d306d93f9f3d9d0476987ddabb144383d701bb926a",
+    "compiler/lsp/check.hpp": "45335b3af7944b16c1303b4f7f7f6ddb216236791b21603bb0c6702a96625e58",
+    "compiler/lsp/main.cpp": "d0592a59e8490c77eb0e27e61cc72df7ee19bd53b5bb0c405bc51613c48fe39e",
+    "compiler/lsp/positions.hpp": "24ff2adbb63c828074475e9fd91d3f0a1e2df01eb1805809fcf87069f5efb140",
+    "compiler/lsp/server.hpp": "9ad1073dcf651757f750b58cf49f2af810c956c3146c9b5b32cc174bfa30653b",
+    "compiler/lsp/transport.hpp": "281ed46c971bcd23c3e45db7a100c2fde449fd5a29d6a72c756fee0158a2c3b5",
+    "compiler/main.cpp": "6362ec82b4aadbd09b255fa933767a02031464b2fc4de75ac7ff1073e12ffbaa",
+    "compiler/modules.hpp": "df3b95bb7da4db02287fa5e91d69aff70da03007172b11d7e33ad7cbee508c46",
+    "compiler/parser.hpp": "3d93eec29876d319a1c60a6f8a3ec60f8a30a8c6d77eb2b151c37e4e3cb0dd05",
+    "compiler/semantics.hpp": "6aa520455f2c0b4e321e5a9a6f5bfcdfa625b17972416ef3ef5168d5cb1d202d",
+    "compiler/syntax.hpp": "c75473fcd8e8380391599cb44ac243395c504122532b2cae0b4053a922c61a1a",
+    "compiler/templates.hpp": "0014d0c3f7941dcd7350888c1b5fd86655cc14568b2f86d3e92c2ed825ab7d22",
+    "compiler/types.hpp": "a7e6f8daf93795c23a31316749fd259d0779e00b22b95e50868a6ad416480ce8",
+    "compiler/x86.hpp": "a9adc595236aa8e0d2cdb2a8b2967529113f359ba14ced18b9f855c65475ce92"
+  },
+  "corrected_failures": [
+    "Initial protocol fixture used an empty exported interface as an open root; current frontend requires a function in that standalone graph. Corrected fixture preserves compiler semantics.",
+    "Independent review reproduced symlink/.. and missing/.. components being normalized away before shared no-symlink source admission. Document URIs and CLI roots now reject parent components before normalization; original binary and reproducer retained."
+  ],
+  "dependency": {
+    "architecture": "all",
+    "distribution": "Debian trixie",
+    "installation": "dpkg-deb --extract into dependency/prefix; no system install, no maintainer scripts run",
+    "package": "nlohmann-json3-dev",
+    "repository_vendored": false,
+    "sha256": "741a6a32f61a14eaf9560ba1814b27da8e78fa3b9bed9e8867ab46316ddf3793",
+    "source": "https://deb.debian.org/debian/pool/main/n/nlohmann-json3/nlohmann-json3-dev_3.11.3-2.1_all.deb",
+    "verification_page": "https://packages.debian.org/trixie/all/nlohmann-json3-dev/download",
+    "verified_bytes": 261656,
+    "version": "3.11.3-2.1"
+  },
+  "limits": [
+    "First error per checked root only",
+    "Existing local files only",
+    "No disk watcher or asynchronous cancellation",
+    "Synchronous checks do not bound total compiler CPU",
+    "No completion, rename, hover, semantic tokens or LSP formatting",
+    "No editor UI, full native aggregate, sanitizer, emulator or hardware qualification"
+  ],
+  "review": "Independent final source and retained-evidence review accepted 2026-10-07; all 735 tested-manifest entries, source/test/binary identities and final receipts matched.",
+  "scope": "Focused initial compiler-owned LSP; no full aggregate",
+  "server_sha256": "e640e708377460907c348e7a03d9e62553c60e967b11522064b8dde8990e59cc",
+  "test_sources": {
+    "tests/lsp-protocol.py": "7645433366c02e7e0244c3d18f988441c81e84a129a120bbbbf8cf5874d3cbf9",
+    "tests/lsp-units.cpp": "b2cb32fa114cd4cf7d51034a59172e59a84e5794735df4c0071ed9f1887b2794"
+  },
+  "tested_base_commit": "0c72576672f97296b7a9903806eaa3fb76eb4db7",
+  "toolchain": {
+    "binutils": "2.44",
+    "cxx": "GCC 14.2.0 (Debian 14.2.0-19)",
+    "meson": "1.12.1",
+    "ninja": "1.13.2.git.kitware.jobserver-pipe-1"
+  },
+  "unit_binary_sha256": "77edde6f2b6e57b8fa33dc4767806f4d0f896fd3b64fb84af5bcabb1613a9b3b"
+}

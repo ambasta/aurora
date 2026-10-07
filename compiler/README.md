@@ -244,3 +244,11 @@ acceptance.
 One direct owned class field can be replaced from a complete named value or
 receive a synchronous const/mutable method call, subject to root mutability and
 visibility. See [the exact subset and focused acceptance](OWNED-FIELD-MUTATION.md).
+
+## Optional language server
+
+The [initial language server](lsp/README.md) reuses compiler diagnostics for
+versioned unsaved buffers over stdio. Enable it separately with Meson
+`-Dlsp=true` and the external `nlohmann_json` development package. The ordinary
+compiler build has no JSON dependency. This first slice covers diagnostics and
+full document synchronization, not completion or rename.
