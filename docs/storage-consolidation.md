@@ -1,5 +1,28 @@
 # One record value and one sector-device contract
 
+## Current runtime-owned device
+
+The single `RamSectorDevice` now consumes a runtime-sized `OwnedBytes` allocation
+under explicit `ByteRegion` authority. Its count comes only from successful
+whole-sector storage. Devices move explicitly; `Sector512` and `SectorReadResult`
+remain independent copied values. Successful empty storage is valid, while
+failed/partial-sector allocations propagate `invalid_source`. Range precedes
+readonly and offset multiplication. Valid visibility flush remains volatile;
+durability and invalid-source flush are unsupported. See the updated
+[I/O contract](block-io-contract.md).
+
+This replaces the inline-sector representation below without adding a second
+backend. Two direction-specific byte-copy loops now bridge runtime-owned bytes
+and copied sectors; no safe mutable view exists to merge that boundary. Fresh
+compiler admission and both Python modes passed the focused 57-case I/O and
+121-case XFS runners, their strict rejections and six device-example invocations.
+The [current I/O contract](block-io-contract.md#example-and-validation-scope)
+records compiler identities and the preserved/fixed diagnostic-location failure.
+The historical compiler digest, counts and results below apply only to the
+original inline-sector source and are not evidence for this migration.
+
+## Historical inline-sector consolidation
+
 The dependency is removal of parallel owned-record and RAM-device APIs before
 adding another storage source. The acceptance gate is a fresh focused replay of
 the migrated record, sector, I/O and XFS consumers on the reviewed owned-field
@@ -7,7 +30,7 @@ compiler, plus independent source/evidence review. This is an intentional API
 break: no aliases, adapters or deprecated production wrappers preserve the old
 stack. The new borrowed multi-sector window remains paused.
 
-## Concrete shape
+### Historical concrete shape
 
 - `std.binary_buffer`: `BinaryBuffer64` owns exactly 64 u8 bytes and provides
   byte access plus the existing LE/BE16/32/64 writes. It is a serialization value,
@@ -36,7 +59,7 @@ span or generic device framework is added. The only compiler dependency is the
 separately reviewed direct owned-class-field assignment; no default-construction
 or borrowed-field exception is presumed.
 
-## Removed production APIs and transfers
+### Historical API removals and transfers
 
 Removed, without aliases:
 
@@ -72,7 +95,7 @@ of a private owned array or return a builtin array. Direct owned-field mutation
 does not grant either capability. Removing that boundary requires a separate
 checked ownership/lifetime contract; another ad hoc wrapper does not solve it.
 
-## Consumer migration
+### Historical consumer migration
 
 The sole end-to-end device example is `library/examples/ram_sector_record.au`.
 It writes a `BinaryBuffer64` header/trailer directly into a sector, constructs the
@@ -85,7 +108,7 @@ Its byte copy now uses the common `std::ByteReadResult`; its test fixture device
 use explicit initial sectors. A real XFS header in one RAM sector still fails the
 capacity check. No mount or new file-data interpretation is introduced.
 
-## Safety-test migration
+### Historical safety-test migration
 
 - `binary_buffer.py`: 542 case definitions, ten rejections, three checked `at`
   traps and one example. Retains the 278 original encoding cases and migrates
@@ -109,7 +132,7 @@ byte-codec and binary-reader dependencies remain selected. Retained historical
 contracts/results live under `docs/history`; they qualify only their original
 source and do not establish results for this consolidation.
 
-## Focused verification — 2026-10-07
+### Historical focused verification — 2026-10-07
 
 Independent source review accepted the API deletion/migration and composition on
 PR55 plus the reviewed owned-field compiler. Migration and review corrected inherited negative-test isolation problems:

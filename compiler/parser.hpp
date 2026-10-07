@@ -14,7 +14,7 @@ class Parser {
     class Nesting {
         int &depth;
 
-      public:
+    public:
         Nesting(int &value, int limit, const Token &token, const std::string &kind) : depth(value) {
             if (depth >= limit)
                 throw Error(
@@ -23,7 +23,9 @@ class Parser {
         }
         Nesting(const Nesting &) = delete;
         Nesting &operator=(const Nesting &) = delete;
-        ~Nesting() { --depth; }
+        ~Nesting() {
+            --depth;
+        }
     };
     void attach(const ExpressionPtr &parent, const ExpressionPtr &child) {
         // Check before attaching: error cleanup must never own an over-deep tree.
@@ -33,9 +35,12 @@ class Parser {
         parent->args.push_back(child);
     }
 
-  public:
-    explicit Parser(std::vector<Token> t) : tokens(std::move(t)) {}
-    Token peek() const { return tokens.at(position); }
+public:
+    explicit Parser(std::vector<Token> t) : tokens(std::move(t)) {
+    }
+    Token peek() const {
+        return tokens.at(position);
+    }
     Token take() {
         const auto token = tokens.at(position);
         // Keep EOF available for a located rejection in truncated expressions,
@@ -60,15 +65,13 @@ class Parser {
     }
     Token ident(bool allowArray = false) {
         auto t = peek();
-        if (t.text.empty() ||
-            !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
+        if (t.text.empty() || !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
             fail("expected identifier");
         static const std::set<std::string> reserved = {
-            "fn",        "module",   "let",      "mut",           "if",     "else",
-            "return",    "true",     "false",    "static_assert", "class",  "while",
-            "break",     "continue", "auto",     "const",         "public", "private",
-            "protected", "unsafe",   "extern",   "struct",        "export", "import",
-            "namespace", "this",     "template", "Scalar",        "enum"};
+            "fn",        "module",        "let",       "mut",    "if",     "else",     "return", "true",
+            "false",     "static_assert", "class",     "while",  "break",  "continue", "auto",   "const",
+            "public",    "private",       "protected", "unsafe", "extern", "struct",   "export", "import",
+            "namespace", "this",          "template",  "Scalar", "enum"};
         if (t.text == "builtin" || (t.text == "array" && !allowArray))
             fail("reserved builtin storage name");
         if (t.text.starts_with("__au_"))
@@ -131,8 +134,7 @@ class Parser {
                     return tokens.size();
                 if (depth == 0)
                     return index + 1;
-            } else if (token == ";" || token == "}" || token == "<eof>" || token == "(" ||
-                       token == "{" || token == "=")
+            } else if (token == ";" || token == "}" || token == "<eof>" || token == "(" || token == "{" || token == "=")
                 return tokens.size();
         }
         return tokens.size();
@@ -158,22 +160,20 @@ class Parser {
                 arguments.push_back(TypeKind::U8);
             else if (eat("bool"))
                 arguments.push_back(TypeKind::Bool);
-            else if (!peek().text.empty() &&
-                     std::isdigit(static_cast<unsigned char>(peek().text[0]))) {
+            else if (!peek().text.empty() && std::isdigit(static_cast<unsigned char>(peek().text[0]))) {
                 const auto argument = take();
                 try {
                     std::size_t used = 0;
                     const auto value = std::stoull(argument.text, &used);
                     if (used != argument.text.size() || value < 1 || value > 64)
                         fail("capacity template arguments must be decimal literals from 1 to 64");
-                    arguments.push_back(
-                        TemplateArgument::capacity(static_cast<std::int64_t>(value)));
+                    arguments.push_back(TemplateArgument::capacity(static_cast<std::int64_t>(value)));
                 } catch (const std::exception &) {
                     fail("capacity template arguments must be decimal literals from 1 to 64");
                 }
             } else if (peek().text != "own" && peek().text != "ref" && peek().text != "mutref" &&
-                       peek().text != "array" && peek().text != "builtin" &&
-                       peek().text != "true" && peek().text != "false") {
+                       peek().text != "array" && peek().text != "builtin" && peek().text != "true" &&
+                       peek().text != "false") {
                 const auto argument = qualifiedTail(ident(), true);
                 TemplateArgument value(argument.text);
                 if (templateParameters.contains(argument.text)) {
@@ -193,14 +193,27 @@ class Parser {
     }
     bool templateExpressionAhead() const {
         const auto end = templateArgumentEnd(position);
-        return end < tokens.size() &&
-               (tokens[end].text == "(" || tokens[end].text == "{");
+        return end < tokens.size() && (tokens[end].text == "(" || tokens[end].text == "{");
     }
     Type type() {
         Nesting nesting(typeNesting, 64, peek(), "type");
-        static const std::set<std::string> forbidden = {
-            "fn",  "let",  "mut",  "auto",  "const",  "class", "unsafe", "struct", "extern",
-            "int", "void", "char", "float", "double", "new",   "delete", "enum"};
+        static const std::set<std::string> forbidden = {"fn",
+                                                        "let",
+                                                        "mut",
+                                                        "auto",
+                                                        "const",
+                                                        "class",
+                                                        "unsafe",
+                                                        "struct",
+                                                        "extern",
+                                                        "int",
+                                                        "void",
+                                                        "char",
+                                                        "float",
+                                                        "double",
+                                                        "new",
+                                                        "delete",
+                                                        "enum"};
         if (forbidden.contains(peek().text))
             fail("unsupported or reserved type spelling");
         if (eat("i64"))
@@ -270,8 +283,7 @@ class Parser {
         else if (t.text == "mutref")
             v = Type::MutRef;
         else {
-            if (t.text.empty() ||
-                !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
+            if (t.text.empty() || !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
                 fail("expected type name");
             t = qualifiedTail(std::move(t), true);
             Type result(t.text);
@@ -420,8 +432,8 @@ class Parser {
     }
     bool startsDeclaration() const {
         const auto name = peek().text;
-        if (name == "const" || name == "i64" || name == "u64" || name == "u8" || name == "bool" ||
-            name == "own" || name == "ref" || name == "mutref" || name == "array")
+        if (name == "const" || name == "i64" || name == "u64" || name == "u8" || name == "bool" || name == "own" ||
+            name == "ref" || name == "mutref" || name == "array")
             return true;
         std::size_t look = position + 1;
         while (look + 1 < tokens.size() && tokens[look].text == "::")
@@ -430,8 +442,7 @@ class Parser {
             look = templateArgumentEnd(look);
         }
         const auto &next = tokens.at(std::min(look, tokens.size() - 1)).text;
-        return !next.empty() &&
-               (std::isalpha(static_cast<unsigned char>(next[0])) || next[0] == '_') &&
+        return !next.empty() && (std::isalpha(static_cast<unsigned char>(next[0])) || next[0] == '_') &&
                name != "return" && name != "if" && name != "while";
     }
     StatementPtr statement() {
@@ -504,10 +515,9 @@ class Parser {
                 // enum method arguments and class constructor/function arguments.
                 if (!scalarOrParameter(parameter.type) && !parameter.type.isClass() && !parameter.type.isSpan() &&
                     !(allowClass && parameter.type.isResource()))
-                    fail(allowClass
-                             ? "only scalar function parameters or scalar-field class values are "
-                               "supported"
-                             : "only scalar or enum method parameters are supported");
+                    fail(allowClass ? "only scalar function parameters or scalar-field class values are "
+                                      "supported"
+                                    : "only scalar or enum method parameters are supported");
                 function.params.push_back(parameter);
             } while (eat(","));
             need(")");
@@ -522,16 +532,14 @@ class Parser {
                 fail("export declarations require an export module interface");
             const bool exported = explicitlyExported || exportScope;
             if (peek().text == "import")
-                fail(explicitlyExported ? "module reexports are not supported"
-                                        : "imports must precede declarations");
+                fail(explicitlyExported ? "module reexports are not supported" : "imports must precede declarations");
             if (eat("namespace")) {
                 const auto name = qualifiedIdent().text;
                 const auto fullScope = scope.empty() ? name : scope + "::" + name;
                 std::size_t end = 0;
                 while (true) {
                     end = fullScope.find("::", end);
-                    program.namespaces.insert(end == std::string::npos ? fullScope
-                                                                       : fullScope.substr(0, end));
+                    program.namespaces.insert(end == std::string::npos ? fullScope : fullScope.substr(0, end));
                     if (end == std::string::npos)
                         break;
                     end += 2;
@@ -585,11 +593,9 @@ class Parser {
                     else
                         fail("template parameters require Scalar, Value or bounded i64 capacity");
                     const auto parameter = ident().text;
-                    if (parameter == "i64" || parameter == "u64" || parameter == "u8" ||
-                        parameter == "bool" ||
-                        parameter == "own" || parameter == "ref" || parameter == "mutref" ||
-                        parameter == "array" || templateParameters.contains(parameter) ||
-                        capacityParameters.contains(parameter))
+                    if (parameter == "i64" || parameter == "u64" || parameter == "u8" || parameter == "bool" ||
+                        parameter == "own" || parameter == "ref" || parameter == "mutref" || parameter == "array" ||
+                        templateParameters.contains(parameter) || capacityParameters.contains(parameter))
                         fail("duplicate or reserved template parameter");
                     if (kind != TemplateParameterKind::Capacity)
                         templateParameters.insert(parameter);
@@ -598,10 +604,9 @@ class Parser {
                     declaredParameters.emplace_back(kind, parameter);
                 } while (eat(","));
                 need(">");
-                if (!capacityParameters.empty() &&
-                    (declaredParameters.size() != 2 ||
-                     declaredParameters.front().kind != TemplateParameterKind::Scalar ||
-                     declaredParameters.back().kind != TemplateParameterKind::Capacity))
+                if (!capacityParameters.empty() && (declaredParameters.size() != 2 ||
+                                                    declaredParameters.front().kind != TemplateParameterKind::Scalar ||
+                                                    declaredParameters.back().kind != TemplateParameterKind::Capacity))
                     fail("template capacity requires a preceding Scalar parameter");
                 if (peek().text != "class" && peek().text != "auto")
                     fail("only class or namespace-level function templates are supported");
@@ -611,8 +616,7 @@ class Parser {
             }
             if (eat("class")) {
                 ClassDefinition definition(ident(scope == "std"));
-                if (templateParameters.contains(definition.name) ||
-                    capacityParameters.contains(definition.name))
+                if (templateParameters.contains(definition.name) || capacityParameters.contains(definition.name))
                     fail("class name cannot shadow a template parameter");
                 definition.templateParameters = declaredParameters;
                 definition.scope = scope;
@@ -630,8 +634,7 @@ class Parser {
                         publicAccess = false;
                         continue;
                     }
-                    if ((peek().text == definition.token.text &&
-                         tokens.at(position + 1).text == "(") ||
+                    if ((peek().text == definition.token.text && tokens.at(position + 1).text == "(") ||
                         peek().text == "auto") {
                         const bool constructor = peek().text != "auto";
                         if (!constructor)
@@ -650,8 +653,7 @@ class Parser {
                                     ExpressionPtr value;
                                     if (eat("{")) {
                                         need("}");
-                                        value =
-                                            std::make_shared<Expression>("array_zero", fieldName);
+                                        value = std::make_shared<Expression>("array_zero", fieldName);
                                     } else {
                                         need("(");
                                         value = expr();
@@ -683,8 +685,13 @@ class Parser {
                              fieldType.length > maximumClassArrayLength(Type(fieldType.elementKind))))
                             fail("class array field capacity must be between 1 and " +
                                  std::to_string(maximumClassArrayLength(Type(fieldType.elementKind))));
+                    } else if (fieldType.isBytes()) {
+                        if (publicAccess)
+                            fail("owned byte fields must be private");
+                        if (!declaredParameters.empty())
+                            fail("owning class templates are unsupported");
                     } else if (!scalarOrParameter(fieldType) && !fieldType.isClass())
-                        fail("class fields require scalar, class or private fixed-array storage");
+                        fail("class fields require scalar, class, private fixed-array or private owned-byte storage");
                     need(";");
                     definition.fields.emplace_back(fieldName, fieldType);
                     definition.fields.back().publicAccess = publicAccess;

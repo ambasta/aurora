@@ -49,7 +49,7 @@ auto answer(i64 input) -> i64 {
 ```
 
 - Each file declares `module name;` or an importable `export module name;`. Named imports, export visibility and namespace blocks now work with explicit `--module-root` directories; see MODULES.md. Separate binary compilation/linking remains deferred.
-- Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar, bounded inline class, or readonly byte-span parameters work on ordinary functions, including synchronous forwarding and ordinary recursion. The span boundary is an independently reviewed milestone014 candidate; see SPANS.md. Class values use a separate checked native value-call convention; see VALUE-CALLS.md. Parameters are immutable in this bootstrap subset; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
+- Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar, bounded inline class, or readonly byte-span parameters work on ordinary functions, including synchronous forwarding and ordinary recursion. The span boundary is an independently reviewed milestone014 candidate; see SPANS.md. Class values use a separate checked native value-call convention; see VALUE-CALLS.md. Copied parameters are immutable; the bounded owning parameters described below are mutable; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
 - Local declarations are `const Type name = initializer;` or `Type name = initializer;`. Initialization is mandatory. Const scalar/aggregate locals cannot be assigned; unqualified scalar locals and scalar fields/elements of unqualified aggregates can be assigned. Ownership binding rules are stricter below.
 - Scalar types are `i64`, `u64`, `u8` and `bool` since milestone013. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
 - Blocks, `if (bool) { ... } else { ... }`, `while (bool) { ... }`, `return`, and `static_assert` are supported. `break`, `continue`, and `for` are deferred.
@@ -137,9 +137,23 @@ Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. U64 has 
 
 `reflect_size(id)` and `reflect_field_count(id)` execute runtime lookups. Unknown IDs return zero. Descriptor entries are emitted for builtins, declared classes and array types used in storage/size/type-ID queries. Array size is `8*N`; arrays and builtins have zero named fields. Class field counts include public fields only, and class size includes all fields. Reflection cannot expose private values or bypass lifetime checks. Runtime queries use the defining module's visible descriptor view; unavailable/private IDs return zero, and reflection cannot implicitly import a type. Member traversal, invocation, mapped/conditional types and `keyof`-style type algebra remain design goals.
 
+## Hosted runtime-sized ownership
+
+The host can grant one borrowed builtin::ByteRegion to an ordinary resource
+function. builtin::OwnedBytes provides checked runtime-sized zero-initialized
+allocation, copied byte access, explicit moves and normal-scope cleanup. See the
+[byte-owner contract](OWNED-BYTES.md) for allocation failures and host limits.
+
+A private direct OwnedBytes field makes a concrete class move-only. Explicit
+constructor/local/function transfers, borrowed methods and reverse field cleanup
+follow the [bounded owning-class contract](OWNING-CLASSES.md). Sector512 and other
+resource-free classes remain independent copied values. Owner fields expose no
+pointer or view; region creation, general resource classes and kernel allocation
+remain outside this hosted increment.
+
 ## Temporary machine integration
 
-The bootstrap assembly boundary currently passes six scalar arguments in RDI, RSI, RDX, RCX, R8, R9 and returns RAX. It preserves RBP, does not touch RBX/R12–R15, and aligns RSP to sixteen bytes immediately before calls. No red zone, libc, heap allocation, SIMD or runtime library is generated. External assembly callers must provide canonical zero/one bools and correct stack alignment.
+The bootstrap assembly boundary currently passes six scalar arguments in RDI, RSI, RDX, RCX, R8, R9 and returns RAX. It preserves RBP, does not touch RBX/R12–R15, and aligns RSP to sixteen bytes immediately before calls. Scalar-only programs generate no red zone, libc, heap allocation, SIMD or runtime-library calls. Resource programs explicitly link the hosted byte adapter described below. External assembly callers must provide canonical zero/one bools and correct stack alignment.
 
 These temporary register choices are implementation machinery, not a source-level C ABI or binary interoperability promise. Only scalar-signature unqualified root functions retain unmangled names for the temporary bootstrap assembly bridge. Imported/namespaced functions use length-prefixed Aurora-native symbols. The compiler emits a complete import graph with per-defining-module reflection helpers; separately linking overlapping compiled graphs is not supported yet. A versioned Aurora-native ABI remains to be designed.
 
@@ -149,7 +163,7 @@ These temporary register choices are implementation machinery, not a source-leve
 
 Tests execute assembled/linked machine code without libc, check compiler rejection diagnostics, and distinguish bounds/overflow SIGILL from crashes or timeouts. Tests are evidence for this constrained implementation, not a soundness proof or a claim of complete Rust-equivalent safety.
 
-Self-hosting, complete modern C++ expressiveness, constructor bodies, method/template overloads, inheritance, destructors, unrestricted nested values, general ownership, general generics, heap storage, concurrency, typed compile-time generation, separate binary compilation and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
+Self-hosting, complete modern C++ expressiveness, constructor bodies, method/template overloads, inheritance, destructors, unrestricted nested values, general ownership, general generics, unrestricted heap-based types, concurrency, typed compile-time generation, separate binary compilation and optimization remain substantial future work. The requested native toolchain/distribution and Zen/RDNA qualification are long-term goals, not capabilities established by this compiler milestone. Hardware/bootstrap assembly and temporary kernel C++ remain outside these language checks.
 
 ## Native library and host I/O
 

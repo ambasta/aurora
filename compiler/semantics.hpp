@@ -8,9 +8,12 @@
 #include <map>
 #include <set>
 namespace aurora {
-enum class AnalysisMode { Check, Lint };
+enum class AnalysisMode {
+    Check,
+    Lint
+};
 class Local {
-  public:
+public:
     std::string name;
     Type type;
     int offset = 0, owner = -1, shared = 0;
@@ -56,13 +59,18 @@ class SemanticAnalyzer {
             fail(token, "unknown class type '" + typeName(type) + "'");
         return classes[found->second];
     }
+    bool owningClass(const Type &type) const {
+        return type.isClass() && ir::owningClass(classShapes, type.className);
+    }
+    bool ownerType(const Type &type) const {
+        return type.isBytes() || owningClass(type);
+    }
     std::int64_t typeId(const Type &type, const Token &token) {
         if (type.isArray()) {
-            const int id =
-                type.elementKind == TypeKind::U8 ? 3000000 + type.length
-                : type.elementKind == TypeKind::U64
-                    ? 2000000 + type.length
-                    : 1000000 + type.length * 2 + (type.elementKind == TypeKind::Bool ? 1 : 0);
+            const int id = type.elementKind == TypeKind::U8 ? 3000000 + type.length
+                           : type.elementKind == TypeKind::U64
+                               ? 2000000 + type.length
+                               : 1000000 + type.length * 2 + (type.elementKind == TypeKind::Bool ? 1 : 0);
             arrayTypes[id] = type;
             return id;
         }
@@ -101,39 +109,51 @@ class SemanticAnalyzer {
             if (member.type.isClass()) {
                 composed = needsConstructor = true;
                 buildClassLayout(member.type.className, nesting + 1);
+                if (owningClass(member.type))
+                    fail(member.token, "nested owning class fields are unsupported");
                 const auto &child = classLeaves.at(member.type.className);
                 leaves.insert(leaves.end(), child.begin(), child.end());
                 depth = std::max(depth, 1 + classDepths.at(member.type.className));
+            } else if (member.type.isBytes()) {
+                needsConstructor = true;
+                if (member.publicAccess)
+                    fail(member.token, "owned byte fields must be private");
+                if (!definition.templateParameters.empty() || !definition.templateArguments.empty())
+                    fail(member.token, "owning class templates are unsupported");
             } else if (member.type.isArray()) {
                 needsConstructor = true;
                 if (member.publicAccess || member.type.length < 1 ||
                     member.type.length > maximumClassArrayLength(Type(member.type.elementKind)) ||
-                    !scalar(Type(member.type.elementKind)) ||
-                    !member.type.elementParameter.empty() || !member.type.lengthParameter.empty())
-                    fail(member.token, "class array fields require private concrete scalar "
-                                       "storage of length 1 to 64, or 1 to 512 for u8");
+                    !scalar(Type(member.type.elementKind)) || !member.type.elementParameter.empty() ||
+                    !member.type.lengthParameter.empty())
+                    fail(member.token,
+                         "class array fields require private concrete scalar "
+                         "storage of length 1 to 64, or 1 to 512 for u8");
                 typeId(member.type, member.token);
                 leaves.insert(leaves.end(), member.type.length, Type(member.type.elementKind));
             } else {
                 if (!scalarValue(member.type))
-                    fail(member.token,
-                         "class field must be concrete scalar, enum, class or private array");
+                    fail(member.token, "class field must be concrete scalar, enum, class or private array");
                 leaves.push_back(member.type);
             }
-            classShapes[name].push_back(ir::ClassField{
-                member.type.isArray() ? Type(member.type.elementKind) : member.type, firstLeaf,
-                static_cast<int>(leaves.size()) - firstLeaf, member.type.isArray()});
+            classShapes[name].push_back(
+                ir::ClassField{member.type.isArray() ? Type(member.type.elementKind) : member.type,
+                               firstLeaf,
+                               static_cast<int>(leaves.size()) - firstLeaf,
+                               member.type.isArray()});
             if (leaves.size() > maxFrameSlots)
                 fail(definition.token, "class layout exceeds 65536 bytes");
             if (composed && !ir::copiedClassLeavesSupported(leaves))
-                fail(definition.token, "composed classes are limited to 64 non-byte scalar leaves, "
-                                       "512 u8 leaves and 513 total leaves");
+                fail(definition.token,
+                     "composed classes are limited to 64 non-byte scalar leaves, "
+                     "512 u8 leaves and 513 total leaves");
         }
         if (composed && depth > 4)
             fail(definition.token, "composed class exceeds depth four");
         if (needsConstructor &&
-            std::none_of(definition.methods.begin(), definition.methods.end(),
-                         [](const Function &method) { return method.constructor; }))
+            std::none_of(definition.methods.begin(), definition.methods.end(), [](const Function &method) {
+                return method.constructor;
+            }))
             fail(definition.token, "array or class fields require a declared complete constructor");
         classDepths[name] = depth;
         layoutStates[name] = 2;
@@ -150,8 +170,9 @@ class SemanticAnalyzer {
     std::int64_t fieldCount(const Type &type, const Token &token) {
         if (type.isClass()) {
             const auto &fields = classDefinition(type, token).fields;
-            return std::count_if(fields.begin(), fields.end(),
-                                 [](const Field &field) { return field.publicAccess; });
+            return std::count_if(fields.begin(), fields.end(), [](const Field &field) {
+                return field.publicAccess;
+            });
         }
         return 0;
     }
@@ -159,8 +180,7 @@ class SemanticAnalyzer {
         const auto &definition = classDefinition(type, token);
         for (const auto &value : definition.fields)
             if (value.token.text == token.text) {
-                if (!value.publicAccess &&
-                    (!currentFunction || currentFunction->receiverClass != type.className))
+                if (!value.publicAccess && (!currentFunction || currentFunction->receiverClass != type.className))
                     fail(token, "private class field is inaccessible");
                 requireVisibleType(value.type, token);
                 return value;
@@ -170,10 +190,14 @@ class SemanticAnalyzer {
     int fieldOffset(int local, const Field &value) {
         return locals.at(local).offset - value.offset;
     }
-    void copyClass(int original, int destination, const ClassDefinition &) {
+    void copyClass(int original, int destination, const Token &token) {
+        if (owningClass(locals[original].type))
+            fail(token, "owning class cannot be copied; use move(named_local)");
         emit(ir::CopyObject{offset(original), offset(destination)});
     }
-    Type payloadType(const Type &type) { return type == Type::Own ? Type::I64 : type; }
+    Type payloadType(const Type &type) {
+        return type == Type::Own ? Type::I64 : type;
+    }
     std::int64_t reflectedValue(ExpressionPtr expression) {
         if (expression->reflectedType.isSpan())
             fail(expression->token, "span capabilities are unavailable to reflection");
@@ -188,8 +212,12 @@ class SemanticAnalyzer {
     template <class Operation> void emit(Operation operation) {
         lowered.code.emplace_back(std::move(operation));
     }
-    int fresh() { return label++; }
-    int offset(int local) { return locals.at(local).offset; }
+    int fresh() {
+        return label++;
+    }
+    int offset(int local) {
+        return locals.at(local).offset;
+    }
     int lookupLocal(const Token &t) const {
         for (auto i = scopes.rbegin(); i != scopes.rend(); ++i) {
             auto v = i->find(t.text);
@@ -234,10 +262,13 @@ class SemanticAnalyzer {
         if (got != want)
             fail(t, "expected " + typeName(want) + ", got " + typeName(got));
     }
-    void push() { emit(ir::Push{}); }
-    void pop() { emit(ir::Pop{}); }
-    int add(const std::string &n, Type t, bool mut, const Token &tok, bool bind = true,
-            bool begin = true) {
+    void push() {
+        emit(ir::Push{});
+    }
+    void pop() {
+        emit(ir::Pop{});
+    }
+    int add(const std::string &n, Type t, bool mut, const Token &tok, bool bind = true, bool begin = true) {
         if (bind && scopes.back().count(n))
             fail(tok, "duplicate local '" + n + "'");
         Local l;
@@ -262,21 +293,20 @@ class SemanticAnalyzer {
         } else if (t.isSpan()) {
             lowered.spanSlots.insert(l.offset);
         } else if (t.isClass()) {
+            l.resourceActive = owningClass(t);
             lowered.objectSlots[l.offset] = ir::ObjectSlot{t.className, mut};
             if (begin)
                 emit(ir::BeginObject{l.offset});
             const auto &leaves = classLeaves.at(t.className);
             for (std::size_t index = 0; index < leaves.size(); ++index)
-                lowered.slots[l.offset - classStorage.at(t.className).leafOffsets[index]] =
-                    leaves[index];
+                lowered.slots[l.offset - classStorage.at(t.className).leafOffsets[index]] = leaves[index];
         } else if (t.isArray()) {
             if (t.elementKind == TypeKind::U8) {
                 lowered.arraySlots[l.offset] = t.length;
                 emit(ir::BeginArray{l.offset});
             }
             for (int index = 0; index < t.length; ++index)
-                lowered.slots[l.offset - index * ir::storageWidth(Type(t.elementKind))] =
-                    Type(t.elementKind);
+                lowered.slots[l.offset - index * ir::storageWidth(Type(t.elementKind))] = Type(t.elementKind);
         } else
             lowered.slots[l.offset] = payloadType(t);
         locals.push_back(l);
@@ -290,8 +320,7 @@ class SemanticAnalyzer {
     }
     int acquireSpan(ExpressionPtr expression, const std::string &name = "", bool bind = false) {
         int parent = -1, origin = -1;
-        const bool subspan = expression->op == "method_call" &&
-                             expression->token.text == "subspan";
+        const bool subspan = expression->op == "method_call" && expression->token.text == "subspan";
         if (subspan) {
             if (expression->args.size() != 3)
                 fail(expression->token, "span subspan expects offset and count");
@@ -355,46 +384,72 @@ class SemanticAnalyzer {
             if (locals[index - 1].live && byteArray(locals[index - 1].type))
                 emit(ir::EndArray{locals[index - 1].offset});
     }
-    int movedBytes(ExpressionPtr value) {
+    int movedOwner(ExpressionPtr value, const Type &expected) {
         if (value->op != "call" || value->token.text != "move")
-            fail(value->token, "owned byte transfer requires move(named_local)");
+            fail(value->token, "owning transfer requires move(named_local)");
         arity(value, 1);
         const int local = source(value->args[0]);
-        match(locals[local].type, Type::OwnedBytes, value->token);
+        match(locals[local].type, expected, value->token);
+        if (!ownerType(expected))
+            fail(value->token, "move requires an owning value");
         if (!locals[local].mut)
-            fail(value->token, "cannot move a const byte owner");
+            fail(value->token, "cannot move a const owner");
         return local;
+    }
+    int movedBytes(ExpressionPtr value) {
+        return movedOwner(value, Type::OwnedBytes);
+    }
+    void moveOwner(int original, int destination) {
+        if (locals[original].type.isBytes())
+            emit(ir::MoveBytes{offset(original), offset(destination)});
+        else
+            emit(ir::MoveObject{offset(original), offset(destination)});
+        locals[destination].owner = locals[original].owner;
+        locals[original].live = false;
+    }
+    void endOwner(int local) {
+        if (locals[local].type.isBytes())
+            emit(ir::EndBytes{offset(local)});
+        else
+            emit(ir::EndObject{offset(local)});
     }
     void endReturnBytes(int returned = -1) {
         for (std::size_t index = locals.size(); index > 0; --index) {
             const int local = static_cast<int>(index - 1);
             if (local != returned && locals[local].resourceActive)
-                emit(ir::EndBytes{offset(local)});
+                endOwner(local);
         }
     }
     Type callResource(ExpressionPtr value, const Function &callee, const StatementPtr &binding) {
-        if (callee.result.isBytes() && !binding)
-            fail(value->token, "owned byte result requires a typed local initializer");
+        const bool constructor = callee.constructor;
+        if ((ownerType(callee.result) || constructor) && !binding)
+            fail(value->token, "owning result requires a typed local initializer");
         if (binding)
-            match(callee.result, binding->type, value->token);
+            match(constructor ? Type(callee.receiverClass) : callee.result, binding->type, value->token);
         arity(value, callee.params.size());
         const int region = source(value->args[0]);
         match(locals[region].type, Type::ByteRegion, value->token);
-        std::vector<int> arguments(callee.params.size(), 0), staged;
+        std::vector<int> arguments(callee.params.size(), 0), staged, snapshots;
         for (std::size_t index = 1; index < callee.params.size(); ++index) {
             const auto &argument = value->args[index];
-            if (callee.params[index].type.isBytes()) {
-                const int original = movedBytes(argument);
+            const auto &type = callee.params[index].type;
+            if (ownerType(type)) {
+                const int original = movedOwner(argument, type);
                 if (locals[original].owner != region)
-                    fail(argument->token, "byte owner belongs to a different region");
-                const int temporary = add("", Type::OwnedBytes, true, argument->token, false);
-                emit(ir::MoveBytes{offset(original), offset(temporary)});
-                locals[temporary].owner = region;
-                locals[original].live = false;
+                    fail(argument->token, "owning value belongs to a different region");
+                const int temporary = add("", type, true, argument->token, false);
+                moveOwner(original, temporary);
                 arguments[index] = offset(temporary);
                 staged.push_back(temporary);
+            } else if (constructor && type.isClass()) {
+                const int original = source(argument);
+                match(locals[original].type, type, argument->token);
+                const int snapshot = add("", type, false, argument->token, false);
+                copyClass(original, snapshot, argument->token);
+                arguments[index] = offset(snapshot);
+                snapshots.push_back(offset(snapshot));
             } else {
-                match(expression(argument), callee.params[index].type, argument->token);
+                match(expression(argument), type, argument->token);
                 push();
             }
         }
@@ -404,12 +459,15 @@ class SemanticAnalyzer {
             locals[local].owner = region;
             destination = offset(local);
         }
-        emit(ir::ResourceCall{callee.name, offset(region), arguments, destination});
+        emit(ir::ResourceCall{
+            callee.name, offset(region), arguments, constructor ? 0 : destination, constructor ? destination : 0});
         for (auto it = staged.rbegin(); it != staged.rend(); ++it) {
-            emit(ir::EndBytes{offset(*it)});
+            endOwner(*it);
             locals[*it].live = locals[*it].resourceActive = false;
         }
-        return callee.result;
+        for (int snapshot : snapshots)
+            emit(ir::EndObject{snapshot});
+        return constructor ? Type(callee.receiverClass) : callee.result;
     }
     void initializeBytes(StatementPtr binding) {
         const auto value = binding->expr;
@@ -444,15 +502,14 @@ class SemanticAnalyzer {
         fail(value->token, "owned bytes require region.try_allocate, move or an owned-result function call");
     }
     class IndexedStorage {
-      public:
+    public:
         int local = -1;
         const Field *member = nullptr;
         Type type;
     };
     IndexedStorage checkedIndex(ExpressionPtr index) {
         if (index->args[0]->op != "name")
-            fail(index->token,
-                 "indexing requires an array local or implicit private receiver field");
+            fail(index->token, "indexing requires an array local or implicit private receiver field");
         IndexedStorage storage;
         const auto &name = index->args[0]->token;
         if (lookupLocal(name) < 0)
@@ -469,19 +526,15 @@ class SemanticAnalyzer {
         if (storage.member)
             emit(ir::ReceiverBoundsGuard{storage.member->index});
         else
-            emit(ir::BoundsGuard{offset(storage.local), storage.type.length,
-                                 Type(storage.type.elementKind)});
+            emit(ir::BoundsGuard{offset(storage.local), storage.type.length, Type(storage.type.elementKind)});
         return storage;
     }
     const Function &method(const Type &type, const Token &token, bool constructor = false) {
         const auto &definition = classDefinition(type, token);
         for (const auto &candidate : definition.methods)
-            if (candidate.constructor == constructor &&
-                (constructor || candidate.token.text == token.text)) {
-                if (!candidate.publicAccess &&
-                    (!currentFunction || currentFunction->receiverClass != type.className))
-                    fail(token, constructor ? "private constructor is inaccessible"
-                                            : "private method is inaccessible");
+            if (candidate.constructor == constructor && (constructor || candidate.token.text == token.text)) {
+                if (!candidate.publicAccess && (!currentFunction || currentFunction->receiverClass != type.className))
+                    fail(token, constructor ? "private constructor is inaccessible" : "private method is inaccessible");
                 return candidate;
             }
         fail(token, constructor ? "class has no declared constructor" : "unknown class method");
@@ -539,13 +592,17 @@ class SemanticAnalyzer {
                 fail(value->token, "method receiver requires a class local or direct owned class field");
             }
             if (member) {
-                if (!member->type.isClass())
-                    fail(target->token, "nested method receiver requires an owned class field");
+                if (!member->type.isClass() && !member->type.isBytes())
+                    fail(target->token, "nested method receiver requires an owned class field or owned byte field");
                 requireVisibleType(member->type, target->token);
                 type = member->type;
                 receiverFieldIndex = member->index;
             }
         }
+        auto requireLiveReceiver = [&] {
+            if (receiver >= 0 && !locals[receiver].live)
+                fail(value->token, "method arguments consumed the receiver or its containing object");
+        };
         if (type.isBytes()) {
             if (resultBinding || implicit)
                 fail(value->token, "byte operation requires a named owner");
@@ -553,10 +610,10 @@ class SemanticAnalyzer {
             if (name == "ok" || name == "size") {
                 arity(value, 1);
                 if (name == "ok") {
-                    emit(ir::BytesOk{offset(receiver)});
+                    emit(ir::BytesOk{receiverOffset, receiverFieldIndex});
                     return Type::Bool;
                 }
-                emit(ir::BytesLength{offset(receiver)});
+                emit(ir::BytesLength{receiverOffset, receiverFieldIndex});
                 return Type::I64;
             }
             if (name == "at" || name == "set") {
@@ -569,12 +626,12 @@ class SemanticAnalyzer {
                     match(expression(value->args[2]), Type::U8, value->token);
                 }
                 // Scalar operand expressions may themselves consume this owner.
-                source(value->args[0]);
+                requireLiveReceiver();
                 if (name == "at") {
-                    emit(ir::BytesLoad{offset(receiver)});
+                    emit(ir::BytesLoad{receiverOffset, receiverFieldIndex});
                     return Type::U8;
                 }
-                emit(ir::BytesStore{offset(receiver)});
+                emit(ir::BytesStore{receiverOffset, receiverFieldIndex});
                 return Type::Bool;
             }
             fail(value->token, "unknown owned byte operation");
@@ -628,7 +685,7 @@ class SemanticAnalyzer {
                 const int original = source(argument);
                 match(locals[original].type, parameterType, argument->token);
                 const int snapshot = add("", parameterType, false, argument->token, false);
-                copyClass(original, snapshot, classDefinition(parameterType, argument->token));
+                copyClass(original, snapshot, argument->token);
                 arguments[index] = offset(snapshot);
                 snapshots.push_back(offset(snapshot));
             } else {
@@ -636,18 +693,18 @@ class SemanticAnalyzer {
                 push();
             }
         }
+        requireLiveReceiver();
         int destination = 0;
         if (resultBinding)
-            destination = offset(add(resultBinding->name, resultBinding->type,
-                                     resultBinding->mutableValue, resultBinding->token));
+            destination = offset(
+                add(resultBinding->name, resultBinding->type, resultBinding->mutableValue, resultBinding->token));
         emit(ir::MethodCall{
             callee.name, receiverOffset, packed ? arguments : std::vector<int>{}, destination, receiverFieldIndex});
         for (int snapshot : snapshots)
             emit(ir::EndObject{snapshot});
         return callee.result;
     }
-    Type callFunction(ExpressionPtr expression, const Function &callee,
-                      const StatementPtr &resultBinding = nullptr) {
+    Type callFunction(ExpressionPtr expression, const Function &callee, const StatementPtr &resultBinding = nullptr) {
         if (!callee.params.empty() && callee.params[0].type.isRegion())
             return callResource(expression, callee, resultBinding);
         if (callee.result.isClass() && !resultBinding)
@@ -674,7 +731,7 @@ class SemanticAnalyzer {
                 const int original = source(argument);
                 match(locals[original].type, type, argument->token);
                 const int snapshot = add("", type, false, argument->token, false);
-                copyClass(original, snapshot, classDefinition(type, argument->token));
+                copyClass(original, snapshot, argument->token);
                 arguments[index] = offset(snapshot);
                 snapshots.push_back(offset(snapshot));
             } else {
@@ -684,8 +741,8 @@ class SemanticAnalyzer {
         }
         int destination = 0;
         if (resultBinding)
-            destination = offset(add(resultBinding->name, resultBinding->type,
-                                     resultBinding->mutableValue, resultBinding->token));
+            destination = offset(
+                add(resultBinding->name, resultBinding->type, resultBinding->mutableValue, resultBinding->token));
         if (aggregate)
             emit(ir::AggregateCall{callee.name, arguments, destination, spanArguments});
         else
@@ -696,8 +753,7 @@ class SemanticAnalyzer {
             releaseSpan(*it, true);
         return callee.result;
     }
-    Type callOverloadedFunction(ExpressionPtr value,
-                                const StatementPtr &resultBinding = nullptr) {
+    Type callOverloadedFunction(ExpressionPtr value, const StatementPtr &resultBinding = nullptr) {
         // Resolve arity before touching arguments. Candidates are already restricted
         // to one defining declaration set and the caller's export visibility.
         std::vector<const Function *> candidates;
@@ -718,9 +774,10 @@ class SemanticAnalyzer {
         for (std::size_t index = 0; index < value->args.size(); ++index) {
             const auto &argument = value->args[index];
             const int local = argument->op == "name" ? lookupLocal(argument->token) : -1;
-            const int windowReceiver = argument->op == "method_call" &&
-                argument->token.text == "subspan" && !argument->args.empty() &&
-                argument->args[0]->op == "name" ? lookupLocal(argument->args[0]->token) : -1;
+            const int windowReceiver = argument->op == "method_call" && argument->token.text == "subspan" &&
+                                               !argument->args.empty() && argument->args[0]->op == "name"
+                                           ? lookupLocal(argument->args[0]->token)
+                                           : -1;
             const bool span = (local >= 0 && locals[local].type.isSpan()) ||
                               (argument->op == "call" && argument->token.text == "borrow_bytes") ||
                               (windowReceiver >= 0 && locals[windowReceiver].type.isSpan());
@@ -736,7 +793,7 @@ class SemanticAnalyzer {
                 const Type type = locals[original].type;
                 types.push_back(type);
                 const int snapshot = add("", type, false, argument->token, false);
-                copyClass(original, snapshot, classDefinition(type, argument->token));
+                copyClass(original, snapshot, argument->token);
                 arguments[index] = offset(snapshot);
                 snapshots.push_back(offset(snapshot));
             } else {
@@ -765,8 +822,8 @@ class SemanticAnalyzer {
             match(selected->result, resultBinding->type, value->token);
         int destination = 0;
         if (resultBinding)
-            destination = offset(add(resultBinding->name, resultBinding->type,
-                                     resultBinding->mutableValue, resultBinding->token));
+            destination = offset(
+                add(resultBinding->name, resultBinding->type, resultBinding->mutableValue, resultBinding->token));
         if (aggregate || selected->result.isClass())
             emit(ir::AggregateCall{selected->name, arguments, destination, spanArguments});
         else
@@ -790,8 +847,7 @@ class SemanticAnalyzer {
             std::size_t used = 0;
             const auto value = std::stoull(digits, &used);
             if (used != digits.size() || (byteValue && value > 255) ||
-                (!unsignedValue &&
-                 value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
+                (!unsignedValue && value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
                 fail(token, "integer literal out of range");
             return {std::bit_cast<std::int64_t>(static_cast<std::uint64_t>(value)),
                     byteValue       ? Type::U8
@@ -825,8 +881,7 @@ class SemanticAnalyzer {
             if (storage.member)
                 emit(ir::ReceiverIndexLoad{storage.member->index});
             else
-                emit(ir::IndexLoad{offset(storage.local), storage.type.length,
-                                   Type(storage.type.elementKind)});
+                emit(ir::IndexLoad{offset(storage.local), storage.type.length, Type(storage.type.elementKind)});
             return Type(storage.type.elementKind);
         }
         if (e->op == "array_literal")
@@ -836,9 +891,8 @@ class SemanticAnalyzer {
                 fail(e->token, "field access currently requires a class local");
             int local = source(e->args[0]);
             const auto &member = field(locals[local].type, e->token);
-            if (member.type.isArray() || member.type.isClass())
-                fail(e->token,
-                     "aggregate fields require a fresh typed class projection or checked indexing");
+            if (member.type.isArray() || member.type.isClass() || member.type.isResource())
+                fail(e->token, "aggregate fields require a fresh typed class projection or checked indexing");
             emit(ir::Load{fieldOffset(local, member), member.type});
             return member.type;
         }
@@ -849,22 +903,26 @@ class SemanticAnalyzer {
         if (e->op == "name") {
             if (lookupLocal(e->token) < 0)
                 if (const auto *member = receiverField(e->token)) {
-                    if (member->type.isArray() || member->type.isClass())
-                        fail(e->token, "aggregate fields require a fresh typed class projection or "
-                                       "checked indexing");
+                    if (member->type.isArray() || member->type.isClass() || member->type.isResource())
+                        fail(e->token,
+                             "aggregate fields require a fresh typed class projection or "
+                             "checked indexing");
                     emit(ir::ReceiverLoad{member->index, member->type});
                     return member->type;
                 }
             int i = source(e);
             if (locals[i].type.isArray())
-                fail(e->token, "array values are only supported in local initializers "
-                               "and indexing");
+                fail(e->token,
+                     "array values are only supported in local initializers "
+                     "and indexing");
             if (locals[i].type.isClass())
-                fail(e->token, "class values are only supported in local initializers "
-                               "and field accesses");
+                fail(e->token,
+                     "class values are only supported in local initializers "
+                     "and field accesses");
             if (!scalarValue(locals[i].type))
-                fail(e->token, "owned values cannot be implicitly copied; use move, "
-                               "read, or borrow");
+                fail(e->token,
+                     "owned values cannot be implicitly copied; use move, "
+                     "read, or borrow");
             if (locals[i].type.isSpan())
                 fail(e->token, "span capability cannot be used as a scalar value");
             emit(ir::Load{offset(i), payloadType(locals[i].type)});
@@ -873,8 +931,7 @@ class SemanticAnalyzer {
         if (e->op == "unary") {
             // Recognize the minimum signed literal before range-checking its positive
             // magnitude.
-            if (n == "-" && e->args[0]->op == "number" &&
-                !e->args[0]->token.text.ends_with("u64") &&
+            if (n == "-" && e->args[0]->op == "number" && !e->args[0]->token.text.ends_with("u64") &&
                 !e->args[0]->token.text.ends_with("u8")) {
                 try {
                     std::size_t used = 0;
@@ -923,7 +980,7 @@ class SemanticAnalyzer {
                         locals[index].spanOrigin != before[index].spanOrigin ||
                         locals[index].owner != before[index].owner)
                         fail(e->token, "logical paths must preserve the same borrow state");
-                    if (locals[index].type.isBytes() && locals[index].live != before[index].live)
+                    if (ownerType(locals[index].type) && locals[index].live != before[index].live)
                         fail(e->token, "logical paths must preserve exact byte ownership state");
                     locals[index].live = locals[index].live && before[index].live;
                 }
@@ -936,20 +993,18 @@ class SemanticAnalyzer {
                 if (left != Type::U64 && left != Type::U8)
                     fail(e->token, "expected u64 or u8 shift operand");
                 match(right, Type::I64, e->token);
-                emit(ir::BinaryValue{n == "<<" ? ir::Binary::ShiftLeft : ir::Binary::ShiftRight,
-                                     left});
+                emit(ir::BinaryValue{n == "<<" ? ir::Binary::ShiftLeft : ir::Binary::ShiftRight, left});
                 return left;
             }
             match(right, left, e->token);
-            static const std::map<std::string, ir::Binary> operations = {
-                {"+", ir::Binary::CheckedAdd},
-                {"-", ir::Binary::CheckedSubtract},
-                {"*", ir::Binary::CheckedMultiply},
-                {"/", ir::Binary::CheckedDivide},
-                {"%", ir::Binary::CheckedRemainder},
-                {"&", ir::Binary::BitAnd},
-                {"|", ir::Binary::BitOr},
-                {"^", ir::Binary::BitXor}};
+            static const std::map<std::string, ir::Binary> operations = {{"+", ir::Binary::CheckedAdd},
+                                                                         {"-", ir::Binary::CheckedSubtract},
+                                                                         {"*", ir::Binary::CheckedMultiply},
+                                                                         {"/", ir::Binary::CheckedDivide},
+                                                                         {"%", ir::Binary::CheckedRemainder},
+                                                                         {"&", ir::Binary::BitAnd},
+                                                                         {"|", ir::Binary::BitOr},
+                                                                         {"^", ir::Binary::BitXor}};
             if (operations.contains(n)) {
                 if (n == "&" || n == "|" || n == "^") {
                     if (left != Type::U64 && left != Type::U8)
@@ -959,13 +1014,14 @@ class SemanticAnalyzer {
                 emit(ir::BinaryValue{operations.at(n), left});
                 return left;
             }
-            if (n != "==" && n != "!=" && left != Type::I64 && left != Type::U64 &&
-                left != Type::U8)
+            if (n != "==" && n != "!=" && left != Type::I64 && left != Type::U64 && left != Type::U8)
                 fail(e->token, "expected i64, u64 or u8 ordered comparison operands");
-            static const std::map<std::string, ir::Comparison> comparisons = {
-                {"==", ir::Comparison::Equal},     {"!=", ir::Comparison::NotEqual},
-                {"<", ir::Comparison::Less},       {">", ir::Comparison::Greater},
-                {"<=", ir::Comparison::LessEqual}, {">=", ir::Comparison::GreaterEqual}};
+            static const std::map<std::string, ir::Comparison> comparisons = {{"==", ir::Comparison::Equal},
+                                                                              {"!=", ir::Comparison::NotEqual},
+                                                                              {"<", ir::Comparison::Less},
+                                                                              {">", ir::Comparison::Greater},
+                                                                              {"<=", ir::Comparison::LessEqual},
+                                                                              {">=", ir::Comparison::GreaterEqual}};
             emit(ir::Compare{comparisons.at(n), left});
             return Type::Bool;
         }
@@ -991,8 +1047,7 @@ class SemanticAnalyzer {
             arity(e, 1);
             if (e->args[0]->op != "name")
                 fail(e->token, "len requires an array local or receiver field");
-            const Field *member =
-                lookupLocal(e->args[0]->token) < 0 ? receiverField(e->args[0]->token) : nullptr;
+            const Field *member = lookupLocal(e->args[0]->token) < 0 ? receiverField(e->args[0]->token) : nullptr;
             const Type type = member ? member->type : locals[source(e->args[0])].type;
             if (!type.isArray())
                 fail(e->token, "len requires an array local or receiver field");
@@ -1026,14 +1081,14 @@ class SemanticAnalyzer {
         if (n == "reflect_size" || n == "reflect_field_count") {
             arity(e, 1);
             match(expression(e->args[0]), Type::I64, e->token);
-            emit(ir::MetadataQuery{n == "reflect_size" ? ir::Query::Size
-                                                       : ir::Query::PublicFieldCount,
+            emit(ir::MetadataQuery{n == "reflect_size" ? ir::Query::Size : ir::Query::PublicFieldCount,
                                    lowered.moduleScope});
             return Type::I64;
         }
         if (n == "own" || n == "move" || n == "borrow" || n == "borrow_mut")
-            fail(e->token, "ownership constructors are only supported in typed local "
-                           "initializers");
+            fail(e->token,
+                 "ownership constructors are only supported in typed local "
+                 "initializers");
         if (!e->overloadCandidates.empty())
             return callOverloadedFunction(e);
         auto f = functions.find(n);
@@ -1056,8 +1111,7 @@ class SemanticAnalyzer {
             match(right.type, left.type, e->token);
             if (name == "&&" || name == "||") {
                 match(left.type, Type::Bool, e->token);
-                return {name == "&&" ? left.value && right.value : left.value || right.value,
-                        Type::Bool};
+                return {name == "&&" ? left.value && right.value : left.value || right.value, Type::Bool};
             }
             auto compare = [&](auto a, auto b) -> bool {
                 if (name == "==")
@@ -1072,13 +1126,11 @@ class SemanticAnalyzer {
                     return a <= b;
                 if (name == ">=")
                     return a >= b;
-                fail(e->token,
-                     "static_assert supports literals, reflection, comparisons, !, && and || only");
+                fail(e->token, "static_assert supports literals, reflection, comparisons, !, && and || only");
             };
-            const bool result = left.type == Type::U64
-                                    ? compare(std::bit_cast<std::uint64_t>(left.value),
-                                              std::bit_cast<std::uint64_t>(right.value))
-                                    : compare(left.value, right.value);
+            const bool result = left.type == Type::U64 ? compare(std::bit_cast<std::uint64_t>(left.value),
+                                                                 std::bit_cast<std::uint64_t>(right.value))
+                                                       : compare(left.value, right.value);
             return {result, Type::Bool};
         }
         if (e->op == "unary" && name == "!") {
@@ -1104,9 +1156,9 @@ class SemanticAnalyzer {
         std::sort(leaving.rbegin(), leaving.rend());
         for (int local : leaving) {
             auto &l = locals[local];
-            if (l.type.isBytes()) {
+            if (ownerType(l.type)) {
                 if (!terminal)
-                    emit(ir::EndBytes{l.offset});
+                    endOwner(local);
                 l.live = l.resourceActive = false;
                 continue;
             }
@@ -1132,6 +1184,8 @@ class SemanticAnalyzer {
         return terminal;
     }
     void assignClassField(int receiverOffset, const Field &member, ExpressionPtr value) {
+        if (owningClass(member.type))
+            fail(value->token, "owning class field reassignment is unsupported");
         if (value->op != "name")
             fail(value->token, "class field assignment requires a complete local name");
         const int original = source(value);
@@ -1141,12 +1195,17 @@ class SemanticAnalyzer {
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);
         const auto expression = statement->expr;
+        if (owningClass(statement->type) && expression->op == "call" && expression->token.text == "move") {
+            const int original = movedOwner(expression, statement->type);
+            const int destination = add(statement->name, statement->type, statement->mutableValue, statement->token);
+            moveOwner(original, destination);
+            return;
+        }
         if (expression->op == "method_call" || expression->op == "implicit_method_call") {
             callMethod(expression, statement);
             return;
         }
-        if (expression->op == "member" ||
-            (expression->op == "name" && lookupLocal(expression->token) < 0)) {
+        if (expression->op == "member" || (expression->op == "name" && lookupLocal(expression->token) < 0)) {
             int original = 0;
             const Field *member = nullptr;
             if (expression->op == "member") {
@@ -1161,17 +1220,17 @@ class SemanticAnalyzer {
                     fail(expression->token, "class projection requires a class field");
             }
             match(member->type, statement->type, expression->token);
-            const int destination =
-                add(statement->name, statement->type, statement->mutableValue, statement->token);
+            if (owningClass(member->type))
+                fail(expression->token, "owning field extraction is unsupported");
+            const int destination = add(statement->name, statement->type, statement->mutableValue, statement->token);
             emit(ir::ObjectFieldCopy{original, member->index, offset(destination)});
             return;
         }
         if (expression->op == "name") {
             const int original = source(expression);
             match(locals[original].type, statement->type, expression->token);
-            const int destination =
-                add(statement->name, statement->type, statement->mutableValue, statement->token);
-            copyClass(original, destination, definition);
+            const int destination = add(statement->name, statement->type, statement->mutableValue, statement->token);
+            copyClass(original, destination, expression->token);
             return;
         }
         if (expression->op == "call") {
@@ -1188,6 +1247,10 @@ class SemanticAnalyzer {
         if (expression->op == "constructor_call") {
             match(expression->reflectedType, statement->type, expression->token);
             const auto &constructor = method(statement->type, expression->token, true);
+            if (owningClass(statement->type)) {
+                callResource(expression, constructor, statement);
+                return;
+            }
             arity(expression, constructor.params.size());
             std::vector<int> arguments(constructor.params.size(), 0), snapshots;
             bool aggregate = false;
@@ -1199,7 +1262,7 @@ class SemanticAnalyzer {
                     const int original = source(argument);
                     match(locals[original].type, type, argument->token);
                     const int snapshot = add("", type, false, argument->token, false);
-                    copyClass(original, snapshot, classDefinition(type, argument->token));
+                    copyClass(original, snapshot, argument->token);
                     arguments[index] = offset(snapshot);
                     snapshots.push_back(offset(snapshot));
                 } else {
@@ -1207,27 +1270,29 @@ class SemanticAnalyzer {
                     push();
                 }
             }
-            const int destination =
-                add(statement->name, statement->type, statement->mutableValue, statement->token);
-            emit(ir::MethodCall{constructor.name, offset(destination),
-                                aggregate ? arguments : std::vector<int>{}});
+            const int destination = add(statement->name, statement->type, statement->mutableValue, statement->token);
+            emit(ir::MethodCall{constructor.name, offset(destination), aggregate ? arguments : std::vector<int>{}});
             for (const int snapshot : snapshots)
                 emit(ir::EndObject{snapshot});
             return;
         }
-        if (std::any_of(definition.methods.begin(), definition.methods.end(),
-                        [](const Function &method) { return method.constructor; }))
+        if (std::any_of(definition.methods.begin(), definition.methods.end(), [](const Function &method) {
+                return method.constructor;
+            }))
             fail(expression->token, "constructor-bearing class rejects designated initialization");
-        if (std::any_of(definition.fields.begin(), definition.fields.end(),
-                        [](const Field &field) { return !field.publicAccess; }))
-            fail(statement->token, "class construction requires public fields; private "
-                                   "construction requires a declared constructor");
+        if (std::any_of(definition.fields.begin(), definition.fields.end(), [](const Field &field) {
+                return !field.publicAccess;
+            }))
+            fail(statement->token,
+                 "class construction requires public fields; private "
+                 "construction requires a declared constructor");
         if (expression->op != "construct")
-            fail(expression->token, "class local requires named-field construction "
-                                    "or same-type class copy");
-        match(expression->reflectedType.isClass() ? expression->reflectedType
-                                                  : Type(expression->token.text),
-              statement->type, expression->token);
+            fail(expression->token,
+                 "class local requires named-field construction "
+                 "or same-type class copy");
+        match(expression->reflectedType.isClass() ? expression->reflectedType : Type(expression->token.text),
+              statement->type,
+              expression->token);
         std::set<std::string> initialized;
         for (std::size_t index = 0; index < expression->args.size(); ++index) {
             const Token token(expression->fieldNames[index], expression->token.line);
@@ -1239,11 +1304,10 @@ class SemanticAnalyzer {
         }
         if (initialized.size() != definition.fields.size())
             fail(expression->token, "every class field must be initialized exactly once");
-        const int destination =
-            add(statement->name, statement->type, statement->mutableValue, statement->token);
+        const int destination = add(statement->name, statement->type, statement->mutableValue, statement->token);
         for (std::size_t index = expression->args.size(); index > 0; --index) {
-            const auto &member = field(
-                statement->type, Token(expression->fieldNames[index - 1], expression->token.line));
+            const auto &member =
+                field(statement->type, Token(expression->fieldNames[index - 1], expression->token.line));
             pop();
             emit(ir::Store{fieldOffset(destination, member), member.type});
         }
@@ -1254,28 +1318,24 @@ class SemanticAnalyzer {
         if (expression->op == "name") {
             const int original = source(expression);
             match(locals[original].type, type, expression->token);
-            const int destination =
-                add(statement->name, type, statement->mutableValue, statement->token);
+            const int destination = add(statement->name, type, statement->mutableValue, statement->token);
             for (int index = 0; index < type.length; ++index) {
                 emit(ir::Load{offset(original) - index * ir::storageWidth(Type(type.elementKind)),
                               Type(type.elementKind)});
-                emit(ir::Store{offset(destination) -
-                                   index * ir::storageWidth(Type(type.elementKind)),
+                emit(ir::Store{offset(destination) - index * ir::storageWidth(Type(type.elementKind)),
                                Type(type.elementKind)});
             }
             return;
         }
         if (expression->op != "array_literal")
-            fail(expression->token,
-                 "array local requires an array literal or same-type array copy");
+            fail(expression->token, "array local requires an array literal or same-type array copy");
         if (expression->args.size() != static_cast<std::size_t>(type.length))
             fail(expression->token, "array initializer length does not match its declared type");
         for (const auto &value : expression->args) {
             match(this->expression(value), Type(type.elementKind), value->token);
             push();
         }
-        const int destination =
-            add(statement->name, type, statement->mutableValue, statement->token);
+        const int destination = add(statement->name, type, statement->mutableValue, statement->token);
         for (int index = type.length - 1; index >= 0; --index) {
             pop();
             emit(ir::Store{offset(destination) - index * ir::storageWidth(Type(type.elementKind)),
@@ -1289,6 +1349,11 @@ class SemanticAnalyzer {
                 endReturnBorrows();
                 endReturnBytes(local);
                 emit(ir::ReturnBytes{offset(local)});
+            } else if (owningClass(result)) {
+                const int local = movedOwner(s->expr, result);
+                endReturnBorrows();
+                endReturnBytes(local);
+                emit(ir::ReturnOwnedObject{offset(local)});
             } else if (result.isClass()) {
                 if (s->expr->op != "name")
                     fail(s->token, "class return requires a complete local name");
@@ -1365,8 +1430,7 @@ class SemanticAnalyzer {
                     match(locals[owner].type, Type::Own, s->token);
                     if (s->type == Type::MutRef && !locals[owner].mut)
                         fail(s->token, "cannot mutably borrow a const owner");
-                    if (locals[owner].exclusive ||
-                        (s->type == Type::MutRef && locals[owner].shared))
+                    if (locals[owner].exclusive || (s->type == Type::MutRef && locals[owner].shared))
                         fail(s->token, "conflicting borrow");
                     if (s->type == Type::Ref)
                         ++locals[owner].shared;
@@ -1399,8 +1463,7 @@ class SemanticAnalyzer {
             if (storage.member)
                 emit(ir::ReceiverIndexStore{storage.member->index});
             else
-                emit(ir::IndexStore{offset(storage.local), storage.type.length,
-                                    Type(storage.type.elementKind)});
+                emit(ir::IndexStore{offset(storage.local), storage.type.length, Type(storage.type.elementKind)});
             return false;
         }
         if (s->kind == "while") {
@@ -1409,15 +1472,16 @@ class SemanticAnalyzer {
             emit(ir::Label{start});
             match(expression(s->expr), Type::Bool, s->token);
             for (std::size_t index = 0; index < incoming.size(); ++index)
-                if (locals[index].type.isBytes() && locals[index].live != incoming[index].live)
+                if (ownerType(locals[index].type) && locals[index].live != incoming[index].live)
                     fail(s->token, "loop conditions cannot transfer an outer byte owner");
             emit(ir::BranchFalse{done});
             const bool alwaysReturns = block(s->body);
             if (!alwaysReturns) {
                 for (std::size_t index = 0; index < incoming.size(); ++index) {
                     if (incoming[index].live != locals[index].live)
-                        fail(s->token, "loop backedge cannot move an outer owner; moves require a "
-                                       "returning path");
+                        fail(s->token,
+                             "loop backedge cannot move an outer owner; moves require a "
+                             "returning path");
                     if (incoming[index].shared != locals[index].shared ||
                         incoming[index].exclusive != locals[index].exclusive)
                         fail(s->token, "loop backedge must preserve outer borrow state");
@@ -1433,6 +1497,8 @@ class SemanticAnalyzer {
         }
         if (s->kind == "field_assign") {
             const int local = find(Token(s->name, s->token.line));
+            if (!locals[local].live)
+                fail(s->token, "use after move of '" + s->name + "'");
             if (!locals[local].mut)
                 fail(s->token, "field assignment requires a mutable class local");
             const auto &member = field(locals[local].type, Token(s->fieldName, s->token.line));
@@ -1440,9 +1506,11 @@ class SemanticAnalyzer {
                 assignClassField(offset(local), member, s->expr);
                 return false;
             }
-            if (member.type.isArray())
-                fail(s->token, "whole aggregate field assignment is unsupported");
+            if (member.type.isArray() || member.type.isResource())
+                fail(s->token, "whole aggregate or resource field assignment is unsupported");
             match(expression(s->expr), member.type, s->token);
+            if (!locals[local].live)
+                fail(s->token, "field assignment value consumed the containing object");
             emit(ir::Store{fieldOffset(local, member), member.type});
             return false;
         }
@@ -1456,8 +1524,8 @@ class SemanticAnalyzer {
                         assignClassField(0, *member, s->expr);
                         return false;
                     }
-                    if (member->type.isArray())
-                        fail(target, "whole aggregate field assignment is unsupported");
+                    if (member->type.isArray() || member->type.isResource())
+                        fail(target, "whole aggregate or resource field assignment is unsupported");
                     match(expression(s->expr), member->type, target);
                     emit(ir::ReceiverStore{member->index, member->type});
                     return false;
@@ -1488,12 +1556,10 @@ class SemanticAnalyzer {
                 if (noReturn && !yesReturn) {
                     locals[i] = yes[i];
                 } else if (!yesReturn && !noReturn) {
-                    if (locals[i].shared != yes[i].shared ||
-                        locals[i].exclusive != yes[i].exclusive ||
-                        locals[i].spanOrigin != yes[i].spanOrigin ||
-                        locals[i].owner != yes[i].owner)
+                    if (locals[i].shared != yes[i].shared || locals[i].exclusive != yes[i].exclusive ||
+                        locals[i].spanOrigin != yes[i].spanOrigin || locals[i].owner != yes[i].owner)
                         fail(s->token, "continuing branches must preserve the same borrow state");
-                    if (locals[i].type.isBytes() && locals[i].live != yes[i].live)
+                    if (ownerType(locals[i].type) && locals[i].live != yes[i].live)
                         fail(s->token, "continuing branches must preserve exact byte ownership state");
                     locals[i].live = locals[i].live && yes[i].live;
                 }
@@ -1505,7 +1571,7 @@ class SemanticAnalyzer {
         return false;
     }
 
-  public:
+public:
     explicit SemanticAnalyzer(Program program, AnalysisMode analysisMode = AnalysisMode::Check)
         : sourceFunctions(std::move(program.functions)), classes(std::move(program.classes)),
           enums(std::move(program.enums)), reflectionAccess(std::move(program.reflectionAccess)), mode(analysisMode) {
@@ -1544,8 +1610,7 @@ class SemanticAnalyzer {
             throw Error("module graph exceeds 64 enum declarations");
         for (std::size_t index = 0; index < enums.size(); ++index) {
             auto &definition = enums[index];
-            if (enumNames.contains(definition.name) || definition.cases.empty() ||
-                definition.cases.size() > 256)
+            if (enumNames.contains(definition.name) || definition.cases.empty() || definition.cases.size() > 256)
                 fail(definition.token, "enum requires a unique name and 1 to 256 cases");
             std::set<std::string> caseNames;
             for (const auto &name : definition.cases)
@@ -1557,8 +1622,8 @@ class SemanticAnalyzer {
         for (std::size_t index = 0; index < classes.size(); ++index) {
             auto &definition = classes[index];
             const auto &name = definition.name;
-            if (builtins.contains(name) || name == "i64" || name == "u64" || name == "bool" ||
-                name == "ref" || name == "mutref" || name == "array" || classNames.contains(name))
+            if (builtins.contains(name) || name == "i64" || name == "u64" || name == "bool" || name == "ref" ||
+                name == "mutref" || name == "array" || classNames.contains(name))
                 fail(definition.token, "duplicate or reserved class name");
             classNames[name] = index;
             definition.id = 100 + static_cast<int>(index);
@@ -1566,57 +1631,72 @@ class SemanticAnalyzer {
         for (const auto &definition : classes)
             buildClassLayout(definition.name);
         classStorage = ir::computeClassStorageLayouts(classLeaves, classShapes);
+        auto checkTemplateOwners = [&](const std::vector<TemplateArgument> &arguments, const Token &token) {
+            for (const auto &argument : arguments)
+                if (argument.kind == TemplateArgumentKind::Type && argument.type == TypeKind::Class &&
+                    owningClass(Type(argument.className)))
+                    fail(token, "owning classes cannot be template arguments");
+        };
         for (const auto &definition : classes) {
-            const bool composed = std::any_of(definition.fields.begin(), definition.fields.end(),
-                                             [](const Field &member) { return member.type.isClass(); });
-            if (composed && classStorage.at(definition.name).reservedBytes > maximumCopiedClassBytes)
-                fail(definition.token, "composed class storage exceeds 520 bytes");
+            checkTemplateOwners(definition.templateArguments, definition.token);
+            const bool composed =
+                std::any_of(definition.fields.begin(), definition.fields.end(), [](const Field &member) {
+                    return member.type.isClass();
+                });
+            if ((composed || owningClass(Type(definition.name))) &&
+                classStorage.at(definition.name).reservedBytes > maximumCopiedClassBytes)
+                fail(definition.token, "composed or owning class storage exceeds 520 bytes");
         }
         for (auto &definition : classes)
             for (auto &member : definition.fields)
                 member.offset = classStorage.at(definition.name).fieldOffsets.at(member.index);
         for (std::size_t i = 0; i < sourceFunctions.size(); ++i) {
-            if (builtins.count(sourceFunctions[i].name) ||
-                functions.count(sourceFunctions[i].name) ||
+            if (builtins.count(sourceFunctions[i].name) || functions.count(sourceFunctions[i].name) ||
                 classNames.count(sourceFunctions[i].name))
                 fail(sourceFunctions[i].token, "duplicate or reserved function name");
             if (sourceFunctions[i].params.size() > 6)
                 fail(sourceFunctions[i].token, "at most six parameters supported");
             const auto &candidate = sourceFunctions[i];
+            checkTemplateOwners(candidate.templateArguments, candidate.token);
+            const bool resourceConstructor = candidate.constructor && owningClass(Type(candidate.receiverClass));
             const bool resource =
-                candidate.result.isResource() ||
-                std::any_of(candidate.params.begin(), candidate.params.end(), [](const Param &parameter) {
-                    return parameter.type.isResource();
+                candidate.result.isResource() || owningClass(candidate.result) ||
+                std::any_of(candidate.params.begin(), candidate.params.end(), [&](const Param &parameter) {
+                    return parameter.type.isResource() || owningClass(parameter.type);
                 });
-            if (resource) {
-                if (!candidate.receiverClass.empty() || !candidate.templateArguments.empty() ||
-                    !candidate.templateParameters.empty() || candidate.params.empty() ||
-                    !candidate.params[0].type.isRegion() ||
-                    (!scalarValue(candidate.result) && !candidate.result.isBytes()))
+            if (resource || resourceConstructor) {
+                if ((!candidate.receiverClass.empty() && !resourceConstructor) ||
+                    !candidate.templateArguments.empty() || !candidate.templateParameters.empty() ||
+                    candidate.params.empty() || !candidate.params[0].type.isRegion() ||
+                    (!scalarValue(candidate.result) && !ownerType(candidate.result)))
                     fail(candidate.token,
-                         "resource functions require one first region parameter "
-                         "and scalar or owned result");
+                         "resource functions and owning constructors require one first region "
+                         "parameter and scalar or owning result");
                 for (std::size_t index = 1; index < candidate.params.size(); ++index)
-                    if (!scalarValue(candidate.params[index].type) && !candidate.params[index].type.isBytes())
-                        fail(candidate.token, "resource function arguments require scalar values or moved byte owners");
+                    if (!scalarValue(candidate.params[index].type) && !candidate.params[index].type.isBytes() &&
+                        !(resourceConstructor
+                              ? candidate.params[index].type.isClass() && !owningClass(candidate.params[index].type)
+                              : owningClass(candidate.params[index].type)))
+                        fail(candidate.token, "resource arguments require scalar values or moved owners");
+                if (resourceConstructor && candidate.result != Type::I64)
+                    fail(candidate.token, "owning constructor requires its internal scalar result");
             }
-            if (!sourceFunctions[i].receiverClass.empty()) {
-                if (!scalarValue(sourceFunctions[i].result) && !sourceFunctions[i].result.isClass())
-                    fail(sourceFunctions[i].token, "methods require scalar, enum or class results");
-                if (!sourceFunctions[i].constructor)
-                    for (const auto &parameter : sourceFunctions[i].params)
-                        if (!scalarValue(parameter.type) && !parameter.type.isClass())
-                            fail(sourceFunctions[i].token,
-                                 "methods require scalar, enum or class parameters");
+            if (!candidate.receiverClass.empty() && !resourceConstructor) {
+                if ((!scalarValue(candidate.result) && !candidate.result.isClass()) || owningClass(candidate.result))
+                    fail(candidate.token, "methods require scalar, enum or copyable class results");
+                for (const auto &parameter : candidate.params)
+                    if ((!scalarValue(parameter.type) && !parameter.type.isClass()) || owningClass(parameter.type))
+                        fail(candidate.token, "methods require scalar, enum or copyable class parameters");
             }
             auto checkBoundaryType = [&](const Type &type) {
                 if (!type.isClass())
                     return;
                 const auto &name = classDefinition(type, sourceFunctions[i].token).name;
                 if (!ir::copiedClassLeavesSupported(classLeaves.at(name)))
-                    fail(sourceFunctions[i].token, "function-boundary classes are limited to 64 "
-                                                   "scalar fields excluding u8, 512 u8 leaves and "
-                                                   "513 total leaves");
+                    fail(sourceFunctions[i].token,
+                         "function-boundary classes are limited to 64 "
+                         "scalar fields excluding u8, 512 u8 leaves and "
+                         "513 total leaves");
                 if (classStorage.at(name).reservedBytes > maximumCopiedClassBytes)
                     fail(sourceFunctions[i].token, "function-boundary class storage exceeds 520 bytes");
             };
@@ -1648,8 +1728,7 @@ class SemanticAnalyzer {
             lowered.moduleScope = function.moduleScope;
             lowered.result = function.result;
             if (!function.receiverClass.empty())
-                lowered.receiver = ir::Receiver{function.receiverClass, !function.receiverConst,
-                                                function.constructor};
+                lowered.receiver = ir::Receiver{function.receiverClass, !function.receiverConst, function.constructor};
             result = function.result;
             for (const auto &parameter : function.params)
                 lowered.parameters.push_back(parameter.type);
@@ -1657,7 +1736,7 @@ class SemanticAnalyzer {
                 const auto &parameter = function.params[index];
                 const int local = add(parameter.name,
                                       parameter.type,
-                                      parameter.type.isBytes(),
+                                      ownerType(parameter.type),
                                       function.token,
                                       true,
                                       !parameter.type.isClass() && !parameter.type.isBytes());
@@ -1668,20 +1747,23 @@ class SemanticAnalyzer {
                     emit(ir::BindBytesParameter{static_cast<int>(index), offset(local)});
                 } else if (parameter.type.isSpan())
                     emit(ir::BindSpanParameter{static_cast<int>(index), offset(local)});
-                else if (parameter.type.isClass())
-                    emit(ir::BindObjectParameter{static_cast<int>(index), offset(local),
-                                                 parameter.type.className});
+                else if (owningClass(parameter.type)) {
+                    locals[local].owner = 0;
+                    emit(
+                        ir::BindOwnedObjectParameter{static_cast<int>(index), offset(local), parameter.type.className});
+                } else if (parameter.type.isClass())
+                    emit(ir::BindObjectParameter{static_cast<int>(index), offset(local), parameter.type.className});
                 else
                     emit(ir::BindParameter{static_cast<int>(index), offset(local), parameter.type});
             }
             if (function.constructor) {
-                const auto &definition =
-                    classDefinition(Type(function.receiverClass), function.token);
+                const auto &definition = classDefinition(Type(function.receiverClass), function.token);
                 std::map<std::string, ExpressionPtr> initializers;
                 for (const auto &[field, value] : function.initializers) {
-                    const auto found = std::find_if(
-                        definition.fields.begin(), definition.fields.end(),
-                        [&](const Field &member) { return member.token.text == field.text; });
+                    const auto found =
+                        std::find_if(definition.fields.begin(), definition.fields.end(), [&](const Field &member) {
+                            return member.token.text == field.text;
+                        });
                     if (found == definition.fields.end())
                         fail(field, "unknown constructor field initializer");
                     if (!initializers.emplace(field.text, value).second)
@@ -1691,27 +1773,33 @@ class SemanticAnalyzer {
                     fail(function.token, "constructor must initialize every field exactly once");
                 for (const auto &member : definition.fields) {
                     const auto &initializer = initializers.at(member.token.text);
-                    if (member.type.isClass()) {
+                    if (member.type.isBytes()) {
+                        const int original = movedBytes(initializer);
+                        if (locals[original].owner != 0)
+                            fail(initializer->token, "constructor byte field belongs to a different region");
+                        emit(ir::InitializeBytesField{0, member.index, offset(original)});
+                        locals[original].live = false;
+                    } else if (member.type.isClass()) {
                         if (initializer->op != "name")
-                            fail(initializer->token,
-                                 "class field initializer requires a complete named class value");
+                            fail(initializer->token, "class field initializer requires a complete named class value");
                         const int original = source(initializer);
                         match(locals[original].type, member.type, initializer->token);
                         emit(ir::InitializeObjectField{0, member.index, offset(original)});
                     } else if (member.type.isArray()) {
                         if (initializer->op != "array_zero")
-                            fail(member.token,
-                                 "array fields require explicit empty-brace zero initialization");
+                            fail(member.token, "array fields require explicit empty-brace zero initialization");
                         emit(ir::ReceiverArrayZero{member.index});
                     } else {
                         if (initializer->op == "array_zero")
-                            fail(member.token, "empty-brace constructor initialization is "
-                                               "restricted to array fields");
+                            fail(member.token,
+                                 "empty-brace constructor initialization is "
+                                 "restricted to array fields");
                         match(expression(initializer), member.type, member.token);
                         emit(ir::ReceiverStore{member.index, member.type});
                     }
                 }
                 emit(ir::Constant{0, Type::I64});
+                endReturnBytes();
                 emit(ir::Return{});
             } else if (!block(function.body))
                 fail(function.token, "function must return on every path");
@@ -1720,7 +1808,8 @@ class SemanticAnalyzer {
             for (const auto &[local, span] : lintBindings)
                 if (!readLocals.contains(local))
                     lintDiagnostics.push_back({DiagnosticCode::UnreadLocal,
-                                               "local binding '" + locals[local].name + "' is never read", span,
+                                               "local binding '" + locals[local].name + "' is never read",
+                                               span,
                                                DiagnosticSeverity::Warning});
         }
         for (int id = 1; id <= 5; ++id)
@@ -1729,14 +1818,13 @@ class SemanticAnalyzer {
         module.descriptors[static_cast<int>(TypeKind::U8) + 1] = ir::Descriptor{1, 0};
         for (const auto &definition : classes) {
             const Type type(definition.name);
-            module.descriptors[definition.id] = ir::Descriptor{typeSize(type, definition.token),
-                                                               fieldCount(type, definition.token)};
+            module.descriptors[definition.id] =
+                ir::Descriptor{typeSize(type, definition.token), fieldCount(type, definition.token)};
         }
         for (const auto &definition : enums)
             module.descriptors[definition.id] = ir::Descriptor{8, 0};
         for (const auto &[id, type] : arrayTypes)
-            module.descriptors[id] =
-                ir::Descriptor{type.length * ir::storageWidth(Type(type.elementKind)), 0};
+            module.descriptors[id] = ir::Descriptor{type.length * ir::storageWidth(Type(type.elementKind)), 0};
         if (reflectionAccess.empty()) {
             auto &own = reflectionAccess[0];
             for (const auto &definition : classes)

@@ -7,33 +7,43 @@ import storage.ram_sector;
 
 // One owned serialization record representation and one sector-device contract.
 // This is volatile RAM I/O, not a filesystem or durable device write.
-auto main() -> i64 {
+auto main(builtin::ByteRegion region, i64 sector_count, i64 _reserved) -> i64 {
+    if (sector_count <= 0 || sector_count > 9223372036854775807 / 512) {
+        return 13;
+    }
+    builtin::OwnedBytes backing = region.try_allocate(sector_count * 512);
+    storage::RamSectorDevice device = storage::RamSectorDevice(region, move(backing));
+    if (device.status() != storage::SectorIoStatus::success) {
+        return 14;
+    }
     storage::Sector512 sector = storage::Sector512();
     std::BinaryBuffer64 header = std::BinaryBuffer64();
     if (header.write_be32(0, 1096110641u64) != std::ByteWriteStatus::success) {
         return 1;
     }
-    if (header.write_le16(4, 1u64) != std::ByteWriteStatus::success ||
-        header.write_le16(6, 512u64) != std::ByteWriteStatus::success ||
-        header.write_le64(8, 1u64) != std::ByteWriteStatus::success ||
-        header.write_le64(16, 0u64) != std::ByteWriteStatus::success) {
+    if (header.write_le16(4, 1u64) != std::ByteWriteStatus::success || header.write_le16(6, 512u64) != std::
+        ByteWriteStatus::success || header.write_le64(8, u64(sector_count)) != std::ByteWriteStatus::success || header.
+        write_le64(16, 0u64) != std::ByteWriteStatus::success) {
         return 2;
     }
     if (sector.write_record(0, header) != std::ByteWriteStatus::success) {
         return 3;
     }
     std::BinaryBuffer64 trailer = std::BinaryBuffer64();
-    if (trailer.write_be16(62, 21930u64) != std::ByteWriteStatus::success ||
-        sector.write_record(448, trailer) != std::ByteWriteStatus::success) {
+    if (trailer.write_be16(62, 21930u64) != std::ByteWriteStatus::success || sector.write_record(448, trailer) != std::
+        ByteWriteStatus::success) {
         return 4;
     }
-    storage::RamSectorDevice device = storage::RamSectorDevice(sector);
+    if (device.write_sector(0, sector) != storage::SectorIoStatus::success) {
+        return 15;
+    }
     const storage::SectorGeometry geometry = device.geometry();
-    if (geometry.sector_size_bytes() != 512u64 || geometry.sector_count() != 1u64 || !geometry.can_write()) {
+    if (geometry.sector_size_bytes() != 512u64 || geometry.sector_count() != u64(sector_count) || !geometry.can_write())
+        {
         return 5;
     }
-    if (device.flush(storage::SectorFlushMode::visibility) != storage::SectorFlushStatus::volatile_complete ||
-        device.flush(storage::SectorFlushMode::durable) != storage::SectorFlushStatus::unsupported) {
+    if (device.flush(storage::SectorFlushMode::visibility) != storage::SectorFlushStatus::volatile_complete || device.
+        flush(storage::SectorFlushMode::durable) != storage::SectorFlushStatus::unsupported) {
         return 6;
     }
     const storage::SectorReadResult saved = device.read_sector(0);
@@ -47,8 +57,8 @@ auto main() -> i64 {
     const storage::Sector512 snapshot = saved.sector_or_zero();
     const storage::RecordReadResult saved_header = snapshot.read_record(0);
     const storage::RecordReadResult saved_trailer = snapshot.read_record(448);
-    if (saved_header.status() != std::ByteReadStatus::success ||
-        saved_trailer.status() != std::ByteReadStatus::success) {
+    if (saved_header.status() != std::ByteReadStatus::success || saved_trailer.status() != std::ByteReadStatus::success)
+        {
         return 9;
     }
     const std::BinaryBuffer64 zero_record = std::BinaryBuffer64();
@@ -57,22 +67,45 @@ auto main() -> i64 {
     }
     const std::BinaryBuffer64 bytes = saved_header.record_or_zero();
     const builtin::array<u8, 24> record = {
-        bytes.at(0), bytes.at(1), bytes.at(2), bytes.at(3), bytes.at(4), bytes.at(5),
-        bytes.at(6), bytes.at(7), bytes.at(8), bytes.at(9), bytes.at(10), bytes.at(11),
-        bytes.at(12), bytes.at(13), bytes.at(14), bytes.at(15), bytes.at(16), bytes.at(17),
-        bytes.at(18), bytes.at(19), bytes.at(20), bytes.at(21), bytes.at(22), bytes.at(23)
+        bytes.at(0),
+        bytes.at(1),
+        bytes.at(2),
+        bytes.at(3),
+        bytes.at(4),
+        bytes.at(5),
+        bytes.at(6),
+        bytes.at(7),
+        bytes.at(8),
+        bytes.at(9),
+        bytes.at(10),
+        bytes.at(11),
+        bytes.at(12),
+        bytes.at(13),
+        bytes.at(14),
+        bytes.at(15),
+        bytes.at(16),
+        bytes.at(17),
+        bytes.at(18),
+        bytes.at(19),
+        bytes.at(20),
+        bytes.at(21),
+        bytes.at(22),
+        bytes.at(23)
     };
     const std::ByteReadResult magic = std::read_be32(borrow_bytes(record), 0);
     const std::ByteReadResult version = std::read_le16(borrow_bytes(record), 4);
     const std::ByteReadResult sector_bytes = std::read_le16(borrow_bytes(record), 6);
-    const std::ByteReadResult sector_count = std::read_le64(borrow_bytes(record), 8);
+    const std::ByteReadResult decoded_count = std::read_le64(borrow_bytes(record), 8);
     const std::ByteReadResult root = std::read_le64(borrow_bytes(record), 16);
-    if (magic.value_or(0u64) != 1096110641u64 || version.value_or(0u64) != 1u64 ||
-        sector_bytes.value_or(0u64) != 512u64 || sector_count.value_or(0u64) != 1u64) {
+    if (magic.value_or(0u64) != 1096110641u64 || version.value_or(0u64) != 1u64 || sector_bytes.value_or(0u64) != 512u64
+        || decoded_count.value_or(0u64) != u64(sector_count)) {
         return 11;
     }
     const std::BinaryBuffer64 tail = saved_trailer.record_or_zero();
-    const builtin::array<u8, 2> signature = {tail.at(62), tail.at(63)};
+    const builtin::array<u8, 2> signature = {
+        tail.at(62),
+        tail.at(63)
+    };
     const std::ByteReadResult marker = std::read_be16(borrow_bytes(signature), 0);
     if (marker.value_or(0u64) != 21930u64 || root.value_or(1u64) != 0u64) {
         return 12;

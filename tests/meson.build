@@ -16,6 +16,7 @@ foreach entry : [
     ['value-calls', 'compiler/value_calls.py', 'core'],
     ['owned-mutation', 'compiler/owned_mutation.py', 'core'],
     ['owned-bytes', 'compiler/owned_bytes.py', 'core'],
+    ['owning-classes', 'compiler/owning_classes.py', 'core'],
     ['signed-integers', 'compiler/integers.py', 'core'],
     ['unsigned-integers', 'compiler/unsigned.py', 'core'],
     ['modules', 'modules/run.py', 'core'],
@@ -125,3 +126,16 @@ owned_bytes_host = executable(
     cpp_args: ['-DAURORA_HOSTED_BYTES_TESTING'], native: true, install: false,
 )
 test('owned-bytes-host', owned_bytes_host, suite: ['dev', 'core', 'compiler'], timeout: 120)
+
+# Direct owning classes reuse the hosted byte adapter and private value ABI.
+owning_classes_ir = executable(
+    'owning-classes-ir', 'compiler/owning_classes_ir.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('owning-classes-ir', owning_classes_ir, suite: ['dev', 'core', 'compiler'], timeout: 120)
+test(
+    'owning-classes-abi', python,
+    args: ['-B', '-O', files('compiler/owning_classes_abi.py'), owning_classes_ir],
+    depends: owning_classes_ir, suite: ['dev', 'core', 'compiler'],
+    env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
+)

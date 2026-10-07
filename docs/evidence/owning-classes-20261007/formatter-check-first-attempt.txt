@@ -1,0 +1,3 @@
+FAIL: the first verification loop iterated over source/driver.cpp as if it were a fixture directory.
+The formatter correctly rejected driver.cpp/input.au as a non-directory path. No source, compiler or test changed.
+The corrected verifier below selects fixture directories only. Meson registration inspection passed independently.

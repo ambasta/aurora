@@ -16,6 +16,8 @@ The project is currently an experimental compiler and emulator-based kernel.
 
 - **Compiler:** modules, private class state, copied values, checked integers,
   fixed arrays, enums, bounded templates, overloads and readonly byte views.
+  Hosted runtime-sized byte owners and bounded move-only classes use explicit
+  region authority and normal-scope cleanup.
   A C++23 bootstrap compiler checks source, validates typed IR and emits x86-64
   assembly. See the [language reference](compiler/README.md).
 - **Library:** Aurora-authored numeric and fixed-value containers, binary readers,

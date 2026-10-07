@@ -1,0 +1,17 @@
+[
+  {
+    "path": "tests/compiler/block_io.py",
+    "ast_identical": true,
+    "sha256": "1b2bf5755996793736b379161aaf860115da60ad53a6a1372c157351ba6be8d4"
+  },
+  {
+    "path": "tests/compiler/owned_bytes.py",
+    "ast_identical": true,
+    "sha256": "b3599f06cd56b1b3b43eac25bc6f10422f6421372f1d434d6b0f25c9e998b9fb"
+  },
+  {
+    "path": "tests/compiler/xfs_sector.py",
+    "ast_identical": true,
+    "sha256": "5c7ed7a7e5780504a42ad7315b00b5c20cb7842c58f3042621a03755d53ff15c"
+  }
+]

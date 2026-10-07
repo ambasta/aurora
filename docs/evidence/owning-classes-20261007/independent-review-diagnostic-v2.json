@@ -1,0 +1,116 @@
+{
+  "status": "passed",
+  "earlier_review_preserved": "/workspace/shared/owning-classes-review/review-result.json",
+  "earlier_review_sha256": "37c73fb29916a2349a6cb9f89a4df16431404293c69b533a28e1c2e3df407659",
+  "checked_source_manifest": "/workspace/shared/owning-classes-review/SOURCE-SHA256-diagnostic-v2.txt",
+  "production_delta": {
+    "file": "compiler/semantics.hpp",
+    "prior_sha256": "85eaddb5808787c1f905ddf201b14ca70ae69e62399971881b5e514a9f926d4c",
+    "current_sha256": "12c5c940de637ad0a952f4d91dbe3d94d9ebf52ae2ffeeefc696d46635002d43",
+    "review": "Exactly the helper token parameter/error token and six call-site arguments differ. Reversing those changes reconstructs the accepted prior hash. Copy prohibition remains before IR emission; use-site identity now comes from the argument/expression token."
+  },
+  "compiler": {
+    "path": "/workspace/scratch/48c5de6446f8/aurora-owning-classes-20261007/admission-005/aurorac",
+    "sha256": "3653897d2c9780eaec83dc29eb156529bb167de334cad7dd72c2e7dd09985b90",
+    "independent_rebuild": false
+  },
+  "narrow_regressions": {
+    "normal": {
+      "copy": {
+        "diagnostic": "/workspace/shared/owning-classes-review/diagnostic-location-normal/reject-imported-copy-location/copy.json",
+        "source": "/workspace/shared/owning-classes-review/diagnostic-location-normal/reject-imported-copy-location/input.au",
+        "source_sha256": "3ab81e28de149cd32cff216d2b661e833d2f7da8631a96bdfd4195c8e10ac3c0",
+        "range": {
+          "start": {
+            "offset": 217,
+            "line": 6,
+            "column": 24
+          },
+          "end": {
+            "offset": 220,
+            "line": 6,
+            "column": 27
+          }
+        }
+      },
+      "declaration": {
+        "diagnostic": "/workspace/shared/owning-classes-review/diagnostic-location-normal/reject-imported-declaration-location/declaration.json",
+        "source": "/workspace/shared/owning-classes-review/diagnostic-location-normal/reject-imported-declaration-location/owners.au",
+        "source_sha256": "52477be2d56b3cdf939cfe72ae8fc94adaeabb3baf3e9d76f0fe8b607d6ad15d",
+        "range": {
+          "start": {
+            "offset": 58,
+            "line": 3,
+            "column": 11
+          },
+          "end": {
+            "offset": 64,
+            "line": 3,
+            "column": 17
+          }
+        }
+      }
+    },
+    "optimized": {
+      "copy": {
+        "diagnostic": "/workspace/shared/owning-classes-review/diagnostic-location-optimized/reject-imported-copy-location/copy.json",
+        "source": "/workspace/shared/owning-classes-review/diagnostic-location-optimized/reject-imported-copy-location/input.au",
+        "source_sha256": "3ab81e28de149cd32cff216d2b661e833d2f7da8631a96bdfd4195c8e10ac3c0",
+        "range": {
+          "start": {
+            "offset": 217,
+            "line": 6,
+            "column": 24
+          },
+          "end": {
+            "offset": 220,
+            "line": 6,
+            "column": 27
+          }
+        }
+      },
+      "declaration": {
+        "diagnostic": "/workspace/shared/owning-classes-review/diagnostic-location-optimized/reject-imported-declaration-location/declaration.json",
+        "source": "/workspace/shared/owning-classes-review/diagnostic-location-optimized/reject-imported-declaration-location/owners.au",
+        "source_sha256": "52477be2d56b3cdf939cfe72ae8fc94adaeabb3baf3e9d76f0fe8b607d6ad15d",
+        "range": {
+          "start": {
+            "offset": 58,
+            "line": 3,
+            "column": 11
+          },
+          "end": {
+            "offset": 64,
+            "line": 3,
+            "column": 17
+          }
+        }
+      }
+    }
+  },
+  "admission_reviewed": {
+    "compiled_programs": 17,
+    "compiler_sha256": "3653897d2c9780eaec83dc29eb156529bb167de334cad7dd72c2e7dd09985b90",
+    "exact_bounds_traps": 0,
+    "mode": "compile-only",
+    "native_cases": 0,
+    "native_checks_not_run": 24,
+    "source_rejections": 29
+  },
+  "optimized_admission_reviewed": {
+    "compiled_programs": 17,
+    "compiler_sha256": "3653897d2c9780eaec83dc29eb156529bb167de334cad7dd72c2e7dd09985b90",
+    "exact_bounds_traps": 0,
+    "mode": "compile-only",
+    "native_cases": 0,
+    "native_checks_not_run": 24,
+    "source_rejections": 29
+  },
+  "diagnostic_cli_log": "PASS 68 structured diagnostic CLI cases",
+  "assembly_equality_reviewed": {
+    "feature": 17,
+    "storage": 167
+  },
+  "evidence_correction": "Original admission diagnostic test reused input files, overwriting the copy source with the declaration source. Test now uses separate folders; independent replay retains both exact sources. Original admission records remain historical. The exact copy range is line 6 column 24 byte offset 217; declaration is line 3 column 11 byte offset 58.",
+  "conclusion": "Accepted bounded diagnostic-location correction; no safety blocker found. Existing reviewed IR/backend headers are byte-identical and their earlier native evidence is preserved. This follow-up performed compile/check diagnostics only, not new native or full qualification."
+}

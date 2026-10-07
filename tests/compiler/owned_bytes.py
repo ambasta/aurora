@@ -147,21 +147,23 @@ def command(args, timeout=30):
 
 
 class Suite:
-    def __init__(self, compiler, directory):
+    def __init__(self, compiler, directory, module_root=None, entry_name=None):
         self.compiler = compiler
+        self.module_args = [] if module_root is None else ["--module-root", module_root]
+        self.entry_name = entry_name
         self.directory = directory
         self.native = self.rejections = self.programs = self.traps = 0
         self.cxx = shlex.split(os.environ.get("CXX", "g++"))
         self.driver = directory / "driver.cpp"
         self.driver.write_text(DRIVER)
 
-    def compile(self, name, source):
+    def compile(self, name, source, entry_name=None):
         folder = self.directory / name
         folder.mkdir()
         source_path = folder / "input.au"
         source_path.write_text(source)
         assembly = folder / "output.s"
-        result = command([self.compiler, source_path, "-o", assembly])
+        result = command([self.compiler, *self.module_args, source_path, "-o", assembly])
         require(result.returncode == 0, f"{name}: compile failed: {result.stderr.decode()}")
         text = assembly.read_text()
         symbols = re.findall(r"^\.type ([A-Za-z_][A-Za-z_0-9]*), @function$", text, re.M)
@@ -171,7 +173,17 @@ class Suite:
             if not symbol.startswith("aurora_reflect_") and not symbol.startswith("__au_reflect_")
         ]
         require(entries, f"{name}: no native function")
-        entry = entries[-1]
+        selected_name = entry_name or self.entry_name
+        if selected_name is None:
+            entry = entries[-1]
+        else:
+            selected = [
+                symbol
+                for symbol in entries
+                if symbol == selected_name or symbol.endswith(f"__d{len(selected_name)}{selected_name}")
+            ]
+            require(len(selected) == 1, f"{name}: expected one entry named {selected_name}, found {selected}")
+            entry = selected[0]
         require(f".local {entry}\n" in text, f"{name}: resource entry must stay private")
         assembly.write_text(text + BRIDGE.replace("ENTRY", entry))
         executable = folder / "native"
@@ -203,6 +215,7 @@ class Suite:
         if fail_after is not None:
             arguments.append(fail_after)
         result = command(arguments)
+        self.last_observation = result
         require(result.returncode == 0, f"{executable.name}: execution failed {result.returncode}: {result.stderr!r}")
         observed = [int(part) for part in result.stdout.split()]
         require(
@@ -231,7 +244,7 @@ class Suite:
         for prior in (None, b"preserve existing output\n"):
             if prior is not None:
                 output.write_bytes(prior)
-            result = command([self.compiler, input_path, "-o", output])
+            result = command([self.compiler, *self.module_args, input_path, "-o", output])
             require(result.returncode == 1 and result.stderr, f"{name}: expected clean rejection, got {result}")
             require(
                 (not output.exists()) if prior is None else output.read_bytes() == prior,

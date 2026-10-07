@@ -2,13 +2,14 @@
 """Checked XFS header I/O/capacity consumer; no mount or complete image fixture."""
 
 import argparse
+from contextlib import nullcontext
 import hashlib
 from pathlib import Path
 import tempfile
 
 import xfs_geometry as geometry
-from block_io import check_sector, make_sector
-from unsigned_oracle import Case, NativeRunner, Rejection, require
+from block_io import Case, StorageRunner, check_sector, make_device, make_sector
+from unsigned_oracle import Rejection, require
 
 
 IMPORTS = (
@@ -63,9 +64,8 @@ def check_report(data, count, io="success", status_override=None):
 
 def native_case(label, data, count, io="success", writable=False, actual_geometry=False):
     body = make_sector("initial", data)
-    body += """
-        storage::RamSectorDevice device = storage::RamSectorDevice(initial);
-    """
+    body += make_device()
+    body += "if (device.write_sector(0, initial) != storage::SectorIoStatus::success) { return 0u64; }"
     if not writable:
         body += """
             if (device.make_read_only() != storage::SectorIoStatus::success) { return 0u64; }
@@ -131,8 +131,7 @@ def cases(real):
         changed[offset] ^= 1
         yield native_case(f"unrepaired full-sector byte {offset}", bytes(changed), required)
     for index in (-(1 << 63), -1, 1, (1 << 63) - 1):
-        body = "const storage::Sector512 initial_device_sector = storage::Sector512();\n"
-        body += "const storage::RamSectorDevice device = storage::RamSectorDevice(initial_device_sector);\n"
+        body = make_device(const=True)
         body += f"const storage::SectorReadResult read = device.read_sector({index});\n"
         body += "const storage::SectorGeometry source = device.geometry();\n"
         body += "const fs::XfsSectorHeaderReport report = fs::inspect_xfs_v5_512_sector(source, read);\n"
@@ -157,7 +156,9 @@ def report_cases(real, label):
             """
             expected = b"" if status == "read_failed" else real
             body += check_report(expected, MAXIMUM, io, status_override=status) + "return 42u64;"
-            yield Case(f"public report masking/layout {label}/{status}/{io}", body, 42, imports=IMPORTS)
+            yield Case(
+                f"public report masking/layout {label}/{status}/{io}", body, 42, imports=IMPORTS, allocations=0, peak=0
+            )
 
 
 def rejections():
@@ -180,6 +181,7 @@ def rejections():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
+    parser.add_argument("--artifacts", type=Path, help="retain this run in a new directory")
     args = parser.parse_args()
     compiler = args.compiler.resolve(strict=True)
     print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
@@ -187,8 +189,15 @@ def main():
     corpus = list(cases(real)) + list(report_cases(real, "valid header"))
     corpus += list(report_cases(geometry.change(real, compat=1), "nonzero diagnostic masks"))
     rejected = list(rejections())
-    with tempfile.TemporaryDirectory(prefix="aurora-xfs-sector-") as temporary:
-        runner = NativeRunner(Path(temporary), compiler, 15)
+    if args.artifacts is not None:
+        args.artifacts.mkdir(parents=True, exist_ok=False)
+    context = (
+        tempfile.TemporaryDirectory(prefix="aurora-xfs-sector-")
+        if args.artifacts is None
+        else nullcontext(args.artifacts)
+    )
+    with context as temporary:
+        runner = StorageRunner(Path(temporary), compiler)
         for start in range(0, len(corpus), 2):
             runner.cases(corpus[start : start + 2])
         for case in rejected:

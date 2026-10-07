@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "/workspace/scratch/48c5de6446f8/aurora-owning-classes-20261007/source/tests/compiler/owning_classes.py", line 298, in <module>
+    main()
+  File "/workspace/scratch/48c5de6446f8/aurora-owning-classes-20261007/source/tests/compiler/owning_classes.py", line 291, in main
+    summary = OwningSuite(compiler, directory, args.compile_only).cases()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/48c5de6446f8/aurora-owning-classes-20261007/source/tests/compiler/owning_classes.py", line 88, in cases
+    dynamic = self.compile(
+              ^^^^^^^^^^^^^
+  File "/workspace/scratch/48c5de6446f8/aurora-owning-classes-20261007/source/tests/compiler/owning_classes.py", line 69, in compile
+    require(result.returncode == 0, f"{name}: compile failed: {result.stderr.decode()}")
+  File "/workspace/scratch/48c5de6446f8/aurora-owning-classes-20261007/source/tests/compiler/unsigned_oracle.py", line 83, in require
+    raise AssertionError(message)
+AssertionError: dynamic-private-field: compile failed: aurorac: error AU4001: only scalar, enum or class constructor parameters are supported
+

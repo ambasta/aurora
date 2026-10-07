@@ -153,15 +153,30 @@ on failure. The [sector contract](../docs/sector-contract.md) uses the same reco
 value directly, without conversions or a second serializer.
 
 `storage.block_io` and `storage.ram_sector` supply the sole device contract and a
-one-sector `RamSectorDevice`. Construct it from a named owned sector snapshot.
-Reads return copied sectors; range and readonly failures preserve the entire
-device. Visibility flush is volatile; durable flush is unsupported.
+runtime-sized, move-only `RamSectorDevice`. Allocate `builtin::OwnedBytes` using a
+host-granted `builtin::ByteRegion`, then transfer it with
+`RamSectorDevice(region, move(bytes))`. `status()` reports `invalid_source` if
+allocation failed or its byte length is not a multiple of 512. A successful empty
+allocation is a valid zero-sector device. Geometry derives its count from the
+actual successful allocation; no caller-supplied capacity or fixed sector cap is
+trusted.
 
-The [I/O contract](../docs/block-io-contract.md) and single
-[end-to-end record example](examples/ram_sector_record.au) cover this interface.
-The device stores a `Sector512` directly and requires checked owned-field
-assignment. There is no four-record device façade, real disk, mount, persistent
-backend or new borrowing facility. See the [migration and results](../docs/storage-consolidation.md).
+Reads and writes still transfer copied `Sector512` values, and copied read
+reports retain independent snapshots. Range checks precede offset multiplication
+and readonly failures. Device transfers require `move(device)`; implicit device
+copies are rejected. A valid device's visibility flush is volatile, while durable
+flush is unsupported. Invalid sources return `invalid_source` for I/O and
+`unsupported` for either flush mode.
+
+The single [record example](examples/ram_sector_record.au) takes a host-granted
+region and runtime sector count, checks multiplication before allocating, then
+uses the same sector API. It has no standalone runtime grant and must be linked
+through the explicit hosted adapter. The focused storage tests cover its success
+and failure paths. Fresh compiler admission and focused hosted runs passed in
+normal and optimized Python; the [I/O contract](../docs/block-io-contract.md)
+records their scope. Earlier one-sector results do not qualify this ownership
+change. No second backend, borrowed payload escape, real disk, mount or durable
+storage is added.
 
 ## Borrowed binary reader candidate
 

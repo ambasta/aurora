@@ -6,8 +6,12 @@
 namespace aurora::ir {
 // Bool and all pre-byte scalar representations retain their historical eight-byte
 // storage slots. Numeric range and occupied storage width are distinct contracts.
-inline int storageWidth(const Type &type) { return type == Type::U8 ? 1 : 8; }
-inline int storageAlignment(const Type &type) { return storageWidth(type); }
+inline int storageWidth(const Type &type) {
+    return type == Type::U8 ? 1 : 8;
+}
+inline int storageAlignment(const Type &type) {
+    return storageWidth(type);
+}
 inline bool copiedClassLeavesSupported(const std::vector<Type> &leaves) {
     if (leaves.size() > maximumCopiedClassLeaves)
         return false;
@@ -50,7 +54,15 @@ computeClassStorageLayouts(const std::map<std::string, std::vector<Type>> &leave
         for (const auto &field : fields.at(name)) {
             if (field.firstLeaf != static_cast<int>(layout.leafOffsets.size()) || field.length < 0)
                 throw Error("IR: invalid logical field range for storage");
-            if (field.elementType.isClass()) {
+            if (field.elementType == Type::OwnedBytes) {
+                if (field.array || field.length != 0)
+                    throw Error("IR: owned byte field requires one non-scalar descriptor");
+                align(8);
+                layout.fieldOffsets.push_back(cursor);
+                cursor += 32;
+            } else if (field.elementType.isClass()) {
+                if (owningClass(fields, field.elementType.className))
+                    throw Error("IR: nested owning class fields are unsupported");
                 const auto &child = build(field.elementType.className, depth + 1);
                 if (field.array || field.length != static_cast<int>(child.leafOffsets.size()))
                     throw Error("IR: invalid nested field storage shape");
@@ -64,8 +76,8 @@ computeClassStorageLayouts(const std::map<std::string, std::vector<Type>> &leave
                 if (!empty)
                     cursor += child.sizeBytes;
             } else {
-                if (!(field.array ? scalar(field.elementType) : scalarValue(field.elementType)) ||
-                    field.length < 1 || (!field.array && field.length != 1) ||
+                if (!(field.array ? scalar(field.elementType) : scalarValue(field.elementType)) || field.length < 1 ||
+                    (!field.array && field.length != 1) ||
                     (field.array && field.length > maximumClassArrayLength(field.elementType)))
                     throw Error("IR: invalid scalar field storage shape");
                 align(storageAlignment(field.elementType));
@@ -80,7 +92,7 @@ computeClassStorageLayouts(const std::map<std::string, std::vector<Type>> &leave
         }
         if (layout.leafOffsets.size() != leaves.at(name).size())
             throw Error("IR: class storage does not cover logical leaves");
-        if (layout.leafOffsets.empty()) {
+        if (cursor == 0) {
             layout.sizeBytes = 8;
             layout.alignment = 8;
         } else {
