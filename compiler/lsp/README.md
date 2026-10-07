@@ -187,8 +187,9 @@ No additional semantic check or import resolution runs for the request.
 Changed text returns exactly one whole-document edit from `(0, 0)` to the
 original snapshot's UTF-16 EOF, with correct CRLF/CR/LF and non-BMP accounting.
 Unchanged text returns `[]`. Whitespace follows the standalone formatter:
-non-comment layout uses LF and a final newline; line-comment CR, tabs and
-trailing spaces remain verbatim. No style warning is printed into protocol
+non-comment layout uses LF and a final newline; intentional structural blank-line
+groups retain one empty line under the [shared layout policy](../FORMAT.md#layout-and-preservation-contract).
+Line-comment CR, tabs and trailing spaces remain verbatim. No style warning is printed into protocol
 stdout or silently used to rewrite a comment. The response neither applies the
 edit to the server snapshot nor writes a file; only a later accepted `didChange`
 updates that snapshot.

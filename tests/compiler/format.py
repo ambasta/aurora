@@ -49,6 +49,26 @@ def main():
         require(record["success"] and not record["changed"], "formatted source not accepted")
         require(run([good], 0).stdout == formatted, "CLI not idempotent")
         require(json.loads(run(["--lint", "--diagnostics=json", good], 0).stderr)["success"], "semantic check failed")
+        separated = root / "separated.au"
+        separated.write_bytes(
+            b"\nmodule x;\r\n \t\r\n\r\nauto f()->i64{\n\ni64 value=1; // value \t\r\n\n"
+            b"// return group\n\nreturn value;\n\n}\n\n// footer\n\n"
+        )
+        separated_before = separated.read_bytes()
+        separated_expected = (
+            b"module x;\n\nauto f() -> i64 {\n    i64 value = 1; // value \t\r\n\n"
+            b"    // return group\n\n    return value;\n}\n\n// footer\n"
+        )
+        require(run([separated], 0).stdout == separated_expected, "CLI deleted intentional blank lines")
+        require(separated.read_bytes() == separated_before, "blank-line formatting changed input")
+        separated.write_bytes(separated_expected)
+        require(run([separated], 0).stdout == separated_expected, "CLI blank-line layout is not idempotent")
+        record = json.loads(run(["--check", "--diagnostics=json", separated], 1).stderr)
+        require(not record["changed"], "canonical blank lines still report a formatting difference")
+        require(record["diagnostics"], "preserved comment whitespace keeps its existing style finding")
+        separated.write_bytes(separated_expected.replace(b" \t\r\n", b"\n"))
+        record = json.loads(run(["--check", "--diagnostics=json", separated], 0).stderr)
+        require(record["success"] and not record["changed"], "clean canonical blank lines fail --check")
         bad = root / "bad.au"
         for text, code in [
             ("module x;auto f()->i64{return @;}", "AU1001"),
