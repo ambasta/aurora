@@ -1,4 +1,12 @@
-# Recovered original XFS root lookup contract
+# XFS root lookup contract
+
+The indexed-entry extension shares the existing complete validator with lookup.
+The lookup API and first-error semantics below are retained. Its implementation
+bytes change in this extension and have fresh [scoped validation](xfs-root-entry-contract.md#focused-validation-results); the
+historical source hash below identifies only the original reconstruction.
+See the [indexed-entry contract](xfs-root-entry-contract.md) for the new operation.
+
+## Historical reconstructed checkpoint
 
 Revision: post-reset reconstruction, 2026-10-04. Actual reconstructed Aurora module
 SHA2568f669775ea7a5e850a314e50c37d90a5ba1ef30b1d60f6c8a54be5a6faef9e4f matches the

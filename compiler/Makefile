@@ -227,6 +227,7 @@ test-xfs-root: $(OUT)
 	printf '%s\n' "$$observed" > "$$work/compiler.observed.sha256"; \
 	python3 -B -O "$$repo/tests/compiler/xfs_root.py" --repo-root "$$repo" --fixture-root "$$fixtures" --artifact-root "$$work/lookup" --compiler "$$compiler" $(AURORA_TEST_IDENTITY_ARGS) $(XFS_ROOT_TEST_FLAGS); \
 	python3 -B -O "$$repo/tests/compiler/xfs_root_api.py" --repo-root "$$repo" --fixture-root "$$fixtures" --artifact-root "$$work/api" --compiler "$$compiler" $(AURORA_TEST_IDENTITY_ARGS) $(XFS_ROOT_API_TEST_FLAGS); \
+	python3 -B -O "$$repo/tests/compiler/xfs_root_entry.py" --repo-root "$$repo" --fixture-root "$$fixtures" --artifact-root "$$work/entries" --compiler "$$compiler" $(AURORA_TEST_IDENTITY_ARGS); \
 	test "$$(sha256sum -- "$$compiler" | cut -d ' ' -f 1)" = "$$observed"; \
 	printf 'PASS XFS root Make recipe: %s\n' "$$work"
 

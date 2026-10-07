@@ -189,6 +189,22 @@ of the preserved real mkfs-generated header. This test does not create or mount
 an image, and does not require installed xfsprogs.
 
 
+## Indexed read-only root entries
+
+`fs::entry_at_xfs_v5_512_root(superblock, inode, index)` returns a copied root
+entry or an explicit end/error status under the same restricted profile as
+name lookup. Both operations share complete metadata validation, including
+entries after the selected one. Results provide inode/type and raw-name byte
+coordinates into the same unchanged input snapshot, with no retained view.
+
+The [contract](../docs/xfs-root-entry-contract.md) defines negative/oversized
+index precedence, end markers and zero-masked failures. The preserved fixture
+hashes stay exact; ordinary root tests record the current implementation hash
+rather than requiring one historical module. [Focused execution and independent
+review passed](../docs/xfs-root-entry-contract.md#focused-validation-results): the complete lookup corpus and
+API checks, plus 912 indexed-entry cases in normal and Python optimized modes.
+This adds no file-data read, path traversal or mount.
+
 ## Bounded primary-header geometry candidate
 
 Import both `fs.xfs_geometry` and `fs.xfs_probe` to use

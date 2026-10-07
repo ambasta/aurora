@@ -1,5 +1,20 @@
 # Completeness and acceptance matrix
 
+## Indexed XFS root entries — 2026-10-07
+
+The readonly `entry_at_xfs_v5_512_root` operation selects a copied entry under
+the same restricted profile as existing name lookup. Shared complete validation
+prevents malformed later entries from being hidden by an early selection.
+Reports distinguish an exact end position from invalid indices and retain only
+numeric facts and raw-name coordinates into the unchanged input snapshot.
+The [contract](xfs-root-entry-contract.md) and independent native corpus cover
+precedence, complete validation, copied reports and error masking. The
+[focused native results](xfs-root-entry-contract.md#focused-validation-results) and independent review passed:
+203 lookup cases, 77 API observations and 912 new cases in both normal and
+Python optimized modes. No compiler semantics,
+filesystem mount, device access or file-data operation is added.
+
+
 ## Lossless shared lexer candidate — 2026-10-07
 
 The compiler scanner can now retain exact whitespace and line-comment trivia
