@@ -1,0 +1,73 @@
+{
+  "repository": "torvalds/linux",
+  "commit": "038d61fd642278bab63ee8ef722c50d10ab01e8f",
+  "scope": "Pinned format/semantics research only; no upstream implementation code copied. Original and additional retrievals used read-only GitHub fetch_file on2026-10-07.",
+  "files": [
+    {
+      "path": "fs/xfs/libxfs/xfs_format.h",
+      "blob_sha": "9566a76233654004d54f47aac17ac60dd8a6629a",
+      "display_url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_format.h",
+      "materialized_git_blob_sha": "9566a76233654004d54f47aac17ac60dd8a6629a",
+      "sha256": "666a011f41405516f39c392efcbba60ba04ac0872529e1bb6783ad1452e052d5",
+      "bytes": 70251
+    },
+    {
+      "path": "fs/xfs/libxfs/xfs_bmap_btree.c",
+      "blob_sha": "908d7b050e9ce0d08ca6d47fb2a09879386038ce",
+      "display_url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_bmap_btree.c",
+      "materialized_git_blob_sha": "908d7b050e9ce0d08ca6d47fb2a09879386038ce",
+      "sha256": "4383c6a09131a758adedc7c9a7aee69afe9a853f960b5bf410e1e2e1249df56d",
+      "bytes": 23221
+    },
+    {
+      "path": "fs/xfs/libxfs/xfs_types.h",
+      "blob_sha": "f6f4f2d4b5dbf50012d0041cc6685421a3e2e07b",
+      "display_url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_types.h",
+      "materialized_git_blob_sha": "f6f4f2d4b5dbf50012d0041cc6685421a3e2e07b",
+      "sha256": "e4b4d5a0dee9f7aef66ae6d2fc6e6af80f93deae994975b2892b8559d24a48b5",
+      "bytes": 8854
+    },
+    {
+      "path": "fs/xfs/libxfs/xfs_bmap.c",
+      "materialized_git_blob_sha": "d954f9b8071f4b8e28e8083d71bcf403da7d2c61",
+      "display_url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_bmap.c",
+      "sha256": "a3a1b0905542e3fbfacc6f78dd48df801cc24ba38e5d57d7fc52073f18108ffe",
+      "bytes": 170531
+    },
+    {
+      "path": "fs/xfs/libxfs/xfs_inode_buf.c",
+      "materialized_git_blob_sha": "aa13fc00afd707b9baa274a16711126cb67d4da9",
+      "display_url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_inode_buf.c",
+      "sha256": "7e84179edcd5031a0f426ea6c3c042704b5ef2131a66c3ca05bf6acfc365ca64",
+      "bytes": 27339
+    },
+    {
+      "path": "fs/xfs/libxfs/xfs_inode_fork.c",
+      "git_blob": "4f99b90add5526f35161f77e17de7706b3776af0",
+      "sha256": "0b453004cd8a154b3fc1939ac71f3b6c17bdf8076c495bce3b098ac9c94fd87c",
+      "bytes": 19931,
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_inode_fork.c"
+    },
+    {
+      "path": "fs/xfs/xfs_iomap.c",
+      "git_blob": "ec30b78bf5c4d9cfa88ac43081f7d478edb1db96",
+      "sha256": "5cad300c750fa0cbdb14a94cb78ad5847292a5e3b8c76f075f9847095cf050fd",
+      "bytes": 61748,
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/xfs_iomap.c"
+    },
+    {
+      "path": "fs/iomap/buffered-io.c",
+      "git_blob": "fb4519158f3a79031639892e8aaf3dc47c83b13e",
+      "sha256": "ce039399e49caccfc526df9c9b8852a34f41aa75796716e1edc2ac0277a27794",
+      "bytes": 58173,
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/iomap/buffered-io.c"
+    },
+    {
+      "path": "fs/xfs/libxfs/xfs_types.c",
+      "git_blob": "1faf04204c5ddca5f45ff00c5dfaf893b5848b1c",
+      "sha256": "6a5350bbef1b837b10cedff0e6c340b1dcf56640683b82bbfdd82204d8291f54",
+      "bytes": 5465,
+      "url": "https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_types.c"
+    }
+  ]
+}

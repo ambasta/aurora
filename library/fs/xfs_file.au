@@ -16,9 +16,11 @@ export namespace fs {
     enum class XfsFileIssue {
         none, geometry, capacity, inode_size, inode_address, inode_length,
         magic, version, checksum, identity, flags, core, extent_count,
-        file_size, file_type, file_format, attribute_fork, extent_hints, unwritten,
+        file_size, file_type, file_format, attribute_fork, extent_hints,
         file_offset, block_count, trailing_allocation, extent_address, sector_index
     };
+
+    enum class XfsFileSectorKind { none, written, hole, unwritten };
 
     class XfsFileRequest {
         u64 _inode;
@@ -33,26 +35,38 @@ export namespace fs {
         u64 _inode;
         u64 _inode_lba;
         u64 _size;
-        u64 _first_lba;
+        u64 _extents;
         u64 _blocks;
     public:
-        XfsFileFacts(u64 inode, u64 inode_lba, u64 size, u64 first_lba, u64 blocks)
-            : _inode(inode), _inode_lba(inode_lba), _size(size), _first_lba(first_lba), _blocks(blocks) {}
+        XfsFileFacts(u64 inode, u64 inode_lba, u64 size, u64 extents, u64 blocks)
+            : _inode(inode), _inode_lba(inode_lba), _size(size), _extents(extents), _blocks(blocks) {}
 
         auto inode_number() const -> u64 { return _inode; }
         auto inode_lba() const -> u64 { return _inode_lba; }
         auto size_bytes() const -> u64 { return _size; }
-        auto first_data_lba() const -> u64 { return _first_lba; }
-        auto extent_blocks() const -> u64 { return _blocks; }
+        auto extent_count() const -> u64 { return _extents; }
+        auto allocated_blocks() const -> u64 { return _blocks; }
     };
 
     class XfsFileSector {
+        XfsFileSectorKind _kind;
         u64 _lba;
         u64 _valid;
     public:
-        XfsFileSector(u64 lba, u64 valid) : _lba(lba), _valid(valid) {}
-        auto source_lba() const -> u64 { return _lba; }
-        auto valid_bytes() const -> u64 { return _valid; }
+        XfsFileSector(XfsFileSectorKind kind, u64 lba, u64 valid) : _kind(kind), _lba(lba), _valid(valid) {}
+        auto kind() const -> XfsFileSectorKind { return _kind; }
+        auto source_lba() const -> u64 {
+            if (_kind == XfsFileSectorKind::written) {
+                return _lba;
+            }
+            return 0u64;
+        }
+        auto valid_bytes() const -> u64 {
+            if (_kind != XfsFileSectorKind::none) {
+                return _valid;
+            }
+            return 0u64;
+        }
     };
 
     class XfsFileReport {
@@ -81,7 +95,7 @@ export namespace fs {
                 const XfsFileSector result = _sector;
                 return result;
             }
-            const XfsFileSector zero = XfsFileSector(0u64, 0u64);
+            const XfsFileSector zero = XfsFileSector(XfsFileSectorKind::none, 0u64, 0u64);
             return zero;
         }
     };
@@ -102,7 +116,7 @@ namespace fs {
     }
     auto xf_failure(XfsFileStatus status, XfsFileIssue issue) -> XfsFileReport {
         const XfsFileFacts facts = XfsFileFacts(0u64, 0u64, 0u64, 0u64, 0u64);
-        const XfsFileSector sector = XfsFileSector(0u64, 0u64);
+        const XfsFileSector sector = XfsFileSector(XfsFileSectorKind::none, 0u64, 0u64);
         const XfsFileReport result = XfsFileReport(status, issue, facts, sector);
         return result;
     }
@@ -294,10 +308,6 @@ export namespace fs {
             const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_inode, XfsFileIssue::extent_count);
             return failure;
         }
-        if (extent_count != 1u64) {
-            const XfsFileReport failure = xf_failure(XfsFileStatus::unsupported_profile, XfsFileIssue::extent_count);
-            return failure;
-        }
         const u64 size = xf64(inode, 56);
         if (size > 9223372036854775807u64) {
             const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_inode, XfsFileIssue::file_size);
@@ -307,36 +317,47 @@ export namespace fs {
             const XfsFileReport failure = xf_failure(XfsFileStatus::unsupported_profile, XfsFileIssue::file_size);
             return failure;
         }
-        const u64 high = xf64(inode, 176);
-        const u64 low = xf64(inode, 184);
-        if ((high >> 63) != 0u64) {
-            const XfsFileReport failure = xf_failure(XfsFileStatus::unsupported_profile, XfsFileIssue::unwritten);
-            return failure;
-        }
-        if (((high >> 9) & 18014398509481983u64) != 0u64) {
-            const XfsFileReport failure = xf_failure(XfsFileStatus::unsupported_profile, XfsFileIssue::file_offset);
-            return failure;
-        }
-        const u64 encoded = ((high & 511u64) << 43) | (low >> 21);
-        const u64 count = low & 2097151u64;
-        if (count == 0u64 || xf64(inode, 64) != count) {
-            const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_extent, XfsFileIssue::block_count);
-            return failure;
-        }
-        // Subtract first to round up without overflowing size + block_bytes - 1.
+        // Logical block arithmetic stays below 2^55; no untrusted startoff is scaled to bytes.
         const u64 required = (size - 1u64) / blocks.block_bytes() + 1u64;
-        if (count < required) {
+        u64 previous_end = 0u64;
+        u64 allocated = 0u64;
+        bool trailing = false;
+        i64 record = 0;
+        while (record < i64(extent_count)) {
+            const i64 position = 176 + record * 16;
+            const u64 high = xf64(inode, position);
+            const u64 low = xf64(inode, position + 8);
+            const u64 logical = (high >> 9) & 18014398509481983u64;
+            const u64 encoded = ((high & 511u64) << 43) | (low >> 21);
+            const u64 count = low & 2097151u64;
+            if (count == 0u64) {
+                const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_extent, XfsFileIssue::block_count);
+                return failure;
+            }
+            if (logical < previous_end) {
+                const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_extent, XfsFileIssue::file_offset);
+                return failure;
+            }
+            // Validate the entire physical interval even when unwritten or not selected by the request.
+            if (xf_address(geometry, encoded, count) == 0u64) {
+                const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_extent, XfsFileIssue::extent_address);
+                return failure;
+            }
+            previous_end = logical + count;
+            allocated = allocated + count;
+            if (previous_end > required) {
+                trailing = true;
+            }
+            record = record + 1;
+        }
+        // At most 21 positive 21-bit counts fit this attribute-free inline fork.
+        if (xf64(inode, 64) != allocated) {
             const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_extent, XfsFileIssue::block_count);
             return failure;
         }
-        if (count > required) {
+        if (trailing) {
             const XfsFileReport failure = xf_failure(
                 XfsFileStatus::unsupported_profile, XfsFileIssue::trailing_allocation);
-            return failure;
-        }
-        const u64 address = xf_address(geometry, encoded, count);
-        if (address == 0u64) {
-            const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_extent, XfsFileIssue::extent_address);
             return failure;
         }
         // Complete metadata validation precedes every index, including end and negative indices.
@@ -351,18 +372,42 @@ export namespace fs {
             return failure;
         }
         const u64 slot = number % inodes.inodes_per_block();
-        const XfsFileFacts facts = XfsFileFacts(number, inode_block / 512u64 + slot, size, address / 512u64, count);
+        const XfsFileFacts facts = XfsFileFacts(number, inode_block / 512u64 + slot, size, extent_count, allocated);
         if (u64(file_sector) == sectors) {
-            const XfsFileSector empty = XfsFileSector(0u64, 0u64);
+            const XfsFileSector empty = XfsFileSector(XfsFileSectorKind::none, 0u64, 0u64);
             const XfsFileReport end = XfsFileReport(XfsFileStatus::end, XfsFileIssue::none, facts, empty);
             return end;
         }
-        // An admitted index lies within the extent and the validated data-device byte bound.
+        // An admitted index is within EOF, including when its block has no allocated record.
         u64 valid = size - u64(file_sector) * 512u64;
         if (valid > 512u64) {
             valid = 512u64;
         }
-        const XfsFileSector sector = XfsFileSector(address / 512u64 + u64(file_sector), valid);
+        const u64 sectors_per_block = blocks.block_bytes() / 512u64;
+        const u64 logical_block = u64(file_sector) / sectors_per_block;
+        XfsFileSectorKind kind = XfsFileSectorKind::hole;
+        u64 lba = 0u64;
+        record = 0;
+        while (record < i64(extent_count)) {
+            const i64 position = 176 + record * 16;
+            const u64 high = xf64(inode, position);
+            const u64 low = xf64(inode, position + 8);
+            const u64 logical = (high >> 9) & 18014398509481983u64;
+            const u64 count = low & 2097151u64;
+            if (logical_block >= logical && logical_block - logical < count) {
+                kind = XfsFileSectorKind::unwritten;
+                if ((high >> 63) == 0u64) {
+                    kind = XfsFileSectorKind::written;
+                    const u64 encoded = ((high & 511u64) << 43) | (low >> 21);
+                    const u64 address = xf_address(geometry, encoded, count);
+                    // Displacement remains inside the complete physical interval validated above.
+                    lba = address / 512u64 + (logical_block - logical) * sectors_per_block;
+                    lba = lba + u64(file_sector) % sectors_per_block;
+                }
+            }
+            record = record + 1;
+        }
+        const XfsFileSector sector = XfsFileSector(kind, lba, valid);
         const XfsFileReport result = XfsFileReport(XfsFileStatus::ready, XfsFileIssue::none, facts, sector);
         return result;
     }
@@ -383,6 +428,12 @@ export namespace fs {
             return rejected;
         }
         const XfsFileSector sector = plan.sector();
+        if (sector.kind() == XfsFileSectorKind::hole || sector.kind() == XfsFileSectorKind::unwritten) {
+            // No window validation or byte access: unwritten storage is not file data.
+            const storage::Sector512 zero = storage::Sector512();
+            const storage::SectorReadResult result = storage::SectorReadResult(storage::SectorIoStatus::success, zero);
+            return result;
+        }
         // A u64 byte-size geometry bounds every LBA below 2^55, so the signed conversion is exact.
         const storage::SectorReadResult read = storage::read_sector_window(window, base_lba, i64(sector.source_lba()));
         if (read.status() != storage::SectorIoStatus::success) {

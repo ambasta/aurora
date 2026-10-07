@@ -429,3 +429,15 @@ large; success tests use explicitly constructed geometry values.
 The [contract](../docs/xfs-sector-contract.md) records error precedence, provenance
 limits and the separate scoped multi-sector-window contract. This is hosted header
 inspection, not a mount, file-data reader or complete device implementation.
+
+
+## Bounded XFS file sectors
+
+`fs.xfs_file` validates a 512-byte v3 regular-file inode with 0..21 ordered inline
+extent records under the existing narrow XFS geometry profile. It selects written
+sectors through the shared `read_sector_window` API;
+holes and unwritten records produce owned zero sectors without reading a window.
+The planner reports an explicit mapping kind, EOF-bounded valid-byte count and
+written-only LBA. All records are validated before any sector is selected.
+Trailing preallocation, empty files, Btrees and attributes remain unsupported.
+See the [contract and qualification status](../docs/xfs-file-contract.md).
