@@ -97,17 +97,18 @@ def shell_plan(*modes, data="", extra_env=None, root=ROOT, plan=True):
 
 
 class ClockContractTests(unittest.TestCase):
-    def test_exact_177_mode_partition_and_macro_boundary(self):
+    def test_existing_177_modes_plus_owned_allocation_profile(self):
         inventory = []
         for family, wrappers in WRAPPERS.items():
             for wrapper in wrappers:
                 inventory += [(family, mode) for mode in wrapper_modes(wrapper)]
         self.assertEqual(len(inventory), 177)
         self.assertEqual(len(set(inventory)), 177)
-        self.assertEqual(set(inventory), set(CLOCK.MODE_CLOCKS))
+        self.assertEqual(set(inventory) | {("uefi", "owned-bytes")}, set(CLOCK.MODE_CLOCKS))
+        self.assertEqual(CLOCK.clock_profile("uefi", "owned-bytes"), CLOCK.ORIGINAL)
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
         self.assertEqual(len(selected), 51)
-        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 126)
+        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 127)
         self.assertEqual(
             hashlib.sha256(("\n".join(sorted(selected)) + "\n").encode()).hexdigest(), SELECTED_NAMES_SHA256
         )
@@ -125,7 +126,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 182)
+        self.assertEqual(len(cases), 183)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -181,7 +182,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 140)
+        self.assertEqual(len(modes), 141)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):

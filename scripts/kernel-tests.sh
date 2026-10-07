@@ -11,3 +11,6 @@ done
 python3 tests/kernel-smoke.py --self-test
 
 python3 tests/kernel-schedule-smoke.py --self-test
+
+# Same real page allocator, with the bounded CPU-only byte-owner adapter.
+./scripts/kernel-owned-bytes-tests.sh
