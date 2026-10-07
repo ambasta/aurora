@@ -108,5 +108,5 @@ product failure or storage-cap breach occurred. Independent source and retained-
 The focused diagnostic gate itself does not assemble/link/run generated Aurora
 programs; the six existing regression suites do exercise their ordinary native
 fixtures. These bounded checks do not replace a full native aggregate or qualify
-kernel behavior, sanitizers or QEMU. Comments/trivia retention, a formatter and an
-LSP server remain separate upcoming increments.
+kernel behavior, sanitizers or QEMU. [Lossless trivia retention](LEXER.md) now
+builds on this foundation; a formatter and LSP server remain separate work.
