@@ -89,3 +89,15 @@ mode on compiler 2d86780c. The final integrated 147-mode worker run passed with 
 executable/build/test inputs unchanged:37 BIOS gates,102 historical UEFI gates,
 one span gate, and seven BAR gates. Parent fresh aggregate, sanitizer and selected actual BIOS/span/BAR checks
 also passed; see the milestone014 verification record. Hosted checks alone are not hardware evidence.
+
+
+## Separate queue-page preparation candidate
+
+The [CPU preparation increment](NVME-QUEUE-PREPARATION.md) adds the
+opt-in `bar-prepare` fixture over the existing owned payload pool. Preparation and
+scrubbed cancellation happen before this BAR window is revoked. Historical BAR
+read-only grants still confer no device/DMA authority, and the seven historical
+BAR modes retain their read-only semantics. Hosted qualification passed; the
+first linked preparation image was rejected for stack lifetime before any boot.
+The corrected call chain and actual preparation/refusal gates now have focused
+qualification; see the [exact results](../../docs/nvme-queue-preparation-results.md).

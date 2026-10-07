@@ -76,13 +76,13 @@ auto payload_main(U64 arena,U64 size) -> void {
     *reinterpret_cast<volatile std::uint8_t*>(arena+Handoff::pool_offset)=0xc3;
     reinterpret_cast<void(*)()>(arena+Handoff::pool_offset)();
 #endif
+    if (!pool.initialize(arena+Handoff::pool_offset,16)) fail("owned pool initialization");
 #ifdef AURORA_UEFI_ACPI
-    if (!aurora::uefi::discover_acpi(arena,h)) fail("ACPI discovery");
+    if (!aurora::uefi::discover_acpi(arena,h,pool)) fail("ACPI discovery");
 #endif
 #ifdef AURORA_UEFI_RUNTIME
     if (!aurora::uefi::run_protected(arena,h)) fail("protected runtime");
 #endif
-    if (!pool.initialize(arena+Handoff::pool_offset,16)) fail("owned pool initialization");
     auto page=pool.acquire();
     if (!page) fail("owned page allocation");
     const auto physical=pool.address(*page);

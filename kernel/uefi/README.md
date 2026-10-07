@@ -171,3 +171,11 @@ The opt-in [all-controlled-user-phase budget and retirement contract](user-phase
 adds isolated client recovery. All 17 new modes passed independent review, and the
 final 139-mode integration passed with the packed-byte compiler. Parent aggregate and selected spot checks passed; see the contract for exact
 compiler provenance and limits.
+
+
+## NVMe page preparation candidate
+
+The [fixed five-page CPU preparation contract](NVME-QUEUE-PREPARATION.md)
+describes an opt-in, namespace-free BAR fixture using the existing allocation
+pool. Focused hosted, corrected linked-stack and actual guest gates passed; see
+[results and limits](../../docs/nvme-queue-preparation-results.md). It does not activate NVMe or DMA.

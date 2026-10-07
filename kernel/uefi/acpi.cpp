@@ -91,8 +91,11 @@ public:
 [[gnu::noinline]] auto prepare_table_acpi(U64 arena,const Bytes& handoff,unsigned& copied_bits,std::size_t& copied_mcfg_size) -> bool {
 #elif defined(AURORA_UEFI_IVRS)
 [[gnu::noinline]] auto prepare_ivrs_acpi(U64 arena,const Bytes& handoff,unsigned& copied_bits,std::size_t& copied_mcfg_size) -> bool {
+#elif defined(AURORA_UEFI_BAR_CAPTURE)
+[[gnu::noinline]] auto prepare_bar_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits,
+                                       std::size_t &copied_mcfg_size) -> bool {
 #else
-auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
+auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
 #endif
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE)
     copied_topology.reset();
@@ -264,10 +267,10 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
 #endif
     Serial::text("AURORA_ACPI_WINDOW_CLOSED: copies="); Serial::number(window.copies()); Serial::text("\r\n");
 #ifdef AURORA_UEFI_PCI
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_TABLES)
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_BAR_CAPTURE)
     copied_bits=physical_bits; copied_mcfg_size=mcfg->size();
 #else
-    if (!discover_pci(arena,handoff,*mcfg,physical_bits)) return false;
+    if (!discover_pci(arena,handoff,*mcfg,physical_bits,pool)) return false;
 #endif
 #endif
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE)
@@ -275,16 +278,18 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
 #endif
     return true;
 }
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_TABLES)
-auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_BAR_CAPTURE)
+auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
     unsigned physical_bits=0; std::size_t mcfg_size=0;
 #ifdef AURORA_UEFI_TABLES
     if (!prepare_table_acpi(arena,handoff,physical_bits,mcfg_size)) return false;
-#else
+#elif defined(AURORA_UEFI_IVRS)
     if (!prepare_ivrs_acpi(arena,handoff,physical_bits,mcfg_size)) return false;
+#else
+    if (!prepare_bar_acpi(arena,handoff,physical_bits,mcfg_size)) return false;
 #endif
     // ACPI parsing/Topology temporaries have ended before PCI scan construction.
-    return discover_pci(arena,handoff,bytes(arena+0x70000,mcfg_size),physical_bits);
+    return discover_pci(arena,handoff,bytes(arena+0x70000,mcfg_size),physical_bits,pool);
 }
 #endif
 

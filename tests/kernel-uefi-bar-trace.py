@@ -247,7 +247,7 @@ def expected_config_writes(base):
 
 
 def validate_trace(trace, firmware, serial, mode, coverage, payload=None):
-    measured = bar.validate(33 if mode == 'bar-read' else 35, serial, mode, payload)
+    measured = bar.validate(33 if mode in ('bar-read', 'bar-prepare') else 35, serial, mode, payload)
     controls = validate_coverage(coverage)
     records, tx, tx_at, debug, debug_at = parse_trace(trace)
     need(normalized(tx) == normalized(serial), 'Trace/serial byte stream mismatch (DLAB-aware)')

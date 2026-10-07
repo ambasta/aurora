@@ -199,7 +199,7 @@ def validate_receipt(receipt, contents):
     """Pure receipt/hash checks; contents maps named roles to exact file bytes."""
     need(receipt.get('schema') == 'aurora-bar-run-v1' and receipt.get('mode') in bar.MODES, 'Wrong run receipt schema/mode')
     mode = receipt['mode']; clean = mode in bar.CLEAN
-    need(receipt.get('status') == (33 if mode == 'bar-read' else 35), 'Recorded process status disagrees with mode')
+    need(receipt.get('status') == (33 if mode in ('bar-read', 'bar-prepare') else 35), 'Recorded process status disagrees with mode')
     need(receipt.get('firmware_profile') == ('clean' if clean else 'stock'), 'Wrong firmware profile for mode')
     required = FILES | (CLEAN_FILES if clean else set())
     files = receipt.get('files')

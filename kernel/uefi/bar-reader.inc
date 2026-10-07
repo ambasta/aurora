@@ -3,7 +3,8 @@
 #ifdef AURORA_UEFI_IVRS
 [[gnu::noinline]]
 #endif
-auto inspect_bar(U64 arena,const Bytes& handoff,const Q35Ecam& aperture,EcamWindow& ecam,const PciInventory& inventory,unsigned bits) -> bool {
+auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamWindow &ecam,
+                 const PciInventory &inventory, unsigned bits, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
     if (handoff.get(8,4)!=4 || handoff.get(120)!=arena+Handoff::bar_record_offset) return false;
     const auto storage=std::span<const std::byte>{reinterpret_cast<const std::byte*>(handoff.get(120)),4096};
     const Bytes record{storage};
@@ -81,6 +82,9 @@ auto inspect_bar(U64 arena,const Bytes& handoff,const Q35Ecam& aperture,EcamWind
         asm volatile(".global uefi_bar_write_probe\nuefi_bar_write_probe: movl $0,(%%rax)"::"a"(window+8):"memory");
     }
 #endif
+#ifdef AURORA_UEFI_NVME_PREPARE
+    const bool preparation_ok = grant && prepare_nvme_pages(arena, pool, *grant, authority, *after);
+#endif
     *slot=0;
     asm volatile("invlpg (%0)"::"r"(window):"memory");
     if (!authority.revoke(*ticket) || *slot || probe->page(authority) || !ecam.closed() || !tables.verify(arena,handoff)) return false;
@@ -88,6 +92,9 @@ auto inspect_bar(U64 arena,const Bytes& handoff,const Q35Ecam& aperture,EcamWind
     Serial::text("AURORA_BAR_WINDOW_CLOSED: reads="); Serial::number(reads); Serial::text(" config="); Serial::number(ecam.reads()-initial_reads);
     Serial::text(" revoked=1\r\n");
     if (!grant) { Serial::text("AURORA_BAR_REJECTED: reason=inactive-controller-required\r\n"); return false; }
+#ifdef AURORA_UEFI_NVME_PREPARE
+    if (!preparation_ok) return false;
+#endif
 #ifdef AURORA_BAR_REVOKED
     Serial::text("AURORA_BAR_REVOKED_PROBE\r\n");
     U64 ignored; asm volatile(".global uefi_bar_revoked_probe\nuefi_bar_revoked_probe: movl (%%rax),%%eax":"=a"(ignored):"0"(window+8):"memory");

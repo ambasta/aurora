@@ -103,6 +103,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-uefi-dispatch test-uefi-user-phases test smoke smoke-fault smoke-page-fault smoke-scheduling \
     smoke-uefi smoke-acpi smoke-division smoke-pci smoke-unsigned smoke-uefi-runtime smoke-uefi-ipc \
     smoke-uefi-budget smoke-uefi-dispatch smoke-uefi-user-phases smoke-all test-storage-model \
+    test-nvme-queues smoke-nvme-prepare \
     test-uefi-bar test-uefi-span smoke-uefi-bar smoke-uefi-span test-uefi-ivrs smoke-uefi-ivrs \
     test-pin-ledger test-uefi-pins smoke-uefi-pins test-dormant-tables test-uefi-tables smoke-uefi-tables \
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
@@ -220,7 +221,10 @@ test-uefi-dispatch:
 test-uefi-user-phases:
 	./scripts/kernel-uefi-user-phases-tests.sh
 
-test: test-console test-round-robin test-dormant-tables test-uefi-tables test-pin-ledger test-uefi-pins test-storage-model test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases test-uefi-bar test-uefi-span test-uefi-ivrs test-semantics
+test: test-console test-round-robin test-dormant-tables test-uefi-tables test-pin-ledger test-uefi-pins \
+    test-storage-model test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci \
+    test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases \
+    test-nvme-queues test-uefi-bar test-uefi-span test-uefi-ivrs test-semantics
 
 .PHONY: test-console
 test-console: compiler
@@ -298,7 +302,14 @@ test-storage-model:
 	python3 storage/design/model/test_traceability.py
 	python3 -O storage/design/model/test_traceability.py
 
-.PHONY: test-uefi-bar test-uefi-span smoke-uefi-bar smoke-uefi-span
+.PHONY: test-uefi-bar test-uefi-span smoke-uefi-bar smoke-uefi-span test-nvme-queues smoke-nvme-prepare
+test-nvme-queues:
+	./scripts/kernel-nvme-queue-tests.sh
+
+smoke-nvme-prepare:
+	python3 scripts/kernel-uefi-bar-run.py bar-prepare \
+	    --output "$${AURORA_NVME_RECEIPTS:?Set a fresh preparation receipt directory}"
+
 test-uefi-bar:
 	./scripts/kernel-uefi-bar-tests.sh
 

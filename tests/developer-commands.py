@@ -347,7 +347,7 @@ class DeveloperCommands(unittest.TestCase):
         # compiler is synthesized and no native-acceptance credit is claimed.
         self.tool("python3", 'printf "context-check|%s|%s|%s\\n" "$*" "${AURORA_TEST_CONTEXT-}" "${AURORAC-}" >> "$CALLS"\nexit 79\n')
         env = self.env | {"AURORA_TEST_CONTEXT": "/invalid/context.json", "AURORAC": "/selected/aurorac"}
-        for goal in ("run", "run-uefi", "kernel-uefi"):
+        for goal in ("test-nvme-queues", "smoke-nvme-prepare", "run", "run-uefi", "kernel-uefi"):
             result = subprocess.run([MAKE, goal], cwd=self.repo, env=env, text=True,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
             self.assertNotEqual(result.returncode, 0, result.stdout)
