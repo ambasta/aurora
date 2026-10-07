@@ -134,6 +134,15 @@ Checked on 2026-10-06:
 - Gentoo with Clang 22.1.8: bootstrap compiler builds; BIOS/UEFI image builds are
   unsupported and fail on GCC-only flags. The full native test driver remains GNU-only.
 
+On 2026-10-07, the same GCC 16.2.1/binutils 2.47 and explicit PE-linker tuple
+passed a fresh compiler build and `host-build-check.sh` on PR61 (`ead198439`).
+Normal BIOS/UEFI images and the existing hosted/routing/firmware-selection checks
+passed, followed by the complete optimized-Python frontend, class, signed-integer
+and unsigned runners (207/74/84/95 checks). All 730 source hashes stayed unchanged.
+The official Gentoo stage and PE package signatures were verified before use.
+Independent retained-evidence review accepted this focused gate. No new guest
+boot, full GCC 16 native aggregate or Clang qualification is claimed.
+
 The Gentoo checks use an isolated Gentoo userland on the same Linux kernel as
 the Debian host. They establish host-toolchain behavior, not a third distribution,
 physical hardware support or complete emulator-matrix qualification. Assembly

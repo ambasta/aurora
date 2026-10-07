@@ -2,8 +2,8 @@
 
 Aurora's formatter, linter and language server must share the compiler frontend.
 Host Python/C++ style configuration is a separate capability. The interfaces
-and milestones below distinguish the implemented diagnostic, lossless-source
-and formatter foundations from remaining editor/server work.
+and milestones below distinguish the implemented diagnostic, lossless-source,
+formatter and initial language-server capabilities from remaining editor work.
 
 ## Current frontend boundary and remaining gaps
 
@@ -22,8 +22,10 @@ error with an explicit diagnostic family and source range when one is available.
   gives its second closer the correct source byte. Retained lexical tokens are
   unchanged. Structured errors preserve imported-file provenance.
 - `ModuleLoader` accepts [bounded immutable overlays](../compiler/SOURCE-OVERLAYS.md)
-  for existing files after the ordinary source-open policy succeeds. Editor URI
-  validation, version tracking and byte-to-UTF-16 conversion remain adapter work.
+  for existing files after the ordinary source-open policy succeeds. The
+  [initial language server](../compiler/lsp/README.md) implements bounded URI
+  validation, full-sync version tracking and byte-to-UTF-16 conversion through
+  this same frontend. New files and project-root-only analysis remain future work.
 - `frontend.hpp::checkSource` is the common checking boundary. CLI text and JSON
   render the same diagnostics; full syntax-node ranges and multi-error recovery
   are not claimed.
@@ -100,6 +102,11 @@ inline values and every supported construct. Keep intentionally invalid and
 exact-byte fixtures outside bulk rewrites.
 
 ### 4. Language server
+
+The initial optional [stdio adapter](../compiler/lsp/README.md) now covers
+initialize/shutdown, full-sync document state and first-error diagnostics.
+Formatting requests, active cancellation and the semantic editor features below
+remain separate gates; none is advertised by this first slice.
 
 Add a bounded stdio JSON-RPC/LSP adapter for initialize/shutdown, document
 open/change/close, diagnostics and document formatting. Full-document changes

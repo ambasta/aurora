@@ -1,5 +1,21 @@
 # Completeness and acceptance matrix
 
+## Initial compiler-owned language server candidate — 2026-10-07
+
+An optional C++23 stdio server reuses the shared checked frontend and immutable
+source overlays. It implements initialization/shutdown, full-sync document state,
+version-aware first-error diagnostics, strict bounded framing and UTF-16 ranges.
+Imports require explicit roots, and unsaved edits never write source files.
+The [bounded contract](../compiler/lsp/README.md) describes existing-file-only
+scope, resource limits, external optional JSON dependency and focused tests.
+A warning-clean optional build, 49 helper checks and 64 real-server protocol
+cases passed fresh, with normal and optimized test clients. Default builds need
+no JSON; enabling LSP without it fails explicitly. [Results](lsp-results.md)
+retain the corrected fixture failure. Independent final source/evidence review accepted the bounded increment.
+No completion, rename or broader semantic-tooling milestone is claimed.
+
+
+
 ## CPU-only NVMe queue-page preparation — 2026-10-07
 
 A fixed five-page `NvmeQueueBundle` uses the existing payload pool for admin/I/O
@@ -430,6 +446,12 @@ Clang's bootstrap builds, but image builds still fail on GCC-only flags. These
 are bounded host/firmware checks, not all-host or physical-machine qualification.
 The current host-build runner also rejects inherited interactive BIOS console
 controls before work, preserving its normal-image scope.
+A fresh PR61 (`ead198439`) Gentoo GCC 16.2.1/binutils 2.47 host gate passed on
+2026-10-07: compiler, normal BIOS/UEFI images, existing focused host checks and
+all four frontend/class/integer sanity runners. Independent retained-evidence
+review accepted the gate. This adds no fresh guest boot or full GCC 16 native
+aggregate; the [host matrix](local-development.md#repeating-host-build-checks)
+records the exact tested scope.
 
 ## Verified bounded ASCII token scanner — 2026-10-06
 

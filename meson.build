@@ -26,5 +26,18 @@ oracle_cxx = run_command(
   check: true,
 ).stdout().strip()
 
+# The JSON dependency belongs only to the explicitly enabled language server.
+if get_option('lsp')
+  lsp_json = dependency('nlohmann_json', version: '>=3.11.3', native: true, required: true)
+  aurora_lsp = executable(
+    'aurora-lsp', ['compiler/lsp/main.cpp', 'compiler/lsp/check.cpp'],
+    dependencies: lsp_json, native: true, install: false,
+  )
+  lsp_units = executable('lsp-units', 'tests/lsp-units.cpp', native: true, install: false)
+  test('lsp-units', lsp_units, suite: 'lsp', timeout: 30)
+  test('lsp-protocol', python, args: ['-B', files('tests/lsp-protocol.py'), aurora_lsp],
+       depends: aurora_lsp, suite: 'lsp', timeout: 120)
+endif
+
 subdir('tests')
 subdir('library/examples')
