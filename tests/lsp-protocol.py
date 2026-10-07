@@ -3,10 +3,13 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
+import select
 import subprocess
 import sys
 import tempfile
+import time
 
 SERVER = Path(sys.argv[1]).resolve()
 CASES = 0
@@ -305,6 +308,312 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-test-") as directory:
     actions = [opened(root / f"count-{i}.au", GOOD) for i in range(33)]
     stages, logs = phases(actions)
     require(stages[-1] == [] and "storage exceeds limit" in logs, "open document count bound")
+
+
+def formatting(path, id=10, options=None, uri=None):
+    return request(
+        "textDocument/formatting",
+        id,
+        {
+            "textDocument": {"uri": uri or path.as_uri()},
+            "options": options if options is not None else {"tabSize": 4, "insertSpaces": True},
+        },
+    )
+
+
+def format_session(actions):
+    outputs, logs = run([request("initialize", 1, {}), *actions, request("shutdown", 2), notification("exit")])
+    require(outputs[0]["result"]["capabilities"]["documentFormattingProvider"] is True, "formatting advertised")
+    require(outputs[-1] == {"jsonrpc": "2.0", "id": 2, "result": None}, "formatting session shuts down normally")
+    responses = [value for value in outputs if "id" in value and value["id"] not in (1, 2)]
+    replies = {value["id"]: value for value in responses}
+    expected = [action["id"] for action in actions if "id" in action]
+    require([value["id"] for value in responses] == expected, "one ordered response per formatting request")
+    require(
+        all(value.get("method") == "textDocument/publishDiagnostics" for value in outputs if "id" not in value),
+        "formatting emits no unsolicited commands or other messages",
+    )
+    return replies, logs
+
+
+def live_reply(process, identifier):
+    deadline = time.monotonic() + 20
+
+    def read_exact(count):
+        data = bytearray()
+        while len(data) < count:
+            remaining = deadline - time.monotonic()
+            require(
+                remaining > 0 and select.select([process.stdout], [], [], max(0, remaining))[0], "live response timeout"
+            )
+            chunk = os.read(process.stdout.fileno(), count - len(data))
+            require(bool(chunk), "live response ends only on a complete frame")
+            data.extend(chunk)
+        return bytes(data)
+
+    while True:
+        header = bytearray()
+        while not header.endswith(b"\r\n\r\n"):
+            require(len(header) < 8192, "live frame header remains bounded")
+            header.extend(read_exact(1))
+        require(header.startswith(b"Content-Length: "), "live stdout has clean framing")
+        size = int(header[len(b"Content-Length: ") : -4])
+        require(0 <= size <= 8 * 1024 * 1024, "live body remains bounded")
+        message = json.loads(read_exact(size))
+        if "id" in message:
+            require(message["id"] == identifier, "live request receives its own response")
+            return message
+        require(message.get("method") == "textDocument/publishDiagnostics", "only diagnostics precede a live response")
+
+
+def whole_edit(reply, text, end):
+    require("error" not in reply and len(reply["result"]) == 1, "one complete formatting edit")
+    require(
+        reply["result"][0] == {"range": {"start": {"line": 0, "character": 0}, "end": end}, "newText": text},
+        "whole-document text and exact original UTF-16 EOF range",
+    )
+
+
+def format_error(reply, code, diagnostic=None):
+    require("result" not in reply and reply["error"]["code"] == code, "formatting failure returns no edits")
+    if diagnostic:
+        require(reply["error"]["data"]["diagnostic"]["code"] == diagnostic, "original formatter diagnostic family")
+
+
+with tempfile.TemporaryDirectory(prefix="aurora-lsp-format-test-") as directory:
+    root = Path(directory)
+    source = root / "format café.au"
+    source.write_text(BAD)
+    source.chmod(0o444)
+    original = source.read_bytes()
+    original_stat = source.stat()
+    compact = "module demo;auto answer()->i64{return 7;}"
+    canonical = "module demo;\nauto answer() -> i64 {\n    return 7;\n}\n"
+    replies, logs = format_session(
+        [
+            opened(source, compact, 10),
+            formatting(source, 10),
+            formatting(source, 11),
+            changed(source, canonical, 11),
+            formatting(source, 12),
+            changed(source, BAD, 10),
+            changed(source, BAD, 11),
+            formatting(source, 13),
+            closed(source),
+            formatting(source, 14),
+            opened(source, compact, -1),
+            formatting(source, 15),
+        ]
+    )
+    whole_edit(replies[10], canonical, {"line": 0, "character": len(compact)})
+    require(replies[10]["result"] == replies[11]["result"], "formatting never applies its own edit to the snapshot")
+    require(replies[12]["result"] == replies[13]["result"] == [], "canonical latest text survives stale edits")
+    format_error(replies[14], -32602)
+    whole_edit(replies[15], canonical, {"line": 0, "character": len(compact)})
+    require(logs.count("ignored stale document version") == 2, "stale changes remain observable")
+    require(
+        source.read_bytes() == original and list(root.iterdir()) == [source], "readonly disk bytes and files unchanged"
+    )
+    require(
+        (source.stat().st_mtime_ns, source.stat().st_ctime_ns, source.stat().st_mode)
+        == (original_stat.st_mtime_ns, original_stat.st_ctime_ns, original_stat.st_mode),
+        "formatting cannot rewrite bytes or change file permissions",
+    )
+
+    # Golden expected text tests comment bytes/anchors, EOF, CRLF/CR/LF, tabs,
+    # non-BMP UTF-16 width, and escaped controls without a second Aurora parser.
+    for text, expected, end in [
+        (compact + "\n", canonical, {"line": 1, "character": 0}),
+        (compact + "\r\n", canonical, {"line": 1, "character": 0}),
+        (compact + "\r", canonical, {"line": 1, "character": 0}),
+        (
+            "// café 😀\r\n" + compact + " // 尾😀",
+            "// café 😀\r\n" + canonical.rstrip("\n") + " // 尾😀\n",
+            {"line": 1, "character": len(compact) + 7},
+        ),
+        (
+            "// \x00\t😀\nmodule demo;// module\nauto answer()->i64{ // body\nreturn 7; // result \t\n}// eof",
+            "// \x00\t😀\nmodule demo; // module\nauto answer() -> i64 { // body\n"
+            "    return 7; // result \t\n} // eof\n",
+            {"line": 4, "character": 7},
+        ),
+    ]:
+        replies, logs = format_session([opened(source, text), formatting(source)])
+        whole_edit(replies[10], expected, end)
+        require(not logs, "successful formatter keeps stderr quiet, including preserved style findings")
+        replies, _ = format_session([opened(source, expected), formatting(source)])
+        require(replies[10]["result"] == [], "applied formatting is idempotent")
+
+    syntax_only = "module demo;import absent;auto answer()->i64{return unknown;}"
+    expected = "module demo;\nimport absent;\nauto answer() -> i64 {\n    return unknown;\n}\n"
+    replies, _ = format_session([opened(source, syntax_only), formatting(source)])
+    whole_edit(replies[10], expected, {"line": 0, "character": len(syntax_only)})
+
+    for text, diagnostic in [
+        ("", "AU2001"),
+        (" \t\r\n", "AU2001"),
+        (BAD, "AU1001"),
+        ("module demo; auto answer()->i64{return ;}", "AU2001"),
+        ("module demo; /* unsupported */", "AU2001"),
+        ("module demo; auto answer()->i64{return " + "(" * 300 + "1" + ")" * 300 + ";}", "AU2002"),
+    ]:
+        replies, _ = format_session([opened(source, text, 17), formatting(source), formatting(source, 11)])
+        for reply in replies.values():
+            format_error(reply, -32803, diagnostic)
+            require(
+                reply["error"]["data"]["version"] == 17 and reply["error"]["data"]["uri"] == source.as_uri(),
+                "formatter failure identifies accepted snapshot",
+            )
+        require(replies[10]["error"] == replies[11]["error"], "failure leaves the snapshot intact")
+
+    for options in [
+        {},
+        [],
+        {"tabSize": 4},
+        {"insertSpaces": True},
+        {"tabSize": 2, "insertSpaces": True},
+        {"tabSize": True, "insertSpaces": True},
+        {"tabSize": 4.0, "insertSpaces": True},
+        {"tabSize": 4, "insertSpaces": False},
+        {"tabSize": 4, "insertSpaces": 1},
+        {"tabSize": 4, "insertSpaces": "true"},
+        {"tabSize": 4, "insertSpaces": True, "trimTrailingWhitespace": True},
+    ]:
+        replies, _ = format_session(
+            [opened(source, compact), formatting(source, options=options), formatting(source, 11)]
+        )
+        format_error(replies[10], -32602)
+        require("tabSize=4" in replies[10]["error"]["message"], "canonical option restriction is explicit")
+        whole_edit(replies[11], canonical, {"line": 0, "character": len(compact)})
+    for params in [None, [], {}, {"textDocument": {"uri": source.as_uri()}}]:
+        replies, _ = format_session([opened(source, compact), request("textDocument/formatting", 10, params)])
+        format_error(replies[10], -32602)
+
+    alias = source.as_uri().replace("file:///", "file://localhost/")
+    for uri in [
+        alias,
+        "untitled:buffer",
+        "file://remote" + str(source),
+        source.as_uri() + "?query",
+        source.as_uri() + "#fragment",
+        root.as_uri() + "/missing/../" + source.name,
+        root.as_uri() + "/%2e%2e/" + source.name,
+        root.as_uri() + "/%ff.au",
+        root.as_uri() + "/%00.au",
+        root.as_uri() + "/%ZZ.au",
+    ]:
+        replies, _ = format_session([opened(source, compact), formatting(source, uri=uri)])
+        format_error(replies[10], -32602)
+    replies, _ = format_session([formatting(source)])
+    format_error(replies[10], -32602)
+    link = root / "link.au"
+    link.symlink_to(source)
+    nested_link = root / "linked-directory"
+    nested_link.symlink_to(root, target_is_directory=True)
+    for path in [root / "missing.au", root, link, nested_link / source.name]:
+        replies, _ = format_session([opened(path, compact), formatting(path)])
+        format_error(replies[10], -32803, "AU4001")
+
+    # Admission must run at formatting time, even after a successful open and
+    # earlier edit response. Mutations here are test-client actions, never LSP.
+    live_directory = root / "live"
+    live_directory.mkdir()
+    live_source = live_directory / "input.au"
+    live_source.write_text(BAD)
+    held = root / "held.au"
+    held_directory = root / "held-directory"
+    process = subprocess.Popen([str(SERVER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        process.stdin.write(frame(request("initialize", 1, {})))
+        process.stdin.flush()
+        require("result" in live_reply(process, 1), "live server initialized")
+        process.stdin.write(frame(opened(live_source, compact, 30)) + frame(formatting(live_source, 10)))
+        process.stdin.flush()
+        whole_edit(live_reply(process, 10), canonical, {"line": 0, "character": len(compact)})
+        for index, replacement in enumerate(["missing", "symlink", "directory", "parent-symlink"]):
+            if replacement == "parent-symlink":
+                live_directory.rename(held_directory)
+                live_directory.symlink_to(held_directory, target_is_directory=True)
+            else:
+                live_source.rename(held)
+                if replacement == "symlink":
+                    live_source.symlink_to(held)
+                elif replacement == "directory":
+                    live_source.mkdir()
+            identifier = 20 + 2 * index
+            process.stdin.write(frame(formatting(live_source, identifier)))
+            process.stdin.flush()
+            reply = live_reply(process, identifier)
+            format_error(reply, -32803, "AU4001")
+            require(reply["error"]["data"]["version"] == 30, "admission failure retains the accepted version")
+            if replacement == "parent-symlink":
+                live_directory.unlink()
+                held_directory.rename(live_directory)
+            else:
+                if replacement == "symlink":
+                    live_source.unlink()
+                elif replacement == "directory":
+                    live_source.rmdir()
+                held.rename(live_source)
+            process.stdin.write(frame(formatting(live_source, identifier + 1)))
+            process.stdin.flush()
+            whole_edit(live_reply(process, identifier + 1), canonical, {"line": 0, "character": len(compact)})
+            require(
+                live_source.read_text() == BAD, "formatting uses accepted text and leaves the restored disk bytes alone"
+            )
+        process.stdin.write(frame(request("shutdown", 2)) + frame(notification("exit")))
+        process.stdin.flush()
+        require(live_reply(process, 2)["result"] is None, "live session shutdown response")
+        process.stdin.close()
+        process.stdin = None
+        stdout, stderr = process.communicate(timeout=20)
+        require(process.returncode == 0 and not stdout and not stderr, "live session exits without stray output")
+        CASES += 1
+    except BaseException:
+        process.kill()
+        process.wait()
+        raise
+
+    # Exact input/output limits and output expansion failure remain transactional.
+    limit = 1024 * 1024
+    exact_input = compact + " " * (limit - len(compact))
+    replies, _ = format_session([opened(source, exact_input), formatting(source)])
+    whole_edit(replies[10], canonical, {"line": 0, "character": limit})
+    exact_output = canonical + "//" + "x" * (limit - len(canonical) - 3)
+    replies, _ = format_session([opened(source, exact_output), formatting(source)])
+    whole_edit(replies[10], exact_output + "\n", {"line": 4, "character": limit - len(canonical) - 1})
+    expansion = exact_output + "x"
+    replies, _ = format_session(
+        [opened(source, expansion), formatting(source), changed(source, compact), formatting(source, 11)]
+    )
+    format_error(replies[10], -32803, "AU9001")
+    whole_edit(replies[11], canonical, {"line": 0, "character": len(compact)})
+    replies, logs = format_session([opened(source, compact), changed(source, " " * (limit + 1)), formatting(source)])
+    whole_edit(replies[10], canonical, {"line": 0, "character": len(compact)})
+    require("storage exceeds limit" in logs, "oversized replacement cannot affect formatting")
+    require(source.read_bytes() == original, "all formatter errors leave source bytes unchanged")
+
+    # Standard lifecycle still applies to formatting; range/on-type are unsupported.
+    outputs, _ = run(
+        [
+            formatting(source),
+            request("initialize", 1, {}),
+            opened(source, compact),
+            request("textDocument/rangeFormatting", 11, {}),
+            request("textDocument/onTypeFormatting", 12, {}),
+            request("shutdown", 2),
+            formatting(source, 13),
+            notification("exit"),
+        ]
+    )
+    replies = {value["id"]: value for value in outputs if "id" in value}
+    for id, code in [(10, -32002), (11, -32601), (12, -32601), (13, -32600)]:
+        format_error(replies[id], code)
+    require(
+        "documentRangeFormattingProvider" not in replies[1]["result"]["capabilities"]
+        and "documentOnTypeFormattingProvider" not in replies[1]["result"]["capabilities"],
+        "only implemented formatting is advertised",
+    )
 
 initialize = request("initialize", 1, {})
 shutdown = request("shutdown", 2)
