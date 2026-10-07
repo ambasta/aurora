@@ -1,5 +1,22 @@
 # Completeness and acceptance matrix
 
+## Public smoke entrypoint repair candidate — 2026-10-07
+
+The [entrypoint contract](smoke-entrypoint-repair.md) makes missing BAR fixture
+prerequisites fail before receipt creation or image builds, preserves existing
+qualification pins and complete trace/serial checks, and restricts normal-image
+restoration to started builds. Explicit BIOS/UEFI console smoke targets call the
+existing private-PTY oracle and join the emulator matrix; the full native graph
+remains native-only. Both Python modes passed 26 BAR, 19 console-routing and
+15 clock checks, alongside existing shortcut/firmware controls. Public NVMe
+preparation and both real PTY gates passed, with three subsequent normal rebuild-and-boot checks.
+The results retain a reviewed cancellation-only final-source delta, preserved
+initial failures and exact reused-compiler scope. The PR71 join preserves all
+50 compared image/assembly/metadata pairs across five profiles. No full emulator/native
+aggregate, device activation or physical-hardware qualification is claimed.
+
+
+
 ## Shared diagnostic location correction — 2026-10-07
 
 Compiler and formatter shared source errors now render `path:line:column` with
