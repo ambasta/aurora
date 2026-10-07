@@ -149,6 +149,23 @@ device. The [focused native results](../docs/binary-writer-results.md) passed
 in normal and Python optimized modes with codec/reader regressions; independent
 review accepted this focused scope. The full native aggregate was not rerun.
 
+## Volatile RAM record blocks
+
+`storage.block` and `storage.ram_blocks` supply owned 64-byte `Block64` values,
+recoverable copied read reports and a four-record `RamBlockStore`. Geometry is
+explicit and fixed at four 64-byte records. Reads return independent snapshots;
+invalid writes preserve every record, and valid writes are immediately visible.
+`flush()` returns `volatile_complete`, with no persistent-storage guarantee.
+
+The private word representation fits existing copied-value bounds without
+exposing packing, pointers or views. `storage.block_codec` provides independent
+`block_from_writer` / `writer_from_block` conversions for `BinaryWriter64`.
+The [contract](../docs/ram-block-contract.md)
+and [serialization example](examples/ram_record.au) keep record blocks separate
+from hardware sectors. The value/store/writer gates and independent review
+passed, with the initial module-admission failure preserved in the contract.
+No disk, filesystem or device is accessed.
+
 ## Borrowed binary reader candidate
 
 `import std.binary;` supplies ByteReadStatus, ByteReadResult, read_le32 and

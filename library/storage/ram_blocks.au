@@ -1,0 +1,84 @@
+export module storage.ram_blocks;
+import storage.block;
+
+export namespace storage {
+    enum class BlockFlushStatus { volatile_complete };
+
+    class BlockGeometry {
+        u64 bytes;
+        u64 count;
+    public:
+        BlockGeometry(u64 block_bytes, u64 block_count) : bytes(block_bytes), count(block_count) {}
+
+        auto block_size_bytes() const -> u64 {
+            return bytes;
+        }
+
+        auto block_count() const -> u64 {
+            return count;
+        }
+    };
+
+    class RamBlockStore {
+        builtin::array<u64, 32> words;
+    public:
+        RamBlockStore() : words{} {}
+
+        auto geometry() const -> BlockGeometry {
+            const BlockGeometry result = BlockGeometry(64u64, 4u64);
+            return result;
+        }
+
+        auto read_block(i64 index) const -> BlockReadResult {
+            if (index < 0) {
+                const Block64 zero = Block64();
+                const BlockReadResult failure = BlockReadResult(BlockStatus::out_of_range, zero);
+                return failure;
+            }
+            if (index >= 4) {
+                const Block64 zero = Block64();
+                const BlockReadResult failure = BlockReadResult(BlockStatus::out_of_range, zero);
+                return failure;
+            }
+            Block64 block = Block64();
+            i64 word = 0;
+            while (word < 8) {
+                const u64 packed = words[index * 8 + word];
+                i64 byte = 0;
+                while (byte < 8) {
+                    block.write_byte(word * 8 + byte, u8((packed >> (byte * 8)) & 255u64));
+                    byte = byte + 1;
+                }
+                word = word + 1;
+            }
+            const BlockReadResult result = BlockReadResult(BlockStatus::success, block);
+            return result;
+        }
+
+        auto write_block(i64 index, Block64 block) -> BlockStatus {
+            if (index < 0) {
+                return BlockStatus::out_of_range;
+            }
+            if (index >= 4) {
+                return BlockStatus::out_of_range;
+            }
+            i64 word = 0;
+            while (word < 8) {
+                u64 packed = 0u64;
+                i64 byte = 0;
+                while (byte < 8) {
+                    const BlockByteResult value = block.read_byte(word * 8 + byte);
+                    packed = packed | (u64(value.value_or(0u8)) << (byte * 8));
+                    byte = byte + 1;
+                }
+                words[index * 8 + word] = packed;
+                word = word + 1;
+            }
+            return BlockStatus::success;
+        }
+
+        auto flush() const -> BlockFlushStatus {
+            return BlockFlushStatus::volatile_complete;
+        }
+    };
+}

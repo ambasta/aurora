@@ -1,0 +1,63 @@
+module ram_record_example;
+import std.binary_writer;
+import std.binary;
+import storage.block;
+import storage.block_codec;
+import storage.ram_blocks;
+
+// A copied record roundtrip through four volatile 64-byte RAM blocks.
+// No disk is opened and flush does not make the record persistent.
+auto main() -> i64 {
+    storage::RamBlockStore store = storage::RamBlockStore();
+    const storage::BlockGeometry geometry = store.geometry();
+    if (geometry.block_size_bytes() != 64u64) {
+        return 1;
+    }
+    if (geometry.block_count() != 4u64) {
+        return 2;
+    }
+    std::BinaryWriter64 writer = std::BinaryWriter64();
+    if (writer.write_be16(0, 10u64) != std::ByteWriteStatus::success) {
+        return 3;
+    }
+    if (writer.write_le64(2, 9223372036854775850u64) != std::ByteWriteStatus::success) {
+        return 4;
+    }
+    const storage::Block64 block = storage::block_from_writer(writer);
+    if (store.write_block(1, block) != storage::BlockStatus::success) {
+        return 5;
+    }
+    writer.write_u8(0, 255u8);
+    if (store.flush() != storage::BlockFlushStatus::volatile_complete) {
+        return 6;
+    }
+    const storage::BlockReadResult report = store.read_block(1);
+    if (report.status() != storage::BlockStatus::success) {
+        return 7;
+    }
+    const storage::Block64 zero = storage::Block64();
+    if (store.write_block(1, zero) != storage::BlockStatus::success) {
+        return 8;
+    }
+    const storage::Block64 snapshot = report.block_or_zero();
+    const std::BinaryWriter64 returned = storage::writer_from_block(snapshot);
+    const builtin::array<u8, 10> record = {
+        returned.at(0), returned.at(1), returned.at(2), returned.at(3), returned.at(4),
+        returned.at(5), returned.at(6), returned.at(7), returned.at(8), returned.at(9)
+    };
+    const std::ByteReadResult length = std::read_be16(borrow_bytes(record), 0);
+    const std::ByteReadResult identifier = std::read_le64(borrow_bytes(record), 2);
+    if (length.status() != std::ByteReadStatus::success) {
+        return 9;
+    }
+    if (identifier.status() != std::ByteReadStatus::success) {
+        return 10;
+    }
+    if (length.value_or(0u64) != 10u64) {
+        return 11;
+    }
+    if (identifier.value_or(0u64) != 9223372036854775850u64) {
+        return 12;
+    }
+    return 42;
+}

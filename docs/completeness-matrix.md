@@ -1,5 +1,20 @@
 # Completeness and acceptance matrix
 
+## Four-record RAM block API — 2026-10-07
+
+The Aurora-authored `RamBlockStore` holds four fixed 64-byte record blocks and
+returns owned copied reads. Full range preflight makes invalid writes preserve
+all records; valid writes are synchronously visible. Flush explicitly returns
+`volatile_complete`, with no durability promise. The private `Block64` word
+representation passed its 264-case native copy/layout proof and four rejections.
+The [store contract](ram-block-contract.md), independent byte-model tests and
+writer/reader serialization example passed: 39 model cases and five rejection
+fixtures in normal and Python optimized modes, plus block/writer dependencies.
+Independent review accepted the bounded scope; the first admission failure is
+retained and the corrected core no longer exposes writer types. No new compiler semantics, hardware sectors,
+filesystem mount, NVMe access, heap or mutable view is claimed.
+
+
 ## Existing-file frontend overlays candidate — 2026-10-07
 
 The shared frontend accepts immutable in-memory snapshots for already-existing
