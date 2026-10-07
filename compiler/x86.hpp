@@ -470,6 +470,22 @@ class X86Emitter {
                                       "(%r10)");
                         storeValue(layout[leaf], address(objectLeaf(operation.resultOffset, leaf)));
                     }
+                } else if constexpr (std::is_same_v<Op, ir::AssignObjectField>) {
+                    const auto &name = operation.objectOffset == 0
+                                           ? currentFunction->receiver->className
+                                           : currentFunction->objectSlots.at(operation.objectOffset).className;
+                    const auto &field = classFields->at(name)[operation.fieldIndex];
+                    const auto &sourceLayout = classLayouts->at(field.elementType.className);
+                    const auto &destinationStorage = classStorage->at(name);
+                    if (operation.objectOffset == 0)
+                        line("movq " + address(receiverSaveOffset) + ", %r10");
+                    else
+                        line("leaq " + address(operation.objectOffset) + ", %r10");
+                    for (int leaf = 0; leaf < field.length; ++leaf) {
+                        loadValue(sourceLayout[leaf], address(objectLeaf(operation.sourceOffset, leaf)));
+                        storeValue(sourceLayout[leaf],
+                                   std::to_string(destinationStorage.leafOffsets[field.firstLeaf + leaf]) + "(%r10)");
+                    }
                 } else if constexpr (std::is_same_v<Op, ir::InitializeObjectField>) {
                     const auto &field = receiverField(operation.fieldIndex);
                     const auto &layout = classLayouts->at(field.elementType.className);
@@ -535,6 +551,14 @@ class X86Emitter {
                         line("movq " + address(receiverSaveOffset) + ", %r10");
                     else
                         line("leaq " + address(operation.receiverOffset) + ", %r10");
+                    if (operation.receiverFieldIndex >= 0) {
+                        const auto &name = operation.receiverOffset == 0
+                                               ? currentFunction->receiver->className
+                                               : currentFunction->objectSlots.at(operation.receiverOffset).className;
+                        const int fieldOffset = classStorage->at(name).fieldOffsets[operation.receiverFieldIndex];
+                        if (fieldOffset != 0)
+                            line("addq $" + std::to_string(fieldOffset) + ", %r10");
+                    }
                     if (target.result.isClass())
                         line("leaq " + address(operation.resultOffset) +
                              (aggregate ? ", %rax" : ", %r11"));

@@ -57,8 +57,10 @@ explicit class arguments remain supported.
 
 A result call acquires receiver identity and evaluates explicit arguments before
 making the new result binding visible. Returning a method call or receiver field
-directly is still unsupported: first create a complete named local. Chained
-mutation, source references to subobjects and implicit class-valued temporaries
+directly is still unsupported: first create a complete named local. The separate
+[direct owned-field extension](OWNED-FIELD-MUTATION.md) supports one child receiver
+and complete direct field replacement. Deeper chained mutation, source references
+to subobjects and implicit class-valued temporaries
 remain outside this subset.
 
 ## Internal calling convention

@@ -257,6 +257,12 @@ def native_copy_cases(suite):
             "const Leaf stored=original.item;const Leaf untouched=outer.item;"
             "if(source.get()!=99){return 1;}if(stored.get()!=20){return 2;}"
             "if(untouched.get()!=20){return 3;}return inner.get()+outer.head+outer.tail-2;")
+    suite.check("chained method call", program(
+        "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);return w.item.get();", LEAF + WRAP))
+    suite.check("chained mutable method", program(
+        "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);return w.item.add(1);", LEAF + WRAP), expected=43)
+    suite.check("whole nested field assignment", program(
+        "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);w.item=source;return 42;", LEAF + WRAP))
     suite.check("constructor copy and public-field extraction are independent", program(body, definitions))
     suite.check("composed value ordinary parameter and complete return", program(
         "Leaf source=Leaf(20);Wrap original=Wrap(7,source,15);Wrap copied=identity(original);"
@@ -547,10 +553,7 @@ def rejection_cases(suite):
     definitions = LEAF + WRAP + PAIR
     for name, body in (
         ("chained scalar read", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);return w.item.value;"),
-        ("chained method call", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);return w.item.get();"),
-        ("chained mutable method", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);return w.item.add(1);"),
         ("chained scalar mutation", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);w.item.value=0;return 42;"),
-        ("whole nested field assignment", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);w.item=source;return 42;"),
         ("const whole nested field assignment", "Leaf source=Leaf(42);const Wrap w=Wrap(0,source,0);w.item=source;return 42;"),
         ("nested field passed directly", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);return consume(w.item);"),
         ("nested field constructor argument requires local copy", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);Wrap other=Wrap(0,w.item,0);return 42;"),
@@ -635,8 +638,8 @@ def rejection_cases(suite):
                  "Pair<i64,Leaf> result=consume(value);return 42;")
         suite.check("same-byte reordered nominal " + operation, program(body, definitions, helper), error=True)
     preserved = b"previous verified assembly\x00\xff\n"
-    suite.check("invalid class copy leaves previous artifact byte-exact", program(
-        "Leaf source=Leaf(42);Wrap value=Wrap(0,source,0);value.item=source;return 42;", definitions),
+    suite.check("readonly class-field copy leaves previous artifact byte-exact", program(
+        "Leaf source=Leaf(42);const Wrap value=Wrap(0,source,0);value.item=source;return 42;", definitions),
         error=True, existing_output=preserved)
 
 

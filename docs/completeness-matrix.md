@@ -1,5 +1,24 @@
 # Completeness and acceptance matrix
 
+## Direct owned class-field mutation candidate — 2026-10-07
+
+Complete replacement of one owned class field and synchronous direct child
+method receivers passed 55 malformed/positive IR checks, 50 source cases and
+12 handwritten ABI cases per Python mode. All seven core and nine storage
+regression runners passed, along with 47 stack-probe checks, 15 isolated guard
+cases per mode, ten exhaustive-dispatch checks and 31 byte-identical old examples.
+The [bounded contract](../compiler/OWNED-FIELD-MUTATION.md) and
+[exact composite results](owned-field-mutation-results.md) preserve the corrected
+base-path mismatch, fixture failures, output-routing caveats and deeper-path
+exclusions. Independent source, retained machine-code and final claim review
+accepted this bounded scope. Five ordinary BIOS/UEFI profiles were rebuilt with
+old/new compilers: all 177 outputs per compiler were byte-identical and matched
+retained admitted-image anchors, preserving exact-image boot evidence without
+redundant guests.
+No full aggregate, fresh sanitizer, performance or hardware claim is added.
+
+
+
 ## XFS sector-header consumer candidate — 2026-10-07
 
 A checked copied-sector consumer preserves I/O failures, runs the existing XFS

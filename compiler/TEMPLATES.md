@@ -155,8 +155,9 @@ Verified M021 adds an explicitly typed `make_pair` helper under its separate
 function-template contract. There is no comparison overload, deduction guide, tuple protocol,
 reference pair or general standard-library compatibility claim.
 The developing Value form permits named concrete class fields, copied through
-complete construction and fresh-local projection. Whole class-field reassignment
-is rejected even when the containing pair is mutable.
+complete construction and fresh-local projection. The separate
+[direct owned-field extension](OWNED-FIELD-MUTATION.md) also supports complete
+direct class-field replacement on mutable pairs and synchronous child receivers.
 
 Acceptance requires native execution across scalar tuples and ordinary class
 boundaries, wrong-type/privacy/initialization rejection, defining-module helper
