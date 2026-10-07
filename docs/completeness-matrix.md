@@ -6,7 +6,7 @@ The compiler scanner can now retain exact whitespace and line-comment trivia
 alongside canonical tokens and their immutable source snapshot. Legacy `lex`
 uses that same scanner without retaining trivia. This supports a future
 compiler-owned Aurora formatter without introducing a parallel lexer/parser.
-Reconstruction passed for all 73 repository sources and 256 generated inputs,
+Reconstruction passed for the 73-file pre-composition source corpus and 256 generated inputs,
 alongside adversarial trivia and canonical-template-token checks. The 27 diagnostic
 cases, 793 existing frontend checks and 26 baseline assembly comparisons passed.
 Independent review accepted this bounded increment. See the
@@ -20,7 +20,7 @@ reuse module, type/lifetime and verified-IR checks without assembly output. Firs
 errors preserve text compatibility and imported-file provenance; unknown semantic
 ranges remain explicit. A fresh GCC 14.2 warning-clean build, focused lexer/parser
 tests and 27 CLI cases passed. All 793 existing checks in six targeted frontend
-suites passed, and all 26 examples emitted byte-identical assembly against the
+suites passed, and 26 representative examples emitted byte-identical assembly against the
 reviewed baseline compiler. Independent source and retained-evidence review accepted this bounded increment. See the [bounded contract](../compiler/DIAGNOSTICS.md). Trivia retention,
 formatting, LSP position conversion and document updates are still separate work.
 
