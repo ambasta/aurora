@@ -15,6 +15,21 @@ Python optimized modes. No compiler semantics,
 filesystem mount, device access or file-data operation is added.
 
 
+## Compiler-owned formatter candidate — 2026-10-07
+
+A standalone C++ `aurora-fmt` uses the shared lossless lexer and parser, rewrites
+whitespace only, and checks exact token/comment preservation, reparsing and
+idempotence before stdout. It provides separate format/style-check and existing
+compiler semantic-check modes, bounded range-bearing style warnings, and no
+in-place writes. The warning-clean GCC 14.2 focused gate passed all 77 repository
+sources, goldens/adversarial cases, 128 trivia variants and 30 CLI checks in 47.51s.
+Independent source review and a separate 60-case boundary replay cover exact
+1 MiB output, rejection/no-output, comment anchoring and template closers. See
+[the formatter contract and exact result scope](../compiler/FORMAT.md). Full
+style/semantic lint, LSP, self-hosting, strict Unicode display-column wrapping,
+full native aggregate and new sanitizer/emulator qualification are not claimed.
+
+
 ## Lossless shared lexer candidate — 2026-10-07
 
 The compiler scanner can now retain exact whitespace and line-comment trivia

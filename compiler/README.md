@@ -206,3 +206,23 @@ ASan/UBSan compiler suites, followed by fresh combined native and 173+3+2 emulat
 integration, passed independent review. LeakSanitizer was disabled for executor
 ptrace limitations, so this is not a leak-clean result. See the
 [integration record](../docs/kernel-round-robin-integration-results.md).
+
+## Aurora source formatting
+
+Run from the repository root:
+
+```sh
+make formatter
+build/aurora-fmt examples/core_math.au
+build/aurora-fmt --check --diagnostics=json examples/core_math.au
+build/aurora-fmt --lint --module-root library examples/core_math.au
+```
+
+Default mode prints validated formatted source to stdout; diagnostics go to
+stderr. There is no in-place write mode. Never redirect stdout onto the input
+file, because the shell would truncate it before the formatter starts. `--check`
+checks syntax, formatting and bounded style rules without resolving imports.
+`--lint` separately runs the existing compiler semantic-check API; no additional
+semantic lint rules are claimed. See [modes, bounds and preservation guarantees](FORMAT.md).
+`make test-formatter` is the focused gate, separate from full compiler/native
+acceptance.
