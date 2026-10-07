@@ -16,7 +16,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPILER = shlex.split(os.environ.get("CXX", "g++"))
-HEADERS = ("types.hpp", "ir.hpp", "ir_layout.hpp", "initialization_facts.hpp", "ir_verify.hpp", "x86.hpp")
+HEADERS = ("diagnostics.hpp", "types.hpp", "ir.hpp", "ir_layout.hpp", "initialization_facts.hpp",
+           "ir_verify.hpp", "x86.hpp")
 CONSUMERS = (("ir_verify.hpp", "unhandled typed IR verifier operation"),
              ("x86.hpp", "unhandled typed IR backend operation"))
 

@@ -494,7 +494,7 @@ def main():
         for relative in ("tests/compiler/nested_values.py", "examples/nested_token_values.au",
                          "library/std/utility.au", "library/std/array.au"):
             print(f"INFO nested values {relative} sha256={hashlib.sha256((ROOT/relative).read_bytes()).hexdigest()}", flush=True)
-    temporary_root = ROOT / "tmp"
+    temporary_root = Path(tempfile.gettempdir())
     temporary_root.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="nested-values-", dir=temporary_root) as temporary:
         suite = Suite(Path(temporary), compiler, args.keep_going)
