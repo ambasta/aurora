@@ -283,4 +283,16 @@ test-token-scan: $(OUT)
 	CXX="$(CXX)" CXXFLAGS="$(CXXFLAGS)" python3 -B -O ../tests/compiler/token_scan.py --compiler "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"; \
 	printf 'PASS token scanner Make recipe: %s\n' "$$work"
 
+# Focused compiler-owned source tooling, separate from native acceptance.
+FORMAT_OUT ?= ../build/aurora-fmt
+.PHONY: formatter test-formatter
+formatter: $(FORMAT_OUT)
+$(FORMAT_OUT): format_main.cpp $(wildcard *.hpp)
+	mkdir -p $(dir $(FORMAT_OUT))
+	$(CXX) $(CXXFLAGS) $< -o $@
+test-formatter: $(FORMAT_OUT)
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/format.cpp -o $(dir $(FORMAT_OUT))format-tests
+	$(dir $(FORMAT_OUT))format-tests $$(find ../examples ../library ../kernel/policies ../tests/kernel-programs -name '*.au' -type f | LC_ALL=C sort)
+	python3 -B -O ../tests/compiler/format.py $(abspath $(FORMAT_OUT))
+
 endif # controlled outer dispatcher / original inner graph
