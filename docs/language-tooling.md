@@ -2,24 +2,31 @@
 
 Aurora's formatter, linter and language server must share the compiler frontend.
 Host Python/C++ style configuration is a separate capability. The interfaces
-and milestones below are planned work, not implemented command-line tools.
+and milestones below distinguish the implemented diagnostic foundation from
+remaining formatter, linter and language-server work.
 
-## Current frontend gap
+## Current frontend boundary and remaining gaps
 
-- `compiler/lexer.hpp` discards whitespace and `//` comments.
-- `Token` in `compiler/types.hpp` retains text and a line number, but no source
-  identity, byte range or trivia. Syntax nodes retain selected tokens, not full
-  ranges covering their original spelling.
-- `Parser` throws the first string diagnostic; `templateClose()` rewrites `>>`
-  into `>` while parsing nested template arguments.
-- `ModuleLoader` reads files directly; the editor has no immutable in-memory
-  document snapshot or workspace overlay provider.
-- `main.cpp` connects module loading, resolution, semantic analysis and x86
-  emission. There is no supported check-only frontend entrypoint or structured
-  diagnostic stream.
+The [structured diagnostic foundation](../compiler/DIAGNOSTICS.md) is implemented.
+`aurorac --check --diagnostics=json` uses the same module/type/lifetime and verified-IR
+checks as ordinary compilation without producing assembly. It reports the first
+error with an explicit diagnostic family and source range when one is available.
 
-A formatter cannot reconstruct discarded comments from this AST. Three new
-parsers would drift from the compiler's grammar and rejection rules.
+- `Token` retains a shared immutable `SourceText` and half-open byte ranges.
+  Synthetic and some resolver diagnostics deliberately have unknown ranges.
+- The lexer still discards whitespace/comment classification from its token
+  stream. Lossless trivia retention and syntax-aware formatting remain next.
+- Nested-template `>>` splitting changes only the parser-owned token copy and
+  gives its second closer the correct source byte. Retained lexical tokens are
+  unchanged. Structured errors preserve imported-file provenance.
+- `ModuleLoader` still reads existing files directly. An editor document overlay
+  and byte-to-UTF-16 position conversion are separate upcoming increments.
+- `frontend.hpp::checkSource` is the common checking boundary. CLI text and JSON
+  render the same diagnostics; full syntax-node ranges and multi-error recovery
+  are not claimed.
+
+Three separate parsers would drift from the compiler's grammar and rejection
+rules. Subsequent tools must build on this shared implementation.
 
 ## Shared frontend boundary
 

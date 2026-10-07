@@ -101,9 +101,9 @@ class ModuleLoader {
                 auto file = resolve(import.text);
                 imported->path = file.displayPath;
                 try {
-                    imported->program = Parser(lex(read(std::move(file)))).parse();
+                    imported->program = Parser(lex(read(std::move(file)), imported->path.string())).parse();
                 } catch (const Error &error) {
-                    throw Error("module " + import.text + ": " + error.what());
+                    throw error.withContext("module " + import.text + ": ");
                 }
                 if (imported->program.moduleName != import.text)
                     throw Error("module header mismatch: expected " + import.text + ", got " +
@@ -136,7 +136,7 @@ class ModuleLoader {
         root->root = true;
         root->scope = 0;
         root->path = rootPath;
-        root->program = Parser(lex(read(host::SourceFile::explicitPath(rootPath)))).parse();
+        root->program = Parser(lex(read(host::SourceFile::explicitPath(rootPath)), rootPath.string())).parse();
         graph.root = root->program.moduleName;
         graph.units.emplace(graph.root, std::move(root));
         visit(graph.root, 0);

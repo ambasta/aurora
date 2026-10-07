@@ -1,19 +1,19 @@
 #pragma once
+#include "diagnostics.hpp"
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 namespace aurora {
-class Error : public std::runtime_error {
-  public:
-    using std::runtime_error::runtime_error;
-};
 class Token {
   public:
     std::string text;
     int line;
+    SourceSpan span;
     Token(std::string t, int l) : text(std::move(t)), line(l) {}
+    Token(std::string t, SourceSpan location)
+        : text(std::move(t)), line(location.begin.line), span(std::move(location)) {}
 };
 // Append new kinds so existing IR and template identity ordinals remain stable.
 enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter, Enum, U8, ByteSpan };

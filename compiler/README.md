@@ -18,6 +18,12 @@ controls are specified in [the shared test contract](../docs/developer-test-cont
 This tooling candidate is under review and unqualified; source/synthetic checks
 are not real fresh-compiler, native, ASan/emulator or broad-host acceptance.
 
+## Check source without assembly
+
+`build/aurorac --check [--diagnostics=json] INPUT.au` runs the same frontend and
+verified-IR checks without writing assembly. Explicit module roots work as usual.
+See [source spans, diagnostic codes and the JSON contract](DIAGNOSTICS.md).
+
 ## Current syntax
 
 ```text
