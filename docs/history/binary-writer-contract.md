@@ -1,3 +1,6 @@
+> Historical checkpoint. These APIs were removed by the
+> [storage consolidation](../storage-consolidation.md).
+
 # Bounded owned binary writer
 
 `import std.binary_writer;` supplies `std::BinaryWriter64` and the closed
@@ -43,7 +46,7 @@ and check each status. Ordinary class copies, function arguments and returned
 values are independent byte snapshots. Const receivers cannot write. No mutable
 span or reference to the private array escapes. To use the readonly readers,
 copy the needed bytes to a local array as in the
-[running example](../library/examples/binary_writer.au).
+[running example](https://github.com/ambasta/aurora/blob/129d5337da8513ad0f5be92b7700c62482f64293/library/examples/binary_writer.au).
 
 ## Why this bound is explicit
 

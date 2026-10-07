@@ -1,0 +1,46 @@
+module binary_buffer_example;
+import std.binary_buffer;
+import std.binary;
+
+// Serialize a bounded record with explicit wire order. Every field write
+// validates its complete range before changing any of the owned bytes.
+auto main() -> i64 {
+    std::BinaryBuffer64 buffer = std::BinaryBuffer64();
+    if (buffer.write_be16(0, 10u64) != std::ByteWriteStatus::success) {
+        return 1;
+    }
+    if (buffer.write_le64(2, 9223372036854775850u64) != std::ByteWriteStatus::success) {
+        return 2;
+    }
+    if (buffer.write_be32(62, 4294967296u64) != std::ByteWriteStatus::out_of_range) {
+        return 3;
+    }
+    const builtin::array<u8, 10> record = {
+        buffer.at(0), buffer.at(1), buffer.at(2), buffer.at(3), buffer.at(4),
+        buffer.at(5), buffer.at(6), buffer.at(7), buffer.at(8), buffer.at(9)
+    };
+    buffer.write_u8(0, 255u8);
+    const std::ByteReadResult length = std::read_be16(borrow_bytes(record), 0);
+    const std::ByteReadResult identifier = std::read_le64(borrow_bytes(record), 2);
+    if (length.status() != std::ByteReadStatus::success) {
+        return 4;
+    }
+    if (identifier.status() != std::ByteReadStatus::success) {
+        return 5;
+    }
+    if (length.value_or(0u64) != 10u64) {
+        return 6;
+    }
+    if (identifier.value_or(0u64) != 9223372036854775850u64) {
+        return 7;
+    }
+    const std::ByteReadResult high_byte = buffer.read_u8(9);
+    if (high_byte.status() != std::ByteReadStatus::success || high_byte.value_or(0u64) != 128u64) {
+        return 8;
+    }
+    const std::ByteReadResult missing = buffer.read_u8(64);
+    if (missing.status() != std::ByteReadStatus::out_of_range || missing.value_or(42u64) != 42u64) {
+        return 9;
+    }
+    return 42;
+}

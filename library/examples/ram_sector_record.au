@@ -1,74 +1,61 @@
 module ram_sector_record_example;
 import std.binary;
-import std.binary_writer;
-import storage.block;
-import storage.block_codec;
+import std.binary_buffer;
 import storage.sector;
 import storage.block_io;
 import storage.ram_sector;
 
-// A volume-header round trip through a one-sector volatile RAM device.
-// This illustrates a wire format, not a filesystem mount or persistent write.
+// One owned serialization record representation and one sector-device contract.
+// This is volatile RAM I/O, not a filesystem or durable device write.
 auto main() -> i64 {
-    storage::RamSectorDevice device = storage::RamSectorDevice();
-    const storage::SectorGeometry geometry = device.geometry();
     storage::Sector512 sector = storage::Sector512();
-    std::BinaryWriter64 header = std::BinaryWriter64();
+    std::BinaryBuffer64 header = std::BinaryBuffer64();
     if (header.write_be32(0, 1096110641u64) != std::ByteWriteStatus::success) {
         return 1;
     }
-    if (header.write_le16(4, 1u64) != std::ByteWriteStatus::success) {
+    if (header.write_le16(4, 1u64) != std::ByteWriteStatus::success ||
+        header.write_le16(6, 512u64) != std::ByteWriteStatus::success ||
+        header.write_le64(8, 1u64) != std::ByteWriteStatus::success ||
+        header.write_le64(16, 0u64) != std::ByteWriteStatus::success) {
         return 2;
     }
-    if (header.write_le16(6, geometry.sector_size_bytes()) != std::ByteWriteStatus::success) {
+    if (sector.write_record(0, header) != std::ByteWriteStatus::success) {
         return 3;
     }
-    if (header.write_le64(8, geometry.sector_count()) != std::ByteWriteStatus::success) {
+    std::BinaryBuffer64 trailer = std::BinaryBuffer64();
+    if (trailer.write_be16(62, 21930u64) != std::ByteWriteStatus::success ||
+        sector.write_record(448, trailer) != std::ByteWriteStatus::success) {
         return 4;
     }
-    if (header.write_le64(16, 0u64) != std::ByteWriteStatus::success) {
+    storage::RamSectorDevice device = storage::RamSectorDevice(sector);
+    const storage::SectorGeometry geometry = device.geometry();
+    if (geometry.sector_size_bytes() != 512u64 || geometry.sector_count() != 1u64 || !geometry.can_write()) {
         return 5;
-    }
-    const storage::Block64 header_block = storage::block_from_writer(header);
-    if (sector.write_window(0, header_block) != storage::BlockStatus::success) {
-        return 6;
-    }
-    std::BinaryWriter64 trailer = std::BinaryWriter64();
-    if (trailer.write_be16(62, 21930u64) != std::ByteWriteStatus::success) {
-        return 7;
-    }
-    const storage::Block64 trailer_block = storage::block_from_writer(trailer);
-    if (sector.write_window(448, trailer_block) != storage::BlockStatus::success) {
-        return 8;
-    }
-    if (device.write_sector(0, sector) != storage::SectorIoStatus::success) {
-        return 9;
     }
     if (device.flush(storage::SectorFlushMode::visibility) != storage::SectorFlushStatus::volatile_complete ||
         device.flush(storage::SectorFlushMode::durable) != storage::SectorFlushStatus::unsupported) {
-        return 10;
+        return 6;
     }
     const storage::SectorReadResult saved = device.read_sector(0);
     if (saved.status() != storage::SectorIoStatus::success) {
-        return 11;
+        return 7;
     }
     const storage::Sector512 zero_sector = storage::Sector512();
     if (device.write_sector(0, zero_sector) != storage::SectorIoStatus::success) {
-        return 12;
+        return 8;
     }
-    const storage::Sector512 read_sector = saved.sector_or_zero();
-    const storage::BlockReadResult saved_header = read_sector.read_window(0);
-    const storage::BlockReadResult saved_trailer = read_sector.read_window(448);
-    if (saved_header.status() != storage::BlockStatus::success ||
-        saved_trailer.status() != storage::BlockStatus::success) {
-        return 13;
+    const storage::Sector512 snapshot = saved.sector_or_zero();
+    const storage::RecordReadResult saved_header = snapshot.read_record(0);
+    const storage::RecordReadResult saved_trailer = snapshot.read_record(448);
+    if (saved_header.status() != std::ByteReadStatus::success ||
+        saved_trailer.status() != std::ByteReadStatus::success) {
+        return 9;
     }
-    const storage::Block64 zero = storage::Block64();
-    if (sector.write_window(0, zero) != storage::BlockStatus::success) {
-        return 14;
+    const std::BinaryBuffer64 zero_record = std::BinaryBuffer64();
+    if (sector.write_record(0, zero_record) != std::ByteWriteStatus::success) {
+        return 10;
     }
-    const storage::Block64 snapshot = saved_header.block_or_zero();
-    const std::BinaryWriter64 bytes = storage::writer_from_block(snapshot);
+    const std::BinaryBuffer64 bytes = saved_header.record_or_zero();
     const builtin::array<u8, 24> record = {
         bytes.at(0), bytes.at(1), bytes.at(2), bytes.at(3), bytes.at(4), bytes.at(5),
         bytes.at(6), bytes.at(7), bytes.at(8), bytes.at(9), bytes.at(10), bytes.at(11),
@@ -82,14 +69,13 @@ auto main() -> i64 {
     const std::ByteReadResult root = std::read_le64(borrow_bytes(record), 16);
     if (magic.value_or(0u64) != 1096110641u64 || version.value_or(0u64) != 1u64 ||
         sector_bytes.value_or(0u64) != 512u64 || sector_count.value_or(0u64) != 1u64) {
-        return 15;
+        return 11;
     }
-    const storage::Block64 tail = saved_trailer.block_or_zero();
-    const std::BinaryWriter64 tail_bytes = storage::writer_from_block(tail);
-    const builtin::array<u8, 2> signature = {tail_bytes.at(62), tail_bytes.at(63)};
+    const std::BinaryBuffer64 tail = saved_trailer.record_or_zero();
+    const builtin::array<u8, 2> signature = {tail.at(62), tail.at(63)};
     const std::ByteReadResult marker = std::read_be16(borrow_bytes(signature), 0);
     if (marker.value_or(0u64) != 21930u64 || root.value_or(1u64) != 0u64) {
-        return 16;
+        return 12;
     }
     return 42;
 }

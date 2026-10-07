@@ -291,13 +291,13 @@ class Device {
 public:
     Device(storage::Sector512 source):stored(source){}
     auto replace(storage::Sector512 source)->i64{stored=source;return 0;}
-    auto write_byte(i64 offset,u8 value)->storage::BlockStatus{return stored.write_byte(offset,value);}
+    auto write_byte(i64 offset,u8 value)->std::ByteWriteStatus{return stored.write_byte(offset,value);}
     auto read_byte(i64 offset)const->u8{
-        const storage::BlockByteResult result=stored.read_byte(offset);return result.value_or(0u8);
+        const std::ByteReadResult result=stored.read_byte(offset);return u8(result.value_or(0u64));
     }
 };
 """,
-            imports="import storage.sector;import storage.block;",
+            imports="import std.binary;import std.binary_buffer;import storage.sector;",
         ),
     )
 

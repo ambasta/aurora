@@ -1,3 +1,7 @@
+> The [storage consolidation](storage-consolidation.md) migrates this consumer and its fixture constructors.
+> Its fresh 110-case/five-rejection gate passed in both Python modes on the owned-field compiler.
+> The older results below still describe the earlier PR54 source.
+
 # Checked XFS sector-header consumer
 
 The next dependency after copied sector I/O is preserving I/O failures while

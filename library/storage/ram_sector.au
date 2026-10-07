@@ -1,14 +1,15 @@
 export module storage.ram_sector;
-import storage.block;
+import std.binary;
+import std.binary_buffer;
 import storage.sector;
 import storage.block_io;
 
 export namespace storage {
     class RamSectorDevice {
-        builtin::array<u8, 512> elements;
+        Sector512 payload;
         bool locked;
     public:
-        RamSectorDevice() : elements{}, locked(false) {}
+        RamSectorDevice(Sector512 initial) : payload(initial), locked(false) {}
 
         auto geometry() const -> SectorGeometry {
             const SectorGeometry result = SectorGeometry(1u64, !locked);
@@ -21,12 +22,7 @@ export namespace storage {
                 const SectorReadResult failure = SectorReadResult(SectorIoStatus::out_of_range, zero);
                 return failure;
             }
-            Sector512 sector = Sector512();
-            i64 offset = 0;
-            while (offset < 512) {
-                sector.write_byte(offset, elements[offset]);
-                offset = offset + 1;
-            }
+            const Sector512 sector = payload;
             const SectorReadResult result = SectorReadResult(SectorIoStatus::success, sector);
             return result;
         }
@@ -38,12 +34,7 @@ export namespace storage {
             if (locked) {
                 return SectorIoStatus::read_only;
             }
-            i64 offset = 0;
-            while (offset < 512) {
-                const BlockByteResult byte = sector.read_byte(offset);
-                elements[offset] = byte.value_or(0u8);
-                offset = offset + 1;
-            }
+            payload = sector;
             return SectorIoStatus::success;
         }
 
@@ -59,5 +50,4 @@ export namespace storage {
             return SectorFlushStatus::volatile_complete;
         }
     };
-
 }

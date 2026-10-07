@@ -11,7 +11,7 @@ from unsigned_oracle import Case, NativeRunner, Rejection, command, require, val
 
 
 ROOT = Path(__file__).resolve().parents[2]
-IMPORTS = ("storage.block", "storage.sector", "storage.block_io", "storage.ram_sector")
+IMPORTS = ("std.binary", "std.binary_buffer", "storage.sector", "storage.block_io", "storage.ram_sector")
 SIZE = 512
 ZERO = bytes(SIZE)
 INITIAL = bytes((index * 53 + index // 256 * 31 + 7) % 256 for index in range(SIZE))
@@ -30,7 +30,7 @@ def make_sector(name, values):
         storage::Sector512 {name} = storage::Sector512();
         i64 {name}_offset = 0;
         while ({name}_offset < 512) {{
-            if ({name}.write_byte({name}_offset, {name}_bytes[{name}_offset]) != storage::BlockStatus::success) {{
+            if ({name}.write_byte({name}_offset, {name}_bytes[{name}_offset]) != std::ByteWriteStatus::success) {{
                 return 0u64;
             }}
             {name}_offset = {name}_offset + 1;
@@ -46,8 +46,8 @@ def check_sector(name, expected):
         + f"""
         i64 offset = 0;
         while (offset < 512) {{
-            const storage::BlockByteResult byte = {name}.read_byte(offset);
-            if (byte.status() != storage::BlockStatus::success || byte.value_or(0u8) != expected[offset]) {{
+            const std::ByteReadResult byte = {name}.read_byte(offset);
+            if (byte.status() != std::ByteReadStatus::success || u8(byte.value_or(0u64)) != expected[offset]) {{
                 return 0u64;
             }}
             offset = offset + 1;
@@ -76,10 +76,7 @@ def seeded_device(read_only=False):
     body = (
         make_sector("initial", INITIAL)
         + """
-        storage::RamSectorDevice device = storage::RamSectorDevice();
-        if (device.write_sector(0, initial) != storage::SectorIoStatus::success) {
-            return 0u64;
-        }
+        storage::RamSectorDevice device = storage::RamSectorDevice(initial);
     """
     )
     if read_only:
@@ -95,7 +92,8 @@ def geometry_cases():
     yield Case(
         "exact geometry, zero initialization and canonical layouts",
         """
-        const storage::RamSectorDevice device = storage::RamSectorDevice();
+        const storage::Sector512 initial_device_sector = storage::Sector512();
+        const storage::RamSectorDevice device = storage::RamSectorDevice(initial_device_sector);
         const storage::SectorGeometry geometry = device.geometry();
         if (geometry.sector_size_bytes() != 512u64 || geometry.sector_count() != 1u64 || !geometry.can_write()) {
             return 0u64;
@@ -137,7 +135,7 @@ def geometry_cases():
         )
     for read_only in (False, True):
         yield Case(
-            f"checked seeding copies all bytes, readonly={read_only}",
+            f"constructor seeding copies all bytes, readonly={read_only}",
             seeded_device(read_only)
             + f"""
             initial.write_byte(0, 0u8);
@@ -184,7 +182,8 @@ def transfer_cases():
     yield Case(
         "every single byte position survives full-sector transport",
         """
-        storage::RamSectorDevice device = storage::RamSectorDevice();
+        const storage::Sector512 initial_device_sector = storage::Sector512();
+        storage::RamSectorDevice device = storage::RamSectorDevice(initial_device_sector);
         i64 selected = 0;
         while (selected < 512) {
             storage::Sector512 input = storage::Sector512();
@@ -203,8 +202,8 @@ def transfer_cases():
                 if (offset == selected) {
                     expected = 255u8;
                 }
-                const storage::BlockByteResult byte = actual.read_byte(offset);
-                if (byte.status() != storage::BlockStatus::success || byte.value_or(0u8) != expected) {
+                const std::ByteReadResult byte = actual.read_byte(offset);
+                if (byte.status() != std::ByteReadStatus::success || u8(byte.value_or(0u64)) != expected) {
                     return 0u64;
                 }
                 offset = offset + 1;
@@ -431,12 +430,13 @@ def flush_cases():
 
 def rejections():
     prefix = "module test; " + " ".join(f"import {module};" for module in IMPORTS)
-    prefix += " auto test() -> u64 { storage::RamSectorDevice device = storage::RamSectorDevice();"
+    prefix += " auto test() -> u64 { const storage::Sector512 initial_device_sector = storage::Sector512();"
+    prefix += "storage::RamSectorDevice device = storage::RamSectorDevice(initial_device_sector);"
     bodies = (
-        "return u64(device.elements[0]);",
+        "const storage::Sector512 leaked = device.payload; return 0u64;",
         "device.locked = false; return 0u64;",
-        "device.read_sector(0u64); return 0u64;",
-        "const storage::Block64 record = storage::Block64(); device.write_sector(0, record); return 0u64;",
+        "const storage::SectorReadResult result = device.read_sector(0u64); return 0u64;",
+        "const std::BinaryBuffer64 record = std::BinaryBuffer64(); device.write_sector(0, record); return 0u64;",
         "const storage::Sector512 sector = storage::Sector512(); device.write_sector(0u64, sector); return 0u64;",
         "device.flush(true); return 0u64;",
         "device.flush(storage::SectorFlushStatus::unsupported); return 0u64;",
@@ -445,8 +445,8 @@ def rejections():
         "const storage::RamSectorDevice frozen = device; frozen.make_read_only(); return 0u64;",
         "const storage::SectorReadResult report = device.read_sector(0);"
         "const storage::Sector512 secret = report.payload; return 0u64;",
-        "const storage::SectorGeometry geometry = device.geometry(); geometry.writable = true; return 0u64;",
-        "borrow_bytes(device); return 0u64;",
+        "storage::SectorGeometry geometry = device.geometry(); geometry.writable = true; return 0u64;",
+        "const builtin::span<const u8> leaked = borrow_bytes(device); return 0u64;",
         "return u64(storage::SectorFlushStatus::volatile_complete);",
     )
     for index, body in enumerate(bodies):

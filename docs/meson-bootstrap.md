@@ -35,7 +35,7 @@ until the compiler can emit dependency files itself.
 
 The default developer feedback set is `dev`, comprising `core`, `bytes` and the
 explicitly partial semantic `packages` suite. An unfiltered `meson test` runs the
-same fifteen tests. Use two workers initially to bound concurrent compiler/test
+same 24 tests. Use two workers initially to bound concurrent compiler/test
 memory. The warm `core` design target is under two minutes on the measured host;
 this is a feedback budget, not a portable timing guarantee. Cold bootstrap builds
 and broader qualification are separate costs. Each Python test has a 300-second
@@ -48,7 +48,7 @@ meson test -C build/meson modules source-depth --num-processes 2 --print-errorlo
 ```
 
 Choose by actual dependencies: compiler frontend/class/integer/module changes
-start with `core`; `std.bytes`, `std.binary` or `std.binary_writer` changes start with `bytes`.
+start with `core`; `std.bytes`, `std.binary` or `std.binary_buffer` changes start with `bytes`.
 Run the affected component's additional tests for surfaces not registered here,
 including templates, overloads, readonly windows, short-circuit joins and text.
 Package changes can start with the partial `packages` suite described below. A focused pass does not imply those other surfaces were exercised.
@@ -58,13 +58,16 @@ the compiler or require the full native aggregate without a relevant reason.
 
 ## Named coverage
 
-The `core` suite keeps eight complete existing tests, without sampling their cases:
+The `core` suite keeps eleven complete tests, without sampling their cases:
 
 - `frontend`: parsing, scalar/array/class basics, ownership and borrow rejections,
   reflection, initialization, stack/depth boundaries and exact SIGILL checks
 - `classes`: constructors, receiver mutability, privacy, method calls and cycles
 - `value-calls`: copied class arguments/results, nominal/visibility rejection,
   evaluation order, alias isolation and wide-value boundaries
+- `owned-mutation`: direct owned-field replacement and child receiver source checks
+- `owned-mutation-ir`: direct typed-IR field/receiver controls
+- `owned-mutation-abi`: handwritten field/receiver ABI controls
 - `signed-integers`: division/remainder boundaries and traps, evaluation order,
   integer algorithms, overflow and access rejection
 - `unsigned-integers`: full-width arithmetic, comparison, shifts, conversion,
@@ -79,15 +82,21 @@ These registrations preserve the runners' native full-width result checks,
 exact SIGILL expectations and diagnostic/output-preservation checks. The core registrations do not alter their runners or oracles; no exhaustive
 matrix is replaced with first-N cases.
 
-The `bytes` suite has four named tests, with their existing default case counts:
+The `bytes` suite has ten named tests, with their existing default case counts:
 
 - `byte-codec`: owned byte encodings, layouts, rejections and the storage example
-- `binary-writer`: owned record writes, unchanged-on-failure bytes, copied values,
+- `binary-buffer`: owned record reads/writes, unchanged-on-failure bytes, copied values,
   reader interoperation, exact bounds traps and rejection cases
+- `owned-sector`: byte/record copies, whole-range failure preservation and record reports
+- `block-io`: sector snapshots, readonly/range errors and explicit flush outcomes
+- `xfs-sector`: copied header inspection and source-capacity checks
+- `sector-values`: sector-sized copied value and rejection/trap cases
+- `sector-values-ir`: direct typed-IR/layout controls
+- `sector-values-abi`: handwritten value-boundary ABI controls
 - `packed-values`: copied values, bounds traps and rejection cases
 - `storage-binary`: readonly readers, CRC32C and offline XFS header cases
 
-`meson test -C build/meson` runs all fifteen registered tests. Select an individual
+`meson test -C build/meson` runs all 24 registered tests. Select an individual
 test by name, or use a named suite for the relevant feedback loop. Test
 invocations always rerun the selected tests; a successful previous run is never
 used as a cache of current correctness. A library-only edit does not require
