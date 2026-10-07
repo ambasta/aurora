@@ -77,6 +77,52 @@ and explicitly widen/shift/or their bytes. Every four-byte pattern is valid, so
 decoding has no error case. All constructors retain complete initializer lists and
 empty bodies; the codec needs no new constructor/method grammar.
 
+## Owned storage-field codec extension
+
+`std.bytes` also provides `Bytes2` and `Bytes8`, with the same checked `at(i64)`
+and mutable exact-`u8` `set(i64,u8)` interface as `Bytes4`. They own fully
+zero-initialized private arrays; their sizes are two and eight bytes. Construction,
+class arguments, returned values and local copies retain independent storage.
+Negative indices and indices at or above the fixed size fail at the language's
+bounds trap; no pointer, mutable view or unchecked access is exposed.
+
+- `encode_le16(u64)` / `encode_be16(u64)` return `Encode16Result`. Inputs through
+  65535 succeed; larger inputs return `ByteCodecStatus::out_of_range`.
+  `status()` and `bytes_or_zero()` follow the existing 32-bit report contract,
+  including zero masking of fabricated nonzero error payloads. The enum-plus-two-
+  byte report has size 16 under the existing packed-value rules.
+- `encode_le64(u64)` / `encode_be64(u64)` return `Bytes8` directly. Every u64
+  value is representable, so no always-success status wrapper is needed.
+- `decode_le16(Bytes2)` / `decode_be16(Bytes2)` return u64 in 0..65535;
+  `decode_le64(Bytes8)` / `decode_be64(Bytes8)` return the full u64 range.
+  Every input byte pattern is valid. Decoders take immutable copied values.
+
+Wire byte order is explicit; class layout is never reinterpreted as a packet.
+Encoding narrows only masked 0..255 values, and decoding widens each byte before
+shifting. Shift counts are fixed in 0..56 and every shifted byte fits u64.
+The [example](../library/examples/storage_codec.au) copies encoded fields into
+an ordinary local byte array and consumes them through `std.binary` readers.
+
+The existing codec gate now retains its 32-bit regressions and adds independent
+Python byte vectors, independently assembled decode inputs, full-width results,
+range/status/masking, copied-value, reader-interoperability, layout and rejection
+cases. The packed-value gate adds exact bounds-trap tests for all three owned
+byte widths. Existing Make compiler/root aggregates already include both gates.
+Validated on 2026-10-07: 789 codec cases, 19 rejection cases and the wire-record
+example; 100 packed-value cases including 54 exact bounds traps and 18
+rejections; and 254 existing storage cases covering 1,186 API calls. Focused
+execution and source review were followed by a fresh complete public
+`make --jobs=1 test`, which passed in 41m24s with independent terminal review.
+The tested 610-file tree is `77a33b4e8dc7739232673c18bbb917df4d7f0fe9`, based
+on main `8ce018ff271e3e0441e9d111f6c958c0df298d4d`. The final result SHA-256 is
+`9ebece519e8ddbd564080248ee26b423b9c93ad696d9b9c783a989bad4897bfd`.
+These result-document updates are the only later source changes.
+
+Existing codec suites remove temporary native binaries and raw scalar outputs;
+retained logs and source review do not establish independent per-binary replay.
+No new sanitizer or emulator run was performed. The extension adds no compiler
+semantics, general byte writer, borrowing or storage/device authority.
+
 ## Validation and limits
 
 The numeric suite independently models all byte unary/conversion values and all

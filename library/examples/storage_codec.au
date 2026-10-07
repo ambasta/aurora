@@ -1,0 +1,25 @@
+module storage_codec_example;
+import std.bytes;
+import std.binary;
+
+// Assemble a small wire record from owned fields, then inspect it through
+// checked readonly readers. The wire bytes are independent of both owners.
+auto main() -> i64 {
+    const std::Encode16Result encoded_length = std::encode_be16(10u64);
+    if (encoded_length.status() != std::ByteCodecStatus::success) { return 1; }
+    const std::Bytes2 length = encoded_length.bytes_or_zero();
+    std::Bytes8 identifier = std::encode_le64(9223372036854775850u64);
+    const builtin::array<u8, 10> record = {
+        length.at(0), length.at(1),
+        identifier.at(0), identifier.at(1), identifier.at(2), identifier.at(3),
+        identifier.at(4), identifier.at(5), identifier.at(6), identifier.at(7)
+    };
+    identifier.set(0, 0u8);
+    const std::ByteReadResult read_length = std::read_be16(borrow_bytes(record), 0);
+    const std::ByteReadResult read_identifier = std::read_le64(borrow_bytes(record), 2);
+    if (read_length.status() != std::ByteReadStatus::success) { return 2; }
+    if (read_identifier.status() != std::ByteReadStatus::success) { return 3; }
+    if (read_length.value_or(0u64) != 10u64) { return 4; }
+    if (read_identifier.value_or(0u64) != 9223372036854775850u64) { return 5; }
+    return 42;
+}

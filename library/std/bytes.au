@@ -3,6 +3,17 @@ export module std.bytes;
 export namespace std {
     enum class ByteCodecStatus { success, out_of_range };
 
+    class Bytes2 {
+        builtin::array<u8, 2> elements;
+    public:
+        Bytes2() : elements{} {}
+        auto at(i64 index) const -> u8 { return elements[index]; }
+        auto set(i64 index, u8 value) -> u8 {
+            elements[index] = value;
+            return value;
+        }
+    };
+
     class Bytes4 {
         builtin::array<u8, 4> elements;
     public:
@@ -11,6 +22,34 @@ export namespace std {
         auto set(i64 index, u8 value) -> u8 {
             elements[index] = value;
             return value;
+        }
+    };
+
+    class Bytes8 {
+        builtin::array<u8, 8> elements;
+    public:
+        Bytes8() : elements{} {}
+        auto at(i64 index) const -> u8 { return elements[index]; }
+        auto set(i64 index, u8 value) -> u8 {
+            elements[index] = value;
+            return value;
+        }
+    };
+
+    class Encode16Result {
+        ByteCodecStatus outcome;
+        Bytes2 payload;
+    public:
+        Encode16Result(ByteCodecStatus status, Bytes2 bytes)
+            : outcome(status), payload(bytes) {}
+        auto status() const -> ByteCodecStatus { return outcome; }
+        auto bytes_or_zero() const -> Bytes2 {
+            if (outcome == ByteCodecStatus::success) {
+                const Bytes2 result = payload;
+                return result;
+            }
+            const Bytes2 zero = Bytes2();
+            return zero;
         }
     };
 
@@ -67,5 +106,87 @@ export namespace std {
     auto decode_be32(Bytes4 bytes) -> u64 {
         return (u64(bytes.at(0)) << 24) | (u64(bytes.at(1)) << 16) |
                (u64(bytes.at(2)) << 8) | u64(bytes.at(3));
+    }
+
+    auto encode_le16(u64 value) -> Encode16Result {
+        Bytes2 bytes = Bytes2();
+        if (value > 65535u64) {
+            const Encode16Result failure = Encode16Result(ByteCodecStatus::out_of_range, bytes);
+            return failure;
+        }
+        bytes.set(0, u8(value & 255u64));
+        bytes.set(1, u8((value >> 8) & 255u64));
+        const Encode16Result result = Encode16Result(ByteCodecStatus::success, bytes);
+        return result;
+    }
+
+    auto encode_be16(u64 value) -> Encode16Result {
+        Bytes2 bytes = Bytes2();
+        if (value > 65535u64) {
+            const Encode16Result failure = Encode16Result(ByteCodecStatus::out_of_range, bytes);
+            return failure;
+        }
+        bytes.set(0, u8((value >> 8) & 255u64));
+        bytes.set(1, u8(value & 255u64));
+        const Encode16Result result = Encode16Result(ByteCodecStatus::success, bytes);
+        return result;
+    }
+
+    auto decode_le16(Bytes2 bytes) -> u64 {
+        return u64(bytes.at(0)) |
+               (u64(bytes.at(1)) << 8);
+    }
+
+    auto decode_be16(Bytes2 bytes) -> u64 {
+        return (u64(bytes.at(0)) << 8) |
+               u64(bytes.at(1));
+    }
+
+    auto encode_le64(u64 value) -> Bytes8 {
+        Bytes8 bytes = Bytes8();
+        bytes.set(0, u8(value & 255u64));
+        bytes.set(1, u8((value >> 8) & 255u64));
+        bytes.set(2, u8((value >> 16) & 255u64));
+        bytes.set(3, u8((value >> 24) & 255u64));
+        bytes.set(4, u8((value >> 32) & 255u64));
+        bytes.set(5, u8((value >> 40) & 255u64));
+        bytes.set(6, u8((value >> 48) & 255u64));
+        bytes.set(7, u8((value >> 56) & 255u64));
+        return bytes;
+    }
+
+    auto encode_be64(u64 value) -> Bytes8 {
+        Bytes8 bytes = Bytes8();
+        bytes.set(0, u8((value >> 56) & 255u64));
+        bytes.set(1, u8((value >> 48) & 255u64));
+        bytes.set(2, u8((value >> 40) & 255u64));
+        bytes.set(3, u8((value >> 32) & 255u64));
+        bytes.set(4, u8((value >> 24) & 255u64));
+        bytes.set(5, u8((value >> 16) & 255u64));
+        bytes.set(6, u8((value >> 8) & 255u64));
+        bytes.set(7, u8(value & 255u64));
+        return bytes;
+    }
+
+    auto decode_le64(Bytes8 bytes) -> u64 {
+        return u64(bytes.at(0)) |
+               (u64(bytes.at(1)) << 8) |
+               (u64(bytes.at(2)) << 16) |
+               (u64(bytes.at(3)) << 24) |
+               (u64(bytes.at(4)) << 32) |
+               (u64(bytes.at(5)) << 40) |
+               (u64(bytes.at(6)) << 48) |
+               (u64(bytes.at(7)) << 56);
+    }
+
+    auto decode_be64(Bytes8 bytes) -> u64 {
+        return (u64(bytes.at(0)) << 56) |
+               (u64(bytes.at(1)) << 48) |
+               (u64(bytes.at(2)) << 40) |
+               (u64(bytes.at(3)) << 32) |
+               (u64(bytes.at(4)) << 24) |
+               (u64(bytes.at(5)) << 16) |
+               (u64(bytes.at(6)) << 8) |
+               u64(bytes.at(7));
     }
 }

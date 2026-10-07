@@ -391,6 +391,15 @@ def model_cases(suite, seed, steps):
 
 
 def bounds_cases(suite):
+    for capacity in (2, 4, 8):
+        concrete = f"std::Bytes{capacity}"
+        for index in (-(1 << 63), -1, capacity, (1 << 63) - 1):
+            suite.check(f"owned codec {capacity} read bounds {index}",
+                        f"{concrete} bytes={concrete}();return u64(bytes.at({index}));",
+                        expected=Trap.BOUNDS, imports=("std.bytes",))
+            suite.check(f"owned codec {capacity} write bounds {index}",
+                        f"{concrete} bytes={concrete}();return u64(bytes.set({index},255u8));",
+                        expected=Trap.BOUNDS, imports=("std.bytes",))
     for capacity in CAPACITIES:
         concrete = f"Bytes{capacity}"
         definitions = byte_storage(concrete, capacity)

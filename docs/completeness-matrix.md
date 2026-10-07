@@ -1,5 +1,19 @@
 # Completeness and acceptance matrix
 
+## Verified owned storage-field codecs — 2026-10-07
+
+`std.bytes` adds owned two/eight-byte values and explicit LE/BE16/64 encoding and
+decoding, completing the scalar widths already supported by readonly readers.
+Sixteen-bit range failures are recoverable and zero-masked; 64-bit encoding is
+infallible for u64 and returns bytes directly. Existing copied-value/private-array
+rules suffice. The [bounded contract](../compiler/BYTES.md#owned-storage-field-codec-extension)
+and existing native tests include independent byte vectors, copied results,
+reader interoperation and rejection/bounds cases. The focused native gates and a
+fresh complete public `make --jobs=1 test` passed with independent review; the
+full graph took 41m24s. The contract records exact source and result identities.
+No compiler, kernel, general borrowing or filesystem capability changes, or new
+sanitizer/emulator qualification, are claimed.
+
 ## Verified serial package harness cleanup — 2026-10-07
 
 Manifest and Graph now share their unchanged serial transport. Trusted local
