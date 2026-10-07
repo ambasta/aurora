@@ -1,5 +1,18 @@
 # Completeness and acceptance matrix
 
+## Bounded kernel owned-byte allocation — 2026-10-07
+
+The [bounded kernel adapter](kernel-owned-bytes.md) uses the existing 16-page
+PhysicalPages pool, four fixed owner slots, explicit grant lifetime and complete
+page initialization/scrub. A dedicated UEFI resource graph avoids the deferred
+mixed-graph reflection boundary; unsupported resize fails object admission/link.
+Compile-only PE/PIC and hosted ABI compatibility passed; both kernel host modes
+passed 483,187 checks/239 exact faults, and ordinary image bytes are unchanged.
+The independently reviewed linked peak is 1,584 bytes including fault reserve;
+the actual allocation-profile and restored normal UEFI boots passed;
+see the [focused results](kernel-owned-bytes-results.md). No device activation,
+userspace allocator, general heap or kernel-resize milestone is claimed.
+
 ## Failure-safe owned-byte resize candidate — 2026-10-07
 
 The [resize contract](../compiler/OWNED-BYTES.md#failure-safe-replacement-resize)

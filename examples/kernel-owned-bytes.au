@@ -1,0 +1,54 @@
+module kernel_owned_bytes;
+
+auto pass_bytes(builtin::ByteRegion region, builtin::OwnedBytes input) -> builtin::OwnedBytes {
+    input.set(input.size() - 1, 53u8);
+    return move(input);
+}
+
+// The trusted kernel supplies the region and runtime length. Both live owners
+// use actual page leases. No byte array, raw address or host result is substituted.
+auto kernel_owned_bytes_entry(builtin::ByteRegion region, i64 length, i64 selector) -> i64 {
+    if (selector != 0 || length <= 0) {
+        return -1;
+    }
+    builtin::OwnedBytes first = region.try_allocate(length);
+    builtin::OwnedBytes second = region.try_allocate(length);
+    if (!first.ok() || !second.ok() || first.size() != length || second.size() != length) {
+        return -2;
+    }
+    i64 index = 0;
+    while (index < length) {
+        if (first.at(index) != 0u8 || second.at(index) != 0u8) {
+            return -3;
+        }
+        if (!first.set(index, 11u8) || !second.set(index, 29u8)) {
+            return -4;
+        }
+        index = index + 1;
+    }
+    if (first.set(-1, 99u8) || first.set(length, 99u8) || second.set(length, 99u8)) {
+        return -5;
+    }
+    builtin::OwnedBytes returned = pass_bytes(region, move(first));
+    index = 0;
+    while (index < length) {
+        if (second.at(index) != 29u8) {
+            return -6;
+        }
+        if (index == length - 1) {
+            if (returned.at(index) != 53u8) {
+                return -7;
+            }
+        } else {
+            if (returned.at(index) != 11u8) {
+                return -8;
+            }
+        }
+        index = index + 1;
+    }
+    builtin::OwnedBytes failed = region.try_allocate(-1);
+    if (failed.ok() || failed.size() != 0 || failed.set(0, 99u8)) {
+        return -9;
+    }
+    return 42;
+}

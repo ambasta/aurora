@@ -13,6 +13,7 @@ flags=(-std=c++23 -O2 -fstack-usage -Wall -Wextra -Werror -ffreestanding -fno-ex
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ owned-bytes) extra+=(-DAURORA_UEFI_OWNED_BYTES) ;;
  console) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_CONSOLE) ;;
  ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-pair|ivrs-alias|ivrs-reserved|ivrs-scope|ivrs-capability|ivrs-range|ivrs-missing)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2 -DAURORA_UEFI_IVRS)
@@ -96,6 +97,7 @@ if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "$
 fi
 console_objects=()
 language_entry=examples/kernel.au
+if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then language_entry=examples/kernel-owned-bytes.au; fi
 if [[ "${UEFI_MODE:-normal}" == console ]]; then
     language_entry=examples/kernel-console.au
     as --64 kernel/uefi/console-entry.S -o build/uefi/console-entry.o
@@ -103,17 +105,31 @@ if [[ "${UEFI_MODE:-normal}" == console ]]; then
     console_objects+=(build/uefi/console-entry.o build/uefi/console.o)
 fi
 "$compiler" --module-root kernel/policies "$language_entry" -o build/uefi/language.s
-as --64 build/uefi/language.s -o build/uefi/language.o
+if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
+    as --64 build/uefi/language.s kernel/uefi/owned-bytes-entry.S -o build/uefi/language.o
+    python3 tests/kernel-uefi-owned-bytes-admission.py build/uefi/language.o
+else
+    as --64 build/uefi/language.s -o build/uefi/language.o
+fi
 as --64 kernel/uefi/payload-entry.S -o build/uefi/payload-entry.o
 as --64 kernel/uefi/memory.S -o build/uefi/memory.o
 "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/payload.cpp -o build/uefi/payload.o
 "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/acpi.cpp -o build/uefi/acpi.o
 "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/pci.cpp -o build/uefi/pci.o
 "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -Ibuild/uefi -c kernel/uefi/runtime.cpp -o build/uefi/runtime.o
+owned_bytes_objects=()
+if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/owned-bytes.cpp -o build/uefi/owned-bytes-runtime.o
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/owned-bytes.cpp -o build/uefi/owned-bytes-profile.o
+    owned_bytes_objects+=(build/uefi/owned-bytes-runtime.o build/uefi/owned-bytes-profile.o)
+fi
 ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 \
     build/uefi/payload-entry.o build/uefi/memory.o build/uefi/payload.o build/uefi/acpi.o \
     build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" "${console_objects[@]}" \
-    build/uefi/language.o -o build/uefi/payload.elf
+    build/uefi/language.o "${owned_bytes_objects[@]}" -o build/uefi/payload.elf
+if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
+    python3 tests/kernel-uefi-owned-bytes-stack.py build/uefi build/uefi/owned-bytes-stack.json
+fi
 objcopy -O binary build/uefi/payload.elf build/uefi/payload.bin
 if [[ "${UEFI_MODE:-normal}" == runtime-table-* ]]; then
     python3 tests/kernel-uefi-tables-stack.py build/uefi "build/uefi/table-stack/$UEFI_MODE"
@@ -171,7 +187,10 @@ for name in loader embed transition memory; do objcopy --remove-section=.comment
 printf 'Built UEFI PE32+ loader and independent payload\n'
 
 image_policy=()
-case "${UEFI_MODE:-normal}" in ipc*|budget*|dispatch*|user-*) image_policy+=(--ipc-policy) ;; esac
+case "${UEFI_MODE:-normal}" in
+    ipc*|budget*|dispatch*|user-*) image_policy+=(--ipc-policy) ;;
+    owned-bytes) image_policy+=(--owned-bytes) ;;
+esac
 python3 tests/kernel-uefi-image.py "${image_policy[@]}"
 
 if [[ "${UEFI_MODE:-normal}" == ivrs-* ]]; then python3 tests/kernel-uefi-ivrs-stack.py build/uefi build/uefi/ivrs-stack.json; fi

@@ -6,6 +6,15 @@ executes the separate Aurora source-language program. No C source compatibility,
 C runtime, libc, or exported C object model is supplied. Scalar assembly symbols
 are a disposable bring-up seam, not a permanent platform ABI.
 
+## Runtime-sized CPU byte owners
+
+The separately selected `owned-bytes` UEFI profile grants Aurora runtime-sized
+allocations from the existing physical page pool, with four fixed owner records,
+whole-page scrubbing and explicit cleanup. See the
+[bounded contract](../docs/kernel-owned-bytes.md) and
+[focused results](../docs/kernel-owned-bytes-results.md) for current gates and limits.
+Kernel resize, user allocation and device activation are outside this profile.
+
 ## Build and verify
 
 For the shortest normal-boot commands and tool overrides, see

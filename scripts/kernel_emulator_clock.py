@@ -4,6 +4,7 @@
 This module never builds images or executes a guest. The launcher executes the
 same array checked here. A clock-plan/receipt is not a runtime success receipt.
 """
+
 import hashlib
 import json
 import sys
@@ -14,7 +15,8 @@ FIXED0_ARGV = ("-icount", "shift=0,align=off,sleep=off")
 SCOPE_MAP_SHA256 = "efd2c6c057d85bdd05cc66b0bbef7db629abdf797361347a96fee6aa1732dc99"
 
 # Exact names, not a prefix rule. Adding a mode requires an explicit decision.
-FIXED0_UEFI_MODES = tuple("""
+FIXED0_UEFI_MODES = tuple(
+    """
 budget budget-fault budget-context budget-pending budget-noapic budget-smp
 budget-discovery budget-cache budget-alias budget-forged budget-root budget-mmio
 budget-softint budget-fpu budget-epoch budget-policy-zero budget-policy-counts
@@ -26,12 +28,14 @@ user-context user-retire-pending user-request-budget user-completion-budget
 user-request-bounds user-completion-bounds user-request-overflow
 user-completion-overflow user-pending user-role user-phase user-transaction user-epoch
 user-root user-unknown user-stale-grant
-""".split())
+""".split()
+)
 
-ORIGINAL_UEFI_MODES = tuple("""
+ORIGINAL_UEFI_MODES = tuple(
+    """
 runtime-table-readback runtime-table-reject runtime-table-exhaust
 runtime-table-quarantine runtime-pin-cancel runtime-pin-fault runtime-pin-stale
-runtime-pin-exhaust runtime-span normal stale stale-exhausted bad-handoff bad-map
+runtime-pin-exhaust runtime-span normal owned-bytes stale stale-exhausted bad-handoff bad-map
 bad-table wp nx acpi acpi-two acpi-disabled acpi-checksum acpi-bad-entry acpi-duplicate
 acpi-bad-source acpi-changed-header acpi-duplicate-root acpi-write acpi-revoked pci
 pci-devices pci-bridge pci-checksum pci-reserved pci-overlap pci-range pci-cycle
@@ -41,9 +45,11 @@ runtime-return runtime-unknown runtime-syscall runtime-sysenter ipc ipc-fault ip
 ipc-owner ipc-stale ipc-version ipc-phase ipc-transaction ipc-site ipc-unknown ipc-root
 ipc-kernel-trap ipc-duplicate ipc-late ipc-exhausted ipc-policy-request-input
 ipc-policy-request-output ipc-policy-cancel-input ipc-policy-cancel-output
-""".split())
+""".split()
+)
 
-ORIGINAL_BIOS_MODES = tuple("""
+ORIGINAL_BIOS_MODES = tuple(
+    """
 normal --fault --page-fault --wp --nx --stack --no-nx --user-read --user-write
 --user-cli --user-code-write --user-nx --user-io --program-bad-return
 --program-unknown-trap --program-kernel-trap --domain-code --domain-stack
@@ -52,16 +58,21 @@ normal --fault --page-fault --wp --nx --stack --no-nx --user-read --user-write
 --division-zero --division-remainder-zero --division-overflow --division-remainder-min
 --division-kernel-trap --unsigned-valid --unsigned-shift-count
 --unsigned-conversion-overflow --unsigned-kernel-trap
-""".split())
+""".split()
+)
 
-ORIGINAL_BAR_MODES = tuple("""
+ORIGINAL_BAR_MODES = tuple(
+    """
 bar-state bar-capture bar-inherited bar-read bar-write bar-revoked bar-alias
-""".split())
+""".split()
+)
 
-ORIGINAL_IVRS_MODES = tuple("""
+ORIGINAL_IVRS_MODES = tuple(
+    """
 ivrs-default ivrs-read ivrs-write ivrs-revoked ivrs-pair ivrs-alias ivrs-reserved
 ivrs-scope ivrs-capability ivrs-range ivrs-missing
-""".split())
+""".split()
+)
 
 
 def make_mode_map(groups):
@@ -77,18 +88,22 @@ def make_mode_map(groups):
     return result
 
 
-MODE_CLOCKS = make_mode_map((
-    ("uefi", FIXED0, FIXED0_UEFI_MODES),
-    ("uefi", ORIGINAL, ORIGINAL_UEFI_MODES),
-    ("bios", ORIGINAL, ORIGINAL_BIOS_MODES),
-    ("bar", ORIGINAL, ORIGINAL_BAR_MODES),
-    ("ivrs", ORIGINAL, ORIGINAL_IVRS_MODES),
-))
-AUXILIARY_CLOCKS = make_mode_map((
-    ("bios-capacity", ORIGINAL, ("full-127", "old-96-negative", "last-sector-negative")),
-    ("bios-restoration", ORIGINAL, ("normal",)),
-    ("uefi-restoration", ORIGINAL, ("normal",)),
-))
+MODE_CLOCKS = make_mode_map(
+    (
+        ("uefi", FIXED0, FIXED0_UEFI_MODES),
+        ("uefi", ORIGINAL, ORIGINAL_UEFI_MODES),
+        ("bios", ORIGINAL, ORIGINAL_BIOS_MODES),
+        ("bar", ORIGINAL, ORIGINAL_BAR_MODES),
+        ("ivrs", ORIGINAL, ORIGINAL_IVRS_MODES),
+    )
+)
+AUXILIARY_CLOCKS = make_mode_map(
+    (
+        ("bios-capacity", ORIGINAL, ("full-127", "old-96-negative", "last-sector-negative")),
+        ("bios-restoration", ORIGINAL, ("normal",)),
+        ("uefi-restoration", ORIGINAL, ("normal",)),
+    )
+)
 
 
 def clock_profile(family, mode):
@@ -101,8 +116,9 @@ def clock_profile(family, mode):
 
 
 def mode_clock_rows():
-    return [dict(family=family, mode=mode, clock_profile=profile)
-            for (family, mode), profile in sorted(MODE_CLOCKS.items())]
+    return [
+        dict(family=family, mode=mode, clock_profile=profile) for (family, mode), profile in sorted(MODE_CLOCKS.items())
+    ]
 
 
 def mode_clock_sha256():
@@ -113,8 +129,7 @@ def mode_clock_sha256():
 def uefi_family(mode):
     # The common launcher historically accepts build modes from these families;
     # the production BAR/IVRS suites keep their separate, unchanged launchers.
-    matches = [family for family in ("uefi", "bar", "ivrs")
-               if (family, mode) in MODE_CLOCKS]
+    matches = [family for family in ("uefi", "bar", "ivrs") if (family, mode) in MODE_CLOCKS]
     if len(matches) != 1:
         raise ValueError("Unknown or ambiguous UEFI clock mode: " + repr(mode))
     return matches[0]
@@ -155,10 +170,12 @@ def expected_firmware_argv(firmware, code, variables):
     if not firmware and code and variables and code != variables:
         code_format = "qcow2" if code.endswith(".qcow2") else "raw"
         vars_format = "qcow2" if variables.endswith(".qcow2") else "raw"
-        return ["-drive", "if=pflash,unit=0,format=" + code_format +
-                ",readonly=on,file=" + code.replace(",", ",,"),
-                "-drive", "if=pflash,unit=1,format=" + vars_format +
-                ",snapshot=on,file=" + variables.replace(",", ",,")]
+        return [
+            "-drive",
+            "if=pflash,unit=0,format=" + code_format + ",readonly=on,file=" + code.replace(",", ",,"),
+            "-drive",
+            "if=pflash,unit=1,format=" + vars_format + ",snapshot=on,file=" + variables.replace(",", ",,"),
+        ]
     raise ValueError("Expected one combined firmware path or two separate CODE/VARS paths")
 
 
@@ -170,23 +187,58 @@ def expected_uefi_argv(mode, qemu, firmware, data, code="", variables=""):
         argv += ["-L", data]
     devices = {
         "bar-state": ["-device", "nvme,serial=AURORA_READ_ONLY"],
-        "pci-devices": ["-device", "nvme,serial=AURORA_READ_ONLY", "-device", "qemu-xhci",
-                        "-device", "e1000e,romfile="],
-        "pci-bridge": ["-device", "pcie-root-port,id=aurora_port,chassis=1,slot=2",
-                       "-device", "nvme,bus=aurora_port,serial=AURORA_READ_ONLY"],
-        "pci-cycle": ["-device", "pcie-root-port,id=aurora_port,chassis=1,slot=2",
-                      "-device", "nvme,bus=aurora_port,serial=AURORA_READ_ONLY"],
+        "pci-devices": [
+            "-device",
+            "nvme,serial=AURORA_READ_ONLY",
+            "-device",
+            "qemu-xhci",
+            "-device",
+            "e1000e,romfile=",
+        ],
+        "pci-bridge": [
+            "-device",
+            "pcie-root-port,id=aurora_port,chassis=1,slot=2",
+            "-device",
+            "nvme,bus=aurora_port,serial=AURORA_READ_ONLY",
+        ],
+        "pci-cycle": [
+            "-device",
+            "pcie-root-port,id=aurora_port,chassis=1,slot=2",
+            "-device",
+            "nvme,bus=aurora_port,serial=AURORA_READ_ONLY",
+        ],
     }
     argv += devices.get(mode, [])
     if profile == FIXED0:
         argv += list(FIXED0_ARGV)
     cpu = "qemu64,vendor=GenuineIntel,+sep" if mode == "runtime-sysenter" else "qemu64"
     cpus = "2" if mode in ("acpi-two", "budget-smp") else "1"
-    argv += ["-machine", "q35", "-accel", "tcg", "-cpu", cpu, "-smp", cpus, "-m", "128M",
-             *expected_firmware_argv(firmware, code, variables),
-             "-drive", "format=raw,file=fat:ro:build/uefi/esp,snapshot=on",
-             "-nic", "none", "-display", "none", "-serial", "stdio", "-monitor", "none",
-             "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]
+    argv += [
+        "-machine",
+        "q35",
+        "-accel",
+        "tcg",
+        "-cpu",
+        cpu,
+        "-smp",
+        cpus,
+        "-m",
+        "128M",
+        *expected_firmware_argv(firmware, code, variables),
+        "-drive",
+        "format=raw,file=fat:ro:build/uefi/esp,snapshot=on",
+        "-nic",
+        "none",
+        "-display",
+        "none",
+        "-serial",
+        "stdio",
+        "-monitor",
+        "none",
+        "-no-reboot",
+        "-device",
+        "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    ]
     return argv
 
 
@@ -195,11 +247,17 @@ def uefi_clock_receipt(mode, declared_profile, argv, qemu, firmware, data, code=
     profile = validate_clock_options(family, mode, declared_profile, argv)
     if argv != expected_uefi_argv(mode, qemu, firmware, data, code, variables):
         raise ValueError("Effective UEFI argv differs from closed command contract")
-    return dict(schema="aurora-emulator-clock-command-v1", family=family, mode=mode,
-                clock_profile=profile, mode_clock_sha256=mode_clock_sha256(),
-                scope_map_sha256=SCOPE_MAP_SHA256, argv=argv,
-                timeout_argv=["timeout", "30", *argv],
-                execution_status="not-established-by-command-receipt")
+    return dict(
+        schema="aurora-emulator-clock-command-v1",
+        family=family,
+        mode=mode,
+        clock_profile=profile,
+        mode_clock_sha256=mode_clock_sha256(),
+        scope_map_sha256=SCOPE_MAP_SHA256,
+        argv=argv,
+        timeout_argv=["timeout", "30", *argv],
+        execution_status="not-established-by-command-receipt",
+    )
 
 
 def main(args):
@@ -208,8 +266,11 @@ def main(args):
         return
     if len(args) >= 10 and args[0] == "verify" and args[8] == "--":
         _, mode, profile, qemu, firmware, code, variables, data, _, *argv = args
-        print(json.dumps(uefi_clock_receipt(mode, profile, argv, qemu, firmware, data, code, variables),
-                         sort_keys=True, indent=2))
+        print(
+            json.dumps(
+                uefi_clock_receipt(mode, profile, argv, qemu, firmware, data, code, variables), sort_keys=True, indent=2
+            )
+        )
         return
     raise ValueError("Expected profile MODE or verify MODE PROFILE QEMU OVMF CODE VARS DATA -- QEMU_ARGV")
 
