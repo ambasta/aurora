@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fresh reconstruction: portable bounded native XFS lookup gate; no old receipts."""
+"""Current-source bounded native XFS lookup regression with exact preserved fixtures."""
 
 from __future__ import annotations
 import argparse, hashlib, importlib, json, pathlib, random, resource, shutil, subprocess, sys
@@ -15,7 +15,6 @@ geometry = None
 MODULE_PATHS = {}
 CAP = 128 << 20
 FLOOR = 1 << 30
-MODULE_SHA = "8f669775ea7a5e850a314e50c37d90a5ba1ef30b1d60f6c8a54be5a6faef9e4f"
 FIXTURE_SHA = {
     "empty-superblock.hex": "55ad821909c312048d9936a74c8904cd25f97aa190b48ae0004b03eaffdc6586",
     "empty-root.hex": "963d4d1ae9f5821528cdeaac5dbc65abc0a4146a737dab84ade621a12d2c326e",
@@ -80,7 +79,6 @@ def configure(args):
         require(len(found) == 1, "module must resolve uniquely across explicit roots: " + name)
         require(not any(x.is_symlink() for x in [found[0], *found[0].parents]), "symlink module path rejected")
         MODULE_PATHS[name] = found[0]
-    require(sha(MODULE_PATHS["fs/xfs_root.au"]) == MODULE_SHA, "recovered module byte identity")
     dep = ROOT / "tests/compiler"
     for name in DEPS:
         require((dep / (name + ".py")).is_file(), "missing explicit oracle dependency " + name)
@@ -609,7 +607,7 @@ def main():
         corpus = corpus[: args.limit]
     report = {
         "status": "running",
-        "revision": "post-reset reconstruction; fresh evidence",
+        "revision": "current-source root lookup regression; fresh evidence",
         "requested_compiler_sha256": args.compiler_sha256,
         "compiler_identity": identity.record(),
         "repo_root": str(ROOT),

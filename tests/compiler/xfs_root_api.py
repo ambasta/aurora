@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fresh post-reset copied-report/layout/privacy checks, with explicit roots/pins."""
+"""Current-source copied-report/layout/privacy checks, with explicit roots/pins."""
 
 import json, pathlib, sys
 
@@ -46,7 +46,7 @@ def main():
         expected.extend(r.Case(name + f"/{i}", "", v) for i, v in enumerate(values))
     report = {
         "status": "running",
-        "revision": "post-reset reconstruction; fresh evidence",
+        "revision": "current-source root lookup API regression; fresh evidence",
         "pins": pins,
         "compiler_sha256": identity.sha256,
         "compiler_identity": identity.record(),
