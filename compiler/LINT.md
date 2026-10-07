@@ -56,14 +56,15 @@ An existing argument/input/compiler failure exits 2, as before. JSON retains
 schema version 1 and the existing diagnostic fields; `success` means no error
 severity diagnostic, so a warning-only result is successful. `--check` remains the
 separate formatting/style check. Ordinary `aurorac`, its `--check` mode and the
-LSP's first-error checking behavior do not enable semantic lint.
+LSP's default first-error checking behavior do not enable semantic lint.
 
 The shared `checkSource` API accepts `AnalysisMode::Lint` after its optional source
 overlays and returns findings in `CheckedSource::lintDiagnostics`. Its default is
 `AnalysisMode::Check`. The lint ledger uses existing resolved local indices and
 sits outside ownership state restored at branch/loop joins. No backend decision or
-IR is changed. The optional LSP does not yet publish these warnings or expose a
-configuration switch; it can reuse this frontend result in a later increment.
+IR is changed. The optional LSP reuses this result when initialized with
+`initializationOptions: {"lint": true}`. Its [protocol contract](lsp/README.md#opt-in-semantic-lint)
+describes session configuration, UTF-16 warning spans and versioned refreshes.
 
 ## Focused verification
 

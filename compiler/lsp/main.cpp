@@ -20,8 +20,8 @@ int main(int argc, char **argv) {
                 throw aurora::lsp::ProtocolError("usage: aurora-lsp [--module-root PATH]...");
         }
         aurora::lsp::Session session(
-            [&](const auto &path, const aurora::lsp::Snapshots &snapshots) -> std::optional<aurora::Diagnostic> {
-                return aurora::lsp::checkDocument(path, roots, snapshots);
+            [&](const auto &path, const aurora::lsp::Snapshots &snapshots, bool lint) {
+                return aurora::lsp::checkDocument(path, roots, snapshots, lint);
             },
             std::cout,
             std::cerr);

@@ -42,6 +42,23 @@ def frame(message):
     return f"Content-Length: {len(payload)}\r\n\r\n".encode() + payload
 
 
+def diagnostic_metadata(message):
+    diagnostics = []
+    if message.get("method") == "textDocument/publishDiagnostics":
+        diagnostics = list(message["params"]["diagnostics"])
+        require(len(diagnostics) <= 128, "each URI publication stays within the diagnostic count bound")
+    failure = message.get("error", {}).get("data", {}).get("diagnostic")
+    if failure is not None:
+        diagnostics.append(failure)
+    for diagnostic in diagnostics:
+        severity = diagnostic["severity"]
+        require(type(severity) is int and severity in (1, 2), "only error/warning severities are published")
+        require(
+            diagnostic["data"]["firstErrorOnly"] is (severity == 1),
+            "firstErrorOnly describes errors, never lint warnings",
+        )
+
+
 def parse_frames(raw):
     messages = []
     while raw:
@@ -49,8 +66,11 @@ def parse_frames(raw):
         require(bool(separator), "stdout contains only complete framed protocol messages")
         require(header.startswith(b"Content-Length: "), "stdout has clean framing")
         count = int(header[len(b"Content-Length: ") :])
+        require(0 <= count <= 8 * 1024 * 1024, "encoded UTF-8 output stays within the wire payload bound")
         require(len(raw) >= count, "output body is complete")
-        messages.append(json.loads(raw[:count]))
+        message = json.loads(raw[:count])
+        diagnostic_metadata(message)
+        messages.append(message)
         raw = raw[count:]
     return messages
 
@@ -77,19 +97,20 @@ def opened(path, text=BAD, version=1, uri=None):
     )
 
 
-def changed(path, text=GOOD, version=2):
+def changed(path, text=GOOD, version=2, uri=None):
     return notification(
         "textDocument/didChange",
-        {"textDocument": {"uri": path.as_uri(), "version": version}, "contentChanges": [{"text": text}]},
+        {"textDocument": {"uri": uri or path.as_uri(), "version": version}, "contentChanges": [{"text": text}]},
     )
 
 
-def closed(path):
-    return notification("textDocument/didClose", {"textDocument": {"uri": path.as_uri()}})
+def closed(path, uri=None):
+    return notification("textDocument/didClose", {"textDocument": {"uri": uri or path.as_uri()}})
 
 
-def phases(actions, roots=()):
-    messages = [request("initialize", 1, {"capabilities": {}}), notification("initialized", {})]
+def phases(actions, roots=(), initialize_params=None):
+    params = {"capabilities": {}} if initialize_params is None else initialize_params
+    messages = [request("initialize", 1, params), notification("initialized", {})]
     for index, action in enumerate(actions):
         messages += [action, request("aurora/testFence", index + 100)]
     messages += [request("shutdown", 2), notification("exit")]
@@ -119,6 +140,48 @@ def phases(actions, roots=()):
 
 def by_uri(stage, path):
     return next(value for value in stage if value["uri"] == path.as_uri())
+
+
+def lint_warnings(publication, expected, truncated_messages=False):
+    require(len(publication["diagnostics"]) == len(expected), "exact number of root lint warnings")
+    for diagnostic, (name, line, character) in zip(publication["diagnostics"], expected):
+        require(
+            diagnostic["code"] == "AU6001" and diagnostic["severity"] == 2 and diagnostic["source"] == "aurora",
+            "lint preserves compiler warning identity",
+        )
+        message = f"local binding '{name}' is never read"
+        if truncated_messages:
+            message = message[:4096] + " [truncated]"
+        require(diagnostic["message"] == message, "exact compiler lint message or explicit bounded prefix")
+        require(
+            diagnostic["range"]
+            == {
+                "start": {"line": line, "character": character},
+                "end": {"line": line, "character": character + len(name)},
+            },
+            "lint warnings preserve source order and exact half-open identifier ranges",
+        )
+        require(diagnostic["data"] == {"rangeKnown": True, "firstErrorOnly": False}, "precise warning metadata")
+
+
+def lint_limit(publication, omitted):
+    require(len(publication["diagnostics"]) == 128, "a truncated publication includes its notice within the limit")
+    notice = publication["diagnostics"][-1]
+    require(
+        notice["code"] == "aurora-lsp-diagnostics-limit"
+        and notice["source"] == "aurora-lsp"
+        and notice["severity"] == 2,
+        "truncation notice is explicitly server-owned, not a compiler finding",
+    )
+    require(
+        notice["range"] == {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}}
+        and notice["data"] == {"rangeKnown": False, "firstErrorOnly": False, "omittedWarnings": omitted},
+        "truncation reports an honest unknown location and the exact omitted warning count",
+    )
+    require(
+        notice["message"] == f"[location unavailable] Diagnostic publication truncated; {omitted} warnings omitted.",
+        "truncation is explained without claiming precise compiler provenance",
+    )
 
 
 with tempfile.TemporaryDirectory(prefix="aurora-lsp-test-") as directory:
@@ -274,6 +337,17 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-test-") as directory:
             stages == [[]] and "parent traversal" in logs,
             "decoded parent walks cannot normalize away a symlink or missing path",
         )
+    for path in [absent, symlink]:
+        stages, _ = phases([opened(path, GOOD)], initialize_params={"initializationOptions": {"lint": True}})
+        diagnostics = by_uri(stages[0], path)["diagnostics"]
+        require(
+            len(diagnostics) == 1 and diagnostics[0]["code"] == "AU4001" and diagnostics[0]["severity"] == 1,
+            "lint cannot admit nonexistent or symlink source files through overlays",
+        )
+    require(not absent.exists() and symlink.is_symlink(), "lint source rejection cannot create or replace files")
+    uri = root.as_uri() + "/path-link/%2e%2e/" + source.name
+    stages, logs = phases([opened(source, GOOD, uri=uri)], initialize_params={"initializationOptions": {"lint": True}})
+    require(stages == [[]] and "parent traversal" in logs, "lint cannot normalize away decoded parent URI components")
     for import_root in [root / "path-link" / "..", root / "missing" / ".."]:
         outputs, logs = run(roots=[import_root], status=1)
         require(not outputs and "parent traversal" in logs, "CLI import roots reject parent walks before normalization")
@@ -308,6 +382,420 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-test-") as directory:
     actions = [opened(root / f"count-{i}.au", GOOD) for i in range(33)]
     stages, logs = phases(actions)
     require(stages[-1] == [] and "storage exceeds limit" in logs, "open document count bound")
+
+
+with tempfile.TemporaryDirectory(prefix="aurora-lsp-lint-test-") as directory:
+    root = Path(directory)
+    source = root / "lint café-中.au"
+    second = root / "second.au"
+    imported = root / "dep.au"
+    warning_text = "module demo;\nauto answer() -> i64 {\n    i64 unused = 7;\n    return 42;\n}\n"
+    dependency_text = "export module dep;\nauto dep_value() -> i64 {\n    i64 imported_unused = 1;\n    return 0;\n}\n"
+    caller = warning_text.replace("module demo;", "module demo; import dep;")
+    independent = warning_text.replace("module demo;", "module second;")
+    lint_params = {"initializationOptions": {"lint": True}}
+    expected_warning = [("unused", 2, 8)]
+    expected_imported = [("imported_unused", 2, 8)]
+    for path, text in [(source, BAD), (second, GOOD), (imported, dependency_text)]:
+        path.write_text(text)
+        path.chmod(0o444)
+    original_files = {path: (path.read_bytes(), path.stat()) for path in root.iterdir()}
+    original_directory = root.stat()
+
+    # Missing, null, empty and false options all retain the original check-only session.
+    actions = [opened(source, warning_text), changed(source, BAD), changed(source, warning_text, 3), closed(source)]
+    check_only = None
+    for params in [
+        None,
+        {},
+        {"initializationOptions": None},
+        {"initializationOptions": {}},
+        {"initializationOptions": {"lint": False}},
+    ]:
+        stages, logs = phases(actions, initialize_params=params)
+        require(not logs, "valid check-only initialization options keep stderr quiet")
+        require(not by_uri(stages[0], source)["diagnostics"], "lint is disabled unless explicitly true")
+        require(by_uri(stages[1], source)["diagnostics"][0]["code"] == "AU1001", "check-only still reports errors")
+        require(not by_uri(stages[2], source)["diagnostics"], "check-only recovery never leaks warnings")
+        if check_only is not None:
+            require(stages == check_only, "default, null, empty and false lint settings are equivalent")
+        check_only = stages
+
+    for invalid in [
+        False,
+        True,
+        0,
+        1,
+        "",
+        "lint",
+        [],
+        [{"lint": True}],
+        {"lint": None},
+        {"lint": 0},
+        {"lint": 1.0},
+        {"lint": "true"},
+        {"lint": []},
+        {"lint": {}},
+        {"unknown": True},
+        {"lint": True, "unknown": False},
+        {"moduleRoots": [str(root)]},
+    ]:
+        outputs, logs = run(
+            [
+                request("initialize", 3, {"initializationOptions": invalid}),
+                opened(source, GOOD, 99),
+                request("aurora/testFence", 4),
+                request("initialize", 1, lint_params),
+                opened(source, warning_text),
+                request("shutdown", 2),
+                notification("exit"),
+            ]
+        )
+        require(len(outputs) == 5 and not logs, "invalid options neither publish nor retain pre-initialize documents")
+        require(
+            outputs[0]["id"] == 3 and outputs[0]["error"]["code"] == -32602 and "result" not in outputs[0],
+            "invalid initialization options return InvalidParams",
+        )
+        require(outputs[1]["error"]["code"] == -32002, "invalid options do not initialize the session")
+        require(outputs[2]["id"] == 1 and "result" in outputs[2], "valid initialization can retry after rejection")
+        publication = outputs[3]["params"]
+        require(publication["uri"] == source.as_uri() and publication["version"] == 1, "retry accepts fresh state")
+        lint_warnings(publication, expected_warning)
+        require(outputs[4]["id"] == 2 and outputs[4]["result"] is None, "recovered lint session shuts down normally")
+
+    for enabled in [False, True]:
+        outputs, logs = run(
+            [
+                request("initialize", 1, {"initializationOptions": {"lint": enabled}}),
+                opened(source, warning_text),
+                request("initialize", 4, {"initializationOptions": {"lint": not enabled}}),
+                request("initialize", 5, {"initializationOptions": {"unknown": True}}),
+                notification("workspace/didChangeConfiguration", {"settings": {"lint": not enabled}}),
+                changed(source, warning_text),
+                request("shutdown", 2),
+                notification("exit"),
+            ]
+        )
+        replies = {value["id"]: value for value in outputs if "id" in value}
+        require(
+            replies[4]["error"]["code"] == replies[5]["error"]["code"] == -32600,
+            "duplicate initialization remains InvalidRequest even when its options are invalid",
+        )
+        publications = [value["params"] for value in outputs if "method" in value]
+        require(
+            len(publications) == 2 and not logs, "duplicate initialization and unsupported configuration stay quiet"
+        )
+        for version, publication in enumerate(publications, 1):
+            require(publication["version"] == version, "reinitialization and configuration preserve document state")
+            lint_warnings(publication, expected_warning if enabled else [])
+
+    # A later error must discard even a successfully analyzed earlier function's findings.
+    error_text = warning_text + "auto broken() -> i64 { return false; }\n"
+    stages, logs = phases(
+        [
+            opened(source, warning_text),
+            changed(source, error_text),
+            changed(source, warning_text, 3),
+            changed(source, GOOD, 4),
+            closed(source),
+        ],
+        initialize_params=lint_params,
+    )
+    lint_warnings(by_uri(stages[0], source), expected_warning)
+    failure = by_uri(stages[1], source)
+    require(
+        failure["version"] == 2
+        and len(failure["diagnostics"]) == 1
+        and failure["diagnostics"][0]["code"] == "AU3001"
+        and failure["diagnostics"][0]["severity"] == 1,
+        "a graph error replaces all warnings with the compiler's first error",
+    )
+    lint_warnings(by_uri(stages[2], source), expected_warning)
+    require(by_uri(stages[2], source)["version"] == 3, "corrected snapshot restores versioned warnings")
+    require(
+        by_uri(stages[3], source) == {"uri": source.as_uri(), "version": 4, "diagnostics": []},
+        "removing unread locals clears prior warnings",
+    )
+    require(
+        by_uri(stages[4], source) == {"uri": source.as_uri(), "diagnostics": []} and not logs,
+        "closing a lint root clears its publication without a stale version",
+    )
+
+    ordered_text = (
+        "module demo;\nauto first() -> i64 {\n    i64 zeta = 1;\n    bool alpha = false;\n    return 0;\n}\n"
+        "auto answer() -> i64 {\n    i64 repeated = 2;\n    { i64 repeated = 3; }\n    return 42;\n}\n"
+    )
+    stages, _ = phases([opened(source, ordered_text)], initialize_params=lint_params)
+    lint_warnings(by_uri(stages[0], source), [("zeta", 2, 8), ("alpha", 3, 9), ("repeated", 7, 8), ("repeated", 8, 10)])
+    underscore_text = (
+        "module demo;\nauto answer() -> i64 {\n    i64 _ = 1;\n    i64 _intentional = 2;\n"
+        "    i64 a_b = 3;\n    return 42;\n}\n"
+    )
+    stages, _ = phases([opened(source, underscore_text)], initialize_params=lint_params)
+    lint_warnings(by_uri(stages[0], source), [("a_b", 4, 8)])
+
+    for newline in ["\r\n", "\n"]:
+        unicode_text = newline.join(
+            [
+                "// café 中 😀",
+                "module demo;",
+                "auto answer() -> i64 {",
+                "    // avant 😀 café",
+                "\ti64 unused = 7;",
+                "    return 42;",
+                "}",
+                "",
+            ]
+        )
+        stages, logs = phases([opened(source, unicode_text)], initialize_params=lint_params)
+        lint_warnings(by_uri(stages[0], source), [("unused", 4, 5)])
+        require(not logs, "Unicode comments with LF/CRLF terminators lint without protocol noise")
+
+    # Aurora line comments end at LF, not bare CR. Keep that lexer contract
+    # while exercising LSP's CR position accounting on accepted source bytes.
+    cr_text = "module demo;\rauto answer() -> i64 {\r\ti64 unused = 7;\rreturn 42;\r}\r"
+    for prefix, line in [("", 2), ("// café 中 😀\n", 3)]:
+        stages, logs = phases([opened(source, prefix + cr_text)], initialize_params=lint_params)
+        lint_warnings(by_uri(stages[0], source), [("unused", line, 5)])
+        require(not logs, "bare CR positions remain correct after a valid Unicode line comment")
+    stages, _ = phases([opened(source, "// café 中 😀\r" + cr_text)], initialize_params=lint_params)
+    comment_failure = by_uri(stages[0], source)["diagnostics"]
+    require(
+        len(comment_failure) == 1 and comment_failure[0]["code"] == "AU2001" and comment_failure[0]["severity"] == 1,
+        "bare CR does not terminate a compiler line comment or create lint findings",
+    )
+
+    stages, logs = phases(
+        [
+            opened(source, warning_text, 10),
+            changed(source, GOOD, 9),
+            changed(source, GOOD, 10),
+            opened(second, BAD, 20),
+            changed(second, independent, 21),
+            closed(second),
+        ],
+        initialize_params=lint_params,
+    )
+    require(stages[1] == stages[2] == [], "stale lint changes cannot clear warnings or publish")
+    require(logs.count("ignored stale document version") == 2, "stale lint changes retain existing log behavior")
+    for stage in stages[3:]:
+        lint_warnings(by_uri(stage, source), expected_warning)
+        require(by_uri(stage, source)["version"] == 10, "independent refresh preserves the accepted warning snapshot")
+    second_failure = by_uri(stages[3], second)
+    require(
+        len(second_failure["diagnostics"]) == 1 and second_failure["diagnostics"][0]["severity"] == 1,
+        "one broken root can publish an error concurrently with another root's warning",
+    )
+    lint_warnings(by_uri(stages[4], second), expected_warning)
+
+    alias = source.as_uri().replace("file:///", "file://localhost/")
+    stages, logs = phases(
+        [
+            opened(source, warning_text, 10, uri=alias),
+            changed(source, GOOD, 11),
+            closed(source),
+            opened(source, GOOD, 11),
+            opened(second, GOOD),
+            changed(source, GOOD, 11, uri=alias),
+            closed(source, uri=alias),
+        ],
+        initialize_params=lint_params,
+    )
+    require(stages[1] == stages[2] == stages[3] == [], "URI mismatches and duplicate opens cannot replace lint state")
+    aliased_warning = next(value for value in stages[4] if value["uri"] == alias)
+    lint_warnings(aliased_warning, expected_warning)
+    require(aliased_warning["version"] == 10, "lint publication preserves the exact accepted URI and version")
+    require(
+        {"uri": alias, "version": 11, "diagnostics": []} in stages[5]
+        and {"uri": alias, "diagnostics": []} in stages[6],
+        "only the exact open URI can clear or close a lint snapshot",
+    )
+    require(logs.count("requires the open document URI") == 2, "lint URI mismatches remain observable")
+
+    # Imported findings appear only while the dependency is independently open as a root.
+    imported_error = dependency_text.replace("return 0;", "return false;")
+    stages, logs = phases(
+        [
+            opened(source, caller, 10),
+            opened(imported, dependency_text, 20),
+            changed(imported, imported_error, 21),
+            changed(imported, dependency_text, 20),
+            opened(second, independent, 30),
+            changed(imported, dependency_text, 22),
+            closed(imported),
+            changed(source, caller.replace("return 42;", "return false;"), 11),
+            changed(source, caller, 12),
+            closed(source),
+            closed(second),
+        ],
+        [root],
+        initialize_params=lint_params,
+    )
+    require(len(stages[0]) == 1, "a closed imported module does not publish its disk lint findings")
+    lint_warnings(by_uri(stages[0], source), expected_warning)
+    lint_warnings(by_uri(stages[1], source), expected_warning)
+    lint_warnings(by_uri(stages[1], imported), expected_imported)
+    require(by_uri(stages[1], imported)["version"] == 20, "independently open imports carry their own version")
+    for stage in [stages[2], stages[4]]:
+        require(not by_uri(stage, source)["diagnostics"], "an imported graph error clears its root's old warnings")
+        publication = by_uri(stage, imported)
+        require(
+            publication["version"] == 21
+            and len(publication["diagnostics"]) == 1
+            and publication["diagnostics"][0]["code"] == "AU3001"
+            and publication["diagnostics"][0]["severity"] == 1,
+            "import overlay errors deduplicate across roots and suppress that module's warnings",
+        )
+    require(stages[3] == [], "a stale import fix cannot restore root warnings")
+    lint_warnings(by_uri(stages[4], second), expected_warning)
+    lint_warnings(by_uri(stages[5], source), expected_warning)
+    lint_warnings(by_uri(stages[5], imported), expected_imported)
+    require(by_uri(stages[5], imported)["version"] == 22, "a corrected imported overlay republishes its own warning")
+    lint_warnings(by_uri(stages[6], source), expected_warning)
+    require(
+        by_uri(stages[6], imported) == {"uri": imported.as_uri(), "diagnostics": []},
+        "closing an imported root clears its warning even while its valid disk module remains imported",
+    )
+    root_error = by_uri(stages[7], source)["diagnostics"]
+    require(
+        len(root_error) == 1 and root_error[0]["code"] == "AU3001" and root_error[0]["severity"] == 1,
+        "a root semantic error suppresses its local lint findings",
+    )
+    lint_warnings(by_uri(stages[7], second), expected_warning)
+    lint_warnings(by_uri(stages[8], source), expected_warning)
+    require(
+        all(value["uri"] != imported.as_uri() for stage in stages[7:] for value in stage),
+        "closed imported warnings do not reappear during later root refreshes",
+    )
+    require(all(not value["diagnostics"] for value in stages[-1]), "closing every lint root clears all publications")
+    require(logs.count("ignored stale document version") == 1, "stale import update is rejected once")
+
+    for count in [127, 128, 129]:
+        declarations = "".join(f"    i64 unused{index:03} = {index};\n" for index in range(count))
+        many_warnings = "module demo;\nauto answer() -> i64 {\n" + declarations + "    return 42;\n}\n"
+        expected_many = [(f"unused{index:03}", index + 2, 8) for index in range(count)]
+        stages, logs = phases(
+            [
+                opened(source, many_warnings, 40),
+                opened(second, GOOD),
+                changed(second, BAD),
+                changed(source, many_warnings + "auto broken() -> i64 { return false; }\n", 41),
+                changed(source, many_warnings, 42),
+                closed(second),
+            ],
+            initialize_params=lint_params,
+        )
+        publication = by_uri(stages[0], source)
+        if count <= 128:
+            lint_warnings(publication, expected_many)
+        else:
+            lint_warnings({"diagnostics": publication["diagnostics"][:-1]}, expected_many[:127])
+            lint_limit(publication, 2)
+        require(
+            by_uri(stages[1], source) == by_uri(stages[2], source) == publication,
+            "warning selection and truncation are deterministic across unrelated accepted refreshes",
+        )
+        require(
+            by_uri(stages[2], second)["diagnostics"][0]["severity"] == 1,
+            "warning-heavy roots cannot hide an independent root's error",
+        )
+        failed = by_uri(stages[3], source)
+        require(
+            failed["version"] == 41
+            and len(failed["diagnostics"]) == 1
+            and failed["diagnostics"][0]["code"] == "AU3001"
+            and failed["diagnostics"][0]["severity"] == 1,
+            "a graph error replaces even warning-heavy publications without a stale truncation notice",
+        )
+        for stage in stages[4:]:
+            restored = by_uri(stage, source)
+            require(
+                restored["version"] == 42 and restored["diagnostics"] == publication["diagnostics"],
+                "correcting a warning-heavy root restores the same ordered bounded findings",
+            )
+        require(not logs, "bounded warning publication is normal quiet operation")
+
+    long_names = [f"unused{index:03}" + "x" * 4096 for index in range(128)]
+    long_declarations = "".join(f"    i64 {name} = 1;\n" for name in long_names)
+    long_source = "module demo;\nauto answer() -> i64 {\n" + long_declarations + "    return 42;\n}\n"
+    require(len(long_source.encode()) < 1024 * 1024, "long-message fixture fits the accepted source limit")
+    stages, logs = phases([opened(source, long_source, 45)], initialize_params=lint_params)
+    long_publication = by_uri(stages[0], source)
+    lint_warnings(
+        long_publication,
+        [(name, index + 2, 8) for index, name in enumerate(long_names)],
+        truncated_messages=True,
+    )
+    require(
+        all(len(value["message"].encode()) == 4096 + len(" [truncated]") for value in long_publication["diagnostics"])
+        and not logs,
+        "all 128 bounded warning messages preserve full identifier spans within the encoded wire limit",
+    )
+
+    # The dependency sorts before its importer. Its unused template succeeds as
+    # a standalone root, then produces a definition-site error when instantiated.
+    template_declarations = "".join(f"    i64 unused{index:03} = {index};\n" for index in range(129))
+    template_dependency = "export module dep;\nauto answer() -> i64 {\n" + template_declarations + "    return 42;\n}\n"
+    template_dependency += "export template<Scalar T> auto broken(T value) -> T { return false; }\n"
+    template_caller = "module demo; import dep; auto answer() -> i64 { return broken<i64>(0); }\n"
+    expected_template = [(f"unused{index:03}", index + 2, 8) for index in range(129)]
+    stages, logs = phases(
+        [
+            opened(imported, template_dependency, 50),
+            opened(source, template_caller, 60),
+            changed(source, GOOD, 61),
+            closed(imported),
+        ],
+        [root],
+        initialize_params=lint_params,
+    )
+    standalone = by_uri(stages[0], imported)
+    lint_warnings({"diagnostics": standalone["diagnostics"][:-1]}, expected_template[:127])
+    lint_limit(standalone, 2)
+    mixed = by_uri(stages[1], imported)
+    require(
+        mixed["version"] == 50
+        and mixed["diagnostics"][0]["code"] == "AU3001"
+        and mixed["diagnostics"][0]["severity"] == 1
+        and mixed["diagnostics"][0]["data"]["rangeKnown"] is True,
+        "a later imported-template error takes precedence over warnings on the same source URI",
+    )
+    lint_warnings({"diagnostics": mixed["diagnostics"][1:-1]}, expected_template[:126])
+    lint_limit(mixed, 3)
+    require(not by_uri(stages[1], source)["diagnostics"], "template failure publishes on its definition source URI")
+    require(by_uri(stages[2], imported) == standalone, "removing the instantiation restores the dependency's budget")
+    require(
+        by_uri(stages[3], imported) == {"uri": imported.as_uri(), "diagnostics": []} and not logs,
+        "closing a warning-heavy root clears compiler warnings and its server truncation notice",
+    )
+
+    stages, _ = phases(
+        [opened(source, caller)],
+        initialize_params={
+            "initializationOptions": {"lint": True},
+            "rootUri": root.as_uri(),
+            "workspaceFolders": [{"uri": root.as_uri(), "name": "lint fixtures"}],
+        },
+    )
+    unauthorized = by_uri(stages[0], source)["diagnostics"]
+    require(
+        len(unauthorized) == 1 and unauthorized[0]["code"] == "AU4001" and unauthorized[0]["severity"] == 1,
+        "lint initialization and workspace metadata do not grant module-root authority",
+    )
+    require(set(root.iterdir()) == set(original_files), "lint sessions create no source, cache or artifact files")
+    require(
+        (root.stat().st_mtime_ns, root.stat().st_ctime_ns)
+        == (original_directory.st_mtime_ns, original_directory.st_ctime_ns),
+        "lint sessions do not create and remove transient workspace files",
+    )
+    for path, (original, original_stat) in original_files.items():
+        current_stat = path.stat()
+        require(path.read_bytes() == original, "lint leaves readonly root and import disk bytes unchanged")
+        require(
+            (current_stat.st_mtime_ns, current_stat.st_ctime_ns, current_stat.st_mode)
+            == (original_stat.st_mtime_ns, original_stat.st_ctime_ns, original_stat.st_mode),
+            "lint neither rewrites original bytes nor changes readonly permissions",
+        )
 
 
 def formatting(path, id=10, options=None, uri=None):
@@ -360,6 +848,7 @@ def live_reply(process, identifier):
         size = int(header[len(b"Content-Length: ") : -4])
         require(0 <= size <= 8 * 1024 * 1024, "live body remains bounded")
         message = json.loads(read_exact(size))
+        diagnostic_metadata(message)
         if "id" in message:
             require(message["id"] == identifier, "live request receives its own response")
             return message
@@ -419,6 +908,36 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-format-test-") as directory:
         == (original_stat.st_mtime_ns, original_stat.st_ctime_ns, original_stat.st_mode),
         "formatting cannot rewrite bytes or change file permissions",
     )
+
+    lint_compact = "module demo;auto answer()->i64{i64 unused=7;return 42;}"
+    lint_canonical = "module demo;\nauto answer() -> i64 {\n    i64 unused = 7;\n    return 42;\n}\n"
+    outputs, logs = run(
+        [
+            request("initialize", 1, {"initializationOptions": {"lint": True}}),
+            opened(source, lint_compact, 70),
+            formatting(source, 10),
+            formatting(source, 11),
+            changed(source, lint_compact, 71),
+            formatting(source, 12),
+            changed(source, lint_canonical, 72),
+            formatting(source, 13),
+            request("shutdown", 2),
+            notification("exit"),
+        ]
+    )
+    require(
+        [value.get("id") for value in outputs] == [1, None, 10, 11, None, 12, None, 13, 2],
+        "lint-enabled formatting emits replies without extra diagnostic publications",
+    )
+    replies = {value["id"]: value for value in outputs if "id" in value}
+    for identifier in [10, 11, 12]:
+        whole_edit(replies[identifier], lint_canonical, {"line": 0, "character": len(lint_compact)})
+    require(replies[13]["result"] == [] and not logs, "canonical lint-enabled formatting is unchanged and quiet")
+    for index, version in [(1, 70), (4, 71), (6, 72)]:
+        publication = outputs[index]["params"]
+        require(publication["version"] == version, "only accepted changes update a formatted lint snapshot")
+        lint_warnings(publication, [("unused", 2, 8)] if version == 72 else [("unused", 0, 35)])
+    require(source.read_bytes() == original, "formatting in lint mode preserves the readonly disk source")
 
     # Golden expected text tests comment bytes/anchors, EOF, CRLF/CR/LF, tabs,
     # non-BMP UTF-16 width, and escaped controls without a second Aurora parser.
