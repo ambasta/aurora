@@ -17,9 +17,8 @@ class Parser {
       public:
         Nesting(int &value, int limit, const Token &token, const std::string &kind) : depth(value) {
             if (depth >= limit)
-                throw Error(DiagnosticCode::NestingLimit,
-                            "line " + std::to_string(token.line) + ": " + kind + " nesting exceeds " +
-                                std::to_string(limit), token.span);
+                throw Error(
+                    DiagnosticCode::NestingLimit, kind + " nesting exceeds " + std::to_string(limit), token.span);
             ++depth;
         }
         Nesting(const Nesting &) = delete;
@@ -46,9 +45,7 @@ class Parser {
         return token;
     }
     [[noreturn]] void fail(const std::string &m) const {
-        throw Error(DiagnosticCode::UnexpectedToken,
-                    "line " + std::to_string(peek().line) + ": " + m + " (found '" + peek().text + "')",
-                    peek().span);
+        throw Error(DiagnosticCode::UnexpectedToken, m + " (found '" + peek().text + "')", peek().span);
     }
     bool eat(const std::string &s) {
         if (peek().text == s) {

@@ -17,6 +17,7 @@ Harness: python3 -O tests/compiler/readonly_spans.py --self-test-only
 """
 from __future__ import annotations
 
+import re
 import argparse
 from dataclasses import replace
 from enum import Enum
@@ -122,9 +123,15 @@ class Suite:
                 observed = command([self.runner.compiler, "--module-root", ROOT / "library",
                                     path, "-o", output], timeout=self.runner.timeout,
                                    allow_rejection=True)
-                require(observed.returncode == 1 and observed.stderr.startswith(b"aurorac: "),
-                        f"{name}: expected normal compiler rejection, got "
-                        f"{observed.returncode}: {observed.stderr!r}")
+                require(
+                    observed.returncode == 1 and re.fullmatch(
+                        rf"(?:{re.escape(str(path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
+                        r"AU(?:1001|200[12]|3001|4001): [^\n]+\n",
+                        observed.stderr.decode(errors="strict"),
+                    ) is not None,
+                    f"{name}: expected normal compiler rejection, got "
+                    f"{observed.returncode}: {observed.stderr!r}",
+                )
                 if diagnostic is not None:
                     require(diagnostic.encode() in observed.stderr,
                             f"{name}: wrong reason for rejection: {observed.stderr!r}")

@@ -88,7 +88,7 @@ void run(const fs::path &directory) {
                                       {directory},
                                       {{dep, importedBad}},
                                       DiagnosticCode::UnsupportedCharacter,
-                                      "module dep: line 2: unsupported character");
+                                      "module dep: unsupported character");
     require(importedError.span.source == importedBad, "import context lost supplied snapshot");
     reject(app, {}, {{dep, importedSnapshot}}, DiagnosticCode::Module, "explicit --module-root");
     fs::remove(dep);

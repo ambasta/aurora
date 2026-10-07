@@ -285,10 +285,16 @@ class PackageRunner:
                 require(code == 1, label + " must reject normally with exit 1")
                 require(not stdout, label + " unexpected stdout")
                 text = diagnostic.decode(errors="strict")
-                # Only source coordinates vary. Every remaining diagnostic byte
-                # must equal the accepted semantic error, including one LF.
-                normalized = re.sub(r"^aurorac: line [0-9]+: ", "aurorac: ", text)
-                require(normalized == "aurorac: " + message + "\n", label + " wrong exact rejection: " + text)
+                # Validate the expected root path and complete renderer syntax before
+                # comparing the explanation. Never strip location-like user content.
+                match = re.fullmatch(
+                    rf"(?:{re.escape(str(path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
+                    r"AU(?:1001|200[12]|3001|4001): ([^\n]+)\n",
+                    text,
+                )
+                require(match is not None, label + " malformed rejection: " + text)
+                normalized = match.group(1)
+                require(normalized == message, label + " wrong exact rejection: " + text)
                 require(path.read_text() == source, "rejection changed source")
                 require(
                     output.read_bytes() == sentinel if existing else not output.exists(), "rejection changed output"

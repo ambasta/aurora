@@ -13,12 +13,40 @@ build/aurorac --check --diagnostics=json --module-root library examples/core_mat
 Checking validates the complete loaded program through the same verified-IR
 boundary as compilation. It never constructs an assembly emitter or output writer.
 `--check` rejects `-o`, including an existing destination, without touching it.
-Ordinary `INPUT.au -o OUTPUT.s` compilation remains available. Existing source
-rejection wording and the `aurorac:` prefix are preserved, except that truncated
-expressions/types now report a located parser error at EOF instead of leaking a
+Ordinary `INPUT.au -o OUTPUT.s` compilation remains available. Source failures
+use the same diagnostic payload in text, JSON and editor clients. Truncated
+expressions/types report a located parser error at EOF instead of leaking a
 host vector-range exception. Invalid invocations consistently exit with status 2.
 Successful text checks are quiet.
 JSON diagnostics are currently supported only with `--check`.
+
+## Text and message contract
+
+`Diagnostic.message` is location-neutral: it contains the explanation and any
+semantic context, such as `module dep:`, without a redundant `line N:` prefix.
+Coordinates belong only to `SourceSpan`. Error construction attaches the actual
+lexer/parser/semantic token span; the resolver's unknown-function rejection also
+retains its call token. No renderer strips arbitrary location-like message text.
+
+Both command-line tools render shared source errors as:
+
+```text
+path/to/source.au:4:5: error AU3001: expected i64, got bool
+```
+
+The format is `path:line:column: severity code: message`, with the same one-based
+byte coordinates as JSON. A source snapshot with an empty name uses `<source>`.
+Unlocated errors use `tool: severity code: message` with no invented coordinates,
+for example `aurorac: error AU5001: duplicate --check option`. Import context stays
+in the message while the location continues to identify the imported source.
+Warnings keep their warning severity. Formatter-specific layout findings keep
+their existing format; shared formatter errors and semantic lint use this renderer.
+
+These text prefixes intentionally replace the earlier `aurorac: line N:` form.
+The JSON schema is unchanged, but clients must not depend on embedded location
+prefixes in `message`. The LSP adapter continues converting source byte ranges to
+UTF-16 positions and adds its existing explicit unknown-location marker only
+when the diagnostic has no source span.
 
 ## Coordinates and provenance
 
@@ -90,7 +118,9 @@ c++ -std=c++23 -Wall -Wextra -Wpedantic -Werror -Icompiler tests/compiler/diagno
 python3 -B -O tests/compiler/diagnostics.py build/aurorac /tmp/diagnostics-tests
 ```
 
-The final 2026-10-07 candidate passed a fresh GCC 14.2 `-O2 -Wall -Wextra
+## Historical first-increment evidence
+
+The original 2026-10-07 candidate passed a fresh GCC 14.2 `-O2 -Wall -Wextra
 -Wpedantic -Werror` compiler build, the C++ span/escaping tests and all 27 CLI
 cases in 35.23 seconds. Independent review caught and the correction gate covered
 empty `-o` values, full qualified-expression spans and truncated-expression/type
@@ -114,3 +144,11 @@ programs; the six existing regression suites do exercise their ordinary native
 fixtures. These bounded checks do not replace a full native aggregate or qualify
 kernel behavior, sanitizers or QEMU. [Lossless trivia retention](LEXER.md) now
 builds on this foundation; a formatter and LSP server remain separate work.
+
+## Location-neutral correction — 2026-10-07
+
+The [focused correction results](../docs/diagnostic-location-results.md) record
+fresh CLI, formatter/lint, overlay, module and actual-server checks, the original
+reproduction and emitted-output preservation. Historical identical-stderr claims
+above describe the earlier increment; they do not constrain the corrected text
+rendering or structured message payloads.

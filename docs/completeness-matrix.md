@@ -1,5 +1,16 @@
 # Completeness and acceptance matrix
 
+## Shared diagnostic location correction — 2026-10-07
+
+Compiler and formatter shared source errors now render `path:line:column` with
+severity and diagnostic family. Structured/editor messages retain their explanation
+and import context without redundant embedded line prefixes. Unknown-function
+resolver errors retain their real source token; unlocated errors keep an explicit
+tool fallback. Source ranges and LSP byte-to-UTF-16 conversion are unchanged.
+The [contract](../compiler/DIAGNOSTICS.md#text-and-message-contract) and
+[focused results](diagnostic-location-results.md) describe validation and limits.
+No new language, lint rule, parser recovery, kernel or full aggregate is claimed.
+
 ## Hosted runtime-sized owned-byte checkpoint — 2026-10-07
 
 The [owned-byte contract](../compiler/OWNED-BYTES.md) adds explicit host-granted

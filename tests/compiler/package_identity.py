@@ -809,7 +809,15 @@ class Runner:
                     allow_rejection=True,
                 )
                 require(code == 1, label + " must reject normally with exit 1")
-                require(diagnostic.startswith(b"aurorac: "), label + " needs a compiler diagnostic")
+                require(
+                    re.fullmatch(
+                        rf"(?:{re.escape(str(path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
+                        r"AU(?:1001|200[12]|3001|4001): [^\n]+\n",
+                        diagnostic.decode(errors="strict"),
+                    )
+                    is not None,
+                    label + " needs a compiler diagnostic",
+                )
                 text = diagnostic.decode(errors="replace").lower()
                 require(words in text, label + " wrong rejection: " + text)
                 require("sanitizer" not in text, "sanitizer error is not a semantic rejection")

@@ -83,9 +83,7 @@ int main(int argc, char **argv) {
                 aurora::writeDiagnosticsJson(std::cerr, checked.lintDiagnostics);
             else
                 for (const auto &diagnostic : checked.lintDiagnostics)
-                    std::cerr << diagnostic.span.source->path << ':' << diagnostic.span.begin.line << ':'
-                              << diagnostic.span.begin.column << ": " << aurora::diagnosticSeverity(diagnostic.severity)
-                              << ' ' << aurora::diagnosticCode(diagnostic.code) << ": " << diagnostic.message << '\n';
+                    aurora::writeDiagnosticText(std::cerr, diagnostic, "aurora-fmt");
             return 0;
         }
         std::string contents;
@@ -110,14 +108,13 @@ int main(int argc, char **argv) {
         if (json)
             aurora::writeDiagnosticsJson(std::cerr, {error.diagnostic});
         else
-            std::cerr << "aurora-fmt: " << aurora::diagnosticCode(error.diagnostic.code) << ": " << error.what()
-                      << '\n';
+            aurora::writeDiagnosticText(std::cerr, error.diagnostic, "aurora-fmt");
         return 2;
     } catch (const std::exception &error) {
         if (json)
             aurora::writeDiagnosticsJson(std::cerr, {{aurora::DiagnosticCode::Internal, error.what(), {}}});
         else
-            std::cerr << "aurora-fmt: AU9001: " << error.what() << '\n';
+            aurora::writeDiagnosticText(std::cerr, {aurora::DiagnosticCode::Internal, error.what(), {}}, "aurora-fmt");
         return 2;
     }
 }

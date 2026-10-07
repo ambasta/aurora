@@ -194,6 +194,7 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-test-") as directory:
     first = by_uri(stages[0], source)
     require(first["version"] == 1 and len(first["diagnostics"]) == 1, "open publishes one versioned first error")
     require(first["diagnostics"][0]["code"] == "AU1001", "compiler diagnostic code")
+    require(first["diagnostics"][0]["message"] == "unsupported character", "location-neutral lexical message")
     require(
         first["diagnostics"][0]["range"] == {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 1}},
         "compiler range converted to LSP",
@@ -248,12 +249,46 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-test-") as directory:
     ]:
         stages, _ = phases([opened(source, text)])
         require(by_uri(stages[0], source)["diagnostics"][0]["range"] == expected, "Unicode/CRLF/EOF source range")
+    require(
+        by_uri(stages[0], source)["diagnostics"][0]["message"] == "expected ';' (found '<eof>')",
+        "location-neutral parser message",
+    )
     stages, _ = phases([opened(source, "module demo; auto answer() -> i64 { return true; }")])
     require(by_uri(stages[0], source)["diagnostics"][0]["code"] == "AU3001", "semantic diagnostics use shared checker")
+
+    require(
+        by_uri(stages[0], source)["diagnostics"][0]["message"] == "expected i64, got bool",
+        "location-neutral semantic message",
+    )
+    stages, _ = phases([opened(source, "module demo;\n\nauto answer() -> i64 {\n    return missing();\n}\n")])
+    resolver_error = by_uri(stages[0], source)["diagnostics"][0]
+    require(
+        resolver_error["code"] == "AU4001"
+        and resolver_error["message"] == "unknown function 'missing' in defining module demo"
+        and resolver_error["range"] == {"start": {"line": 3, "character": 11}, "end": {"line": 3, "character": 18}},
+        "resolver publishes its real UTF-16 token range without embedded coordinates",
+    )
 
     imported = root / "dep.au"
     imported.write_text(DEP_GOOD)
     caller = "module demo; import dep; auto answer() -> i64 { return 42; }"
+    for imported_text, code, message in (
+        ("export module dep;\nauto broken() -> i64 { return 0 }", "AU2001", "module dep: expected ';' (found '}')"),
+        ("export module dep;\nauto broken() -> i64 { return true; }", "AU3001", "expected i64, got bool"),
+        (
+            "export module dep;\nauto broken() -> i64 { return missing(); }",
+            "AU4001",
+            "unknown function 'missing' in defining module dep",
+        ),
+    ):
+        imported.write_text(imported_text)
+        stages, _ = phases([opened(source, caller)], [root])
+        failure = by_uri(stages[0], imported)["diagnostics"][0]
+        require(
+            failure["code"] == code and failure["message"] == message and failure["range"]["start"]["line"] == 1,
+            "imported parser/semantic/resolver message and original URI/range",
+        )
+    imported.write_text(DEP_GOOD)
     stages, _ = phases([opened(source, caller)])
     missing_root = by_uri(stages[0], source)["diagnostics"][0]
     require(
@@ -273,6 +308,11 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-test-") as directory:
     require(not by_uri(stages[0], source)["diagnostics"], "explicit root import succeeds")
     require(len(by_uri(stages[1], imported)["diagnostics"]) == 1, "imported errors publish once on actual source URI")
     require(by_uri(stages[1], imported)["version"] == 1, "imported overlay version is preserved")
+    require(
+        by_uri(stages[1], imported)["diagnostics"][0]["message"]
+        in ("unsupported character", "module dep: unsupported character"),
+        "imported error preserves context without embedded coordinates",
+    )
     require(not by_uri(stages[2], imported)["diagnostics"], "import fix clears all root projections")
     require(
         not by_uri(stages[4], imported)["diagnostics"] and "version" not in by_uri(stages[4], imported),

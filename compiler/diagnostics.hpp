@@ -75,6 +75,7 @@ inline std::string_view diagnosticSeverity(DiagnosticSeverity severity) {
 class Diagnostic {
 public:
     DiagnosticCode code = DiagnosticCode::Unclassified;
+    // Locations belong to span; message contains only the explanation and semantic context.
     std::string message;
     SourceSpan span;
     DiagnosticSeverity severity = DiagnosticSeverity::Error;
@@ -101,6 +102,17 @@ public:
         return Error(std::move(result));
     }
 };
+inline void writeDiagnosticText(std::ostream &out, const Diagnostic &diagnostic, std::string_view tool) {
+    if (diagnostic.span.source) {
+        const auto &path = diagnostic.span.source->path;
+        out << (path.empty() ? "<source>" : path) << ':' << diagnostic.span.begin.line << ':'
+            << diagnostic.span.begin.column;
+    } else {
+        out << tool;
+    }
+    out << ": " << diagnosticSeverity(diagnostic.severity) << ' ' << diagnosticCode(diagnostic.code) << ": "
+        << diagnostic.message << '\n';
+}
 inline void writeJsonString(std::ostream &out, std::string_view value) {
     constexpr char hex[] = "0123456789abcdef";
     out << '\"';
