@@ -1,5 +1,22 @@
 # Completeness and acceptance matrix
 
+## Call-scoped readonly sector-window candidate — 2026-10-07
+
+One `storage::read_sector_window` function copies a requested sector from a
+1–8-sector readonly span into the existing owned `SectorReadResult`. Length,
+signed request, below-base and relative-index checks precede address arithmetic
+and copying; no base-plus-count addition is used. The only added device outcome
+is `SectorIoStatus::invalid_source`, masked by existing result and XFS consumers.
+The [contract](sector-window-contract.md) defines ownership, error order and
+boundary/copy/rejection coverage. Independent source review accepted the candidate;
+110 new native cases/nine rejections passed in normal and optimized Python,
+with changed device/XFS consumers and the owned-sector dependency. All four
+selected Meson runners and complete readonly-span/window dependency runners passed.
+All 706 frozen source hashes and reused compiler bytes held through exit zero.
+Independent terminal evidence review accepted these focused results. No retained view, new
+backend, full-device geometry, compiler change, filesystem mount or persistence
+is claimed.
+
 ## Storage consolidation candidate — 2026-10-07
 
 One owned `std::BinaryBuffer64` record representation replaces the writer/block

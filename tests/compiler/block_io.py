@@ -338,7 +338,7 @@ def failure_cases():
         42,
         imports=IMPORTS,
     )
-    for status in ("out_of_range", "read_only"):
+    for status in ("out_of_range", "read_only", "invalid_source"):
         yield Case(
             f"public {status} report masks every nonzero payload byte",
             make_sector("input", INITIAL)

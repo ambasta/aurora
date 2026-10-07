@@ -1,0 +1,38 @@
+export module storage.sector_window;
+import std.binary;
+import std.binary_buffer;
+import storage.sector;
+import storage.block_io;
+
+export namespace storage {
+    auto read_sector_window(builtin::span<const u8> bytes, u64 base_lba, i64 requested_lba) -> SectorReadResult {
+        Sector512 sector = Sector512();
+        const i64 length = bytes.size();
+        if (length == 0 || length > 4096 || length % 512 != 0) {
+            const SectorReadResult failure = SectorReadResult(SectorIoStatus::invalid_source, sector);
+            return failure;
+        }
+        if (requested_lba < 0) {
+            const SectorReadResult failure = SectorReadResult(SectorIoStatus::out_of_range, sector);
+            return failure;
+        }
+        const u64 requested = u64(requested_lba);
+        if (requested < base_lba) {
+            const SectorReadResult failure = SectorReadResult(SectorIoStatus::out_of_range, sector);
+            return failure;
+        }
+        const u64 relative = requested - base_lba;
+        if (relative >= u64(length / 512)) {
+            const SectorReadResult failure = SectorReadResult(SectorIoStatus::out_of_range, sector);
+            return failure;
+        }
+        const i64 start = i64(relative) * 512;
+        i64 offset = 0;
+        while (offset < 512) {
+            sector.write_byte(offset, bytes.at(start + offset));
+            offset = offset + 1;
+        }
+        const SectorReadResult result = SectorReadResult(SectorIoStatus::success, sector);
+        return result;
+    }
+}

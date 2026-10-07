@@ -81,39 +81,14 @@ successful header check does not establish mountability or readonly filesystem
 safety. CRC is not authentication. No kernel, physical device, sanitizer or full
 native aggregate qualification follows from focused hosted execution.
 
-## Next dependency: a scoped multi-sector window
+## Separate dependency: a scoped multi-sector window
 
-A complete source handle is not implemented by `storage.block_io`. However,
-local builtin arrays already support up to 4096 bytes, and readonly spans may be
-passed to functions without being stored or returned. A separate library step
-can therefore copy one 512-byte sector from a call-scoped 1–8-sector window,
-without increasing class/value limits or adding heap storage.
-
-The proposed operation takes `(bytes, base_lba, requested_lba)`: a readonly byte
-span, a u64 base LBA and an exact i64 requested absolute LBA. Proposed rules:
-
-- Reject an empty, non-512-multiple or greater-than-4096-byte span with a distinct
-  `invalid_source` status before evaluating any index arithmetic. Extend the
-  closed I/O status domain deliberately and test existing error masking.
-- Reject negative requested LBAs before conversion. For nonnegative values,
-  compare `u64(requested_lba)` against `base_lba`, then subtract only if it is at
-  least the base. Compare this relative sector index against `bytes.size()/512`.
-- Multiply only an admitted relative index by 512. Its maximum is seven, so the
-  byte offset fits i64. Add individual byte indices only within the admitted
-  sector. Do not calculate `base_lba + count`, which could overflow.
-- Return a complete copied `SectorReadResult`; no input span or slice survives
-  the call. Report window capacity separately from full-device capacity. Missing
-  windows must never be silently represented as zero-filled disk data.
-
-The current language already returns a copied `SectorReadResult` from methods
-and accepts call-scoped spans in free functions; composing these is the concrete
-next acceptance gate. A window whose base is above signed-i64 maximum simply has
-no addressable request in this API. No negative value may wrap to reach it.
-Required tests include lengths 1/511/512/513/4096, every admitted sector, first and
-last bytes, signed endpoints, bases near u64 maximum, unchanged source bytes and
-mutation after a retained read. An endpoint-empty `subspan` is already supported
-by readonly windows and must execute the empty-source rejection; no private ABI
-forging is needed.
+The proposed readonly window is now implemented as a separate focused candidate
+on the consolidated API. Its [contract](sector-window-contract.md) defines the
+single free function, length/address error order, signed-request limits,
+independent owned result and boundary/copy tests. It provides window bytes, not
+a full-device handle or source-capacity provenance. Its verification is separate
+from the historical XFS consumer results below.
 
 A complete small-file read also needs genuine child-inode and file-data fixtures,
 a checked inode-to-sector request plan, v3 regular-file validation and the

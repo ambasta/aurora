@@ -23,6 +23,7 @@ foreach entry : [
     ['binary-buffer', 'compiler/binary_buffer.py', 'bytes'],
     ['owned-sector', 'compiler/sector.py', 'bytes'],
     ['block-io', 'compiler/block_io.py', 'bytes'],
+    ['sector-window', 'compiler/sector_window.py', 'bytes'],
     ['xfs-sector', 'compiler/xfs_sector.py', 'bytes'],
     ['packed-values', 'compiler/packed_values.py', 'bytes'],
     ['sector-values', 'compiler/sector_values.py', 'bytes'],

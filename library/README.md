@@ -408,6 +408,15 @@ leak-clean result is claimed.
 This adds no parser integration, numeric validation, strings, heap or native
 self-hosting compiler and does not change any kernel qualification.
 
+## Call-scoped readonly sector windows
+
+`storage.sector_window` supplies `read_sector_window(bytes, base_lba, requested_lba)`.
+It reads one owned `SectorReadResult` from a checked readonly 1–8-sector window,
+using the same `Sector512` and `SectorIoStatus` as RAM I/O. The span is never
+retained. Invalid length precedes invalid address; failed results expose zero
+bytes. A window is not a full-device capacity claim. See the
+[contract and focused acceptance gate](../docs/sector-window-contract.md).
+
 ## XFS headers over copied sector I/O
 
 `fs.xfs_sector` preserves failed read statuses, parses successfully copied sector
@@ -418,5 +427,5 @@ failure. A real preserved header in the one-sector RAM backend is correctly too
 large; success tests use explicitly constructed geometry values.
 
 The [contract](../docs/xfs-sector-contract.md) records error precedence, provenance
-limits and the next scoped multi-sector-window dependency. This is hosted header
+limits and the separate scoped multi-sector-window contract. This is hosted header
 inspection, not a mount, file-data reader or complete device implementation.

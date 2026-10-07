@@ -12,8 +12,14 @@ from unsigned_oracle import Case, NativeRunner, Rejection, require
 
 
 IMPORTS = (
-    "std.binary", "std.binary_buffer", "storage.sector", "storage.block_io", "storage.ram_sector",
-    "fs.xfs_probe", "fs.xfs_geometry", "fs.xfs_sector",
+    "std.binary",
+    "std.binary_buffer",
+    "storage.sector",
+    "storage.block_io",
+    "storage.ram_sector",
+    "fs.xfs_probe",
+    "fs.xfs_geometry",
+    "fs.xfs_sector",
 )
 MAXIMUM = (1 << 64) - 1
 
@@ -91,12 +97,14 @@ def cases(real):
     required = int.from_bytes(real[8:16], "big") * int.from_bytes(real[4:8], "big") // 512
     require(required == 1048576, "preserved image capacity anchor")
     for writable in (False, True):
-        yield native_case(f"actual one-sector backend, writable={writable}", real, 1,
-                          writable=writable, actual_geometry=True)
+        yield native_case(
+            f"actual one-sector backend, writable={writable}", real, 1, writable=writable, actual_geometry=True
+        )
         for count in (0, 1, required - 1, required, required + 1, 1 << 63, MAXIMUM):
-            yield native_case(f"constructed source capacity {count}, writable={writable}", real, count,
-                              writable=writable)
-    for io in ("out_of_range", "read_only"):
+            yield native_case(
+                f"constructed source capacity {count}, writable={writable}", real, count, writable=writable
+            )
+    for io in ("out_of_range", "read_only", "invalid_source"):
         for count in (0, required, MAXIMUM):
             yield native_case(f"read failure before parsing/capacity {io}/{count}", real, count, io)
     # Cover each validator status/issue through the copied-sector boundary.
@@ -112,8 +120,7 @@ def cases(real):
         yield native_case("metadata gate: " + header.name, header.data, 0)
         if header.expected.status != "header_geometry_consistent":
             yield native_case("metadata before large capacity: " + header.name, header.data, MAXIMUM)
-    large = [header for header in headers
-             if header.name == "data representability edge 4503599627370495"]
+    large = [header for header in headers if header.name == "data representability edge 4503599627370495"]
     require(len(large) == 1 and large[0].expected.status == "header_geometry_consistent", "large header anchor")
     large_required = large[0].expected.facts[geometry.FACTS.index("claimed_data_sectors")]
     require(large_required == 36028797018963960, "large capacity anchor")
@@ -135,7 +142,7 @@ def cases(real):
 
 def report_cases(real, label):
     for status in ("read_failed", "geometry_rejected", "source_too_small", "header_fits_source"):
-        for io in ("success", "out_of_range", "read_only"):
+        for io in ("success", "out_of_range", "read_only", "invalid_source"):
             body = geometry.array("bytes", real)
             body += """
                 const fs::XfsGeometryReport header = fs::inspect_xfs_v5_512_geometry(borrow_bytes(bytes));
@@ -183,7 +190,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="aurora-xfs-sector-") as temporary:
         runner = NativeRunner(Path(temporary), compiler, 15)
         for start in range(0, len(corpus), 2):
-            runner.cases(corpus[start:start + 2])
+            runner.cases(corpus[start : start + 2])
         for case in rejected:
             runner.rejection(case)
     print(f"PASS XFS sector: {len(corpus)} native cases, {len(rejected)} rejections", flush=True)
