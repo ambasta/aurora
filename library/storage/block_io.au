@@ -1,0 +1,48 @@
+export module storage.block_io;
+import storage.block;
+import storage.sector;
+
+export namespace storage {
+    enum class SectorIoStatus { success, out_of_range, read_only };
+    enum class SectorFlushMode { visibility, durable };
+    enum class SectorFlushStatus { volatile_complete, unsupported };
+
+    class SectorGeometry {
+        u64 count;
+        bool writable;
+    public:
+        SectorGeometry(u64 sector_count, bool can_write) : count(sector_count), writable(can_write) {}
+
+        auto sector_size_bytes() const -> u64 {
+            return 512u64;
+        }
+
+        auto sector_count() const -> u64 {
+            return count;
+        }
+
+        auto can_write() const -> bool {
+            return writable;
+        }
+    };
+
+    class SectorReadResult {
+        SectorIoStatus outcome;
+        Sector512 payload;
+    public:
+        SectorReadResult(SectorIoStatus status, Sector512 sector) : outcome(status), payload(sector) {}
+
+        auto status() const -> SectorIoStatus {
+            return outcome;
+        }
+
+        auto sector_or_zero() const -> Sector512 {
+            if (outcome == SectorIoStatus::success) {
+                const Sector512 result = payload;
+                return result;
+            }
+            const Sector512 zero = Sector512();
+            return zero;
+        }
+    };
+}

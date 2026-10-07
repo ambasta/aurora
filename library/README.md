@@ -164,6 +164,23 @@ admission claim. All 43 native cases, nine rejections and the example passed in
 normal and optimized Python modes, together with the existing dependencies;
 see the [focused results](../docs/sector-contract.md#focused-results--2026-10-07).
 
+## Checked sector I/O
+
+`storage.block_io` and `storage.ram_sector` supply copied geometry and full-sector
+read reports, plus a one-sector `RamSectorDevice`. Checked writes return explicit
+range/readonly errors without modifying data. A one-way readonly operation and
+independent device clones keep state explicit. Visibility flush is volatile;
+requested durable flush returns `unsupported` and never changes bytes.
+
+The [contract](../docs/block-io-contract.md) and
+[metadata round trip](examples/ram_sector_record.au) reuse the existing 512-byte
+sector, record writer and readers. This bounded hosted implementation fits the
+existing 520-byte copied-value limit without compiler changes. All 38 native
+cases, 13 rejections and the example passed in normal and optimized Python modes,
+plus six dependency runners. Independent final source and evidence review
+accepted this focused scope; no
+real disk, mount, durability or kernel admission is claimed.
+
 ## Volatile RAM record blocks
 
 `storage.block` and `storage.ram_blocks` supply owned 64-byte `Block64` values,

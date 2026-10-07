@@ -1,5 +1,19 @@
 # Completeness and acceptance matrix
 
+## Checked one-sector I/O candidate — 2026-10-07
+
+A concrete sector-I/O contract adds geometry, copied full-sector reports,
+range/readonly write errors and explicit volatile/unsupported flush outcomes.
+The one-sector `RamSectorDevice` fits current copied-value caps with private
+byte storage and a one-way readonly flag. All 38 native cases, 13 rejections and
+a public-I/O metadata round trip passed in normal and optimized Python modes,
+plus six complete dependency runners. Independent final source and evidence
+review accepted this focused scope. The [contract](block-io-contract.md)
+distinguishes snapshot clones from
+shared handles and records the nested-value mutation limitation and corrected
+initial import-admission failure. No compiler,
+real device, durable storage, filesystem mount or kernel claim is added.
+
 ## Owned sector library candidate — 2026-10-07
 
 `storage::Sector512` owns a zeroed 512-byte array and exposes checked byte access
