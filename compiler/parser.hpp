@@ -225,6 +225,10 @@ class Parser {
                 need(">");
                 return Type::ByteSpan;
             }
+            if (eat("ByteRegion"))
+                return Type::ByteRegion;
+            if (eat("OwnedBytes"))
+                return Type::OwnedBytes;
             need("array");
             t.text = "array";
         }
@@ -501,8 +505,8 @@ class Parser {
                 parameter.name = ident().text;
                 // Nominal names are unresolved here; module resolution permits
                 // enum method arguments and class constructor/function arguments.
-                if (!scalarOrParameter(parameter.type) && !parameter.type.isClass() &&
-                    !parameter.type.isSpan())
+                if (!scalarOrParameter(parameter.type) && !parameter.type.isClass() && !parameter.type.isSpan() &&
+                    !(allowClass && parameter.type.isResource()))
                     fail(allowClass
                              ? "only scalar function parameters or scalar-field class values are "
                                "supported"
@@ -707,7 +711,7 @@ class Parser {
             parameters(function, true);
             need("->");
             function.result = type();
-            if (!scalarOrParameter(function.result) && !function.result.isClass())
+            if (!scalarOrParameter(function.result) && !function.result.isClass() && !function.result.isBytes())
                 fail("only scalar function results or scalar-field class values are supported");
             function.body = block();
             if (declaredParameters.empty())

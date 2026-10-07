@@ -73,3 +73,13 @@ parent aggregate/selected UEFI integration passed; see
 [M021 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-021/README.md). This advances reusable core value
 operations only. Heap ownership, returned references, generic recursion, complete
 text/collections, native runtime and self-hosting still need the gates above.
+
+## Initial owned-byte prerequisite candidate
+
+The [compiler contract](../compiler/OWNED-BYTES.md) introduces one fixed-length
+runtime allocation resource with explicit region/quota authority, copied checked
+byte access, move-only transfer and intrinsic normal-scope cleanup. Its trusted
+single-thread hosted adapter is bootstrap machinery. The [focused composite](owned-bytes-results.md)
+passed with explicit sanitizer and fail-stop limits; resize, borrowed views,
+strings/collections, native startup and kernel allocator integration remain
+separate prerequisites.

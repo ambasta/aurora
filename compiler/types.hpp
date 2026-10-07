@@ -16,7 +16,22 @@ class Token {
         : text(std::move(t)), line(location.begin.line), span(std::move(location)) {}
 };
 // Append new kinds so existing IR and template identity ordinals remain stable.
-enum class TypeKind { I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter, Enum, U8, ByteSpan };
+enum class TypeKind {
+    I64,
+    Bool,
+    Own,
+    Ref,
+    MutRef,
+    Class,
+    Array,
+    U64,
+    Parameter,
+    Enum,
+    U8,
+    ByteSpan,
+    ByteRegion,
+    OwnedBytes
+};
 enum class TemplateArgumentKind { Type, Value };
 inline constexpr int maximumTemplateNesting = 4;
 class TemplateArgument {
@@ -76,6 +91,15 @@ class Type {
     bool isEnum() const { return kind == TypeKind::Enum; }
     bool isArray() const { return kind == TypeKind::Array; }
     bool isSpan() const { return kind == TypeKind::ByteSpan; }
+    bool isRegion() const {
+        return kind == TypeKind::ByteRegion;
+    }
+    bool isBytes() const {
+        return kind == TypeKind::OwnedBytes;
+    }
+    bool isResource() const {
+        return isRegion() || isBytes();
+    }
     static Type enumeration(std::string name) {
         Type type(TypeKind::Enum);
         type.className = std::move(name);
@@ -87,7 +111,7 @@ class Type {
         type.length = count;
         return type;
     }
-    static const Type I64, U64, U8, Bool, Own, Ref, MutRef, ByteSpan;
+    static const Type I64, U64, U8, Bool, Own, Ref, MutRef, ByteSpan, ByteRegion, OwnedBytes;
 };
 inline const Type Type::I64{TypeKind::I64};
 inline const Type Type::U64{TypeKind::U64};
@@ -97,6 +121,8 @@ inline const Type Type::Own{TypeKind::Own};
 inline const Type Type::Ref{TypeKind::Ref};
 inline const Type Type::MutRef{TypeKind::MutRef};
 inline const Type Type::ByteSpan{TypeKind::ByteSpan};
+inline const Type Type::ByteRegion{TypeKind::ByteRegion};
+inline const Type Type::OwnedBytes{TypeKind::OwnedBytes};
 inline std::string typeName(const Type &type) {
     switch (type.kind) {
     case TypeKind::I64:
@@ -115,6 +141,10 @@ inline std::string typeName(const Type &type) {
         return "mutref<i64>";
     case TypeKind::ByteSpan:
         return "builtin::span<const u8>";
+    case TypeKind::ByteRegion:
+        return "builtin::ByteRegion";
+    case TypeKind::OwnedBytes:
+        return "builtin::OwnedBytes";
     case TypeKind::Parameter:
         return type.className;
     case TypeKind::Enum:

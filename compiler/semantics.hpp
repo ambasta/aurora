@@ -16,6 +16,7 @@ class Local {
     int offset = 0, owner = -1, shared = 0;
     int spanOrigin = -1;
     bool mut = false, live = true, exclusive = false;
+    bool resourceActive = false;
 };
 class SemanticAnalyzer {
     std::vector<Function> sourceFunctions;
@@ -176,6 +177,8 @@ class SemanticAnalyzer {
     std::int64_t reflectedValue(ExpressionPtr expression) {
         if (expression->reflectedType.isSpan())
             fail(expression->token, "span capabilities are unavailable to reflection");
+        if (expression->reflectedType.isResource())
+            fail(expression->token, "resource capabilities are unavailable to reflection");
         if (expression->token.text == "type_id")
             return typeId(expression->reflectedType, expression->token);
         if (expression->token.text == "field_count")
@@ -241,15 +244,22 @@ class SemanticAnalyzer {
         l.name = n;
         l.type = t;
         l.mut = mut;
-        const auto needed = t.isSpan() ? 2
-                            : (t.isClass() || t.isArray())
-                                ? ir::roundedStorage(static_cast<int>(typeSize(t, tok))) / 8
-                                : 1;
+        const auto needed = t.isBytes()                    ? 4
+                            : t.isSpan()                   ? 2
+                            : (t.isClass() || t.isArray()) ? ir::roundedStorage(static_cast<int>(typeSize(t, tok))) / 8
+                                                           : 1;
         if (needed > maxFrameSlots || slot > maxFrameSlots - needed)
             fail(tok, "function local stack frame exceeds 65536 bytes");
         slot += static_cast<int>(needed);
         l.offset = 8 * slot;
-        if (t.isSpan()) {
+        if (t.isRegion()) {
+            lowered.regionSlots.insert(l.offset);
+        } else if (t.isBytes()) {
+            lowered.byteSlots[l.offset] = mut;
+            l.resourceActive = true;
+            if (begin)
+                emit(ir::BeginBytes{l.offset});
+        } else if (t.isSpan()) {
             lowered.spanSlots.insert(l.offset);
         } else if (t.isClass()) {
             lowered.objectSlots[l.offset] = ir::ObjectSlot{t.className, mut};
@@ -344,6 +354,94 @@ class SemanticAnalyzer {
         for (std::size_t index = locals.size(); index > 0; --index)
             if (locals[index - 1].live && byteArray(locals[index - 1].type))
                 emit(ir::EndArray{locals[index - 1].offset});
+    }
+    int movedBytes(ExpressionPtr value) {
+        if (value->op != "call" || value->token.text != "move")
+            fail(value->token, "owned byte transfer requires move(named_local)");
+        arity(value, 1);
+        const int local = source(value->args[0]);
+        match(locals[local].type, Type::OwnedBytes, value->token);
+        if (!locals[local].mut)
+            fail(value->token, "cannot move a const byte owner");
+        return local;
+    }
+    void endReturnBytes(int returned = -1) {
+        for (std::size_t index = locals.size(); index > 0; --index) {
+            const int local = static_cast<int>(index - 1);
+            if (local != returned && locals[local].resourceActive)
+                emit(ir::EndBytes{offset(local)});
+        }
+    }
+    Type callResource(ExpressionPtr value, const Function &callee, const StatementPtr &binding) {
+        if (callee.result.isBytes() && !binding)
+            fail(value->token, "owned byte result requires a typed local initializer");
+        if (binding)
+            match(callee.result, binding->type, value->token);
+        arity(value, callee.params.size());
+        const int region = source(value->args[0]);
+        match(locals[region].type, Type::ByteRegion, value->token);
+        std::vector<int> arguments(callee.params.size(), 0), staged;
+        for (std::size_t index = 1; index < callee.params.size(); ++index) {
+            const auto &argument = value->args[index];
+            if (callee.params[index].type.isBytes()) {
+                const int original = movedBytes(argument);
+                if (locals[original].owner != region)
+                    fail(argument->token, "byte owner belongs to a different region");
+                const int temporary = add("", Type::OwnedBytes, true, argument->token, false);
+                emit(ir::MoveBytes{offset(original), offset(temporary)});
+                locals[temporary].owner = region;
+                locals[original].live = false;
+                arguments[index] = offset(temporary);
+                staged.push_back(temporary);
+            } else {
+                match(expression(argument), callee.params[index].type, argument->token);
+                push();
+            }
+        }
+        int destination = 0;
+        if (binding) {
+            const int local = add(binding->name, binding->type, binding->mutableValue, binding->token);
+            locals[local].owner = region;
+            destination = offset(local);
+        }
+        emit(ir::ResourceCall{callee.name, offset(region), arguments, destination});
+        for (auto it = staged.rbegin(); it != staged.rend(); ++it) {
+            emit(ir::EndBytes{offset(*it)});
+            locals[*it].live = locals[*it].resourceActive = false;
+        }
+        return callee.result;
+    }
+    void initializeBytes(StatementPtr binding) {
+        const auto value = binding->expr;
+        if (value->op == "call" && value->token.text == "move") {
+            const int original = movedBytes(value);
+            const int local = add(binding->name, binding->type, binding->mutableValue, binding->token);
+            emit(ir::MoveBytes{offset(original), offset(local)});
+            locals[local].owner = locals[original].owner;
+            locals[original].live = false;
+            return;
+        }
+        if (value->op == "method_call" && value->token.text == "try_allocate") {
+            arity(value, 2);
+            const int region = source(value->args[0]);
+            match(locals[region].type, Type::ByteRegion, value->token);
+            match(expression(value->args[1]), Type::I64, value->token);
+            const int local = add(binding->name, binding->type, binding->mutableValue, binding->token);
+            locals[local].owner = region;
+            emit(ir::AllocateBytes{offset(region), offset(local)});
+            return;
+        }
+        if (value->op == "call" && value->overloadCandidates.empty()) {
+            const auto found = functions.find(value->resolvedName.empty() ? value->token.text : value->resolvedName);
+            if (found != functions.end()) {
+                const auto &callee = sourceFunctions[found->second];
+                if (!callee.params.empty() && callee.params[0].type.isRegion()) {
+                    callResource(value, callee, binding);
+                    return;
+                }
+            }
+        }
+        fail(value->token, "owned bytes require region.try_allocate, move or an owned-result function call");
     }
     class IndexedStorage {
       public:
@@ -448,6 +546,41 @@ class SemanticAnalyzer {
                 receiverFieldIndex = member->index;
             }
         }
+        if (type.isBytes()) {
+            if (resultBinding || implicit)
+                fail(value->token, "byte operation requires a named owner");
+            const auto &name = value->token.text;
+            if (name == "ok" || name == "size") {
+                arity(value, 1);
+                if (name == "ok") {
+                    emit(ir::BytesOk{offset(receiver)});
+                    return Type::Bool;
+                }
+                emit(ir::BytesLength{offset(receiver)});
+                return Type::I64;
+            }
+            if (name == "at" || name == "set") {
+                arity(value, name == "at" ? 2 : 3);
+                if (name == "set" && !mutableReceiver)
+                    fail(value->token, "cannot write a const byte owner");
+                match(expression(value->args[1]), Type::I64, value->token);
+                if (name == "set") {
+                    push();
+                    match(expression(value->args[2]), Type::U8, value->token);
+                }
+                // Scalar operand expressions may themselves consume this owner.
+                source(value->args[0]);
+                if (name == "at") {
+                    emit(ir::BytesLoad{offset(receiver)});
+                    return Type::U8;
+                }
+                emit(ir::BytesStore{offset(receiver)});
+                return Type::Bool;
+            }
+            fail(value->token, "unknown owned byte operation");
+        }
+        if (type.isRegion())
+            fail(value->token, "region allocation requires an OwnedBytes local initializer");
         if (type.isSpan()) {
             if (resultBinding || implicit)
                 fail(value->token, "span operation requires a named live span");
@@ -515,6 +648,8 @@ class SemanticAnalyzer {
     }
     Type callFunction(ExpressionPtr expression, const Function &callee,
                       const StatementPtr &resultBinding = nullptr) {
+        if (!callee.params.empty() && callee.params[0].type.isRegion())
+            return callResource(expression, callee, resultBinding);
         if (callee.result.isClass() && !resultBinding)
             fail(expression->token, "class-returning call requires a typed local initializer");
         if (resultBinding)
@@ -788,6 +923,8 @@ class SemanticAnalyzer {
                         locals[index].spanOrigin != before[index].spanOrigin ||
                         locals[index].owner != before[index].owner)
                         fail(e->token, "logical paths must preserve the same borrow state");
+                    if (locals[index].type.isBytes() && locals[index].live != before[index].live)
+                        fail(e->token, "logical paths must preserve exact byte ownership state");
                     locals[index].live = locals[index].live && before[index].live;
                 }
                 emit(ir::Label{end});
@@ -967,6 +1104,12 @@ class SemanticAnalyzer {
         std::sort(leaving.rbegin(), leaving.rend());
         for (int local : leaving) {
             auto &l = locals[local];
+            if (l.type.isBytes()) {
+                if (!terminal)
+                    emit(ir::EndBytes{l.offset});
+                l.live = l.resourceActive = false;
+                continue;
+            }
             if (l.type.isSpan()) {
                 releaseSpan(local, !terminal);
                 continue;
@@ -1141,16 +1284,23 @@ class SemanticAnalyzer {
     }
     bool statement(StatementPtr s) {
         if (s->kind == "return") {
-            if (result.isClass()) {
+            if (result.isBytes()) {
+                const int local = movedBytes(s->expr);
+                endReturnBorrows();
+                endReturnBytes(local);
+                emit(ir::ReturnBytes{offset(local)});
+            } else if (result.isClass()) {
                 if (s->expr->op != "name")
                     fail(s->token, "class return requires a complete local name");
                 const int local = source(s->expr);
                 match(locals[local].type, result, s->token);
                 endReturnBorrows();
+                endReturnBytes();
                 emit(ir::ReturnObject{offset(local)});
             } else {
                 match(expression(s->expr), result, s->token);
                 endReturnBorrows();
+                endReturnBytes();
                 emit(ir::Return{});
             }
             return true;
@@ -1169,6 +1319,12 @@ class SemanticAnalyzer {
             return false;
         }
         if (s->kind == "let") {
+            if (s->type.isRegion())
+                fail(s->token, "region authority is available only as the first function parameter");
+            if (s->type.isBytes()) {
+                initializeBytes(s);
+                return false;
+            }
             if (s->type.isSpan()) {
                 if (s->mutableValue)
                     fail(s->token, "span bindings must be const and cannot be rebound");
@@ -1252,6 +1408,9 @@ class SemanticAnalyzer {
             const auto incoming = locals;
             emit(ir::Label{start});
             match(expression(s->expr), Type::Bool, s->token);
+            for (std::size_t index = 0; index < incoming.size(); ++index)
+                if (locals[index].type.isBytes() && locals[index].live != incoming[index].live)
+                    fail(s->token, "loop conditions cannot transfer an outer byte owner");
             emit(ir::BranchFalse{done});
             const bool alwaysReturns = block(s->body);
             if (!alwaysReturns) {
@@ -1334,6 +1493,8 @@ class SemanticAnalyzer {
                         locals[i].spanOrigin != yes[i].spanOrigin ||
                         locals[i].owner != yes[i].owner)
                         fail(s->token, "continuing branches must preserve the same borrow state");
+                    if (locals[i].type.isBytes() && locals[i].live != yes[i].live)
+                        fail(s->token, "continuing branches must preserve exact byte ownership state");
                     locals[i].live = locals[i].live && yes[i].live;
                 }
             }
@@ -1421,6 +1582,24 @@ class SemanticAnalyzer {
                 fail(sourceFunctions[i].token, "duplicate or reserved function name");
             if (sourceFunctions[i].params.size() > 6)
                 fail(sourceFunctions[i].token, "at most six parameters supported");
+            const auto &candidate = sourceFunctions[i];
+            const bool resource =
+                candidate.result.isResource() ||
+                std::any_of(candidate.params.begin(), candidate.params.end(), [](const Param &parameter) {
+                    return parameter.type.isResource();
+                });
+            if (resource) {
+                if (!candidate.receiverClass.empty() || !candidate.templateArguments.empty() ||
+                    !candidate.templateParameters.empty() || candidate.params.empty() ||
+                    !candidate.params[0].type.isRegion() ||
+                    (!scalarValue(candidate.result) && !candidate.result.isBytes()))
+                    fail(candidate.token,
+                         "resource functions require one first region parameter "
+                         "and scalar or owned result");
+                for (std::size_t index = 1; index < candidate.params.size(); ++index)
+                    if (!scalarValue(candidate.params[index].type) && !candidate.params[index].type.isBytes())
+                        fail(candidate.token, "resource function arguments require scalar values or moved byte owners");
+            }
             if (!sourceFunctions[i].receiverClass.empty()) {
                 if (!scalarValue(sourceFunctions[i].result) && !sourceFunctions[i].result.isClass())
                     fail(sourceFunctions[i].token, "methods require scalar, enum or class results");
@@ -1476,9 +1655,18 @@ class SemanticAnalyzer {
                 lowered.parameters.push_back(parameter.type);
             for (std::size_t index = 0; index < function.params.size(); ++index) {
                 const auto &parameter = function.params[index];
-                const int local = add(parameter.name, parameter.type, false, function.token, true,
-                                      !parameter.type.isClass());
-                if (parameter.type.isSpan())
+                const int local = add(parameter.name,
+                                      parameter.type,
+                                      parameter.type.isBytes(),
+                                      function.token,
+                                      true,
+                                      !parameter.type.isClass() && !parameter.type.isBytes());
+                if (parameter.type.isRegion())
+                    emit(ir::BindRegionParameter{static_cast<int>(index), offset(local)});
+                else if (parameter.type.isBytes()) {
+                    locals[local].owner = 0;
+                    emit(ir::BindBytesParameter{static_cast<int>(index), offset(local)});
+                } else if (parameter.type.isSpan())
                     emit(ir::BindSpanParameter{static_cast<int>(index), offset(local)});
                 else if (parameter.type.isClass())
                     emit(ir::BindObjectParameter{static_cast<int>(index), offset(local),
