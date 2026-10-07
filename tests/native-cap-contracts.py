@@ -2,6 +2,8 @@
 """Check resource configuration through the real entrypoints, without native work."""
 from pathlib import Path
 import argparse
+from collections import Counter
+import os
 import hashlib
 import importlib.util
 import json
@@ -63,6 +65,7 @@ def accounting(module, native):
                                 rglob=lambda _pattern: [])
     runner = object.__new__(module.Runner)
     runner.cap, runner.peak = cap, 0
+    runner.root = fake_root
     with mock.patch.object(module, 'ROOT', fake_root), \
          mock.patch.object(module.shutil, 'disk_usage', return_value=SimpleNamespace(free=floor + reserve)):
         runner.budget(reserve)
@@ -72,6 +75,107 @@ def accounting(module, native):
         rejected(lambda: runner.budget(reserve), 'free floor')
 
 
+
+def host_tool_checks(out):
+    # All subprocess calls below are mocked. These controls never execute tools.
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    import package_native_runner as transport
+    serial = 0
+    def fixture():
+        nonlocal serial
+        directory = out / ('host-scope-' + str(serial)); serial += 1
+        directory.mkdir()
+        compiler, library, oracle, native = (directory / name for name in ('compiler', 'library', 'oracle', 'native'))
+        hosts = {name:directory/name for name in ('as', 'ld', 'nm', 'readelf', 'python')}
+        for path in (compiler, library, oracle, native, *hosts.values()): path.write_bytes(b'original bytes\n')
+        with mock.patch.object(transport.shutil, 'which', side_effect=lambda name:str(hosts[name])), \
+             mock.patch.object(transport.sys, 'executable', str(hosts['python'])):
+            runner = transport.PackageRunner(compiler, directory, 256 << 20, root=out,
+                prefix='', shared=lambda:'', validate=lambda *args:(), function_prefix='unused', sentinel=b'keep')
+        runner.budget = mock.Mock(return_value=0)
+        runner.measure = mock.Mock(return_value=(0, 1 << 30))
+        runner.pins = {p:transport.sha(p) for p in (compiler, library, oracle, *hosts.values())}
+        return runner, hosts, library, oracle, native
+    def mutate(path):
+        stat = path.stat(); path.write_bytes(b'changed! bytes\n')
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    def run(*args, **kwargs): return SimpleNamespace(returncode=0)
+    def finish(runner, report=None):
+        report = {'status':'passed'} if report is None else report
+        errors = transport.finalize_report(runner, report, runner.compiler, runner.artifacts)
+        return errors, report
+
+    real_sha, calls = transport.sha, Counter()
+    def counted(path):
+        calls[Path(path)] += 1
+        return real_sha(path)
+    with mock.patch.object(transport, 'sha', side_effect=counted), mock.patch.object(transport.subprocess, 'run', side_effect=run):
+        runner, hosts, library, oracle, native = fixture()
+        for number, executable in enumerate((hosts['as'], hosts['python'], runner.compiler, native)):
+            runner.command([executable], runner.artifacts, str(number))
+            receipt = json.loads((runner.artifacts / (str(number)+'.command.json')).read_text())
+            require(receipt['executable_hash_scope'] == ('suite-boundary' if executable in hosts.values() else 'command'), 'wrong executable hash scope')
+        errors, report = finish(runner)
+        require(not errors and report['status']=='passed', 'stable host suite rejected')
+        require(all(calls[p]==2 for p in hosts.values()), 'host binaries rehashed between suite boundaries')
+        require(calls[library]==10 and calls[oracle]==10 and calls[runner.compiler]>=10,
+                'compiler/library/oracle command checks weakened')
+        require(calls[native]==1, 'generated executable hash not command-scoped')
+
+    for field in ('compiler', 'library', 'oracle'):
+        for during in (False, True):
+            runner, hosts, library, oracle, _ = fixture()
+            path = {'compiler':runner.compiler, 'library':library, 'oracle':oracle}[field]
+            def drift(*args, **kwargs): mutate(path); return run(*args, **kwargs)
+            if not during: mutate(path)
+            with mock.patch.object(transport.subprocess, 'run', side_effect=drift if during else run) as execute:
+                rejected(lambda:runner.command([hosts['as']], runner.artifacts, 'source-drift'), 'input/tool changed')
+                require(execute.call_count==int(during), 'source drift checked at wrong boundary')
+
+    for name in ('as', 'ld', 'nm', 'readelf', 'python'):
+        runner, hosts, _, _, _ = fixture(); mutate(hosts[name])
+        with mock.patch.object(transport.subprocess, 'run', side_effect=run):
+            runner.command([hosts['as']], runner.artifacts, 'host-drift')
+        errors, report = finish(runner)
+        require(report['status']=='failed' and any(str(hosts[name]) in error for error in errors), 'persistent host drift escaped finalization')
+
+    for primary in (subprocess.TimeoutExpired(['mock'], 30), AssertionError('primary'), SystemExit(7), KeyboardInterrupt()):
+        runner, hosts, _, _, _ = fixture(); caught = None
+        def fail(*args, **kwargs):
+            mutate(hosts['python']); raise primary
+        try:
+            try:
+                with mock.patch.object(transport.subprocess, 'run', side_effect=fail):
+                    runner.command([hosts['as']], runner.artifacts, 'failed-command')
+            except BaseException as error:
+                caught = error; raise
+            finally:
+                errors, report = finish(runner, {'status':'failed', 'error':'primary'})
+                require(errors and report['error']=='primary', 'final drift masked primary failure')
+        except BaseException as error:
+            require(error is caught, 'primary exception replaced during finalization')
+        require(caught is not None, 'injected failure passed')
+
+    for deleted in (False, True):
+        runner, hosts, _, _, _ = fixture()
+        if deleted: hosts['python'].unlink()
+        def denied(path):
+            if Path(path)==hosts['python'] and not deleted: raise PermissionError('host hash denied')
+            return real_sha(path)
+        with mock.patch.object(transport, 'sha', side_effect=denied): errors, report = finish(runner)
+        require(errors and report['status']=='failed', 'final host read failure passed')
+
+    runner, hosts, _, _, _ = fixture(); runner.compiler = hosts['as']; mutate(hosts['as'])
+    with mock.patch.object(transport.subprocess, 'run', side_effect=run) as execute:
+        rejected(lambda:runner.command([hosts['as']], runner.artifacts, 'compiler-alias'), 'input/tool changed')
+        require(not execute.called, 'host classification weakened compiler identity')
+    runner, hosts, _, _, _ = fixture(); original = hosts['as'].read_bytes(); mutate(hosts['as'])
+    with mock.patch.object(transport.subprocess, 'run', side_effect=run): runner.command([hosts['as']], runner.artifacts, 'transient')
+    hosts['as'].write_bytes(original)
+    require(not finish(runner)[0], 'suite-boundary policy unexpectedly detects restored transient host drift')
+    return serial
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifacts', type=Path)
@@ -79,9 +183,11 @@ def main():
     out = artifact_root(args.artifacts or ROOT / 'build' / ('native-cap-contracts-' + str(time.time_ns())))
     require(not out.exists(), 'fresh evidence directory required')
     require(shutil.disk_usage(ROOT).free >= 1 << 30, 'one GiB free floor before outputs')
-    sources = [ROOT / name for name, _, _ in CONSUMERS] + [Path(__file__).resolve()]
+    sources = [ROOT / name for name, _, _ in CONSUMERS] + [
+        Path(__file__).resolve(), ROOT / 'scripts/package_native_runner.py']
     pins = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}
     out.mkdir(parents=True)
+    host_scope_controls = host_tool_checks(out)
     rows = []
     for index, (name, minimum, native) in enumerate(CONSUMERS):
         spec = importlib.util.spec_from_file_location('cap_subject_' + str(index), ROOT / name)
@@ -146,7 +252,7 @@ def main():
     require(pins == {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources},
             'configuration sources changed during checks')
     report = dict(status='configuration-contracts-verified', native_executed=False,
-                  cli_cases=len(rows), consumers=len(CONSUMERS), optimization_modes=[0, 1],
+                  cli_cases=len(rows), host_scope_controls=host_scope_controls, consumers=len(CONSUMERS), optimization_modes=[0, 1],
                   accounting='mocked cap/reserve/free-floor boundaries; no large allocation',
                   configuration_source_pins=pins, cases=rows)
     (out / 'configuration-results.json').write_text(json.dumps(report, indent=2) + '\n')

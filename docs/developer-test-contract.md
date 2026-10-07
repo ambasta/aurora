@@ -546,3 +546,34 @@ full public workflow; see the current results record. The retired dynamic experi
 and uncredited. Current-source composition continuity, the genuine three-file
 delta and new validation records accompany this revision; earlier reports are
 not summed into acceptance of corrected source or a complete native workflow.
+
+
+### Serial package transport identity checks
+
+Manifest and Graph share one serial native transport; their original cases, batch
+boundaries, seven child commands, rejection checks and resource limits are unchanged.
+Compiler, library, oracle and transport inputs retain full-content checks around
+successful or expected-rejection commands. Generated executables and archives
+retain their command/output hashes. No mtime cache is used.
+
+Python and GNU as/ld/nm/readelf are trusted local host tools. Their full-content
+hashes are recorded at suite entry and compared in finalization on success or
+failure. Host command receipts label the reused entry digest `suite-boundary`;
+compiler/native executable receipts remain `command` scoped. A persistent host-tool
+change fails finalization, but detection is later and a change restored before
+finalization can escape detection. This harness is not a hostile multi-user
+toolchain security boundary. Compiler identity takes precedence when a fixture
+uses the same executable path as a host tool.
+
+Normal and optimized controls cover persistent host drift, unchanged compiler/
+source checks, hash counts and primary-error preservation. A complete public
+`make --jobs=1 test` on the 609-file candidate tree
+`15980f4e7804befd826d05a0155cafc5c36ac73e` passed with a fresh compiler in 38m16s,
+including IPC and both 76-method developer-contract suites. The final result
+SHA-256 is `daa69d730dc6070d6c9477fa84f3820dad5a2b0d0602a3118914ab9e05dc291c`.
+These documentation results are the only changes after that tested tree. The
+[balanced subset measurement](completeness-matrix.md#verified-serial-package-harness-cleanup--2026-10-07)
+covers eight original batches, not whole-suite performance. The first full-run
+attempt remains failed: its wrapper mapped UID 0, so the unchanged unprivileged
+rename-denial gate rejected it. A same-UID isolation probe and fresh full replay
+passed; no tests were skipped.
