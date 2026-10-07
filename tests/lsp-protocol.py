@@ -963,6 +963,28 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-format-test-") as directory:
         replies, _ = format_session([opened(source, expected), formatting(source)])
         require(replies[10]["result"] == [], "applied formatting is idempotent")
 
+    separated = (
+        "\nmodule demo;\r\n \t\r\n\r\nauto answer()->i64{\n\ni64 value=7; // value \t\r\n\n"
+        "// return group 😀\n\nreturn value;\n\n}\n\n// footer\n\n"
+    )
+    separated_canonical = (
+        "module demo;\n\nauto answer() -> i64 {\n    i64 value = 7; // value \t\r\n\n"
+        "    // return group 😀\n\n    return value;\n}\n\n// footer\n"
+    )
+    replies, logs = format_session(
+        [
+            opened(source, separated, 80),
+            formatting(source, 10),
+            formatting(source, 11),
+            changed(source, separated_canonical, 81),
+            formatting(source, 12),
+        ]
+    )
+    whole_edit(replies[10], separated_canonical, {"line": separated.count("\n"), "character": 0})
+    require(replies[10]["result"] == replies[11]["result"], "blank-line edits leave the accepted snapshot untouched")
+    require(replies[12]["result"] == [] and not logs, "blank-line formatting is idempotent through real LSP")
+    require(source.read_bytes() == original, "blank-line formatting never changes disk source")
+
     syntax_only = "module demo;import absent;auto answer()->i64{return unknown;}"
     expected = "module demo;\nimport absent;\nauto answer() -> i64 {\n    return unknown;\n}\n"
     replies, _ = format_session([opened(source, syntax_only), formatting(source)])

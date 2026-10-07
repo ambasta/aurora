@@ -51,9 +51,18 @@ The formatter uses four-space indentation, attached block braces, one statement
 per line and a 120-byte-column soft wrapping target. Constructor/class/function
 blocks expand; small empty expression initializers stay `{}`. Enum members and
 brace-initializer entries are placed on separate lines. Template and unary/binary
-operator roles come from the existing parser AST. Layout is deliberately simple:
-it does not optimize line breaking, preserve extra blank lines, sort declarations
-or imports, reflow comments, or normalize the token stream. For example, lexical
+operator roles come from the existing parser AST. Intentional blank-line groups
+between declarations, statements, members, initializer entries and comments retain
+one empty line. Runs of empty or whitespace-only lines become one unindented empty
+line. Leading/trailing empty lines, gaps immediately inside braces and gaps within
+expressions are removed. An attached `else` remains attached. Only whitespace
+between adjacent tokens/comments is inspected; comment contents cannot create
+separators, and automatic wrapping never adds a blank line. Line boundaries follow
+the shared lexer's LF contract, including CRLF input.
+
+Layout is deliberately simple: it does not optimize line breaking, invent blank
+separators, sort declarations or imports, reflow comments, or normalize the token
+stream. For example, lexical
 `>>` stays one token, while separated `> >` stays two. Valid current syntax is the
 boundary; unsupported or malformed syntax gets the compiler's original rejection.
 
@@ -93,7 +102,9 @@ reports remaining findings against the output snapshot's coordinates.
 cases, comment bytes and token-relative position checks, canonical versus split
 template closers, nested initializers, constructor initialization, member calls,
 unary/binary operators, original diagnostic rejection, bounded reads and 128
-seeded trivia perturbations. Its optional file arguments run format/reparse,
+seeded trivia perturbations. Blank-line goldens cover declaration/statement/member
+and comment groups, CRLF and whitespace-only runs, block/file/expression edge
+normalization, attached `else`, and automatic-wrap stability. Its optional file arguments run format/reparse,
 token/comment equality and idempotence on a source corpus. The Make target covers
 all repository `.au` files under examples, library, kernel policies and kernel
 program fixtures; any unsupported source fails visibly rather than being skipped.
@@ -117,3 +128,6 @@ empty stdout, comment anchoring, opaque bytes, CRLF and template closers.
 These are focused formatter results. The main compiler is unchanged. No complete
 root native aggregate, compiler regression suite, sanitizer or emulator gate was
 rerun; the formatter does not replace those checks.
+
+The [blank-line regression results](../docs/formatter-blank-lines-results.md)
+record the shared CLI/LSP preservation fix and its focused validation.

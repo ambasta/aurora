@@ -17,6 +17,17 @@ failed host fixture and LeakSanitizer environment failure. Final retained-eviden
 review is recorded separately. No growth, payload views, general resource classes,
 full native aggregate, kernel allocation or memory-safety proof is claimed.
 
+## Formatter blank-line preservation — 2026-10-07
+
+The shared formatter retains one intentional empty separator between declarations,
+statements, members, initializer entries and comments, while normalizing blank
+runs and trimming file/block edges and expression whitespace. Four-space layout,
+the 120-byte soft target, exact tokens/comment anchors and second-pass idempotence
+remain unchanged. Both the standalone CLI and real LSP call this implementation.
+See the [policy](../compiler/FORMAT.md#layout-and-preservation-contract) and
+[focused regression evidence](formatter-blank-lines-results.md). This change does
+not alter diagnostics, compiler semantics or LSP protocol options.
+
 ## Opt-in LSP semantic lint candidate — 2026-10-07
 
 The optional language server can select the existing compiler-owned lint mode

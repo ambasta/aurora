@@ -172,6 +172,14 @@ inline std::string layout(const LexedSource &source, const Program &program) {
         }
         column = 0;
     };
+    const auto blankLine = [&]() {
+        newline();
+        if (!result.empty() && (result.size() < 2 || result[result.size() - 2] != '\n')) {
+            if (result.size() == sourceLimit)
+                throw Error(DiagnosticCode::Internal, "formatted output exceeds 1 MiB bound");
+            result += '\n';
+        }
+    };
     const auto append = [&](std::string_view text, std::size_t depth) {
         const auto needed = text.size() + (column == 0 ? depth * indentWidth : 0);
         if (needed > sourceLimit - result.size())
@@ -186,11 +194,23 @@ inline std::string layout(const LexedSource &source, const Program &program) {
     for (std::size_t index = 0; index < pieces.size(); ++index) {
         const auto &piece = pieces[index];
         const auto &text = piece.text;
+        // Inspect only the whitespace between adjacent lossless pieces. Counting
+        // from a preceding code token would mistake intervening comments for an
+        // intentional blank line. LF matches the shared lexer's line contract.
+        bool separated = false;
+        if (index > 0) {
+            const auto begin = pieces[index - 1].span.end.offset;
+            const auto gap = std::string_view(source.source->text).substr(begin, piece.span.begin.offset - begin);
+            separated = std::count(gap.begin(), gap.end(), '\n') >= 2;
+        }
+        const bool afterOpeningBrace = index > 0 && !pieces[index - 1].comment && pieces[index - 1].text == "{";
         std::size_t depth = braces.size();
         if (piece.comment) {
             const bool wasTrailing = previousSpan.source && previousSpan.end.line == piece.span.begin.line;
             if (!wasTrailing || column + 1 + text.size() > columnLimit)
                 newline();
+            if (separated && !afterOpeningBrace)
+                blankLine();
             if (column != 0)
                 append(" ", depth);
             append(text, depth);
@@ -214,9 +234,17 @@ inline std::string layout(const LexedSource &source, const Program &program) {
         }
         if (label && depth > 0)
             --depth;
-        if ((hardBreak && text != ";" && text != "," && text != ")" && text != "]" && text != "else") ||
-            (text == "}" && !closesEmpty) || label)
+        const bool structuralBreak =
+            (hardBreak && text != ";" && text != "," && text != ")" && text != "]" && text != "else") ||
+            (text == "}" && !closesEmpty) || label;
+        if (structuralBreak)
             newline();
+        // Keep one user separator between declarations, statements, members or
+        // comments. Block/file edges and expression gaps remain canonical; soft
+        // wrapping never creates a separator that a later pass could amplify.
+        if (separated && !afterOpeningBrace && text != "}" &&
+            (structuralBreak || (index > 0 && pieces[index - 1].comment)))
+            blankLine();
         hardBreak = false;
         bool space = !previous.empty();
         if (text == ";" || text == "," || text == ")" || text == "]" || text == "." || text == "::" || templateClose ||

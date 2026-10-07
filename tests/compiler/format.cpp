@@ -68,6 +68,28 @@ void cases() {
     golden("export module x;class C{array<i64,2> a;public:C():a{}{}};",
            "export module x;\nclass C {\n    array<i64, 2> a;\npublic:\n    C() : a{} {\n    }\n};\n");
     golden("export module x;enum class E{a,b,c,};", "export module x;\nenum class E {\n    a,\n    b,\n    c,\n};\n");
+    // Retain user grouping at structural boundaries, normalizing each blank run
+    // to one empty line. Whitespace inside expressions and block/file edges is noise.
+    golden("\n\nmodule x;\n \t\r\n\nimport y;\n\nauto f()->i64{\n\n"
+           "i64 a=1;\n \t\n\n// group \t\r\n\n// next\n\nreturn a;\n\n}\n\n\n"
+           "auto g()->i64{return 2;}\n\n",
+           "module x;\n\nimport y;\n\nauto f() -> i64 {\n    i64 a = 1;\n\n"
+           "    // group \t\r\n\n    // next\n\n    return a;\n}\n\nauto g() -> i64 {\n    return 2;\n}\n");
+    golden("module x;\nauto f()->i64{\ni64 a=1; // trailing\n\nreturn a;\n}\n\n// footer\n\n",
+           "module x;\nauto f() -> i64 {\n    i64 a = 1; // trailing\n\n    return a;\n}\n\n// footer\n");
+    golden("export module x;\n\nclass C{\n\nprivate:i64 a;\n\ni64 b;\n\npublic:\n"
+           "C():a(0),b(0){}\n\nauto get()const->i64{return a+b;}\n\n};\n",
+           "export module x;\n\nclass C {\nprivate:\n    i64 a;\n\n    i64 b;\n\npublic:\n"
+           "    C() : a(0), b(0) {\n    }\n\n    auto get() const -> i64 {\n        return a + b;\n    }\n};\n");
+    golden("module x;auto f()->i64{if(true){\n\nreturn 1;\n\n}\n\nelse{\n\nreturn 2;\n\n}}",
+           "module x;\nauto f() -> i64 {\n    if (true) {\n        return 1;\n    } else {\n"
+           "        return 2;\n    }\n}\n");
+    golden("module\n\nx;auto f(\n\n)->i64{array<i64,2> a={\n\n1,\n\n2\n\n};\n\n"
+           "return\n\na[0]\n\n+\n\n1;}",
+           "module x;\nauto f() -> i64 {\n    array<i64, 2> a = {\n        1,\n\n        2\n    };\n\n"
+           "    return a[0] + 1;\n}\n");
+    golden("// header\n\nmodule x;\r\n\r\nauto f()->i64{return 1;}\n// attached\n// next\n",
+           "// header\n\nmodule x;\n\nauto f() -> i64 {\n    return 1;\n}\n// attached\n// next\n");
     const std::vector<std::string> fixtures = {
         "module x;auto f()->i64{return -(1+2)*~3/-4;}",
         "module x;auto f()->bool{return 1<2&&2>=1||!false;}",
@@ -96,6 +118,7 @@ void cases() {
     chain += ";}";
     verify(chain, "member-chain.au");
     const auto wrapped = aurora::format::source(chain);
+    require(wrapped.text.find("\n\n") == std::string::npos, "automatic wrapping added a blank line");
     require(std::none_of(wrapped.remainingFindings.begin(),
                          wrapped.remainingFindings.end(),
                          [](const auto &finding) {
