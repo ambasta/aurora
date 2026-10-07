@@ -9,7 +9,8 @@ consumers used the run-owned compiler. Separate five-entrypoint fatal sanitizer,
 The later PR35 composition preserves the compiled inputs and adds independently
 reviewed synthetic and actual terminal-origin checks. Exact source identities,
 commands and limitations are in the [IPC results](kernel-ipc-transition-integration-results.md).
-This documentation-only publication does not claim another execution of the full
+That historical IPC documentation-only publication did not claim another execution
+of the full
 graph. The older reconstruction and five-consumer records below are historical;
 their pending/blocked statements do not describe the completed checkpoint.
 
@@ -271,6 +272,73 @@ evidence preservation, bounded-resource admission and independent review remain
 necessary. Existing historical proposal contracts, pins and receipts retain their
 original meaning and are not rewritten by this tooling contract.
 
+## Per-invocation output budgets
+
+Focused package and kernel native tests apply their storage cap to the fresh
+output directory for that invocation. Repository inputs, the compiler binary,
+unrelated checkout files and retained output from earlier runs do not consume
+that cap. Repeated runs preserve earlier evidence and receive independent output
+budgets. The cap values and override bounds below are unchanged.
+
+Accounting measures allocated filesystem blocks, including directory metadata,
+not sparse-file logical length. Hardlinked inodes within the explicit output
+scope are counted once; symbolic links are not followed. Output paths reject
+symlink roots/ancestors. Compiler/tool temporary files are directed to a `tmp`
+directory inside the invocation through child-only environment variables; the
+parent environment and user-selected temporary directory are left intact.
+Package archives are charged alongside their originals before deletion. Archive
+verification and cleanup failures stop the run and retain the remaining current
+outputs. Nothing scans or deletes old runs to make a new run fit.
+
+The one-GiB usable-free-space floor still applies on the output filesystem,
+including each operation's reserve. Other disk users can therefore still cause a
+free-space failure. Guards sample at operation boundaries, not a filesystem
+quota or a guarantee against arbitrary concurrent writers. Process/source/file
+limits remain separate. `xfs_root.py` already had an explicit output-root budget;
+it now shares block accounting and child temporary-directory handling.
+
+`tests/native-cap-contracts.py` covers all six configurable consumers plus XFS
+scope, independent/repeated roots, preexisting allocated history and sparse
+images, link accounting, owned overflow, archive growth and cleanup failure.
+These compiler-free controls are not native or emulator acceptance evidence.
+
+### Focused correction verification — 2026-10-07
+
+The 618-file formatted candidate based on `f458620b325c4f17c32b32c3c4a09b2771a472b8`
+has tested tree `f2cd18242a6aa419afb3a66ac56cac9516af1a64`. The compiler was freshly
+built by each public focused Make invocation; source bytes stayed unchanged.
+A deliberately allocated 300 MiB unrelated file made the previous guard reject
+323,825,664 bytes against 268,435,456. The corrected default-cap invocations passed:
+
+- `make --jobs=1 test-package-graph`: 5,548 native cases, 333,671 u64 observations,
+  60 rejection runs; 256 MiB cap and 10,211,328-byte measured owned peak.
+- The same target with explicit `PACKAGE_GRAPH_TEST_FLAGS=--quick`: 37 cases in
+  a second fresh root, with the first run and unrelated file retained.
+- `make --jobs=1 test-package-manifest PACKAGE_MANIFEST_TEST_FLAGS=--quick`:
+  32 cases at the unchanged 256 MiB cap. Both quick runs are subsets.
+- `make --jobs=1 test-kernel-budget-native`, `test-round-robin` and
+  `test-ipc-transaction`: full focused hosted gates at their 128 MiB defaults,
+  retaining about 42–44 MB of owned output each.
+- Complete XFS-root gate: 203 cases / 2,233 u64 observations in 12.9 seconds,
+  using the unchanged compiler and its checked developer-build receipt.
+
+Normal/optimized compiler-free cap controls exercised 384 real CLI invocations
+and 18 focused compiler-contract method executions. A separate read-only probe
+used an actual 660,754,432-byte historical checkout; all seven budget
+implementations counted only each fresh 45,056-byte output root. The retained
+checkout's allocation stayed unchanged. Pinned Ruff format/style checks passed
+all 13 touched Python files; mechanical changes preserve cap-runner ASTs and all
+generated source strings. One formatting-sensitive source test now checks exact
+AST shapes and rejects deliberately weakened comparisons/renamed targets.
+
+The native worktree remained below its 640 MiB outer bound and retained its
+unrelated file's exact SHA-256. The six Make invocations inherited a 2 GiB
+per-process address-space limit. Outer RSS sampling covered only the top process
+group, not nested compiler-supervisor groups; no whole-tree RSS bound is claimed.
+No full root aggregate or emulator gate was run for this correction. Subsequent
+integration preserves separately verified Meson/console/library changes and adds
+result documentation; those changes do not relabel this exact tested tree.
+
 ## Reviewed resource-cap composition
 
 This source integration retains the five reviewed tooling consumers and adds
@@ -279,8 +347,8 @@ kernel budget, round-robin and IPC transaction. Their focused defaults are
 128/256/256/128/128/128 MiB; the aggregate selects the
 bounded 1024 MiB ceiling. A selected cap does not itself admit a supervised aggregate: retained
 workspaces, reserve and the existing free-space floor still need separate measured
-admission. Process address-space, source-size, file-size and accounting comparisons
-are unchanged. The tooling tests and `tests/native-cap-contracts.py` driver name
+admission. Process address-space, source-size, file-size and numeric cap comparisons
+are unchanged; output accounting follows the per-invocation scope above. The tooling tests and `tests/native-cap-contracts.py` driver name
 all six consumers explicitly, without filtering missing consumers. The aggregate
 prerequisite is retained. Their
 cap-only controls emit configuration-only results with native_executed=false and

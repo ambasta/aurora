@@ -1,0 +1,4 @@
+# Optional host development tools, separate from build/test dependencies.
+# Review formatter output when deliberately updating either exact version.
+ruff==0.16.7
+clang-format==22.1.8

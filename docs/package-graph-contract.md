@@ -163,7 +163,7 @@ final integrated source before acceptance; coordinate heavy builds with the
 ordinary-function-overload lane. This library-only change adds no emulator or
 physical-device claim. Preserve all failures and exact source revisions.
 
-Focused candidate cap: 256 MiB with conservative command growth reserve and a
+Focused per-invocation owned-output cap: 256 MiB with conservative command growth reserve and a
 1 GiB filesystem free-space floor. No silent cap increase; request measured
 aggregate admission separately. Keep an early verified recoverable source archive.
 Compaction may replace only completed successful outputs after exact recoverable
@@ -222,10 +222,12 @@ is structurally independent of the implementation's ready-mask algorithm.
 
 ## Current bounded resource-configuration checks
 
-The maximum selectable whole-candidate storage cap is 1024 MiB; focused defaults
+The maximum selectable per-invocation owned-output storage cap is 1024 MiB; focused defaults
 remain unchanged. Any increase still needs separate measured aggregate admission,
-including retained roots, growth reserve and the existing free-space floor. This
-does not change per-process address-space, per-file or source-size limits.
+including retained roots, growth reserve and the existing free-space floor. Retained
+roots affect free disk, not this invocation's cap; see the
+[shared output-budget scope](developer-test-contract.md#per-invocation-output-budgets).
+This does not change per-process address-space, per-file or source-size limits.
 `--check-cap-only` validates resource configuration without reading/running a
 compiler or creating a native acceptance receipt. Its configuration-only result
 cannot replace this contract's behavioral oracle and full acceptance gates.

@@ -1,5 +1,24 @@
 # Completeness and acceptance matrix
 
+## Corrected native output budgets and host style — 2026-10-07
+
+A retained ~650 MiB checkout incorrectly exhausted focused tests' caps before
+counting their own output. Package Identity, shared Manifest/Graph and three
+kernel native runners now count only the invocation's fresh outputs, including
+subprocess scratch and archives. Cap values remain unchanged; old files remain
+untouched and the usable-free-disk floor still applies. XFS shares the same
+accounting. Terminal receipts are counted before success is accepted.
+
+The full Graph gate passed at its default 256 MiB cap with 300 MiB of allocated
+unrelated history; repeat Graph/Manifest quick runs, three default-128-MiB kernel
+native gates and all 203 XFS-root cases passed. Compiler-free overflow, link,
+sparse-file, cleanup and primary-error controls passed in normal/optimized modes.
+Touched Python files now use four spaces and at most 120 columns, with pinned
+Ruff/clang-format configuration and explicit style commands. Generated fixture
+strings and cap-runner ASTs were preserved. This is focused correction coverage,
+not a new full aggregate or emulator qualification. See the
+[scope and exact verification](developer-test-contract.md#per-invocation-output-budgets).
+
 ## Bounded owned binary writer candidate — 2026-10-07
 
 `std.binary_writer` adds an Aurora-authored `BinaryWriter64`: a private owned

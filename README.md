@@ -98,6 +98,8 @@ and build machinery. Detailed contracts sit beside the component they describe.
 
 Start with a small running mechanism and a clear acceptance condition. Include
 positive, rejection and regression cases, and update the affected contract.
+Host C++ and Python follow the [source style guide](docs/style.md), with pinned
+formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
 
 ```sh
