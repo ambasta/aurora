@@ -23,6 +23,7 @@ foreach entry : [
     ['source-depth', 'modules/robustness.py', 'core'],
     ['byte-codec', 'compiler/byte_codec.py', 'bytes'],
     ['binary-buffer', 'compiler/binary_buffer.py', 'bytes'],
+    ['byte-buffer', 'compiler/byte_buffer.py', 'bytes'],
     ['owned-sector', 'compiler/sector.py', 'bytes'],
     ['block-io', 'compiler/block_io.py', 'bytes'],
     ['sector-window', 'compiler/sector_window.py', 'bytes'],

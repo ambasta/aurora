@@ -26,3 +26,13 @@ ram_sector_record_assembly = custom_target(
     build_by_default: true,
     install: false,
 )
+
+byte_buffer_assembly = custom_target(
+    'byte-buffer-example',
+    input: 'byte_buffer.au',
+    output: 'byte_buffer.s',
+    command: [aurorac, '--module-root', meson.project_source_root() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+    depend_files: files('../std/byte_buffer.au', '../std/binary.au'),
+    build_by_default: true,
+    install: false,
+)
