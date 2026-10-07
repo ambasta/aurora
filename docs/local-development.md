@@ -202,3 +202,11 @@ actual compiler-only and normal BIOS/UEFI checks, preserved failures and limits.
   files. Report `g++ --version` (or your selected `CXX`), `as --version`,
   `ld --version`, QEMU version, the exact command and firmware path. Do not treat
   a blocked/failed gate as a pass or bypass image/serial checks.
+
+## Interactive BIOS console
+
+`make console` opens an opt-in QEMU serial prompt after the boot self-tests.
+Commands are `help`, `status` and `exit`; the session has a five-minute limit.
+The [console contract](kernel-console-contract.md) explains its 64-byte ASCII
+editor, interrupt-driven idle wait and emulator-only limits. `make run` and
+`make run-uefi` still complete automatically as before.

@@ -36,7 +36,7 @@ if [[ -n "${AURORA_TEST_CONTEXT:-}" ]]; then
 fi
 cd "$(dirname "$0")/.."
 # Never silently turn the normal developer command into a fault-injection run.
-for name in "${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE UEFI_MODE; do
+for name in "${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE; do
     [[ -n "$name" ]] || continue
     if [[ -n "${!name:-}" ]]; then
         echo "Unset $name before a normal boot; use the smoke scripts for fault modes." >&2

@@ -35,6 +35,7 @@ class DeveloperCommands(unittest.TestCase):
         for name in ("kernel-run.sh", "compiler-test.sh", "kernel-build.sh", "kernel-uefi-build.sh", "uefi-firmware.sh", "uefi-linker.sh", "host-build-check.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
+        shutil.copy2(ROOT / "scripts/kernel-console.sh", self.scripts / "kernel-console.sh")
         for name in ("bash", "dirname", "cat", "mkdir", "printf"):
             resolved = shutil.which(name)
             self.assertIsNotNone(resolved, name)
@@ -152,9 +153,29 @@ class DeveloperCommands(unittest.TestCase):
         self.assertEqual(receipt["execution_status"], "not-established-by-command-receipt")
 
     def test_fault_environment_is_rejected_before_dispatch(self):
-        for name in ("KERNEL_TEST_DIVISION", "KERNEL_TEST_FUTURE_MODE", "KERNEL_USER_PROBE_MODE", "UEFI_MODE"):
+        for name in ("KERNEL_TEST_DIVISION", "KERNEL_TEST_FUTURE_MODE", "KERNEL_USER_PROBE_MODE",
+                     "KERNEL_CONSOLE", "UEFI_MODE"):
             output = self.run_script("kernel-run.sh", env={name: "1"}, expected=2)
             self.assertIn("Unset " + name, output)
+        self.assert_no_work()
+
+    def test_console_launcher_is_foreground_bounded_and_preserves_status(self):
+        self.script(self.scripts / "kernel-build.sh",
+                    'printf "build|%s\\n" "$KERNEL_CONSOLE" >> "$CALLS"\n')
+        self.tool("timeout", 'printf "timeout|%s\\n" "$*" >> "$CALLS"\nexit "$FAKE_STATUS"\n')
+        for status, expected in ((33, 0), (35, 35), (124, 124)):
+            self.run_script("kernel-console.sh", env={"FAKE_STATUS": str(status)}, expected=expected)
+        self.assertEqual(len(self.calls()), 6)
+        for build, command in zip(self.calls()[::2], self.calls()[1::2]):
+            self.assertEqual(build, "build|1")
+            self.assertTrue(command.startswith("timeout|--foreground --kill-after=2 300 qemu-system-x86_64 "))
+            self.assertIn("snapshot=on", command)
+            self.assertIn("-nic none -display none -serial stdio -monitor none", command)
+
+    def test_console_launcher_rejects_mixed_controls_before_build(self):
+        for name in ("KERNEL_TEST_SCHEDULE", "KERNEL_USER_PROBE_MODE", "KERNEL_CONSOLE", "AURORA_TEST_CONTEXT"):
+            self.run_script("kernel-console.sh", env={name: "1"}, expected=2)
+        self.run_script("kernel-console.sh", "extra", expected=2)
         self.assert_no_work()
 
     def test_empty_fault_environment_is_not_an_injection(self):

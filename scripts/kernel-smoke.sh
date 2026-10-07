@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if [[ "${KERNEL_CONSOLE:-0}" != 0 ]]; then
+    echo 'Self-test smoke rejects KERNEL_CONSOLE; use the separate console profile.' >&2
+    exit 2
+fi
 mode="${1:-normal}"
 build_environment=()
 cpu=qemu64
