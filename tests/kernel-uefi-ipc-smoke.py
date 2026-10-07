@@ -6,8 +6,10 @@ spec=importlib.util.spec_from_file_location('pci',Path(__file__).with_name('kern
 pci=importlib.util.module_from_spec(spec);spec.loader.exec_module(pci)
 need=pci.need
 BASE=0x10000000000
-MODES=('ipc','ipc-fault','ipc-cancel','ipc-owner','ipc-stale','ipc-version','ipc-phase','ipc-transaction','ipc-site','ipc-unknown','ipc-root','ipc-kernel-trap','ipc-duplicate','ipc-late','ipc-exhausted')
+MODES=('ipc','ipc-fault','ipc-cancel','ipc-owner','ipc-stale','ipc-version','ipc-phase','ipc-transaction','ipc-site','ipc-unknown','ipc-root','ipc-kernel-trap','ipc-duplicate','ipc-late','ipc-exhausted','ipc-policy-request-input','ipc-policy-request-output','ipc-policy-cancel-input','ipc-policy-cancel-output')
 SUCCESS=('ipc','ipc-fault','ipc-cancel')
+REQUEST_POLICY_MODES=('ipc-policy-request-input','ipc-policy-request-output')
+CANCEL_POLICY_MODES=('ipc-policy-cancel-input','ipc-policy-cancel-output')
 SUFFIX='AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n'
 
 def metadata_valid(metadata,mode):
@@ -54,11 +56,13 @@ def expected(mode,metadata,arena):
                 row('AURORA_UEFI_RUNTIME_FAIL: '+reason);return
             record('SUBMIT' if phase==0 else 'REPLY' if phase==1 else 'COMPLETE',value,second if phase==0 else 0)
         row(f'AURORA_UEFI_IPC_RESTORE: slot={slot} root={kernel} stack=(\\d+) event={kind} value={value}')
-    first_failure=mode if mode in ('ipc-owner','ipc-stale','ipc-version','ipc-phase','ipc-site','ipc-unknown','ipc-root','ipc-kernel-trap','ipc-exhausted') else None
+    first_failure=mode if mode in ('ipc-owner','ipc-stale','ipc-version','ipc-phase','ipc-site','ipc-unknown','ipc-root','ipc-kernel-trap','ipc-exhausted')+REQUEST_POLICY_MODES else None
     enter(0,0,40,2,failure=first_failure)
     if first_failure:return rows
-    if mode=='ipc-fault':
+    if mode=='ipc-fault' or mode in CANCEL_POLICY_MODES:
         record('DELIVER',40,2);enter(1,4,0,2,kind='bounds')
+    if mode in CANCEL_POLICY_MODES:
+        row('AURORA_UEFI_RUNTIME_FAIL: IPC cancel boundary');return rows
     if mode in ('ipc-fault','ipc-cancel','ipc-late'):
         record('CANCEL',0,0);record('CONSUME',0,1);enter(0,3,7)
         if mode=='ipc-late':enter(1,1,42,2,failure=mode);return rows

@@ -1,5 +1,6 @@
 #pragma once
 #include "domain-policy.hpp"
+#include "ipc-transition-transport.hpp"
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -93,6 +94,37 @@ class Mailbox final {
         return transaction != 0 && transaction_ == transaction;
     }
     auto scrub() -> void { request_ = Request{}; reply_ = 0; }
+    [[nodiscard]] auto transition(TransactionOperation operation, Phase phase) const -> TransactionTransition {
+        const auto original_phase = static_cast<std::uint64_t>(phase);
+        const auto original_state = static_cast<std::uint64_t>(state_);
+        const std::uint64_t original_scrubbed = scrubbed() ? 1 : 0;
+        auto copied_phase = original_phase;
+        // Fault profiles change only local copied inputs or the actual result.
+        // Decoding always uses the original trusted facts; no live state changes.
+#ifdef AURORA_IPC_POLICY_REQUEST_INPUT
+        if (operation == TransactionOperation::submit) copied_phase = std::numeric_limits<std::uint64_t>::max();
+#endif
+#ifdef AURORA_IPC_POLICY_CANCEL_INPUT
+        if (operation == TransactionOperation::cancel) copied_phase = std::numeric_limits<std::uint64_t>::max();
+#endif
+        auto encoded = language_ipc_transition(static_cast<std::uint64_t>(operation), copied_phase,
+                                               original_state, original_scrubbed);
+#ifdef AURORA_IPC_POLICY_REQUEST_OUTPUT
+        if (operation == TransactionOperation::submit) {
+            const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
+            encoded |= reserved_bit;
+        }
+#endif
+#ifdef AURORA_IPC_POLICY_CANCEL_OUTPUT
+        if (operation == TransactionOperation::cancel) {
+            const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
+            encoded |= reserved_bit;
+        }
+#endif
+        return TransactionTransition::decode(encoded, static_cast<std::uint64_t>(operation),
+                                             original_phase, original_state, original_scrubbed);
+    }
+
 public:
     explicit Mailbox(const user::DomainRegistry& registry,
                      std::uint64_t generation_ceiling = std::numeric_limits<std::uint64_t>::max())
@@ -125,53 +157,60 @@ public:
     }
     [[nodiscard]] auto submit(user::DomainHandle caller, Phase phase, Endpoint endpoint, Request request)
         -> std::optional<std::uint64_t> {
-        if (phase != Phase::request || state_ != State::idle || !participants_live()
-            || !owns(caller, endpoint, Right::client)) return std::nullopt;
+        if (!participants_live() || !owns(caller, endpoint, Right::client)) return std::nullopt;
+        const auto decision = transition(TransactionOperation::submit, phase);
+        if (!decision.accepted()) return std::nullopt;
+        // Mint only after a checked accepted effect. A refusal cannot burn a stamp.
         const auto transaction = mint();
         if (!transaction) return std::nullopt;
         request_ = request;
         transaction_ = *transaction;
-        state_ = State::pending;
+        state_ = static_cast<State>(decision.next());
         return transaction;
     }
     [[nodiscard]] auto receive(user::DomainHandle caller, Phase phase, Endpoint endpoint, std::uint64_t transaction)
         -> std::optional<Request> {
-        if (phase != Phase::service || state_ != State::pending || !matches(transaction)
-            || !participants_live() || !owns(caller, endpoint, Right::service)) return std::nullopt;
+        if (!matches(transaction) || !participants_live() || !owns(caller, endpoint, Right::service)) return std::nullopt;
+        const auto decision = transition(TransactionOperation::receive, phase);
+        if (!decision.accepted()) return std::nullopt;
         const auto delivered = request_;
         request_ = Request{};
-        state_ = State::delivered;
+        state_ = static_cast<State>(decision.next());
         return delivered;
     }
     [[nodiscard]] auto reply(user::DomainHandle caller, Phase phase, Endpoint endpoint,
                              std::uint64_t transaction, std::uint64_t value) -> bool {
-        if (phase != Phase::service || state_ != State::delivered || !matches(transaction)
-            || !participants_live() || !owns(caller, endpoint, Right::service)) return false;
+        if (!matches(transaction) || !participants_live() || !owns(caller, endpoint, Right::service)) return false;
+        const auto decision = transition(TransactionOperation::reply, phase);
+        if (!decision.accepted()) return false;
         reply_ = value;
-        state_ = State::replied;
+        state_ = static_cast<State>(decision.next());
         return true;
     }
     [[nodiscard]] auto consume(user::DomainHandle caller, Phase phase, Endpoint endpoint, std::uint64_t transaction)
         -> std::optional<Completion> {
-        if (phase != Phase::completion || (state_ != State::replied && state_ != State::cancelled)
-            || !matches(transaction) || !owns(caller, endpoint, Right::client)
+        if (!matches(transaction) || !owns(caller, endpoint, Right::client)
             || (state_ == State::replied && !participants_live())) return std::nullopt;
-        const Completion result{state_ == State::replied ? Outcome::replied : Outcome::cancelled, reply_};
+        const auto decision = transition(TransactionOperation::consume, phase);
+        if (!decision.accepted()) return std::nullopt;
+        const Completion result{decision.effect() == TransactionEffect::consume_reply ? Outcome::replied : Outcome::cancelled, reply_};
         scrub();
         transaction_ = 0;
-        state_ = State::consumed;
+        state_ = static_cast<State>(decision.next());
         return result;
     }
     [[nodiscard]] auto cancel(Phase phase) -> bool {
-        if (phase != Phase::inactive || (state_ != State::pending && state_ != State::delivered)) return false;
+        const auto decision = transition(TransactionOperation::cancel, phase);
+        if (!decision.accepted()) return false;
         scrub();
-        state_ = State::cancelled;
+        state_ = static_cast<State>(decision.next());
         return true;
     }
     [[nodiscard]] auto recycle(Phase phase) -> bool {
-        if (phase != Phase::inactive || state_ != State::consumed || !scrubbed()) return false;
+        const auto decision = transition(TransactionOperation::recycle, phase);
+        if (!decision.accepted()) return false;
         transaction_ = 0;
-        state_ = State::idle;
+        state_ = static_cast<State>(decision.next());
         return true;
     }
     [[nodiscard]] auto revoke(Phase phase) -> bool {

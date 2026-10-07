@@ -1,8 +1,70 @@
 # Developer test-build and explicit acceptance contract
 
-## Candidate status and scope
+## IPC integration qualification — 2026-10-07
 
-This is the **PR26-based developer-test workflow with reviewed full native results**. It composes the
+The 608-file 851f288 checkpoint completed both full public native workflows with
+independent terminal/provenance and retained-corpus review. All six actual native
+consumers used the run-owned compiler. Separate five-entrypoint fatal sanitizer,
+28-image bounded static, 177+3+2 runtime and three split-firmware gates also passed.
+The later PR35 composition preserves the compiled inputs and adds independently
+reviewed synthetic and actual terminal-origin checks. Exact source identities,
+commands and limitations are in the [IPC results](kernel-ipc-transition-integration-results.md).
+This documentation-only publication does not claim another execution of the full
+graph. The older reconstruction and five-consumer records below are historical;
+their pending/blocked statements do not describe the completed checkpoint.
+
+## Historical PR28 native status — before input-review reconsideration
+
+Fresh full public developer D and pinned-prebuilt P release workflows on the
+586-file manifest `2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf`
+have independent terminal/provenance and retained-corpus approval. D built current
+source once; P recorded `externally-pinned-prebuilt` with zero bootstrap builds.
+All six actual 1024 MiB sampled-storage-cap consumers passed. These results do
+not establish sanitizer, guest-boot, broad-host or full IPC/kernel acceptance;
+the hosted service-budget gate does not exercise IPC/RR restart. Separately, the
+five-entrypoint fatal sanitizer supplement and all 177+3+2 actual runtime boots
+now have scoped independent acceptance on that same 586-file source. Their
+evidence does not close the blocked input-guard linked gate or qualify a new
+documentation-only source. See [exact results and limits](kernel-ipc-transition-integration-results.md).
+The following reconstruction and PR27 five-consumer records are historical;
+neither supplies substitute credit for the new runs. This status overlay changes
+documentation only and does not claim execution of its new source manifest.
+
+## Historical accepted-base IPC source reconciliation
+
+This candidate reconciles the 578-file IPC source, historically identified by
+manifest `531af7f09e4b7a3456e8e99df1e6f21a5edd7e7fe18455513d850faca825310c`,
+with the reviewed 574-file tooling documentation/results overlay, historically
+identified by manifest `cad13bfbf84ff657b97ac9c4d44f4423d9238fe524119cb4727ad43eb4cf581c`.
+PR27 merged at 2026-10-05 22:52:33 UTC. The accepted base is main
+`772b9c8a6291aa3cc656b409ce0263f73d45b034`, tree
+`62a2728942d9c36df16bd00189260f6a94cb847e`.
+The older IPC/PR28 source ancestry and failed/interrupted receipts retain their
+original identities and scope. This local integration requires independent review,
+a final current-source freeze and freshly admitted qualification; it is not an
+accepted integration head.
+
+After an execution-environment reset, this candidate was freshly reconstructed
+from independently verified published PR26, PR27 and IPC PR28 source trees.
+The PR27 recovery manifest is
+`aa0e772957f2248bde3b369f4fc9dd3092a6faf0a4d392792dde176a553e81dd`;
+the IPC recovery manifest is
+`6c66ea2ec9585305ec54cb32010c0871454ab0c9fad81f2accedcf48b9d5182a`.
+Recovery checked file SHA256, Git blob SHA1, sizes and executable modes. Exact
+historical PR27 manifest bytes were not restored; their digest remains a historical
+reference, not a claim of recovered manifest-byte identity. The lost provisional
+integration checkpoint is not presumed restored or hash-identical. A fresh merge
+ledger, manifest and independent review are required.
+
+IPC is now the sixth explicitly named portable native cap consumer. Source-only
+review and Python AST/Bash syntax checks do not rerun any native, sanitizer,
+compiler, Make-control or emulator workload. The historical developer audit
+failure/composite and prebuilt acceptance result below retain their exact
+five-consumer source scope. No result is transferred to this integration.
+
+## Reviewed five-consumer tooling checkpoint
+
+The prior **PR26-based developer-test workflow with reviewed full native results** composes the
 reviewed PR25 developer-test tooling with the accepted 569-file PR26 source
 baseline. Its underlying 566-file tested implementation manifest is `f8aec37b518c2dc9ccfe0ba95b35055b06bbc3e01fa10d2295348abcd2de9366`.
 That implementation includes round-robin policy and exact-bool short-circuit
@@ -211,14 +273,16 @@ original meaning and are not rewritten by this tooling contract.
 
 ## Reviewed resource-cap composition
 
-This PR26 composition retains all five independently reviewed cap consumers:
-package identity, package manifest, package graph, kernel budget and round-robin.
-Their focused defaults remain 128/256/256/128/128 MiB; the aggregate selects the
+This source integration retains the five reviewed tooling consumers and adds
+IPC transaction explicitly: package identity, package manifest, package graph,
+kernel budget, round-robin and IPC transaction. Their focused defaults are
+128/256/256/128/128/128 MiB; the aggregate selects the
 bounded 1024 MiB ceiling. A selected cap does not itself admit a supervised aggregate: retained
 workspaces, reserve and the existing free-space floor still need separate measured
 admission. Process address-space, source-size, file-size and accounting comparisons
-are unchanged. The tooling tests name all five consumers explicitly. The unchanged
-`tests/native-cap-contracts.py` driver and its aggregate prerequisite are retained. Their
+are unchanged. The tooling tests and `tests/native-cap-contracts.py` driver name
+all six consumers explicitly, without filtering missing consumers. The aggregate
+prerequisite is retained. Their
 cap-only controls emit configuration-only results with native_executed=false and
 cannot replace any behavioral, native or emulator gate.
 
@@ -239,6 +303,70 @@ it never computes its own expected pin or selects a default compiler. The native
 runner validates identity before artifacts, records observed identity separately
 from an external expected pin, and revalidates identity before a passing summary.
 A cap-only check remains compiler-free configuration evidence.
+
+## IPC consumer and preserved real policy linkage
+
+`make test-ipc-transaction`, `make test-uefi-ipc` and `make test-uefi-budget` enter
+the shared supervisor. The latter two now compile the real IPC policy root;
+dispatch, user-phase and round-robin focused routes were already supervised.
+All retained IPC/dispatch/budget/round-robin hosted linkages honor the selected
+`AURORAC` and do not rebuild it. The round-robin hostile adapter still renames
+only the round-robin producer while linking the genuine IPC producer. The IPC
+hostile adapter still renames only the IPC producer and verifies that the
+round-robin and other real symbols remain unchanged. There is no C++ fallback.
+
+Both Make entrypoints admit `IPC_TRANSACTION_COMPILER`,
+`IPC_TRANSACTION_COMPILER_SHA256` and `IPC_TRANSACTION_CAP_MIB` under the same
+selector, pin and raw cap rules as the existing families. The supervisor sets the
+IPC compiler alias to its immutable run-owned compiler. The generic family's
+existing empty-alias-as-omitted behavior is preserved; this is distinct from
+`ACCEPTANCE_COMPILER`, whose explicit empty value is rejected. Conflicting
+nonempty compiler paths and mismatched pins are rejected by the shared contract.
+
+The focused cap is 128 MiB and the explicit aggregate cap is 1024 MiB. The cap is
+forwarded as one quoted operand. Direct `scripts/kernel-ipc-transaction-tests.sh`
+requires `AURORAC` and exactly one `--compiler-sha256 DIGEST` or
+`--developer-build-receipt FILE` argument pair, forwarded with a Bash array.
+The native runner validates the selection after argument parsing, keeps cap-only
+checks compiler-free, resolves identity before artifacts or execution, revalidates
+identity before a passing summary and records the identity mode in its inputs and
+summary. Neither an observed self-hash nor a fixed default is approval.
+
+The existing finite truth table, full-width/hostile corpus, copy observations,
+exhaustive model, source-drift guards and fatal sanitizer paths are retained.
+New shell/metadata tests mock commands and cannot claim native acceptance.
+All six cap variables enter the existing both-entry developer/pinned-prebuilt
+mocked rejection controls. The retired executable-Make-expression observation
+stays retired and uncredited. Future changes to executable source still require
+source review, a separate final freeze and freshly admitted complete native and
+emulator qualification. The exact older 586-file `2b4da219…` source now has
+separate full D/P native, five-entrypoint fatal ASan/UBSan, runtime-premise,
+28-image bounded static and 177+3+2 guest acceptance, recorded in the dated
+addendum. The fresh current-main composition changes executable source and
+requires new qualification; none of those receipts establishes a rerun here.
+
+## Native-free emulator clock contract gate
+
+Current-main addendum (2026-10-06): the composed clock and firmware suites now
+contain 13 and 15 methods respectively, authored but not executed. Both ordinary
+and optimized focused runs and complete native routing remain required. The
+historical eight-method result below is not coverage of the added firmware join.
+
+`make test-emulator-clock` runs `tests/kernel-emulator-clock.py` in ordinary and
+optimized (`python3 -O`) Python, with `PYTHONDONTWRITEBYTECODE=1` for both recipes.
+It is also a prerequisite of the root `make test` aggregate and validates the
+immutable test context when nested inside a supervised run. This compiler-free
+target does not enter compiler-consuming dispatch, select/build a compiler,
+build an image or launch QEMU. Source/argv controls cannot qualify an emulator
+run. Launcher syntax, both complete eight-method Python suites inside the public
+Make target, and retirement/normal plans passed in the separately admitted
+compiler-free stage on source manifest
+`e6c08e72e9764615043b4ef7c5a726c5a5dda12c6f1de9f8735ec0fe8b6230b7`.
+The target also completed within the independently accepted full D/P workflows
+on the later 586-file `2b4da219…` source, whose earlier clock-stage delta was
+documentation only. These controls establish no guest-boot result. See
+[integration results](kernel-ipc-transition-integration-results.md) for exact
+source and receipt identities.
 
 ## Earlier PR25-only focused evidence
 
@@ -262,10 +390,11 @@ in the current developer workflow.
 
 ## Cap override admission
 
-All five `*_CAP_MIB` controls are decimal data only. Omission retains the focused
+All six current `*_CAP_MIB` controls are decimal data only (the reviewed
+five-consumer revision history below keeps its original scope). Omission retains the focused
 or aggregate default; an explicit empty value, whitespace, option text, shell or
 Make expression, out-of-range integer or extra operand rejects before run artifacts
-or build/native dispatch. Identity, budget and round-robin accept 128..1024 MiB;
+or build/native dispatch. Identity, budget, round-robin and IPC accept 128..1024 MiB;
 manifest and graph accept 256..1024 MiB. Make checks raw values without evaluating
 or echoing them before export, and the supervisor authoritatively checks the same
 reviewed numeric bounds. Recipes quote each cap operand individually. In

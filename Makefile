@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-acceptance test-compiler test-image test-semantics test-semantics-stress test-unsigned test-uefi-span test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-round-robin test-uefi-dispatch test-uefi-user-phases,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-acceptance test-compiler test-image test-semantics test-semantics-stress test-unsigned test-uefi-span test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-round-robin test-ipc-transaction test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -15,6 +15,7 @@ override _AURORA_USER_CONTROLS := CXX CXXFLAGS IR_TEST_CXXFLAGS IR_TEST_BUILD_PR
     PACKAGE_MANIFEST_COMPILER PACKAGE_MANIFEST_COMPILER_SHA256 PACKAGE_MANIFEST_TEST_FLAGS \
     PACKAGE_MANIFEST_CAP_MIB PACKAGE_GRAPH_COMPILER PACKAGE_GRAPH_COMPILER_SHA256 PACKAGE_GRAPH_TEST_FLAGS \
     PACKAGE_GRAPH_CAP_MIB KERNEL_BUDGET_COMPILER KERNEL_BUDGET_COMPILER_SHA256 KERNEL_BUDGET_CAP_MIB ROUND_ROBIN_TEST_CAP_MIB \
+    IPC_TRANSACTION_COMPILER IPC_TRANSACTION_COMPILER_SHA256 IPC_TRANSACTION_CAP_MIB \
     UTF8_TEST_FLAGS UTF8_LINES_TEST_FLAGS UTF8_LINES_COMPILER_SHA256 UTF8_LINES_ARTIFACT_PARENT \
     UTF8_RANGE_TEST_FLAGS UTF8_RANGE_COMPILER_SHA256 UTF8_RANGE_ARTIFACT_PARENT XFS_GEOMETRY_TEST_FLAGS \
     XFS_ROOT_TEST_FLAGS XFS_ROOT_API_TEST_FLAGS XFS_ROOT_REPO XFS_ROOT_FIXTURES XFS_ROOT_ARTIFACT_PARENT \
@@ -32,7 +33,7 @@ $(error unsupported raw flag syntax in controls: $(_AURORA_BAD_RAW_FLAGS))
 endif
 
 # Inspect raw cap data before export can expand a Make expression. Never echo it.
-override _AURORA_CAP_CONTROLS := PACKAGE_IDENTITY_CAP_MIB PACKAGE_MANIFEST_CAP_MIB PACKAGE_GRAPH_CAP_MIB KERNEL_BUDGET_CAP_MIB ROUND_ROBIN_TEST_CAP_MIB
+override _AURORA_CAP_CONTROLS := PACKAGE_IDENTITY_CAP_MIB PACKAGE_MANIFEST_CAP_MIB PACKAGE_GRAPH_CAP_MIB KERNEL_BUDGET_CAP_MIB ROUND_ROBIN_TEST_CAP_MIB IPC_TRANSACTION_CAP_MIB
 override _AURORA_CAP_EMPTY :=
 override _AURORA_CAP_SPACE := $(_AURORA_CAP_EMPTY) $(_AURORA_CAP_EMPTY)
 override _AURORA_CAP_TAB := $(_AURORA_CAP_EMPTY)	$(_AURORA_CAP_EMPTY)
@@ -95,7 +96,7 @@ else
 ifneq ($(strip $(AURORA_TEST_CONTEXT)),)
 .NOTPARALLEL:
 export AURORA_TEST_CONTEXT AURORA_TEST_MODE AURORA_TEST_COMPILER AURORA_TEST_IDENTITY_ARGS
-export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_GRAPH_COMPILER KERNEL_BUDGET_COMPILER
+export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_GRAPH_COMPILER KERNEL_BUDGET_COMPILER IPC_TRANSACTION_COMPILER
 .PHONY: aurora-test-context
 all compiler kernel test-compiler test-image test-kernel test-semantics test-semantics-stress test-uefi \
     test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget \
@@ -105,7 +106,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-uefi-bar test-uefi-span smoke-uefi-bar smoke-uefi-span test-uefi-ivrs smoke-uefi-ivrs \
     test-pin-ledger test-uefi-pins smoke-uefi-pins test-dormant-tables test-uefi-tables smoke-uefi-tables \
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
-    test-boot-capacity smoke-boot-capacity test-compiler-contract test-round-robin test-native-cap-contracts \
+    test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-native-cap-contracts \
     run run-uefi kernel-uefi test-developer-commands: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
@@ -416,5 +417,24 @@ test-compiler-contract:
 	python3 -B -O tests/test_compiler_contract.py
 
 test: test-compiler-contract
+
+# Bounded operational IPC policy shares the immutable run-owned compiler.
+IPC_TRANSACTION_COMPILER ?= $(AURORAC)
+IPC_TRANSACTION_COMPILER_SHA256 ?=
+IPC_TRANSACTION_CAP_MIB ?= 128
+test: IPC_TRANSACTION_CAP_MIB = 1024
+.PHONY: test-ipc-transaction
+test-ipc-transaction: compiler
+	AURORAC="$(IPC_TRANSACTION_COMPILER)" IPC_TRANSACTION_CAP_MIB="$(IPC_TRANSACTION_CAP_MIB)" ./scripts/kernel-ipc-transaction-tests.sh $(AURORA_TEST_IDENTITY_ARGS)
+
+test: test-ipc-transaction
+
+# Compiler-free clock argv contracts; never boot QEMU or select a compiler here.
+.PHONY: test-emulator-clock
+test-emulator-clock:
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/kernel-emulator-clock.py
+	PYTHONDONTWRITEBYTECODE=1 python3 -O tests/kernel-emulator-clock.py
+
+test: test-emulator-clock
 
 endif # controlled outer dispatcher / original inner graph

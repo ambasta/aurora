@@ -470,6 +470,7 @@ class Controls(unittest.TestCase):
             ('tests/compiler/utf8_lines.py', ['--compiler', str(self.compiler), '--artifacts', str(output)]),
             ('tests/kernel-budget-native.py', ['--compiler', str(self.compiler)]),
             ('tests/kernel-round-robin-native.py', ['--compiler', str(self.compiler), '--output', str(output)]),
+            ('tests/kernel-ipc-transition-native.py', ['--compiler', str(self.compiler), '--output', str(output)]),
             ('fixtures/xfs-offline/verify_native.py', ['--compiler', str(self.compiler)]),
         ]
         for name in ('tests/compiler/xfs_root.py', 'tests/compiler/xfs_root_api.py'):
@@ -488,22 +489,23 @@ class Controls(unittest.TestCase):
         after = {str(p) for p in (ROOT / 'build').rglob('*')} if (ROOT / 'build').exists() else set()
         self.assertEqual(before, after)
 
-    def test_five_pr26_cap_consumers_configuration_only(self):
-        # The PR26 composition explicitly preserves every cap consumer.
+    def test_six_integrated_cap_consumers_configuration_only(self):
+        # Name all five PR26 consumers and the IPC consumer; never filter missing inputs.
         consumers = (
             ('tests/compiler/package_identity.py', 'PACKAGE_IDENTITY', 128),
             ('tests/compiler/package_manifest.py', 'PACKAGE_MANIFEST', 256),
             ('tests/compiler/package_graph.py', 'PACKAGE_GRAPH', 256),
             ('tests/kernel-budget-native.py', 'KERNEL_BUDGET', 128),
             ('tests/kernel-round-robin-native.py', 'ROUND_ROBIN_TEST', 128),
+            ('tests/kernel-ipc-transition-native.py', 'IPC_TRANSACTION', 128),
         )
         before = {str(p) for p in (ROOT / 'build').rglob('*')} if (ROOT / 'build').exists() else set()
         makefile = (ROOT / 'Makefile').read_text()
         for name, family, focused in consumers:
-            self.assertTrue((ROOT / name).is_file(), 'missing required PR26 cap consumer')
+            self.assertTrue((ROOT / name).is_file(), 'missing required integrated cap consumer')
             self.assertIn('test: ' + family + '_CAP_MIB = 1024', makefile)
             self.assertIn(family + '_CAP_MIB ?= ' + str(focused), makefile)
-            selected = ['--compiler', '/nonexistent/compiler'] if family in ('KERNEL_BUDGET', 'ROUND_ROBIN_TEST') else ['/nonexistent/compiler']
+            selected = ['--compiler', '/nonexistent/compiler'] if family in ('KERNEL_BUDGET', 'ROUND_ROBIN_TEST', 'IPC_TRANSACTION') else ['/nonexistent/compiler']
             for cap in (focused, 513, 1024, focused - 1, 1025):
                 command = [sys.executable, '-B'] + (['-O'] if not __debug__ else []) + [str(ROOT / name), *selected,
                     '--check-cap-only', '--candidate-cap-mib', str(cap)]
@@ -525,13 +527,14 @@ class Controls(unittest.TestCase):
 
 
 
-    def test_cap_controls_match_all_five_reviewed_bounds(self):
+    def test_cap_controls_match_all_six_integrated_bounds(self):
         self.assertEqual(c.CAP_CONTROLS, {
             'PACKAGE_IDENTITY_CAP_MIB': (128, 1024),
             'PACKAGE_MANIFEST_CAP_MIB': (256, 1024),
             'PACKAGE_GRAPH_CAP_MIB': (256, 1024),
             'KERNEL_BUDGET_CAP_MIB': (128, 1024),
             'ROUND_ROBIN_TEST_CAP_MIB': (128, 1024),
+            'IPC_TRANSACTION_CAP_MIB': (128, 1024),
         })
         c.validate_cap_controls({})
         for name, (minimum, maximum) in c.CAP_CONTROLS.items():
@@ -541,7 +544,7 @@ class Controls(unittest.TestCase):
                           '128 --check-cap-only', '1024 --self-test-only', '128 invalid',
                           '128 unexpected', '128\n--check-cap-only', '128\t--check-cap-only',
                           ' 128', '128 ', '$UNEXPANDED', '${UNEXPANDED}', '1' * 5000, None, True, 128):
-                for goal in ('test', 'test-round-robin', 'test-acceptance'):
+                for goal in ('test', 'test-round-robin', 'test-ipc-transaction', 'test-acceptance'):
                     env = {name: value}
                     if goal == 'test-acceptance': env['ACCEPTANCE_COMPILER_SHA256'] = '0' * 64
                     with self.subTest(name=name, value=str(value)[:50], goal=goal), self.assertRaises(c.ContractError):
@@ -626,10 +629,12 @@ class Controls(unittest.TestCase):
         for name, (minimum, maximum) in c.CAP_CONTROLS.items():
             self.assertIn(name + ' ?= ' + str(minimum), text)
             self.assertIn('test: ' + name + ' = ' + str(maximum), text)
-            if name == 'ROUND_ROBIN_TEST_CAP_MIB':
+            if name in ('ROUND_ROBIN_TEST_CAP_MIB', 'IPC_TRANSACTION_CAP_MIB'):
+                script = ('kernel-round-robin-tests.sh' if name == 'ROUND_ROBIN_TEST_CAP_MIB'
+                          else 'kernel-ipc-transaction-tests.sh')
                 self.assertIn(name + '="$(' + name + ')"', text)
-                self.assertIn('--candidate-cap-mib "${ROUND_ROBIN_TEST_CAP_MIB:-128}"',
-                              (ROOT / 'scripts/kernel-round-robin-tests.sh').read_text())
+                self.assertIn('--candidate-cap-mib "${' + name + ':-128}"',
+                              (ROOT / 'scripts' / script).read_text())
             else:
                 self.assertIn('--candidate-cap-mib "$(' + name + ')"', text)
 
@@ -848,7 +853,8 @@ class Controls(unittest.TestCase):
                 c.parse_cxx(value)
 
     def test_pr26_consuming_targets_use_shared_fresh_route(self):
-        for directory, targets in (('', ('test-round-robin', 'test-uefi-dispatch', 'test-uefi-user-phases')),
+        for directory, targets in (('', ('test-round-robin', 'test-ipc-transaction', 'test-uefi-ipc', 'test-uefi-budget',
+                                         'test-uefi-dispatch', 'test-uefi-user-phases')),
                                    ('compiler', ('test-short-circuit',))):
             for target in targets:
                 with self.subTest(target=target):
@@ -865,8 +871,20 @@ class Controls(unittest.TestCase):
         self.assertIn('test: test-native-cap-contracts', root_make)
         self.assertIn('test: test-short-circuit', compiler_make)
         self.assertIn('ROUND_ROBIN_TEST_CAP_MIB', c.FORWARDED)
+        self.assertIn('IPC_TRANSACTION_CAP_MIB', c.FORWARDED)
+        self.assertIn('IPC_TRANSACTION_COMPILER', c.SELECTORS)
+        self.assertIn('IPC_TRANSACTION_COMPILER_SHA256', c.PINS)
+        self.assertIn('test: test-ipc-transaction', root_make)
+        context_targets = set()
+        for line in root_make.replace('\\\n', ' ').splitlines():
+            targets, separator, prerequisite = line.partition(':')
+            if separator and prerequisite.strip() == 'aurora-test-context':
+                context_targets.update(targets.split())
+        self.assertTrue({'test-ipc-transaction', 'test-native-cap-contracts',
+                         'test-emulator-clock', 'run', 'run-uefi', 'kernel-uefi',
+                         'test-developer-commands'} <= context_targets)
 
-    def test_five_consumer_driver_is_not_filtered(self):
+    def test_six_consumer_driver_is_not_filtered(self):
         spec = importlib.util.spec_from_file_location('synthetic_cap_driver', ROOT / 'tests/native-cap-contracts.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -876,12 +894,13 @@ class Controls(unittest.TestCase):
             ('tests/compiler/package_graph.py', 256, False),
             ('tests/kernel-budget-native.py', 128, True),
             ('tests/kernel-round-robin-native.py', 128, True),
+            ('tests/kernel-ipc-transition-native.py', 128, True),
         ))
 
-    def test_round_robin_shell_preserves_one_identity_pair(self):
+    def shell_preserves_one_identity_pair(self, script, runner, cap_control):
         scripts = self.root / 'scripts'; scripts.mkdir()
-        wrapper = scripts / 'kernel-round-robin-tests.sh'
-        shutil.copyfile(ROOT / 'scripts/kernel-round-robin-tests.sh', wrapper)
+        wrapper = scripts / script
+        shutil.copyfile(ROOT / 'scripts' / script, wrapper)
         bindir = self.root / 'fake-bin'; bindir.mkdir()
         log = self.root / 'build/shell-argv.json'
         python = bindir / 'python3'
@@ -890,12 +909,12 @@ class Controls(unittest.TestCase):
         python.chmod(0o755)
         env = {**self.env, 'PATH': str(bindir) + ':' + self.env['PATH'],
                'CONTROL_LOG': str(log), 'AURORAC': str(self.root / 'selected compiler; literal'),
-               'ROUND_ROBIN_TEST_CAP_MIB': '513'}
+               cap_control: '513'}
         for mode, value in (('--compiler-sha256', 'a' * 64),
                             ('--developer-build-receipt', str(self.root / 'receipt with spaces; $(false).json'))):
             result = subprocess.run(['/bin/bash', str(wrapper), mode, value], env=env, capture_output=True, timeout=10)
             self.assertEqual(result.returncode, 91, result.stderr.decode())
-            self.assertEqual(json.loads(log.read_text()), ['-B', '-O', 'tests/kernel-round-robin-native.py',
+            self.assertEqual(json.loads(log.read_text()), ['-B', '-O', runner,
                 '--compiler', env['AURORAC'], mode, value, '--candidate-cap-mib', '513'])
             log.unlink()
         for args in ([], ['--compiler-sha256'], ['--bogus', 'x'],
@@ -912,6 +931,128 @@ class Controls(unittest.TestCase):
         self.assertNotIn('eval', text)
         self.assertNotIn('sha256sum', text)
         self.assertNotIn('make -C compiler', text)
+
+    def test_round_robin_shell_preserves_one_identity_pair(self):
+        self.shell_preserves_one_identity_pair('kernel-round-robin-tests.sh',
+            'tests/kernel-round-robin-native.py', 'ROUND_ROBIN_TEST_CAP_MIB')
+
+    def test_ipc_shell_preserves_one_identity_pair(self):
+        self.shell_preserves_one_identity_pair('kernel-ipc-transaction-tests.sh',
+            'tests/kernel-ipc-transition-native.py', 'IPC_TRANSACTION_CAP_MIB')
+
+    def test_ipc_real_policy_linkage_is_retained(self):
+        # Source composition only. Actual linked/native observations remain
+        # separate gates; these checks prevent accidentally restoring old stubs.
+        for name in ('kernel-uefi-ipc-tests.sh', 'kernel-uefi-budget-tests.sh',
+                     'kernel-uefi-dispatch-tests.sh', 'kernel-uefi-user-phases-tests.sh'):
+            text = (ROOT / 'scripts' / name).read_text()
+            self.assertIn('compiler="${AURORAC:-build/aurorac}"', text)
+            self.assertIn('if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi', text)
+            self.assertIn('"$compiler" --module-root kernel/policies examples/kernel.au', text)
+        text = (ROOT / 'scripts/kernel-round-robin-tests.sh').read_text()
+        self.assertIn('"$compiler" --module-root kernel/policies examples/kernel.au', text)
+        self.assertIn('--redefine-sym aurora_kernel_round_robin_next=aurora_kernel_round_robin_next_real', text)
+        self.assertIn('tests/kernel-round-robin-adapter.cpp build/uefi/round-robin-adapter-substitute.o', text)
+        ipc = (ROOT / 'tests/kernel-ipc-transition-native.py').read_text()
+        self.assertIn("old, new = 'aurora_kernel_ipc_transition', 'aurora_kernel_ipc_transition_real'", ipc)
+        self.assertIn("need(after == renamed, 'Only IPC producer may be renamed; round-robin and all other symbols must remain genuine')", ipc)
+        for name in ('Makefile', 'compiler/Makefile'):
+            text = (ROOT / name).read_text()
+            controls = text[text.index('override _AURORA_USER_CONTROLS :='):text.index('# Raw user flags')]
+            for control in ('IPC_TRANSACTION_COMPILER', 'IPC_TRANSACTION_COMPILER_SHA256', 'IPC_TRANSACTION_CAP_MIB'):
+                self.assertIn(control, controls)
+            raw_caps = next(line for line in text.splitlines() if line.startswith('override _AURORA_CAP_CONTROLS :='))
+            self.assertIn('IPC_TRANSACTION_CAP_MIB', raw_caps)
+        root = (ROOT / 'Makefile').read_text()
+        self.assertIn('KERNEL_BUDGET_COMPILER IPC_TRANSACTION_COMPILER', root)
+        self.assertIn('./scripts/kernel-ipc-transaction-tests.sh $(AURORA_TEST_IDENTITY_ARGS)', root)
+
+    def test_ipc_family_alias_and_pin_use_existing_selection_policy(self):
+        expected = c.digest(self.compiler)
+        for entry in ('root', 'compiler'):
+            for goal in ('test', 'test-ipc-transaction'):
+                # Existing family aliases treat an empty value as omission.
+                mode, _, selected, _ = c.prepare_controls(self.launch(goal, entry=entry),
+                    {'IPC_TRANSACTION_COMPILER': ''})
+                self.assertEqual(mode, 'developer'); self.assertIsNone(selected)
+            pinned = {'ACCEPTANCE_COMPILER': str(self.compiler),
+                      'ACCEPTANCE_COMPILER_SHA256': expected,
+                      'IPC_TRANSACTION_COMPILER': str(self.compiler),
+                      'IPC_TRANSACTION_COMPILER_SHA256': expected}
+            mode, observed, selected, _ = c.prepare_controls(
+                self.launch('test-ipc-transaction', entry=entry), pinned)
+            self.assertEqual((mode, observed, selected), ('acceptance', expected, self.compiler))
+            for changed in ({'IPC_TRANSACTION_COMPILER': str(self.root / 'wrong')},
+                            {'IPC_TRANSACTION_COMPILER_SHA256': '0' * 64}):
+                with self.subTest(entry=entry, changed=changed), self.assertRaises(c.ContractError):
+                    c.prepare_controls(self.launch('test-ipc-transaction', entry=entry), {**pinned, **changed})
+        mode, observed, selected, full = c.prepare_controls(self.launch('test-ipc-transaction'),
+            {'IPC_TRANSACTION_COMPILER_SHA256': expected})
+        self.assertEqual((mode, observed, selected, full), ('acceptance', expected, None, False))
+
+    def ipc_adapter(self, fail_final=False, fail_resolve=False):
+        spec = importlib.util.spec_from_file_location('synthetic_ipc_adapter', ROOT / 'tests/kernel-ipc-transition-native.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        output = self.root / 'build/ipc-synthetic'
+        identity = Mock(sha256=c.digest(self.compiler))
+        identity.record.return_value = dict(mode='developer', observed_compiler_sha256=c.digest(self.compiler),
+                                           external_expected_sha256=None)
+        if fail_final:
+            identity.verify.side_effect = RuntimeError('synthetic final identity failure')
+        argv = ['synthetic_ipc_adapter', '--compiler', str(self.compiler), '--output', str(output),
+                '--developer-build-receipt', str(self.receipt)]
+        def observed_run(command, folder, name, cap, **kwargs):
+            symbols = b''
+            if name == 'root-symbols':
+                symbols = b'aurora_kernel_ipc_transition T 10 20\naurora_kernel_round_robin_next T 30 40\n'
+            elif name == 'adapter-root-symbols':
+                symbols = b'aurora_kernel_ipc_transition_real T 10 20\naurora_kernel_round_robin_next T 30 40\n'
+            return subprocess.CompletedProcess(command, 0, symbols, b'')
+        # Synthetic metadata/ordering only: compiler, linker, vectors and native
+        # execution are mocked. These counts are not IPC qualification evidence.
+        with patch.object(sys, 'argv', argv), patch.object(module, 'ROOT', self.root), \
+             patch.object(module, 'resolve_identity', return_value=identity) as resolve, \
+             patch.object(module, 'run', side_effect=observed_run) as run, \
+             patch.object(module, 'guard') as guard, \
+             patch.object(module, 'sha', side_effect=lambda path: c.digest(path) if path == self.compiler else 'b' * 64), \
+             patch.object(module, 'vector_gate', side_effect=[17, 19]), \
+             patch.object(module, 'rejection_gate', return_value=22), \
+             patch.object(module, 'allocated', return_value=0), redirect_stdout(io.StringIO()):
+            if fail_resolve:
+                resolve.side_effect = RuntimeError('synthetic initial identity failure')
+                with self.assertRaisesRegex(RuntimeError, 'synthetic initial identity failure'):
+                    module.main()
+                self.assertFalse(output.exists())
+                run.assert_not_called(); guard.assert_not_called(); identity.verify.assert_not_called()
+                return
+            if fail_final:
+                with self.assertRaisesRegex(RuntimeError, 'synthetic final identity failure'):
+                    module.main()
+                self.assertFalse((output / 'summary.json').exists())
+            else:
+                module.main()
+                summary = json.loads((output / 'summary.json').read_text())
+                inputs = json.loads((output / 'inputs.json').read_text())
+                self.assertEqual(summary['compiler_identity'], identity.record.return_value)
+                self.assertEqual(inputs['compiler_identity'], identity.record.return_value)
+                self.assertEqual(summary['cases']['copy_repetitions'], 4096)
+                self.assertEqual(summary['cases']['finite_contexts'], 288)
+                self.assertEqual(summary['cases']['decoder_compact'], 73728)
+                self.assertIn('no QEMU', summary['limits'])
+            identity.verify.assert_called_once_with()
+            resolve.assert_called_once()
+            self.assertEqual(resolve.call_args.args[1:], (self.compiler, self.root))
+            self.assertEqual(run.call_count, 17)
+
+    def test_ipc_adapter_metadata_and_final_identity(self):
+        self.ipc_adapter()
+
+    def test_ipc_final_identity_failure_cannot_pass(self):
+        self.ipc_adapter(fail_final=True)
+
+    def test_ipc_initial_identity_failure_precedes_artifacts(self):
+        self.ipc_adapter(fail_resolve=True)
 
     def round_robin_adapter(self, fail_final=False):
         spec = importlib.util.spec_from_file_location('synthetic_rr_adapter', ROOT / 'tests/kernel-round-robin-native.py')

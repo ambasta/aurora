@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-mode="${1:-normal}"
+clock_plan=false
+if [[ "${1-}" == --clock-plan ]]; then clock_plan=true; shift; fi
+if (( $# > 1 )); then echo 'Expected one exact UEFI mode' >&2; exit 2; fi
+mode="${1-normal}"
+clock_profile="$(python3 scripts/kernel_emulator_clock.py profile "$mode")"
 source ./scripts/uefi-firmware.sh
-uefi_firmware_select
+if [[ "$clock_plan" == true ]]; then
+    uefi_firmware_select --plan
+else
+    uefi_firmware_select
+fi
 qemu="${QEMU:-qemu-system-x86_64}"
-command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing' >&2; exit 2; }
-UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh
-if [[ "$mode" != normal ]]; then trap './scripts/kernel-uefi-build.sh >/dev/null' EXIT; fi
+if [[ "$clock_plan" == false ]]; then
+    command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing' >&2; exit 2; }
+    UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh
+    if [[ "$mode" != normal ]]; then trap './scripts/kernel-uefi-build.sh >/dev/null' EXIT; fi
+fi
 cpus=1
 cpu=qemu64
 if [[ "$mode" == runtime-sysenter ]]; then cpu=qemu64,vendor=GenuineIntel,+sep; fi
@@ -19,14 +29,29 @@ case "$mode" in
  pci-devices) args+=(-device nvme,serial=AURORA_READ_ONLY -device qemu-xhci -device e1000e,romfile=) ;;
  pci-bridge|pci-cycle) args+=(-device pcie-root-port,id=aurora_port,chassis=1,slot=2 -device nvme,bus=aurora_port,serial=AURORA_READ_ONLY) ;;
 esac
+case "$clock_profile" in
+ tcg-original-clock) ;;
+ tcg-fixed0-noalign-nosleep) args+=(-icount shift=0,align=off,sleep=off) ;;
+ *) echo 'Unknown emulator clock profile' >&2; exit 2 ;;
+esac
+qemu_argv=("$qemu" "${args[@]}" -machine q35 -accel tcg -cpu "$cpu" -smp "$cpus" -m 128M \
+    "${UEFI_FIRMWARE_ARGS[@]}" -drive format=raw,file=fat:ro:build/uefi/esp,snapshot=on \
+    -nic none -display none -serial stdio -monitor none -no-reboot \
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04)
+clock_check=(python3 scripts/kernel_emulator_clock.py verify "$mode" "$clock_profile"
+    "$qemu" "$UEFI_FIRMWARE_COMBINED" "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS"
+    "${QEMU_DATA:-}" -- "${qemu_argv[@]}")
+if [[ "$clock_plan" == true ]]; then
+    "${clock_check[@]}"
+    exit 0
+fi
+# Fail closed before QEMU; this records a command, never a successful execution.
+"${clock_check[@]}" >"build/uefi/$mode.clock.json"
 log="build/uefi/$mode.log"
 set +e
 # Keep QEMU off the terminal: timeout's background process group would be
 # stopped by SIGTTOU when -serial stdio changes a terminal's mode.
-timeout 30 "$qemu" "${args[@]}" -machine q35 -accel tcg -cpu "$cpu" -smp "$cpus" -m 128M \
-    "${UEFI_FIRMWARE_ARGS[@]}" -drive format=raw,file=fat:ro:build/uefi/esp,snapshot=on \
-    -nic none -display none -serial stdio -monitor none -no-reboot \
-    -device isa-debug-exit,iobase=0xf4,iosize=0x04 </dev/null >"$log" 2>&1
+timeout 30 "${qemu_argv[@]}" </dev/null >"$log" 2>&1
 status=$?
 set -e
 cat "$log"

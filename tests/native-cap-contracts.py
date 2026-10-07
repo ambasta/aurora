@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check resource configuration through the five real entrypoints, without native work."""
+"""Check resource configuration through the real entrypoints, without native work."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -19,6 +19,7 @@ CONSUMERS = (
     ('tests/compiler/package_graph.py', 256, False),
     ('tests/kernel-budget-native.py', 128, True),
     ('tests/kernel-round-robin-native.py', 128, True),
+    ('tests/kernel-ipc-transition-native.py', 128, True),
 )
 
 
@@ -145,11 +146,11 @@ def main():
     require(pins == {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources},
             'configuration sources changed during checks')
     report = dict(status='configuration-contracts-verified', native_executed=False,
-                  cli_cases=len(rows), consumers=5, optimization_modes=[0, 1],
+                  cli_cases=len(rows), consumers=len(CONSUMERS), optimization_modes=[0, 1],
                   accounting='mocked cap/reserve/free-floor boundaries; no large allocation',
                   configuration_source_pins=pins, cases=rows)
     (out / 'configuration-results.json').write_text(json.dumps(report, indent=2) + '\n')
-    print('CONFIGURATION CONTRACTS VERIFIED: 160 real entrypoint cases; no native acceptance claimed')
+    print(f'CONFIGURATION CONTRACTS VERIFIED: {len(rows)} real entrypoint cases; no native acceptance claimed')
 
 
 if __name__ == '__main__':

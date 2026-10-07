@@ -22,7 +22,7 @@ class FirmwareSelection(unittest.TestCase):
         path.write_bytes(b'synthetic firmware fixture')
         return str(path)
 
-    def select(self, expected=0, **env):
+    def select(self, expected=0, plan=False, resolved=False, **env):
         current = {name: value for name, value in os.environ.items()
                    if not name.startswith('OVMF') and name != 'QEMU_DATA'}
         current.update(env)
@@ -30,8 +30,11 @@ class FirmwareSelection(unittest.TestCase):
         if not any(name in env for name in ('OVMF', 'OVMF_CODE', 'OVMF_VARS', 'OVMF_DIR')):
             current['OVMF_DIR'] = str(self.home)
         result = subprocess.run(['bash', '-eu', '-c',
-            'source "$1"; uefi_firmware_select; printf "%s\\0" "${UEFI_FIRMWARE_ARGS[@]}"',
-            'test', str(HELPER)], env=current, capture_output=True, timeout=5)
+            'source "$1"; shift; uefi_firmware_select "$@"; ' +
+            ('printf "%s\\0" "$UEFI_FIRMWARE_COMBINED" "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS"; '
+             if resolved else '') + 'printf "%s\\0" "${UEFI_FIRMWARE_ARGS[@]}"',
+            'test', str(HELPER), *(['--plan'] if plan else [])],
+            env=current, capture_output=True, timeout=5)
         self.assertEqual(result.returncode, expected, result.stderr.decode())
         return result.stdout.decode().rstrip('\0').split('\0') if expected == 0 else result.stderr.decode()
 
@@ -97,6 +100,52 @@ class FirmwareSelection(unittest.TestCase):
         self.select(expected=2, OVMF_CODE=code, OVMF_VARS=code)
         alias = self.home/'alias.fd'; alias.symlink_to(code)
         self.select(expected=2, OVMF_CODE=code, OVMF_VARS=str(alias))
+
+    def test_plan_accepts_explicit_missing_paths_without_writes(self):
+        combined = str(self.home / 'missing combined.fd')
+        code = str(self.home / 'missing,code.qcow2')
+        variables = str(self.home / 'missing,,vars.fd')
+        self.assertEqual(self.select(plan=True, resolved=True, OVMF=combined),
+                         [combined, '', '', '-bios', combined])
+        self.assertEqual(self.select(plan=True, resolved=True, OVMF_CODE=code, OVMF_VARS=variables), [
+            '', code, variables,
+            '-drive', 'if=pflash,unit=0,format=qcow2,readonly=on,file=' + code.replace(',', ',,'),
+            '-drive', 'if=pflash,unit=1,format=raw,snapshot=on,file=' + variables.replace(',', ',,')])
+        self.assertEqual(list(self.home.iterdir()), [])
+        # The ordinary runtime selector still refuses those same missing files.
+        self.select(expected=2, OVMF=combined)
+        self.select(expected=2, OVMF_CODE=code, OVMF_VARS=variables)
+
+    def test_plan_retains_conflict_pair_and_alias_checks(self):
+        for env in ({'OVMF': 'combined', 'OVMF_CODE': 'code', 'OVMF_VARS': 'vars'},
+                    {'OVMF': 'combined', 'OVMF_DIR': str(self.home)},
+                    {'OVMF_CODE': 'code', 'OVMF_VARS': 'vars', 'OVMF_DIR': str(self.home)},
+                    {'OVMF_CODE': 'code'}, {'OVMF_VARS': 'vars'},
+                    {'OVMF_CODE': 'same-missing', 'OVMF_VARS': 'same-missing'}):
+            with self.subTest(env=env): self.select(expected=2, plan=True, **env)
+        code = self.file('code.fd')
+        alias = self.home / 'alias.fd'; alias.symlink_to(code)
+        self.select(expected=2, plan=True, OVMF_CODE=code, OVMF_VARS=str(alias))
+
+    def test_plan_discovery_has_same_order_and_resolved_paths(self):
+        combined = self.file('OVMF.fd')
+        code = self.file('OVMF_CODE.fd'); variables = self.file('OVMF_VARS.fd')
+        self.assertEqual(self.select(plan=True), self.select())
+        self.assertEqual(self.select(plan=True, resolved=True)[:3], ['', code, variables])
+        Path(code).unlink(); Path(variables).unlink()
+        self.assertEqual(self.select(plan=True, resolved=True), [combined, '', '', '-bios', combined])
+
+    def test_plan_unresolved_directory_fails_without_guessed_command(self):
+        self.assertIn('Clock plan unresolved', self.select(expected=2, plan=True))
+        self.assertIn('existing firmware directory', self.select(
+            expected=2, plan=True, OVMF_DIR=str(self.home / 'missing')))
+
+    def test_qemu_data_discovery_and_resolved_runtime_fields(self):
+        code = self.file('OVMF_CODE_4M.qcow2'); variables = self.file('OVMF_VARS_4M.qcow2')
+        # Present empty selectors suppress this test helper's OVMF_DIR default.
+        env = dict(OVMF='', OVMF_CODE='', OVMF_VARS='', OVMF_DIR='', QEMU_DATA=str(self.home))
+        self.assertEqual(self.select(resolved=True, **env)[:3], ['', code, variables])
+        self.assertEqual(self.select(plan=True, **env), self.select(**env))
 
 
 if __name__ == '__main__':

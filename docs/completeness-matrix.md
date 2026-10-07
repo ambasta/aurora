@@ -1,5 +1,28 @@
 # Completeness and acceptance matrix
 
+## Bounded IPC checkpoint and PR35 integration — 2026-10-07
+
+The six Mailbox operations now use copied Aurora decisions; trusted C++ retains
+identity, authority, payload storage and atomic commit. The 608-file 851f288
+checkpoint completed both full native workflows, five fatal hosted sanitizer
+entrypoints, bounded static review of 28 rebuilt images, 177+3+2 actual runtime
+boots and three additional split-firmware boots. All received independent review.
+
+The reviewed composition with PR35 main `4c9af2cf0a30337a8c39a6b16e0a9164c23ced1f`
+preserves all 201 primary build inputs. Its separate 608-file `583439c7…` source
+passed two shell syntax checks, 108 synthetic method executions and 16 actual
+terminal-origin boots, including capacity and normal restorations. Earlier full
+gates retain their exact old-source scope; this is a reviewed incremental join,
+not a repeat of those runs. This publication changes documentation only from
+that tested composition. See [source identities, results and limits](kernel-ipc-transition-integration-results.md).
+
+The original wall-clock retirement failure remains unexplained stress evidence.
+Fixed instruction-clock success does not repair it. Sanitizer, ABI, stack, timer,
+firmware and emulator findings have bounded scopes; physical hardware, general
+DMA isolation and full-kernel memory safety remain unqualified. Earlier
+interrupted review attempts stay historical; all planned checkpoint gates above
+are now complete.
+
 ## Emulator runs from an interactive terminal — 2026-10-07
 
 Reproduced defect: from a terminal, `make run` failed with `QEMU exit status 124`
@@ -148,7 +171,7 @@ This is a requirements map, not a completion percentage. Snapshot: 2026-10-04, v
 | Tooling/self-hosting | Host compiler/build/test harness; no native self-hosting | Native toolchain/packages/debugger/profiler; build compiler/system using the native core/runtime/library, inspect target dependencies and compare multi-stage outputs |
 | Boot/CPU | Separate OVMF-tested relocatable UEFI loader/payload with bounded final-map handoff, own stack/mappings and Aurora execution; Sequential protected user domains now run on UEFI; bounded UEFI run budgets and controlled client recovery are implemented. Emulator-only BIOS loader, explicit 4 KiB permissioned identity mappings, serial result, IDT/GDT/TSS/guarded IST, NXE/WP and fail-stop paths verified in QEMU | Native or UEFI boot contract; validated memory map, exception recovery, per-CPU state, feature detection, real-machine logs |
 | Memory/process isolation | Partial trusted C++ bootstrap: E820 usable-map validation and bounded 128-page arena, move-only generation/epoch tickets; controlled ring-3 probe plus new separately compiled user fixtures, bounded scalar return and validated compiler-fault containment in three owned CR3 domains with leased stacks, tested foreign-access denial, root restoration, scrubbed reuse and stale-handle checks; bounded integer-only BIOS preemption plus milestone009 sequential UEFI domains with explicit layout authority, private backing and guarded entry stacks; no general process model | Physical/virtual allocation, user isolation, capabilities, revocation and resource accounting; cross-domain access/forgery tests fail safely |
-| Scheduler/SMP/IPC | Bounded QEMU xAPIC single-CPU integer-context preemption, fixed tasks/slice budgets, pending-IRQ drain; staged copied-scalar request/reply IPC on UEFI with incarnation-bound grants and cancellation/restart; UEFI role/phase/transaction-bound client and service interrupt-count budgets with disposal, mapping retirement, scrub and rebinding; Aurora owns the copied two-slot next-eligible policy, with authority and commit still in trusted bootstrap code; no SMP, arbitrary suspended IPC, calibrated time or general scheduler | Preemptive scheduling, multiprocessor synchronization, timers and bounded IPC; fairness, interrupt storms, starvation and restart tests |
+| Scheduler/SMP/IPC | Bounded QEMU xAPIC single-CPU integer-context preemption, fixed tasks/slice budgets, pending-IRQ drain; staged copied-scalar request/reply IPC on UEFI with incarnation-bound grants and cancellation/restart; UEFI role/phase/transaction-bound client and service interrupt-count budgets with disposal, mapping retirement, scrub and rebinding; Aurora owns the copied two-slot next-eligible and six-operation IPC transition policies, with authority and commit still in trusted bootstrap code; bounded IPC checkpoint gates are complete as recorded above; no SMP, arbitrary suspended IPC, calibrated time or general scheduler | Preemptive scheduling, multiprocessor synchronization, timers and bounded IPC; fairness, interrupt storms, starvation and restart tests |
 | Platform/power | Bounded post-firmware RSDP/XSDT/MADT discovery through a revocable R-NX window, tested in OVMF; read-only q35 MCFG/PCI function inventory through revocable UC mappings; milestone014 adds explicit validated read-only BAR/profile authority with revoked-window tests and a pinned clean-firmware fixture; no AML, device activation/IOMMU driver stack or physical-platform power support | Discovery, DMA isolation, interrupt routing, suspend/resume, shutdown and thermal policy; malformed tables, stale DMA and transition-failure tests |
 | Storage/network/input | No target driver/filesystem/network/input implementation; native NVMe object/extent filesystem and XFS on-disk backend are specified in [storage requirements](../storage/design/requirements.md); host-only durability model and traceability tests pass, not mount support | Real drivers and services, persistence/recovery, networking and input; corruption, unplug, exhaustion and restart tests on named devices |
 | AMD display | Not implemented; no framebuffer acceptance result | Boot framebuffer then native display separately; modesetting, hotplug and resume tested on named GPU/connector tuples |

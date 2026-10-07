@@ -31,12 +31,13 @@ def validate_language_symbols(symbols: str, final_image: bool = False) -> None:
     if final_image:
         expected.append(("T", "aurora_kernel_main"))  # Existing C++ entry.
     require(sorted(entries) == sorted(expected), "Unexpected BIOS Aurora kernel entry set")
-    forbidden = ("interrupt_budget", "round_robin", "TickDecision", "SelectionDecision")
+    forbidden = ("interrupt_budget", "round_robin", "TickDecision", "SelectionDecision",
+                 "ipc_transition", "TransactionSnapshot", "TransactionDecision")
     require(not any(part in row[2] for row in rows for part in forbidden),
             "Unused UEFI policy graph linked into BIOS image")
 
 
-def root_controls(bios: str, uefi: str) -> None:
+def root_controls(bios: str, uefi: str) -> int:
     validate_bios_root(bios, uefi)
     valid = "00000000 T aurora_kernel_value\n0000004b T aurora_reflect_size\n"
     validate_language_symbols(valid)
@@ -47,6 +48,10 @@ def root_controls(bios: str, uefi: str) -> None:
         valid.replace("aurora_kernel_value", "aurora_kernel_unexpected"),
         valid + "000000cc T aurora_kernel_budget_tick\n",
         valid + "000000cc T aurora_kernel_round_robin_next\n",
+        valid + "000000cc T aurora_kernel_ipc_transition\n",
+        valid + "000000cc t __au_v_m2_6kernel14ipc_transition_n1_6kernel_d22transaction_transition\n",
+        valid + "000000cc t __au_k_TransactionSnapshot\n",
+        valid + "000000cc t __au_k_TransactionDecision\n",
         valid + "000000cc t __au_v_m2_6kernel16interrupt_budget_n1_6kernel_d14interrupt_tick\n",
         valid + "000000cc t __au_v_m2_6kernel11round_robin_n1_6kernel_d16round_robin_next\n",
         valid + "000000cc t __au_k_TickDecision\n",
@@ -63,14 +68,16 @@ def root_controls(bios: str, uefi: str) -> None:
         except ValueError:
             continue
         raise RuntimeError("Invalid BIOS Aurora graph accepted by negative control")
-    for invalid in (bios.replace("own(40)", "own(41)"),
-                    bios.replace("module kernel;", "module kernel;\nimport kernel.round_robin;"),
-                    bios + "\nauto extra() -> i64 { return 0; }\n"):
+    bad_roots = (bios.replace("own(40)", "own(41)"),
+                 bios.replace("module kernel;", "module kernel;\nimport kernel.round_robin;"),
+                 bios + "\nauto extra() -> i64 { return 0; }\n")
+    for invalid in bad_roots:
         try:
             validate_bios_root(invalid, uefi)
         except ValueError:
             continue
         raise RuntimeError("Changed BIOS value/root accepted by negative control")
+    return len(bad_inventories) + len(bad_roots)
 
 
 def validate(boot: bytes, kernel: bytes, elf: bytes, packet_offset: int) -> None:
@@ -150,7 +157,7 @@ def package_image(boot: bytes, kernel: bytes, elf: bytes, packet_offset: int) ->
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     build = root / "build"
-    root_controls((root / "examples/kernel-bios.au").read_text(),
+    root_negative_controls = root_controls((root / "examples/kernel-bios.au").read_text(),
                   (root / "examples/kernel.au").read_text())
     # Check the compiled root and final image separately. The generic reflection
     # entrypoints are compiler bootstrap output; UEFI policy graphs are forbidden.
@@ -202,7 +209,7 @@ def main() -> None:
         raise RuntimeError("Unaligned BIOS packet accepted")
     print(f"PASS: boot signature, ELF entry, zero unresolved symbols, {len(kernel)}-byte payload, 1 MiB image; 14 negative controls; RX/R/RW segments and bounded BIOS packet")
 
-    print("PASS: BIOS value/ownership root unchanged; no unused UEFI policy graph; 27 root/symbol negative controls")
+    print(f"PASS: BIOS value/ownership root unchanged; no unused UEFI policy graph; {root_negative_controls} root/symbol negative controls")
 
 
 if __name__ == "__main__":

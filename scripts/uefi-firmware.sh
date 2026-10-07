@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 # Shared QEMU firmware selection. Source this file, then call uefi_firmware_select.
 # Never write installed firmware: split VARS uses QEMU's disposable snapshot.
+# --plan permits unchecked explicit file paths. Discovery still needs real files;
+# an unresolved plan fails instead of inventing a firmware path or command.
 uefi_firmware_select() {
     UEFI_FIRMWARE_ARGS=()
+    UEFI_FIRMWARE_COMBINED= UEFI_FIRMWARE_CODE= UEFI_FIRMWARE_VARS=
+    local plan=false
+    if (( $# )); then
+        if [[ $# != 1 || "$1" != --plan ]]; then
+            echo 'Expected no firmware argument or --plan.' >&2
+            return 2
+        fi
+        plan=true
+    fi
     local combined="${OVMF:-}" code="${OVMF_CODE:-}" vars="${OVMF_VARS:-}"
     local directory="${OVMF_DIR:-}" dir pair candidate code_format vars_format
     local -a directories=() pairs=(
@@ -50,23 +61,26 @@ uefi_firmware_select() {
         fi
         if [[ -z "$combined" && -z "$code" ]]; then
             echo 'OVMF firmware not found. Set OVMF to a combined OVMF.fd ROM, OVMF_CODE and OVMF_VARS to a matching pair, or OVMF_DIR to their directory.' >&2
+            if [[ "$plan" == true ]]; then
+                echo 'Clock plan unresolved: supply explicit OVMF or OVMF_CODE plus OVMF_VARS paths to plan without installed firmware.' >&2
+            fi
             return 2
         fi
     fi
     if [[ -n "$combined" ]]; then
-        if [[ ! -f "$combined" || ! -r "$combined" || ! -s "$combined" ]]; then
+        if [[ "$plan" == false && ( ! -f "$combined" || ! -r "$combined" || ! -s "$combined" ) ]]; then
             echo 'OVMF must name a readable, nonempty combined OVMF.fd ROM.' >&2
             return 2
         fi
         UEFI_FIRMWARE_ARGS=(-bios "$combined")
     else
         for candidate in "$code" "$vars"; do
-            if [[ ! -f "$candidate" || ! -r "$candidate" || ! -s "$candidate" ]]; then
+            if [[ "$plan" == false && ( ! -f "$candidate" || ! -r "$candidate" || ! -s "$candidate" ) ]]; then
                 echo 'OVMF_CODE and OVMF_VARS must name readable, nonempty firmware files.' >&2
                 return 2
             fi
         done
-        if [[ "$code" -ef "$vars" ]]; then
+        if [[ "$code" == "$vars" || "$code" -ef "$vars" ]]; then
             echo 'OVMF_CODE and OVMF_VARS must be separate files from a matching firmware build.' >&2
             return 2
         fi
@@ -79,4 +93,8 @@ uefi_firmware_select() {
             -drive "if=pflash,unit=1,format=$vars_format,snapshot=on,file=${vars//,/,,}"
         )
     fi
+    # Resolved semantic inputs, separate from the argv verified by the launcher.
+    UEFI_FIRMWARE_COMBINED="$combined"
+    UEFI_FIRMWARE_CODE="$code"
+    UEFI_FIRMWARE_VARS="$vars"
 }

@@ -1,0 +1,63 @@
+module ipc_transition_copy;
+import kernel.ipc_transition;
+
+auto inspect_snapshot(kernel::TransactionSnapshot snapshot) -> u64 {
+    const kernel::TransactionSnapshot other = kernel::TransactionSnapshot(0u64, 5u64, 1u64);
+    const kernel::TransactionDecision later = kernel::transaction_transition(5u64, other);
+    if (later.action() != kernel::TransactionAction::accepted) { return 0u64; }
+    if (snapshot.phase() != 1u64 || snapshot.state() != 0u64 || snapshot.scrubbed() != 1u64) { return 0u64; }
+    const kernel::TransactionDecision first = kernel::transaction_transition(0u64, snapshot);
+    if (first.action() != kernel::TransactionAction::accepted) { return 0u64; }
+    if (first.next() != 1u64 || first.effect() != kernel::TransactionEffect::submit_request) { return 0u64; }
+    return 42u64;
+}
+
+auto inspect_decision(kernel::TransactionDecision decision) -> u64 {
+    const kernel::TransactionSnapshot later_input = kernel::TransactionSnapshot(3u64, 4u64, 1u64);
+    const kernel::TransactionDecision later = kernel::transaction_transition(3u64, later_input);
+    if (later.next() != 5u64 || later.effect() != kernel::TransactionEffect::consume_cancelled) { return 0u64; }
+    if (decision.action() != kernel::TransactionAction::accepted) { return 0u64; }
+    if (decision.next() != 1u64 || decision.effect() != kernel::TransactionEffect::submit_request) { return 0u64; }
+    return 42u64;
+}
+
+auto echo_snapshot(kernel::TransactionSnapshot snapshot) -> kernel::TransactionSnapshot {
+    return snapshot;
+}
+
+auto echo_decision(kernel::TransactionDecision decision) -> kernel::TransactionDecision {
+    return decision;
+}
+
+auto ipc_transition_copy_probe() -> u64 {
+    u64 phase = 1u64;
+    u64 state = 0u64;
+    u64 scrubbed = 1u64;
+    const kernel::TransactionSnapshot first = kernel::TransactionSnapshot(phase, state, scrubbed);
+    const kernel::TransactionSnapshot saved = echo_snapshot(first);
+    phase = 18446744073709551615u64;
+    state = 9223372036854775808u64;
+    scrubbed = 0u64;
+    const kernel::TransactionDecision answer = kernel::transaction_transition(0u64, saved);
+    const kernel::TransactionDecision copied = echo_decision(answer);
+    const kernel::TransactionSnapshot terminal = kernel::TransactionSnapshot(3u64, 3u64, 0u64);
+    const kernel::TransactionDecision second = kernel::transaction_transition(3u64, terminal);
+    const kernel::TransactionDecision refused = kernel::transaction_transition(0u64, terminal);
+    const kernel::TransactionSnapshot raw = kernel::TransactionSnapshot(0u64, 9223372036854775808u64, 18446744073709551615u64);
+    const kernel::TransactionSnapshot raw_copy = raw;
+    const kernel::TransactionDecision invalid = kernel::transaction_transition(0u64, raw_copy);
+    if (phase != 18446744073709551615u64 || state != 9223372036854775808u64 || scrubbed != 0u64) { return 0u64; }
+    if (inspect_snapshot(saved) != 42u64 || inspect_decision(copied) != 42u64) { return 0u64; }
+    if (first.phase() != 1u64 || first.state() != 0u64 || first.scrubbed() != 1u64) { return 0u64; }
+    if (saved.phase() != 1u64 || saved.state() != 0u64 || saved.scrubbed() != 1u64) { return 0u64; }
+    if (answer.action() != kernel::TransactionAction::accepted || copied.action() != kernel::TransactionAction::accepted) { return 0u64; }
+    if (answer.next() != 1u64 || copied.next() != 1u64) { return 0u64; }
+    if (answer.effect() != kernel::TransactionEffect::submit_request || copied.effect() != kernel::TransactionEffect::submit_request) { return 0u64; }
+    if (second.action() != kernel::TransactionAction::accepted || second.next() != 5u64 || second.effect() != kernel::TransactionEffect::consume_reply) { return 0u64; }
+    if (refused.action() != kernel::TransactionAction::refused || refused.next() != 0u64 || refused.effect() != kernel::TransactionEffect::none) { return 0u64; }
+    if (invalid.action() != kernel::TransactionAction::invalid || invalid.next() != 0u64 || invalid.effect() != kernel::TransactionEffect::none) { return 0u64; }
+    if (raw.phase() != 0u64 || raw_copy.phase() != 0u64) { return 0u64; }
+    if (raw.state() != 9223372036854775808u64 || raw_copy.state() != 9223372036854775808u64) { return 0u64; }
+    if (raw.scrubbed() != 18446744073709551615u64 || raw_copy.scrubbed() != 18446744073709551615u64) { return 0u64; }
+    return 42u64;
+}
