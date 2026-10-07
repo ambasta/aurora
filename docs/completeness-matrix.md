@@ -1,5 +1,20 @@
 # Completeness and acceptance matrix
 
+## Hosted growable byte buffer — 2026-10-07
+
+`std::ByteBuffer` is an Aurora-authored move-only collection over the existing
+private OwnedBytes/resize contract. Separate logical size and capacity, checked
+copied reads/writes, exact reserve, geometric byte append and retained-capacity
+truncate/clear preserve state on recoverable failure. Both Python modes passed
+14 programs, 37 native cases and 17 source rejections, including three complete
+60-operation byte models, tight-quota recovery, injected allocation failure,
+hidden discarded bytes and explicit move/cleanup cases. Compile-only admission,
+format checks and independent source/test/contract review passed; the
+[contract and focused results](byte-buffer.md) record scope and limits. Compiler,
+runtime and kernel implementation are unchanged. Near-maximum growth arithmetic
+is source-reviewed, not exercised with huge allocations. No payload views,
+strings/parser, kernel resize, self-hosting or full-native qualification is claimed.
+
 ## Bounded kernel owned-byte allocation — 2026-10-07
 
 The [bounded kernel adapter](kernel-owned-bytes.md) uses the existing 16-page

@@ -76,10 +76,16 @@ text/collections, native runtime and self-hosting still need the gates above.
 
 ## Initial owned-byte prerequisite candidate
 
-The [compiler contract](../compiler/OWNED-BYTES.md) introduces one fixed-length
-runtime allocation resource with explicit region/quota authority, copied checked
-byte access, move-only transfer and intrinsic normal-scope cleanup. Its trusted
-single-thread hosted adapter is bootstrap machinery. The [focused composite](owned-bytes-results.md)
-passed with explicit sanitizer and fail-stop limits; resize, borrowed views,
-strings/collections, native startup and kernel allocator integration remain
-separate prerequisites.
+The [compiler contract](../compiler/OWNED-BYTES.md) introduces runtime allocation
+with explicit region/quota authority, copied checked byte access, move-only
+transfer and intrinsic normal-scope cleanup. Its trusted single-thread hosted
+adapter is bootstrap machinery. The [initial focused composite](owned-bytes-results.md)
+and [failure-safe resize](owned-bytes-resize-results.md) retain their exact scope.
+
+`std::ByteBuffer` now uses those mechanisms for a first
+[hosted growable byte collection](byte-buffer.md): logical size/capacity, checked
+scalar byte access, exact reserve, geometric append and logical truncation.
+Private ownership prevents escaped stale views, and failure preserves prior state.
+This is one concrete collection slice, not generic containers, native strings or
+a parser. Borrowed owning parameters, native startup, kernel resize integration
+and replacing host toolchain dependencies remain separate gates.

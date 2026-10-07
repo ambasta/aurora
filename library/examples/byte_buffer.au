@@ -1,0 +1,30 @@
+module byte_buffer_example;
+import std.binary;
+import std.byte_buffer;
+
+auto byte_buffer_example(builtin::ByteRegion region, i64 initial_capacity, i64 count) -> i64 {
+    builtin::OwnedBytes allocation = region.try_allocate(initial_capacity);
+    std::ByteBuffer buffer = std::ByteBuffer(region, move(allocation));
+    if (!buffer.ok() || count < 0) {
+        return -1;
+    }
+    // An exact reservation avoids geometric over-allocation under a tight quota.
+    if (!buffer.try_reserve(count)) {
+        return -2;
+    }
+    i64 index = 0;
+    while (index < count) {
+        if (!buffer.try_append(u8(index % 256))) {
+            return -3;
+        }
+        index = index + 1;
+    }
+    i64 checksum = 0;
+    index = 0;
+    while (index < buffer.size()) {
+        const std::ByteReadResult byte = buffer.read_u8(index);
+        checksum =(checksum + i64(byte.value_or(0u64))) % 65536;
+        index = index + 1;
+    }
+    return checksum;
+}

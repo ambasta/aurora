@@ -1,6 +1,9 @@
 # Aurora native core library: scalar seed
 
-The library is authored in Aurora's safe C++ dialect and compiled freestanding by the native module pipeline. These are small working library modules, not a complete C++ standard library or libc replacement.
+The library is authored in Aurora's safe C++ dialect. Fixed-value modules compile
+freestanding through the native module pipeline; allocating owners use an explicit
+hosted region/runtime. These are small working modules, not a complete C++ standard
+library or libc replacement.
 
 Current Make test invocations use the [shared developer-test contract](../docs/developer-test-contract.md):
 one fresh run-owned compiler for developer tests, or an explicitly externally
@@ -37,9 +40,20 @@ Calls evaluate their arguments left to right under the existing language rules. 
 
 The implementations are intentionally simple and currently retain ordinary function-call overhead. There is no unmeasured zero-cost or equivalent-C performance claim. Inlining and other optimizations must preserve checked arithmetic, module identity and reflection scope.
 
+## Hosted growable bytes
+
+`std.byte_buffer` supplies move-only `std::ByteBuffer` over a private OwnedBytes
+allocation. Logical size is separate from capacity; checked copied reads/writes,
+exact reserve, geometric scalar append and retained-capacity truncate/clear have
+explicit failure behavior. Construction requires a region and moved owner; import
+`std.binary` directly for its copied read result. See the [contract](../docs/byte-buffer.md)
+and [example](examples/byte_buffer.au). This hosted-only collection adds no compiler
+builtin, payload view, string/parser API or replacement for fixed BinaryBuffer64
+and Sector512 records.
+
 ## Deliberately absent
 
-There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, heap ownership and general interprocedural borrowing remain deferred; the milestone014 candidate adds only synchronous readonly local-byte-array spans. ordinary inline class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.
+There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, general heap ownership and general interprocedural borrowing remain deferred; the milestone014 candidate adds only synchronous readonly local-byte-array spans. Ordinary inline class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.
 
 The long-term goal remains a native runtime responsible for the useful roles currently served by libc, and a broad safe C++ standard-library ecosystem without C source/ABI compatibility. This module establishes actual imports, private implementation helpers, typed calls and executable scalar contracts toward that goal.
 

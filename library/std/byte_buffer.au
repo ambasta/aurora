@@ -1,0 +1,87 @@
+export module std.byte_buffer;
+import std.binary;
+
+export namespace std {
+    class ByteBuffer {
+        builtin::OwnedBytes payload;
+        i64 length;
+    public:
+        ByteBuffer(builtin::ByteRegion region, builtin::OwnedBytes initial) : payload(move(initial)), length(0) {
+        }
+
+        auto ok() const -> bool {
+            return payload.ok();
+        }
+
+        auto size() const -> i64 {
+            return length;
+        }
+
+        auto capacity() const -> i64 {
+            return payload.size();
+        }
+
+        auto read_u8(i64 offset) const -> ByteReadResult {
+            if (!payload.ok() || offset < 0 || offset >= length) {
+                const ByteReadResult failure = ByteReadResult(ByteReadStatus::out_of_range, 0u64);
+                return failure;
+            }
+            const ByteReadResult result = ByteReadResult(ByteReadStatus::success, u64(payload.at(offset)));
+            return result;
+        }
+
+        auto try_write_u8(i64 offset, u8 value) -> bool {
+            if (!payload.ok() || offset < 0 || offset >= length) {
+                return false;
+            }
+            return payload.set(offset, value);
+        }
+
+        auto try_reserve(i64 minimum_capacity) -> bool {
+            if (!payload.ok() || minimum_capacity < 0) {
+                return false;
+            }
+            if (minimum_capacity <= payload.size()) {
+                return true;
+            }
+            return payload.try_resize(minimum_capacity);
+        }
+
+        auto try_append(u8 value) -> bool {
+            if (!payload.ok() || length == 9223372036854775807) {
+                return false;
+            }
+            if (length == payload.size()) {
+                i64 next_capacity = 1;
+                if (length > 0) {
+                    // Saturate before doubling; neither branch can overflow i64.
+                    if (length > 4611686018427387903) {
+                        next_capacity = 9223372036854775807;
+                    } else {
+                        next_capacity = length * 2;
+                    }
+                }
+                if (!payload.try_resize(next_capacity)) {
+                    return false;
+                }
+            }
+            // The invariant and successful growth prove this write is in bounds.
+            payload.set(length, value);
+            length = length + 1;
+            return true;
+        }
+
+        auto try_truncate(i64 new_size) -> bool {
+            if (!payload.ok() || new_size < 0 || new_size > length) {
+                return false;
+            }
+            // Retain capacity. Discarded bytes stay inaccessible until overwritten.
+            length = new_size;
+            return true;
+        }
+
+        auto clear() -> bool {
+            return try_truncate(0);
+        }
+    };
+}
