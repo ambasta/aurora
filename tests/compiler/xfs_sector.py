@@ -12,7 +12,7 @@ from unsigned_oracle import Case, NativeRunner, Rejection, require
 
 
 IMPORTS = (
-    "storage.block", "storage.sector", "storage.block_io", "storage.ram_sector",
+    "std.binary", "std.binary_buffer", "storage.sector", "storage.block_io", "storage.ram_sector",
     "fs.xfs_probe", "fs.xfs_geometry", "fs.xfs_sector",
 )
 MAXIMUM = (1 << 64) - 1
@@ -58,10 +58,7 @@ def check_report(data, count, io="success", status_override=None):
 def native_case(label, data, count, io="success", writable=False, actual_geometry=False):
     body = make_sector("initial", data)
     body += """
-        storage::RamSectorDevice device = storage::RamSectorDevice();
-        if (device.write_sector(0, initial) != storage::SectorIoStatus::success) {
-            return 0u64;
-        }
+        storage::RamSectorDevice device = storage::RamSectorDevice(initial);
     """
     if not writable:
         body += """
@@ -127,7 +124,8 @@ def cases(real):
         changed[offset] ^= 1
         yield native_case(f"unrepaired full-sector byte {offset}", bytes(changed), required)
     for index in (-(1 << 63), -1, 1, (1 << 63) - 1):
-        body = "const storage::RamSectorDevice device = storage::RamSectorDevice();\n"
+        body = "const storage::Sector512 initial_device_sector = storage::Sector512();\n"
+        body += "const storage::RamSectorDevice device = storage::RamSectorDevice(initial_device_sector);\n"
         body += f"const storage::SectorReadResult read = device.read_sector({index});\n"
         body += "const storage::SectorGeometry source = device.geometry();\n"
         body += "const fs::XfsSectorHeaderReport report = fs::inspect_xfs_v5_512_sector(source, read);\n"

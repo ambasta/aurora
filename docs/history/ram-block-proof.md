@@ -1,3 +1,6 @@
+> Historical checkpoint. These APIs were removed by the
+> [storage consolidation](../storage-consolidation.md).
+
 # Owned block-value proof before a RAM block store
 
 This value proof establishes the copied representation needed for the bounded

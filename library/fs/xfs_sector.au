@@ -1,5 +1,6 @@
 export module fs.xfs_sector;
-import storage.block;
+import std.binary;
+import std.binary_buffer;
 import storage.sector;
 import storage.block_io;
 import fs.xfs_probe;
@@ -103,8 +104,8 @@ export namespace fs {
         };
         i64 offset = 0;
         while (offset < 512) {
-            const storage::BlockByteResult byte = sector.read_byte(offset);
-            bytes[offset] = byte.value_or(0u8);
+            const std::ByteReadResult byte = sector.read_byte(offset);
+            bytes[offset] = u8(byte.value_or(0u64));
             offset = offset + 1;
         }
         const XfsGeometryReport geometry = inspect_xfs_v5_512_geometry(borrow_bytes(bytes));

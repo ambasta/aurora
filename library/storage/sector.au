@@ -1,7 +1,28 @@
 export module storage.sector;
-import storage.block;
+import std.binary;
+import std.binary_buffer;
 
 export namespace storage {
+    class RecordReadResult {
+        std::ByteReadStatus outcome;
+        std::BinaryBuffer64 payload;
+    public:
+        RecordReadResult(std::ByteReadStatus status, std::BinaryBuffer64 record) : outcome(status), payload(record) {}
+
+        auto status() const -> std::ByteReadStatus {
+            return outcome;
+        }
+
+        auto record_or_zero() const -> std::BinaryBuffer64 {
+            if (outcome == std::ByteReadStatus::success) {
+                const std::BinaryBuffer64 result = payload;
+                return result;
+            }
+            const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+            return zero;
+        }
+    };
+
     class Sector512 {
         builtin::array<u8, 512> elements;
     public:
@@ -11,50 +32,49 @@ export namespace storage {
             return 512;
         }
 
-        auto read_byte(i64 offset) const -> BlockByteResult {
+        auto read_byte(i64 offset) const -> std::ByteReadResult {
             if (offset < 0 || offset >= 512) {
-                const BlockByteResult failure = BlockByteResult(BlockStatus::out_of_range, 0u8);
+                const std::ByteReadResult failure = std::ByteReadResult(std::ByteReadStatus::out_of_range, 0u64);
                 return failure;
             }
-            const BlockByteResult result = BlockByteResult(BlockStatus::success, elements[offset]);
+            const std::ByteReadResult result = std::ByteReadResult(std::ByteReadStatus::success, u64(elements[offset]));
             return result;
         }
 
-        auto write_byte(i64 offset, u8 value) -> BlockStatus {
+        auto write_byte(i64 offset, u8 value) -> std::ByteWriteStatus {
             if (offset < 0 || offset >= 512) {
-                return BlockStatus::out_of_range;
+                return std::ByteWriteStatus::out_of_range;
             }
             elements[offset] = value;
-            return BlockStatus::success;
+            return std::ByteWriteStatus::success;
         }
 
-        auto read_window(i64 offset) const -> BlockReadResult {
+        auto read_record(i64 offset) const -> RecordReadResult {
             if (offset < 0 || offset > 448) {
-                const Block64 zero = Block64();
-                const BlockReadResult failure = BlockReadResult(BlockStatus::out_of_range, zero);
+                const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+                const RecordReadResult failure = RecordReadResult(std::ByteReadStatus::out_of_range, zero);
                 return failure;
             }
-            Block64 block = Block64();
+            std::BinaryBuffer64 record = std::BinaryBuffer64();
             i64 index = 0;
             while (index < 64) {
-                block.write_byte(index, elements[offset + index]);
+                record.write_u8(index, elements[offset + index]);
                 index = index + 1;
             }
-            const BlockReadResult result = BlockReadResult(BlockStatus::success, block);
+            const RecordReadResult result = RecordReadResult(std::ByteReadStatus::success, record);
             return result;
         }
 
-        auto write_window(i64 offset, Block64 block) -> BlockStatus {
+        auto write_record(i64 offset, std::BinaryBuffer64 record) -> std::ByteWriteStatus {
             if (offset < 0 || offset > 448) {
-                return BlockStatus::out_of_range;
+                return std::ByteWriteStatus::out_of_range;
             }
             i64 index = 0;
             while (index < 64) {
-                const BlockByteResult byte = block.read_byte(index);
-                elements[offset + index] = byte.value_or(0u8);
+                elements[offset + index] = record.at(index);
                 index = index + 1;
             }
-            return BlockStatus::success;
+            return std::ByteWriteStatus::success;
         }
     };
 }

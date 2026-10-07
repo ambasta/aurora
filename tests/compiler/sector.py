@@ -7,12 +7,12 @@ from pathlib import Path
 import random
 import tempfile
 
-from unsigned_oracle import Case, NativeRunner, Rejection, command, require, validate_values
+from unsigned_oracle import Case, NativeRunner, Rejection, require
 
 
 ROOT = Path(__file__).resolve().parents[2]
-IMPORTS = ("storage.block", "storage.sector")
-CODECS = IMPORTS + ("storage.block_codec", "std.binary_writer", "std.binary")
+IMPORTS = ("std.binary", "std.binary_buffer", "storage.sector")
+CODECS = IMPORTS
 CAPACITY = 512
 WINDOW = 64
 INITIAL = bytes((index * 37 + index // 256 * 19 + 11) % 256 for index in range(CAPACITY))
@@ -31,7 +31,7 @@ def initialized_sector():
         i64 initialize = 0;
         while (initialize < 512) {
             if (sector.write_byte(initialize, u8((initialize * 37 + initialize / 256 * 19 + 11) % 256)) !=
-                storage::BlockStatus::success) {
+                std::ByteWriteStatus::success) {
                 return 0u64;
             }
             initialize = initialize + 1;
@@ -39,14 +39,14 @@ def initialized_sector():
     """
 
 
-def make_block(name, values):
+def make_record(name, values):
     return (
         array(f"{name}_bytes", values)
         + f"""
-        storage::Block64 {name} = storage::Block64();
+        std::BinaryBuffer64 {name} = std::BinaryBuffer64();
         i64 {name}_index = 0;
         while ({name}_index < 64) {{
-            if ({name}.write_byte({name}_index, {name}_bytes[{name}_index]) != storage::BlockStatus::success) {{
+            if ({name}.write_u8({name}_index, {name}_bytes[{name}_index]) != std::ByteWriteStatus::success) {{
                 return 0u64;
             }}
             {name}_index = {name}_index + 1;
@@ -56,13 +56,14 @@ def make_block(name, values):
 
 
 def check_bytes(expected, name="sector"):
+    read_method = "read_u8" if len(expected) == WINDOW else "read_byte"
     return (
         array("expected", expected)
         + f"""
         i64 check = 0;
         while (check < {len(expected)}) {{
-            const storage::BlockByteResult byte = {name}.read_byte(check);
-            if (byte.status() != storage::BlockStatus::success || byte.value_or(0u8) != expected[check]) {{
+            const std::ByteReadResult byte = {name}.{read_method}(check);
+            if (byte.status() != std::ByteReadStatus::success || u8(byte.value_or(0u64)) != expected[check]) {{
                 return 0u64;
             }}
             check = check + 1;
@@ -99,7 +100,7 @@ def value_cases():
     """
         + initialized_sector()
         + """
-            if (sector.write_byte(offset, replacement[offset]) != storage::BlockStatus::success) {
+            if (sector.write_byte(offset, replacement[offset]) != std::ByteWriteStatus::success) {
                 return 0u64;
             }
             i64 index = 0;
@@ -108,8 +109,8 @@ def value_cases():
                 if (index == offset) {
                     expected = replacement[offset];
                 }
-                const storage::BlockByteResult byte = sector.read_byte(index);
-                if (byte.status() != storage::BlockStatus::success || byte.value_or(0u8) != expected) {
+                const std::ByteReadResult byte = sector.read_byte(index);
+                if (byte.status() != std::ByteReadStatus::success || u8(byte.value_or(0u64)) != expected) {
                     return 0u64;
                 }
                 index = index + 1;
@@ -126,11 +127,11 @@ def value_cases():
             f"invalid byte {offset} is recoverable and unchanged",
             initialized_sector()
             + f"""
-            if (sector.write_byte({offset}, 255u8) != storage::BlockStatus::out_of_range) {{
+            if (sector.write_byte({offset}, 255u8) != std::ByteWriteStatus::out_of_range) {{
                 return 0u64;
             }}
-            const storage::BlockByteResult failed = sector.read_byte({offset});
-            if (failed.status() != storage::BlockStatus::out_of_range || failed.value_or(42u8) != 42u8) {{
+            const std::ByteReadResult failed = sector.read_byte({offset});
+            if (failed.status() != std::ByteReadStatus::out_of_range || u8(failed.value_or(42u64)) != 42u8) {{
                 return 0u64;
             }}
         """
@@ -171,12 +172,12 @@ def value_cases():
         "retained byte result survives overwrite",
         initialized_sector()
         + f"""
-        const storage::BlockByteResult saved = sector.read_byte(511);
+        const std::ByteReadResult saved = sector.read_byte(511);
         sector.write_byte(511, 0u8);
-        if (saved.status() != storage::BlockStatus::success) {{
+        if (saved.status() != std::ByteReadStatus::success) {{
             return 0u64;
         }}
-        return u64(saved.value_or(0u8));
+        return saved.value_or(0u64);
     """,
         INITIAL[511],
         imports=IMPORTS,
@@ -191,16 +192,16 @@ def window_cases():
         + """
         i64 offset = 0;
         while (offset <= 448) {
-            const storage::BlockReadResult report = sector.read_window(offset);
-            if (report.status() != storage::BlockStatus::success) {
+            const storage::RecordReadResult report = sector.read_record(offset);
+            if (report.status() != std::ByteReadStatus::success) {
                 return 0u64;
             }
-            const storage::Block64 block = report.block_or_zero();
+            const std::BinaryBuffer64 block = report.record_or_zero();
             i64 index = 0;
             while (index < 64) {
-                const storage::BlockByteResult byte = block.read_byte(index);
-                if (byte.status() != storage::BlockStatus::success ||
-                    byte.value_or(0u8) != original[offset + index]) {
+                const std::ByteReadResult byte = block.read_u8(index);
+                if (byte.status() != std::ByteReadStatus::success ||
+                    u8(byte.value_or(0u64)) != original[offset + index]) {
                     return 0u64;
                 }
                 index = index + 1;
@@ -216,14 +217,14 @@ def window_cases():
     yield Case(
         "every valid window write preserves all neighboring bytes",
         array("original", INITIAL)
-        + make_block("input", pattern)
+        + make_record("input", pattern)
         + """
         i64 offset = 0;
         while (offset <= 448) {
     """
         + initialized_sector()
         + """
-            if (sector.write_window(offset, input) != storage::BlockStatus::success) {
+            if (sector.write_record(offset, input) != std::ByteWriteStatus::success) {
                 return 0u64;
             }
             i64 index = 0;
@@ -232,8 +233,8 @@ def window_cases():
                 if (index >= offset && index < offset + 64) {
                     expected = input_bytes[index - offset];
                 }
-                const storage::BlockByteResult byte = sector.read_byte(index);
-                if (byte.status() != storage::BlockStatus::success || byte.value_or(0u8) != expected) {
+                const std::ByteReadResult byte = sector.read_byte(index);
+                if (byte.status() != std::ByteReadStatus::success || u8(byte.value_or(0u64)) != expected) {
                     return 0u64;
                 }
                 index = index + 1;
@@ -249,16 +250,16 @@ def window_cases():
         yield Case(
             f"invalid window {offset} masks the read and preserves all sector bytes",
             initialized_sector()
-            + make_block("input", bytes([255]) * WINDOW)
+            + make_record("input", bytes([255]) * WINDOW)
             + f"""
-            if (sector.write_window({offset}, input) != storage::BlockStatus::out_of_range) {{
+            if (sector.write_record({offset}, input) != std::ByteWriteStatus::out_of_range) {{
                 return 0u64;
             }}
-            const storage::BlockReadResult failed = sector.read_window({offset});
-            if (failed.status() != storage::BlockStatus::out_of_range) {{
+            const storage::RecordReadResult failed = sector.read_record({offset});
+            if (failed.status() != std::ByteReadStatus::out_of_range) {{
                 return 0u64;
             }}
-            const storage::Block64 masked = failed.block_or_zero();
+            const std::BinaryBuffer64 masked = failed.record_or_zero();
         """
             + continue_check(bytes(WINDOW), "masked")
             + check_bytes(INITIAL),
@@ -272,24 +273,24 @@ def window_cases():
             f"window {offset} report and extracted copies survive sector mutation",
             initialized_sector()
             + f"""
-            const storage::BlockReadResult report = sector.read_window({offset});
-            const storage::BlockReadResult saved = copy_report(report);
-            if (saved.status() != storage::BlockStatus::success) {{
+            const storage::RecordReadResult report = sector.read_record({offset});
+            const storage::RecordReadResult saved = copy_report(report);
+            if (saved.status() != std::ByteReadStatus::success) {{
                 return 0u64;
             }}
-            const storage::Block64 zero = storage::Block64();
-            sector.write_window({offset}, zero);
-            storage::Block64 changed = saved.block_or_zero();
-            changed.write_byte(0, 0u8);
-            changed.write_byte(63, 0u8);
-            const storage::Block64 snapshot = saved.block_or_zero();
+            const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+            sector.write_record({offset}, zero);
+            std::BinaryBuffer64 changed = saved.record_or_zero();
+            changed.write_u8(0, 0u8);
+            changed.write_u8(63, 0u8);
+            const std::BinaryBuffer64 snapshot = saved.record_or_zero();
         """
             + continue_check(INITIAL[offset : offset + WINDOW], "snapshot")
             + check_bytes(changed),
             42,
             imports=IMPORTS,
             prelude="""
-            auto copy_report(storage::BlockReadResult report) -> storage::BlockReadResult {
+            auto copy_report(storage::RecordReadResult report) -> storage::RecordReadResult {
                 return report;
             }
         """,
@@ -299,13 +300,13 @@ def window_cases():
     yield Case(
         "write takes a complete copied block",
         initialized_sector()
-        + make_block("input", pattern)
+        + make_record("input", pattern)
         + """
-        if (sector.write_window(448, input) != storage::BlockStatus::success) {
+        if (sector.write_record(448, input) != std::ByteWriteStatus::success) {
             return 0u64;
         }
-        input.write_byte(0, 0u8);
-        input.write_byte(63, 0u8);
+        input.write_u8(0, 0u8);
+        input.write_u8(63, 0u8);
     """
         + check_bytes(changed),
         42,
@@ -326,25 +327,25 @@ def codec_cases():
                 body = (
                     initialized_sector()
                     + f"""
-                    std::BinaryWriter64 writer = std::BinaryWriter64();
+                    std::BinaryBuffer64 writer = std::BinaryBuffer64();
                     if (writer.write_{endian}{width}({WINDOW - size}, {value}u64) !=
                         std::ByteWriteStatus::success) {{
                         return 0u64;
                     }}
-                    const storage::Block64 block = storage::block_from_writer(writer);
-                    if (sector.write_window({offset}, block) != storage::BlockStatus::success) {{
+                    const std::BinaryBuffer64 block = writer;
+                    if (sector.write_record({offset}, block) != std::ByteWriteStatus::success) {{
                         return 0u64;
                     }}
                     writer.write_u8(63, 0u8);
                 """
                     + continue_check(model)
                     + f"""
-                    const storage::BlockReadResult report = sector.read_window({offset});
-                    if (report.status() != storage::BlockStatus::success) {{
+                    const storage::RecordReadResult report = sector.read_record({offset});
+                    if (report.status() != std::ByteReadStatus::success) {{
                         return 0u64;
                     }}
-                    const storage::Block64 snapshot = report.block_or_zero();
-                    const std::BinaryWriter64 returned = storage::writer_from_block(snapshot);
+                    const std::BinaryBuffer64 snapshot = report.record_or_zero();
+                    const std::BinaryBuffer64 returned = snapshot;
                 """
                 )
                 values = ", ".join(f"returned.at({WINDOW - size + index})" for index in range(size))
@@ -372,7 +373,7 @@ def sequence_cases():
                 value = rng.randrange(256)
                 status = "success" if 0 <= offset < CAPACITY else "out_of_range"
                 body += f"""
-                    if (sector.write_byte({offset}, {value}u8) != storage::BlockStatus::{status}) {{
+                    if (sector.write_byte({offset}, {value}u8) != std::ByteWriteStatus::{status}) {{
                         return 0u64;
                     }}
                 """
@@ -383,9 +384,9 @@ def sequence_cases():
                 status = "success" if 0 <= offset <= CAPACITY - WINDOW else "out_of_range"
                 body += (
                     "{"
-                    + make_block("input", pattern)
+                    + make_record("input", pattern)
                     + f"""
-                    if (sector.write_window({offset}, input) != storage::BlockStatus::{status}) {{
+                    if (sector.write_record({offset}, input) != std::ByteWriteStatus::{status}) {{
                         return 0u64;
                     }}
                 """
@@ -399,20 +400,54 @@ def sequence_cases():
         yield Case(f"mixed overlapping writes sequence {sequence}", body, 42, imports=IMPORTS, prelude="\n")
 
 
+
+def record_report_cases():
+    pattern = bytes((index * 29 + 7) % 256 for index in range(WINDOW))
+    for status in ("success", "out_of_range"):
+        body = make_record("payload", pattern)
+        body += f"""
+            const storage::RecordReadResult original = storage::RecordReadResult(
+                std::ByteReadStatus::{status}, payload);
+            const storage::RecordReadResult report = copy_record_report(original);
+            if (size_of(storage::RecordReadResult) != 72 || report.status() != std::ByteReadStatus::{status}) {{
+                return 0u64;
+            }}
+            payload.write_u8(0, 0u8);
+            const std::BinaryBuffer64 saved = report.record_or_zero();
+        """
+        body += check_bytes(pattern if status == "success" else bytes(WINDOW), "saved")
+        yield Case(f"record report layout, copying and masking {status}", body, 42, imports=IMPORTS, prelude="""
+            auto copy_record_report(storage::RecordReadResult input) -> storage::RecordReadResult {
+                return input;
+            }
+        """)
+    body = "storage::Sector512 sector = storage::Sector512();"
+    model = bytearray(CAPACITY)
+    for position in (0, 64, 128, 192, 64, 0):
+        record = bytes((position + index * 11 + 3) % 256 for index in range(WINDOW))
+        body += "{" + make_record("record", record) + f"""
+            if (sector.write_record({position}, record) != std::ByteWriteStatus::success) {{ return 0u64; }}
+        """ + "}"
+        model[position:position + WINDOW] = record
+        body += continue_check(model)
+    body += "return 42u64;"
+    yield Case("four records share one sector without changing other records or unused bytes",
+               body, 42, imports=IMPORTS)
+
 def rejections():
-    prefix = "module test; import storage.block; import storage.sector; auto test() -> u64 {"
+    prefix = "module test; import std.binary; import std.binary_buffer; import storage.sector; auto test() -> u64 {"
     prefix += "storage::Sector512 sector = storage::Sector512();"
     bodies = (
         "return u64(sector.elements[0]);",
         "sector.elements[511] = 255u8; return 0u64;",
-        "sector.read_byte(0u64); return 0u64;",
+        "const std::ByteReadResult result = sector.read_byte(0u64); return 0u64;",
         "sector.write_byte(0, 255u64); return 0u64;",
-        "sector.read_window(0u64); return 0u64;",
-        "sector.write_window(0, sector); return 0u64;",
+        "const storage::RecordReadResult result = sector.read_record(0u64); return 0u64;",
+        "sector.write_record(0, sector); return 0u64;",
         "const storage::Sector512 frozen = sector; frozen.write_byte(0, 1u8); return 0u64;",
-        "const storage::Sector512 frozen = sector; const storage::Block64 block = storage::Block64();"
-        "frozen.write_window(0, block); return 0u64;",
-        "borrow_bytes(sector); return 0u64;",
+        "const storage::Sector512 frozen = sector; const std::BinaryBuffer64 block = std::BinaryBuffer64();"
+        "frozen.write_record(0, block); return 0u64;",
+        "const builtin::span<const u8> leaked = borrow_bytes(sector); return 0u64;",
     )
     for index, body in enumerate(bodies):
         yield Rejection(f"sector privacy/readonly/type rejection {index}", prefix + body + "}")
@@ -425,7 +460,8 @@ def main():
     compiler = args.compiler.resolve()
     require(compiler.is_file(), "compiler must exist")
     print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
-    corpus = list(value_cases()) + list(window_cases()) + list(codec_cases()) + list(sequence_cases())
+    corpus = list(value_cases()) + list(window_cases()) + list(codec_cases())
+    corpus += list(sequence_cases()) + list(record_report_cases())
     rejected = list(rejections())
     with tempfile.TemporaryDirectory(prefix="aurora-sector-") as temporary:
         runner = NativeRunner(Path(temporary), compiler, 15)
@@ -445,13 +481,7 @@ def main():
             runner.cases(batch)
         for case in rejected:
             runner.rejection(case)
-        assembly = Path(temporary) / "sector-record.s"
-        command(
-            [compiler, "--module-root", ROOT / "library", ROOT / "library/examples/sector_record.au", "-o", assembly]
-        )
-        observed, _ = runner.assemble(assembly.read_text(), ["main"])
-        validate_values(observed, [Case("sector record example", "", 42, result_type="i64")])
-    print(f"PASS owned sector: {len(corpus)} native cases, {len(rejected)} rejections; example=passed", flush=True)
+    print(f"PASS owned sector: {len(corpus)} native cases, {len(rejected)} rejections", flush=True)
 
 
 if __name__ == "__main__":

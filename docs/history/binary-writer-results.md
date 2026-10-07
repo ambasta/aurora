@@ -1,3 +1,6 @@
+> Historical checkpoint. These APIs were removed by the
+> [storage consolidation](../storage-consolidation.md).
+
 # Bounded writer focused results — 2026-10-07
 
 The source adds only the owned writer library, its example and tests, the existing

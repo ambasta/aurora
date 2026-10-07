@@ -133,70 +133,35 @@ Focused native checks, independent review and a fresh complete `make test` passe
 on the source identified in the contract. No general writer, mutable span,
 filesystem write or new language feature is implied.
 
-## Bounded owned binary writer (candidate)
+## Owned serialization record
 
-`import std.binary_writer;` supplies `BinaryWriter64`, a zero-initialized private
-64-byte record buffer. Explicit-offset byte and LE/BE16/32/64 writes return a
-recoverable `ByteWriteStatus`, checking the whole destination and value before
-changing any bytes. Offset errors take precedence over value-width errors;
-all failures preserve the entire buffer. `size()` and checked `at()` expose
-copied byte values, with ordinary independent class copies and no escaped view.
+`std.binary_buffer` supplies `BinaryBuffer64`, a zero-initialized owned 64-byte
+record with the existing endian-write operations, recoverable `read_u8`, and
+checked `at`. It is the sole owned record representation. There is no block/writer
+conversion layer, geometry or flush operation on a record.
 
-The [contract](../docs/binary-writer-contract.md) and
-[running example](examples/binary_writer.au) describe the API and current
-64-leaf compiler bound. This is not a hardware sector, mutable borrow or storage
-device. The [focused native results](../docs/binary-writer-results.md) passed
-in normal and Python optimized modes with codec/reader regressions; independent
-review accepted this focused scope. The full native aggregate was not rerun.
+The [buffer contract](../docs/binary-buffer-contract.md) and
+[example](examples/binary_buffer.au) distinguish read bounds from write bounds
+and numeric-width errors. Fresh focused normal/optimized native checks passed; see the
+[results and scope](../docs/storage-consolidation.md#focused-verification--2026-10-07).
 
-## Owned sectors and copied record windows
+## Owned sectors and one device contract
 
-`storage.sector` supplies a zero-initialized `Sector512` with checked byte access
-and copied 64-byte `Block64` windows at byte offsets 0 through 448. Invalid writes
-preserve the complete sector; valid writes preserve all neighboring bytes.
-Ordinary sector copies and read reports retain independent storage.
+`storage.sector` supplies `Sector512`, checked bytes and copied `BinaryBuffer64`
+records at byte offsets 0 through 448. Full-range preflight preserves every byte
+on failure. The [sector contract](../docs/sector-contract.md) uses the same record
+value directly, without conversions or a second serializer.
 
-The [contract](../docs/sector-contract.md) and [volume-record example](examples/sector_record.au)
-reuse `storage.block_codec`, `BinaryWriter64` and the readonly binary readers
-for endian fields. No second writer, multi-sector RAM array or compiler feature
-is added. This is a hosted value API, with no device, durability or kernel
-admission claim. All 43 native cases, nine rejections and the example passed in
-normal and optimized Python modes, together with the existing dependencies;
-see the [focused results](../docs/sector-contract.md#focused-results--2026-10-07).
+`storage.block_io` and `storage.ram_sector` supply the sole device contract and a
+one-sector `RamSectorDevice`. Construct it from a named owned sector snapshot.
+Reads return copied sectors; range and readonly failures preserve the entire
+device. Visibility flush is volatile; durable flush is unsupported.
 
-## Checked sector I/O
-
-`storage.block_io` and `storage.ram_sector` supply copied geometry and full-sector
-read reports, plus a one-sector `RamSectorDevice`. Checked writes return explicit
-range/readonly errors without modifying data. A one-way readonly operation and
-independent device clones keep state explicit. Visibility flush is volatile;
-requested durable flush returns `unsupported` and never changes bytes.
-
-The [contract](../docs/block-io-contract.md) and
-[metadata round trip](examples/ram_sector_record.au) reuse the existing 512-byte
-sector, record writer and readers. This bounded hosted implementation fits the
-existing 520-byte copied-value limit without compiler changes. All 38 native
-cases, 13 rejections and the example passed in normal and optimized Python modes,
-plus six dependency runners. Independent final source and evidence review
-accepted this focused scope; no
-real disk, mount, durability or kernel admission is claimed.
-
-## Volatile RAM record blocks
-
-`storage.block` and `storage.ram_blocks` supply owned 64-byte `Block64` values,
-recoverable copied read reports and a four-record `RamBlockStore`. Geometry is
-explicit and fixed at four 64-byte records. Reads return independent snapshots;
-invalid writes preserve every record, and valid writes are immediately visible.
-`flush()` returns `volatile_complete`, with no persistent-storage guarantee.
-
-The private word representation fits existing copied-value bounds without
-exposing packing, pointers or views. `storage.block_codec` provides independent
-`block_from_writer` / `writer_from_block` conversions for `BinaryWriter64`.
-The [contract](../docs/ram-block-contract.md)
-and [serialization example](examples/ram_record.au) keep record blocks separate
-from hardware sectors. The value/store/writer gates and independent review
-passed, with the initial module-admission failure preserved in the contract.
-No disk, filesystem or device is accessed.
+The [I/O contract](../docs/block-io-contract.md) and single
+[end-to-end record example](examples/ram_sector_record.au) cover this interface.
+The device stores a `Sector512` directly and requires checked owned-field
+assignment. There is no four-record device façade, real disk, mount, persistent
+backend or new borrowing facility. See the [migration and results](../docs/storage-consolidation.md).
 
 ## Borrowed binary reader candidate
 

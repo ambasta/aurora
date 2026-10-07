@@ -1,3 +1,6 @@
+> Historical checkpoint. These APIs were removed by the
+> [storage consolidation](../storage-consolidation.md).
+
 # Four-record volatile RAM block API
 
 This API supplies an Aurora-authored `storage::RamBlockStore` with four
@@ -48,7 +51,7 @@ This is volatile local RAM. Contents do not survive destruction or reset.
 There is no delayed writeback, filesystem mount, NVMe queue, device authority,
 crash recovery, sector atomicity or DMA claim. No user disk is opened or changed.
 
-The [record example](../library/examples/ram_record.au) serializes explicit
+The [record example](https://github.com/ambasta/aurora/blob/129d5337da8513ad0f5be92b7700c62482f64293/library/examples/ram_record.au) serializes explicit
 big-/little-endian fields with `BinaryWriter64`, writes and reads a RAM block,
 then changes the store while decoding the retained copied snapshot with existing
 readonly readers. Class representation is never treated as wire layout.

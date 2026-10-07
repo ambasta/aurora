@@ -1,13 +1,14 @@
-export module std.binary_writer;
+export module std.binary_buffer;
+import std.binary;
 import std.bytes;
 
 export namespace std {
     enum class ByteWriteStatus { success, out_of_range, value_out_of_range };
 
-    class BinaryWriter64 {
+    class BinaryBuffer64 {
         builtin::array<u8, 64> elements;
     public:
-        BinaryWriter64() : elements{} {}
+        BinaryBuffer64() : elements{} {}
 
         auto size() const -> i64 {
             return 64;
@@ -15,6 +16,15 @@ export namespace std {
 
         auto at(i64 offset) const -> u8 {
             return elements[offset];
+        }
+
+        auto read_u8(i64 offset) const -> ByteReadResult {
+            if (offset < 0 || offset >= 64) {
+                const ByteReadResult failure = ByteReadResult(ByteReadStatus::out_of_range, 0u64);
+                return failure;
+            }
+            const ByteReadResult result = ByteReadResult(ByteReadStatus::success, u64(elements[offset]));
+            return result;
         }
 
         auto write_u8(i64 offset, u8 value) -> ByteWriteStatus {

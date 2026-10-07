@@ -1,5 +1,6 @@
 export module storage.block_io;
-import storage.block;
+import std.binary;
+import std.binary_buffer;
 import storage.sector;
 
 export namespace storage {

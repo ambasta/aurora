@@ -1,5 +1,20 @@
 # Completeness and acceptance matrix
 
+## Storage consolidation candidate — 2026-10-07
+
+One owned `std::BinaryBuffer64` record representation replaces the writer/block
+conversion pair. Only the 512-byte sector-device contract remains; the four-record
+RAM-device façade is removed. Owned byte bounds/encoding statuses remain distinct
+from device I/O and durability outcomes. A device owns a `Sector512` value and uses
+checked complete-field replacement, removing its handwritten transfer loops.
+
+The [contract](storage-consolidation.md) lists the six removed transfer operations,
+consumer/test migrations and the three necessary record/parser boundary copies.
+The reviewed owned-field compiler passed all five changed runners in normal and
+optimized Python, plus complete byte-codec/storage-binary dependency runners.
+All seven selected Meson runners passed; this is not the full 24-test dev suite.
+Independent final evidence review accepted these results. No borrowed-window extension is added.
+
 ## Direct owned class-field mutation candidate — 2026-10-07
 
 Complete replacement of one owned class field and synchronous direct child
@@ -19,7 +34,10 @@ No full aggregate, fresh sanitizer, performance or hardware claim is added.
 
 
 
-## XFS sector-header consumer candidate — 2026-10-07
+## Historical PR54 XFS sector-header consumer — 2026-10-07
+
+These results qualify the PR54 source before storage consolidation. Its migrated
+consumer and fixture constructors require the fresh consolidation gate.
 
 A checked copied-sector consumer preserves I/O failures, runs the existing XFS
 geometry validator and compares its claimed sector count with supplied source
@@ -66,7 +84,10 @@ performance and full aggregate/emulator qualification remain separate.
 
 
 
-## Checked one-sector I/O candidate — 2026-10-07
+## Historical PR54 one-sector I/O checkpoint — 2026-10-07
+
+The results below precede the owned-field representation change. Current
+consolidation results are tracked separately above.
 
 A concrete sector-I/O contract adds geometry, copied full-sector reports,
 range/readonly write errors and explicit volatile/unsupported flush outcomes.
@@ -74,17 +95,20 @@ The one-sector `RamSectorDevice` fits current copied-value caps with private
 byte storage and a one-way readonly flag. All 38 native cases, 13 rejections and
 a public-I/O metadata round trip passed in normal and optimized Python modes,
 plus six complete dependency runners. Independent final source and evidence
-review accepted this focused scope. The [contract](block-io-contract.md)
+review accepted this focused scope. The [historical contract](history/block-io-contract-pr54.md)
 distinguishes snapshot clones from
 shared handles and records the nested-value mutation limitation and corrected
 initial import-admission failure. No compiler,
 real device, durable storage, filesystem mount or kernel claim is added.
 
-## Owned sector library candidate — 2026-10-07
+## Historical PR54 owned-sector checkpoint — 2026-10-07
+
+The results below describe the removed block/window API. The current record API
+requires the fresh consolidation gate.
 
 `storage::Sector512` owns a zeroed 512-byte array and exposes checked byte access
 and independent copied 64-byte record windows. Whole-range preflight preserves
-every byte on invalid writes. The [contract](sector-contract.md) composes the
+every byte on invalid writes. The [historical contract](history/sector-contract-pr54.md) composes the
 existing block conversions, writer and readers instead of duplicating endian
 logic. All 43 native cases, nine rejections and a header/trailer record example
 passed in normal and optimized Python modes, including all 512 byte positions
@@ -114,14 +138,16 @@ that checkpoint's emitter had no per-page stack probes; the later
 sanitizer or full native-aggregate qualification is added.
 
 
-## Four-record RAM block API — 2026-10-07
+## Historical four-record RAM block API — 2026-10-07
+
+This API was removed by the storage consolidation; the results below describe its historical source.
 
 The Aurora-authored `RamBlockStore` holds four fixed 64-byte record blocks and
 returns owned copied reads. Full range preflight makes invalid writes preserve
 all records; valid writes are synchronously visible. Flush explicitly returns
 `volatile_complete`, with no durability promise. The private `Block64` word
 representation passed its 264-case native copy/layout proof and four rejections.
-The [store contract](ram-block-contract.md), independent byte-model tests and
+The [store contract](history/ram-block-contract.md), independent byte-model tests and
 writer/reader serialization example passed: 39 model cases and five rejection
 fixtures in normal and Python optimized modes, plus block/writer dependencies.
 Independent review accepted the bounded scope; the first admission failure is
@@ -232,15 +258,15 @@ An unchanged subsequent build ran no compiler or linker command. The initial
 PR38-based eleven-test result remains separately recorded. See
 [coverage, measurements and commands](meson-bootstrap.md).
 
-## Bounded owned binary writer candidate — 2026-10-07
+## Historical bounded owned binary writer candidate — 2026-10-07
 
 `std.binary_writer` adds an Aurora-authored `BinaryWriter64`: a private owned
 64-byte record buffer with explicit-offset byte and LE/BE16/32/64 writes.
 Full offset/value preflight gives recoverable, unchanged-on-failure behavior;
 offset failures take precedence. Existing `std.bytes` encoders and the current
 64-leaf copied-class limit are reused without compiler changes. The
-[contract](binary-writer-contract.md), native independent-byte tests and record
-example are included. The [focused results](binary-writer-results.md) passed:
+[contract](history/binary-writer-contract.md), native independent-byte tests and record
+example are included. The [focused results](history/binary-writer-results.md) passed:
 278 writer cases in both normal and Python optimized modes, eight rejections and
 three exact bounds traps per run, plus existing codec/reader regressions. Independent
 review accepted this focused scope. No full aggregate was rerun; no heap, general
