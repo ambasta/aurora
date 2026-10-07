@@ -70,10 +70,10 @@ UEFI discovers an installed combined ROM or matching CODE/VARS pair. Both comman
 validate serial output and exit. Images are disposable emulator inputs; do not
 write them to a physical disk or replace your bootloader.
 
-For an interactive BIOS serial prompt, run `make console`, then type `help`,
+For an interactive serial prompt, run `make console` (BIOS) or `make console-uefi`, then type `help`,
 `status` or `exit`. This opt-in QEMU profile has a 64-byte ASCII line editor and
 a five-minute session limit. See the [console contract](docs/kernel-console-contract.md)
-for its focused validation and limits.
+and the [UEFI results](docs/uefi-console-results.md) for focused validation and limits.
 
 See [local development](docs/local-development.md) for dependencies, compiler and
 firmware options, build-only commands and troubleshooting. `make help` lists the
@@ -121,3 +121,4 @@ compiler-only or focused checks do not cover the full system. See the
 [developer-test contract](docs/developer-test-contract.md) for result interpretation,
 explicit acceptance pins and sanitizer controls, and the
 [development contract](AGENTS.md) for design and review requirements.
+

@@ -15,8 +15,10 @@ build and verify bounded, headless boot self-tests.
 The separate opt-in `make console` profile opens a bounded BIOS serial prompt
 with `help`, `status` and `exit`. It uses a 64-byte ASCII line editor and sleeps
 on UART interrupts while idle. See the [console contract](../docs/kernel-console-contract.md)
-for its trust boundary, focused checks and deliberate limits. UEFI remains a
-self-test profile; this console is not a desktop or general process shell.
+for its trust boundary and focused checks. `make console-uefi` adds a normal-payload
+serial prompt with admitted LAPIC-woken polling and UART interrupts disabled; see
+the [UEFI contract](../docs/uefi-console.md) and [results](../docs/uefi-console-results.md).
+The ordinary run commands remain self-tests. Neither console is a desktop or general process shell.
 
 From the repository root:
 
@@ -818,3 +820,4 @@ results. The same-reviewer reconsideration closed the two-input-image static
 gate; the interrupted attempt remains unaccepted. This fresh current-main
 composition is unqualified and needs new linked review and native/runtime
 integration. See the [dated results](../docs/kernel-ipc-transition-integration-results.md).
+

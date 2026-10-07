@@ -9,7 +9,7 @@
 #endif
 #include "../console.hpp"
 namespace aurora::uefi {
-#ifdef AURORA_UEFI_SERVICE_BUDGET
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE)
 namespace { constinit std::optional<Topology> copied_topology; }
 auto discovered_topology() -> const std::optional<Topology>& { return copied_topology; }
 #endif
@@ -94,7 +94,7 @@ public:
 #else
 auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
 #endif
-#ifdef AURORA_UEFI_SERVICE_BUDGET
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE)
     copied_topology.reset();
 #endif
     std::uint32_t a,b,c,d;
@@ -269,13 +269,11 @@ auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
 #else
     if (!discover_pci(arena,handoff,*mcfg,physical_bits)) return false;
 #endif
-#ifdef AURORA_UEFI_SERVICE_BUDGET
+#endif
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE)
     copied_topology.emplace(*topology);
 #endif
     return true;
-#else
-    return true;
-#endif
 }
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_TABLES)
 auto discover_acpi(U64 arena,const Bytes& handoff) -> bool {
