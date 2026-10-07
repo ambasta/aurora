@@ -26,6 +26,8 @@ paths = [
         "tests/kernel-dormant-decoder.cpp",
         "tests/amd310-translation-oracle.hpp",
         "tests/kernel-iommu-oracle.cpp",
+        "tests/amd310-event-completion-oracle.hpp",
+        "tests/kernel-iommu-event-completion.cpp",
         "tests/kernel-dormant-oracle.cpp",
         "scripts/kernel-dormant-tests.py",
     ]
@@ -72,6 +74,7 @@ if not args.privacy_only:
         ("ownership", "tests/kernel-dormant-tables.cpp", []),
         ("independent", "tests/kernel-dormant-decoder.cpp", []),
         ("translation-oracle", "tests/kernel-iommu-oracle.cpp", []),
+        ("event-completion-oracle", "tests/kernel-iommu-event-completion.cpp", []),
         ("constructor-oracle", "tests/kernel-dormant-oracle.cpp", []),
         (
             "generation",
@@ -185,6 +188,121 @@ if not args.privacy_only:
         for fatal in (b"AddressSanitizer", b"UndefinedBehaviorSanitizer", b"LeakSanitizer", b"runtime error:"):
             if fatal in diagnostic:
                 raise RuntimeError("oracle mutant encountered a sanitizer failure: " + name)
+# Same host-only semantic-mutant contract for the independent event/completion model.
+if not args.privacy_only:
+    event_oracle = (ROOT / "tests/amd310-event-completion-oracle.hpp").read_text()
+    event_fixtures = (ROOT / "tests/kernel-iommu-event-completion.cpp").read_bytes()
+    event_mutations = [
+        (
+            "memory-i",
+            "value.interrupt = (b & (1U << 19)) != 0;",
+            "value.interrupt = (b & (1U << 19)) == 0;",
+            "literal ordinary fault fields",
+        ),
+        (
+            "domain",
+            "value.domain = static_cast<std::uint16_t>(b);",
+            "value.domain = static_cast<std::uint16_t>(b & 0);",
+            "literal ordinary fault fields",
+        ),
+        (
+            "definedness",
+            "return !expected.has_value() || *expected == raw;",
+            "return expected.value_or(false) == raw;",
+            "unknown fault fields ignore raw payload",
+        ),
+        (
+            "event-status",
+            "inline constexpr std::uint64_t event_interrupt = 2;",
+            "inline constexpr std::uint64_t event_interrupt = 4;",
+            "ordinary event uses bit1 and advances only tail",
+        ),
+        (
+            "tail",
+            "ring.tail = next;",
+            "ring.tail = next == 0 ? 0U : next - 16;",
+            "ordinary event uses bit1 and advances only tail",
+        ),
+        (
+            "fullness",
+            "next == ring.head",
+            "ring.tail == ring.head",
+            "one unused slot detects full without tail advance",
+        ),
+        (
+            "overflow",
+            "!status.logging() || status.overflow() || next == ring.head",
+            "!status.logging() || next == ring.head",
+            "disabled or overflowed logging discards events",
+        ),
+        (
+            "dte-order",
+            "fetched_ < 2 || !device_cache_ || page_cache_",
+            "fetched_ < 2 || page_cache_",
+            "page invalidation waits for prior DTE cache invalidation",
+        ),
+        (
+            "dte-not-pages",
+            "device_cache_ = true;",
+            "device_cache_ = true; page_cache_ = true;",
+            "DTE invalidation does not invalidate pages",
+        ),
+        (
+            "fetch-not-finish",
+            "++fetched_;",
+            "++fetched_; completed_ = fetched_ == 3;",
+            "fetching wait never completes invalidation",
+        ),
+        (
+            "read-drain",
+            "|| !reads_ || !writes_",
+            "|| !writes_",
+            "read drain required before completion",
+        ),
+        (
+            "write-drain",
+            "|| !reads_ || !writes_",
+            "|| !reads_",
+            "write drain required before completion",
+        ),
+        ("store-s", "if (wait_.store)", "if (true)", "completion store requires s"),
+        ("interrupt-i", "if (wait_.interrupt)", "if (true)", "completion interrupt requires i"),
+        (
+            "command-stop",
+            "halted_ = true;",
+            "halted_ = false;",
+            "command error halts fetch even when logging is lost",
+        ),
+        (
+            "fault-not-finish",
+            "status_ = append->status;",
+            "status_ = append->status; completed_ = true;",
+            "ordinary fault and stale status never finish pending batch",
+        ),
+    ]
+    for name, original, replacement, marker in event_mutations:
+        if event_oracle.count(original) != 1:
+            raise RuntimeError("ambiguous event/completion mutation: " + name)
+        directory = OUT / ("event-mutant-" + name)
+        directory.mkdir()
+        (directory / "amd310-event-completion-oracle.hpp").write_text(event_oracle.replace(original, replacement, 1))
+        (directory / "amd310-translation-oracle.hpp").write_bytes(
+            (ROOT / "tests/amd310-translation-oracle.hpp").read_bytes()
+        )
+        source = directory / "kernel-iommu-event-completion.cpp"
+        source.write_bytes(event_fixtures)
+        binary = directory / "mutant"
+        options = san if os.environ.get("SANITIZE") == "1" else []
+        run("event-mutant-" + name + "-compile", flags + options + [str(source), "-o", str(binary)])
+        diagnostic = run("event-mutant-" + name + "-execute", [str(binary)], expected=1, env=env)
+        if ("FAIL: " + marker).encode() not in diagnostic:
+            raise RuntimeError("event/completion mutant missed intended fixture: " + name)
+        terminal = rb"FAIL [0-9]+ independent AMD310 event/completion checks; no device operation\n$"
+        if not re.search(terminal, diagnostic):
+            raise RuntimeError("event/completion mutant did not reach its normal terminal: " + name)
+        for fatal in (b"AddressSanitizer", b"UndefinedBehaviorSanitizer", b"LeakSanitizer", b"runtime error:"):
+            if fatal in diagnostic:
+                raise RuntimeError("event/completion mutant encountered a sanitizer failure: " + name)
 # Identical, well-formed member-pointer expressions are compiled against the
 # real private class and an isolated mutation with the same region public.
 # The positive mutation prevents unrelated syntax/type errors from passing.
@@ -227,7 +345,7 @@ after = {str(p.relative_to(ROOT)): digest(p) for p in paths}
 if before != after:
     raise RuntimeError("candidate source changed during tests")
 summary = {
-    "scope": "CPU-only dormant construction and independent translation oracle; no hardware operation",
+    "scope": "CPU-only dormant tables and independent translation/event/completion oracles; no hardware operation",
     "privacy_only": args.privacy_only,
     "commands": len(records),
     "all_expected_statuses": True,

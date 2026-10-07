@@ -1,5 +1,20 @@
 # Completeness and acceptance matrix
 
+## Test-only IOMMU event/completion reference candidate — 2026-10-07
+
+The next test-only dependency distinguishes copied ordinary-memory faults from
+invalidation completion. The [contract](iommu-event-completion-oracle.md) adds
+independent code 2/5/6 event decoding, low status bits, bounded event-ring effects
+and one typed DTE/page/CompletionWait model with explicit assumed read/write drain
+facts. Stale status and ordinary faults cannot complete its pending batch.
+Independent source review accepted the candidate. Both complete hosted modes
+passed 290 new checks and sixteen new semantic mutants alongside all existing
+dormant gates. The [results](iommu-event-completion-oracle-results.md) preserve
+exact source/tool identities. Independent retained-evidence and final-claim
+review accepted this bounded checkpoint.
+This is test-only evidence, not hardware-observed completion or page-reuse authority.
+No production kernel/image, device activation or interrupt-isolation claim is added.
+
 ## Shared LSP document formatting candidate — 2026-10-07
 
 The optional language server now routes whole-document formatting through the
