@@ -1,5 +1,23 @@
 # Completeness and acceptance matrix
 
+## CPU-only NVMe queue-page preparation — 2026-10-07
+
+A fixed five-page `NvmeQueueBundle` uses the existing payload pool for admin/I/O
+SQ/CQ and one data page. Exact live BAR-session/generation checks, whole-page
+initialization, scrubbed cancellation, partial rollback and permanent retention
+passed 1,871/1,901 hosted cases normally and under fatal ASan/UBSan, with page/pin/BAR
+dependencies. A rejected stack image led to a narrow ACPI lifetime split; the
+corrected linked bound is 14,960 bytes within the unchanged 16 KiB stack.
+
+The actual preparation and six BAR controls passed complete serial/trace/provenance
+checks, with two normal restoration boots. The initial truncated trace stays a
+failed record; fresh bounded replay preserved full event coverage. Independent
+source, hosted, linked and final retained-guest evidence review passed.
+The [results](nvme-queue-preparation-results.md) preserve exact scope and both failures.
+No publication API, DMA isolation, command submission, disk read, filesystem mount
+or performance claim is added. Real IOMMU and publication-lifecycle qualification
+remain prerequisites to activation.
+
 ## Bounded XFS written-file sector candidate — 2026-10-07
 
 A narrow v3 single-written-extent consumer reads all 34 sectors of the preserved

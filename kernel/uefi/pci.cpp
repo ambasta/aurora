@@ -1,4 +1,10 @@
 #include "pci.hpp"
+#if defined(AURORA_UEFI_NVME_PREPARE) \
+    && (!defined(AURORA_UEFI_ACPI) || !defined(AURORA_UEFI_PCI) || !defined(AURORA_UEFI_BAR_CAPTURE) \
+        || !defined(AURORA_UEFI_BAR_EDK2) || defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_IVRS) \
+        || defined(AURORA_UEFI_TABLES))
+#error "NVMe preparation requires the standalone BAR profile"
+#endif
 #ifdef AURORA_UEFI_PCI
 #include "pci-policy.hpp"
 #ifdef AURORA_UEFI_IVRS
@@ -7,6 +13,9 @@
 #ifdef AURORA_UEFI_BAR_CAPTURE
 #include "bar-policy.hpp"
 #include "bar-record.hpp"
+#ifdef AURORA_UEFI_NVME_PREPARE
+#include "nvme-queues.hpp"
+#endif
 #endif
 #include "acpi-policy.hpp"
 #include "tables.hpp"
@@ -92,6 +101,9 @@ public:
 }
 #endif
 #ifdef AURORA_UEFI_BAR_CAPTURE
+#ifdef AURORA_UEFI_NVME_PREPARE
+#include "nvme-prepare.inc"
+#endif
 #include "bar-reader.inc"
 #ifdef AURORA_UEFI_IVRS
 #include "ivrs-reader.inc"
@@ -103,7 +115,8 @@ public:
     table[9]=std::byte(0U-sum);
 }
 }
-auto discover_pci(U64 arena,const Bytes& handoff,std::span<const std::byte> source,unsigned bits) -> bool {
+auto discover_pci(U64 arena, const Bytes &handoff, std::span<const std::byte> source, unsigned bits,
+                  [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
     // The source is an owned, consistent ACPI snapshot. No firmware pointer escapes.
     std::array<std::byte,108> storage{};
     if (source.size()<60 || source.size()>storage.size()) return false;
@@ -174,10 +187,10 @@ auto discover_pci(U64 arena,const Bytes& handoff,std::span<const std::byte> sour
     if (!facts || !facts->matches_inventory(inventory->functions(),0,0,2,0)) {
         Serial::text("AURORA_IVRS_REJECTED: reason=requester-coverage\r\n");return false;
     }
-    if (!inspect_bar(arena,handoff,*aperture,window,*inventory,bits)) return false;
+    if (!inspect_bar(arena,handoff,*aperture,window,*inventory,bits,pool)) return false;
     return inspect_ivrs(arena,handoff,*aperture,window,*inventory,bits);
 #elif defined(AURORA_UEFI_BAR_CAPTURE)
-    return inspect_bar(arena,handoff,*aperture,window,*inventory,bits);
+    return inspect_bar(arena,handoff,*aperture,window,*inventory,bits,pool);
 #elif defined(AURORA_UEFI_BAR_ADMISSION)
     unsigned candidates=0;
     for (const auto& function:inventory->functions()) {

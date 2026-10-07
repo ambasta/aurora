@@ -17,6 +17,8 @@ case "${UEFI_MODE:-normal}" in
  ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-pair|ivrs-alias|ivrs-reserved|ivrs-scope|ivrs-capability|ivrs-range|ivrs-missing)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2 -DAURORA_UEFI_IVRS)
    flag="${UEFI_MODE#ivrs-}"; extra+=("-DAURORA_IVRS_${flag^^}") ;;
+ bar-prepare)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2 -DAURORA_UEFI_NVME_PREPARE) ;;
  bar-read|bar-inherited|bar-write|bar-revoked|bar-alias)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2)
    if [[ "$UEFI_MODE" == bar-write || "$UEFI_MODE" == bar-revoked || "$UEFI_MODE" == bar-alias ]]; then flag="${UEFI_MODE#bar-}"; extra+=("-DAURORA_BAR_${flag^^}"); fi ;;
@@ -173,3 +175,7 @@ case "${UEFI_MODE:-normal}" in ipc*|budget*|dispatch*|user-*) image_policy+=(--i
 python3 tests/kernel-uefi-image.py "${image_policy[@]}"
 
 if [[ "${UEFI_MODE:-normal}" == ivrs-* ]]; then python3 tests/kernel-uefi-ivrs-stack.py build/uefi build/uefi/ivrs-stack.json; fi
+
+if [[ "${UEFI_MODE:-normal}" == bar-prepare ]]; then
+    python3 tests/kernel-uefi-nvme-stack.py build/uefi build/uefi/nvme-stack.json
+fi

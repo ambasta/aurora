@@ -3,7 +3,7 @@
 import argparse, hashlib, importlib.util, json, os, shutil, subprocess
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
-MODES=('bar-state','bar-capture','bar-inherited','bar-read','bar-write','bar-revoked','bar-alias')
+MODES=('bar-state','bar-capture','bar-inherited','bar-read','bar-prepare','bar-write','bar-revoked','bar-alias')
 def module(name):
     spec=importlib.util.spec_from_file_location(name,ROOT/'tests'/f'kernel-uefi-{name}.py')
     result=importlib.util.module_from_spec(spec);spec.loader.exec_module(result);return result
@@ -26,7 +26,7 @@ def run(mode,out):
     for key,name in [('payload','payload.bin'),('payload_elf','payload.elf'),('payload_metadata','bar-metadata.json')]:
         shutil.copy2(ROOT/'build/uefi'/name,out/name);files[key]=record(out/name)
     files['loader']=record(out/'esp/EFI/BOOT/BOOTX64.EFI')
-    clean=mode in ('bar-read','bar-write','bar-revoked','bar-alias')
+    clean=mode in ('bar-read','bar-prepare','bar-write','bar-revoked','bar-alias')
     argv=[str(qemu),'-L',str(data),'-machine','q35','-accel','tcg','-cpu','qemu64','-smp','1','-m','128M']
     if clean:
         code=fixture/'output/OVMF_CODE.fd';template=fixture/'output/OVMF_VARS.fd'

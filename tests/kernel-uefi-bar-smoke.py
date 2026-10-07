@@ -14,8 +14,8 @@ spec = importlib.util.spec_from_file_location('pci_smoke', Path(__file__).with_n
 pci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pci)
 need = pci.need
-MODES = ('bar-state', 'bar-capture', 'bar-inherited', 'bar-read', 'bar-write', 'bar-revoked', 'bar-alias')
-CLEAN = ('bar-read', 'bar-write', 'bar-revoked', 'bar-alias')
+MODES = ('bar-state', 'bar-capture', 'bar-inherited', 'bar-read', 'bar-prepare', 'bar-write', 'bar-revoked', 'bar-alias')
+CLEAN = ('bar-read', 'bar-prepare', 'bar-write', 'bar-revoked', 'bar-alias')
 READS = ((0, 8), (8, 4), (0x14, 4), (0x1c, 4), (0x24, 4), (0x28, 8), (0x30, 8))
 WINDOW = 0xffff800000001000
 CAP = 18023332293183487
@@ -99,7 +99,7 @@ def fixture_rows(command):
 
 def validate(status, serial, mode, payload=None):
     need(mode in MODES, 'Unknown BAR mode')
-    need(status == (33 if mode == 'bar-read' else 35), 'Wrong emulator exit status')
+    need(status == (33 if mode in ('bar-read', 'bar-prepare') else 35), 'Wrong emulator exit status')
     lines = protocol_lines(serial)
     command = 2 if mode in CLEAN else 7
     descriptor_count = 0 if mode == 'bar-state' else 2
@@ -154,8 +154,12 @@ def validate(status, serial, mode, payload=None):
     else:
         need(values == (0, 0, 0, 0, 0), 'Clean receipt contains active/retained controller state')
     close = 'AURORA_BAR_WINDOW_CLOSED: reads=7 config=8 revoked=1'
-    if mode == 'bar-read':
-        wanted = [close, 'AURORA_BAR_READ_ONLY_OK'] + SUFFIX
+    if mode in ('bar-read', 'bar-prepare'):
+        preparation = ([
+            'AURORA_NVME_PREPARED: pages=5 bytes=20480 generation=1 unpublished=1',
+            'AURORA_NVME_CANCELLED: pages=0 pool=0 scrubbed=20480',
+        ] if mode == 'bar-prepare' else [])
+        wanted = preparation + [close, 'AURORA_BAR_READ_ONLY_OK'] + SUFFIX
     elif mode == 'bar-inherited':
         wanted = [close, 'AURORA_BAR_REJECTED: reason=inactive-controller-required', FAIL]
     else:
@@ -204,6 +208,11 @@ def fixture(mode):
         else:
             values = (0x460001, 1, 0x10001, 0x6000000, 0x6001000) if mode == 'bar-inherited' else (0, 0, 0, 0, 0)
             lines += [f'AURORA_BAR_STATE: segment=0 bus=0 device=2 function=0 command={command} base={base} length={length} cap={CAP} version={VERSION} cc={values[0]} csts={values[1]} aqa={values[2]} asq={values[3]} acq={values[4]}']
+            if mode == 'bar-prepare':
+                lines += [
+                    'AURORA_NVME_PREPARED: pages=5 bytes=20480 generation=1 unpublished=1',
+                    'AURORA_NVME_CANCELLED: pages=0 pool=0 scrubbed=20480',
+                ]
             if mode != 'bar-write':
                 lines += ['AURORA_BAR_WINDOW_CLOSED: reads=7 config=8 revoked=1']
             if mode in ('bar-write', 'bar-revoked'):
@@ -214,7 +223,7 @@ def fixture(mode):
                 lines += ['AURORA_BAR_REJECTED: reason=inactive-controller-required', FAIL]
             else:
                 lines += ['AURORA_BAR_READ_ONLY_OK'] + SUFFIX
-    return 33 if mode == 'bar-read' else 35, '\n'.join(lines) + '\n', payload
+    return 33 if mode in ('bar-read', 'bar-prepare') else 35, '\n'.join(lines) + '\n', payload
 
 
 def self_test():
@@ -245,9 +254,14 @@ def self_test():
             bad += [(status, serial, None), (status, serial, dict(payload, fault_offsets={})),
                     (status, re.sub(r'rip=([0-9]+)', lambda m: 'rip='+str(int(m[1])+1), serial), payload),
                     (status, serial.replace(f'cr2={WINDOW+8}', f'cr2={WINDOW}'), payload)]
-        if mode in ('bar-read', 'bar-write', 'bar-revoked'):
+        if mode in ('bar-read', 'bar-prepare', 'bar-write', 'bar-revoked'):
             for field in ('cc', 'csts', 'aqa', 'asq', 'acq'):
                 bad.append((status, serial.replace(f' {field}=0', f' {field}=1'), payload))
+        if mode == 'bar-prepare':
+            for before, after in (('pages=5', 'pages=4'), ('bytes=20480', 'bytes=16384'),
+                                  ('generation=1', 'generation=0'), ('unpublished=1', 'unpublished=0'),
+                                  ('pages=0 pool=0', 'pages=0 pool=1'), ('scrubbed=20480', 'scrubbed=0')):
+                bad.append((status, serial.replace(before, after), payload))
         for code, text, metadata in bad:
             try:
                 validate(code, text, mode, metadata)
