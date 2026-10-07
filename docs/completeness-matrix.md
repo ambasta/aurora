@@ -1,5 +1,22 @@
 # Completeness and acceptance matrix
 
+## Verified serial package harness cleanup — 2026-10-07
+
+Manifest and Graph now share their unchanged serial transport. Trusted local
+Python/binutils hashes move to suite entry and guaranteed finalization; compiler,
+library and oracle command checks remain. Receipts state the hash scope and the
+[developer contract](developer-test-contract.md#serial-package-transport-identity-checks)
+explains the reduced host-tool detection window. Cases, observers, commands and
+limits are unchanged. Normal and optimized focused controls passed, followed by
+one complete public `make --jobs=1 test` with a fresh compiler and current IPC
+coverage in 38m16s. The matching native-aggregate result and owned cleanup passed.
+
+A balanced main/candidate/candidate/main comparison of eight original batches
+(560 cases, 34,423 observations per round) reduced mean wall time by 46.0% and
+child CPU by 49.0%; host-tool hashes fell from 730 to 20. This measures the selected
+workload, not a whole-suite speedup; sampled memory did not improve. No parallel
+worker pool or additional kernel, sanitizer or QEMU qualification is included.
+
 ## Bounded IPC checkpoint and PR35 integration — 2026-10-07
 
 The six Mailbox operations now use copied Aurora decisions; trusted C++ retains
