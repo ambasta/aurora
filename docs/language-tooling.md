@@ -14,8 +14,10 @@ error with an explicit diagnostic family and source range when one is available.
 
 - `Token` retains a shared immutable `SourceText` and half-open byte ranges.
   Synthetic and some resolver diagnostics deliberately have unknown ranges.
-- The lexer still discards whitespace/comment classification from its token
-  stream. Lossless trivia retention and syntax-aware formatting remain next.
+- `lexSource` now retains exact whitespace and line-comment trivia alongside
+  canonical tokens. The compiler uses the same scanner with trivia discarded.
+  [Lossless reconstruction](../compiler/LEXER.md) is tested; syntax-aware formatting
+  remains next.
 - Nested-template `>>` splitting changes only the parser-owned token copy and
   gives its second closer the correct source byte. Retained lexical tokens are
   unchanged. Structured errors preserve imported-file provenance.

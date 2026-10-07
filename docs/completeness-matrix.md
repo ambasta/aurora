@@ -1,5 +1,17 @@
 # Completeness and acceptance matrix
 
+## Lossless shared lexer candidate — 2026-10-07
+
+The compiler scanner can now retain exact whitespace and line-comment trivia
+alongside canonical tokens and their immutable source snapshot. Legacy `lex`
+uses that same scanner without retaining trivia. This supports a future
+compiler-owned Aurora formatter without introducing a parallel lexer/parser.
+Reconstruction passed for all 73 repository sources and 256 generated inputs,
+alongside adversarial trivia and canonical-template-token checks. The 27 diagnostic
+cases, 793 existing frontend checks and 26 baseline assembly comparisons passed.
+Independent review accepted this bounded increment. See the
+[lossless lexer contract](../compiler/LEXER.md). No formatter or LSP is claimed.
+
 ## Shared frontend diagnostics candidate — 2026-10-07
 
 The existing lexer/parser now carries immutable source snapshots and half-open
