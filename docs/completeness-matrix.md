@@ -1,5 +1,19 @@
 # Completeness and acceptance matrix
 
+## Bounded owned binary writer candidate — 2026-10-07
+
+`std.binary_writer` adds an Aurora-authored `BinaryWriter64`: a private owned
+64-byte record buffer with explicit-offset byte and LE/BE16/32/64 writes.
+Full offset/value preflight gives recoverable, unchanged-on-failure behavior;
+offset failures take precedence. Existing `std.bytes` encoders and the current
+64-leaf copied-class limit are reused without compiler changes. The
+[contract](binary-writer-contract.md), native independent-byte tests and record
+example are included. The [focused results](binary-writer-results.md) passed:
+278 writer cases in both normal and Python optimized modes, eight rejections and
+three exact bounds traps per run, plus existing codec/reader regressions. Independent
+review accepted this focused scope. No full aggregate was rerun; no heap, general
+borrowing, hardware-sector, device or filesystem claim is added.
+
 ## Opt-in BIOS serial console candidate — 2026-10-07
 
 A separate `make console` profile keeps the existing boot self-tests and then

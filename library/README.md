@@ -133,6 +133,22 @@ Focused native checks, independent review and a fresh complete `make test` passe
 on the source identified in the contract. No general writer, mutable span,
 filesystem write or new language feature is implied.
 
+## Bounded owned binary writer (candidate)
+
+`import std.binary_writer;` supplies `BinaryWriter64`, a zero-initialized private
+64-byte record buffer. Explicit-offset byte and LE/BE16/32/64 writes return a
+recoverable `ByteWriteStatus`, checking the whole destination and value before
+changing any bytes. Offset errors take precedence over value-width errors;
+all failures preserve the entire buffer. `size()` and checked `at()` expose
+copied byte values, with ordinary independent class copies and no escaped view.
+
+The [contract](../docs/binary-writer-contract.md) and
+[running example](examples/binary_writer.au) describe the API and current
+64-leaf compiler bound. This is not a hardware sector, mutable borrow or storage
+device. The [focused native results](../docs/binary-writer-results.md) passed
+in normal and Python optimized modes with codec/reader regressions; independent
+review accepted this focused scope. The full native aggregate was not rerun.
+
 ## Borrowed binary reader candidate
 
 `import std.binary;` supplies ByteReadStatus, ByteReadResult, read_le32 and
