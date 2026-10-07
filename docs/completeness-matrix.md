@@ -1,5 +1,22 @@
 # Completeness and acceptance matrix
 
+## Hosted runtime-sized owned-byte checkpoint — 2026-10-07
+
+The [owned-byte contract](../compiler/OWNED-BYTES.md) adds explicit host-granted
+region authority, runtime-sized allocation, checked copied access, move-only
+local/function transfer and normal-scope cleanup. Independent source review
+accepted the bounded implementation. Both Python modes passed 29 native cases,
+four exact bounds traps and 29 rejection fixtures; independent IR checks passed
+61 accepted/263 rejected cases. The host adapter passed 19,453 checks/36 expected
+traps normally and with fatal ASan/UBSan, with LeakSanitizer explicitly excluded.
+Current PR68 core/byte dependencies, selected frontend/IR regressions, formatter
+and lint checks passed; fifteen feature assemblies and 29 scalar-only example
+assemblies preserve their reviewed identities across the final diagnostic fix.
+The [composite results](owned-bytes-results.md) retain the source-review corrections,
+failed host fixture and LeakSanitizer environment failure. Final retained-evidence
+review is recorded separately. No growth, payload views, general resource classes,
+full native aggregate, kernel allocation or memory-safety proof is claimed.
+
 ## Opt-in LSP semantic lint candidate — 2026-10-07
 
 The optional language server can select the existing compiler-owned lint mode

@@ -159,6 +159,63 @@ class BindSpanParameter {
     int index;
     int offset;
 };
+// Opaque byte resources never inhabit scalar slots or the operand stack. The
+// region is borrowed authority; one owner holds a private four-word descriptor.
+class BeginBytes {
+public:
+    int offset;
+};
+class AllocateBytes {
+public:
+    int regionOffset;
+    int resultOffset; // consumes the current i64 length, creates an owning result
+};
+class MoveBytes {
+public:
+    int sourceOffset;
+    int resultOffset;
+};
+class BytesOk {
+public:
+    int offset;
+};
+class BytesLength {
+public:
+    int offset;
+};
+class BytesLoad {
+public:
+    int offset; // current i64 index -> copied u8, checked fail-stop access
+};
+class BytesStore {
+public:
+    int offset; // saved i64 index and current u8 -> bool; false never writes
+};
+class EndBytes {
+public:
+    int offset; // closes pristine, moved or live binding; preserves scalar state
+};
+class BindRegionParameter {
+public:
+    int index;
+    int offset;
+};
+class BindBytesParameter {
+public:
+    int index;
+    int offset;
+};
+class ResourceCall {
+public:
+    std::string callee;
+    int regionOffset;
+    std::vector<int> ownerArguments; // one entry per parameter, zero except owners
+    int resultOffset;                // pristine owner slot for owner result, otherwise zero
+};
+class ReturnBytes {
+public:
+    int offset;
+};
 // Receiver capabilities are deliberately not scalar Values. Only these operations
 // can address the hidden receiver, and a call consumes a synchronous reborrow.
 class BeginObject {
@@ -318,7 +375,19 @@ using Instruction = std::variant<Constant,
                                  EndSpan,
                                  SpanLength,
                                  SpanLoad,
-                                 BindSpanParameter>;
+                                 BindSpanParameter,
+                                 BeginBytes,
+                                 AllocateBytes,
+                                 MoveBytes,
+                                 BytesOk,
+                                 BytesLength,
+                                 BytesLoad,
+                                 BytesStore,
+                                 EndBytes,
+                                 BindRegionParameter,
+                                 BindBytesParameter,
+                                 ResourceCall,
+                                 ReturnBytes>;
 class ObjectSlot {
   public:
     std::string className;
@@ -344,6 +413,8 @@ class Function {
     // per element. Capability spills reserve 16 disjoint bytes and no scalar slot.
     std::map<int, int> arraySlots;
     std::set<int> spanSlots;
+    std::set<int> regionSlots;     // private eight-byte authority spills
+    std::map<int, bool> byteSlots; // private 32-byte owner spills, mutable binding
     std::optional<Receiver> receiver;
     int frameBytes = 0;
     std::vector<Instruction> code;

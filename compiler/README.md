@@ -253,3 +253,12 @@ versioned unsaved buffers over stdio. Enable it separately with Meson
 `-Dlsp=true` and the external `nlohmann_json` development package. The ordinary
 compiler build has no JSON dependency. This first slice covers diagnostics and
 full document synchronization, not completion or rename.
+
+## Hosted owned-byte candidate
+
+The [owned-byte contract](OWNED-BYTES.md) describes a runtime-sized, move-only
+resource under explicit host-granted region authority, private checked access and
+normal-scope cleanup. The [focused results](../docs/owned-bytes-results.md) record
+source review, native execution and sanitizer limits. It does not widen the
+existing scalar-only own/ref/mutref prototype or provide general resource classes,
+resizing, payload views, kernel allocation or a public foreign ABI.

@@ -384,11 +384,10 @@ class ModuleResolver {
                     continue;
                 }
                 const bool valueBoundary =
-                    function.result.isClass() ||
-                    std::any_of(function.params.begin(), function.params.end(),
-                                [](const Param &parameter) {
-                                    return parameter.type.isClass() || parameter.type.isSpan();
-                                });
+                    function.result.isClass() || function.result.isResource() ||
+                    std::any_of(function.params.begin(), function.params.end(), [](const Param &parameter) {
+                        return parameter.type.isClass() || parameter.type.isSpan() || parameter.type.isResource();
+                    });
                 function.name = add(Kind::Function, function.scope, function.token.text,
                                     function.exported, valueBoundary);
             }

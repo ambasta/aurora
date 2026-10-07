@@ -155,6 +155,7 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 ../tests/compiler/enum_composition.py $(abspath $(OUT))
 	python3 -O ../tests/compiler/method_values.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/owned_mutation.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/owned_bytes.py $(abspath $(OUT))
 	python3 ../tests/compiler/integers.py $(abspath $(OUT))
 	python3 ../tests/compiler/unsigned.py $(abspath $(OUT))
 	python3 ../tests/compiler/u8_numeric.py $(abspath $(OUT))
@@ -188,6 +189,11 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 -O ../tests/compiler/method_values_abi.py $(abspath $(dir $(OUT))method-values-ir-tests)
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_mutation_ir.cpp -o $(dir $(OUT))owned-mutation-ir-tests
 	$(dir $(OUT))owned-mutation-ir-tests
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_bytes_ir.cpp -o $(dir $(OUT))owned-bytes-ir-tests
+	$(dir $(OUT))owned-bytes-ir-tests
+	$(CXX) $(CXXFLAGS) -DAURORA_HOSTED_BYTES_TESTING ../runtime/hosted_bytes.cpp \
+	    ../tests/compiler/owned_bytes_host.cpp -o $(dir $(OUT))owned-bytes-host-tests
+	$(dir $(OUT))owned-bytes-host-tests
 	python3 -B -O ../tests/compiler/owned_mutation_abi.py $(abspath $(dir $(OUT))owned-mutation-ir-tests)
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/sector_values_ir.cpp -o $(dir $(OUT))sector-values-ir-tests
 	$(dir $(OUT))sector-values-ir-tests

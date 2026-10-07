@@ -52,6 +52,33 @@ class SpanCapability {
     std::size_t site;
     bool operator==(const SpanCapability &) const = default;
 };
+// Region identity comes only from an entry binding. Ownership tokens are minted
+// internally from instruction sites, never supplied by an IR operand or runtime
+// descriptor. A failed allocation still creates one live logical ownership token.
+class RegionIdentity {
+public:
+    int offset;
+    std::size_t site;
+    bool operator==(const RegionIdentity &) const = default;
+};
+class ByteToken {
+public:
+    std::size_t site;
+    RegionIdentity region;
+    bool operator==(const ByteToken &) const = default;
+};
+enum class ByteDisposition {
+    Pristine,
+    Live,
+    Consumed
+};
+class ByteBinding {
+public:
+    std::size_t site;
+    ByteDisposition disposition;
+    std::optional<ByteToken> token;
+    bool operator==(const ByteBinding &) const = default;
+};
 class State {
   public:
     std::optional<Value> current;
@@ -66,6 +93,8 @@ class State {
     std::set<int> activeObjects;
     std::map<int, std::size_t> activeArrays; // array base -> BeginArray site
     std::map<int, SpanCapability> activeSpans;
+    std::map<int, RegionIdentity> activeRegions;
+    std::map<int, ByteBinding> activeBytes;
     // Logical completion is independent of leaf initialization: empty embedded
     // values also require one complete, nominally checked initialization.
     std::set<std::pair<int, int>> objectClassesInitialized;
@@ -101,6 +130,12 @@ inline bool scalarValueType(const Type &type, const std::map<std::string, int> &
     return scalar(type) || (type.isEnum() && type == Type::enumeration(type.className) &&
                             enumCases.contains(type.className));
 }
+inline bool resourceSignature(const Function &function) {
+    return function.result.isResource() ||
+           std::any_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
+               return type.isResource();
+           });
+}
 class Metrics {
   public:
     std::size_t snapshots = 0;
@@ -134,9 +169,26 @@ inline void verifyFunction(Function &function,
         return base - storage.at(function.objectSlots.at(base).className).leafOffsets.at(leaf);
     };
     require(availableScopes.contains(function.moduleScope), "unknown function module scope");
+    const bool resourceFunction = resourceSignature(function);
+    if (resourceFunction) {
+        require(!function.receiver, "resource signature cannot have a receiver");
+        require(!function.parameters.empty() && function.parameters.front() == Type::ByteRegion,
+                "resource signature requires its region parameter first");
+        require(scalarValueType(function.result, enumCases) || function.result == Type::OwnedBytes,
+                "resource signature requires scalar or owned byte result");
+        for (std::size_t index = 1; index < function.parameters.size(); ++index)
+            require(scalarValueType(function.parameters[index], enumCases) ||
+                        function.parameters[index] == Type::OwnedBytes,
+                    "resource signature requires exactly one region and scalar or owned byte parameters");
+    }
     auto boundaryType = [&](const Type &type, bool parameter) {
         if (scalarValueType(type, enumCases))
             return;
+        if (type.isResource()) {
+            require(resourceFunction && (type == Type::OwnedBytes || (parameter && type == Type::ByteRegion)),
+                    "invalid resource boundary type");
+            return;
+        }
         if (type.isSpan()) {
             require(type == Type::ByteSpan && parameter && !function.receiver,
                     "readonly span is only an ordinary function parameter");
@@ -246,6 +298,23 @@ inline void verifyFunction(Function &function,
             require(spanStorage.insert(byte).second, "overlapping span spills");
         }
     }
+    std::set<int> resourceStorage;
+    auto reserveResource = [&](int base, int width, const std::string &name) {
+        require(base >= width && base <= function.frameBytes && base % 8 == 0,
+                "invalid " + name + " spill extent or alignment");
+        for (int byte = base - width + 1; byte <= base; ++byte) {
+            require(!occupiedSlotBytes.contains(byte) && !objectStorage.contains(byte) &&
+                        !arrayStorage.contains(byte) && !spanStorage.contains(byte),
+                    name + " spill overlaps scalar, object, array or span storage");
+            require(resourceStorage.insert(byte).second, "overlapping region or owned byte spills");
+        }
+    };
+    for (int base : function.regionSlots)
+        reserveResource(base, 8, "region");
+    for (const auto &[base, mutableValue] : function.byteSlots) {
+        (void)mutableValue;
+        reserveResource(base, 32, "owned byte");
+    }
     // Physical offset/layout validation above proves every slot belongs to the
     // existing bounded frame. Share this immutable dense domain across snapshots.
     std::vector<int> initializationOffsets;
@@ -260,14 +329,27 @@ inline void verifyFunction(Function &function,
     std::set<int> scalarParameterSlots;
     std::set<int> objectParameterSlots;
     std::set<int> spanParameterSlots;
+    std::set<int> byteParameterSlots;
+    std::optional<int> regionParameterSlot;
     std::map<int, int> spanParameterOrigins; // source position -> root spill
     for (std::size_t index = 0; index < function.code.size(); ++index) {
         const auto *binding = std::get_if<BindParameter>(&function.code[index]);
         const auto *objectBinding = std::get_if<BindObjectParameter>(&function.code[index]);
         const auto *spanBinding = std::get_if<BindSpanParameter>(&function.code[index]);
+        const auto *regionBinding = std::get_if<BindRegionParameter>(&function.code[index]);
+        const auto *byteBinding = std::get_if<BindBytesParameter>(&function.code[index]);
         if (index < function.parameters.size()) {
             const auto &type = function.parameters[index];
-            if (type.isClass()) {
+            if (type.isRegion()) {
+                require(regionBinding && regionBinding->index == 0 && index == 0,
+                        "region parameter binding must begin the entry prefix");
+                require(!regionParameterSlot, "duplicate region parameter binding");
+                regionParameterSlot = regionBinding->offset;
+            } else if (type.isBytes()) {
+                require(byteBinding && byteBinding->index == static_cast<int>(index),
+                        "owned byte parameter bindings must form the entry prefix");
+                require(byteParameterSlots.insert(byteBinding->offset).second, "owned byte parameter bindings overlap");
+            } else if (type.isClass()) {
                 require(objectBinding && objectBinding->index == static_cast<int>(index),
                         "object parameter bindings must form the entry prefix");
                 require(objectParameterSlots.insert(objectBinding->offset).second,
@@ -285,7 +367,7 @@ inline void verifyFunction(Function &function,
                         "scalar parameter bindings overlap");
             }
         } else
-            require(!binding && !objectBinding && !spanBinding,
+            require(!binding && !objectBinding && !spanBinding && !regionBinding && !byteBinding,
                     "parameter binding outside entry prefix");
     }
     std::map<int, std::size_t> labels;
@@ -347,8 +429,8 @@ inline void verifyFunction(Function &function,
                state.receiverInitialized.size() + state.receiverMaybeInitialized.size() +
                state.maybeConstructedObjects.size() + state.activeObjects.size() +
                state.objectClassesInitialized.size() + state.receiverClassesInitialized.size() +
-               state.receiverClassesMaybeInitialized.size() + state.activeArrays.size() +
-               state.activeSpans.size();
+               state.receiverClassesMaybeInitialized.size() + state.activeArrays.size() + state.activeSpans.size() +
+               state.activeRegions.size() + state.activeBytes.size();
     };
     retainedValueFacts = facts(*states[0]);
     auto initializationPayload = [](const State &state) {
@@ -394,6 +476,10 @@ inline void verifyFunction(Function &function,
                 "incompatible active array lifetimes at control-flow join");
         require(existing.activeSpans == state.activeSpans,
                 "incompatible active span capabilities at control-flow join");
+        require(existing.activeRegions == state.activeRegions,
+                "incompatible active region authority at control-flow join");
+        require(existing.activeBytes == state.activeBytes,
+                "incompatible owned byte lifetimes or ownership at control-flow join");
         require(existing.stack == state.stack,
                 "incompatible value/guard stacks at control-flow join");
         State merged = existing;
@@ -499,6 +585,47 @@ inline void verifyFunction(Function &function,
                 require(function.spanSlots.contains(base), "span requires exact typed spill");
                 require(!spanParameterSlots.contains(base), "span parameter cannot be rebound");
                 require(!state.activeSpans.contains(base), "span spill is already active");
+            };
+            auto region = [&](int base) -> RegionIdentity {
+                require(function.regionSlots.contains(base), "region requires exact typed spill");
+                require(state.activeRegions.contains(base), "region authority is not active");
+                return state.activeRegions.at(base);
+            };
+            auto byteBinding = [&](int base) -> ByteBinding & {
+                require(function.byteSlots.contains(base), "owned byte operation requires exact typed spill");
+                require(state.activeBytes.contains(base), "owned byte lifetime is not active");
+                return state.activeBytes.at(base);
+            };
+            auto bytes = [&](int base, bool mutableAccess) -> ByteBinding & {
+                auto &binding = byteBinding(base);
+                require(binding.disposition == ByteDisposition::Live && binding.token.has_value(),
+                        "owned byte binding does not hold live ownership");
+                require(region(binding.token->region.offset) == binding.token->region,
+                        "owned byte region identity does not match active authority");
+                require(!mutableAccess || function.byteSlots.at(base),
+                        "const owned byte binding cannot be mutated or moved");
+                return binding;
+            };
+            auto byteTarget = [&](int base) -> ByteBinding & {
+                auto &binding = byteBinding(base);
+                require(binding.disposition == ByteDisposition::Pristine && !binding.token,
+                        "owned byte result requires pristine binding");
+                return binding;
+            };
+            auto mintBytes = [&](int base, const RegionIdentity &origin) {
+                auto &binding = byteTarget(base);
+                for (const auto &[unused, other] : state.activeBytes) {
+                    (void)unused;
+                    require(!other.token || other.token->site != index,
+                            "owned byte creation site still has a live token");
+                }
+                binding.disposition = ByteDisposition::Live;
+                binding.token = ByteToken{index, origin};
+            };
+            auto consumeBytes = [&](int base) {
+                auto &binding = byteBinding(base);
+                binding.disposition = ByteDisposition::Consumed;
+                binding.token.reset();
             };
             auto store = [&](int offset, const Type &type) {
                 slot(offset, type);
@@ -808,6 +935,7 @@ inline void verifyFunction(Function &function,
                         require(functions.contains(operation.callee), "unknown call target");
                         const auto &target = *functions.at(operation.callee);
                         require(!target.receiver, "plain call cannot target receiver function");
+                        require(!resourceSignature(target), "plain call cannot target resource signature");
                         require(scalarValueType(target.result, enumCases) &&
                                     std::all_of(target.parameters.begin(), target.parameters.end(),
                                                 [&](const Type &type) {
@@ -823,6 +951,7 @@ inline void verifyFunction(Function &function,
                                 "unknown aggregate call target");
                         const auto &target = *functions.at(operation.callee);
                         require(!target.receiver, "aggregate call cannot target receiver function");
+                        require(!resourceSignature(target), "aggregate call cannot target resource signature");
                         require(target.result.isClass() ||
                                     std::any_of(target.parameters.begin(), target.parameters.end(),
                                                 [](const Type &type) {
@@ -902,8 +1031,85 @@ inline void verifyFunction(Function &function,
                                     "scalar result cannot name object storage");
                             state.current = Value{target.result, {}};
                         }
-                    } else if constexpr (std::is_same_v<Op, BeginArray> ||
-                                         std::is_same_v<Op, EndArray>) {
+                    } else if constexpr (std::is_same_v<Op, ResourceCall>) {
+                        require(functions.contains(operation.callee), "unknown resource call target");
+                        const auto &target = *functions.at(operation.callee);
+                        require(resourceSignature(target) && !target.receiver && !target.parameters.empty() &&
+                                    target.parameters.front() == Type::ByteRegion,
+                                "resource call requires ordinary resource signature");
+                        const auto origin = region(operation.regionOffset);
+                        require(operation.ownerArguments.size() == target.parameters.size(),
+                                "resource call argument vector size mismatch");
+                        std::set<int> arguments;
+                        for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
+                            const auto &type = target.parameters[arg - 1];
+                            const int base = operation.ownerArguments[arg - 1];
+                            if (type == Type::OwnedBytes) {
+                                require(arguments.insert(base).second,
+                                        "resource call owned byte arguments must be distinct");
+                                require(bytes(base, true).token->region == origin,
+                                        "resource call owned byte argument has wrong region");
+                            } else {
+                                require(base == 0, "resource call non-owner argument cannot name owned byte spill");
+                                if (arg == 1)
+                                    require(type == Type::ByteRegion, "resource call first argument must be region");
+                                else {
+                                    require(scalarValueType(type, enumCases), "invalid resource call parameter type");
+                                    require(pop().type == type, "resource call scalar argument type mismatch");
+                                }
+                            }
+                        }
+                        if (target.result == Type::OwnedBytes) {
+                            require(!arguments.contains(operation.resultOffset),
+                                    "resource call owned byte result aliases argument");
+                            byteTarget(operation.resultOffset);
+                        } else {
+                            require(scalarValueType(target.result, enumCases), "invalid resource call result type");
+                            require(operation.resultOffset == 0,
+                                    "scalar resource call result cannot name owned byte spill");
+                        }
+                        for (int base : arguments)
+                            consumeBytes(base);
+                        if (target.result == Type::OwnedBytes) {
+                            mintBytes(operation.resultOffset, origin);
+                            state.current.reset();
+                        } else
+                            state.current = Value{target.result, {}};
+                    } else if constexpr (std::is_same_v<Op, BeginBytes>) {
+                        require(function.byteSlots.contains(operation.offset),
+                                "owned byte lifetime requires exact typed spill");
+                        require(!byteParameterSlots.contains(operation.offset),
+                                "owned byte parameter lifetime cannot restart");
+                        require(!state.activeBytes.contains(operation.offset), "owned byte lifetime already active");
+                        state.activeBytes.emplace(operation.offset, ByteBinding{index, ByteDisposition::Pristine, {}});
+                    } else if constexpr (std::is_same_v<Op, AllocateBytes>) {
+                        current(Type::I64);
+                        mintBytes(operation.resultOffset, region(operation.regionOffset));
+                        state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, MoveBytes>) {
+                        require(operation.sourceOffset != operation.resultOffset,
+                                "owned byte move source aliases result");
+                        const auto token = bytes(operation.sourceOffset, true).token;
+                        auto &target = byteTarget(operation.resultOffset);
+                        consumeBytes(operation.sourceOffset);
+                        target.disposition = ByteDisposition::Live;
+                        target.token = token;
+                    } else if constexpr (std::is_same_v<Op, BytesOk> || std::is_same_v<Op, BytesLength>) {
+                        bytes(operation.offset, false);
+                        state.current = Value{std::is_same_v<Op, BytesOk> ? Type::Bool : Type::I64, {}};
+                    } else if constexpr (std::is_same_v<Op, BytesLoad>) {
+                        bytes(operation.offset, false);
+                        current(Type::I64);
+                        state.current = Value{Type::U8, {}};
+                    } else if constexpr (std::is_same_v<Op, BytesStore>) {
+                        bytes(operation.offset, true);
+                        current(Type::U8);
+                        require(pop().type == Type::I64, "owned byte store index requires i64");
+                        state.current = Value{Type::Bool, {}};
+                    } else if constexpr (std::is_same_v<Op, EndBytes>) {
+                        byteBinding(operation.offset);
+                        state.activeBytes.erase(operation.offset);
+                    } else if constexpr (std::is_same_v<Op, BeginArray> || std::is_same_v<Op, EndArray>) {
                         require(function.arraySlots.contains(operation.offset),
                                 "array lifetime requires exact byte array origin");
                         if constexpr (std::is_same_v<Op, BeginArray>) {
@@ -939,8 +1145,7 @@ inline void verifyFunction(Function &function,
                             SpanCapability{false, operation.arrayOffset,
                                            state.activeArrays.at(operation.arrayOffset), 0, 0,
                                            index});
-                    } else if constexpr (std::is_same_v<Op, ReborrowSpan> ||
-                                         std::is_same_v<Op, Subspan>) {
+                    } else if constexpr (std::is_same_v<Op, ReborrowSpan> || std::is_same_v<Op, Subspan>) {
                         if constexpr (std::is_same_v<Op, Subspan>) {
                             current(Type::I64);
                             require(pop().type == Type::I64, "subspan offset requires i64");
@@ -969,8 +1174,7 @@ inline void verifyFunction(Function &function,
                         span(operation.offset);
                         current(Type::I64);
                         state.current = Value{Type::U8, {}};
-                    } else if constexpr (std::is_same_v<Op, BeginObject> ||
-                                         std::is_same_v<Op, EndObject>) {
+                    } else if constexpr (std::is_same_v<Op, BeginObject> || std::is_same_v<Op, EndObject>) {
                         require(function.objectSlots.contains(operation.offset),
                                 "lifetime operation requires exact object slot");
                         if constexpr (std::is_same_v<Op, BeginObject>) {
@@ -1246,9 +1450,10 @@ inline void verifyFunction(Function &function,
                         enqueue(labels.at(operation.target), state);
                     } else if constexpr (std::is_same_v<Op, Return>) {
                         require(scalarValueType(function.result, enumCases),
-                                "scalar return cannot return class value");
+                                "scalar return cannot return class value or resource value");
                         current(function.result);
                         require(state.stack.empty(), "unbalanced stack at return");
+                        require(state.activeBytes.empty(), "return with active owned byte lifetime");
                         require(state.activeSpans.empty() && state.activeArrays.empty(),
                                 "return with active span or byte array lifetime");
                         if (function.receiver && function.receiver->constructor) {
@@ -1277,9 +1482,43 @@ inline void verifyFunction(Function &function,
                                     "returned object not fully initialized");
                         logicalComplete(operation.offset);
                         require(state.stack.empty(), "unbalanced stack at object return");
+                        require(state.activeBytes.empty(), "return with active owned byte lifetime");
                         require(state.activeSpans.empty() && state.activeArrays.empty(),
                                 "return with active span or byte array lifetime");
                         fallsThrough = false;
+                    } else if constexpr (std::is_same_v<Op, ReturnBytes>) {
+                        require(function.result == Type::OwnedBytes, "owned byte return requires owned byte result");
+                        require(regionParameterSlot.has_value(), "owned byte return requires bound region parameter");
+                        require(bytes(operation.offset, true).token->region == region(*regionParameterSlot),
+                                "owned byte return has wrong region");
+                        state.activeBytes.erase(operation.offset);
+                        require(state.activeBytes.empty(), "return with active owned byte lifetime");
+                        require(state.activeSpans.empty() && state.activeArrays.empty(),
+                                "return with active span or byte array lifetime");
+                        require(state.stack.empty(), "unbalanced stack at owned byte return");
+                        fallsThrough = false;
+                    } else if constexpr (std::is_same_v<Op, BindRegionParameter>) {
+                        require(resourceFunction && operation.index == 0 &&
+                                    function.parameters.front() == Type::ByteRegion,
+                                "region parameter type or index mismatch");
+                        require(function.regionSlots.contains(operation.offset),
+                                "region parameter requires exact typed spill");
+                        require(state.activeRegions.empty(), "region parameter authority already active");
+                        state.activeRegions.emplace(operation.offset, RegionIdentity{operation.offset, index});
+                    } else if constexpr (std::is_same_v<Op, BindBytesParameter>) {
+                        require(operation.index > 0 &&
+                                    static_cast<std::size_t>(operation.index) < function.parameters.size(),
+                                "invalid owned byte parameter index");
+                        require(function.parameters[operation.index] == Type::OwnedBytes,
+                                "owned byte parameter type mismatch");
+                        require(regionParameterSlot.has_value(), "owned byte parameter requires bound region");
+                        require(function.byteSlots.contains(operation.offset),
+                                "owned byte parameter requires exact typed spill");
+                        require(function.byteSlots.at(operation.offset), "owned byte parameter must be mutable");
+                        require(!state.activeBytes.contains(operation.offset),
+                                "owned byte parameter lifetime already active");
+                        state.activeBytes.emplace(operation.offset, ByteBinding{index, ByteDisposition::Pristine, {}});
+                        mintBytes(operation.offset, region(*regionParameterSlot));
                     } else if constexpr (std::is_same_v<Op, BindSpanParameter>) {
                         require(operation.index >= 0 && static_cast<std::size_t>(operation.index) <
                                                             function.parameters.size(),
@@ -1374,10 +1613,10 @@ inline ValidatedModule validate(Module module) {
     std::map<std::string, const Function *> functions;
     verification::require(!module.functions.empty(), "empty module");
     for (const auto &function : module.functions) {
-        verification::require(verification::symbol(function.name) &&
-                                  function.name != "aurora_reflect_size" &&
+        verification::require(verification::symbol(function.name) && function.name != "aurora_reflect_size" &&
                                   function.name != "aurora_reflect_field_count" &&
-                                  !function.name.starts_with("__au_reflect_"),
+                                  !function.name.starts_with("__au_reflect_") &&
+                                  !function.name.starts_with("__au_runtime_bytes_"),
                               "invalid or reserved function symbol");
         verification::require(functions.emplace(function.name, &function).second,
                               "duplicate function");
@@ -1520,6 +1759,8 @@ inline ValidatedModule validate(Module module) {
             if (const auto *call = std::get_if<MethodCall>(&instruction))
                 target = &call->callee;
             if (const auto *call = std::get_if<AggregateCall>(&instruction))
+                target = &call->callee;
+            if (const auto *call = std::get_if<ResourceCall>(&instruction))
                 target = &call->callee;
             if (target) {
                 const auto next = functionIndices.at(*target);

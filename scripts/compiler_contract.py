@@ -51,8 +51,20 @@ CAP_CONTROLS = {'PACKAGE_IDENTITY_CAP_MIB': (128, 1024),
                 'IPC_TRANSACTION_CAP_MIB': (128, 1024)}
 MAKE_CONTROL = ('MAKEFLAGS', 'GNUMAKEFLAGS', 'MFLAGS', 'MAKEFILES', 'MAKEOVERRIDES',
                 'MAKELEVEL', 'MAKE', 'SHELL', '.SHELLFLAGS')
-SOURCE_DIRS = ('compiler', 'scripts', 'tests', 'library', 'kernel', 'fixtures',
-               'storage', 'tools', 'examples', 'diagnostics', 'docs')
+SOURCE_DIRS = (
+    "compiler",
+    "runtime",
+    "scripts",
+    "tests",
+    "library",
+    "kernel",
+    "fixtures",
+    "storage",
+    "tools",
+    "examples",
+    "diagnostics",
+    "docs",
+)
 TOOLS = ('make', 'g++', 'as', 'ld', 'objcopy', 'objdump', 'readelf', 'nm',
          'python3', 'bash', 'rg')
 OPAQUE_ENV = ('GCC_EXEC_PREFIX', 'COMPILER_PATH', 'LD_PRELOAD', 'LD_AUDIT')

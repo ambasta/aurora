@@ -106,10 +106,10 @@ class X86Emitter {
                           : "__au_reflect_s" + std::to_string(scope) + "_" + name;
     }
     bool aggregateSignature(const ir::Function &function) const {
-        if (function.result.isClass())
+        if (function.result.isClass() || function.result.isBytes())
             return true;
         for (const auto &type : function.parameters)
-            if (type.isClass() || type.isSpan())
+            if (type.isClass() || type.isSpan() || type.isResource())
                 return true;
         return false;
     }
@@ -118,9 +118,10 @@ class X86Emitter {
                            [](const Type &type) { return type.isClass(); });
     }
     int argumentBytes(const Type &type) const {
-        return type.isClass()  ? classStorage->at(type.className).reservedBytes
-               : type.isSpan() ? 16
-                               : 8;
+        return type.isBytes()   ? 32
+               : type.isClass() ? classStorage->at(type.className).reservedBytes
+               : type.isSpan()  ? 16
+                                : 8;
     }
     int recordOffset(const ir::Function &function, std::size_t parameter) const {
         int offset = 0;
@@ -178,6 +179,45 @@ class X86Emitter {
                 }
             }
         }
+        line("movq %rsp, %r11");
+        return recordBytes;
+    }
+    void clearBytesOwner(int offset) {
+        for (int byte = 0; byte < 32; byte += 8)
+            line("movq $0, " + address(offset - byte));
+    }
+    void moveBytesOwner(int source, int destination) {
+        for (int byte = 0; byte < 32; byte += 8) {
+            line("movq " + address(source - byte) + ", %rcx");
+            line("movq %rcx, " + address(destination - byte));
+        }
+        clearBytesOwner(source);
+    }
+    int packResources(const ir::Function &target, const ir::ResourceCall &operation) {
+        for (std::size_t index = target.parameters.size(); index > 1; --index)
+            if (!target.parameters[index - 1].isBytes())
+                pop(argumentRegisters[index - 1]);
+        const int recordBytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
+        reserveStack(recordBytes);
+        clearBytes(0, recordBytes, [](int byte) {
+            return std::to_string(byte) + "(%rsp)";
+        });
+        // Save scalar arguments before descriptor copying reuses scratch GPRs.
+        for (std::size_t index = 1; index < target.parameters.size(); ++index)
+            if (!target.parameters[index].isBytes())
+                storeArgument(target.parameters[index], index, std::to_string(recordOffset(target, index)) + "(%rsp)");
+        line("movq " + address(operation.regionOffset) + ", %rax");
+        line("movq %rax, (%rsp)");
+        for (std::size_t index = 1; index < target.parameters.size(); ++index)
+            if (target.parameters[index].isBytes()) {
+                const int source = operation.ownerArguments[index];
+                const int destination = recordOffset(target, index);
+                for (int byte = 0; byte < 32; byte += 8) {
+                    line("movq " + address(source - byte) + ", %rax");
+                    line("movq %rax, " + std::to_string(destination + byte) + "(%rsp)");
+                }
+                clearBytesOwner(source);
+            }
         line("movq %rsp, %r11");
         return recordBytes;
     }
@@ -396,8 +436,69 @@ class X86Emitter {
                     call(operation.callee);
                     if (recordBytes)
                         line("addq $" + std::to_string(recordBytes) + ", %rsp");
-                } else if constexpr (std::is_same_v<Op, ir::BeginArray> ||
-                                     std::is_same_v<Op, ir::EndArray> ||
+                } else if constexpr (std::is_same_v<Op, ir::BeginBytes>) {
+                    clearBytesOwner(operation.offset);
+                } else if constexpr (std::is_same_v<Op, ir::AllocateBytes>) {
+                    line("movq %rax, %rsi");
+                    line("movq " + address(operation.regionOffset) + ", %rdi");
+                    line("leaq " + address(operation.resultOffset) + ", %rdx");
+                    call("__au_runtime_bytes_allocate");
+                } else if constexpr (std::is_same_v<Op, ir::MoveBytes>) {
+                    moveBytesOwner(operation.sourceOffset, operation.resultOffset);
+                } else if constexpr (std::is_same_v<Op, ir::BytesOk>) {
+                    line("movq " + address(operation.offset - 24) + ", %rax");
+                } else if constexpr (std::is_same_v<Op, ir::BytesLength>) {
+                    line("movq " + address(operation.offset - 16) + ", %rax");
+                } else if constexpr (std::is_same_v<Op, ir::BytesLoad>) {
+                    // Canonical failed/empty owners have length zero. Unsigned
+                    // comparison rejects negative and upper-bound indices too.
+                    line("cmpq " + address(operation.offset - 16) + ", %rax");
+                    line("jae .Laurora_bounds_trap");
+                    line("movq %rax, %rsi");
+                    line("leaq " + address(operation.offset) + ", %rdi");
+                    call("__au_runtime_bytes_at");
+                } else if constexpr (std::is_same_v<Op, ir::BytesStore>) {
+                    line("movq %rax, %rdx");
+                    pop("%rsi");
+                    line("leaq " + address(operation.offset) + ", %rdi");
+                    call("__au_runtime_bytes_set");
+                } else if constexpr (std::is_same_v<Op, ir::EndBytes>) {
+                    // Cleanup may occur with a return value or other expression
+                    // operands outstanding. Preserve both value and stack parity.
+                    push();
+                    line("leaq " + address(operation.offset) + ", %rdi");
+                    call("__au_runtime_bytes_drop");
+                    pop("%rax");
+                } else if constexpr (std::is_same_v<Op, ir::ResourceCall>) {
+                    const auto &target = *functions.at(operation.callee);
+                    const int recordBytes = packResources(target, operation);
+                    if (target.result.isBytes())
+                        line("leaq " + address(operation.resultOffset) + ", %r10");
+                    call(operation.callee);
+                    line("addq $" + std::to_string(recordBytes) + ", %rsp");
+                } else if constexpr (std::is_same_v<Op, ir::BindRegionParameter>) {
+                    line("movq " + address(callRecordSaveOffset) + ", %r11");
+                    line("movq (%r11), %rax");
+                    line("movq %rax, " + address(operation.offset));
+                } else if constexpr (std::is_same_v<Op, ir::BindBytesParameter>) {
+                    line("movq " + address(callRecordSaveOffset) + ", %r11");
+                    const int source = recordOffset(*currentFunction, operation.index);
+                    for (int byte = 0; byte < 32; byte += 8) {
+                        const auto field = std::to_string(source + byte) + "(%r11)";
+                        line("movq " + field + ", %rax");
+                        line("movq %rax, " + address(operation.offset - byte));
+                        line("movq $0, " + field);
+                    }
+                } else if constexpr (std::is_same_v<Op, ir::ReturnBytes>) {
+                    line("movq " + address(resultSaveOffset) + ", %r10");
+                    for (int byte = 0; byte < 32; byte += 8) {
+                        line("movq " + address(operation.offset - byte) + ", %rcx");
+                        line("movq %rcx, " + std::to_string(byte) + "(%r10)");
+                    }
+                    clearBytesOwner(operation.offset);
+                    line("xorq %rax, %rax");
+                    line("jmp " + returnLabel());
+                } else if constexpr (std::is_same_v<Op, ir::BeginArray> || std::is_same_v<Op, ir::EndArray> ||
                                      std::is_same_v<Op, ir::EndSpan>) {
                     // Static lifetime changes preserve the scalar current value.
                 } else if constexpr (std::is_same_v<Op, ir::BorrowSpan>) {
@@ -641,6 +742,21 @@ class X86Emitter {
             argumentCounts[function.name] = function.parameters.size();
             functions[function.name] = &function;
         }
+        // Resource graphs link a trusted host adapter. No user-selected source
+        // symbol may interpose its allocator, stdio or fail-stop dependencies.
+        // Derive this from validated signatures/lifetime IR, never an input flag.
+        const bool resourceGraph =
+            std::any_of(module.functions.begin(), module.functions.end(), [](const ir::Function &function) {
+                return function.result.isResource() ||
+                       std::any_of(function.parameters.begin(),
+                                   function.parameters.end(),
+                                   [](const Type &type) {
+                                       return type.isResource();
+                                   }) ||
+                       std::any_of(function.code.begin(), function.code.end(), [](const ir::Instruction &op) {
+                           return std::holds_alternative<ir::BeginBytes>(op);
+                       });
+            });
         output << "# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n";
         for (const auto &function : module.functions) {
             stackDepth = 0;
@@ -649,9 +765,10 @@ class X86Emitter {
             const bool aggregate = aggregateSignature(function);
             // Receiver and aggregate entry points use a private compiler ABI and cannot be
             // exposed as ordinary scalar-callable external symbols.
-            output << (function.receiver || aggregate || function.name.starts_with("__au_o_")
-                           ? ".local " : ".globl ") << function.name
-                   << "\n.type " << function.name << ", @function\n"
+            output << (resourceGraph || function.receiver || aggregate || function.name.starts_with("__au_o_")
+                           ? ".local "
+                           : ".globl ")
+                   << function.name << "\n.type " << function.name << ", @function\n"
                    << function.name << ":\n";
             line("pushq %rbp");
             line("movq %rsp, %rbp");
@@ -662,7 +779,7 @@ class X86Emitter {
                 function.receiver && packedArguments && function.result.isClass();
             callRecordSaveOffset =
                 packedArguments ? function.frameBytes + (function.receiver ? 16 : 8) : 0;
-            resultSaveOffset = function.result.isClass()
+            resultSaveOffset = (function.result.isClass() || function.result.isBytes())
                                    ? function.frameBytes + (combinedMethod ? 24 : 16)
                                    : 0;
             // Hidden capabilities never occupy source-addressable slots. The
@@ -675,7 +792,7 @@ class X86Emitter {
                 line("movq %r10, " + address(receiverSaveOffset));
             if (packedArguments)
                 line("movq %r11, " + address(callRecordSaveOffset));
-            if (function.result.isClass())
+            if (function.result.isClass() || function.result.isBytes())
                 line(std::string("movq ") +
                      (combinedMethod ? "%rax" : function.receiver ? "%r11" : "%r10") + ", " +
                      address(resultSaveOffset));

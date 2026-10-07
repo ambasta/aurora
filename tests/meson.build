@@ -15,6 +15,7 @@ foreach entry : [
     ['classes', 'compiler/classes.py', 'core'],
     ['value-calls', 'compiler/value_calls.py', 'core'],
     ['owned-mutation', 'compiler/owned_mutation.py', 'core'],
+    ['owned-bytes', 'compiler/owned_bytes.py', 'core'],
     ['signed-integers', 'compiler/integers.py', 'core'],
     ['unsigned-integers', 'compiler/unsigned.py', 'core'],
     ['modules', 'modules/run.py', 'core'],
@@ -112,3 +113,15 @@ foreach family : ['identity', 'manifest', 'graph']
         is_parallel: true,
     )
 endforeach
+
+# Runtime-owned bytes are a hosted bootstrap boundary, separate from freestanding core.
+owned_bytes_ir = executable(
+    'owned-bytes-ir', 'compiler/owned_bytes_ir.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('owned-bytes-ir', owned_bytes_ir, suite: ['dev', 'core', 'compiler'], timeout: 120)
+owned_bytes_host = executable(
+    'owned-bytes-host', ['compiler/owned_bytes_host.cpp', '../runtime/hosted_bytes.cpp'],
+    cpp_args: ['-DAURORA_HOSTED_BYTES_TESTING'], native: true, install: false,
+)
+test('owned-bytes-host', owned_bytes_host, suite: ['dev', 'core', 'compiler'], timeout: 120)
