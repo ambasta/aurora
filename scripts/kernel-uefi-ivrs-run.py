@@ -44,7 +44,7 @@ def run(mode,out):
     if clean:invocation['firmware_source_revision']='fbe0805b2091393406952e84724188f8c1941837'
     (out/'invocation-start.json').write_text(json.dumps(invocation,indent=2)+'\n')
     with (out/'serial.log').open('w') as log:
-        try:status=subprocess.run(argv,cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,timeout=60).returncode
+        try:status=subprocess.run(argv,cwd=ROOT,env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,timeout=60).returncode
         except subprocess.TimeoutExpired:status=124
     (out/'status').write_text(str(status)+'\n');invocation['status']=status
     for key,name in [('serial','serial.log'),('trace','trace.log'),('firmware_log','firmware.log')]:files[key]=record(out/name)

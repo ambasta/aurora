@@ -49,7 +49,9 @@ fi
 "${clock_check[@]}" >"build/uefi/$mode.clock.json"
 log="build/uefi/$mode.log"
 set +e
-timeout 30 "${qemu_argv[@]}" >"$log" 2>&1
+# Keep QEMU off the terminal: timeout's background process group would be
+# stopped by SIGTTOU when -serial stdio changes a terminal's mode.
+timeout 30 "${qemu_argv[@]}" </dev/null >"$log" 2>&1
 status=$?
 set -e
 cat "$log"

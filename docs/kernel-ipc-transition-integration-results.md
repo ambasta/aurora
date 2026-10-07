@@ -1,254 +1,122 @@
-# IPC transition native and runtime results
+# IPC transition integration results
 
-## Current-main integration and input-review addendum — 2026-10-06
+The bounded IPC checkpoint has completed independent review and its planned
+integration gates. The six Mailbox operations—submit, receive, reply, consume,
+cancel and recycle—use copied decisions from safe Aurora. Trusted C++ retains
+participant identity, capability checks, transaction/generation binding, payload
+storage and atomic commit. A refused or malformed decision cannot mutate that
+Mailbox call's records or advance its generation. Composite dispatcher operations
+retain an already committed prefix and fail on a later refusal; they do not
+promise rollback. See the [contract](kernel-ipc-transition-contract.md).
 
-**The prior IPC checkpoint's scoped gates are complete; this fresh current-main
-composition is unqualified.** The 586-file source manifest
-`2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf`
-has separately accepted full developer D and pinned-prebuilt P native workflows,
-five fatal sanitizer entrypoints, bounded linked review of 28 images (26+2), and
-182 actual boots (177 production + 3 capacity + 2 normal restoration).
+## Two tested source checkpoints
 
-The same original reviewer completed a fresh reconsidered review of the two
-original input-guard images, and its bounded static scope was accepted. Report
-SHA256 is `4e019368228111796dc4d45e7c8af5af2e73ab3a88d6f19418fda70790506014`;
-`JOIN-28.json` adds these two images to the unchanged prior 26-image review.
-The interrupted review/error remains historical and unaccepted, with no credit
-transferred from its partial output. The fresh review's corrected CFG assertion
-was a reviewer-method limitation, not a product defect. The exact durability
-receipt is `6d2b84745c63d0abb714262dbb5098a5ecf593d61a0efea512751110a53c07ff`;
-its private Library archive is `libfile_05e518f97ad48191bff467a59b3c13aa`, SHA256
-`bd5c29e3266c5ffb77eb8aff9c88316620e4cdecc055bf2b6dde76ae9e0c9558`.
-Full references and the unchanged earlier snapshots are in the
-[receipt index](evidence/ipc-transition-policy/receipts.json).
+The complete qualification of [PR28 checkpoint 851f288](https://github.com/ambasta/aurora/commit/851f288567b1e97d830089759052e17f5f591980)
+used 608 files with manifest SHA256
+`3522f7b87b7e3f0048581724a5ff4a19310612ee7c1f7474ad1376c04b3c6148`.
+It includes the current scanner, developer workflow, memory assembly, PE-linker
+selection and firmware helper. The following are separately reviewed gates:
 
-This integration composes published PR28 head
-`28921dff57e671c3a9d3c25c6c3af371be51fe74` onto accepted main
-`25d76b1799c2a29d21b175b6b720c7a256e97b9e`. It changes executable source as well
-as documentation. Old ABI/stack/mapping addresses, image identities and test
-receipts do not qualify the combined graph, including main's `memory.S` changes.
-Independent source/linked review and fresh native, sanitizer and runtime
-integration remain required before merge qualification. No current-source
-execution is claimed. The original wall-clock retirement failure remains
-unresolved stress evidence; the fixed-clock pass does not explain or repair it.
-Main's PR33 full GCC 14 native and focused GCC 16 boot results retain their
-separate scope; neither Clang kernel nor full Gentoo native acceptance is claimed.
-
-## Prior published status — before input-review reconsideration
-
-The following status and execution records identify the older PR27-based
-checkpoint. Blocked/pending statements in that snapshot are superseded only by
-the dated addendum above; they are not the status of this current-main composition.
-
-As of 2026-10-06, the exact full public developer **D** and pinned-prebuilt **P**
-release native workflows, the separate fatal sanitizer supplement and the full
-182-boot runtime regression have independent scoped acceptance. The two input-guard
-linked reviews remain blocked and unaccepted, so this is not full IPC/kernel
-acceptance. PR28 remains draft; accepted main remains PR27
-`772b9c8a6291aa3cc656b409ce0263f73d45b034`.
-
-The tested source has **586 files**, manifest SHA256
-`2b4da2190713a207e53e54c597e722ce1ad3cf8a51d438af6072bfae729ebabf`,
-published draft head `073c8aeb8af49a38ead95a809cf5c5d595d97dd1`, tree
-`93ac7b4ed0a846ccc56fbfa305180d4bc7d6fde6`. This later status overlay changes
-documentation/evidence only. It does not claim execution of its new source
-manifest, change an earlier terminal, or independently approve its own composition.
-Compiler, kernel, libraries, scripts, tests and product inputs remain byte-exact.
-
-The [compact receipt index](evidence/ipc-transition-policy/receipts.json) records
-full report, approval, seal, product and archive hashes. Its paths identify retained
-external evidence, not additional repository files. Separate raw and audit Library
-archives preserve the original evidence; giant logs and binaries are not copied here.
-
-## Completed full public native workflows
-
-Both workflows ran the complete default release graph on the captured GNU/Linux
-GCC 14 host: 34 root prerequisites including shared context, 39 direct compiler
-recipes and five compound gates, reconciled against 83 retained recipe echoes.
-Newly completed matching product receipts, original supervisor exits and positive
-quiescent closure establish the result; echoes and Make exit alone do not.
-
-| Workflow | Actual command and provenance | Original completion | Independent terminal report SHA256 |
-|---|---|---|---|
-| D | `/usr/bin/make --jobs=1 test`; current-source compiler built once; developer receipt has no external expected pin | Session 37204, exit 0 | `c60e8814410cc97e99948212a50eb8c0ff712e14689fa7d3b98df94fcbc2b4a8` |
-| P | `/usr/bin/make --jobs=1 test-acceptance` with the independently selected private compiler and expected digest; `externally-pinned-prebuilt`, zero bootstrap builds | Session 2804, exit 0 | `63a6877c7fb274008640ee82d28140634de3b70805628684648bb0292eaa2964` |
-
-Both use compiler SHA256
-`66bb719d0ad1622e97b7e448a724d153bb370080f0ce4aa1e5a0b6b322a4a298`.
-P's immutable input and run-owned mode-0555 copy have distinct identities; P
-does not claim a fresh compiler build. D's terminal is
-`4075601769c99a6b6fb8f90bf79f5dac0ac5959cb0b50c2deee831c5031502a3`;
-P's is `00ee5b98512bba0f64a36791f00451e61d7647a966264687816bbc54bac48d56`.
-The exact P argv and both product/context hashes are in the receipt index.
-
-Each full workflow includes both ordinary and optimized 76-method contract suites
-and 192-case cap-configuration checks per Python mode. Those configuration checks
-explicitly execute no native work. Separately, all six **actual native consumers**
-pass with their configured **1024 MiB sampled storage caps**, using the selected
-run-owned compiler. The caps are not aggregate RSS limits or filesystem quotas.
-
-| Native family, per workflow | Retained cases/observations | Rejection runs |
-|---|---|---:|
-| Package identity | 5,503 cases; 199,213 u64 observations | 40 |
-| Package manifest | 20,022 cases; 1,827,671 observations | 58 |
-| Package graph | 5,548 cases; 333,671 observations | 60 |
-| Kernel budget | 104,120 policy rows; 815,301 decoder rows | 10 |
-| Round robin | 17,672 policy rows; 1,051,016 decoder rows; 4,096 copies | 10 |
-| IPC transition | 114,613 policy rows; 401,488 decoder rows; 288 finite contexts: 15 accepted, 273 refused | 32 |
-
-Counts include repeated input vectors and overlapping coverage. D and P are not
-additive unique-case totals. IPC's 4,096 copy executions repeat one probe. Independent
-corpus reviews join complete retained streams to contract arithmetic, package
-lineage and genuine generated-root linkage, including all 314 retained
-manifest/graph archives and 8,792 archive members per workflow.
-
-Hosted IPC, dispatcher and client-disposal models and hostile adapters exercise
-the genuine policy under their finite contracts. Individual refused/malformed
-Mailbox operations preserve target/peer bytes and generation behavior. Previously
-committed composite prefixes remain committed; no aggregate rollback is promised.
-The **6,726-check service-budget host gate instantiates neither Mailbox nor
-Dispatcher and calls neither IPC nor round robin**. Its APIC/context/authority
-checks do not demonstrate IPC cancellation or restart. Whole-root linkage does
-not close that behavioral gap. The separately reviewed actual guest lifecycle
-results below supply runtime evidence without relabeling this hosted model.
-
-## Other closed evidence, each with its own scope
-
-- Compiler-free clock controls: ordinary and optimized eight-method suites plus
-  retirement/normal command plans passed. Their 586-file source manifest is
-  `e6c08e72e9764615043b4ef7c5a726c5a5dda12c6f1de9f8735ec0fe8b6230b7`;
-  the later tested `2b4da219…` composition changed documentation only.
-- Separate portable controls: all 76 methods and all 192 cap cases per Python
-  mode passed. These controls are native-free and do not establish broad-host support.
-- Image construction: 54 closed commands produced and preserved 26 variants,
-  followed by separate six-command construction of the two IPC input variants.
-  Each stage's final normal image construction is not a restoration boot.
-- The 26-image linked review accepted its bounded static IPC/ABI, both-stack,
-  mapping and four-output-guard scope under stated bootstrap assumptions. Its
-  measured generated IPC chain is 512 bytes; independent 16 KiB stacks have
-  maxima of 2,120 bytes for RSP0, a conservative 3,416-byte supervisor drain
-  bound, and 14,664 bytes for pre-runtime supervisor discovery. These are scoped
-  bounds, not whole-kernel safety or observed guest behavior.
-- The 22-driver emitted-instruction review supports the unchanged 128 budget
-  only conditionally on exact fixed0/APIC/MMIO/interrupt/IRET premises. It keeps
-  nine genuine three-tick/two-resume exhaustion obligations. No new numeric gate,
-  runtime timing guarantee or family-wide acceptance follows.
-- The two new input images have accepted construction/terminal evidence. Their
-  separate linked-image review is **platform-blocked and UNACCEPTED**. This status
-  overlay neither inspected nor continued that review or its quarantined helper.
-
-## Completed 177+3+2 runtime regression — 2026-10-06
-
-One newly admitted run completed all 177 production modes, three BIOS capacity
-probes and two additional normal restoration boots. Original supervisor session
-13448 exited 0; terminal completion is 2026-10-06 10:32:21.906857 UTC. Independent
-terminal/control and guest-corpus reviews passed, and the parent accepted their
-scoped result. No failed prefix or diagnostic attempt supplies credit.
-
-| Evidence | SHA256 |
+| Gate on that source | Result and boundary |
 |---|---|
-| Actual terminal | `95bdf3904e3abf9705c8bebec64e971036867fea397eaa2ea44e472e14f58339` |
-| Independent runtime approval | `9516ab78fa562aa7f39de2604854276bee3f800377862f2bb5a60a3f0baeb16d` |
-| Terminal/control report | `bd9e61fb85d78e3faab13adb0ce5b97f6c75a8157d0ab2848ff90d27f2ba6e54` |
-| Raw-corpus report | `04d3dc5b98d3d6142e01565655f9dc1d3d46abf07bba910f4fcdbb01e3c9de4b` |
-| Run seal: 1,299 files and 84 directories | `99c1a041e8b234873c7d34a822c7d681261bbc78eaddf253cae2dc616ffc2694` |
+| Full developer native workflow | `make --jobs=1 test` built one compiler and completed the full root graph; matching product receipts and retained corpora passed independent review. |
+| Full prebuilt acceptance workflow | `make --jobs=1 test-acceptance` used an independently selected immutable compiler, explicit expected digest and zero bootstrap builds; the full graph and all six native consumers passed. |
+| Fatal hosted sanitizers | Five existing IPC, dispatch, disposal and budget entrypoints passed with fatal ASan/UBSan settings. Eight retained binaries contain meaningful instrumentation; the tiny copy wrapper has initialization hooks only. |
+| Fresh image/static review | 57 construction/preservation commands supplied 28 actual image variants, including both input guards. Independent review covered bounded ABI, mapping, output guards, memory helpers, both caller stacks and conditional timer arithmetic. |
+| Full runtime matrix | 177 production modes, three BIOS capacity probes and two additional actual normal restoration boots passed. No failed prefix was credited. |
+| Split firmware integration | Normal / budget-smp / normal produced raw statuses 33 / 35 / 33 with three distinct private VARS copies, unchanged templates and byte-identical restored normal artifacts. |
 
-All 182 complete QEMU arrays and expected statuses matched: 54 exits of 33 and
-128 intended exits of 35. Exactly 51 timer-family modes used
-`-icount shift=0,align=off,sleep=off`; 126 other production modes and all five
-capacity/restoration boots kept the original clock. No guest loop, 128/3 budget
-or strict validator was weakened. Both normal restoration boots actually ran.
+The selected compiler SHA256 is
+`66bb719d0ad1622e97b7e448a724d153bb370080f0ce4aa1e5a0b6b322a4a298`.
+Ordinary developer builds still require no historical compiler pin.
 
-Normal IPC returned and consumed 42; dispatch returned 42/73/42 in client order
-0,1,0. Mixed dispatch preserved an already committed reply while cancelling its
-peer. Cancellation consumption, service restart, retirement and rebinding passed.
-The request input/output faults stopped after a valid envelope and before submit;
-the cancellation input/output faults stopped after delivery, authenticated service
-bounds failure and supervisor restoration, before cancel commit. All four matched
-output-image guards passed before their guest launches. Input-mode runtime passes
-do not replace the blocked linked reviews.
+The subsequent [PR35](https://github.com/ambasta/aurora/pull/35) composition preserves
+main `4c9af2cf0a30337a8c39a6b16e0a9164c23ced1f` and its terminal-stdin correction.
+Its tested 608-file manifest is
+`583439c752ef69dd8e57fb55d9759fd564399c861e1855807853ec6db8bc51e3`,
+Git tree `c2de4c69bf2be6ba90dfe1d135be31ae0b7856a6`.
+Independent composition review verified all 201 primary build inputs unchanged,
+including all compiler, kernel and image-builder inputs. Nine paths differ from
+851f288: stdin detachment, its synthetic test, necessary runner identity pins and
+documentation. Strict validators and the complete mode/clock map are unchanged.
+The later publication changes only four documentation files from this tested
+composition; its new tree is not a claim of another test run.
 
-The independent timer recount covered 141 armed runs, 3,652 charged ticks,
-14 kernel drains and nine context samples. Nine modes retained genuine three-tick
-exhaustion; context and pending-drain requirements stayed distinct. Retirement's
-instruction-clock service runs recorded 78 compiled ticks, including the required
-old-owner drain before disposal/rebind and preserved peer completion. These are
-observations, not new acceptance thresholds or performance measurements. They do
-not explain or repair the historical wall-clock failure.
+## PR35 targeted qualification
 
-The run used exact restored QEMU 10.0.13 (`Debian 1:10.0.13+ds-0+deb13u1`),
-executable SHA256 `d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067`,
-and the historical 4 MiB combined OVMF image, SHA256
-`14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db`.
-Firmware came directly from authenticated package bytes, not CODE/VARS
-concatenation. Effective argv, clean environment, absent default configuration
-and excluded optional modules remain bound. The earlier version-only probe was
-not a guest result; the separately admitted run supplies the new guest evidence.
+Two shell syntax checks and 108 ordinary/optimized clock, developer-command and
+firmware method executions passed. These use synthetic tools and earn no guest
+credit. The real follow-on run completed **16 terminal-origin boots**:
 
-All 181 supervised commands used the observed-owned-leader namespace branch,
-with recorded actual exits and empty cleanup remaining/signals. The reduced
-terminal-source-assumed branch was unused in this run. These are sampled
-observations, not lifetime or descendant-wide namespace proofs. Source/runtime
-identity, canonical lease closure and all 1,383 sealed entries were verified.
-The running allocation sample peaked at 1,658,089,472 bytes; a later preterminal
-sample was 1,658,368,000 bytes. Neither is a whole-lifecycle physical peak.
-The 4 GiB plan retained its 64 MiB terminal reserve and separately charged
-64 MiB unlinked-snapshot engineering allowance; no hard physical quota is claimed.
+- BIOS normal and fault; UEFI normal, budget, budget-root and user-retire-pending.
+- Stock-firmware BAR refusal; clean-firmware BAR read/revoked and IVRS read/revoked.
+- Three CPU-observed BIOS capacity probes, then actual BIOS and UEFI normal restores.
 
-Raw and final-audit evidence have private Library receipts with exact full
-readback. These locators do not grant access to other readers:
+Original supervisor 19406 exited 0. Fourteen private controlling-terminal wrappers
+contain the 16 guest executions; the capacity wrapper accounts for three boots.
+All raw statuses and complete argument vectors match the reviewed plan. Three
+selected timer cases use fixed instruction clock and thirteen retain the original
+clock. Terminal, foreground-group and termios records agree before/after each
+wrapper, with positive owned-process cleanup. QEMU's detached stdin is established
+by pinned source and actual terminal-origin execution, not a direct QEMU-fd audit.
 
-| Archive | Library file | Bytes | SHA256 |
-|---|---|---:|---|
-| Closed raw source/run evidence | `libfile_74fddefa6d688191a1f6516dbf7f308e` | 10,399,397 | `df3feae7d7b2ec24b12cfe47575d6d61625717cc9e574c52e885ea6804bfc8cc` |
-| Final independent audits | `libfile_54992a2480c08191bed106e9775635b7` | 92,249 | `f0d2484992251ac7f7e0cb7f8dfc26ecd530cd09a2915c644d7b31abf451ca19` |
+Independent corpus review read five complete device traces, reconstructed serial
+and debugcon output, and checked bounded BAR/IVRS reads and revocation failures.
+The retirement case drains the old owner before revoke/rebind, preserves its peer,
+then completes a fresh transaction. Both normal restoration serial streams and
+selected images match their initial counterparts. All 204 sealed files and 28
+directories are accounted for. This targeted qualification composes with the
+earlier source's full gates; it is not a second full native or 182-boot run.
 
-The raw readback verified 2,451 original regular files, 153 directories and its
-manifest; the audit readback verified all 21 members. Exact receipt and report
-paths/hashes are in the [index](evidence/ipc-transition-policy/receipts.json).
-The earlier full-run preflight failed because its new comparator omitted SAN's
-sealed absent `tmp` sentinel; all native bytes/modes were unchanged. That failure
-remains preserved. A narrowly reviewed successor and one ten-method mocked
-control passed before the new preflight and sole actual runtime run.
+## Runtime behavior and limits
 
+The full matrix observed normal IPC value 42 and dispatcher values 42/73/42 in
+client order 0,1,0. Cancellation, service restart, disposal and rebinding passed.
+Four real request/cancellation input/output corruption modes failed before their
+rejected commit. The 177-mode clock contract remains 51 fixed-instruction modes
+and 126 original-clock modes, with unchanged 128/3 budgets and strict validators.
+QEMU was the pinned 10.0.13 runtime; common UEFI routes used the exact combined
+OVMF image, while declared BAR/IVRS and focused split routes used their separately
+qualified firmware. No substitute firmware was synthesized.
 
-## Preserved failures, prior remaining gates and evidence limits
+The original wall-clock user-retire-pending failure remains preserved and
+unexplained stress evidence. Fixed instruction-clock success does not explain or
+repair it. The first targeted terminal harness attempt failed during private-PTY
+setup before launcher execution; its failure and qualified source-based cleanup
+assessment remain preserved. A reviewed Linux-UAPI binding correction and one
+bounded private-PTY control preceded the successful guest run.
 
-The original wall-clock aggregate remains **failed at mode 163,
-`user-retire-pending`, after 162 partial passes**. The later single traced success
-is inconclusive and spent, not a repair or host-contention diagnosis. No old
-prefix, old boot or lost diagnostic is reconstructed or transferred. Historical
-PR27 five-consumer results and their original developer-audit failure/composite
-retain their distinct identities in [workflow results](developer-test-workflow-results.md).
+Static stack findings apply to fixed images, single-BSP execution and stated
+interrupt/drain assumptions. The exact private timer-stop leaf exceptions do not
+relax Aurora or opaque external ABI alignment. There is no general NMI or
+whole-kernel stack theorem. Sanitizers exclude generated Aurora assembly, the
+release compiler and leak detection. The hosted service-budget model does not
+exercise IPC or round-robin restart; actual guest evidence supplies that separate
+behavioral coverage. Storage accounting and snapshot reservations are sampled
+engineering bounds, not hard filesystem quotas. These results establish neither
+physical AMD support, general DMA isolation nor full-kernel memory safety.
 
-The exact five-entrypoint fatal ASan/UBSan supplement has now completed using a
-separately selected copy of the accepted D compiler. All five rows passed; original
-supervisor session **14420** returned actual exit **0**, observed at 2026-10-06
-05:37:15 UTC. Terminal SHA256 is
-`6b69bd0378e222c560dfcf6109d0dfc978b94d88f850830c1f7522a2a0c0dc09`.
-Independent sanitizer review accepted its 140 scoped checks, approval
-`a250ffba5445a31f8f445d8b242a90f799e80e6a82d4f21af86d3f5432488019`.
-It remains `native_complete=false`, not another full aggregate. The release
-compiler and generated assembly are uninstrumented; `detect_leaks=0` gives no
-leak-clean result. The tiny copy wrapper contains ASan initialization/registration
-only, without operation-level load/store or UBSan handler instrumentation.
+## Evidence and history
 
-At this prior published snapshot, the remaining technical gate was the
-**platform-blocked, unaccepted linked review of both input-guard images**. The
-dated addendum above records its separate closure; runtime acceptance did not waive it.
-PR28 remains draft and `overall_merge_qualified=false`. This docs-only successor
-of `d6891c9d6a09dd154df9e11a7a2d7e800e617252` preserves executable inputs; it is
-not relabeled as the executed 586-file manifest.
+Raw logs, binaries and independent audits are retained privately. The final
+targeted terminal report SHA256 is
+`8d6293954e486cf2b1c483e2a3cc0ea2e41ab7baa53f58d387db5f2b88927032`;
+the corpus report is
+`06ba1929127c7d3f4bb11dac53f21c7913cc14973c3dbc3ea68fd305ec0622cb`.
+Their acceptance remains scoped as described above.
 
-Successful package-identity assembly/object/executable products were deliberately
-deleted by the unchanged producer: 1,150 files per workflow remain absent, with
-hashes only. Nothing is reconstructed. Hosted model summaries are aggregate
-observations, not per-step raw traces. P's host audit joins the prior D independent
-full-byte pass, exact capture equality, and current metadata/membership/executable
-checks; it is not a fresh full-host-byte scan or continuous library attestation.
-The 7,200-second deadlines apply to polled owned commands; preflight, blocking
-checks, cleanup and final hashing can extend outside them. Sampled resource and
-namespace checks are not hard quotas, aggregate RSS bounds or exhaustive process
-attestation. No CI, ready/merge, Gentoo make-test, broad-host, full Linux/device,
-physical-platform, performance-equivalence or whole-language/kernel safety claim
-follows from these results.
+The verified raw archive is Library `libfile_f49ca43a552081919caa5cd9b91c4b5f`
+version 0, SHA256 `55a03bf0f957e910b4af90197a4b8d4575a3801f1851790d245632b8ae06ccb5`
+(4,176,962 bytes; 1,066 members). The final audit archive is
+`libfile_481f105a1ebc8191a441caec387805b8` version 0, SHA256
+`199e856ee7f8e601dc382b4ed584bbf23efc807d3b1ab47bb76899fac9095c3f`
+(31,034 bytes; 18 members). Both were read back and checked member-by-member.
+The raw packing command's numeric exit became unavailable after an interruption;
+its complete archive and final receipt were verified independently. The guest
+supervisor's exit 0 was directly observed before that interruption.
+
+Earlier snapshots, original failures and interrupted review history remain in
+the [851f288 result record](https://github.com/ambasta/aurora/blob/851f288567b1e97d830089759052e17f5f591980/docs/kernel-ipc-transition-integration-results.md)
+and its [historical receipt index](https://github.com/ambasta/aurora/blob/851f288567b1e97d830089759052e17f5f591980/docs/evidence/ipc-transition-policy/receipts.json).
+Their old pending/blocked statements describe those dates, not the completed
+checkpoint above. Retired milestone archives remain in Git history.

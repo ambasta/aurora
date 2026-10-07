@@ -33,10 +33,10 @@ WRAPPERS = {
 # Byte identity preserves actual unchanged argv and strict validation, not just
 # names in our map. New legitimate changes need a separately reviewed contract.
 UNCHANGED = {
-    "scripts/kernel-smoke.sh": "37f02032c31ad6b137222b3be323be299c05f9eb4fb0fa0107d2379c9dc9ddf3",
-    "scripts/kernel-uefi-bar-run.py": "0a86c6a0d06babda622f50368d50ec85a7084ed6c39574f2d71c276d49e38dd1",
-    "scripts/kernel-uefi-ivrs-run.py": "16d80ca8d975385691ad538287f4e5eecdacde5d0b8982f423146a1ec7fccd67",
-    "tests/kernel-boot-capacity.py": "90c76ca1e1d8bf89b36179ab3c82d8c08a7b25e08c04d9a2afa170da99800a3a",
+    "scripts/kernel-smoke.sh": "2eb8f221e04eb3f750fb54d58376b586a37224d9d8345d9e9c8dc2bfc6cc14c6",
+    "scripts/kernel-uefi-bar-run.py": "0308965405a2fc10fe32cd0253f2c6732b6ef73f16984fe38351251985de2f15",
+    "scripts/kernel-uefi-ivrs-run.py": "b40859a34534387507c4663b252492c1a92cc9e5f393b9477b9b76ae620f3b1b",
+    "tests/kernel-boot-capacity.py": "a50b6cb2d0bb3b43f50afa3d8d8059c4504dbe633510eb43b8a1ab16c54c257b",
     "tests/kernel-uefi-budget-smoke.py": "51aaa29ba0f28f59576b7bbff451eafd913b306790f72bd1afc6b0839a853e93",
     "tests/kernel-uefi-dispatch-smoke.py": "506ff383b107ad1f4f05297c54e5179a73bcc05978a91f9429a389b5888f97f9",
     "tests/kernel-uefi-user-phases-smoke.py": "8b85959a9f15aa872200fd552ae1fc08ec29da16b396922c05ebd97919e6e1ee",

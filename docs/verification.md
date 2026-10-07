@@ -14,7 +14,7 @@ For current capabilities, start with the [project overview](../README.md) and
 milestone history; later changes have their own results rather than extending an
 older run's coverage.
 
-- [Copied IPC transitions](kernel-ipc-transition-integration-results.md): prior scoped gates complete; current-main integration pending
+- [Copied IPC transitions](kernel-ipc-transition-integration-results.md): full native, bounded image/stack and runtime gates; reviewed PR35 terminal integration
 - [ASCII token scanner](token-scan-results.md): native aggregate and focused host sanitizers
 - [Local developer commands](local-development-results.md): compiler-only and normal boot checks
 - [Developer-test workflows](developer-test-workflow-results.md): fresh and pinned native routes

@@ -1,19 +1,17 @@
 # Developer test-build and explicit acceptance contract
 
-## Current-main IPC integration addendum — 2026-10-06
+## IPC integration qualification — 2026-10-07
 
-This combined source on accepted main `25d76b1799c2a29d21b175b6b720c7a256e97b9e`
-remains unqualified. The prior 586-file `2b4da219…` checkpoint separately passed
-full D/P native, five-entrypoint fatal sanitizer, bounded linked review of all
-28 images and 177+3+2 actual runtime boots. The original reviewer completed the
-missing two-input-image review in a fresh reconsideration; its accepted result
-does not give credit to the interrupted attempt or to this later source.
-Current `memory.S` and linked layout require fresh source/static review, followed
-by newly admitted complete native, sanitizer and runtime integration. Main's
-scanner, portable controls and host workflows keep their own recorded scope;
-PR33 established full GCC 14 native and focused GCC 16 image/boot results,
-not Clang kernel or full Gentoo native acceptance. See [exact results and
-remaining gates](kernel-ipc-transition-integration-results.md).
+The 608-file 851f288 checkpoint completed both full public native workflows with
+independent terminal/provenance and retained-corpus review. All six actual native
+consumers used the run-owned compiler. Separate five-entrypoint fatal sanitizer,
+28-image bounded static, 177+3+2 runtime and three split-firmware gates also passed.
+The later PR35 composition preserves the compiled inputs and adds independently
+reviewed synthetic and actual terminal-origin checks. Exact source identities,
+commands and limitations are in the [IPC results](kernel-ipc-transition-integration-results.md).
+This documentation-only publication does not claim another execution of the full
+graph. The older reconstruction and five-consumer records below are historical;
+their pending/blocked statements do not describe the completed checkpoint.
 
 ## Historical PR28 native status — before input-review reconsideration
 

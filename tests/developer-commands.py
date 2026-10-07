@@ -6,9 +6,11 @@ record argv/environment or fail immediately. This does not establish compiler,
 native aggregate, firmware or emulator acceptance.
 """
 from pathlib import Path
+import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -105,6 +107,49 @@ class DeveloperCommands(unittest.TestCase):
     def test_existing_runner_failure_is_propagated(self):
         self.run_script("kernel-run.sh", env={"FAKE_STATUS": "17"}, expected=17)
         self.assertEqual(len(self.calls()), 1)
+
+    def test_smoke_runners_detach_qemu_from_a_terminal(self):
+        # Interactive runs give the runner a terminal stdin. timeout puts QEMU in a
+        # background process group, so -serial stdio changing that terminal's mode
+        # stops QEMU (SIGTTOU) until the time limit. QEMU must never inherit it.
+        for name in ("timeout", "cp", "env"):
+            (self.bin / name).unlink(missing_ok=True)
+            (self.bin / name).symlink_to(shutil.which(name))
+        for name in ("kernel-smoke.sh", "kernel-uefi-smoke.sh"):
+            shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
+        for name in ("kernel-build.sh", "kernel-uefi-build.sh"):
+            self.script(self.scripts / name, 'mkdir -p build/uefi\nprintf "{}" > build/user-metadata.json\n')
+        # Clock selection and full argv binding must use the real helper. Only
+        # the normal serial validators are synthetic in this routing fixture.
+        shutil.copy2(ROOT / "scripts/kernel_emulator_clock.py",
+                     self.scripts / "kernel_emulator_clock.py")
+        self.env["REAL_PYTHON"] = sys.executable
+        self.tool("python3", 'case "$1" in\n'
+                  '  scripts/kernel_emulator_clock.py) exec "$REAL_PYTHON" -B "$@" ;;\n'
+                  '  tests/kernel-smoke.py|tests/kernel-uefi-smoke.py) exit 0 ;;\n'
+                  '  *) echo "Unexpected Python command in terminal fixture" >&2; exit 93 ;;\n'
+                  'esac\n')
+        self.tool("qemu-system-x86_64", 'if [ -t 0 ]; then state=terminal; else state=detached; fi\n'
+                  'printf "qemu|stdin-%s\\n" "$state" >> "$CALLS"\nexit 33\n')
+        for name in ("kernel-smoke.sh", "kernel-uefi-smoke.sh"):
+            leader, follower = os.openpty()
+            self.addCleanup(os.close, leader)
+            try:
+                self.assertTrue(os.isatty(follower))
+                result = subprocess.run([BASH, str(self.scripts / name)], cwd=self.home,
+                                        env=self.env | {"OVMF": self.firmware()}, stdin=follower,
+                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        timeout=10)
+            finally:
+                os.close(follower)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("PASS:", result.stdout)
+        self.assertEqual(self.calls(), ["qemu|stdin-detached"] * 2)
+        receipt = json.loads((self.repo / "build/uefi/normal.clock.json").read_text())
+        self.assertEqual(receipt["clock_profile"], "tcg-original-clock")
+        self.assertNotIn("-icount", receipt["argv"])
+        self.assertEqual(receipt["timeout_argv"], ["timeout", "30", *receipt["argv"]])
+        self.assertEqual(receipt["execution_status"], "not-established-by-command-receipt")
 
     def test_fault_environment_is_rejected_before_dispatch(self):
         for name in ("KERNEL_TEST_DIVISION", "KERNEL_TEST_FUTURE_MODE", "KERNEL_USER_PROBE_MODE", "UEFI_MODE"):
