@@ -1,0 +1,127 @@
+export module fs.xfs_sector;
+import storage.block;
+import storage.sector;
+import storage.block_io;
+import fs.xfs_probe;
+import fs.xfs_geometry;
+
+namespace fs {
+    auto xs_empty_geometry() -> XfsGeometryReport {
+        const XfsProbeResult probe = XfsProbeResult(XfsProbeStatus::wrong_length, 0u64, 0u64, 0u64, 0u64);
+        const XfsHeaderObservations raw = XfsHeaderObservations(0u64, 0u64, 0u64);
+        const XfsFeatureMasks zero = XfsFeatureMasks(0u64, 0u64, 0u64, 0u64);
+        const XfsFeatureDiagnostics masks = XfsFeatureDiagnostics(zero, zero);
+        const XfsBlockFacts blocks = XfsBlockFacts(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+        const XfsInodeFacts inodes = XfsInodeFacts(0u64, 0u64, 0u64, 0u64);
+        const XfsDataFacts data = XfsDataFacts(0u64, 0u64, 0u64);
+        const XfsAgFacts ags = XfsAgFacts(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+        const XfsLogFacts log = XfsLogFacts(0u64, 0u64, 0u64, 0u64, 0u64);
+        const XfsGeometryFacts facts = XfsGeometryFacts(blocks, inodes, data, ags, log);
+        const XfsGeometryReport result = XfsGeometryReport(
+            XfsGeometryStatus::probe_rejected, XfsGeometryIssue::none, probe, raw, masks, facts);
+        return result;
+    }
+}
+
+export namespace fs {
+    enum class XfsSectorHeaderStatus { read_failed, geometry_rejected, source_too_small, header_fits_source };
+
+    class XfsSectorHeaderReport {
+        XfsSectorHeaderStatus _status;
+        storage::SectorIoStatus _io;
+        XfsGeometryReport _geometry;
+    public:
+        XfsSectorHeaderReport(XfsSectorHeaderStatus status, storage::SectorIoStatus io, XfsGeometryReport geometry)
+            : _status(status), _io(io), _geometry(geometry) {}
+
+        auto status() const -> XfsSectorHeaderStatus { return _status; }
+        auto io_status() const -> storage::SectorIoStatus { return _io; }
+
+        auto geometry_or_empty() const -> XfsGeometryReport {
+            if (_status == XfsSectorHeaderStatus::read_failed || _io != storage::SectorIoStatus::success) {
+                const XfsGeometryReport empty = xs_empty_geometry();
+                return empty;
+            }
+            const XfsGeometryReport result = _geometry;
+            return result;
+        }
+
+        auto facts() const -> XfsGeometryFacts {
+            if (_status != XfsSectorHeaderStatus::header_fits_source || _io != storage::SectorIoStatus::success) {
+                const XfsGeometryReport empty = xs_empty_geometry();
+                const XfsGeometryFacts zero = empty.facts();
+                return zero;
+            }
+            const XfsGeometryReport geometry = _geometry;
+            const XfsGeometryFacts result = geometry.facts();
+            return result;
+        }
+    };
+
+    auto inspect_xfs_v5_512_sector(storage::SectorGeometry source, storage::SectorReadResult first_sector)
+        -> XfsSectorHeaderReport {
+        if (first_sector.status() != storage::SectorIoStatus::success) {
+            const XfsGeometryReport empty = xs_empty_geometry();
+            const XfsSectorHeaderReport failure = XfsSectorHeaderReport(
+                XfsSectorHeaderStatus::read_failed, first_sector.status(), empty);
+            return failure;
+        }
+        const storage::Sector512 sector = first_sector.sector_or_zero();
+        builtin::array<u8, 512> bytes = {
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8
+        };
+        i64 offset = 0;
+        while (offset < 512) {
+            const storage::BlockByteResult byte = sector.read_byte(offset);
+            bytes[offset] = byte.value_or(0u8);
+            offset = offset + 1;
+        }
+        const XfsGeometryReport geometry = inspect_xfs_v5_512_geometry(borrow_bytes(bytes));
+        if (geometry.status() != XfsGeometryStatus::header_geometry_consistent) {
+            const XfsSectorHeaderReport failure = XfsSectorHeaderReport(
+                XfsSectorHeaderStatus::geometry_rejected, storage::SectorIoStatus::success, geometry);
+            return failure;
+        }
+        const XfsGeometryFacts facts = geometry.facts();
+        const XfsDataFacts data = facts.data();
+        if (data.claimed_data_sectors() > source.sector_count()) {
+            const XfsSectorHeaderReport failure = XfsSectorHeaderReport(
+                XfsSectorHeaderStatus::source_too_small, storage::SectorIoStatus::success, geometry);
+            return failure;
+        }
+        const XfsSectorHeaderReport result = XfsSectorHeaderReport(
+            XfsSectorHeaderStatus::header_fits_source, storage::SectorIoStatus::success, geometry);
+        return result;
+    }
+}

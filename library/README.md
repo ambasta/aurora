@@ -442,3 +442,16 @@ assembly is not sanitizer-instrumented; no complete compiler sanitizer run or
 leak-clean result is claimed.
 This adds no parser integration, numeric validation, strings, heap or native
 self-hosting compiler and does not change any kernel qualification.
+
+## XFS headers over copied sector I/O
+
+`fs.xfs_sector` preserves failed read statuses, parses successfully copied sector
+bytes through the existing XFS geometry checks, and rejects a header whose
+claimed data area exceeds the supplied source sector count. Its copied report
+keeps I/O and metadata errors separate and masks capacity-admitted facts on
+failure. A real preserved header in the one-sector RAM backend is correctly too
+large; success tests use explicitly constructed geometry values.
+
+The [contract](../docs/xfs-sector-contract.md) records error precedence, provenance
+limits and the next scoped multi-sector-window dependency. This is hosted header
+inspection, not a mount, file-data reader or complete device implementation.
