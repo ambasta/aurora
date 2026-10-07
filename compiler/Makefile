@@ -161,6 +161,7 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 -B ../tests/compiler/binary_writer.py $(abspath $(OUT))
 	python3 -B ../tests/compiler/block_value.py $(abspath $(OUT))
 	python3 -B ../tests/compiler/ram_blocks.py $(abspath $(OUT))
+	python3 -B ../tests/compiler/sector.py $(abspath $(OUT))
 	python3 ../tests/compiler/packed_values.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/sector_values.py $(abspath $(OUT))
 	python3 ../tests/compiler/readonly_spans.py $(abspath $(OUT))

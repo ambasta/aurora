@@ -22,6 +22,7 @@ foreach entry : [
     ['binary-writer', 'compiler/binary_writer.py', 'bytes'],
     ['block-value', 'compiler/block_value.py', 'bytes'],
     ['ram-blocks', 'compiler/ram_blocks.py', 'bytes'],
+    ['owned-sector', 'compiler/sector.py', 'bytes'],
     ['packed-values', 'compiler/packed_values.py', 'bytes'],
     ['sector-values', 'compiler/sector_values.py', 'bytes'],
     ['storage-binary', 'compiler/storage_binary.py', 'bytes'],

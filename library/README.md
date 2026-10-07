@@ -149,6 +149,21 @@ device. The [focused native results](../docs/binary-writer-results.md) passed
 in normal and Python optimized modes with codec/reader regressions; independent
 review accepted this focused scope. The full native aggregate was not rerun.
 
+## Owned sectors and copied record windows
+
+`storage.sector` supplies a zero-initialized `Sector512` with checked byte access
+and copied 64-byte `Block64` windows at byte offsets 0 through 448. Invalid writes
+preserve the complete sector; valid writes preserve all neighboring bytes.
+Ordinary sector copies and read reports retain independent storage.
+
+The [contract](../docs/sector-contract.md) and [volume-record example](examples/sector_record.au)
+reuse `storage.block_codec`, `BinaryWriter64` and the readonly binary readers
+for endian fields. No second writer, multi-sector RAM array or compiler feature
+is added. This is a hosted value API, with no device, durability or kernel
+admission claim. All 43 native cases, nine rejections and the example passed in
+normal and optimized Python modes, together with the existing dependencies;
+see the [focused results](../docs/sector-contract.md#focused-results--2026-10-07).
+
 ## Volatile RAM record blocks
 
 `storage.block` and `storage.ram_blocks` supply owned 64-byte `Block64` values,
