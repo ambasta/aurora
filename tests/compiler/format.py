@@ -33,6 +33,18 @@ def main():
                 require(not record["success"], "error reported success")
                 require(record["diagnostics"][0]["code"] == code, f"wrong diagnostic: {record}")
                 require(not result.stdout, "diagnostic command emitted source")
+                if code != "AU5001":
+                    diagnostic = record["diagnostics"][0]
+                    plain = run(
+                        ["--diagnostics=text" if str(arg) == "--diagnostics=json" else arg for arg in arguments], status
+                    )
+                    if diagnostic["range"] is None:
+                        prefix = "aurora-fmt"
+                    else:
+                        start = diagnostic["range"]["start"]
+                        prefix = f"{diagnostic['path']}:{start['line']}:{start['column']}"
+                    expected = f"{prefix}: {diagnostic['severity']} {diagnostic['code']}: {diagnostic['message']}\n"
+                    require(not plain.stdout and plain.stderr.decode() == expected, "shared error text/JSON parity")
             cases += 1
             return result
 

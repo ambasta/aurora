@@ -1081,9 +1081,10 @@ class ModuleResolver {
                         ? classDeclaration(Type(activeClass->name))
                         : lookup(unit, scope, value->token.text, Kind::Any);
                 if (!declaration)
-                    throw Error("line " + std::to_string(value->token.line) +
-                                ": unknown function '" + value->token.text +
-                                "' in defining module " + unit.program.moduleName);
+                    throw Error(DiagnosticCode::Module,
+                                "unknown function '" + value->token.text + "' in defining module " +
+                                    unit.program.moduleName,
+                                value->token.span);
                 if (declaration->kind == Kind::Template || declaration->kind == Kind::FunctionTemplate)
                     throw Error(std::string(declaration->kind == Kind::Template ?
                                             "class template requires explicit type arguments: " :

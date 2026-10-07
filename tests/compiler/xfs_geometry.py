@@ -14,6 +14,7 @@ Controls: python3 -O tests/compiler/xfs_geometry.py --self-test-only
 """
 from __future__ import annotations
 
+import re
 import argparse
 from collections import Counter
 from dataclasses import asdict, dataclass, replace
@@ -571,7 +572,14 @@ class Suite(BoundedSuite):
                 command = json.loads((directory / "compiler.command.json").read_text())
                 diagnostic = (directory / "compiler.stderr").read_text()
                 require(command.get("returncode") == 1, "rejection must be normal exit1, not crash/timeout")
-                require(diagnostic.startswith("aurorac: "), "rejection must be compiler diagnostic")
+                require(
+                    re.fullmatch(
+                        rf"(?:{re.escape(str(path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
+                        r"AU(?:1001|200[12]|3001|4001): [^\n]+\n",
+                        diagnostic,
+                    ) is not None,
+                    "rejection must be compiler diagnostic",
+                )
                 require(any(word in diagnostic.lower() for word in expected_text), "unexpected rejection diagnostic")
                 require("sanitizer" not in diagnostic.lower(), "sanitizer failure is not rejection")
             else:

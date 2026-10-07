@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Current-source copied-report/layout/privacy checks, with explicit roots/pins."""
 
+import re
 import json, pathlib, sys
 
 sys.dont_write_bytecode = True
@@ -102,7 +103,15 @@ def main():
                     rec = json.loads((d / "compiler.command.json").read_text())
                     diagnostic = (d / "compiler.stderr").read_text()
                     r.require(rec.get("returncode") == 1, "normal rejection exit1")
-                    r.require(diagnostic.startswith("aurorac: "), "compiler diagnostic required")
+                    r.require(
+                        re.fullmatch(
+                            rf"(?:{re.escape(str(path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
+                            r"AU(?:1001|200[12]|3001|4001): [^\n]+\n",
+                            diagnostic,
+                        )
+                        is not None,
+                        "compiler diagnostic required",
+                    )
                     r.require(any(w in diagnostic.lower() for w in words), "wrong rejection diagnostic")
                     r.require("sanitizer" not in diagnostic.lower(), "sanitizer error not rejection")
                 else:

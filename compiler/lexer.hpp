@@ -93,9 +93,7 @@ inline LexedSource lexSource(std::shared_ptr<const SourceText> source,
             continue;
         }
         ++index;
-        throw Error(DiagnosticCode::UnsupportedCharacter,
-                    "line " + std::to_string(line) + ": unsupported character",
-                    span(begin));
+        throw Error(DiagnosticCode::UnsupportedCharacter, "unsupported character", span(begin));
     }
     out.tokens.emplace_back("<eof>", span(position()));
     return out;

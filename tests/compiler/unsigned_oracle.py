@@ -20,6 +20,7 @@ This is bounded test evidence, not a language-equivalence or safety proof.
 """
 from __future__ import annotations
 
+import re
 import argparse
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -260,9 +261,15 @@ class NativeRunner:
             result = command([self.compiler, "--module-root", ROOT / "library",
                               input_path, "-o", output], timeout=self.timeout,
                              allow_rejection=True)
-            require(result.returncode == 1 and result.stderr.startswith(b"aurorac: "),
-                    f"{case.name}: expected normal compiler rejection, got {result.returncode}: "
-                    f"{result.stderr!r}\nReproduction source:\n{case.source}")
+            require(
+                result.returncode == 1 and re.fullmatch(
+                    rf"(?:{re.escape(str(input_path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
+                    r"AU(?:1001|200[12]|3001|4001): [^\n]+\n",
+                    result.stderr.decode(errors="strict"),
+                ) is not None,
+                f"{case.name}: expected normal compiler rejection, got {result.returncode}: "
+                f"{result.stderr!r}\nReproduction source:\n{case.source}",
+            )
             require(input_path.read_text() == case.source, f"{case.name}: compiler modified input")
             if existing:
                 require(output.read_bytes() == sentinel, f"{case.name}: rejection changed output")

@@ -48,7 +48,7 @@ class SemanticAnalyzer {
     std::vector<Diagnostic> lintDiagnostics;
 
     [[noreturn]] void fail(const Token &t, const std::string &m) {
-        throw Error(DiagnosticCode::Semantic, "line " + std::to_string(t.line) + ": " + m, t.span);
+        throw Error(DiagnosticCode::Semantic, m, t.span);
     }
     const ClassDefinition &classDefinition(const Type &type, const Token &token) {
         auto found = classNames.find(type.className);

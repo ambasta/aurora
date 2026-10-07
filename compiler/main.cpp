@@ -53,10 +53,7 @@ int main(int argc, char **argv) {
         if (inputPath.empty() || (!checkOnly && outputPath.empty())) {
             const std::string usage = "usage: aurorac [--module-root DIR] INPUT.au -o OUTPUT.s\n"
                                       "       aurorac --check [--diagnostics=text|json] [--module-root DIR] INPUT.au";
-            if (jsonDiagnostics)
-                throw argumentError(usage);
-            std::cerr << usage << '\n';
-            return 2;
+            throw argumentError(usage);
         }
         if (checkOnly && outputSpecified)
             throw argumentError("--check does not accept -o");
@@ -77,13 +74,13 @@ int main(int argc, char **argv) {
         if (jsonDiagnostics)
             aurora::writeDiagnosticsJson(std::cout, {error.diagnostic});
         else
-            std::cerr << "aurorac: " << error.what() << '\n';
+            aurora::writeDiagnosticText(std::cerr, error.diagnostic, "aurorac");
         return error.diagnostic.code == aurora::DiagnosticCode::CommandLine ? 2 : 1;
     } catch (const std::exception &error) {
         if (jsonDiagnostics)
             aurora::writeDiagnosticsJson(std::cout, {{aurora::DiagnosticCode::Internal, error.what(), {}}});
         else
-            std::cerr << "aurorac: " << error.what() << '\n';
+            aurora::writeDiagnosticText(std::cerr, {aurora::DiagnosticCode::Internal, error.what(), {}}, "aurorac");
         return 1;
     }
 }

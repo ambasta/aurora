@@ -63,7 +63,7 @@ void checkParserRanges() {
         require(error.diagnostic.code == aurora::DiagnosticCode::UnexpectedToken, "explicit parser code");
         require(error.diagnostic.span.begin.offset == 13 && error.diagnostic.span.end.offset == 13,
                 "parser EOF location");
-        require(std::string(error.what()) == "line 1: expected ';' (found '<eof>')", "legacy parser message");
+        require(std::string(error.what()) == "expected ';' (found '<eof>')", "location-neutral parser message");
     }
     const std::string nested =
         "module sample; auto sample() -> i64 { return " + std::string(130, '(') + "1" + std::string(130, ')') + "; }";
@@ -90,6 +90,37 @@ void checkTruncatedSource() {
         }
     }
 }
+void checkTextRendering() {
+    const auto source = std::make_shared<const aurora::SourceText>("sample.au", "\n  name");
+    const aurora::SourceSpan span{source, {3, 2, 3}, {7, 2, 7}};
+    std::ostringstream located;
+    aurora::writeDiagnosticText(located, {aurora::DiagnosticCode::Semantic, "wrong type", span}, "aurorac");
+    require(located.str() == "sample.au:2:3: error AU3001: wrong type\n", "located text includes path and column");
+    std::ostringstream warning;
+    aurora::writeDiagnosticText(
+        warning,
+        {aurora::DiagnosticCode::UnreadLocal, "unused binding", span, aurora::DiagnosticSeverity::Warning},
+        "aurora-fmt");
+    require(warning.str() == "sample.au:2:3: warning AU6001: unused binding\n", "text preserves warning severity");
+    for (const auto code : {aurora::DiagnosticCode::CommandLine, aurora::DiagnosticCode::Internal}) {
+        const aurora::Diagnostic diagnostic{code, "literal line 4: is part of this message", {}};
+        std::ostringstream text;
+        aurora::writeDiagnosticText(text, diagnostic, "aurorac");
+        require(text.str() ==
+                    "aurorac: error " + std::string(aurora::diagnosticCode(code)) + ": " + diagnostic.message + "\n",
+                "unlocated fallback preserves literal message content without fake coordinates");
+        std::ostringstream json;
+        aurora::writeDiagnosticsJson(json, {diagnostic});
+        require(json.str().find("\"message\":\"" + diagnostic.message + "\"") != std::string::npos &&
+                    json.str().find("\"path\":null,\"range\":null") != std::string::npos,
+                "unlocated JSON uses the identical location-neutral payload");
+    }
+    const auto anonymous = std::make_shared<const aurora::SourceText>("", "name");
+    std::ostringstream text;
+    aurora::writeDiagnosticText(
+        text, {aurora::DiagnosticCode::Semantic, "wrong type", {anonymous, {0, 1, 1}, {4, 1, 5}}}, "aurorac");
+    require(text.str() == "<source>:1:1: error AU3001: wrong type\n", "unnamed snapshot is explicit");
+}
 void checkErrors() {
     try {
         aurora::lex("// comment\n @", "bad.au");
@@ -103,7 +134,8 @@ void checkErrors() {
         require(wrapped.diagnostic.code == error.diagnostic.code &&
                     wrapped.diagnostic.span.source == error.diagnostic.span.source,
                 "context wrapping preserves provenance");
-        require(std::string(wrapped.what()) == "module dep: line 2: unsupported character", "legacy context message");
+        require(std::string(wrapped.what()) == "module dep: unsupported character",
+                "location-neutral import context message");
     }
     std::string adversarial = "\"\\\n\r\t";
     adversarial.push_back('\0');
@@ -125,6 +157,7 @@ int main() {
         checkParserRanges();
         checkTruncatedSource();
         checkErrors();
+        checkTextRendering();
         std::cerr << "PASS shared lexer/parser diagnostic ranges\n";
         return 0;
     } catch (const std::exception &error) {
