@@ -39,7 +39,7 @@ class SemanticAnalyzer {
     const Function *currentFunction = nullptr;
 
     [[noreturn]] void fail(const Token &t, const std::string &m) {
-        throw Error("line " + std::to_string(t.line) + ": " + m);
+        throw Error(DiagnosticCode::Semantic, "line " + std::to_string(t.line) + ": " + m, t.span);
     }
     const ClassDefinition &classDefinition(const Type &type, const Token &token) {
         auto found = classNames.find(type.className);

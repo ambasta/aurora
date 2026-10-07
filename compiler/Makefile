@@ -136,6 +136,8 @@ $(OUT): main.cpp $(wildcard *.hpp)
 	$(CXX) $(CXXFLAGS) $< -o $@
 endif
 test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/diagnostics.cpp -o $(dir $(OUT))diagnostics-tests
+	python3 -B -O ../tests/compiler/diagnostics.py $(abspath $(OUT)) $(abspath $(dir $(OUT))diagnostics-tests)
 	python3 ../tests/compiler/run.py $(abspath $(OUT))
 	python3 ../tests/compiler/classes.py $(abspath $(OUT))
 	python3 ../tests/compiler/value_calls.py $(abspath $(OUT))

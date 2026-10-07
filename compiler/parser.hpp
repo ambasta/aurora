@@ -15,10 +15,11 @@ class Parser {
         int &depth;
 
       public:
-        Nesting(int &value, int limit, int line, const std::string &kind) : depth(value) {
+        Nesting(int &value, int limit, const Token &token, const std::string &kind) : depth(value) {
             if (depth >= limit)
-                throw Error("line " + std::to_string(line) + ": " + kind + " nesting exceeds " +
-                            std::to_string(limit));
+                throw Error(DiagnosticCode::NestingLimit,
+                            "line " + std::to_string(token.line) + ": " + kind + " nesting exceeds " +
+                                std::to_string(limit), token.span);
             ++depth;
         }
         Nesting(const Nesting &) = delete;
@@ -36,10 +37,18 @@ class Parser {
   public:
     explicit Parser(std::vector<Token> t) : tokens(std::move(t)) {}
     Token peek() const { return tokens.at(position); }
-    Token take() { return tokens.at(position++); }
+    Token take() {
+        const auto token = tokens.at(position);
+        // Keep EOF available for a located rejection in truncated expressions,
+        // types and array lengths, instead of peeking past the token vector.
+        if (position + 1 < tokens.size())
+            ++position;
+        return token;
+    }
     [[noreturn]] void fail(const std::string &m) const {
-        throw Error("line " + std::to_string(peek().line) + ": " + m + " (found '" + peek().text +
-                    "')");
+        throw Error(DiagnosticCode::UnexpectedToken,
+                    "line " + std::to_string(peek().line) + ": " + m + " (found '" + peek().text + "')",
+                    peek().span);
     }
     bool eat(const std::string &s) {
         if (peek().text == s) {
@@ -71,16 +80,24 @@ class Parser {
             fail("reserved identifier");
         return take();
     }
-    Token qualifiedIdent() {
-        auto token = ident();
-        while (eat("::"))
-            token.text += "::" + ident().text;
+    Token qualifiedTail(Token token, bool allowArray = false) {
+        while (eat("::")) {
+            const auto next = ident(allowArray);
+            token.text += "::" + next.text;
+            token.span.end = next.span.end;
+        }
         return token;
+    }
+    Token qualifiedIdent() {
+        return qualifiedTail(ident());
     }
     Token moduleIdent() {
         auto token = ident();
-        while (eat("."))
-            token.text += "." + ident(true).text;
+        while (eat(".")) {
+            const auto next = ident(true);
+            token.text += "." + next.text;
+            token.span.end = next.span.end;
+        }
         return token;
     }
     bool scalarOrParameter(const Type &value) const {
@@ -90,9 +107,13 @@ class Parser {
         if (eat(">"))
             return;
         if (peek().text == ">>") {
-            // Consume only the first closer. The remaining token keeps its source
-            // line and is consumed by the enclosing template-id, never by lexing.
+            // Split only the parser-owned copy. Retained lexical tokens and the
+            // immutable source snapshot still describe the original two bytes.
             tokens[position].text = ">";
+            if (tokens[position].span.source) {
+                ++tokens[position].span.begin.offset;
+                ++tokens[position].span.begin.column;
+            }
             return;
         }
         fail("expected '>'");
@@ -122,7 +143,7 @@ class Parser {
     std::vector<TemplateArgument> templateArguments(int callAllowance = 0) {
         // Calls are kind-resolved later. Their outer argument list is not a
         // class-template level; class construction depth is checked in resolution.
-        Nesting nesting(templateNesting, maximumTemplateNesting + callAllowance, peek().line, "template-id");
+        Nesting nesting(templateNesting, maximumTemplateNesting + callAllowance, peek(), "template-id");
         if (!templateParameters.empty() && !functionTemplate)
             fail("template-id references inside template definitions are not supported");
         need("<");
@@ -156,9 +177,7 @@ class Parser {
             } else if (peek().text != "own" && peek().text != "ref" && peek().text != "mutref" &&
                        peek().text != "array" && peek().text != "builtin" &&
                        peek().text != "true" && peek().text != "false") {
-                auto argument = ident();
-                while (eat("::"))
-                    argument.text += "::" + ident(true).text;
+                const auto argument = qualifiedTail(ident(), true);
                 TemplateArgument value(argument.text);
                 if (templateParameters.contains(argument.text)) {
                     if (templateNesting != 1 || peek().text == "<")
@@ -181,7 +200,7 @@ class Parser {
                (tokens[end].text == "(" || tokens[end].text == "{");
     }
     Type type() {
-        Nesting nesting(typeNesting, 64, peek().line, "type");
+        Nesting nesting(typeNesting, 64, peek(), "type");
         static const std::set<std::string> forbidden = {
             "fn",  "let",  "mut",  "auto",  "const",  "class", "unsafe", "struct", "extern",
             "int", "void", "char", "float", "double", "new",   "delete", "enum"};
@@ -253,8 +272,7 @@ class Parser {
             if (t.text.empty() ||
                 !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
                 fail("expected type name");
-            while (eat("::"))
-                t.text += "::" + ident(true).text;
+            t = qualifiedTail(std::move(t), true);
             Type result(t.text);
             if (peek().text == "<")
                 result.templateArguments = templateArguments();
@@ -291,7 +309,7 @@ class Parser {
         }
     }
     ExpressionPtr primary() {
-        Nesting nesting(expressionNesting, 128, peek().line, "expression parser");
+        Nesting nesting(expressionNesting, 128, peek(), "expression parser");
         auto t = take();
         auto e = std::make_shared<Expression>("name", t);
         if (t.text == "{") {
@@ -324,9 +342,8 @@ class Parser {
         }
         if (!(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
             fail("expected expression");
-        while (eat("::"))
-            t.text += "::" + ident(true).text;
-        e->token.text = t.text;
+        t = qualifiedTail(std::move(t), true);
+        e->token = t;
         if (templateExpressionAhead())
             e->templateArguments = templateArguments(1);
         if (eat("(")) {
@@ -390,7 +407,7 @@ class Parser {
         return e;
     }
     std::vector<StatementPtr> block() {
-        Nesting nesting(blockNesting, 128, peek().line, "block");
+        Nesting nesting(blockNesting, 128, peek(), "block");
         need("{");
         std::vector<StatementPtr> b;
         while (!eat("}")) {

@@ -1,5 +1,17 @@
 # Completeness and acceptance matrix
 
+## Shared frontend diagnostics candidate — 2026-10-07
+
+The existing lexer/parser now carries immutable source snapshots and half-open
+byte spans. Structured diagnostic families and `aurorac --check --diagnostics=json`
+reuse module, type/lifetime and verified-IR checks without assembly output. First
+errors preserve text compatibility and imported-file provenance; unknown semantic
+ranges remain explicit. A fresh GCC 14.2 warning-clean build, focused lexer/parser
+tests and 27 CLI cases passed. All 793 existing checks in six targeted frontend
+suites passed, and all 26 examples emitted byte-identical assembly against the
+reviewed baseline compiler. Independent source and retained-evidence review accepted this bounded increment. See the [bounded contract](../compiler/DIAGNOSTICS.md). Trivia retention,
+formatting, LSP position conversion and document updates are still separate work.
+
 ## Corrected native output budgets and host style — 2026-10-07
 
 A retained ~650 MiB checkout incorrectly exhausted focused tests' caps before
