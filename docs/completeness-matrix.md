@@ -1,5 +1,18 @@
 # Completeness and acceptance matrix
 
+## Existing-file frontend overlays candidate — 2026-10-07
+
+The shared frontend accepts immutable in-memory snapshots for already-existing
+root/import files. Normal source-open and module-root policies run before byte
+substitution, with file/graph limits unchanged and separate cache bounds. This
+supports unsaved edits without adding another parser or widening path authority.
+All 37 access-policy, provenance and bounds cases passed, together with the
+tested snapshot's 77-source reconstruction, 27 diagnostic cases and 793 existing
+frontend checks. A profile-corrected replay passed 28 valid-example assembly
+comparisons and five legacy error/output pairs. Independent source/evidence review
+accepted this focused composite. A fresh formatter compatibility rebuild/check
+also passed its 77-file corpus and 30 CLI cases. See [the overlay contract](../compiler/SOURCE-OVERLAYS.md).
+
 ## Indexed XFS root entries — 2026-10-07
 
 The readonly `entry_at_xfs_v5_512_root` operation selects a copied entry under

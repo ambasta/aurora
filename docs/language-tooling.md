@@ -2,8 +2,8 @@
 
 Aurora's formatter, linter and language server must share the compiler frontend.
 Host Python/C++ style configuration is a separate capability. The interfaces
-and milestones below distinguish the implemented diagnostic foundation from
-remaining formatter, linter and language-server work.
+and milestones below distinguish the implemented diagnostic, lossless-source
+and formatter foundations from remaining editor/server work.
 
 ## Current frontend boundary and remaining gaps
 
@@ -16,13 +16,14 @@ error with an explicit diagnostic family and source range when one is available.
   Synthetic and some resolver diagnostics deliberately have unknown ranges.
 - `lexSource` now retains exact whitespace and line-comment trivia alongside
   canonical tokens. The compiler uses the same scanner with trivia discarded.
-  [Lossless reconstruction](../compiler/LEXER.md) is tested; syntax-aware formatting
-  remains next.
+  [Lossless reconstruction](../compiler/LEXER.md) and the standalone
+  [Aurora formatter](../compiler/FORMAT.md) are implemented and tested.
 - Nested-template `>>` splitting changes only the parser-owned token copy and
   gives its second closer the correct source byte. Retained lexical tokens are
   unchanged. Structured errors preserve imported-file provenance.
-- `ModuleLoader` still reads existing files directly. An editor document overlay
-  and byte-to-UTF-16 position conversion are separate upcoming increments.
+- `ModuleLoader` accepts [bounded immutable overlays](../compiler/SOURCE-OVERLAYS.md)
+  for existing files after the ordinary source-open policy succeeds. Editor URI
+  validation, version tracking and byte-to-UTF-16 conversion remain adapter work.
 - `frontend.hpp::checkSource` is the common checking boundary. CLI text and JSON
   render the same diagnostics; full syntax-node ranges and multi-error recovery
   are not claimed.

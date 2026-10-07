@@ -18,8 +18,8 @@ The legacy `lex(contents, path)` API wraps the same scanner with
 not retain a trivia vector. `Parser` owns a copy of those tokens, so consuming
 nested-template `>>` closers cannot mutate a retained lexical stream or snapshot.
 This is infrastructure for the Aurora formatter/LSP, not a formatter, linter or
-language server by itself. Unsaved editor documents and position-encoding
-conversion remain separate work.
+language server by itself. [Existing-file overlays](SOURCE-OVERLAYS.md) now reuse these immutable snapshots.
+Editor version tracking and position-encoding conversion remain separate work.
 
 The focused `tests/compiler/lexer_trivia.cpp` gate checks independent positions,
 exact reconstruction, bounds, token equivalence, EOF, CRLF/tabs, comment-at-EOF,
@@ -34,7 +34,9 @@ bounded gate time was 73.03 seconds. Source and compiler pins were unchanged.
 Independent review accepted this bounded increment; no full native aggregate, sanitizer or QEMU
 qualification is claimed.
 
-The permanent compiler Make recipe checks 40 explicitly scoped example and
-`library/std` inputs. The separate acceptance gate supplied all 73 `.au` files from that tested candidate
-source manifest, including kernel/package/filesystem inputs.
-These are distinct, measured corpus scopes; neither scans generated build output.
+The permanent compiler Make recipe uses explicit example and `library/std`
+source-directory globs. They matched 40 files in the tested candidate and 43 in
+the PR43 publication composition. The standalone gate supplied all 73 `.au` files
+from its frozen source manifest. That composition contains 77 `.au` files; its
+four added console/writer files do not gain coverage from this historical gate.
+Neither route scans generated build output.
