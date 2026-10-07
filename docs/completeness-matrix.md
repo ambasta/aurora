@@ -800,3 +800,20 @@ executor ptrace limitations; no leak-clean claim follows. See
 [contract](../compiler/SHORT-CIRCUIT.md) and the linked integration results. This
 language feature itself adds no kernel authority, ABI or heap/reference extension,
 full-language safety/resource proof or physical-hardware/performance qualification.
+
+## Semantic package developer profiles — 2026-10-07
+
+An opt-in semantic developer profile selects 183 Identity, 157 Manifest and 187
+Graph cases with their independent full-width oracles and all 79 compile-time
+rejection cases, each tested with absent and existing output. The full 31,073-case
+corpus and its expected vectors, generated sources and rejection diagnostics are
+unchanged. Compiler-free controls check selection counts, semantic families,
+authority separation and exact full-corpus regression digests. This changes
+feedback selection only, not package functionality or qualification scope.
+Meson owns the compiler dependency and records a deliberately non-qualification
+selected artifact identity. All fifteen final `dev` tests passed with two workers
+in 33.68 seconds; the core+packages replay passed in 22.11 seconds. A retained
+initial Manifest scratch-path failure was corrected and rerun. The later PR47
+composition also passed the three profiles on its current overlay-aware compiler
+in 16.96 seconds, without a duplicate compiler build. No full aggregate
+qualification is claimed. See [coverage and limits](meson-bootstrap.md#semantic-package-feedback).

@@ -645,3 +645,20 @@ covers eight original batches, not whole-suite performance. The first full-run
 attempt remains failed: its wrapper mapped UID 0, so the unchanged unprivileged
 rename-denial gate rejected it. A same-UID isolation probe and fresh full replay
 passed; no tests were skipped.
+
+## Partial package developer profiles
+
+Package Identity, Manifest and Graph now accept an opt-in `--profile dev` semantic
+selection. Their default full factories and Make qualification remain unchanged.
+The selected labels, actual counts and `qualification_eligible: false` are written
+in each partial receipt; a developer pass must never be interpreted as complete
+package or root acceptance. `--quick`/`--smoke` cannot be combined with this profile.
+
+For the incremental Meson route, `--developer-selected-compiler` records only the
+observed compiler artifact and before/after stability. It requires the dev profile,
+rejects an active `AURORA_TEST_CONTEXT` and competing explicit-pin/fresh-build
+receipt arguments, and claims no external authority or build provenance. The
+existing independently pinned and controlled full-build modes are not relaxed.
+Meson/Ninja owns the compiler build; Python retains the package oracles, case
+driving, per-invocation output accounting and receipt writing. See the
+[semantic coverage and commands](meson-bootstrap.md#semantic-package-feedback).

@@ -14,7 +14,15 @@ from dataclasses import dataclass
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
+from package_profiles import (
+    add_identity_arguments,
+    developer_artifacts,
+    finalize_selected_identity,
+    profile_record,
+    resolve_identity,
+    select_cases,
+    validate_identity_selection,
+)
 from package_native_runner import PackageRunner, finalize_report, safe_receipt
 
 CONTRACT_SHA256 = "2272fba3b7163550f5dabef95c5b54c0d1039063b84545ef0c0b20f93928e01c"
@@ -412,7 +420,7 @@ def exhaustive_cases():
     return cases
 
 
-def adversarial_cases():
+def adversarial_cases(*, exhaustive=True):
     cases = []
 
     def add(label, ms=None, **kw):
@@ -512,8 +520,9 @@ def adversarial_cases():
             [make_manifest(b"root", deps=((b"lib", mismatch),)), make_manifest(b"lib", version)],
         )
     valid = make_manifest(b"root", deps=((b"lib", (1, 2, 3)),))
-    for cut in range(len(valid)):
-        add(f"truncation/{cut}", data=valid, offsets=[0] * 8, lengths=[cut] + [0] * 7, count=1, ranks=(0,))
+    if exhaustive:
+        for cut in range(len(valid)):
+            add(f"truncation/{cut}", data=valid, offsets=[0] * 8, lengths=[cut] + [0] * 7, count=1, ranks=(0,))
     invalid_tokens = (
         b"root@01.0.0",
         b"Root@0.0.0",
@@ -543,21 +552,22 @@ def adversarial_cases():
     ):
         add("grammar/" + repr(bad[:24]), [bad])
     # Mutations run against a shared source body; each byte position is poisoned.
-    base = catalog_case("unused", [a, b])
-    data, offs, lens = pack([a, b])
-    prefix = array("owner", data) + index_arrays(offs, lens)
-    for position in range(len(data)):
-        for byte in (0, 13, 255):
-            mutated = data[:position] + bytes([byte]) + data[position + 1 :]
-            body = prefix + "owner[argument1]=u8(argument2);" + finish_body(2, (0,))
-            cases.append(
-                Case(
-                    f"adversarial/byte-mutation/{position}/{byte}",
-                    body,
-                    expected_graph(mutated, offs, lens, 2, (0,)),
-                    arguments=(position, byte),
+    if exhaustive:
+        base = catalog_case("unused", [a, b])
+        data, offs, lens = pack([a, b])
+        prefix = array("owner", data) + index_arrays(offs, lens)
+        for position in range(len(data)):
+            for byte in (0, 13, 255):
+                mutated = data[:position] + bytes([byte]) + data[position + 1 :]
+                body = prefix + "owner[argument1]=u8(argument2);" + finish_body(2, (0,))
+                cases.append(
+                    Case(
+                        f"adversarial/byte-mutation/{position}/{byte}",
+                        body,
+                        expected_graph(mutated, offs, lens, 2, (0,)),
+                        arguments=(position, byte),
+                    )
                 )
-            )
     maxroot = b"z" * 24
     maxdeps = tuple((bytes([97 + i]) + b"q" * 23, (U32, U32, U32)) for i in range(8))
     maximum = make_manifest(maxroot, (U32, U32, U32), maxdeps)
@@ -1069,6 +1079,125 @@ def freeze_corpus(directory):
     print(json.dumps(report, indent=2))
 
 
+def developer_cases():
+    """Named graph shapes, precedence pairs and poisoned public constructors."""
+    size = len(make_manifest())
+    adversarial = select_cases(
+        adversarial_cases(exhaustive=False),
+        prefixes=(
+            "adversarial/precedence/",
+            "adversarial/out-of-range-before-",
+            "adversarial/isolated-",
+            "adversarial/rank-boundaries/",
+            "adversarial/count/",
+        ),
+        labels=(
+            *(
+                f"adversarial/eight/{shape}/{perm}/{reverse}"
+                for shape in ("empty", "chain", "dense", "cycle", "disconnected-cycle", "diamond")
+                for perm, reverse in ((tuple(range(8)), False), (tuple(reversed(range(8))), True))
+            ),
+            *(f"adversarial/eight/{shape}/{tuple(range(8))}/True" for shape in ("dense", "diamond")),
+            *(f"adversarial/eight/{shape}/{(7, 2, 5, 0, 3, 6, 1, 4)}/False" for shape in ("chain", "diamond")),
+            *(
+                f"adversarial/window/{offset}/{length}"
+                for offset, length in (
+                    (0, size),
+                    (-1, size),
+                    (0, -1),
+                    (0, 0),
+                    (1, size),
+                    (IMIN, 0),
+                    (0, IMAX),
+                    (IMAX, IMAX),
+                )
+            ),
+            *(
+                "adversarial/" + label
+                for label in (
+                    "duplicate-same-version",
+                    "duplicate-overlapping-same-window",
+                    "self-name-different-version",
+                    "late-duplicate-dependency",
+                    "late-malformed-dependency",
+                    "conflicting-exact-pins",
+                    "maximum-manifest-missing-ninth-package",
+                    "dependency-over-cap",
+                    "unselected-junk",
+                    "empty-catalog-ignores-all",
+                    "large-owner-exact-window",
+                )
+            ),
+        ),
+    )
+    # Small graph shapes exercise the same oracle without the exhaustive masks.
+    for shape, dependencies in (
+        ("chain", ((), (0,), (1,), (2,))),
+        ("diamond", ((), (0,), (0,), (1, 2))),
+        ("cycle", ((1,), (0,))),
+        ("disconnected-cycle", ((), (), (3,), (2,))),
+    ):
+        manifests = [
+            make_manifest(bytes([97 + i]), deps=tuple((bytes([97 + j]), (0, 0, 0)) for j in deps))
+            for i, deps in enumerate(dependencies)
+        ]
+        for reverse in (False, True):
+            adversarial.append(
+                catalog_case(f"dev-small/{shape}/{reverse}", list(reversed(manifests)) if reverse else manifests)
+            )
+    construction = select_cases(
+        construction_cases(),
+        labels=(
+            *(
+                f"constructor/order/{status}/{count}/{poison}"
+                for status in STATUSES
+                for count, poison in ((1, 0), (8, 1))
+            ),
+            *(
+                f"constructor/order/success/{count}/{poison}"
+                for count, poison in ((IMIN, 0), (-1, 0), (0, 0), (2, 1), (9, 0), (IMAX, 0))
+            ),
+            *(f"constructor/order-each-slot/{count}/{slot}" for count in (2, 8) for slot in range(8)),
+            *(
+                f"constructor/entry/{status}/8/7/7/{bad}"
+                for status in STATUSES
+                for bad in (None, "padding", "length", "version", "status")
+            ),
+            *(
+                f"constructor/entry/success/{count}/{rank}/{index}/None"
+                for count, rank, index in (
+                    (0, 0, 0),
+                    (9, 0, 0),
+                    (IMIN, 0, 0),
+                    (IMAX, 0, 0),
+                    (8, -1, 0),
+                    (8, 8, 0),
+                    (8, IMIN, 0),
+                    (8, IMAX, 0),
+                    (8, 0, -1),
+                    (8, 0, 8),
+                    (8, 0, IMIN),
+                    (8, 0, IMAX),
+                )
+            ),
+        ),
+    )
+    ownership, binding = ownership_cases(), binding_cases()
+    require(
+        tuple(map(len, (adversarial, construction, ownership, binding))) == (81, 97, 6, 3),
+        "developer semantic group counts changed",
+    )
+    cases = adversarial + construction + ownership + binding
+    select_cases(cases, prefixes=("",))
+    return cases, dict(
+        exhaustive_graph_cases=0,
+        adversarial_cases=len(adversarial),
+        constructor_cases=len(construction),
+        ownership_cases=len(ownership),
+        binding_cases=len(binding),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", nargs="?", type=Path, default=ROOT / "build/aurorac")
@@ -1151,7 +1280,11 @@ def main():
             if errors and not original_error_active:
                 raise AssertionError("freeze finalization failed: " + "; ".join(errors))
         return
-    artifacts = artifact_path(args.artifact_root or ROOT / f"build/package-graph-{os.getpid()}")
+    artifacts = (
+        developer_artifacts(args, "graph")
+        if args.profile == "dev"
+        else artifact_path(args.artifact_root or ROOT / f"build/package-graph-{os.getpid()}")
+    )
     require(artifacts.parent.is_dir() and not artifacts.exists(), "fresh artifact root with existing parent required")
     runner = Runner(compiler, artifacts, cap)
     runner.budget(65536)
@@ -1165,6 +1298,8 @@ def main():
         Path(__file__).resolve(),
         ROOT / "scripts/package_native_runner.py",
         ROOT / "scripts/owned_outputs.py",
+        ROOT / "scripts/package_profiles.py",
+        ROOT / "scripts/compiler_contract.py",
         frozen,
         reference,
         Path(sys.executable).resolve(strict=True),
@@ -1200,7 +1335,7 @@ def main():
     try:
         for name, tool in {**runner.tools, "python": Path(sys.executable).resolve()}.items():
             runner.command([tool, "--version"], artifacts, "version-" + name)
-        cases, counts = all_cases()
+        cases, counts = developer_cases() if args.profile == "dev" else all_cases()
         report.update(counts)
         if args.smoke:
             cases = (
@@ -1210,6 +1345,7 @@ def main():
                 + ownership_cases()
                 + binding_cases()
             )
+        report.update(profile_record(args, cases, negative_cases()))
         report.update(
             native_cases=len(cases),
             complete_u64_observations=sum(len(c.expected) for c in cases),
@@ -1223,17 +1359,20 @@ def main():
         for number, (label, source, message) in enumerate(negative_cases()):
             runner.reject(number, label, source, message)
         identity.verify()
+        report["compiler_identity"] = identity.record()
         report["status"] = "passed"
     except BaseException as exc:
         report.update(status="failed", error=str(exc), exception_type=type(exc).__name__)
         raise
     finally:
         original_error_active = sys.exc_info()[0] is not None
-        final_errors = finalize_report(runner, report, compiler, artifacts)
+        final_errors = finalize_selected_identity(identity, report)
+        final_errors += finalize_report(runner, report, compiler, artifacts)
         if final_errors and not original_error_active:
             raise AssertionError("run finalization failed: " + "; ".join(final_errors))
+    scope = " [partial dev]" if args.profile == "dev" else ""
     print(
-        f"PASS package graph: {len(cases)} native cases, "
+        f"PASS package graph{scope}: {len(cases)} native cases, "
         f"{report['complete_u64_observations']} complete u64 observations, "
         f"{2 * report['rejection_cases']} rejection runs; selected compiler identity unchanged",
         flush=True,

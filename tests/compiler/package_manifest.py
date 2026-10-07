@@ -26,7 +26,15 @@ import time
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
+from package_profiles import (
+    add_identity_arguments,
+    developer_artifacts,
+    finalize_selected_identity,
+    profile_record,
+    resolve_identity,
+    select_cases,
+    validate_identity_selection,
+)
 from package_native_runner import PackageRunner, finalize_report
 
 CONTRACT_SHA256 = "5aa8786a1afc3fac793deccb1e4bb11ae2d6497ab10093b0545c72aa39dc7103"
@@ -265,7 +273,7 @@ def shared():
     return source
 
 
-def parsing_cases():
+def parsing_cases(*, exhaustive=True):
     cases = []
 
     def add(label, data, offset=0, count=None, index=0, mutation=None):
@@ -278,18 +286,20 @@ def parsing_cases():
             add(f"canonical/{len(ds)}/{index}", manifest(root, ds), index=index)
     for count in range(11):
         ds = tuple(bytes([98 + i]) + b"@1.2.3" for i in range(count))
-        for index in (-1, 0, count - 1, count):
+        indices = (-1, 0, count - 1, count)
+        for index in indices if exhaustive else dict.fromkeys(indices):
             add(f"dependency-limit/{count}/{index}", manifest(deps=ds), index=index)
-    for token in (manifest(), manifest(b"a1-b2@12.34.56", (b"c3-d4@56.78.90",)), manifest(maximum, deps)):
-        for cut in range(len(token)):
-            add(f"truncation/{len(token)}/{cut}", token, count=cut)
-        # Every distinct starting boundary must not accidentally accept a suffix.
-        for cut in range(1, len(token) + 1):
-            add(f"suffix/{len(token)}/{cut}", token, offset=cut, count=len(token) - cut)
-    representative = manifest(b"a1-b2@12.34.56", (b"c3-d4@56.78.90",))
-    for position in range(len(representative)):
-        for value in range(256):
-            add(f"all-byte-substitution/{position}/{value}", representative, mutation=(position, value))
+    if exhaustive:
+        for token in (manifest(), manifest(b"a1-b2@12.34.56", (b"c3-d4@56.78.90",)), manifest(maximum, deps)):
+            for cut in range(len(token)):
+                add(f"truncation/{len(token)}/{cut}", token, count=cut)
+            # Every distinct starting boundary must not accidentally accept a suffix.
+            for cut in range(1, len(token) + 1):
+                add(f"suffix/{len(token)}/{cut}", token, offset=cut, count=len(token) - cut)
+        representative = manifest(b"a1-b2@12.34.56", (b"c3-d4@56.78.90",))
+        for position in range(len(representative)):
+            for value in range(256):
+                add(f"all-byte-substitution/{position}/{value}", representative, mutation=(position, value))
     for data in (
         b"",
         b"\0",
@@ -390,18 +400,19 @@ def parsing_cases():
     for length in (616, 1024, 4096):
         add(f"large-owner/{length}", b"\xff" * (length - len(seed)) + seed, length - len(seed), len(seed))
         add(f"large-invalid/{length}", b"a" * length)
-    rng = random.Random(221004)
-    for i in range(80):
-        ds = []
-        for n in range(rng.randrange(9)):
-            name = bytes([98 + n]) + bytes(
-                rng.choice(b"abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(rng.randrange(24))
-            )
-            ds.append(name + b"@" + b".".join(str(rng.randrange(1 << 32)).encode() for _ in range(3)))
-        data = manifest(b"app@1.2.3", tuple(ds))
-        index = rng.randrange(-1, len(ds) + 1)
-        add(f"seed221004-valid/{i}", data, index=index)
-        add(f"seed221004-mutation/{i}", data, index=index, mutation=(rng.randrange(len(data)), rng.randrange(256)))
+    if exhaustive:
+        rng = random.Random(221004)
+        for i in range(80):
+            ds = []
+            for n in range(rng.randrange(9)):
+                name = bytes([98 + n]) + bytes(
+                    rng.choice(b"abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(rng.randrange(24))
+                )
+                ds.append(name + b"@" + b".".join(str(rng.randrange(1 << 32)).encode() for _ in range(3)))
+            data = manifest(b"app@1.2.3", tuple(ds))
+            index = rng.randrange(-1, len(ds) + 1)
+            add(f"seed221004-valid/{i}", data, index=index)
+            add(f"seed221004-mutation/{i}", data, index=index, mutation=(rng.randrange(len(data)), rng.randrange(256)))
     return cases
 
 
@@ -754,7 +765,7 @@ def validate(output, expected, returncode=0):
     return observed
 
 
-def self_test():
+def self_test(*, temporary_parent=None):
     minimal = manifest()
     require(len(minimal) == 37, "minimum length")
     maximum = manifest(
@@ -801,13 +812,15 @@ def self_test():
             pass
         else:
             raise AssertionError("containment accepted traversal/outside path")
-    with tempfile.TemporaryDirectory(prefix="manifest-path-control-", dir=ROOT / "build") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="manifest-path-control-", dir=temporary_parent or ROOT / "build"
+    ) as temporary:
         link = Path(temporary) / "escape"
         link.symlink_to(ROOT.parent, target_is_directory=True)
         try:
             artifact_path(link / "output")
-        except AssertionError:
-            pass
+        except AssertionError as exc:
+            require(str(exc) == "symlink output root denied", "symlink control failed for the wrong reason")
         else:
             raise AssertionError("containment accepted symlink ancestor")
     require(candidate_cap(256) == CAP and candidate_cap(1024) == MAX_CAP, "cap boundaries")
@@ -889,6 +902,107 @@ def batches(cases):
         yield current
 
 
+def developer_cases():
+    """Semantic framing, duplicate-name, selector and constructor boundaries."""
+    seed = manifest(b"app@1.2.3", (b"lib@3.2.1",))
+    parse = select_cases(
+        parsing_cases(exhaustive=False),
+        prefixes=("missing-or-script/", "leading/", "trailing/", "inside/", "grammar/"),
+        labels=(
+            *(f"canonical/{count}/{index}" for count, index in ((0, 0), (8, 0), (8, 7), (8, 8), (8, -1))),
+            *(f"dependency-limit/{count}/{index}" for count, index in ((1, 0), (1, 1), (9, 0))),
+            "dependency-only-crlf",
+            "self-name-different-version",
+            *(
+                f"global-name-rule/{kind}/{position}/{index}"
+                for kind in ("self", "same-version", "different-version")
+                for position in (0, 7)
+                for index in (-1, 0, 7, 8)
+            ),
+            *(
+                f"{family}/{component}/{number}"
+                for family in ("numeric-boundary", "numeric-dependency")
+                for component in range(3)
+                for number in (U32, U32 + 1)
+            ),
+            *(f"name-length/{length}" for length in (0, 1, 24, 25)),
+            *(
+                f"{family}/{token.hex()}" + ("/0" if family == "bad-late-dependency" else "")
+                for family in ("bad-root", "bad-late-dependency")
+                for token in (b"A@1.2.3", b"a--b@1.2.3", b"a@1.2.3.4", b"a@4294967296.2.3")
+            ),
+            "window/exact-delimited",
+            "window/0/0/0",
+            f"window/2/{len(seed)}/0",
+            "window/-1/37/0",
+            "window/2/-1/0",
+            f"window/{IMIN}/0/0",
+            f"window/2/{IMAX}/0",
+            f"window/{IMAX}/{IMAX}/0",
+            "large-owner/4096",
+            "large-invalid/616",
+        ),
+    )
+    # Explicit truncation points complement whole framing categories without
+    # generating every prefix, byte mutation or seeded-random manifest.
+    for label, count in (("empty", 0), ("header", 16), ("missing-final-lf", len(seed) - 1)):
+        parse.append(parse_case("dev-truncation/" + label, seed, count=count))
+    construction = select_cases(
+        construction_cases(),
+        labels=(
+            *(
+                f"constructor-manifest/{status}/{root}/{count}"
+                for status, root, count in (
+                    ("success", 0, 0),
+                    ("success", 0, 8),
+                    ("success", 0, 9),
+                    ("success", 0, -1),
+                    ("success", 1, 1),
+                    ("success", 2, 1),
+                    ("success", 3, 1),
+                    ("malformed", 1, 9),
+                    ("out_of_range", 1, 9),
+                )
+            ),
+            *(
+                f"constructor-dependency/success/{count}/{index}"
+                for count, index in ((1, 0), (8, 7), (0, 0), (9, 0), (8, -1), (8, 8), (IMIN, 0), (8, IMAX))
+            ),
+            *(
+                f"constructor-dependency/{status}/9/-1"
+                for status in ("malformed", "out_of_range", "index_out_of_range")
+            ),
+            *(
+                f"constructor-local-invariants/{status}/{root_bad}/{dep_status}/{poison}/{same}"
+                for status, root_bad, dep_status, poison, same in (
+                    ("success", False, "success", False, False),
+                    ("success", True, "success", False, False),
+                    ("success", False, "malformed", False, False),
+                    ("success", False, "out_of_range", False, False),
+                    ("success", False, "success", True, False),
+                    ("success", False, "success", False, True),
+                    ("malformed", True, "success", True, True),
+                    ("out_of_range", True, "success", True, True),
+                    ("index_out_of_range", True, "success", True, True),
+                )
+            ),
+        ),
+    )
+    ownership, binding = ownership_cases(), binding_cases()
+    require(
+        tuple(map(len, (parse, construction, ownership, binding))) == (120, 29, 5, 3),
+        "developer semantic group counts changed",
+    )
+    cases = parse + construction + ownership + binding
+    select_cases(cases, prefixes=("",))
+    return cases, dict(
+        parse_cases=len(parse),
+        constructor_cases=len(construction),
+        ownership_cases=len(ownership),
+        binding_cases=len(binding),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", nargs="?", type=Path, default=ROOT / "build/aurorac")
@@ -935,7 +1049,7 @@ def main():
     if not diagnostic_only:
         compiler = args.compiler.resolve(strict=True)
         identity = resolve_identity(args, compiler, ROOT)
-    self_test()
+    self_test(temporary_parent=Path(tempfile.gettempdir()) if args.profile == "dev" else None)
     frozen = ROOT / "evidence/package-manifest/contract-before-implementation.md"
     require(sha(frozen) == CONTRACT_SHA256, "frozen pre-implementation contract byte identity")
     if args.self_test_only:
@@ -944,7 +1058,11 @@ def main():
     if args.freeze_reference:
         freeze_corpus(artifact_path(args.freeze_reference))
         return
-    artifacts = artifact_path(args.artifact_root or ROOT / f"build/package-manifest-{os.getpid()}")
+    artifacts = (
+        developer_artifacts(args, "manifest")
+        if args.profile == "dev"
+        else artifact_path(args.artifact_root or ROOT / f"build/package-manifest-{os.getpid()}")
+    )
     require(artifacts.parent.is_dir() and not artifacts.exists(), "fresh artifact root with existing parent required")
     runner = Runner(compiler, artifacts, cap)
     runner.budget(65536)
@@ -957,6 +1075,8 @@ def main():
         Path(__file__).resolve(),
         ROOT / "scripts/package_native_runner.py",
         ROOT / "scripts/owned_outputs.py",
+        ROOT / "scripts/package_profiles.py",
+        ROOT / "scripts/compiler_contract.py",
         frozen,
         Path(sys.executable).resolve(strict=True),
         *runner.tools.values(),
@@ -988,10 +1108,11 @@ def main():
     try:
         for name, tool in {**runner.tools, "python": Path(sys.executable).resolve()}.items():
             runner.command([tool, "--version"], artifacts, "version-" + name)
-        cases, counts = all_cases()
+        cases, counts = developer_cases() if args.profile == "dev" else all_cases()
         report.update(counts)
         if args.smoke:
             cases = cases[:16] + construction_cases()[:8] + ownership_cases() + binding_cases()
+        report.update(profile_record(args, cases, negative_cases()))
         report.update(
             native_cases=len(cases),
             complete_u64_observations=sum(len(c.expected) for c in cases),
@@ -1005,17 +1126,20 @@ def main():
         for number, (label, source, message) in enumerate(negative_cases()):
             runner.reject(number, label, source, message)
         identity.verify()
+        report["compiler_identity"] = identity.record()
         report["status"] = "passed"
     except BaseException as exc:
         report.update(status="failed", error=str(exc), exception_type=type(exc).__name__)
         raise
     finally:
         original_error_active = sys.exc_info()[0] is not None
-        final_errors = finalize_report(runner, report, compiler, artifacts)
+        final_errors = finalize_selected_identity(identity, report)
+        final_errors += finalize_report(runner, report, compiler, artifacts)
         if final_errors and not original_error_active:
             raise AssertionError("run finalization failed: " + "; ".join(final_errors))
+    scope = " [partial dev]" if args.profile == "dev" else ""
     print(
-        f"PASS package manifest: {len(cases)} native cases, "
+        f"PASS package manifest{scope}: {len(cases)} native cases, "
         f"{report['complete_u64_observations']} complete u64 observations, "
         f"{2 * report['rejection_cases']} rejection runs; selected compiler identity unchanged",
         flush=True,

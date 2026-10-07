@@ -11,8 +11,8 @@ Never write the images to a physical disk or attach user data.
 ## Quick start
 
 For ordinary compiler and core/byte library edits, configure the
-[incremental Meson developer path](meson-bootstrap.md) and select `core`, `bytes`
-or `dev` with two test workers. Those tests own isolated outputs and can run in
+[incremental Meson developer path](meson-bootstrap.md) and select `core`, `bytes`, partial `packages`
+or combined `dev` with two test workers. Those tests own isolated outputs and can run in
 parallel. The one-command-at-a-time warning above applies to the inherited shared
 Make/script paths, not independent tests within one Meson invocation. Full native
 qualification and the emulator workflows below remain explicit broader gates.

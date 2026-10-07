@@ -27,7 +27,15 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
-from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
+from package_profiles import (
+    add_identity_arguments,
+    developer_artifacts,
+    finalize_selected_identity,
+    profile_record,
+    resolve_identity,
+    select_cases,
+    validate_identity_selection,
+)
 
 CONTRACT_SHA256 = "79af6fe35314b1dd17a6f1115c8269754866018e39061c5ad1cba6161634887f"
 CAP = 128 << 20
@@ -214,7 +222,7 @@ return 998u64;}\n"""
     return source
 
 
-def parsing_cases():
+def parsing_cases(*, exhaustive=True):
     cases = []
     add = lambda label, data, offset=0, count=None: cases.append(parse_case(label, data, offset, count))
     for token in (
@@ -275,21 +283,25 @@ def parsing_cases():
     for suffix in (b"\0", b"\n", b"\r", b"\r\n", b" ", b"\t", b"-pre", b"+build", b".4", b"@1.2.3", b";"):
         add("trailing/" + suffix.hex(), b"a@1.2.3" + suffix)
         add("leading/" + suffix.hex(), suffix + b"a@1.2.3")
-    for token in (b"a@0.0.0", b"a1-b2@12.34.56", b"a" * 24 + b"@4294967295.4294967295.4294967295"):
-        for cut in range(len(token)):
-            add(f"prefix/{token.hex()}/{cut}", token, 0, cut)
-            add(f"suffix/{token.hex()}/{cut}", token, cut + 1, len(token) - cut - 1)
-    # Every byte at every position of this representative token: lowercase name,
-    # name digit, internal hyphen, separator @, numeric starts/tails, both dots.
-    token = b"a1-b2@12.34.56"
-    for position in range(len(token)):
-        for value in range(256):
-            data = token[:position] + bytes([value]) + token[position + 1 :]
-            add(f"all-byte-substitution/{position}/{value}", data)
-    maximum = b"a@4294967295.4294967295.4294967295"
-    for position in (11, 22, 33):
-        for value in range(256):
-            add(f"max-component-byte/{position}/{value}", maximum[:position] + bytes([value]) + maximum[position + 1 :])
+    if exhaustive:
+        for token in (b"a@0.0.0", b"a1-b2@12.34.56", b"a" * 24 + b"@4294967295.4294967295.4294967295"):
+            for cut in range(len(token)):
+                add(f"prefix/{token.hex()}/{cut}", token, 0, cut)
+                add(f"suffix/{token.hex()}/{cut}", token, cut + 1, len(token) - cut - 1)
+        # Every byte at every position of this representative token: lowercase name,
+        # name digit, internal hyphen, separator @, numeric starts/tails, both dots.
+        token = b"a1-b2@12.34.56"
+        for position in range(len(token)):
+            for value in range(256):
+                data = token[:position] + bytes([value]) + token[position + 1 :]
+                add(f"all-byte-substitution/{position}/{value}", data)
+        maximum = b"a@4294967295.4294967295.4294967295"
+        for position in (11, 22, 33):
+            for value in range(256):
+                add(
+                    f"max-component-byte/{position}/{value}",
+                    maximum[:position] + bytes([value]) + maximum[position + 1 :],
+                )
     owner = b"\xff\0a@1.2.3\n\xff"
     for offset in (IMIN, -57, -1, 0, 1, 2, 3, len(owner) - 1, len(owner), len(owner) + 1, IMAX):
         for count in (IMIN, -1, 0, 1, 7, 57, len(owner), len(owner) + 1, IMAX):
@@ -298,17 +310,18 @@ def parsing_cases():
     for length in (58, 64, 128, 4096):
         add(f"bounded-long/{length}", b"a" * length)
         add(f"large-owner-small-window/{length}", b"\xff" * (length - 7) + b"a@1.2.3", length - 7, 7)
-    rng = random.Random(220104)
-    for index in range(128):
-        name = bytes([rng.randrange(97, 123)]) + bytes(
-            rng.choice(b"abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(rng.randrange(24))
-        )
-        version = tuple(rng.randrange(1 << 32) for _ in range(3))
-        token = name + b"@" + b".".join(str(v).encode() for v in version)
-        add(f"seed220104-valid/{index}", token)
-        bad = bytearray(token)
-        bad[rng.randrange(len(bad))] = rng.randrange(256)
-        add(f"seed220104-mutation/{index}", bytes(bad))
+    if exhaustive:
+        rng = random.Random(220104)
+        for index in range(128):
+            name = bytes([rng.randrange(97, 123)]) + bytes(
+                rng.choice(b"abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(rng.randrange(24))
+            )
+            version = tuple(rng.randrange(1 << 32) for _ in range(3))
+            token = name + b"@" + b".".join(str(v).encode() for v in version)
+            add(f"seed220104-valid/{index}", token)
+            bad = bytearray(token)
+            bad[rng.randrange(len(bad))] = rng.randrange(256)
+            add(f"seed220104-mutation/{index}", bytes(bad))
     return cases
 
 
@@ -812,6 +825,83 @@ class Runner:
                 write_checked_receipt(directory / "receipt.json", receipt, self.budget)
 
 
+def developer_groups():
+    """Named boundary/grammar cases, retaining every ownership and rejection case."""
+    parse = select_cases(
+        parsing_cases(exhaustive=False),
+        prefixes=("canonical/", "invalid-name/", "invalid-component/", "leading/", "trailing/"),
+        labels=(
+            *(f"name-length/{n}" for n in (1, 24, 25)),
+            *(f"component/{component}/{number}" for component in range(3) for number in (0, U32, U32 + 1)),
+            "window/exact-delimited",
+            "window/0/0",
+            "window/2/7",
+            "window/-1/7",
+            "window/2/-1",
+            f"window/{IMIN}/0",
+            f"window/2/{IMAX}",
+            f"window/{IMAX}/{IMAX}",
+            "bounded-long/58",
+            "large-owner-small-window/4096",
+        ),
+    )
+    for label, token in (
+        ("missing-at", b"a1.2.3"),
+        ("extra-at", b"a@@1.2.3"),
+        ("missing-first-dot", b"a@12.3"),
+        ("missing-second-dot", b"a@1.23"),
+        ("extra-dot", b"a@1..2.3"),
+        ("swapped-separators", b"a.1@2.3"),
+    ):
+        parse.append(parse_case("dev-delimiter/" + label, token))
+    construction = select_cases(
+        construction_cases(),
+        prefixes=("constructor/name/",),
+        labels=(
+            *(
+                f"constructor/{status}/length/{length}"
+                for status in ("success", "malformed", "out_of_range")
+                for length in (0, 1, 24, 25)
+            ),
+            *(f"constructor/{status}/poisoned" for status in ("success", "malformed", "out_of_range")),
+            *(f"constructor/unused-tail/{position}/{value}" for position in (1, 23) for value in (1, 255)),
+            *(f"constructor/component/{component}/{value}" for component in range(3) for value in (0, U32, U32 + 1)),
+            *(f"constructor/first-byte/{value}" for value in (0, 65, 97, 255)),
+        ),
+    )
+    comparisons = select_cases(
+        comparison_cases(),
+        prefixes=("comparison/normalized-invalid/",),
+        labels=(
+            *(
+                f"comparison/{left}/{right}"
+                for left, right in (
+                    (0, 0),
+                    (0, 1),
+                    (1, 0),
+                    (1, 2),
+                    (2, 1),
+                    (2, 3),
+                    (3, 2),
+                    (3, 4),
+                    (4, 3),
+                    (0, 8),
+                    (8, 0),
+                    (8, 8),
+                    (0, 9),
+                    (9, 0),
+                    (0, 10),
+                    (10, 0),
+                )
+            ),
+        ),
+    )
+    groups = parse, construction, comparisons, ownership_cases()
+    require(tuple(map(len, groups)) == (115, 42, 19, 7), "developer semantic group counts changed")
+    select_cases([case for group in groups for case in group], prefixes=("",))
+    return groups
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", nargs="?", type=Path, default=ROOT / "build/aurorac")
@@ -864,7 +954,11 @@ def main():
     if args.self_test_only:
         print("PASS independent regex/integer oracle and observation negative self-tests")
         return
-    artifacts = artifact_path(args.artifact_root or ROOT / f"build/package-identity-{os.getpid()}")
+    artifacts = (
+        developer_artifacts(args, "identity")
+        if args.profile == "dev"
+        else artifact_path(args.artifact_root or ROOT / f"build/package-identity-{os.getpid()}")
+    )
     require(artifacts.parent.is_dir() and not artifacts.exists(), "fresh artifact root with existing parent required")
     runner = Runner(compiler, artifacts, cap)
     runner.budget(65536)
@@ -880,6 +974,8 @@ def main():
             Path(__file__).resolve(),
             frozen,
             ROOT / "scripts/owned_outputs.py",
+            ROOT / "scripts/package_profiles.py",
+            ROOT / "scripts/compiler_contract.py",
             Path(sys.executable).resolve(strict=True),
             *runner.tools.values(),
         ]
@@ -907,15 +1003,19 @@ def main():
     try:
         for name, tool in {**runner.tools, "python": Path(sys.executable).resolve()}.items():
             runner.command([tool, "--version"], artifacts, "version-" + name)
-        parse = parsing_cases()
-        construction = construction_cases()
-        comparisons = comparison_cases()
-        ownership = ownership_cases()
+        if args.profile == "dev":
+            parse, construction, comparisons, ownership = developer_groups()
+        else:
+            parse = parsing_cases()
+            construction = construction_cases()
+            comparisons = comparison_cases()
+            ownership = ownership_cases()
         if args.smoke:
             parse = parse[:6]
             construction = construction[:6]
             comparisons = comparisons[:6]
         cases = parse + construction + comparisons + ownership
+        report.update(profile_record(args, cases, negative_cases()))
         report.update(
             parse_cases=len(parse),
             constructor_cases=len(construction),
@@ -933,13 +1033,14 @@ def main():
             runner.reject(number, label, source, words)
         require(pins == {p: sha(ROOT / p) for p in pins}, "compiler/library/test inputs changed during execution")
         identity.verify()
+        report["compiler_identity"] = identity.record()
         report["status"] = "passed"
     except Exception as exc:
         report.update(status="failed", error=str(exc))
         raise
     finally:
         active_error = sys.exc_info()[0] is not None
-        finalization_errors = []
+        finalization_errors = finalize_selected_identity(identity, report)
         try:
             allocated, free = runner.measure()
             report.update(
@@ -965,8 +1066,9 @@ def main():
             print("Secondary receipt-write failure; primary failure preserved: " + str(exc), file=sys.stderr)
         if finalization_errors and not active_error:
             raise AssertionError("run finalization failed: " + "; ".join(finalization_errors))
+    scope = " [partial dev]" if args.profile == "dev" else ""
     print(
-        f"PASS package identity: {len(cases)} native cases, "
+        f"PASS package identity{scope}: {len(cases)} native cases, "
         f"{report['complete_u64_observations']} complete u64 observations, "
         f"{2 * report['rejection_cases']} rejection runs; selected compiler identity unchanged",
         flush=True,

@@ -49,3 +49,21 @@ test(
     suite: ['dev', 'core', 'compiler'],
     timeout: 120,
 )
+
+# Named semantic selections, explicitly partial; Meson/Ninja builds aurorac.
+# Each family creates a unique retained receipt/output directory beneath TMPDIR
+# and gives every subprocess a private, cap-accounted tmp subdirectory.
+foreach family : ['identity', 'manifest', 'graph']
+    test(
+        'package-' + family,
+        python,
+        args: ['-B', '-O', files('compiler/package_' + family + '.py'), aurorac,
+               '--profile', 'dev', '--developer-selected-compiler'],
+        depends: aurorac,
+        suite: ['dev', 'packages'],
+        env: oracle_env,
+        workdir: meson.current_build_dir(),
+        timeout: 300,
+        is_parallel: true,
+    )
+endforeach
