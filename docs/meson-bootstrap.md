@@ -2,7 +2,7 @@
 
 This is a focused developer path alongside Make. It builds the native C++23
 `aurorac` once per changed compiler input and runs existing core and byte/storage
-scripts directly. It does not enter `compiler_contract.py`, create a fresh
+scripts directly. It does not invoke compiler-contract build orchestration, create a fresh
 compiler per test invocation, or change any existing Make or firmware command.
 
 ## Run
@@ -33,9 +33,9 @@ until the compiler can emit dependency files itself.
 
 ## Choose the checks for the change
 
-The default developer feedback set is `dev`, comprising `core` and `bytes`.
-All registered tests currently belong to `dev`, so an unfiltered `meson test`
-runs the same set. Use two workers initially to bound concurrent compiler/test
+The default developer feedback set is `dev`, comprising `core`, `bytes` and the
+explicitly partial semantic `packages` suite. An unfiltered `meson test` runs the
+same fifteen tests. Use two workers initially to bound concurrent compiler/test
 memory. The warm `core` design target is under two minutes on the measured host;
 this is a feedback budget, not a portable timing guarantee. Cold bootstrap builds
 and broader qualification are separate costs. Each Python test has a 300-second
@@ -50,9 +50,9 @@ meson test -C build/meson modules source-depth --num-processes 2 --print-errorlo
 Choose by actual dependencies: compiler frontend/class/integer/module changes
 start with `core`; `std.bytes`, `std.binary` or `std.binary_writer` changes start with `bytes`.
 Run the affected component's additional tests for surfaces not registered here,
-including templates, overloads, readonly windows, short-circuit joins, text and
-packages. A focused pass does not imply those other surfaces were exercised.
-Run `dev` when both covered areas change or a wider quick pass is useful.
+including templates, overloads, readonly windows, short-circuit joins and text.
+Package changes can start with the partial `packages` suite described below. A focused pass does not imply those other surfaces were exercised.
+Run `dev` when multiple covered areas change or a wider quick pass is useful.
 For leaf documentation edits, review content, commands and links; do not rebuild
 the compiler or require the full native aggregate without a relevant reason.
 
@@ -76,8 +76,8 @@ The `core` suite keeps eight complete existing tests, without sampling their cas
 - `initialization-facts`: the existing C++ model fixture, also in `compiler`
 
 These registrations preserve the runners' native full-width result checks,
-exact SIGILL expectations and diagnostic/output-preservation checks. No runner
-or oracle was changed, and no exhaustive matrix was replaced with first-N cases.
+exact SIGILL expectations and diagnostic/output-preservation checks. The core registrations do not alter their runners or oracles; no exhaustive
+matrix is replaced with first-N cases.
 
 The `bytes` suite has four named tests, with their existing default case counts:
 
@@ -87,7 +87,7 @@ The `bytes` suite has four named tests, with their existing default case counts:
 - `packed-values`: copied values, bounds traps and rejection cases
 - `storage-binary`: readonly readers, CRC32C and offline XFS header cases
 
-`meson test -C build/meson` runs all twelve registered tests. Select an individual
+`meson test -C build/meson` runs all fifteen registered tests. Select an individual
 test by name, or use a named suite for the relevant feedback loop. Test
 invocations always rerun the selected tests; a successful previous run is never
 used as a cache of current correctness. A library-only edit does not require
@@ -220,3 +220,101 @@ calls. The existing codec test also assembled and executed the storage example;
 the Meson example build target itself produces assembly only. Logs use Meson's
 standard output and test formats. These are single-host measurements, not stable
 performance guarantees or a repeat of the full native qualification.
+
+## Semantic package feedback
+
+`meson test -C build/meson --suite packages --num-processes 2 --print-errorlogs`
+selects explicit `--profile dev` cases for Package Identity, Manifest and Graph.
+These profiles provide partial developer feedback. They are not complete package
+qualification and do not replace the default full package runners or `make test`.
+The historical `--quick`/`--smoke` first-N selection remains separate and cannot
+be combined with `--profile dev`.
+
+- Identity: 183 cases, 6,048 complete u64 observations, all 20 compile-time
+  rejection cases run with both missing and existing output. Named cases cover
+  name/version bounds, each component's overflow, delimiter/framing and invalid
+  grammar families, selected byte windows, constructor poisoning, comparison,
+  copying, eager fallbacks and defining-module lookup.
+- Manifest: 157 cases, 13,098 observations, all 29 rejection cases run twice.
+  Cases cover zero/one/eight and over-cap dependencies, first/last/bad selectors,
+  truncation/framing/CRLF/unknown directives, self/duplicate names with same and
+  differing versions, late malformed dependencies, numeric/name/window bounds,
+  poisoned constructors, copied storage and lookup isolation.
+- Graph: 187 cases, 15,029 observations, all 30 rejection cases run twice.
+  Cases cover small and eight-package chain/diamond/cycle/disconnected-cycle
+  shapes, empty/dense graphs, separate catalog/dependency permutations, missing
+  dependencies, version conflicts, malformed/duplicate packages, all 20 directional pairs
+  among malformed/duplicate-package/missing-package/version-mismatch/cycle errors,
+  separate range precedence and count/rank/
+  window boundaries, poisoned unused selectors and constructor normalization.
+
+Each named selection keeps the existing independent expected-value oracle,
+complete u64 comparison, output-preservation checks and every
+ownership, eager-fallback, binding and compile-time rejection case. Selected
+labels and actual counts are retained in each invocation's manifest.json. Missing
+required labels, absent required families or duplicate selected labels fail closed.
+The full byte-mutation, seeded-random and graph-mask/permutation corpora remain
+unchanged and are generated only on the full path. Compiler-free regression tests
+in `tests/test_package_profiles.py` compare the full generated corpus, expected
+vectors, rejection sources/diagnostics and shared observers to reviewed digests.
+
+Meson passes its actual `aurorac` target plus `--developer-selected-compiler`.
+Ninja owns building and dependency tracking. The runner observes that artifact's
+path, metadata and SHA256 before/after; this is expressly not independently pinned
+acceptance or a fresh-build provenance receipt. The selected-artifact switch is
+restricted to the partial profile, rejects competing pin/receipt arguments and
+cannot run inside an aggregate test context. Existing full qualification modes
+and their compiler-identity requirements remain unchanged. The package helper
+does not invoke Make or build a compiler.
+
+Each family creates a unique output directory under the build-local TMPDIR,
+including its own charged subprocess tmp directory. Existing default caps remain
+128 MiB for Identity and 256 MiB for Manifest/Graph, with the 1 GiB free-space
+floor. Retained package receipts and compacted successful artifacts differ from
+the older temporary-output core/byte runners; repeated package tests create new
+invocation directories. No shared output directory is cleared.
+
+The first out-of-tree native attempt exposed a pre-existing Manifest self-test
+scratch assumption (`source/build` had to exist). Its failure is retained. Dev
+mode now places that compiler-free path-control fixture under build-local TMPDIR;
+the control checks the exact symlink rejection reason, so generic outside-root
+rejection cannot hide a broken symlink check. Full mode keeps its existing default
+scratch parent and all artifact containment rules.
+
+### Package-profile measurements
+
+On the PR44-based profile candidate (compiler SHA256 prefix `993c94564d6b`),
+using GCC 14.2, Meson 1.12.1 and Ninja 1.13.2 on x86-64 Linux,
+the clean two-worker core+packages replay passed all eleven tests in 22.11 seconds.
+The final combined `dev` run passed all fifteen registered tests in 33.68 seconds,
+including core, all four byte/storage runners and the three partial package
+profiles. These are measured wall times, not portable guarantees. The separate
+fresh compiler/example/model build took 41.49 seconds; it is excluded from warm
+feedback timing. The final dev invocation regenerated changed suite metadata but
+rebuilt no C++ target; a following `meson compile` also reported no work.
+
+The final package durations were Identity 2.44 seconds, Manifest 5.17 seconds and
+Graph 12.10 seconds. Their peak owned-output allocations were respectively 1.55,
+3.78 and 3.21 MiB, below unchanged 128/256/256 MiB caps. Test intervals verify two
+concurrent tests. The core+packages replay additionally demonstrated 3.44 seconds
+of package-family overlap; in the combined run, storage-binary occupied one slot
+while the package families ran in the other. The selected compiler artifact's
+before/after identity was unchanged, with no external pin claimed.
+
+All 527 selected native cases, 34,175 complete u64 observations and 158 rejection
+executions passed. Seven compiler-free controls passed normally and with Python
+optimization; pinned Ruff 0.16.7 format/lint checks passed for touched Python.
+Independent review verified generated expectations, exact native observations,
+rejection/output-preservation receipts, input hashes and full-corpus equivalence.
+This is focused developer evidence only. The retained initial Manifest scratch
+failure is not counted as a pass, and no full native aggregate was rerun.
+
+After composing the reviewed profile delta onto PR47, the same three package
+profiles passed on the current overlay-aware compiler (SHA256 prefix
+`fa426eb231c9`) in 16.96 seconds. Its main source and complete 16-file quoted-include
+closure were byte-identical to the published PR47 inputs, so the existing built
+artifact was reused without another compiler build. This was a package-only
+compatibility check; the 33.68-second combined dev timing remains scoped to the
+prior measured candidate and compiler. Both runs record selected-artifact identity,
+not an externally approved pin. Worker count remains configurable; only the
+two-worker setting is measured here.
