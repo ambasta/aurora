@@ -41,7 +41,7 @@ acpi-bad-source acpi-changed-header acpi-duplicate-root acpi-write acpi-revoked 
 pci-devices pci-bridge pci-checksum pci-reserved pci-overlap pci-range pci-cycle
 pci-write pci-revoked runtime runtime-code runtime-stack runtime-kernel runtime-window
 runtime-root runtime-kernel-trap runtime-entry-stack runtime-write runtime-nx
-runtime-return runtime-unknown runtime-syscall runtime-sysenter ipc ipc-fault ipc-cancel
+runtime-return runtime-unknown runtime-syscall runtime-sysenter runtime-terminal-input runtime-terminal-output ipc ipc-fault ipc-cancel
 ipc-owner ipc-stale ipc-version ipc-phase ipc-transaction ipc-site ipc-unknown ipc-root
 ipc-kernel-trap ipc-duplicate ipc-late ipc-exhausted ipc-policy-request-input
 ipc-policy-request-output ipc-policy-cancel-input ipc-policy-cancel-output
@@ -52,7 +52,7 @@ ORIGINAL_BIOS_MODES = tuple(
     """
 normal --fault --page-fault --wp --nx --stack --no-nx --user-read --user-write
 --user-cli --user-code-write --user-nx --user-io --program-bad-return
---program-unknown-trap --program-kernel-trap --domain-code --domain-stack
+--program-terminal-input --program-terminal-output --program-unknown-trap --program-kernel-trap --domain-code --domain-stack
 --domain-root-mismatch --schedule --schedule-no-apic --schedule-smp --schedule-forged
 --schedule-context --schedule-root --schedule-softint --schedule-fpu --schedule-mmio
 --division-zero --division-remainder-zero --division-overflow --division-remainder-min

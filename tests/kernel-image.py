@@ -16,18 +16,19 @@ def require(condition: bool, message: str) -> None:
 
 
 def validate_bios_root(bios: str, uefi: str) -> None:
-    """Keep the existing BIOS value/ownership probe, without unused UEFI imports."""
+    """Keep the value probe and live terminal policy, without unrelated UEFI imports."""
     begin = uefi.index("auto aurora_kernel_value()")
     end = uefi.index("\n}\n", begin) + 3
-    require(bios == "module kernel;\n\n" + uefi[begin:end],
-            "BIOS Aurora root must preserve the exact value/ownership probe only")
+    terminal = uefi[uefi.index("// Private bootstrap transport of copied facts;"):]
+    require(bios == "module kernel;\nimport kernel.terminal_event;\n\n" + uefi[begin:end] + "\n" + terminal,
+            "BIOS Aurora root must preserve exact value and terminal-event probes only")
 
 
 def validate_language_symbols(symbols: str, final_image: bool = False) -> None:
     rows = [line.split() for line in symbols.splitlines() if line.strip()]
     require(rows and all(len(row) == 3 for row in rows), "Invalid defined Aurora symbol inventory")
     entries = [(row[1], row[2]) for row in rows if row[2].startswith("aurora_kernel_")]
-    expected = [("T", "aurora_kernel_value")]
+    expected = [("T", "aurora_kernel_value"), ("T", "aurora_kernel_terminal_event")]
     if final_image:
         expected.append(("T", "aurora_kernel_main"))  # Existing C++ entry.
     require(sorted(entries) == sorted(expected), "Unexpected BIOS Aurora kernel entry set")
@@ -39,11 +40,13 @@ def validate_language_symbols(symbols: str, final_image: bool = False) -> None:
 
 def root_controls(bios: str, uefi: str) -> int:
     validate_bios_root(bios, uefi)
-    valid = "00000000 T aurora_kernel_value\n0000004b T aurora_reflect_size\n"
+    valid = "00000000 T aurora_kernel_value\n0000004b T aurora_reflect_size\n00000050 T aurora_kernel_terminal_event\n"
     validate_language_symbols(valid)
     validate_language_symbols(valid + "000000cc T aurora_kernel_main\n", final_image=True)
     invalid_symbols = (
         "", valid + "000000cc T aurora_kernel_value\n",
+        valid.replace("00000050 T aurora_kernel_terminal_event\n", ""),
+        valid + "000000cc T aurora_kernel_terminal_event\n",
         valid.replace("T aurora_kernel_value", "t aurora_kernel_value"),
         valid.replace("aurora_kernel_value", "aurora_kernel_unexpected"),
         valid + "000000cc T aurora_kernel_budget_tick\n",
@@ -70,7 +73,9 @@ def root_controls(bios: str, uefi: str) -> int:
         raise RuntimeError("Invalid BIOS Aurora graph accepted by negative control")
     bad_roots = (bios.replace("own(40)", "own(41)"),
                  bios.replace("module kernel;", "module kernel;\nimport kernel.round_robin;"),
-                 bios + "\nauto extra() -> i64 { return 0; }\n")
+                 bios + "\nauto extra() -> i64 { return 0; }\n",
+                 bios.replace("import kernel.terminal_event;\n", ""),
+                 bios.replace("return 5u64;", "return 4u64;"))
     for invalid in bad_roots:
         try:
             validate_bios_root(invalid, uefi)
@@ -209,7 +214,7 @@ def main() -> None:
         raise RuntimeError("Unaligned BIOS packet accepted")
     print(f"PASS: boot signature, ELF entry, zero unresolved symbols, {len(kernel)}-byte payload, 1 MiB image; 14 negative controls; RX/R/RW segments and bounded BIOS packet")
 
-    print(f"PASS: BIOS value/ownership root unchanged; no unused UEFI policy graph; {root_negative_controls} root/symbol negative controls")
+    print(f"PASS: BIOS value/ownership and terminal-event roots verified; no unused UEFI policy graph; {root_negative_controls} root/symbol negative controls")
 
 
 if __name__ == "__main__":

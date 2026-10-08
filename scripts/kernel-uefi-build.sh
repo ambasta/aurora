@@ -38,6 +38,9 @@ case "${UEFI_MODE:-normal}" in
  ipc|ipc-fault|ipc-cancel|ipc-owner|ipc-stale|ipc-version|ipc-phase|ipc-transaction|ipc-site|ipc-unknown|ipc-root|ipc-kernel-trap|ipc-duplicate|ipc-late|ipc-exhausted|ipc-policy-request-input|ipc-policy-request-output|ipc-policy-cancel-input|ipc-policy-cancel-output)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC)
    if [[ "$UEFI_MODE" != ipc ]]; then flag="${UEFI_MODE#ipc-}"; flag="${flag//-/_}"; extra+=("-DAURORA_IPC_${flag^^}"); fi ;;
+ runtime-terminal-input|runtime-terminal-output)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME)
+   flag="${UEFI_MODE#runtime-terminal-}"; extra+=("-DAURORA_TERMINAL_EVENT_${flag^^}") ;;
  runtime-table-readback|runtime-table-reject|runtime-table-exhaust|runtime-table-quarantine)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_PINS -DAURORA_UEFI_TABLES -DAURORA_DORMANT_TABLE_TESTING=1)
    flag="${UEFI_MODE#runtime-table-}"; extra+=("-DAURORA_TABLE_${flag^^}")

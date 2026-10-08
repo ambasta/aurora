@@ -169,6 +169,7 @@ def owned_bytes_symbols(symbols):
         "aurora_kernel_round_robin_next",
         "aurora_kernel_ipc_transition",
         "aurora_kernel_client_disposal",
+        "aurora_kernel_terminal_event",
         "uefi_runtime_enter",
         "uefi_console_interrupt",
         "__au_runtime_bytes_test_entry",
@@ -217,6 +218,13 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
 
     if "uefi_runtime_enter" in symbols:
         names += ["runtime-entry", "runtime-exceptions"]
+        terminal_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
+        need(policy_call_present(terminal_calls, "aurora_kernel_terminal_event"),
+             "Runtime must call the actual Aurora terminal-event producer")
+        terminal_symbols = {row.split()[2]: int(row.split()[0], 16)
+                            for row in symbols.splitlines() if len(row.split()) == 3}
+        need(0 < terminal_symbols.get("aurora_kernel_terminal_event", 0)
+             < terminal_symbols["__payload_text_end"], "Terminal-event entry outside owned payload RX")
     if "uefi_console_interrupt" in symbols:
         names += ["console", "console-entry"]
         need("uefi_runtime_enter" not in symbols, "Console linked a user runtime")

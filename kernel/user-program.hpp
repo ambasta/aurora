@@ -1,12 +1,12 @@
 #pragma once
 #include "program-layout.hpp"
+#include "terminal-event-transport.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <optional>
 
 namespace aurora::user {
-enum class ProgramEvent { rejected, returned, bounds, overflow, division_zero, shift_count };
 class ProgramContext final {
     friend class ProgramContract;
     std::uint64_t vector, error, instruction, code, stack_selector, stack, flags, kernel_frame;
@@ -65,14 +65,22 @@ public:
     }
     [[nodiscard]] auto classify(const ProgramContext& context) const -> ProgramEvent {
         if (!valid() || !context.origin_valid(layout_) || context.error != 0) return ProgramEvent::rejected;
-        if (context.vector == 129 && context.instruction == return_
-            && context.stack == layout_.user_stack_top()) return ProgramEvent::returned;
-        if (context.vector != 6) return ProgramEvent::rejected;
-        if (context.instruction == bounds_) return ProgramEvent::bounds;
-        if (context.instruction == overflow_) return ProgramEvent::overflow;
-        if (division_zero_ != 0 && context.instruction == division_zero_) return ProgramEvent::division_zero;
-        if (shift_count_ != 0 && context.instruction == shift_count_) return ProgramEvent::shift_count;
-        return ProgramEvent::rejected;
+        const std::uint64_t matched_sites = (context.instruction == return_ ? 1ULL : 0ULL)
+            | (context.instruction == bounds_ ? 2ULL : 0ULL)
+            | (context.instruction == overflow_ ? 4ULL : 0ULL)
+            | (division_zero_ != 0 && context.instruction == division_zero_ ? 8ULL : 0ULL)
+            | (shift_count_ != 0 && context.instruction == shift_count_ ? 16ULL : 0ULL);
+        const std::uint64_t stack_top = context.stack == layout_.user_stack_top() ? 1 : 0;
+        auto policy_vector = context.vector;
+#ifdef AURORA_TERMINAL_EVENT_INPUT
+        policy_vector = ~std::uint64_t{0};
+#endif
+        auto encoded = language_terminal_event(policy_vector, matched_sites, stack_top);
+#ifdef AURORA_TERMINAL_EVENT_OUTPUT
+        const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
+        encoded |= reserved_bit;
+#endif
+        return decode_terminal_event(encoded, context.vector, matched_sites, stack_top);
     }
 };
 class ProgramImage final {

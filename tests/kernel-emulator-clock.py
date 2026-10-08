@@ -59,8 +59,8 @@ UNCHANGED = {
 
 # The BIOS console commit added an early opt-in rejection guard. Its closed
 # whole-file provenance and the unchanged executable smoke body are independent.
-BIOS_SMOKE_SHA256 = "afaa3d384615bd6df8751b8f189e7656eb95a41839d86cf0347669a568fd628e"
-BIOS_SMOKE_BODY_SHA256 = "a2b4912ce3e0a77c9b0429770e551eb25df2edc4829be3a94178815be22ce1ad"
+BIOS_SMOKE_SHA256 = "694eaa63266939af88634664e8ecc3be261a066d69f8050fe320cd15f303d4da"
+BIOS_SMOKE_BODY_SHA256 = "e95b28a60111ba61f04ecfb588c42f6a5fc69e69126c519ac34e539119ff0271"
 
 
 def wrapper_modes(name):
@@ -103,13 +103,13 @@ class ClockContractTests(unittest.TestCase):
         for family, wrappers in WRAPPERS.items():
             for wrapper in wrappers:
                 inventory += [(family, mode) for mode in wrapper_modes(wrapper)]
-        self.assertEqual(len(inventory), 179)
-        self.assertEqual(len(set(inventory)), 179)
+        self.assertEqual(len(inventory), 183)
+        self.assertEqual(len(set(inventory)), 183)
         self.assertEqual(set(inventory) | {("uefi", "owned-bytes")}, set(CLOCK.MODE_CLOCKS))
         self.assertEqual(CLOCK.clock_profile("uefi", "owned-bytes"), CLOCK.ORIGINAL)
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
         self.assertEqual(len(selected), 53)
-        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 127)
+        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 131)
         self.assertEqual(
             hashlib.sha256(("\n".join(sorted(selected)) + "\n").encode()).hexdigest(), SELECTED_NAMES_SHA256
         )
@@ -127,7 +127,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 185)
+        self.assertEqual(len(cases), 189)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -183,7 +183,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 143)
+        self.assertEqual(len(modes), 145)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):
@@ -484,7 +484,8 @@ class ClockContractTests(unittest.TestCase):
         self.assertEqual(explicit.returncode, 0, explicit.stderr)
         self.assertEqual(json.loads(default.stdout), json.loads(explicit.stdout))
         self.assertNotIn("-icount", json.loads(default.stdout)["argv"])
-        # BIOS default/restoration and capacity paths are preserved byte-for-byte.
+        # BIOS launcher pin includes only the two copied-policy mode additions;
+        # its default/restoration command bodies and capacity paths are preserved.
         smoke = (ROOT / "scripts/kernel-smoke.sh").read_bytes()
         self.assertEqual(hashlib.sha256(smoke).hexdigest(), BIOS_SMOKE_SHA256)
         body = smoke[smoke.index(b'mode="${1:-normal}"\n') :]
