@@ -311,6 +311,43 @@ def snapshot_cases(suite):
         result="u64"))
 
 
+def owned_field_cases(suite):
+    # Direct owned replacement and receivers are supported by
+    # compiler/OWNED-FIELD-MUTATION.md. Keep their enum/value invariants native.
+    for enum_first in (True, False):
+        concrete = "std::pair<Status,Leaf>" if enum_first else "std::pair<Leaf,Status>"
+        arguments = "Status::ok,source" if enum_first else "source,Status::ok"
+        enum_field, leaf_field = ("first", "second") if enum_first else ("second", "first")
+        suite.check(f"direct owned enum class replacement enum_first={enum_first}", program(
+            f"Leaf source=Leaf(Status::ok,{HIGH_U64}u64);"
+            f"{concrete} pair={concrete}({arguments});const {concrete} before=pair;"
+            f"Leaf replacement=Leaf(Status::error,{MAX_U64}u64);"
+            f"pair.{leaf_field}=replacement;replacement.set(Status::ok,0u64);"
+            f"const Leaf copied=pair.{leaf_field};const Leaf saved=before.{leaf_field};"
+            f"if(pair.{enum_field}!=Status::ok){{return 1u64;}}"
+            f"if(before.{enum_field}!=Status::ok){{return 2u64;}}"
+            "if(copied.status()!=Status::error){return 3u64;}"
+            f"if(saved.status()!=Status::ok||saved.get()!={HIGH_U64}u64){{return 4u64;}}"
+            f"if(source.status()!=Status::ok||source.get()!={HIGH_U64}u64){{return 5u64;}}"
+            "if(replacement.status()!=Status::ok||replacement.get()!=0u64){return 6u64;}"
+            "return copied.get();", ENUMS + LEAF, imports="import std.utility;", result="u64"),
+            MAX_U64)
+        suite.check(f"direct owned enum class result enum_first={enum_first}", program(
+            f"Leaf source=Leaf(Status::error,{MAX_U64}u64);"
+            f"{concrete} pair={concrete}({arguments});"
+            f"const Leaf saved=pair.{leaf_field}.snapshot();"
+            f"Leaf changed=pair.{leaf_field}.snapshot();changed.set(Status::ok,0u64);"
+            f"if(pair.{leaf_field}.status()!=Status::error){{return 1u64;}}"
+            f"if(pair.{leaf_field}.get()!={MAX_U64}u64){{return 2u64;}}"
+            f"pair.{leaf_field}.set(Status::ok,{HIGH_U64}u64);source.set(Status::ok,0u64);"
+            f"if(pair.{enum_field}!=Status::ok){{return 3u64;}}"
+            f"if(pair.{leaf_field}.status()!=Status::ok){{return 4u64;}}"
+            f"if(pair.{leaf_field}.get()!={HIGH_U64}u64){{return 5u64;}}"
+            "if(changed.status()!=Status::ok||changed.get()!=0u64){return 6u64;}"
+            "if(saved.status()!=Status::error){return 7u64;}return saved.get();",
+            ENUMS + LEAF, imports="import std.utility;", result="u64"), MAX_U64)
+
+
 def method_result_cases(suite):
     for method in ("snapshot", "forwarded"):
         suite.check("nested enum class result " + method, program(
@@ -615,14 +652,32 @@ def rejection_cases(suite):
          "std::pair<Other,Leaf> wrong=pair;return 42;"),
         ("enum pair copied into reordered specialization", init +
          "std::pair<Leaf,Status> wrong=pair;return 42;"),
-        ("nested field whole assignment", init + "pair.second=leaf;return 42;"),
-        ("nested field method result chaining", init + "Leaf result=pair.second.snapshot();return 42;"),
+        ("readonly root owned field replacement", init.replace(f"{pair} pair=", f"const {pair} pair=") +
+         "pair.second=leaf;return 42;"),
+        ("readonly root owned mutable receiver", init.replace(f"{pair} pair=", f"const {pair} pair=") +
+         "pair.second.set(Status::error,0u64);return 42;"),
+        ("same layout wrong nominal owned field replacement", init +
+         "Factory other=Factory(Status::ok,42u64);pair.second=other;return 42;"),
+        ("owned field result requires exact nominal destination", init +
+         "Factory result=pair.second.snapshot();return 42;"),
+        ("deeper owned field replacement remains rejected", init +
+         f"std::pair<Status,{pair}> outer=std::pair<Status,{pair}>(Status::ok,pair);"
+         "outer.second.second=leaf;return 42;"),
+        ("deeper owned field receiver remains rejected", init +
+         f"std::pair<Status,{pair}> outer=std::pair<Status,{pair}>(Status::ok,pair);"
+         "Leaf result=outer.second.second.snapshot();return 42;"),
         ("enum builtin array", "array<Status,2> values={Status::ok,Status::error};return 42;"),
         ("enum std array", "std::array<Status,2> values=std::array<Status,2>();return 42;"),
         ("nested template value requires exact class constructor argument", "std::pair<Status,std::pair<Status,i64>> p="
          "std::pair<Status,std::pair<Status,i64>>(Status::ok,42);return 42;"),
     ):
         suite.check(label, program(body, BASE, imports="import std.utility;import std.array;"), reject=True)
+    for label, action in (("replacement", "input.second=leaf;"),
+                          ("mutable receiver", "input.second.set(Status::error,0u64);")):
+        suite.check("readonly parameter owned field " + label, program(
+            init + "return mutate(pair,leaf);", BASE,
+            f"auto mutate({pair} input,Leaf leaf)->i64{{{action}return 42;}}",
+            imports="import std.utility;"), reject=True)
     for operator in ("+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>"):
         suite.check("composed enum arithmetic rejected " + operator, program(
             init + f"Status result=pair.first{operator}Status::error;return 42;", BASE,
@@ -715,6 +770,7 @@ def main():
     suite = Suite(compiler, args.keep_going)
     value_cases(suite)
     snapshot_cases(suite)
+    owned_field_cases(suite)
     method_result_cases(suite)
     wide_cases(suite)
     modeled_copies(suite, args.seed, args.steps)
