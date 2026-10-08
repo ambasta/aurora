@@ -1,5 +1,20 @@
 # Completeness and acceptance matrix
 
+## Native client-disposal plan — focused gates passed
+
+A copied Aurora decision selects the real dispatcher recovery plan after trusted
+owner/quiescence checks. Receipt handling, mailbox effects, revocation and domain
+authority remain in the bootstrap adapter. Independent native/hostile/copy gates,
+fatal host sanitizers, current linked stack/image admission and 37 actual focused
+guest/restoration executions and final independent source/evidence review passed.
+See [contract](kernel-client-disposal-contract.md) and
+[results](kernel-client-disposal-results.md). This is not a full dispatcher port
+or fresh full-native/all-mode qualification. The PR88 repaired-main join preserves
+all 21 repair paths and freshly passes dev plus affected controls. Existing guest
+and stack evidence applies through independently checked unchanged execution
+inputs and byte-identical representative rebuilds; see the results for exact scope.
+
+
 ## Developer-suite and tooling repairs — 2026-10-08
 
 Current package diagnostics and the single compiler-owned GNU-stack note restore

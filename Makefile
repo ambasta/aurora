@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-acceptance test-compiler test-image test-semantics test-semantics-stress test-unsigned test-uefi-span test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-round-robin test-console test-ipc-transaction test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-acceptance test-compiler test-image test-semantics test-semantics-stress test-unsigned test-uefi-span test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-round-robin test-console test-ipc-transaction test-client-disposal test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -107,7 +107,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-uefi-bar test-uefi-span smoke-uefi-bar smoke-uefi-span test-uefi-ivrs smoke-uefi-ivrs \
     test-pin-ledger test-uefi-pins smoke-uefi-pins test-dormant-tables test-uefi-tables smoke-uefi-tables \
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
-    test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-native-cap-contracts \
+    test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-client-disposal test-native-cap-contracts \
     run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
     test-developer-commands: aurora-test-context
 aurora-test-context:
@@ -469,6 +469,14 @@ test-ipc-transaction: compiler
 	AURORAC="$(IPC_TRANSACTION_COMPILER)" IPC_TRANSACTION_CAP_MIB="$(IPC_TRANSACTION_CAP_MIB)" ./scripts/kernel-ipc-transaction-tests.sh $(AURORA_TEST_IDENTITY_ARGS)
 
 test: test-ipc-transaction
+
+# Bounded recovery-plan policy shares the immutable selected compiler. Its
+# 128 MiB focused artifact cap is fixed and has no coverage-reducing override.
+.PHONY: test-client-disposal
+test-client-disposal: compiler
+	python3 -B -O tests/kernel-client-disposal-native.py --compiler "$(AURORAC)" $(AURORA_TEST_IDENTITY_ARGS)
+
+test: test-client-disposal
 
 # Compiler-free clock argv contracts; never boot QEMU or select a compiler here.
 .PHONY: test-emulator-clock

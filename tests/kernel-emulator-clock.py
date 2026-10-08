@@ -20,7 +20,7 @@ SPEC = importlib.util.spec_from_file_location("kernel_emulator_clock", ROOT / "s
 CLOCK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CLOCK)
 FIXED_ARGS = ["-icount", "shift=0,align=off,sleep=off"]
-SELECTED_NAMES_SHA256 = "8de8cbdb6c9811690811e802adeed75095d0335ca69901ade7b2f69b83e9608e"
+SELECTED_NAMES_SHA256 = "a5b6f5d5194dc6113bb6864fe3c2e4efa44faf5ab6a6fee42fe8dc9ecd2160ee"
 WRAPPERS = {
     "bios": (
         "kernel-protection-smoke.sh",
@@ -52,7 +52,8 @@ UNCHANGED = {
     "tests/kernel-boot-capacity.py": "a50b6cb2d0bb3b43f50afa3d8d8059c4504dbe633510eb43b8a1ab16c54c257b",
     "tests/kernel-uefi-budget-smoke.py": "51aaa29ba0f28f59576b7bbff451eafd913b306790f72bd1afc6b0839a853e93",
     "tests/kernel-uefi-dispatch-smoke.py": "506ff383b107ad1f4f05297c54e5179a73bcc05978a91f9429a389b5888f97f9",
-    "tests/kernel-uefi-user-phases-smoke.py": "8b85959a9f15aa872200fd552ae1fc08ec29da16b396922c05ebd97919e6e1ee",
+    # Recovery validator changed only for two disposal-denial profiles; its
+    # existing fixtures are compared against the accepted baseline separately.
 }
 
 
@@ -97,17 +98,17 @@ def shell_plan(*modes, data="", extra_env=None, root=ROOT, plan=True):
 
 
 class ClockContractTests(unittest.TestCase):
-    def test_existing_177_modes_plus_owned_allocation_profile(self):
+    def test_existing_177_modes_plus_disposal_and_owned_profiles(self):
         inventory = []
         for family, wrappers in WRAPPERS.items():
             for wrapper in wrappers:
                 inventory += [(family, mode) for mode in wrapper_modes(wrapper)]
-        self.assertEqual(len(inventory), 177)
-        self.assertEqual(len(set(inventory)), 177)
+        self.assertEqual(len(inventory), 179)
+        self.assertEqual(len(set(inventory)), 179)
         self.assertEqual(set(inventory) | {("uefi", "owned-bytes")}, set(CLOCK.MODE_CLOCKS))
         self.assertEqual(CLOCK.clock_profile("uefi", "owned-bytes"), CLOCK.ORIGINAL)
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
-        self.assertEqual(len(selected), 51)
+        self.assertEqual(len(selected), 53)
         self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 127)
         self.assertEqual(
             hashlib.sha256(("\n".join(sorted(selected)) + "\n").encode()).hexdigest(), SELECTED_NAMES_SHA256
@@ -117,7 +118,7 @@ class ClockContractTests(unittest.TestCase):
         for match in re.finditer(r"^ ([\w|_-]+)\)\n(.*?);;", build, re.MULTILINE | re.DOTALL):
             if "-DAURORA_UEFI_SERVICE_BUDGET" in match[2]:
                 admitted.extend(match[1].split("|"))
-        self.assertEqual(len(admitted), 51)
+        self.assertEqual(len(admitted), 53)
         self.assertEqual(set(admitted), set(selected))
         rows = CLOCK.mode_clock_rows()
         raw = json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
@@ -126,7 +127,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 183)
+        self.assertEqual(len(cases), 185)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -182,7 +183,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 141)
+        self.assertEqual(len(modes), 143)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):

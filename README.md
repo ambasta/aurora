@@ -25,7 +25,8 @@ The project is currently an experimental compiler and emulator-based kernel.
   token scanner. See the [library](library/README.md) and [examples](examples/).
 - **Kernel:** BIOS and UEFI boot, protected user-domain fixtures, bounded
   scheduling, copied request/reply IPC and service cancellation/restart in QEMU.
-  Three small Aurora policies participate in the UEFI dispatcher; trusted
+  Four small Aurora policies participate in the UEFI dispatcher, including a
+  [focused recovery-plan port](docs/kernel-client-disposal-results.md). Trusted
   C++/assembly owns memory, hardware and authority. See the [kernel](kernel/README.md) and [IPC checkpoint](docs/kernel-ipc-transition-integration-results.md).
 - **Storage experiments:** a host crash model and offline XFS header/root probes.
   See the [storage project](storage/README.md).

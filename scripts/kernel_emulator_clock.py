@@ -27,7 +27,7 @@ dispatch-policy-cursor dispatch-policy-mask dispatch-policy-output user-phases
 user-context user-retire-pending user-request-budget user-completion-budget
 user-request-bounds user-completion-bounds user-request-overflow
 user-completion-overflow user-pending user-role user-phase user-transaction user-epoch
-user-root user-unknown user-stale-grant
+user-root user-unknown user-stale-grant user-disposal-input user-disposal-output
 """.split()
 )
 

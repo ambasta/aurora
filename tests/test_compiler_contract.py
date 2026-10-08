@@ -1276,6 +1276,7 @@ class Controls(unittest.TestCase):
                     "test-uefi-budget",
                     "test-uefi-dispatch",
                     "test-uefi-user-phases",
+                    "test-client-disposal",
                 ),
             ),
             ("compiler", ("test-short-circuit",)),
@@ -1297,7 +1298,7 @@ class Controls(unittest.TestCase):
                     self.assertNotIn("kernel-round-robin-native.py", result.stdout)
         root_make = (ROOT / "Makefile").read_text()
         compiler_make = (ROOT / "compiler/Makefile").read_text()
-        self.assertIn("test: test-round-robin ", root_make)
+        self.assertRegex(root_make, r"(?m)^test:[^\n]*\btest-round-robin(?:[ \t]|$)")
         self.assertIn("test: test-native-cap-contracts", root_make)
         self.assertIn("test: test-short-circuit", compiler_make)
         self.assertIn("ROUND_ROBIN_TEST_CAP_MIB", c.FORWARDED)
@@ -1305,6 +1306,8 @@ class Controls(unittest.TestCase):
         self.assertIn("IPC_TRANSACTION_COMPILER", c.SELECTORS)
         self.assertIn("IPC_TRANSACTION_COMPILER_SHA256", c.PINS)
         self.assertIn("test: test-ipc-transaction", root_make)
+        self.assertIn("test: test-client-disposal", root_make)
+        self.assertIn("tests/kernel-client-disposal-native.py --compiler", root_make)
         context_targets = set()
         for line in root_make.replace("\\\n", " ").splitlines():
             targets, separator, prerequisite = line.partition(":")
@@ -1313,6 +1316,7 @@ class Controls(unittest.TestCase):
         self.assertTrue(
             {
                 "test-ipc-transaction",
+                "test-client-disposal",
                 "test-native-cap-contracts",
                 "test-emulator-clock",
                 "run",
