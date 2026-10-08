@@ -10,6 +10,7 @@ guest acceptance is claimed.
 from pathlib import Path
 import json
 import os
+import re
 import shlex
 import signal
 import shutil
@@ -41,6 +42,39 @@ SMOKE_SCRIPTS = (
     "kernel-uefi-dispatch-all.sh",
     "kernel-uefi-user-phases-all.sh",
 )
+
+
+def target_prerequisites(source, target):
+    """Collect every literal rule for a target, including continued rule lines."""
+    logical = re.sub(r"\\\r?\n", " ", source)
+    prerequisites = []
+    for line in logical.splitlines():
+        if not line or line.startswith("\t"):
+            continue
+        rule = line.split("#", 1)[0].split(";", 1)[0]
+        if ":" not in rule:
+            continue
+        targets, dependencies = rule.split(":", 1)
+        if "=" in dependencies:
+            continue  # Target-specific variable assignments are not prerequisites.
+        if target in targets.split():
+            prerequisites.extend(dependencies.lstrip(":").replace("|", " ").split())
+    return prerequisites
+
+
+class MakePrerequisiteParsing(unittest.TestCase):
+    def test_collects_fragmented_continued_and_shared_target_rules(self):
+        source = ("test: test-program-stream\n"
+                  "other: smoke\n"
+                  "test other: test-compiler " + chr(92) + "\n  test-console # retained gate\n"
+                  "test: test-library | prepare\n"
+                  "\t@echo smoke\n")
+        self.assertEqual(target_prerequisites(source, "test"),
+                         ["test-program-stream", "test-compiler", "test-console", "test-library", "prepare"])
+
+    def test_detects_smoke_in_later_clause_and_exact_target_names(self):
+        source = "test: test-compiler\ntest-extra: smoke-extra\ntest: smoke-console\n"
+        self.assertEqual(target_prerequisites(source, "test"), ["test-compiler", "smoke-console"])
 
 
 class ConsoleRouting(unittest.TestCase):
@@ -460,9 +494,9 @@ class ConsoleRouting(unittest.TestCase):
         self.assertEqual(len(self.calls()), 1)
         self.assertIn("--entry root --goal test", self.calls()[0])
         source = (self.repo / "Makefile").read_text()
-        prerequisites = source.split("\ntest: ", 1)[1].split("\n\n", 1)[0]
+        prerequisites = target_prerequisites(source, "test")
         self.assertIn("test-console", prerequisites)
-        self.assertNotIn("smoke", prerequisites)
+        self.assertFalse(any(name.startswith("smoke") for name in prerequisites), prerequisites)
 
     def test_make_help_discovers_both_public_console_gates(self):
         output = self.run_make("help")

@@ -68,7 +68,8 @@ remains native-only.
 
 A separately reviewed protected-command profile offers `upper`. Its
 [contract and current qualification](docs/program-console-contract.md) describe
-the exact build/review-pin gate, scoped guest evidence and final integration gates.
+automatic local build/image/stack checks for public commands, the separate
+review-pinned first-image qualification, scoped guest evidence and final integration gates.
 
 See [local development](docs/local-development.md) for dependencies, compiler and
 firmware options, build-only commands and troubleshooting. `make help` lists the

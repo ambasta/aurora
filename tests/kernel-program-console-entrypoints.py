@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""Synthetic local-admission/qualification routing; no compiler or guest executes."""
+
+from pathlib import Path
+import os
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+BASH = shutil.which("bash")
+MAKE = shutil.which("make")
+
+
+class Entrypoints(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="program-console-routing-")
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name)
+        self.repo = self.home / "repo"
+        self.scripts = self.repo / "scripts"
+        self.scripts.mkdir(parents=True)
+        self.bin = self.home / "bin"
+        self.bin.mkdir()
+        self.log = self.home / "calls"
+        self.env = {"PATH": str(self.bin), "HOME": str(self.home), "CALLS": str(self.log), "LC_ALL": "C"}
+        for name in (
+            "kernel-program-console.sh",
+            "kernel-program-console-smoke.sh",
+            "kernel-program-console-common.sh",
+            "uefi-firmware.sh",
+            "uefi-linker.sh",
+        ):
+            shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
+        shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
+        for name in ("bash", "dirname", "mkdir", "cat"):
+            (self.bin / name).symlink_to(shutil.which(name))
+        for name in ("qemu-system-x86_64", "g++", "make", "as", "ld", "objcopy", "nm", "objdump", "readelf"):
+            self.script(self.bin / name, 'echo unexpected-tool >> "$CALLS"; exit 93\n')
+        self.script(self.bin / "ld", 'printf "Supported emulations:\n i386pep\n"\n')
+        self.script(self.bin / "timeout", 'echo guest >> "$CALLS"; exit "${GUEST_STATUS:-33}"\n')
+        self.script(
+            self.bin / "python3",
+            """
+case "$*" in
+    "-B scripts/kernel_program_console_admission.py reviewed --mode "*)
+        echo reviewed >> "$CALLS"
+        if [[ -z "${PROGRAM_CONSOLE_REVIEW_SHA256:-}" ]]; then echo 'BLOCKED: external review missing'; exit 2; fi
+        exit "${REVIEW_STATUS:-0}" ;;
+    "-B scripts/kernel_program_console_admission.py checked --mode "*)
+        echo checked >> "$CALLS"; exit "${CHECK_STATUS:-0}" ;;
+    "-B tests/kernel-program-console-pty.py "*)
+        echo "pty|$*" >> "$CALLS"; exit "${PTY_STATUS:-0}" ;;
+    "-B scripts/kernel_uefi_console_clock.py "*)
+        echo clock >> "$CALLS"; exit 0 ;;
+    *) echo unexpected-python >> "$CALLS"; exit 93 ;;
+esac
+""",
+        )
+        self.script(
+            self.scripts / "kernel-uefi-build.sh",
+            """
+echo "build|$UEFI_MODE" >> "$CALLS"
+mkdir -p build/uefi
+if [[ "$UEFI_MODE" == normal ]]; then exit "${RESTORE_STATUS:-0}"; fi
+exit "${BUILD_STATUS:-0}"
+""",
+        )
+        firmware = self.home / "firmware.fd"
+        firmware.write_bytes(b"synthetic firmware, never executed")
+        self.env["OVMF"] = str(firmware)
+
+    def script(self, path, body):
+        path.write_text("#!/bin/bash\nset -eu\n" + body)
+        path.chmod(0o755)
+
+    def run_script(self, name="kernel-program-console-smoke.sh", args=(), env=None, expected=0):
+        result = subprocess.run(
+            [BASH, str(self.scripts / name), *args],
+            cwd=self.repo,
+            env=self.env | (env or {}),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, expected, result.stdout)
+        return result.stdout
+
+    def calls(self):
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def clear(self):
+        self.log.unlink(missing_ok=True)
+
+    def test_profile_builder_emits_automatic_admission(self):
+        script = (ROOT / "scripts/kernel-uefi-build.sh").read_text()
+        self.assertIn(
+            'python3 -B scripts/kernel_program_console_admission.py end-build --mode "$UEFI_MODE"\n'
+            '    python3 -B scripts/kernel_program_console_admission.py emit --mode "$UEFI_MODE"',
+            script,
+        )
+
+    def test_public_smoke_rebuilds_without_pin_and_restores(self):
+        for mode in ("program-console", "program-pending", "program-owner"):
+            self.run_script(args=(mode,))
+            self.assertEqual(
+                self.calls(),
+                [f"build|{mode}", f"pty|-B tests/kernel-program-console-pty.py --mode {mode}", "build|normal"],
+            )
+            self.clear()
+
+    def test_public_launch_rebuilds_checks_and_starts_original_clock(self):
+        self.run_script(name="kernel-program-console.sh")
+        self.assertEqual(self.calls(), ["build|program-console", "checked", "clock", "guest"])
+        self.clear()
+        self.run_script(name="kernel-program-console.sh", env={"GUEST_STATUS": "0"}, expected=1)
+        self.assertEqual(self.calls()[-1], "guest")
+
+    def test_qualification_never_rebuilds_before_reviewed_guest(self):
+        (self.repo / "build").mkdir()
+        self.run_script(args=("--qualification",), env={"PROGRAM_CONSOLE_REVIEW_SHA256": "a" * 64})
+        self.assertEqual(
+            self.calls(),
+            [
+                "reviewed",
+                "pty|-B tests/kernel-program-console-pty.py --mode program-console --qualification",
+                "build|normal",
+            ],
+        )
+        self.clear()
+        result = self.run_script(args=("--qualification",), expected=2)
+        self.assertIn("BLOCKED:", result)
+        self.assertEqual(self.calls(), ["reviewed"])
+        self.clear()
+        self.run_script(
+            args=("--qualification",), env={"PROGRAM_CONSOLE_REVIEW_SHA256": "a" * 64, "REVIEW_STATUS": "1"}, expected=1
+        )
+        self.assertEqual(self.calls(), ["reviewed"])
+
+    def test_build_admission_and_guest_failures_never_become_blocked(self):
+        for build, pty, restore, expected in (
+            (2, 0, 0, 2),
+            (19, 0, 0, 19),
+            (0, 2, 0, 2),
+            (0, 17, 19, 17),
+            (0, 0, 19, 19),
+        ):
+            result = self.run_script(
+                env={"BUILD_STATUS": str(build), "PTY_STATUS": str(pty), "RESTORE_STATUS": str(restore)},
+                expected=expected,
+            )
+            self.assertIn("FAIL:", result)
+            self.assertNotIn("BLOCKED:", result)
+            self.assertEqual(self.calls()[-1], "build|normal")
+            self.assertEqual(len(self.calls()), 2 if build else 3)
+            self.clear()
+        self.run_script(name="kernel-program-console.sh", env={"CHECK_STATUS": "1"}, expected=1)
+        self.assertEqual(self.calls(), ["build|program-console", "checked"])
+
+    def test_missing_prerequisites_block_before_any_mutation(self):
+        for env in (
+            {"QEMU": "missing-qemu"},
+            {"CXX": "missing-cxx"},
+            {"AURORAC": "missing-compiler"},
+            {"OVMF": str(self.home / "missing.fd")},
+            {"QEMU_DATA": str(self.home / "missing-data")},
+            {"UEFI_LD": "missing-linker"},
+        ):
+            result = self.run_script(env=env, expected=2)
+            self.assertIn("BLOCKED:", result)
+            self.assertEqual(self.calls(), [])
+            self.assertFalse((self.repo / "build").exists())
+
+    def test_invalid_controls_fail_before_any_mutation(self):
+        for env in (
+            {"UEFI_MODE": "normal"},
+            {"AURORA_TEST_CONTEXT": "context"},
+            {"KERNEL_TEST_FAULT": "1"},
+            {"OVMF_CODE": "code.fd"},
+            {"OVMF": "", "OVMF_CODE": "code.fd"},
+            {"OVMF": "", "OVMF_CODE": "same.fd", "OVMF_VARS": "same.fd"},
+        ):
+            result = self.run_script(env=env, expected=1)
+            self.assertIn("FAIL:", result)
+            self.assertEqual(self.calls(), [])
+        self.run_script(args=("not-a-mode",), expected=1)
+        self.assertEqual(self.calls(), [])
+
+    def test_public_make_routes(self):
+        for target, expected_calls in (
+            ("program-console-uefi", ["build|program-console", "checked", "clock", "guest"]),
+            (
+                "smoke-program-console-uefi",
+                [
+                    "build|program-console",
+                    "pty|-B tests/kernel-program-console-pty.py --mode program-console",
+                    "build|normal",
+                ],
+            ),
+        ):
+            result = subprocess.run(
+                [MAKE, target],
+                cwd=self.repo,
+                env=self.env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(self.calls(), expected_calls)
+            self.clear()
+
+
+if __name__ == "__main__":
+    unittest.main()

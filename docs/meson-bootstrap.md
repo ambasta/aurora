@@ -34,30 +34,38 @@ until the compiler can emit dependency files itself.
 ## Choose the checks for the change
 
 Before every merge, run both complete `dev` and `slow` suites on the final
-integrated source, including after conflict resolution. Focused checks are
-additional. Before releases, also complete root `make test`; a Meson pass is not
-full-native release qualification. Squash verified changes without rewriting
-existing main history.
+integrated source, including after conflict resolution. Before every
+compiler-affecting merge and every release, also complete root `make test`.
+Focused checks are additional; Meson is not complete Make-native qualification.
+Squash verified changes without rewriting existing main history.
 
+`dev` is quick feedback, including public developer-command routing and inventory
+consistency. `slow` holds complete longer integration/ABI and source-model runners;
+no cases are sampled away to meet a timing target. Fifteen formerly Make-only
+compiler source/oracle runners are now in `slow`, including constructor-return
+regressions in templates, arrays, decimals and enum composition.
 
-`dev` is the quick feedback set (41 tests). `slow` holds twelve longer exhaustive
-integration or ABI runners: block-io, sector-window, xfs-sector, xfs-file,
-method-spans-abi, json-profile, json-codecs, json-integers, json-lookup,
-borrowed-objects, borrowed-objects-abi and json-string-write.
-The borrowed-object smoke and malformed-IR gates remain in `dev`; the complete
-source/helper runner and handwritten ABI sweep remain in `slow`.
-The existing json-owned runner remains in `dev` for representative JSON and
-real owner-window coverage, alongside core/value/owner and partial package checks.
-No runner is sampled or weakened to meet a timing target.
+The checked inventory is `tests/compiler-test-inventory.json`: all 76 compiler
+Python files are runnable, including files imported as helpers. 73 have direct
+Make recipes: 71 are reachable from the root native graph and formatter/linter
+checks are focused targets. Three are supplemental/differential runners requiring independent
+inputs or qualification. 56 scripts are registered in Meson and 20 remain explicit
+gaps, including fixture-based ABI/IR, formatter/linter, artifact-managed UTF-8/XFS,
+and supplemental qualifications. Package dev registrations are partial selections;
+script registration alone does not imply complete native coverage. The inventory
+gate compares the actual Meson introspection commands and both Makefiles against
+that classification, failing on added/removed script membership or changed literal
+root-Make dependency reachability. It does not
+compare every argument, profile or suite membership. The standalone Make check
+validates files and Make membership; Meson membership is verified only inside the
+Meson invocation using its actual introspection file.
 
-`full` and an unfiltered `meson test` both run all 53 registered tests when the
-optional LSP is disabled. `dev` and `slow` are a disjoint, complete partition.
-The existing `core`, `bytes`, `compiler` and `packages` memberships are preserved,
-so dependency-selected suites still include their longer checks. In particular,
-`dev` no longer means the union of `core`, `bytes` and `packages`.
-Use two workers initially to bound concurrent compiler/test memory. Cold builds
-are separate from warm timings; see [the measured repair qualification](developer-suite-repair-results.md).
-The optional LSP tests remain separately registered under `lsp` when enabled.
+`full` and an unfiltered run cover every registered non-LSP test; `dev` and `slow`
+partition those registrations, not the complete Make graph. Use `meson test -C
+build/meson --list` for the current test count. Existing `core`, `bytes`, `compiler`
+and `packages` memberships remain available. Optional LSP tests use `lsp`.
+Use two workers to bound compiler/test memory; cold builds are separate from warm
+runs. Keep full Make and Meson phases sequential, with source unchanged throughout.
 
 ```sh
 meson test -C build/meson --suite core --num-processes 2 --print-errorlogs
@@ -76,8 +84,7 @@ Run `dev` for a quick cross-component pass. Run `slow` as well, or `full`,
 when qualifying all registered coverage; a `dev` pass alone does not cover the
 exhaustive JSON/storage/ABI sweeps. The Make full-native graph remains separate.
 For leaf documentation edits, also review content, commands and links. The final
-pre-merge `dev` and `slow` gate still applies; root `make test` is required before
-a release, not every ordinary edit.
+pre-merge `dev` and `slow` gate still applies; root `make test` is also required for compiler-affecting merges and releases.
 
 ## Named coverage
 

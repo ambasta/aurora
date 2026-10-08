@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Launch only an already built and independently reviewed exact image.
+# Routine developer launch: rebuild and automatically admit the local image.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-if [[ $# != 0 ]]; then echo 'Usage: scripts/kernel-program-console.sh (already reviewed image)' >&2; exit 2; fi
-if [[ -n "${AURORA_TEST_CONTEXT:-}" || -n "${UEFI_MODE:-}" ]]; then
-    echo 'Unset AURORA_TEST_CONTEXT and UEFI_MODE before interactive launch.' >&2; exit 2
+source scripts/kernel-program-console-common.sh
+if [[ $# != 0 ]]; then program_console_fail 'usage: scripts/kernel-program-console.sh'; exit 1; fi
+program_console_controls program-console
+program_console_preflight
+command -v timeout >/dev/null || { program_console_blocked 'missing dependency: timeout'; exit 2; }
+if UEFI_MODE=program-console ./scripts/kernel-uefi-build.sh; then :; else
+    status=$?; echo "FAIL: protected-console image build/admission exited $status" >&2; exit "$status"
 fi
-python3 -B scripts/kernel_program_console_admission.py reviewed --mode program-console
-qemu="${QEMU:-qemu-system-x86_64}"
-for tool in "$qemu" timeout python3; do command -v "$tool" >/dev/null; done
-source scripts/uefi-firmware.sh
-uefi_firmware_select
+python3 -B scripts/kernel_program_console_admission.py checked --mode program-console
 args=()
 if [[ -n "${QEMU_DATA:-}" ]]; then args+=(-L "$QEMU_DATA"); fi
 command=("$qemu" "${args[@]}" -machine q35 -accel tcg -cpu qemu64 -smp 1 -m 128M
@@ -26,4 +26,7 @@ timeout --foreground --kill-after=2 300 "${command[@]}"
 status=$?
 set -e
 if [[ "$status" == 33 ]]; then exit 0; fi
+echo "FAIL: protected console guest exited $status" >&2
+# A clean host exit without the guest's debug-exit success is not a pass.
+if [[ "$status" == 0 ]]; then exit 1; fi
 exit "$status"

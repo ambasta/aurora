@@ -409,9 +409,10 @@ def method_result_cases(suite):
         "Counter receiver=Counter(0u64);Report source=Report(42u64);Report result=receiver.take(source);"
         "source.set(0u64);return i64(result.get());", REPORT.replace("auto forwarded()", "auto take(Report r)"
         "const->Report{return r;}auto forwarded()")))
-    suite.check("class method result requires complete named return", program(
-        "return 42;", REPORT.replace("return result;", "return Report(value);", 1)),
-        reject=True)
+    suite.check("class method constructor return copies independent value", program(
+        "Counter c=Counter(42u64);Report r=c.snapshot();c.add(1u64);return i64(r.get());",
+        REPORT.replace("const Report result=Report(value);return result;",
+                       "return Report(value);", 1)))
 
 
 @dataclass(frozen=True)

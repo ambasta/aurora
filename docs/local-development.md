@@ -272,3 +272,14 @@ run fail. Logs and metrics remain in `build/kernel-console-pty.*` for BIOS or
 `build/uefi/kernel-console-pty.*` for UEFI, with the UEFI command receipt in
 `build/uefi/console-pty.clock.json`. Restoration builds an image; it is not an
 additional normal guest-boot gate.
+
+### Merge gates and retained test artifacts
+
+Compiler-affecting merges require final integrated Meson `dev`, Meson `slow`, and
+root `make test`, each as a separate completed phase. Meson registrations remain
+partial against Make; `tests/compiler-test-inventory.json` and the developer
+inventory gate record the remaining gaps. Focused runs do not replace these gates.
+The supervised Make run sets TMPDIR/TMP/TEMP to its retained `build/test-contract-*/tmp`
+directory. Artifact-capable JSON, UTF-8, geometry and ABI recipes also select unique
+`build/` descendants explicitly. A failed run keeps its evidence there; no cleanup
+of unrelated temporary directories is performed.

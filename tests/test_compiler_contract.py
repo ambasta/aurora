@@ -474,6 +474,16 @@ class Controls(unittest.TestCase):
         self.assertEqual(len(paths), 1)
         return paths[0], json.loads(paths[0].read_text())
 
+    def test_every_subprocess_uses_retained_build_temporary_root(self):
+        os.environ.update(TMPDIR='/unrelated-user-tmp', TMP='/other-tmp', TEMP='/another-tmp')
+        calls = self.simulate()
+        path, record = self.latest_attempt()
+        expected = str(path.parent / 'tmp')
+        self.assertTrue(Path(expected).is_dir())
+        for _, _, env in calls:
+            for name in ('TMPDIR', 'TMP', 'TEMP'):
+                self.assertEqual(env[name], expected)
+
     def test_failed_build_preserves_plan(self):
         with self.assertRaises(c.ContractError):
             self.simulate(build_status=7)
