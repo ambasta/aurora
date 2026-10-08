@@ -264,7 +264,7 @@ class NativeRunner:
             require(
                 result.returncode == 1 and re.fullmatch(
                     rf"(?:{re.escape(str(input_path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
-                    r"AU(?:1001|200[12]|3001|4001): [^\n]+\n",
+                    r"AU(?:1001|200[123]|3001|4001): [^\n]+\n",
                     result.stderr.decode(errors="strict"),
                 ) is not None,
                 f"{case.name}: expected normal compiler rejection, got {result.returncode}: "

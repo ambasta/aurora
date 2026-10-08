@@ -82,11 +82,18 @@ reported; there is no recovery or multi-error claim. The opt-in
 graph validation. Severity defaults to `error`; warning-only JSON has `success:
 true`. Ordinary `aurorac --check` does not enable lint.
 
-Codes are explicit stable families, not inferred from message strings:
+Codes are explicit stable classifications, not inferred from message strings.
+The leading family reflects the reporting subsystem, but does not replace the
+failure category: recognized unsupported field storage is AU2003, not an
+unexpected-token AU2001. Add an explicit enum/catalog entry for a distinct stable
+category and preserve it through frontend, imports and renderers; do not classify
+by message matching. Existing broad legacy families remain below:
+
 
 - AU1001: unsupported lexical character
-- AU2001: parser rejection / unexpected token
+- AU2001: unexpected token or legacy general parser rejection
 - AU2002: parser nesting limit
+- AU2003: recognized class-field type with unsupported storage
 - AU3001: semantic, lifetime or verified-IR rejection
 - AU4001: module loading or resolution rejection, including source I/O
 - AU5001: invalid command-line invocation
@@ -152,3 +159,10 @@ fresh CLI, formatter/lint, overlay, module and actual-server checks, the origina
 reproduction and emitted-output preservation. Historical identical-stderr claims
 above describe the earlier increment; they do not constrain the corrected text
 rendering or structured message payloads.
+
+Unsupported class-field storage reports AU2003 with the same complete type range
+and supported-storage explanation as before. It does not accept new field types.
+The shared parser produces this classification directly; compiler text/JSON,
+formatter and imported diagnostics preserve it. AU2001 syntax/EOF and AU2002
+nesting controls remain separate. Source case identities and exact message
+oracles are unchanged by this classification-only correction.

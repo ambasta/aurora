@@ -83,8 +83,8 @@ void checkUnsupportedFieldTypes() {
                 aurora::Parser(aurora::lex(text, "field.au")).parse();
                 require(false, "unsupported field type accepted");
             } catch (const aurora::Error &error) {
-                require(error.diagnostic.code == aurora::DiagnosticCode::UnexpectedToken,
-                        "field rejection retains parser diagnostic family");
+                require(error.diagnostic.code == aurora::DiagnosticCode::UnsupportedFieldType,
+                        "field rejection identifies unsupported storage, not unexpected syntax");
                 require(
                     std::string(error.what()) ==
                         "unsupported class field type '" + std::string(type) +

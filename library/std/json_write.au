@@ -105,8 +105,8 @@ export namespace std {
     // failure. They preserve bytes, length, capacity and committed accounting.
     // Completed argument side effects are outside this transaction; fail-stop
     // faults do not unwind. Input and output must have distinct storage owners.
-    auto append_json_string(ByteBuffer& output, builtin::span<const u8> input, i64 offset, i64 count) ->
-        JsonStringAppendResult {
+    auto append_json_string(ByteBuffer& output, builtin::span<const u8> input, i64 offset,
+        i64 count) -> JsonStringAppendResult {
         if (offset < 0 || count < 0 || offset > input.size()) {
             return JsonStringAppendResult(JsonStringAppendStatus::out_of_range, 0);
         }

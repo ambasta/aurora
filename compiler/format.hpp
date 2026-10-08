@@ -162,7 +162,16 @@ inline std::string layout(const LexedSource &source, const Program &program) {
     };
     std::vector<Brace> braces;
     std::string result;
-    std::size_t column = 0, parentheses = 0;
+    std::size_t column = 0, parentheses = 0, lineStart = 0;
+    // Only grammar-shaped boundaries can become soft breaks. Keep candidates
+    // until the line overflows, so the decision includes the whole pending atom
+    // rather than splitting whichever token happens to cross the byte limit.
+    class Break {
+    public:
+        std::size_t offset, depth, gap;
+        unsigned priority;
+    };
+    std::vector<Break> breaks;
     bool hardBreak = false;
     bool previousUnary = false, previousTemplateOpen = false;
     std::string previous;
@@ -174,6 +183,8 @@ inline std::string layout(const LexedSource &source, const Program &program) {
             result += '\n';
         }
         column = 0;
+        lineStart = result.size();
+        breaks.clear();
     };
     const auto blankLine = [&]() {
         newline();
@@ -181,6 +192,7 @@ inline std::string layout(const LexedSource &source, const Program &program) {
             if (result.size() == sourceLimit)
                 throw Error(DiagnosticCode::Internal, "formatted output exceeds 1 MiB bound");
             result += '\n';
+            lineStart = result.size();
         }
     };
     const auto append = [&](std::string_view text, std::size_t depth) {
@@ -267,27 +279,46 @@ inline std::string layout(const LexedSource &source, const Program &program) {
             space = false;
         if (column != 0 && !space && !joinsWithoutChangingTokens(previous, text))
             space = true;
-        // A qualified name is one soft-wrap unit. Measure its adjacent token
-        // group only at the start, so even long scope chains take linear work.
-        // Comments remain hard boundaries and are never moved across a token.
-        const auto qualifiedContinuation = [&](std::size_t at) {
-            return at > 0 && !pieces[at - 1].comment && !pieces[at].comment &&
-                   (pieces[at - 1].text == "::" || pieces[at].text == "::");
-        };
-        const bool continuesQualified = qualifiedContinuation(index);
-        std::size_t wrapWidth = text.size();
-        if (!continuesQualified)
-            for (std::size_t next = index + 1; next < pieces.size() && qualifiedContinuation(next); ++next)
-                wrapWidth += pieces[next].text.size();
-        if (!continuesQualified && column != 0 && column + (space ? 1 : 0) + wrapWidth > columnLimit) {
-            newline();
-            // A wrapped token/group receives one continuation level beyond its block.
-            // An oversized indivisible name retains the existing long-line finding.
-            ++depth;
-        }
+        // Commas and AST binary operators are preferred over opening a list
+        // or breaking after an assignment/return/result-type introducer. No
+        // candidate exists inside a member/scope chain, around unary operators,
+        // before call/index punctuation, or before a closing delimiter.
+        unsigned priority = 0;
+        if (binary || previous == ",")
+            priority = 2;
+        else if (previous == "=" || previous == "return" || previous == "->" ||
+                 ((previous == "(" || previous == "[") && text != ")" && text != "]"))
+            priority = 1;
+        if (priority != 0 && column != 0)
+            breaks.push_back({result.size(), braces.size() + 1, space ? 1u : 0u, priority});
         if (column != 0 && space)
             append(" ", depth);
         append(text, depth);
+        while (column > columnLimit && !breaks.empty()) {
+            // Prefer the strongest, latest boundary whose prefix fits. If an
+            // indivisible prefix is itself oversized, emit it intact at the
+            // first available boundary and retain its long-line finding.
+            auto chosen = breaks.begin();
+            bool fits = false;
+            for (auto candidate = breaks.begin(); candidate != breaks.end(); ++candidate) {
+                if (candidate->offset - lineStart > columnLimit)
+                    break;
+                if (!fits || candidate->priority >= chosen->priority) {
+                    chosen = candidate;
+                    fits = true;
+                }
+            }
+            const auto boundary = *chosen;
+            const auto added = 1 + boundary.depth * indentWidth;
+            if (added - boundary.gap > sourceLimit - result.size())
+                throw Error(DiagnosticCode::Internal, "formatted output exceeds 1 MiB bound");
+            result.replace(boundary.offset, boundary.gap, "\n" + std::string(boundary.depth * indentWidth, ' '));
+            breaks.erase(breaks.begin(), chosen + 1);
+            for (auto &candidate : breaks)
+                candidate.offset += added - boundary.gap;
+            lineStart = boundary.offset + 1;
+            column = result.size() - lineStart;
+        }
         if (text == "(")
             ++parentheses;
         else if (text == ")") {

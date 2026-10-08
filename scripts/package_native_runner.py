@@ -289,7 +289,7 @@ class PackageRunner:
                 # comparing the explanation. Never strip location-like user content.
                 match = re.fullmatch(
                     rf"(?:{re.escape(str(path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
-                    r"AU(?:1001|200[12]|3001|4001): ([^\n]+)\n",
+                    r"AU(?:1001|200[123]|3001|4001): ([^\n]+)\n",
                     text,
                 )
                 require(match is not None, label + " malformed rejection: " + text)

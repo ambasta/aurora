@@ -60,7 +60,7 @@ def main():
         unsupported = root / "field.au"
         field_text = "module x; class Bad { builtin::span<const u8> view; };"
         unsupported.write_text(field_text)
-        field = json.loads(run(["--check", "--diagnostics=json", unsupported], 2, "AU2001").stderr)["diagnostics"][0]
+        field = json.loads(run(["--check", "--diagnostics=json", unsupported], 2, "AU2003").stderr)["diagnostics"][0]
         require(
             field["message"] == "unsupported class field type 'builtin::span<const u8>': "
             "class fields require scalar, class, private fixed-array or private owned-byte storage",

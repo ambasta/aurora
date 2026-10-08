@@ -18,7 +18,9 @@ kernel or hardware qualification is claimed.
 
 Binary operators keep spaces before parenthesized operands, unary operators stay
 attached, and four affected library/example files have canonical qualified names.
-Unsupported class-field types receive a type-located AU2001 diagnostic without
+Structural wrapping prefers commas and binary operators while keeping member
+and qualified access intact, including oversized atoms with width findings.
+Unsupported class-field types receive a type-located AU2003 diagnostic without
 expanding the accepted language. See the [repair scope and required gates](../compiler/FORMAT.md#parenthesized-operands-and-unsupported-fields--2026-10-08).
 
 

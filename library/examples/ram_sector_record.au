@@ -21,29 +21,29 @@ auto main(builtin::ByteRegion region, i64 sector_count, i64 _reserved) -> i64 {
     if (header.write_be32(0, 1096110641u64) != std::ByteWriteStatus::success) {
         return 1;
     }
-    if (header.write_le16(4, 1u64) != std::ByteWriteStatus::success || header.write_le16(6, 512u64) !=
-        std::ByteWriteStatus::success || header.write_le64(8, u64(sector_count)) != std::ByteWriteStatus::success ||
-        header.write_le64(16, 0u64) != std::ByteWriteStatus::success) {
+    if (header.write_le16(4, 1u64) != std::ByteWriteStatus::success || header.write_le16(6, 512u64)
+        != std::ByteWriteStatus::success || header.write_le64(8, u64(sector_count)) != std::ByteWriteStatus::success
+        || header.write_le64(16, 0u64) != std::ByteWriteStatus::success) {
         return 2;
     }
     if (sector.write_record(0, header) != std::ByteWriteStatus::success) {
         return 3;
     }
     std::BinaryBuffer64 trailer = std::BinaryBuffer64();
-    if (trailer.write_be16(62, 21930u64) != std::ByteWriteStatus::success || sector.write_record(448, trailer) !=
-        std::ByteWriteStatus::success) {
+    if (trailer.write_be16(62, 21930u64) != std::ByteWriteStatus::success || sector.write_record(448, trailer)
+        != std::ByteWriteStatus::success) {
         return 4;
     }
     if (device.write_sector(0, sector) != storage::SectorIoStatus::success) {
         return 15;
     }
     const storage::SectorGeometry geometry = device.geometry();
-    if (geometry.sector_size_bytes() != 512u64 || geometry.sector_count() != u64(sector_count) || !geometry.can_write())
-        {
+    if (geometry.sector_size_bytes() != 512u64 || geometry.sector_count() != u64(sector_count)
+        || !geometry.can_write()) {
         return 5;
     }
-    if (device.flush(storage::SectorFlushMode::visibility) != storage::SectorFlushStatus::volatile_complete || device.
-        flush(storage::SectorFlushMode::durable) != storage::SectorFlushStatus::unsupported) {
+    if (device.flush(storage::SectorFlushMode::visibility) != storage::SectorFlushStatus::volatile_complete
+        || device.flush(storage::SectorFlushMode::durable) != storage::SectorFlushStatus::unsupported) {
         return 6;
     }
     const storage::SectorReadResult saved = device.read_sector(0);
@@ -57,8 +57,8 @@ auto main(builtin::ByteRegion region, i64 sector_count, i64 _reserved) -> i64 {
     const storage::Sector512 snapshot = saved.sector_or_zero();
     const storage::RecordReadResult saved_header = snapshot.read_record(0);
     const storage::RecordReadResult saved_trailer = snapshot.read_record(448);
-    if (saved_header.status() != std::ByteReadStatus::success || saved_trailer.status() != std::ByteReadStatus::success)
-        {
+    if (saved_header.status() != std::ByteReadStatus::success || saved_trailer.status()
+        != std::ByteReadStatus::success) {
         return 9;
     }
     const std::BinaryBuffer64 zero_record = std::BinaryBuffer64();
