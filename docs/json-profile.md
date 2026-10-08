@@ -160,3 +160,10 @@ Direct native runner: `python3 -B tests/compiler/json_profile.py COMPILER
 --compiler-sha256 REVIEWED_DIGEST --artifacts FRESH_DIRECTORY`, repeated with `-O`.
 `--self-test-only` runs compiler-free oracle controls only. Generated sources,
 assembly, complete observations, diagnostics and identities remain retained.
+
+## Qualified scalar-codec follow-on
+
+The [scalar codecs](json-codecs.md) share string escape reading with this scanner.
+Fresh ordinary/optimized regressions and focused public Make passed; see
+[results](json-codecs-results.md). Token/document limits are unchanged. Scalar
+reading alone neither validates a whole string nor replaces host JSON support.

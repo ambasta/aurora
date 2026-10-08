@@ -1,5 +1,17 @@
 # Completeness and acceptance matrix
 
+## JSON scalar codecs — 2026-10-08
+
+A shared scalar-valid string reader and canonical escaped-scalar copied result
+reuse existing spans and UTF-8, keeping ByteBuffer generic. Fresh ordinary and
+optimized gates each passed 1,942 codec cases/19,781 full-width observations,
+45 rejections and 431 hosted checks; original scanner regressions each passed
+2,111 cases/10,768 observations/52 rejections. Separate real owner-window tests
+cover up to 8,192-byte input; the public focused Make gate passed with the reused
+reviewed compiler. See [contract](json-codecs.md) and [results](json-codecs-results.md).
+This is not an owned string, DOM, bulk writer API, whole-document serializer or
+replacement of host nlohmann; no new full-native or hardware claim follows.
+
 ## Reconstructed readonly owned-byte views — 2026-10-08
 
 The [bounded extension](../compiler/READONLY-OWNED-SPANS.md) provides one logical

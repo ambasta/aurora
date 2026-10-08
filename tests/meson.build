@@ -178,3 +178,11 @@ test('logical-spans-abi', python,
      args: ['-B', '-O', files('compiler/logical_spans_abi.py'), logical_spans_abi],
      depends: logical_spans_abi, suite: ['dev', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
+
+# Single-scalar codecs retain their own independent oracle and hosted composition.
+test(
+    'json-codecs', python,
+    args: ['-B', '-O', files('compiler/json_codecs.py'), aurorac, '--developer-selected-compiler'],
+    depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
+    workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
+)
