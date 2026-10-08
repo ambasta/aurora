@@ -799,11 +799,17 @@ class SemanticAnalyzer {
         // Resolve receiver identity first, then snapshot each argument at its
         // left-to-right position before acquiring synchronous receiver authority.
         std::vector<int> arguments(callee.params.size(), 0), snapshots;
+        std::vector<int> spanArguments(callee.params.size(), 0), spanBorrows;
         bool packed = false;
         for (std::size_t index = 0; index < callee.params.size(); ++index) {
             const auto &parameterType = callee.params[index].type;
             const auto &argument = value->args[index + first];
-            if (parameterType.isClass()) {
+            if (parameterType.isSpan()) {
+                packed = true;
+                const int borrowed = acquireSpan(argument);
+                spanArguments[index] = offset(borrowed);
+                spanBorrows.push_back(borrowed);
+            } else if (parameterType.isClass()) {
                 packed = true;
                 if (argument->op != "name")
                     fail(argument->token, "class argument requires a complete local name");
@@ -839,9 +845,12 @@ class SemanticAnalyzer {
             }
         }
         emit(ir::MethodCall{
-            callee.name, receiverOffset, packed ? arguments : std::vector<int>{}, destination, receiverFieldIndex});
+            callee.name, receiverOffset, packed ? arguments : std::vector<int>{}, destination, receiverFieldIndex,
+            spanBorrows.empty() ? std::vector<int>{} : spanArguments});
         for (int snapshot : snapshots)
             emit(ir::EndObject{snapshot});
+        for (auto it = spanBorrows.rbegin(); it != spanBorrows.rend(); ++it)
+            releaseSpan(*it, true);
         return callee.result;
     }
     Type callFunction(ExpressionPtr expression, const Function &callee, const StatementPtr &resultBinding = nullptr) {
@@ -1848,7 +1857,8 @@ public:
                     owningClass(candidate.result))
                     fail(candidate.token, "methods require scalar, enum or copyable class results");
                 for (const auto &parameter : candidate.params)
-                    if ((!scalarValue(parameter.type) && !parameter.type.isClass()) || owningClass(parameter.type))
+                    if ((!scalarValue(parameter.type) && !parameter.type.isClass() && !parameter.type.isSpan()) ||
+                        owningClass(parameter.type))
                         fail(candidate.token, "methods require scalar, enum or copyable class parameters");
             }
             auto checkBoundaryType = [&](const Type &type) {

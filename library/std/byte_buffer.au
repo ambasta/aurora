@@ -77,6 +77,40 @@ export namespace std {
             return true;
         }
 
+        auto try_append_bytes(builtin::span<const u8> input) -> bool {
+            if (!payload.ok()) {
+                return false;
+            }
+            const i64 count = input.size();
+            if (count > 9223372036854775807 - length) {
+                return false;
+            }
+            const i64 required = length + count;
+            if (required > payload.size()) {
+                i64 target = 1;
+                if (payload.size() > 0) {
+                    if (payload.size() > 4611686018427387903) {
+                        target = 9223372036854775807;
+                    } else {
+                        target = payload.size() * 2;
+                    }
+                }
+                if (target < required) {
+                    target = required;
+                }
+                if (!payload.try_resize(target)) {
+                    return false;
+                }
+            }
+            i64 index = 0;
+            while (index < count) {
+                payload.set(length + index, input.at(index));
+                index = index + 1;
+            }
+            length = required;
+            return true;
+        }
+
         auto try_truncate(i64 new_size) -> bool {
             if (!payload.ok() || new_size < 0 || new_size > length) {
                 return false;
