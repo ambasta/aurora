@@ -470,3 +470,11 @@ The planner reports an explicit mapping kind, EOF-bounded valid-byte count and
 written-only LBA. All records are validated before any sector is selected.
 Trailing preallocation, empty files, Btrees and attributes remain unsupported.
 See the [contract and qualification status](../docs/xfs-file-contract.md).
+
+## Native JSON candidate
+
+`std.json` scans bounded JSON tokens and validates complete documents with copied
+reports. The [contract](../docs/json-profile.md) defines limits, strict scalar-valid
+Unicode, duplicate-key acceptance and spelling-only numbers. Reconstructed source
+passed fresh focused tests and independent review; see the
+[results](../docs/json-profile-results.md). No DOM or host replacement is claimed.
