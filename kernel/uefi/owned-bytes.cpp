@@ -17,6 +17,8 @@
 
 #include <array>
 #include <span>
+#include <optional>
+#include <utility>
 
 extern "C" std::int64_t
 __au_runtime_bytes_kernel_entry(std::uint64_t region, std::int64_t length, std::int64_t selector) noexcept;
@@ -76,10 +78,66 @@ bool zero(std::span<std::byte> backing, std::size_t size) noexcept {
         Serial::number(state.releases);
         Serial::text(" used=0\r\n");
     }
+    // Real alternating leases force owners onto pages 1/3 and 5/7.
+    std::array<std::optional<memory::PageLease>, Region::pool_pages> holders;
+    volatile std::byte *data = backing.data();
+    for (std::size_t index = 0; index < backing.size(); ++index) {
+        data[index] = std::byte{0xa5};
+    }
+    for (std::size_t index = 0; index < holders.size(); ++index) {
+        auto lease = pool.acquire();
+        if (!lease || pool.address(*lease) != base + index * Region::page_bytes) {
+            return false;
+        }
+        holders[index].emplace(std::move(*lease));
+    }
+    for (std::size_t index = 1; index < holders.size(); index += 2) {
+        if (!pool.release(*holders[index])) {
+            return false;
+        }
+        holders[index].reset();
+    }
+    const auto fragmented = __au_runtime_bytes_kernel_entry(byte_region.id(), 4097, 0);
+    const auto state = byte_region.metrics();
+    if (fragmented != 42 || pool.used() != 8 || state.used != 0 || state.live_allocations != 0 ||
+        state.held_pages != 0 || state.retained_pages != 0 || state.successful_allocations != 8 ||
+        state.releases != 8 || state.peak_live_allocations != 2 || state.peak_used != payload_quota ||
+        state.peak_held_pages != 4) {
+        return false;
+    }
+    for (std::size_t index = 0; index < holders.size(); ++index) {
+        const auto expected = (index == 1 || index == 3 || index == 5 || index == 7) ? std::byte{0} : std::byte{0xa5};
+        for (std::size_t byte = 0; byte < Region::page_bytes; ++byte) {
+            if (data[index * Region::page_bytes + byte] != expected) {
+                return false;
+            }
+        }
+        if (index % 2 == 0 && pool.address(*holders[index]) != base + index * Region::page_bytes) {
+            return false;
+        }
+    }
+    for (std::size_t index = 0; index < holders.size(); index += 2) {
+        if (!pool.release(*holders[index])) {
+            return false;
+        }
+    }
+    if (pool.used() != 0) {
+        return false;
+    }
+    Serial::text("AURORA_UEFI_OWNED_BYTES_FRAGMENTED: length=4097 owners=2 pages=1,3,5,7 holders=8 preserved=1 "
+                 "releases=8 used=0\r\n");
+    const auto empty = __au_runtime_bytes_kernel_entry(byte_region.id(), 0, 0);
+    const auto final = byte_region.metrics();
+    if (empty != 42 || pool.used() != 0 || final.used != 0 || final.live_allocations != 0 || final.held_pages != 0 ||
+        final.retained_pages != 0 || final.successful_allocations != 9 || final.releases != 9 ||
+        final.peak_live_allocations != 2 || final.peak_used != payload_quota || final.peak_held_pages != 4) {
+        return false;
+    }
+    Serial::text("AURORA_UEFI_OWNED_BYTES_VIEWS: crossing=4095,4096 empty=1 allocations=9 releases=9 used=0\r\n");
     if (!byte_region.close() || byte_region.is_open() || byte_region.faulted() || pool.used() != 0) {
         return false;
     }
-    Serial::text("AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=6 releases=6\r\n");
+    Serial::text("AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=9 releases=9\r\n");
     return true;
 }
 } // namespace aurora::uefi

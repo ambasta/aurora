@@ -106,7 +106,12 @@ def validate(status, text, mode):
         "AURORA_UEFI_OWNED_BYTES: length=65 owners=2 pages=2 releases=2 used=0",
         "AURORA_UEFI_OWNED_BYTES: length=513 owners=2 pages=2 releases=4 used=0",
         "AURORA_UEFI_OWNED_BYTES: length=4097 owners=2 pages=4 releases=6 used=0",
-        "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=6 releases=6",
+        (
+            "AURORA_UEFI_OWNED_BYTES_FRAGMENTED: length=4097 owners=2 pages=1,3,5,7 "
+            "holders=8 preserved=1 releases=8 used=0"
+        ),
+        "AURORA_UEFI_OWNED_BYTES_VIEWS: crossing=4095,4096 empty=1 allocations=9 releases=9 used=0",
+        "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=9 releases=9",
     ]
     actual_owned = [line.strip() for line in text.splitlines() if "AURORA_UEFI_OWNED_BYTES" in line]
     need(actual_owned == (owned_lines if mode == "owned-bytes" else []), "Wrong owned-byte lifecycle evidence")
@@ -163,7 +168,10 @@ def self_test():
         "AURORA_UEFI_OWNED_BYTES: length=65 owners=2 pages=2 releases=2 used=0\n"
         "AURORA_UEFI_OWNED_BYTES: length=513 owners=2 pages=2 releases=4 used=0\n"
         "AURORA_UEFI_OWNED_BYTES: length=4097 owners=2 pages=4 releases=6 used=0\n"
-        "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=6 releases=6\n"
+        "AURORA_UEFI_OWNED_BYTES_FRAGMENTED: length=4097 owners=2 pages=1,3,5,7 "
+        "holders=8 preserved=1 releases=8 used=0\n"
+        "AURORA_UEFI_OWNED_BYTES_VIEWS: crossing=4095,4096 empty=1 allocations=9 releases=9 used=0\n"
+        "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=9 releases=9\n"
     )
     cases["owned-bytes"] = (33, success.replace("AURORA_UEFI_LANGUAGE_OK:", records + "AURORA_UEFI_LANGUAGE_OK:"))
     cases["stale-exhausted"] = (
@@ -220,6 +228,13 @@ def self_test():
                 ("releases=6", "releases=5"),
                 ("used=0", "used=1"),
                 ("quota=8194", "quota=8193"),
+                ("pages=1,3,5,7", "pages=1,2,3,4"),
+                ("holders=8", "holders=7"),
+                ("preserved=1", "preserved=0"),
+                ("crossing=4095,4096", "crossing=4094,4095"),
+                ("empty=1", "empty=0"),
+                ("allocations=9", "allocations=10"),
+                ("releases=9", "releases=8"),
             ]:
                 broken.append((status, text.replace(old, new)))
         if mode in ("wp", "nx"):

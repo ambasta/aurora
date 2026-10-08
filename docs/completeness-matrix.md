@@ -1282,3 +1282,12 @@ initial Manifest scratch-path failure was corrected and rerun. The later PR47
 composition also passed the three profiles on its current overlay-aware compiler
 in 16.96 seconds, without a duplicate compiler build. No full aggregate
 qualification is claimed. See [coverage and limits](meson-bootstrap.md#semantic-package-feedback).
+
+## Reconstructed kernel readonly-owner views, fresh local gates passed
+
+An isolated candidate extends the existing owned-bytes profile with a readonly
+Aurora consumer, real fragmented holders, empty ownership and exact five-import
+admission. The prior local implementation/evidence was lost in a rollback. This
+reconstruction has fresh build-only, host and actual-guest passes after independent
+pre-guest review; final evidence review/publication remain separate. No prior pass
+transfers. See [status](kernel-owned-views-results.md).

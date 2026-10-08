@@ -19,6 +19,7 @@ import subprocess
 import sys
 
 ENTRY = "__au_v_m1_18kernel_owned_bytes_n0__d24kernel_owned_bytes_entry"
+CONSUMER = "__au_v_m1_18kernel_owned_bytes_n0__d13consume_bytes"
 TRANSFER = "__au_v_m1_18kernel_owned_bytes_n0__d10pass_bytes"
 BRIDGE = "__au_runtime_bytes_kernel_entry"
 WALK = "_ZZNK6aurora4uefi10PageTables6verifyEmRKNS0_5BytesEPKNS0_18LocalApicAdmissionEENKUlOT_mjmE_clIRKSA_EEbS9_mjm"
@@ -307,6 +308,7 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False):
                     "stos %eax,%es:(%rdi)",
                     "stos %rax,%es:(%rdi)",
                     "movsq %ds:(%rsi),%es:(%rdi)",
+                    "movsl %ds:(%rsi),%es:(%rdi)",
                 ),
                 "Unsupported repeated instruction",
             )
@@ -565,12 +567,12 @@ def generated_records(source, functions, symbols, instructions):
         elif current and line and not line.startswith(".") and not line.endswith(":"):
             bodies[current].append(line)
     require(
-        set(bodies) == {ENTRY, TRANSFER, "aurora_reflect_size", "aurora_reflect_field_count"},
+        set(bodies) == {ENTRY, TRANSFER, CONSUMER, "aurora_reflect_size", "aurora_reflect_field_count"},
         "Unexpected generated function inventory",
     )
     records = {}
-    runtime = {"__au_runtime_bytes_" + suffix for suffix in ("allocate", "at", "set", "drop")}
-    for name in (ENTRY, TRANSFER):
+    runtime = {"__au_runtime_bytes_" + suffix for suffix in ("allocate", "at", "set", "drop", "borrow_length")}
+    for name in (ENTRY, TRANSFER, CONSUMER):
         body = bodies[name]
         require(body[:2] == ["pushq %rbp", "movq %rsp, %rbp"], "Unknown generated frame prologue")
         frame = re.fullmatch(r"subq \$([0-9]+), %rsp", body[2])
@@ -590,7 +592,9 @@ def generated_records(source, functions, symbols, instructions):
         expected_calls = [line.removeprefix("call ") for line in body if line.startswith("call ")]
         actual_calls = [row for row in functions[name]["calls"] if row["kind"] == "call"]
         require(expected_calls == [row["target"] for row in actual_calls], "Generated source/linked call mismatch")
-        allowed = runtime | ({TRANSFER} if name == ENTRY else set())
+        allowed = runtime | ({TRANSFER, CONSUMER} if name == ENTRY else set())
+        if name == CONSUMER:
+            allowed = {"__au_runtime_bytes_at"}
         require(set(expected_calls) <= allowed, "Unknown generated resource/helper call")
         base = local_bytes + 16  # incoming return address and saved rbp
         resource = [row for row in actual_calls if row["target"] == TRANSFER]
@@ -598,14 +602,21 @@ def generated_records(source, functions, symbols, instructions):
         source_allocations = [
             int(match[1]) for line in body[3:] if (match := re.fullmatch(r"subq \$([0-9]+), %rsp", line))
         ]
-        require(all(count in (8, 48) for count in source_allocations), "Unknown generated temporary allocation")
+        require(all(count in (8, 48, 64) for count in source_allocations), "Unknown generated temporary allocation")
         if name == ENTRY:
             require(
                 source_allocations.count(48) == 1 and resource[0]["live_bytes"] == base + 48,
                 "Resource argument record no longer has its exact 48-byte extent",
             )
+            consumers = [row for row in actual_calls if row["target"] == CONSUMER]
+            require(
+                source_allocations.count(64) == 3
+                and len(consumers) == 3
+                and all(row["live_bytes"] == base + 64 for row in consumers),
+                "Span argument record no longer has its exact 64-byte extent",
+            )
         else:
-            require(not source_allocations, "Unexpected transfer-function temporary record")
+            require(not source_allocations, "Unexpected helper-function temporary record")
         runtime_calls = [row for row in actual_calls if row["target"] in runtime]
         expression = max(
             [row["live_bytes"] - base for row in runtime_calls] + [max(0, functions[name]["push_peak"] - base)]
@@ -615,6 +626,7 @@ def generated_records(source, functions, symbols, instructions):
             "base_with_saved_rbp_and_return": base,
             "expression_and_cleanup_peak": expression,
             "resource_argument_bytes": 48 if resource else 0,
+            "span_argument_bytes": 64 if name == ENTRY else 0,
             "linked_local_peak": functions[name]["local_peak"],
             "calls": actual_calls,
         }
@@ -674,6 +686,7 @@ def validate(directory):
     assembly = {
         ENTRY,
         TRANSFER,
+        CONSUMER,
         BRIDGE,
         "aurora_reflect_size",
         "aurora_reflect_field_count",
@@ -716,6 +729,7 @@ def validate(directory):
         BRIDGE,
         ENTRY,
         TRANSFER,
+        CONSUMER,
         *load_admission().RUNTIME,
         "_ZN6aurora4uefi15run_owned_bytesEmRNS_6memory13PhysicalPagesE",
     }
@@ -801,6 +815,9 @@ def self_test():
     bodies, symbols, code, starts = fixture({"root": root, "leaf": leaf})
     require(calculate(bodies, {}, {}, "root")["peak"] == 56, "Wrong call/return/temporary stack sum")
     positives += 1
+    repeated, *_ = fixture({"root": [("rep", "movsl %ds:(%rsi),%es:(%rdi)"), ("ret", "")]})
+    require(calculate(repeated, {}, {}, "root")["peak"] == 8, "Repeated dword copy changed stack")
+    positives += 1
     tail, *_ = fixture({"root": [("jmp", "@leaf")], "leaf": leaf})
     require(calculate(tail, {}, {}, "root")["peak"] == 8, "Tail return address counted twice")
     positives += 1
@@ -878,6 +895,7 @@ def self_test():
     for op, operands in [
         ("cpuid", ""),
         ("rep", "movsb %ds:(%rsi),%es:(%rdi)"),
+        ("rep", "movsl %ds:(%rsi),%es:(%rdi)"),
         ("xchg", "%ecx,%eax"),
         ("mov", "$0x3,%cl"),
         ("mov", "$0x3,%cx"),
