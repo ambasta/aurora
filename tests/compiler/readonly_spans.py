@@ -453,8 +453,8 @@ def rejection_cases(suite):
     suite.reject("seven source parameters exceed the bounded call contract", base
                  + "return many(borrow_bytes(bytes),1,2,3,4,5,6);",
                  helpers=f"auto many({SPAN} a,i64 b,i64 c,i64 d,i64 e,i64 f,i64 g)->u64{{return u64(a.at(0));}}")
-    suite.reject("span parameter cannot appear on a method", done,
-                 definitions=f"class Bad{{public:Bad(){{}}auto take({SPAN} bytes)const->u64{{return u64(bytes.at(0));}}}};")
+    suite.reject("method span parameter cannot be rebound", done,
+                 definitions=f"class Bad{{public:Bad(){{}}auto take({SPAN} bytes)const->u64{{bytes=bytes;return u64(bytes.at(0));}}}};")
     suite.reject("span parameter cannot appear on a constructor", done,
                  definitions=f"class Bad{{public:Bad({SPAN} bytes){{}}}};")
     suite.reject("private class array cannot be borrowed by caller", "Hidden h=Hidden();"

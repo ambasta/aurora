@@ -842,6 +842,7 @@ class ModuleResolver {
                     for (auto &parameter : method.params) {
                         resolve(parameter.type);
                         if (!scalarValue(parameter.type) && !parameter.type.isClass() &&
+                            !(!method.constructor && parameter.type.isSpan()) &&
                             !(method.constructor && parameter.type.isResource()))
                             throw Error(method.constructor
                                             ? "only scalar, enum or class constructor parameters "

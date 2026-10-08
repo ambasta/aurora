@@ -3694,11 +3694,11 @@ void spanTests() {
         },
         "span parameter cannot be rebound");
     rejectCall(
-        "receiver span parameter prohibited",
+        "ordinary span call cannot target receiver",
         [](Module &m) {
             m.functions[3].receiver = Receiver{"SpanPacket", false, false};
         },
-        "readonly span boundary");
+        "aggregate call cannot target receiver function");
     rejectCall(
         "constructor span parameter prohibited",
         [](Module &m) {

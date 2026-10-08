@@ -91,3 +91,7 @@ compose the scalar codecs locally. No duplicate JsonBuffer or new borrowed-resou
 signature is introduced to evade these boundaries. Native transport, decoded-key
 lookup/duplicate policy, numeric conversion/formatting, value representation and
 larger LSP budgets remain distinct dependencies before host JSON replacement.
+
+The separate [integer codecs](json-integers.md) reuse the number DFA and generic
+decimal accumulator/encoding. They do not change string-codec behavior or add a
+string/DOM representation; see their [qualification status](json-integers-results.md).

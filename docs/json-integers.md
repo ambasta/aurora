@@ -1,9 +1,11 @@
 # Checked JSON integer spelling codecs
 
-Status: implemented candidate; native qualification and independent review pending.
+Status: bounded focused qualification and independent source/evidence review passed;
+see the [results and limits](json-integers-results.md).
 This library-only increment adds no compiler semantics, floats, string container,
 DOM or replacement for host nlohmann. It does not depend on method-span/bulk append
-work. The base is accepted PR79.
+work. The original mechanism base was accepted PR79; final publication composes
+on accepted PR81 and is separately qualified with its reviewed compiler.
 
 ## Dependency and observable acceptance gate
 

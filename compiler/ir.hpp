@@ -348,6 +348,7 @@ public:
     std::vector<int> objectArguments = {}; // readonly copied snapshots; scalar entries are zero
     int resultOffset = 0;                  // pristine class result destination; zero for scalar results
     int receiverFieldIndex = -1;           // -1 selects the root; otherwise one logical owned class field
+    std::vector<int> spanArguments = {};   // zero except readonly capability positions
 };
 class MetadataQuery {
 public:

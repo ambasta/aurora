@@ -40,8 +40,9 @@ Named receivers and the implicit receiver are supported. Temporary receivers,
 ordinary-function span results, local-array and local-owner returns reject.
 Span-result methods must derive their result directly rather than forwarding
 another span-result method; scalar-result const helpers may consume such views.
-Method span parameters, class span fields, generic span type arguments, reflected
-capabilities and asynchronous escape remain unsupported.
+Nonconstructor methods now accept synchronous readonly span parameters under the
+[method-span contract](METHOD-SPANS.md). Class span fields, generic span type
+arguments, reflected capabilities and asynchronous escape remain unsupported.
 
 ## Private representation and independent verification
 

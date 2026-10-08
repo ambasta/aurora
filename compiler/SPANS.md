@@ -35,8 +35,9 @@ state and IR validates explicit capability lifetimes before native emission.
 
 Ordinary functions may receive `builtin::span<const u8>` parameters and forward
 reborrows synchronously. A parameter's capability lasts only for its invocation.
-Ordinary functions cannot return spans. Spans cannot be stored in classes or assigned into outer bindings,
-passed as class-method/constructor parameters, used as template arguments,
+Nonconstructor methods also accept synchronous parameters under the
+[method-span contract](METHOD-SPANS.md). Ordinary functions cannot return spans. Spans cannot be stored in classes or assigned into outer bindings,
+passed as constructor parameters, used as template arguments,
 reflected, compared, converted or treated as scalar values. No global storage,
 mutable span, raw base address or arbitrary pointer/length constructor exists.
 Private array-field borrowing remains unsupported; direct private OwnedBytes

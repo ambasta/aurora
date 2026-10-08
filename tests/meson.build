@@ -24,6 +24,7 @@ foreach entry : [
     ['byte-codec', 'compiler/byte_codec.py', 'bytes'],
     ['binary-buffer', 'compiler/binary_buffer.py', 'bytes'],
     ['byte-buffer', 'compiler/byte_buffer.py', 'bytes'],
+    ['method-spans', 'compiler/method_spans.py', 'bytes'],
     ['owned-spans', 'compiler/owned_spans.py', 'bytes'],
     ['json-owned', 'compiler/json_owned.py', 'bytes'],
     ['owned-sector', 'compiler/sector.py', 'bytes'],
@@ -179,6 +180,20 @@ test('logical-spans-abi', python,
      depends: logical_spans_abi, suite: ['dev', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
+# Synchronous method capabilities retain independent IR and literal-layout ABI gates.
+method_spans_ir = executable(
+    'method-spans-ir', 'compiler/method_spans_ir.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('method-spans-ir', method_spans_ir, suite: ['dev', 'core', 'bytes', 'compiler'], timeout: 120)
+method_spans_abi = executable(
+    'method-spans-abi', 'compiler/method_spans_abi.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('method-spans-abi', python,
+     args: ['-B', '-O', files('compiler/method_spans_abi.py'), method_spans_abi],
+     depends: method_spans_abi, suite: ['dev', 'core', 'bytes', 'compiler'],
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 # Single-scalar codecs retain their own independent oracle and hosted composition.
 test(
     'json-codecs', python,
