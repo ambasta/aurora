@@ -1,0 +1,9 @@
+{
+  "profile": "aurora-amdvi-command-stop-v1",
+  "source_c_sha256": "a506dccf0c112cc791208724651b3aaca300f8b713362dfd07af2308e6f5a2d9",
+  "binary_path": "REPLACE_WITH_REVIEWED_LOCAL_ABSOLUTE_BINARY_PATH",
+  "binary_sha256": "e19fa6c25b2eb8198d79284d7f1b161359c96db7c6c9f1147810ef5004a565f4",
+  "source_h_sha256": "94d50d0dd0548c533252b4fdff7ec3cf800aed8655ce38db24de837adf1785e4",
+  "patch_sha256": "0f3e51a4dea545092114a049a4781a01fe909f759b39cb6580cf9d41ef63c360",
+  "build_receipt_sha256": "1990d8703fa2b375dd01549a763a597745b4841e46bc9780afc38c4aea27d04a"
+}

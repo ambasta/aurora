@@ -22,7 +22,7 @@ hardware support.
 | Modern safe kernel | BIOS/UEFI emulator boot, protected-domain fixtures, bounded scheduling and copied request/reply IPC; five Aurora policies plus a persistent Aurora-owned simple-UEFI console, within trusted C++/assembly hardware adapters | General protected-program lifecycle, capability/file services, SMP, broader native implementation and assurance |
 | Safe C++-like language with TypeScript-like types | Checked values, modules, classes, bounded generics/overloads, readonly views, runtime-sized byte ownership, move-only classes, synchronous owning-object helpers and sealed exclusive ConsoleSession/DisplaySession borrows | General ownership/borrowing, concurrency, key/mapped/conditional types, richer checked reflection, optimizer and self-hosting; no general safety/performance proof |
 | Ideal filesystem and XFS compatibility | Host crash model, runtime-capacity RAM sector device, offline XFS geometry/root/inline-extent readers | Real transport, mounted file services, persistence/recovery/GC and XFS read-write; no target filesystem is usable yet |
-| Framework Laptop 13 AMD system | Emulator boot/discovery, owned page/pin preparation and test-only AMD translation/event/completion references | Actual DMA conformance/isolation, active drivers, device power/recovery and complete-machine physical qualification; no supported physical tuple |
+| Framework Laptop 13 AMD system | Emulator boot/discovery, owned page/pin preparation, test-only AMD references and bounded emulator model diagnostics | Actual DMA conformance/isolation, active drivers, device power/recovery and complete-machine physical qualification; no supported physical tuple |
 | Native binutils/glibc/Mesa alternatives | Host-bootstrap compiler, Aurora core/byte/text/JSON modules and bounded package metadata tools | Native assembler/linker/toolchain, complete platform runtime and standard library, graphics stack and reproducible native rebuilds; no C/POSIX/ABI compatibility promise |
 | Useful apps, terminal and tiling desktop | Aurora-owned simple-UEFI serial editor/presentation; BIOS diagnostic prompt and scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
 
@@ -82,7 +82,10 @@ old results paragraph or its “not implemented” list.
 
 Follow the [dependency roadmap](roadmap.md): protected program/file services are
 the next system-level integration target. Actual DMA conformance remains blocked;
-CPU-only preparation and test-only oracles do not clear that gate. Display/input,
+CPU-only preparation, test-only oracles and bounded model diagnostics do not clear
+that gate. The [emulated DMA diagnostic contract](iommu-dma-conformance.md) records
+exact patch/fixture scope, preserved failures and separate runtime acceptance.
+Display/input,
 terminal sessions and desktop work depend on usable native service boundaries.
 Terminal-event and the joined structural formatter retain their scoped evidence.
 Protected-console evidence includes the accepted original normal guest plus narrow

@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "historical_checks": 65,
+  "portable_checks": 56,
+  "unchanged_check_names": 53,
+  "removed_task_preparation_checks": [
+    "all_command_pins_match",
+    "fixed_full_thirty_case_order",
+    "frozen_import_exact_original",
+    "no_execution_markers",
+    "no_execution_release",
+    "plan_command_pin_matches",
+    "reviewed_source_target",
+    "target_pin_present_matches_built_bytes",
+    "transport_import_exact_original",
+    "unchanged_seven_argument_shape",
+    "unchanged_v4_supervisor",
+    "unchanged_wrapper"
+  ],
+  "added_repository_checks": [
+    "frozen_import_identity",
+    "no_runtime_target_in_repository",
+    "transport_import_identity"
+  ],
+  "structural_comparison": {
+    "synthetic_memory_model_ast_unchanged": true,
+    "mutants_ast_unchanged": true,
+    "all_28_case_driver_ast_unchanged": true,
+    "all_15_mutant_driver_ast_unchanged": true
+  },
+  "wrong_target_path_check": "Retained with synthetic target metadata; no absolute workspace target or binary read.",
+  "scope": "28 synthetic cases and 15 mutants retained. External execution supervisor/build/plan/path/unused-release checks are not part of the portable suite; runtime preparation still requires separate review."
+}
