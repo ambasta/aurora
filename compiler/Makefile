@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -100,7 +100,7 @@ export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_G
 .PHONY: aurora-test-context
 all test test-modules test-storage test-initialization-facts test-utf8 test-utf8-encoding \
     test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads \
-    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects: aurora-test-context
+    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write: aurora-test-context
 aurora-test-context:
 	python3 -B ../scripts/compiler_contract.py check --repo-root "$(abspath ..)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -375,5 +375,13 @@ test-borrowed-objects: $(OUT)
 	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/borrowed_objects_abi.cpp -o "$$work/abi-tests"; \
 	python3 -B -O ../tests/compiler/borrowed_objects_abi.py "$$work/abi-tests" --artifacts "$$work/abi"; \
 	printf 'PASS borrowed objects Make recipe: %s\n' "$$work"
+
+.PHONY: test-json-string-write
+test: test-json-string-write
+test-json-string-write: $(OUT)
+	@set -eu; \
+	work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-string-write.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/json_string_write.py "$(abspath $(OUT))" --artifacts "$$work/source"; \
+	printf 'PASS JSON string write Make recipe: %s\n' "$$work"
 
 endif # controlled outer dispatcher / original inner graph

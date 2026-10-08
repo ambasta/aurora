@@ -85,3 +85,16 @@ json_lookup_assembly = custom_target(
     build_by_default: true,
     install: false,
 )
+
+json_string_write_assembly = custom_target(
+    'json-string-write-example',
+    input: 'json_string_write.au',
+    output: 'json_string_write.s',
+    command: [aurorac, '--module-root', meson.project_source_root() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+    depend_files: files(
+        '../std/json_write.au', '../std/json.au', '../std/decimal.au', '../std/utf8.au', '../std/array.au',
+        '../std/byte_buffer.au', '../std/binary.au',
+    ),
+    build_by_default: true,
+    install: false,
+)

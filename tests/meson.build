@@ -246,3 +246,14 @@ test('borrowed-objects-abi', python,
      args: ['-B', '-O', files('compiler/borrowed_objects_abi.py'), borrowed_objects_abi],
      depends: borrowed_objects_abi, suite: ['full', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
+
+# Complete native string transactions stay in slow; routine feedback uses an
+# explicitly partial manifest with the same byte and allocation assertions.
+test('json-string-write-smoke', python,
+     args: ['-B', '-O', files('compiler/json_string_write.py'), aurorac, '--smoke'],
+     depends: aurorac, suite: ['full', 'dev', 'bytes'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
+test('json-string-write', python,
+     args: ['-B', '-O', files('compiler/json_string_write.py'), aurorac],
+     depends: aurorac, suite: ['full', 'slow', 'bytes'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 600, is_parallel: true)
