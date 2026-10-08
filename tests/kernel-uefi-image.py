@@ -151,6 +151,7 @@ def owned_bytes_symbols(symbols):
         "__au_runtime_bytes_at",
         "__au_runtime_bytes_set",
         "__au_runtime_bytes_drop",
+        "__au_runtime_bytes_borrow_length",
         "__au_runtime_bytes_kernel_fault",
     )
     for name in required:
@@ -158,6 +159,7 @@ def owned_bytes_symbols(symbols):
     for name in (
         "__au_v_m1_18kernel_owned_bytes_n0__d24kernel_owned_bytes_entry",
         "__au_v_m1_18kernel_owned_bytes_n0__d10pass_bytes",
+        "__au_v_m1_18kernel_owned_bytes_n0__d13consume_bytes",
     ):
         need(rows.get(name) == "t", "Owned-byte Aurora entry must remain local: " + name)
     forbidden = (

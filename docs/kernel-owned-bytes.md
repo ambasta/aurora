@@ -13,7 +13,7 @@ and a private grant bridge in one object instead of the ordinary scalar policy
 graph. Each current generated graph exports the same reflection helper names;
 mixed independently generated scalar/resource graphs remain unsupported.
 The source entry stays local, and only a scalar status crosses the private bridge.
-No descriptor, pointer, span or physical address is exported to Aurora.
+No descriptor, pointer, span or physical address crosses the private grant bridge.
 
 The next acceptance gate is focused native ownership/failure coverage, explicit
 unsupported-import rejection, complete linked stack/authority/image admission,
@@ -72,9 +72,10 @@ state read-only and terminate the isolated child without unwinding.
 The shared `runtime/bytes_abi.hpp` is the unchanged 32-byte compiler-private owner
 layout and helper declarations, including hosted resize. The hosted allocator
 implementation and its resize semantics remain separate. The kernel profile
-supports allocation, copied read/write and normal drop only. `try_resize` is
+supports allocation, copied read/write, validated readonly logical borrowing and
+normal drop. `try_resize` is
 explicitly rejected by object-import admission and unresolved at the actual
-kernel link; there is no resize success/failure stub. General payload borrowing,
+kernel link; there is no resize success/failure stub. Mutable/general escaping borrowing,
 DMA/BAR/IOMMU activation, concurrency, exception unwinding and mixed graphs remain
 out of scope.
 
@@ -108,3 +109,37 @@ rejection, compiler-driven cleanup, whole-page poison/readback and exact counter
 Host tests cover the wider fragmentation, metadata/page/quota exhaustion,
 descriptor and fail-stop boundaries. Neither synthetic transcripts nor native
 adapter passes establish a real guest result or physical-hardware support.
+
+## Reconstructed readonly-owner consumer
+
+The candidate extends this same exclusive profile to exactly five imports:
+allocate, at, set, drop and borrow_length. A real Aurora consumer copies and
+narrows the existing 56-byte logical span, reads every byte and checks logical
+4,095/4,096 across a physical page boundary. Its return value is the observed
+length, checked against the independently supplied owner length. An empty span
+cannot masquerade as nonempty success. The consumer may call only copied read;
+three exact aligned 64-byte span-call records are checked at source and link.
+
+Eight even-page holders force two 4,097-byte owners onto pages 1/3 and 5/7.
+Whole-page scrub, untouched neighbor poison and actual foreign lease identities
+are checked before holder release and explicit region close. Existing length
+cases remain; successful-empty ownership adds no page. Exact totals are nine
+allocations and nine releases. Quota, pool, stack and region implementation do
+not change. Resize and unrelated imports still reject; no stubs are supplied.
+
+The dependency is the freshly reconstructed owned-span compiler/runtime.
+The exact image/import/linked-stack checks and independent source review passed
+before the new guest. Actual owned-bytes, runtime-span and normal guests passed
+with exact normal restoration. Historical results do not transfer.
+See [current results and limits](kernel-owned-views-results.md).
+
+Focused exact-source host replay, with an explicitly selected compiler:
+
+```sh
+AURORAC=/path/to/current/aurorac ./scripts/kernel-owned-views-tests.sh
+AURORAC=/path/to/current/aurorac SANITIZE=1 ./scripts/kernel-owned-views-tests.sh
+```
+
+The adversarial host wrapper calls the real descriptor validator, then poisons
+its length to zero. Nonempty input must reject with exact failure. It is never
+linked into a guest. Host sanitizers do not instrument generated Aurora assembly.

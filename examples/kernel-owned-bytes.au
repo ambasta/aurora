@@ -5,10 +5,52 @@ auto pass_bytes(builtin::ByteRegion region, builtin::OwnedBytes input) -> builti
     return move(input);
 }
 
+// A real Aurora consumer of the existing logical view. No owner or grant
+// crosses this call; every copied read dispatches through the retained leases.
+auto consume_bytes(builtin::span<const u8> input) -> i64 {
+    const builtin::span<const u8> copy = input;
+    const builtin::span<const u8> nested = copy.subspan(0, copy.size());
+    const builtin::span<const u8> endpoint = nested.subspan(nested.size(), 0);
+    if (endpoint.size() != 0) {
+        return -10;
+    }
+    i64 index = 0;
+    while (index < nested.size()) {
+        if (index == nested.size() - 1) {
+            if (nested.at(index) != 53u8) {
+                return -11;
+            }
+        } else {
+            if (nested.at(index) != 11u8) {
+                return -12;
+            }
+        }
+        index = index + 1;
+    }
+    if (nested.size() == 4097) {
+        const builtin::span<const u8> crossing = nested.subspan(4095, 2);
+        if (crossing.at(0) != 11u8 || crossing.at(1) != 53u8) {
+            return -13;
+        }
+    }
+    return nested.size();
+}
+
 // The trusted kernel supplies the region and runtime length. Both live owners
 // use actual page leases. No byte array, raw address or host result is substituted.
 auto kernel_owned_bytes_entry(builtin::ByteRegion region, i64 length, i64 selector) -> i64 {
-    if (selector != 0 || length <= 0) {
+    if (selector == 0 && length == 0) {
+        builtin::OwnedBytes empty = region.try_allocate(0);
+        if (!empty.ok() || empty.size() != 0) {
+            return -14;
+        }
+        const builtin::span<const u8> view = borrow_bytes(empty);
+        if (consume_bytes(view) != 0) {
+            return -18;
+        }
+        return 42;
+    }
+    if (selector != 0 || length < 0) {
         return -1;
     }
     builtin::OwnedBytes first = region.try_allocate(length);
@@ -45,6 +87,23 @@ auto kernel_owned_bytes_entry(builtin::ByteRegion region, i64 length, i64 select
             }
         }
         index = index + 1;
+    }
+    {
+        const builtin::span<const u8> view = borrow_bytes(returned);
+        const builtin::span<const u8> copy = view;
+        if (consume_bytes(copy.subspan(0, copy.size())) != length) {
+            return -15;
+        }
+    }
+    // The descendant views have ended, so mutation and a fresh borrow are legal.
+    if (!returned.set(0, 11u8)) {
+        return -16;
+    }
+    {
+        const builtin::span<const u8> again = borrow_bytes(returned);
+        if (consume_bytes(again) != length) {
+            return -17;
+        }
     }
     builtin::OwnedBytes failed = region.try_allocate(-1);
     if (failed.ok() || failed.size() != 0 || failed.set(0, 99u8)) {

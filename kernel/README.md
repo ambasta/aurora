@@ -14,6 +14,8 @@ whole-page scrubbing and explicit cleanup. See the
 [bounded contract](../docs/kernel-owned-bytes.md) and
 [focused results](../docs/kernel-owned-bytes-results.md) for current gates and limits.
 Kernel resize, user allocation and device activation are outside this profile.
+A reconstructed [readonly-view increment](../docs/kernel-owned-views-results.md)
+has fresh local build/host/guest gates; final acceptance is recorded separately.
 
 ## Build and verify
 
