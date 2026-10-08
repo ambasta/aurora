@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
 
     field_text = "module x; class Bad { builtin::span<const u8> view; };"
     source.write_text(field_text)
-    field = check(source, 1, "AU2001")
+    field = check(source, 1, "AU2003")
     require(
         field["message"] == "unsupported class field type 'builtin::span<const u8>': "
         "class fields require scalar, class, private fixed-array or private owned-byte storage",
@@ -94,6 +94,15 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
         "complete field type range",
     )
     require(source.read_text() == field_text, "field rejection changed source")
+
+    field_text = "// café 😀\r\nmodule demo; class Bad { builtin :: span < const u8 > view; };"
+    source.write_text(field_text)
+    field = check(source, 1, "AU2003")
+    require(
+        field["range"]["start"]["offset"] == len(field_text[: field_text.index("builtin")].encode())
+        and field["range"]["end"]["offset"] == len(field_text[: field_text.index(" view")].encode()),
+        "spaced full type range after non-ASCII comment uses byte offsets",
+    )
 
     bad = "// café 😀\r\n\tmodule demo;\r\n@"
     source.write_text(bad)
@@ -154,6 +163,12 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     dep.write_text("export module dep;\nauto broken() -> i64 { return 0 }")
     diagnostic = check(source, 1, "AU2001", ("--module-root", root))
     require(diagnostic["path"] == str(dep) and diagnostic["range"]["start"]["line"] == 2, "imported parser provenance")
+    dep.write_text("export module dep;\nclass Bad { builtin::span<const u8> view; };")
+    diagnostic = check(source, 1, "AU2003", ("--module-root", root))
+    require(
+        diagnostic["path"] == str(dep) and diagnostic["range"]["start"]["line"] == 2,
+        "imported unsupported-field code and full type provenance",
+    )
     dep.write_text("export module dep;\nauto broken() -> i64 { return true; }")
     diagnostic = check(source, 1, "AU3001", ("--module-root", root))
     require(diagnostic["path"] == str(dep), "imported semantic provenance")

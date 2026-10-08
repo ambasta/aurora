@@ -46,8 +46,8 @@ export namespace std {
         i64 number;
         i64 error;
     public:
-        JsonI64Result(JsonIntegerStatus status, i64 value, i64 position) : outcome(status), number(value), error(
-            position) {
+        JsonI64Result(JsonIntegerStatus status, i64 value, i64 position) : outcome(status), number(value),
+            error(position) {
         }
         auto status() const -> JsonIntegerStatus {
             if (outcome == JsonIntegerStatus::invalid_window || error < 0) {
@@ -82,8 +82,8 @@ export namespace std {
         u64 number;
         i64 error;
     public:
-        JsonU64Result(JsonIntegerStatus status, u64 value, i64 position) : outcome(status), number(value), error(
-            position) {
+        JsonU64Result(JsonIntegerStatus status, u64 value, i64 position) : outcome(status), number(value),
+            error(position) {
         }
         auto status() const -> JsonIntegerStatus {
             if (outcome == JsonIntegerStatus::invalid_window || error < 0) {
@@ -151,8 +151,8 @@ export namespace std {
         i64 length;
         i64 error;
     public:
-        JsonLookupResult(JsonLookupStatus status, JsonValueKind kind, i64 start, i64 count, i64 position) : outcome(
-            status), category(kind), offset(start), length(count), error(position) {
+        JsonLookupResult(JsonLookupStatus status, JsonValueKind kind, i64 start, i64 count,
+            i64 position) : outcome(status), category(kind), offset(start), length(count), error(position) {
         }
         auto status() const -> JsonLookupStatus {
             if (outcome == JsonLookupStatus::invalid_window) {
@@ -168,8 +168,8 @@ export namespace std {
                 if (error != 0 || length == 0 || category == JsonValueKind::none) {
                     return JsonLookupStatus::invalid_window;
                 }
-                if ((category == JsonValueKind::object || category == JsonValueKind::array_value || category ==
-                    JsonValueKind::string) && length < 2) {
+                if ((category == JsonValueKind::object || category == JsonValueKind::array_value || category
+                    == JsonValueKind::string) && length < 2) {
                     return JsonLookupStatus::invalid_window;
                 }
                 if (category == JsonValueKind::number && length > 128) {
@@ -186,8 +186,8 @@ export namespace std {
             if (category != JsonValueKind::none || offset != 0 || length != 0) {
                 return JsonLookupStatus::invalid_window;
             }
-            if ((outcome == JsonLookupStatus::invalid_key_window || outcome == JsonLookupStatus::invalid_index ||
-                outcome == JsonLookupStatus::wrong_root || outcome == JsonLookupStatus::not_found) && error != 0) {
+            if ((outcome == JsonLookupStatus::invalid_key_window || outcome == JsonLookupStatus::invalid_index
+                || outcome == JsonLookupStatus::wrong_root || outcome == JsonLookupStatus::not_found) && error != 0) {
                 return JsonLookupStatus::invalid_window;
             }
             return outcome;
@@ -313,8 +313,9 @@ export namespace std {
         i64 consumed;
         i64 error;
     public:
-        JsonTokenResult(JsonStatus status, JsonTokenKind kind, i64 start, i64 count, i64 used, i64 position) : outcome(
-            status), category(kind), offset(start), length(count), consumed(used), error(position) {
+        JsonTokenResult(JsonStatus status, JsonTokenKind kind, i64 start, i64 count, i64 used,
+            i64 position) : outcome(status), category(kind), offset(start), length(count), consumed(used),
+            error(position) {
         }
         auto status() const -> JsonStatus {
             if (outcome == JsonStatus::invalid_window) {
@@ -338,8 +339,8 @@ export namespace std {
                 }
                 return outcome;
             }
-            if (outcome == JsonStatus::token_limit || outcome == JsonStatus::depth_limit || outcome ==
-                JsonStatus::invalid_structure) {
+            if (outcome == JsonStatus::token_limit || outcome == JsonStatus::depth_limit || outcome
+                == JsonStatus::invalid_structure) {
                 return JsonStatus::invalid_window;
             }
             if (category != JsonTokenKind::none || offset != 0 || length != 0 || consumed != 0) {
@@ -384,8 +385,8 @@ export namespace std {
         i64 tokens;
         i64 peak;
     public:
-        JsonResult(JsonStatus status, i64 position, i64 count, i64 depth) : outcome(status), error(position), tokens(
-            count), peak(depth) {
+        JsonResult(JsonStatus status, i64 position, i64 count, i64 depth) : outcome(status), error(position),
+            tokens(count), peak(depth) {
         }
         auto status() const -> JsonStatus {
             if (outcome == JsonStatus::invalid_window || outcome == JsonStatus::end_of_input) {
@@ -427,8 +428,8 @@ namespace std {
         return byte >= 48u8 && byte <= 57u8;
     }
     auto json_boundary(u8 byte) -> bool {
-        return json_space(byte) || byte == 123u8 || byte == 125u8 || byte == 91u8 || byte == 93u8 || byte == 58u8 ||
-            byte == 44u8;
+        return json_space(byte) || byte == 123u8 || byte == 125u8 || byte == 91u8 || byte == 93u8 || byte == 58u8
+            || byte == 44u8;
     }
     auto json_hex(u8 byte) -> i64 {
         if (byte >= 48u8 && byte <= 57u8) {
@@ -575,8 +576,8 @@ namespace std {
                     const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, index);
                     return result;
                 }
-                const JsonScalarResult result = JsonScalarResult(JsonStatus::success, decoded.scalar_or(0u64), decoded.
-                    width(), 0);
+                const JsonScalarResult result = JsonScalarResult(JsonStatus::success, decoded.scalar_or(0u64),
+                    decoded.width(), 0);
                 return result;
             }
         }
@@ -585,8 +586,8 @@ namespace std {
         i64 index = start + 1;
         while (index < end) {
             if (bytes.at(index) == 34u8) {
-                const JsonTokenResult result = json_success(JsonTokenKind::string, start, index - start + 1, index -
-                    request + 1);
+                const JsonTokenResult result = json_success(JsonTokenKind::string, start, index - start + 1, index
+                    - request + 1);
                 return result;
             }
             const JsonScalarResult decoded = json_scalar(bytes, index, end);
@@ -689,8 +690,8 @@ namespace std {
             return result;
         }
         if (token.byte_count() != count) {
-            const JsonU64Result result = JsonU64Result(JsonIntegerStatus::invalid_number, 0u64, offset + token.
-                byte_count());
+            const JsonU64Result result = JsonU64Result(JsonIntegerStatus::invalid_number, 0u64, offset
+                + token.byte_count());
             return result;
         }
         i64 index = offset;
@@ -719,8 +720,8 @@ namespace std {
         const JsonU64Result result = JsonU64Result(JsonIntegerStatus::success, magnitude.value_or(0u64), 0);
         return result;
     }
-    auto json_literal(builtin::span<const u8> bytes, i64 start, i64 end, i64 request, JsonTokenKind kind) ->
-        JsonTokenResult {
+    auto json_literal(builtin::span<const u8> bytes, i64 start, i64 end, i64 request,
+        JsonTokenKind kind) -> JsonTokenResult {
         i64 width = 4;
         if (kind == JsonTokenKind::false_value) {
             width = 5;
@@ -1100,8 +1101,8 @@ namespace std {
         return JsonValueKind::none;
     }
     // Both windows have already been validated. Each cursor advances monotonically.
-    auto json_key_equal(builtin::span<const u8> bytes, i64 offset, i64 count, builtin::span<const u8> key, i64
-        key_offset, i64 key_count) -> bool {
+    auto json_key_equal(builtin::span<const u8> bytes, i64 offset, i64 count, builtin::span<const u8> key,
+        i64 key_offset, i64 key_count) -> bool {
         i64 left = offset;
         i64 right = key_offset;
         const i64 end = offset + count;
@@ -1109,8 +1110,8 @@ namespace std {
         while (left < end && right < key_end) {
             const JsonScalarResult a = json_scalar(bytes, left, end);
             const Utf8DecodeResult b = decode_utf8(key, right, key_end - right, true);
-            if (a.status() != JsonStatus::success || b.status() != Utf8Status::success || a.scalar_or(0u64) != b.
-                scalar_or(0u64)) {
+            if (a.status() != JsonStatus::success || b.status() != Utf8Status::success || a.scalar_or(0u64)
+                != b.scalar_or(0u64)) {
                 return false;
             }
             left = left + a.consumed_bytes();
@@ -1118,8 +1119,8 @@ namespace std {
         }
         return left == end && right == key_end;
     }
-    auto json_walk(builtin::span<const u8> bytes, builtin::span<const u8> key, JsonWalkRequest request) ->
-        JsonWalkResult {
+    auto json_walk(builtin::span<const u8> bytes, builtin::span<const u8> key,
+        JsonWalkRequest request) -> JsonWalkResult {
         const i64 offset = request.offset();
         const i64 count = request.count();
         const i64 key_offset = request.key_offset();
@@ -1200,8 +1201,8 @@ namespace std {
                 const JsonResult document = JsonResult(JsonStatus::success, 0, tokens, peak);
                 JsonLookupStatus outcome = JsonLookupStatus::success;
                 i64 error = 0;
-                if ((mode == 1u8 && root_kind != JsonValueKind::object) || (mode == 2u8 && root_kind !=
-                    JsonValueKind::array_value)) {
+                if ((mode == 1u8 && root_kind != JsonValueKind::object) || (mode == 2u8 && root_kind
+                    != JsonValueKind::array_value)) {
                     outcome = JsonLookupStatus::wrong_root;
                 } else {
                     if (mode == 1u8 && matching_keys == 2) {
@@ -1244,8 +1245,8 @@ namespace std {
             if (depth == 0 && !root_complete) {
                 root_kind = json_value_kind(kind);
             }
-            if (mode == 1u8 && depth == 1 && (before_state == 4u8 || before_state == 5u8) && kind ==
-                JsonTokenKind::string) {
+            if (mode == 1u8 && depth == 1 && (before_state == 4u8 || before_state == 5u8) && kind
+                == JsonTokenKind::string) {
                 member_matches = false;
                 if (matching_keys < 2) {
                     member_matches = json_key_equal(bytes, token.byte_offset() + 1, token.byte_count() - 2, key,
@@ -1339,9 +1340,9 @@ namespace std {
                         peak = depth;
                     }
                 } else {
-                    if (kind != JsonTokenKind::string && kind != JsonTokenKind::number && kind !=
-                        JsonTokenKind::true_value && kind != JsonTokenKind::false_value && kind !=
-                        JsonTokenKind::null_value) {
+                    if (kind != JsonTokenKind::string && kind != JsonTokenKind::number && kind
+                        != JsonTokenKind::true_value && kind != JsonTokenKind::false_value && kind
+                        != JsonTokenKind::null_value) {
                         valid = false;
                     }
                 }
@@ -1386,8 +1387,8 @@ export namespace std {
         const JsonResult result = walked.document();
         return result;
     }
-    auto lookup_json_member(builtin::span<const u8> bytes, i64 offset, i64 count, builtin::span<const u8> key, i64
-        key_offset, i64 key_count) -> JsonLookupResult {
+    auto lookup_json_member(builtin::span<const u8> bytes, i64 offset, i64 count, builtin::span<const u8> key,
+        i64 key_offset, i64 key_count) -> JsonLookupResult {
         const JsonWalkRequest request = JsonWalkRequest(offset, count, key_offset, key_count, 0, 1u8);
         const JsonWalkResult walked = json_walk(bytes, key, request);
         const JsonLookupResult result = walked.lookup();

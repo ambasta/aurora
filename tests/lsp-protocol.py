@@ -253,6 +253,25 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-test-") as directory:
         by_uri(stages[0], source)["diagnostics"][0]["message"] == "expected ';' (found '<eof>')",
         "location-neutral parser message",
     )
+    # The parser-owned unsupported-storage identity and complete type range
+    # survive the shared LSP adapter, including CRLF and multiline spelling.
+    field_text = "// café 😀\r\nmodule demo; class Bad {\r\n    builtin :: span <\r\n        const u8 > view;\r\n};"
+    stages, logs = phases([opened(source, field_text)])
+    field_diagnostics = by_uri(stages[0], source)["diagnostics"]
+    require(len(field_diagnostics) == 1 and not logs, "unsupported field publishes one quiet diagnostic")
+    field = field_diagnostics[0]
+    require(
+        field["code"] == "AU2003"
+        and field["severity"] == 1
+        and field["source"] == "aurora"
+        and field["message"]
+        == "unsupported class field type 'builtin::span<const u8>': "
+        "class fields require scalar, class, private fixed-array or private owned-byte storage"
+        and field["range"] == {"start": {"line": 2, "character": 4}, "end": {"line": 3, "character": 18}}
+        and field["data"] == {"rangeKnown": True, "firstErrorOnly": True},
+        "unsupported field code and full multiline type range use the compiler-owned mapping",
+    )
+    require(source.read_bytes() == original, "unsupported-field overlay leaves disk unchanged")
     stages, _ = phases([opened(source, "module demo; auto answer() -> i64 { return true; }")])
     require(by_uri(stages[0], source)["diagnostics"][0]["code"] == "AU3001", "semantic diagnostics use shared checker")
 

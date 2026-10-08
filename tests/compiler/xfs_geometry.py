@@ -575,7 +575,7 @@ class Suite(BoundedSuite):
                 require(
                     re.fullmatch(
                         rf"(?:{re.escape(str(path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
-                        r"AU(?:1001|200[12]|3001|4001): [^\n]+\n",
+                        r"AU(?:1001|200[123]|3001|4001): [^\n]+\n",
                         diagnostic,
                     ) is not None,
                     "rejection must be compiler diagnostic",

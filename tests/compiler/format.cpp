@@ -101,8 +101,53 @@ void qualifiedNames() {
                         }),
             "oversized qualified group must retain the soft-width finding");
 }
+void structuralWrapping() {
+    const auto check = [](const std::string &input) {
+        verify(input, "structural-boundary.au");
+        const auto output = aurora::format::source(input);
+        const auto tokens = aurora::lexSource(output.text).tokens;
+        for (std::size_t index = 1; index + 1 < tokens.size(); ++index) {
+            if (tokens[index].text == "." || tokens[index].text == "::")
+                require(tokens[index - 1].span.end.line == tokens[index].span.begin.line &&
+                            tokens[index].span.end.line == tokens[index + 1].span.begin.line,
+                        "member/scope access split at soft limit: " + output.text);
+        }
+        return output;
+    };
+    // Move every token boundary across the soft limit, both with nested call
+    // arguments and without any legal internal break in a chained access atom.
+    for (std::size_t width = 1; width <= 180; ++width) {
+        const auto padding = std::string(width, 'p');
+        check("module x;auto f()->u64{return pick(" + padding + ", token.value_or(0u64));}");
+        check("module x;auto f()->u64{return outer::pick(inner::read(" + padding +
+              ", device.flush()), token.value_or(0u64));}");
+        check("module x;auto f()->u64{return " + padding + ".child.value_or(0u64);}");
+        check("module x;auto f()->u64{return source.open().child.read(" + padding + ", 0u64).value;}");
+        check("module x;auto f()->bool{return " + padding + "==1&&(token.value_or(0u64)<2)||!(false);}");
+        check("module x;auto f()->i64{return " + padding + "+(2)*-(3);}");
+        verify("// café 😀\r\nmodule x;auto f()->u64{return pick(" + padding +
+                   ", token. // anchored café 😀\nvalue_or(0u64));}",
+               "structural-comment-boundary.au");
+    }
+    const auto padding = std::string(80, 'a');
+    golden("module x;auto f()->u64{return choose(" + padding + ", token.value_or(0u64));}",
+           "module x;\nauto f() -> u64 {\n    return choose(" + padding + ",\n        token.value_or(0u64));\n}\n");
+    const auto lhs = std::string(100, 'a');
+    golden("module x;auto f()->bool{return " + lhs + "&&(token.value_or(0u64)==1);}",
+           "module x;\nauto f() -> bool {\n    return " + lhs + "\n        && (token.value_or(0u64) == 1);\n}\n");
+    const auto oversized = std::string(140, 'a') + ".child.value";
+    const auto result = check("module x;auto f()->i64{return " + oversized + ";}");
+    require(result.text.find(oversized) != std::string::npos, "oversized member atom was split");
+    require(std::any_of(result.remainingFindings.begin(),
+                        result.remainingFindings.end(),
+                        [](const auto &finding) {
+                            return finding.code == "AUF1001";
+                        }),
+            "oversized member atom lost its long-line finding");
+}
 void cases() {
     qualifiedNames();
+    structuralWrapping();
     golden("module x;auto f(i64 a,i64 b)->bool{return a==1&&(b<1)||!(a==2);}",
            "module x;\nauto f(i64 a, i64 b) -> bool {\n"
            "    return a == 1 && (b < 1) || !(a == 2);\n}\n");
@@ -180,12 +225,12 @@ void cases() {
     verify(chain, "member-chain.au");
     const auto wrapped = aurora::format::source(chain);
     require(wrapped.text.find("\n\n") == std::string::npos, "automatic wrapping added a blank line");
-    require(std::none_of(wrapped.remainingFindings.begin(),
-                         wrapped.remainingFindings.end(),
-                         [](const auto &finding) {
-                             return finding.code == "AUF1001";
-                         }),
-            "punctuation-adjacent short-token chain did not wrap");
+    require(std::any_of(wrapped.remainingFindings.begin(),
+                        wrapped.remainingFindings.end(),
+                        [](const auto &finding) {
+                            return finding.code == "AUF1001";
+                        }),
+            "oversized member-only chain must stay intact and retain its soft-width finding");
     std::string bytes = "module x;auto f()->i64{return 1;}\n//";
     for (int byte = 0; byte <= 255; ++byte) {
         if (byte != '\n')

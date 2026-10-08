@@ -703,7 +703,7 @@ public:
                         if (!declaredParameters.empty())
                             fail("owning class templates are unsupported");
                     } else if (!scalarOrParameter(fieldType) && !fieldType.isClass())
-                        throw Error(DiagnosticCode::UnexpectedToken,
+                        throw Error(DiagnosticCode::UnsupportedFieldType,
                                     "unsupported class field type '" + typeName(fieldType) +
                                         "': class fields require scalar, class, private fixed-array or private "
                                         "owned-byte storage",

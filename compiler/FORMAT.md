@@ -60,11 +60,22 @@ between adjacent tokens/comments is inspected; comment contents cannot create
 separators, and automatic wrapping never adds a blank line. Line boundaries follow
 the shared lexer's LF contract, including CRLF input.
 
-Adjacent qualified-name tokens such as `std::ByteWriteStatus` and
-`outer::inner::value` form one soft-wrap unit: wrapping occurs before the complete
-name, never immediately before or after `::`. Explicitly anchored line comments
-remain hard boundaries. A qualified name wider than the target stays intact and
-retains the existing long-line finding.
+Soft wrapping uses explicit structural opportunities instead of an overflow
+check at every token. A pending line prefers the latest fitting argument/list
+comma or AST-classified binary operator boundary. Lower-priority boundaries after
+an opening parenthesis/bracket, assignment, `return`, or result-type arrow are
+fallbacks. Binary operators begin continuation lines. Continuations use one
+indentation level beyond their block; this is a deterministic local choice, not
+global layout optimization.
+
+Member and qualified access chains (`token.value_or`, `std::ByteWriteStatus`),
+unary operators, call/index punctuation and closing delimiters have no internal
+soft-break opportunity. Calls can break inside their argument lists; a chained
+call retains `).member(` while its arguments can wrap. A member-only chain or
+other indivisible atom wider than the target stays intact and retains AUF1001.
+Explicitly anchored line comments remain hard boundaries, including a comment
+between a dot/scope token and its member; the formatter never moves that comment
+across a token to force visual continuity.
 
 Parenthesized operands retain a space after binary operators, including `&&`
 and `||`. Unary operators remain attached, for example `!(condition)` and
@@ -93,7 +104,7 @@ A host write failure can still produce a partial stdout stream after validation;
 there is no transactional stdout API.
 
 Line comments retain all bytes, including a CR, tabs or trailing spaces. Outside
-comments whitespace becomes LF and spaces. Indivisible tokens/comments, qualified names and deep
+comments whitespace becomes LF and spaces. Indivisible tokens/comments, member/qualified chains and deep
 indentation may exceed 120 bytes. They are preserved and reported; this increment
 does not promise a strict 120-column result. The limit counts bytes, not Unicode
 display cells, codepoints or UTF-16 units.
@@ -154,12 +165,53 @@ source-token/comment equivalence, reparsing and idempotence.
 
 Unsupported class fields now name their type and highlight its complete source
 range, rather than the following semicolon. `builtin::span<const u8> view;`
-remains unsupported as a class field. The shared parser retains AU2001 and its
+remains unsupported as a class field. The shared parser emits the distinct AU2003 classification and its
 supported-storage explanation. Public/private/default visibility, other excluded
 storage types, CLI text/JSON parity and unchanged source/output are covered.
 The two package exact-message fixtures retain their case sources and identities;
 full-corpus hash updates were checked by restoring exactly the prior messages.
 
 Acceptance requires the focused formatter/diagnostic controls and both complete
-Meson `dev` and `slow` suites on the final integrated source. This repair does
-not claim a full `make test`, LSP-process, sanitizer, emulator or hardware run.
+Meson `dev` and `slow` suites on the final integrated source. The structural
+correction qualification below supersedes the original LSP-process exclusion.
+This repair does not claim full root `make test`, sanitizer, emulator, release
+or hardware qualification.
+
+### Structural wrapping and diagnostic classification correction
+
+The line planner replaces the previous qualified-name exemption and arbitrary
+per-token overflow breaks. Width sweeps cover nested and chained calls, comma and
+binary boundaries, unary spacing, member-only oversized atoms and UTF-8 comments.
+Goldens assert readable comma/operator continuations; the existing token, comment
+anchor, reparse, output-bound and second-pass guards remain mandatory. Only the
+four previously canonical library/example sources are reformatted in this repair;
+unrelated repository formatting is not swept into the change. Compiling their
+consumer closures before/after formatting must emit identical assembly.
+
+AU2003 describes recognized but unsupported field storage; AU2001 unexpected
+syntax and AU2002 nesting remain distinct. Full type spans and exact rejection
+messages are preserved. See the [shared classification catalog](DIAGNOSTICS.md).
+The strict negative-case source/message hash oracles remain unchanged; their text
+envelope matchers explicitly recognize the new code.
+
+### Structural correction qualification — 2026-10-08
+
+The final terminal-policy/PR91 composition passed all 41 developer and 12 slow
+Meson tests with a warning-clean optimized compiler. Focused checks passed
+1,260 structural boundary cases, 128 trivia variants, 97 corpus sources,
+53 formatter CLI and 77 structured diagnostic CLI cases. Independent review
+replayed 672 extra boundary probes, verified exact token/comment sequences for
+the four canonicalized files, and compared byte-identical assembly for eight
+consumer closures and 31 kernel roots.
+
+Actual LSP protocol runs passed 169 process cases and 18,944 assertions each
+under ordinary and optimized Python; 49 transport/position unit checks passed.
+The isolated warning-clean optimized server used hash-verified official
+nlohmann-json 3.11.3-2.1 headers. This verifies the focused LSP protocol, not
+editor UI behavior or a new full native/release qualification.
+
+The initial developer run failed two package-envelope matches after AU2003 was
+introduced. The matcher now explicitly lists AU2001/AU2002/AU2003; exact case,
+message, source-hash and output-preservation oracles remain intact. That failure
+and an interrupted first slow run are retained separately from the fresh final
+41/12 success. The final documentation seal changes no executable/test input.

@@ -19,8 +19,8 @@ auto json_integers_example(builtin::ByteRegion region, i64 initial_capacity, i64
         return -1;
     }
     const std::DecimalEncodingResult zero = std::format_decimal_i64(parsed_zero.value_or(1));
-    if (signed_value.status() != std::DecimalEncodingStatus::success || unsigned_value.status() !=
-        std::DecimalEncodingStatus::success || zero.status() != std::DecimalEncodingStatus::success) {
+    if (signed_value.status() != std::DecimalEncodingStatus::success || unsigned_value.status()
+        != std::DecimalEncodingStatus::success || zero.status() != std::DecimalEncodingStatus::success) {
         return -2;
     }
     // Three fixed-width encodings and four punctuation bytes have a proved <=64
@@ -89,11 +89,11 @@ auto json_integers_example(builtin::ByteRegion region, i64 initial_capacity, i64
             return -7;
         }
         const std::JsonI64Result signed_read = std::parse_json_i64(wire, 1, signed_value.size());
-        const std::JsonU64Result unsigned_read = std::parse_json_u64(wire, 2 + signed_value.size(), unsigned_value.size(
-            ));
+        const std::JsonU64Result unsigned_read = std::parse_json_u64(wire, 2 + signed_value.size(),
+            unsigned_value.size());
         if (signed_read.status() != std::JsonIntegerStatus::success || signed_read.value_or(0) != -9223372036854775808
-            || unsigned_read.status() != std::JsonIntegerStatus::success || unsigned_read.value_or(0u64) !=
-            18446744073709551615u64) {
+            || unsigned_read.status() != std::JsonIntegerStatus::success || unsigned_read.value_or(0u64)
+            != 18446744073709551615u64) {
             return -8;
         }
     }
