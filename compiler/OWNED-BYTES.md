@@ -1,5 +1,11 @@
 # Hosted runtime-sized byte ownership candidate
 
+The [readonly owned-view extension](READONLY-OWNED-SPANS.md) now adds runtime
+owner origins and narrow const receiver-field results using the same span type.
+Historical qualification and representation details on this page describe their
+original checkpoints; the extension's source/ABI contract and fresh results are
+separate. Existing array-only temporary-chain restrictions remain unchanged.
+
 This checkpoint adds one allocation/lifetime prerequisite. Independent source
 review and the [focused native composite](../docs/owned-bytes-results.md) passed. It does not replace the fixed-record BinaryBuffer64 or
 Sector512 APIs. The resize extension below has passed [focused checks](../docs/owned-bytes-resize-results.md); it adds

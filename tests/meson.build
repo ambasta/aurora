@@ -24,6 +24,8 @@ foreach entry : [
     ['byte-codec', 'compiler/byte_codec.py', 'bytes'],
     ['binary-buffer', 'compiler/binary_buffer.py', 'bytes'],
     ['byte-buffer', 'compiler/byte_buffer.py', 'bytes'],
+    ['owned-spans', 'compiler/owned_spans.py', 'bytes'],
+    ['json-owned', 'compiler/json_owned.py', 'bytes'],
     ['owned-sector', 'compiler/sector.py', 'bytes'],
     ['block-io', 'compiler/block_io.py', 'bytes'],
     ['sector-window', 'compiler/sector_window.py', 'bytes'],
@@ -141,6 +143,25 @@ test(
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
 )
 
+# Logical owner views share the established readonly-span source type.
+owned_spans_ir = executable(
+    'owned-spans-ir', 'compiler/owned_spans_ir.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('owned-spans-ir', owned_spans_ir, suite: ['dev', 'core', 'bytes', 'compiler'], timeout: 120)
+test('owned-spans-source', python,
+     args: ['-B', '-O', files('compiler/owned_spans_source.py'), aurorac],
+     depends: aurorac, suite: ['dev', 'core', 'bytes'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 180)
+foreach mode : ['standalone', 'receiver']
+    span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac]
+    if mode == 'receiver'
+        span_kernel_args += ['--receiver-bound']
+    endif
+    test('owned-spans-kernel-' + mode, python,
+         args: span_kernel_args, depends: aurorac, suite: ['dev', 'bytes'],
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
+endforeach
 # Meson owns compiler dependencies; this records observed artifact stability only.
 test(
     'json-profile', python,
@@ -148,3 +169,12 @@ test(
     depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
 )
+
+logical_spans_abi = executable(
+    'logical-spans-abi', 'compiler/logical_spans_abi.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('logical-spans-abi', python,
+     args: ['-B', '-O', files('compiler/logical_spans_abi.py'), logical_spans_abi],
+     depends: logical_spans_abi, suite: ['dev', 'core', 'bytes', 'compiler'],
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)

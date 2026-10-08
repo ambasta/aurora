@@ -3,7 +3,8 @@
 `std.byte_buffer` implements `std::ByteBuffer` in Aurora using one private
 `builtin::OwnedBytes` field and an `i64` logical length. It is a small allocating
 collection prerequisite for native library consumers. It adds no compiler builtin,
-raw address, escaped view, borrowed owning parameter or kernel dependency.
+raw address, borrowed owning parameter or kernel dependency. The separately
+qualified compiler extension adds receiver-bound readonly views.
 `BinaryBuffer64` remains the copied fixed-record API; `Sector512` and
 `RamSectorDevice` keep their existing contracts.
 
@@ -30,6 +31,17 @@ Valid state satisfies `0 <= size() <= capacity()`. A failed initial allocation
 produces an inert buffer with false `ok()` and zero size/capacity. It cannot recover
 by reserving or appending. Successful zero-capacity ownership is distinct: it can
 grow if later allocation succeeds. There is no ambient allocator or hidden region.
+
+## Readonly logical prefix
+
+`bytes() const -> builtin::span<const u8>` exposes exactly `[0,size())`, never
+spare capacity or discarded suffix bytes. The result is tied to this precise
+buffer and private owner; live descendants freeze all mutable buffer methods and
+moves, even for zero length. Scope exit releases that view authority. Successful
+empty allocation returns a valid empty view; borrowing an invalid buffer traps.
+Existing UTF-8, binary and JSON consumers can take this view without copying.
+See the [lifetime/representation contract](../compiler/READONLY-OWNED-SPANS.md)
+and [fresh reconstructed results](readonly-owned-spans-results.md).
 
 ## Checked operations
 
@@ -112,7 +124,7 @@ is hosted-only until that separate integration exists. It is not an owned string
 Unicode API, JSON parser, generic vector, native program startup or self-hosting
 toolchain, and does not remove the trusted C++ hosted allocator dependency.
 
-### Focused result — 2026-10-07
+### Historical PR76 focused result — 2026-10-07
 
 The final corpus passed compile-only admission: 14 programs and 17 rejection
 fixtures, with all 37 native invocations explicitly skipped. Separate normal and

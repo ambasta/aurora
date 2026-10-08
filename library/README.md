@@ -48,12 +48,13 @@ exact reserve, geometric scalar append and retained-capacity truncate/clear have
 explicit failure behavior. Construction requires a region and moved owner; import
 `std.binary` directly for its copied read result. See the [contract](../docs/byte-buffer.md)
 and [example](examples/byte_buffer.au). This hosted-only collection adds no compiler
-builtin, payload view, string/parser API or replacement for fixed BinaryBuffer64
-and Sector512 records.
+builtin or replacement for fixed BinaryBuffer64 and Sector512 records. The
+[readonly owner-view extension](../compiler/READONLY-OWNED-SPANS.md) adds
+`bytes() const`, exposing the logical prefix with receiver-bound lifetime checks.
 
 ## Deliberately absent
 
-There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, general heap ownership and general interprocedural borrowing remain deferred; the milestone014 candidate adds only synchronous readonly local-byte-array spans. Ordinary inline class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.
+There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, general heap ownership and general interprocedural borrowing remain deferred; the original milestone014 candidate added synchronous readonly local-byte-array spans, now extended by the bounded owned-view contract. Ordinary inline class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.
 
 The long-term goal remains a native runtime responsible for the useful roles currently served by libc, and a broad safe C++ standard-library ecosystem without C source/ABI compatibility. This module establishes actual imports, private implementation helpers, typed calls and executable scalar contracts toward that goal.
 

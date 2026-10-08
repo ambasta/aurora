@@ -26,6 +26,7 @@ static_assert(offsetof(NativeOwner, length) == 16 && offsetof(NativeOwner, succe
 
 extern "C" {
 void __au_runtime_bytes_allocate(std::uint64_t region, std::int64_t length, NativeOwner *output) noexcept;
+std::int64_t __au_runtime_bytes_borrow_length(const NativeOwner *owner) noexcept;
 std::uint64_t __au_runtime_bytes_at(const NativeOwner *owner, std::int64_t index) noexcept;
 std::uint64_t __au_runtime_bytes_set(NativeOwner *owner, std::int64_t index, std::uint64_t value) noexcept;
 std::uint64_t __au_runtime_bytes_resize(NativeOwner *owner, std::int64_t length) noexcept;
