@@ -472,10 +472,17 @@ written-only LBA. All records are validated before any sector is selected.
 Trailing preallocation, empty files, Btrees and attributes remain unsupported.
 See the [contract and qualification status](../docs/xfs-file-contract.md).
 
-## Native JSON candidate
+## Native JSON
 
 `std.json` scans bounded JSON tokens and validates complete documents with copied
 reports. The [contract](../docs/json-profile.md) defines limits, strict scalar-valid
 Unicode, duplicate-key acceptance and spelling-only numbers. Reconstructed source
 passed fresh focused tests and independent review; see the
 [results](../docs/json-profile-results.md). No DOM or host replacement is claimed.
+
+`decode_json_string_scalar` reads one content scalar with copied diagnostics;
+`escape_json_scalar` returns at most six canonical JSON bytes. Neither retains
+input or introduces a string container. The [scalar contract](../docs/json-codecs.md)
+and [focused results](../docs/json-codecs-results.md) cover real ByteBuffer
+composition, allocation failure and larger owner-backed windows. Whole-document
+serialization, numeric conversion and native LSP integration remain separate.

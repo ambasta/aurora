@@ -5,12 +5,14 @@ from pathlib import Path
 import subprocess
 import sys
 
-RUNTIME = frozenset("__au_runtime_bytes_" + name for name in ("allocate", "at", "set", "drop"))
+RUNTIME = frozenset("__au_runtime_bytes_" + name for name in ("allocate", "at", "set", "drop", "borrow_length"))
 ENTRY = "__au_v_m1_18kernel_owned_bytes_n0__d24kernel_owned_bytes_entry"
+CONSUMER = "__au_v_m1_18kernel_owned_bytes_n0__d13consume_bytes"
 TRANSFER = "__au_v_m1_18kernel_owned_bytes_n0__d10pass_bytes"
 DEFINITIONS = {
     ENTRY: "t",
     TRANSFER: "t",
+    CONSUMER: "t",
     "__au_runtime_bytes_kernel_entry": "T",
     "aurora_reflect_size": "T",
     "aurora_reflect_field_count": "T",
@@ -37,7 +39,7 @@ def validate_symbols(text):
     if unsupported:
         raise ValueError("Unsupported kernel owned-byte runtime import: " + ", ".join(sorted(unsupported)))
     if imports != RUNTIME:
-        raise ValueError("Dedicated owned-byte profile must exercise all four admitted runtime operations")
+        raise ValueError("Dedicated owned-byte profile must exercise all five admitted runtime operations")
     if definitions != DEFINITIONS:
         raise ValueError("Unexpected dedicated owned-byte graph definitions or visibility")
     return dict(imports=sorted(imports), definitions=definitions)
@@ -51,8 +53,11 @@ def self_test():
     rejected = 0
     mutants = ["\n".join(rows[:i] + rows[i + 1 :]) for i in range(len(rows))]
     mutants += [text + "\nU " + name for name in ("__au_runtime_bytes_resize", "malloc", "unknown_helper")]
-    mutants += [text + "\n0 T " + name for name in ("__au_runtime_bytes_resize", "aurora_kernel_value", "malloc")]
-    mutants += [text.replace("0 t " + name, "0 T " + name) for name in (ENTRY, TRANSFER)]
+    mutants += [
+        text + "\n0 T " + name
+        for name in (*sorted(RUNTIME), "__au_runtime_bytes_resize", "aurora_kernel_value", "malloc")
+    ]
+    mutants += [text.replace("0 t " + name, "0 T " + name) for name in (ENTRY, TRANSFER, CONSUMER)]
     mutants += [text + "\n" + rows[0], text + "\n" + rows[-1], text + "\nmalformed"]
     for candidate in mutants:
         try:
@@ -70,6 +75,6 @@ if __name__ == "__main__":
     elif len(sys.argv) == 2:
         symbols = subprocess.check_output(["nm", "-a", str(Path(sys.argv[1]))], text=True)
         validate_symbols(symbols)
-        print("PASS: dedicated owned-byte object has only four admitted runtime imports")
+        print("PASS: dedicated owned-byte object has only five admitted runtime imports")
     else:
         raise SystemExit("Expected language.o or --self-test")

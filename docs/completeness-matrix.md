@@ -1,14 +1,16 @@
 # Completeness and acceptance matrix
 
-## JSON scalar codecs — unverified candidate 2026-10-08
+## JSON scalar codecs — 2026-10-08
 
 A shared scalar-valid string reader and canonical escaped-scalar copied result
-are implemented without compiler or ByteBuffer changes. The real hosted example
-measures then appends decoded and escaped bytes through existing storage. Fresh
-codec/scanner, allocation-failure and independent review gates are pending; see
-[the contract](json-codecs.md). This is not an owned string, DOM, bulk writer API,
-whole-document serializer or replacement of host nlohmann.
-
+reuse existing spans and UTF-8, keeping ByteBuffer generic. Fresh ordinary and
+optimized gates each passed 1,942 codec cases/19,781 full-width observations,
+45 rejections and 431 hosted checks; original scanner regressions each passed
+2,111 cases/10,768 observations/52 rejections. Separate real owner-window tests
+cover up to 8,192-byte input; the public focused Make gate passed with the reused
+reviewed compiler. See [contract](json-codecs.md) and [results](json-codecs-results.md).
+This is not an owned string, DOM, bulk writer API, whole-document serializer or
+replacement of host nlohmann; no new full-native or hardware claim follows.
 
 ## Reconstructed readonly owned-byte views — 2026-10-08
 
@@ -1292,3 +1294,12 @@ initial Manifest scratch-path failure was corrected and rerun. The later PR47
 composition also passed the three profiles on its current overlay-aware compiler
 in 16.96 seconds, without a duplicate compiler build. No full aggregate
 qualification is claimed. See [coverage and limits](meson-bootstrap.md#semantic-package-feedback).
+
+## Reconstructed kernel readonly-owner views, fresh local gates passed
+
+An isolated candidate extends the existing owned-bytes profile with a readonly
+Aurora consumer, real fragmented holders, empty ownership and exact five-import
+admission. The prior local implementation/evidence was lost in a rollback. This
+reconstruction has fresh build-only, host and actual-guest passes after independent
+pre-guest review; final evidence review/publication remain separate. No prior pass
+transfers. See [status](kernel-owned-views-results.md).

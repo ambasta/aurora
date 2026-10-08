@@ -1,6 +1,6 @@
 # JSON string scalar codecs
 
-Status: implemented candidate, not yet independently qualified. This library-only
+Status: fresh focused native gates passed; see [results](json-codecs-results.md). This library-only
 increment shares scalar reading with the accepted bounded JSON scanner. It adds
 no compiler semantics, string container, DOM or replacement for host nlohmann.
 

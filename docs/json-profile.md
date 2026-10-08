@@ -161,8 +161,9 @@ Direct native runner: `python3 -B tests/compiler/json_profile.py COMPILER
 `--self-test-only` runs compiler-free oracle controls only. Generated sources,
 assembly, complete observations, diagnostics and identities remain retained.
 
-## Unverified scalar-codec follow-on
+## Qualified scalar-codec follow-on
 
-The [candidate scalar codecs](json-codecs.md) share string escape reading with
-this scanner. Their fresh regression gates are pending; historical scanner
-evidence does not qualify modified source. Token/document limits are unchanged.
+The [scalar codecs](json-codecs.md) share string escape reading with this scanner.
+Fresh ordinary/optimized regressions and focused public Make passed; see
+[results](json-codecs-results.md). Token/document limits are unchanged. Scalar
+reading alone neither validates a whole string nor replaces host JSON support.
