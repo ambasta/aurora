@@ -15,6 +15,44 @@ normalized to `append_failed`; all other failure reports expose zero regardless
 of their supplied count. Reports retain no owner, borrow or allocation authority,
 and their public construction does not prove that an append occurred.
 
+## Copied append-report invariants
+
+Both `JsonAppendResult` and `JsonStringAppendResult` normalize their supplied
+status once during construction using nonexported scalar helpers. A scalar
+success count must be 1..6; a string success count must be at least two. Invalid
+success counts become `append_failed`. Every other declared status remains
+unchanged for every `i64` count. The private raw count is retained; `appended_bytes()`
+returns it only for success and otherwise returns zero before caller arithmetic.
+Neither report has a field-mutating method. `status()` is therefore a plain read.
+
+For supplied status `s` and count `c`, let `N(s,c)` be that range normalization.
+The previous observer computed `N(s,c)` on each call; the constructor now stores
+`N(s,c)`, so every observer returns the same status and masked count. The helper
+uses only comparisons and short-circuit logic, including at both `i64` extrema.
+Complete copies, returns, field replacement and projection preserve this state.
+This proof relies on the language's existing private-field, initialization and
+complete-copy guarantees. It does not assume arbitrary forged IR is valid, and
+no compiler, IR corruption, ownership, overflow or append-boundary check is removed.
+Public construction still does not establish that any output was changed.
+
+The existing JSON-string runner adds an independent public-contract oracle for
+all nine enum statuses across 13 runtime counts: both signed extrema and their
+neighbors, -1, 0, 1, 2, 3, 5, 6, 7 and 9. Its 117 native cases repeat direct and
+copied observations, return/project composed values, replace complete child
+reports and check failure masking before extreme-value arithmetic. The same
+fixtures pass against the preceding accessor-normalizing implementation and the
+constructor-normalizing implementation. Existing real-owner lifetime, byte,
+transaction and borrow-rejection regressions remain required, as do the complete
+final-source Meson `dev` and `slow` suites.
+
+Static x86-64 assembly inspection with the unchanged accepted compiler counts
+43 to 10 instruction lines for scalar `status()` and 32 to 10 for string
+`status()`; conditional branches fall from three/two to zero. Constructor helper
+calls now perform the checks once. These are static observer measurements, not a
+runtime speedup, code-size reduction, root native release or whole-library claim.
+The pilot changes only these two report classes; other result types keep their
+existing checks.
+
 ## Failure order and preservation
 
 1. Negative offset/count, an offset past the input, or a count greater than
