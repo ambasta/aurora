@@ -59,6 +59,9 @@ For an interactive serial prompt, run `make console` (BIOS) or `make console-uef
 `status` or `exit`. This opt-in QEMU profile has a 64-byte ASCII line editor and
 a five-minute session limit. See the [console contract](docs/kernel-console-contract.md)
 and the [UEFI results](docs/uefi-console-results.md) for focused validation and limits.
+The simple UEFI editor and command presentation are Aurora-owned through a
+[sealed synchronous console service](docs/native-console-service.md). BIOS and
+the protected-program console retain their explicitly scoped legacy adapters.
 For automated console acceptance, use `make smoke-console` (BIOS) or
 `make smoke-console-uefi`. Both are included in `make smoke-all`; `make test`
 remains native-only.

@@ -6,9 +6,11 @@ ACPI checks. It does not first run timing-sensitive user service fixtures. A suc
 precedes the separate console-ready marker.
 
 This is an experimental QEMU serial interface, not a graphical terminal or a hardware-qualified Framework driver.
-There are no firmware calls after ExitBootServices. It accepts the existing bounded ASCII editor and Aurora command
-policy: `help`, `status`, `exit`, backspace/delete, and CR/LF/CRLF. Storage remains a copied 64-byte kernel-owned line.
-No parser or raw user-memory access is added.
+There are no firmware calls after ExitBootServices. The current simple profile runs its complete 64-byte ASCII editor,
+command parsing and presentation in one persistent Aurora frame: `help`, `status`, `exit`, backspace/delete and
+CR/LF/CRLF. A sealed synchronous ConsoleSession borrow supplies copied input observations and checked byte output.
+See the [current native-service contract and evidence scope](native-console-service.md). No raw user-memory access,
+general process API or BIOS/protected-program editor migration is implied.
 
 ## Wake and authority contract
 
@@ -39,7 +41,8 @@ console shares this correction so its existing rejection promise also covers out
 
 ## Qualification boundaries
 
-The [focused results](uefi-console-results.md) record hosted, fatal sanitizer, linked and actual guest passes.
+The [native-service contract](native-console-service.md) records the current migrated profile and acceptance scope.
+The [earlier focused results](uefi-console-results.md) retain the original shared-C++-editor qualification as history.
 Future executable changes must re-establish
 both the complete IF-off main/editor/Aurora call chains against the 16 KiB stack and the complete IRQ closure against
 its separate 4 KiB checked reserve. Account for generated frame/hidden/operand/return/alignment storage. These are
@@ -51,7 +54,11 @@ post-last-send response latency, a 0.6-second idle CPU sample, pasted-line rejec
 clean exit and actual normal-image restoration. Affected user timer-origin and pending-drain controls also passed.
 The full boot matrix and physical AMD/Framework qualification are outside this increment.
 
-## Recovery provenance
+## Historical shared-editor qualification
+
+The following results precede the persistent Aurora service migration and do not substitute for its new gates.
+
+### Recovery provenance
 
 The initial reconstruction started from PR50 commit `e1d776b2cd25a5fd4f997dcc3c931be6bbbe8fbb`.
 The executable qualification used PR53 commit `92e28a823afe56af774a128df8f9093083f26e29`, tree
@@ -63,7 +70,7 @@ candidate does not treat that report as fresh runtime evidence. The interactive 
 checks only and stopped on an unrelated stale BIOS smoke-script pin before any image or guest build. The pin is
 now corrected with closed full-file provenance, unchanged executable-body identity, and an early-guard behavior test.
 
-## First fresh latency attempt
+### First fresh latency attempt
 
 The reconstructed source passed hosted normal/fatal-sanitizer, routing/clock and image gates. Independent linked
 review bounded the full UEFI IF-off chain at 6,888 bytes and the IRQ closure including entry at 632 bytes. The real
@@ -73,7 +80,7 @@ normal BIOS and UEFI restoration passed afterward. The next narrow source correc
 trigger only for UEFI polling and preserves it across RX-only error flushes. It leaves the clock/count and latency
 limit unchanged; the subsequent focused passes are recorded below and in the results.
 
-## Corrected interaction and final compiler join
+### Corrected interaction and final compiler join
 
 With only the five UEFI FIFO immediate values changed, the original-clock interaction passed all commands,
 short-input, invalid/pasted-input rejection and recovery controls. Responses measured 3.10–20.64 ms after the final

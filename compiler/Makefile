@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write test-console-service,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -100,7 +100,7 @@ export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_G
 .PHONY: aurora-test-context
 all test test-modules test-storage test-initialization-facts test-utf8 test-utf8-encoding \
     test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads \
-    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write: aurora-test-context
+    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write test-console-service: aurora-test-context
 aurora-test-context:
 	python3 -B ../scripts/compiler_contract.py check --repo-root "$(abspath ..)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -384,5 +384,17 @@ test-json-string-write: $(OUT)
 	work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-string-write.XXXXXXXX")"; \
 	python3 -B -O ../tests/compiler/json_string_write.py "$(abspath $(OUT))" --artifacts "$$work/source"; \
 	printf 'PASS JSON string write Make recipe: %s\n' "$$work"
+
+.PHONY: test-console-service
+test: test-console-service
+test-console-service: $(OUT)
+	@set -eu; \
+	work="$$(mktemp -d "$(dir $(abspath $(OUT)))console-service.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/console_service.py "$(abspath $(OUT))"; \
+	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/console_service_ir.cpp -o "$$work/ir-tests"; \
+	"$$work/ir-tests"; \
+	$(CXX) $(CXXFLAGS) ../tests/kernel-console-session.cpp -o "$$work/grant-tests"; \
+	"$$work/grant-tests"; \
+	printf 'PASS console service Make recipe: %s\n' "$$work"
 
 endif # controlled outer dispatcher / original inner graph

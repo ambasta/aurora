@@ -205,7 +205,7 @@ class SemanticAnalyzer {
     std::int64_t reflectedValue(ExpressionPtr expression) {
         if (expression->reflectedType.isSpan())
             fail(expression->token, "span capabilities are unavailable to reflection");
-        if (expression->reflectedType.isResource())
+        if (expression->reflectedType.isResource() || expression->reflectedType.isService())
             fail(expression->token, "resource capabilities are unavailable to reflection");
         if (expression->token.text == "type_id")
             return typeId(expression->reflectedType, expression->token);
@@ -281,7 +281,8 @@ class SemanticAnalyzer {
         l.name = n;
         l.type = t;
         l.mut = mut;
-        const auto needed = t.isBytes()                    ? 4
+        const auto needed = t.isService()                  ? service::capabilityBytes / 8
+                            : t.isBytes()                  ? 4
                             : t.isSpan()                   ? ir::spanBytes / 8
                             : (t.isClass() || t.isArray()) ? ir::roundedStorage(static_cast<int>(typeSize(t, tok))) / 8
                                                            : 1;
@@ -289,7 +290,9 @@ class SemanticAnalyzer {
             fail(tok, "function local stack frame exceeds 65536 bytes");
         slot += static_cast<int>(needed);
         l.offset = 8 * slot;
-        if (t.isRegion()) {
+        if (t.isService()) {
+            lowered.serviceSlots.insert(l.offset);
+        } else if (t.isRegion()) {
             lowered.regionSlots.insert(l.offset);
         } else if (t.isBytes()) {
             lowered.byteSlots[l.offset] = mut;
@@ -658,6 +661,8 @@ class SemanticAnalyzer {
         fail(token, constructor ? "class has no declared constructor" : "unknown class method");
     }
     void requireVisibleType(const Type &type, const Token &token) {
+        if (service::copiedType(type))
+            return;
         if ((!type.isClass() && !type.isEnum()) || reflectionAccess.empty())
             return;
         if (currentFunction->templateTypeAuthority.contains(type.className))
@@ -728,6 +733,32 @@ class SemanticAnalyzer {
             if (receiver >= 0 && locals[receiver].objectExclusive)
                 fail(value->token, "owning object is exclusively borrowed for a call");
         };
+        if (type.isService()) {
+            if (implicit || receiver < 0 || receiverFieldIndex != -1 || locals[receiver].exclusive)
+                fail(value->token, "service operation requires an active named exclusive service parameter");
+            if (value->token.text == "next") {
+                arity(value, 1);
+                if (!resultBinding)
+                    fail(value->token, "next requires a typed ConsoleSample initializer");
+                match(resultBinding->type, service::sampleType(), value->token);
+                const int destination = add(resultBinding->name,
+                                            resultBinding->type,
+                                            resultBinding->mutableValue,
+                                            resultBinding->token,
+                                            bindResult);
+                emit(ir::ServiceOperation{receiverOffset, service::Operation::Next, offset(destination)});
+                return service::sampleType();
+            }
+            if (value->token.text == "put") {
+                arity(value, 2);
+                if (resultBinding)
+                    fail(value->token, "put returns a scalar enum, not a copied report");
+                match(expression(value->args[1]), Type::U8, value->token);
+                emit(ir::ServiceOperation{receiverOffset, service::Operation::Put, 0});
+                return service::putResultType();
+            }
+            fail(value->token, "unknown sealed ConsoleSession operation");
+        }
         if (type.isBytes()) {
             if (resultBinding || implicit)
                 fail(value->token, "byte operation requires a named owner");
@@ -872,7 +903,47 @@ class SemanticAnalyzer {
             releaseSpan(*it, true);
         return callee.result;
     }
+    Type callService(ExpressionPtr value, const Function &callee, const StatementPtr &binding) {
+        arity(value, callee.params.size());
+        if (callee.result.isClass() && !binding)
+            fail(value->token, "copied service report requires a typed local initializer");
+        if (binding)
+            match(callee.result, binding->type, value->token);
+        if (value->args[0]->op != "name")
+            fail(value->token, "service forwarding requires a named exclusive service parameter");
+        const int root = source(value->args[0]);
+        match(locals[root].type, Type::ConsoleSession, value->token);
+        if (locals[root].exclusive)
+            fail(value->token, "service authority is suspended during synchronous forwarding");
+        locals[root].exclusive = true;
+        const int loan = nextObjectLoan++;
+        emit(ir::AcquireServiceLoan{loan, offset(root)});
+        std::vector<int> spans(callee.params.size(), 0), borrowedSpans;
+        for (std::size_t index = 1; index < callee.params.size(); ++index) {
+            const auto &argument = value->args[index];
+            const auto &type = callee.params[index].type;
+            if (type.isSpan()) {
+                const int span = acquireSpan(argument);
+                spans[index] = offset(span);
+                borrowedSpans.push_back(span);
+            } else {
+                match(expression(argument), type, argument->token);
+                push();
+            }
+        }
+        int destination = 0;
+        if (binding)
+            destination = offset(add(binding->name, binding->type, binding->mutableValue, binding->token));
+        emit(ir::ServiceCall{callee.name, loan, destination, spans});
+        emit(ir::ReleaseServiceLoan{loan});
+        locals[root].exclusive = false;
+        for (auto it = borrowedSpans.rbegin(); it != borrowedSpans.rend(); ++it)
+            releaseSpan(*it, true);
+        return callee.result;
+    }
     Type callFunction(ExpressionPtr expression, const Function &callee, const StatementPtr &resultBinding = nullptr) {
+        if (!callee.params.empty() && callee.params.front().type.isService())
+            return callService(expression, callee, resultBinding);
         if (!callee.params.empty() && callee.params[0].type.isRegion())
             return callResource(expression, callee, resultBinding);
         if (callee.result.isClass() && !resultBinding)
@@ -1121,6 +1192,8 @@ class SemanticAnalyzer {
                 fail(e->token,
                      "class values are only supported in local initializers "
                      "and field accesses");
+            if (locals[i].type.isService())
+                fail(e->token, "service capability is not a value");
             if (!scalarValue(locals[i].type))
                 fail(e->token,
                      "owned values cannot be implicitly copied; use move, "
@@ -1625,6 +1698,8 @@ class SemanticAnalyzer {
             return false;
         }
         if (s->kind == "let") {
+            if (s->type.isService())
+                fail(s->token, "service capability cannot be stored in a local");
             if (s->type.isRegion())
                 fail(s->token, "region authority is available only as the first function parameter");
             if (s->type.isBytes()) {
@@ -1917,7 +1992,26 @@ public:
                 std::count_if(candidate.params.begin(), candidate.params.end(), [](const Param &parameter) {
                     return parameter.borrowed;
                 });
-            if (borrowedCount) {
+            const bool serviceFunction = !candidate.params.empty() && candidate.params.front().type.isService();
+            if (candidate.result.isService())
+                fail(candidate.token, "service capabilities cannot be returned");
+            if (serviceFunction) {
+                if (borrowedCount != 1 || !candidate.params.front().borrowed || candidate.params.front().borrowConst ||
+                    !candidate.receiverClass.empty() || candidate.constructor || !candidate.templateArguments.empty() ||
+                    !candidate.templateParameters.empty() ||
+                    (!scalarValue(candidate.result) && candidate.result != service::sampleType()))
+                    fail(candidate.token,
+                         "service functions require one leading exclusive ConsoleSession reference and copied result");
+                for (std::size_t index = 1; index < candidate.params.size(); ++index)
+                    if (!scalarValue(candidate.params[index].type) && !candidate.params[index].type.isSpan())
+                        fail(candidate.token,
+                             "service helper parameters require scalars, enums or readonly byte spans");
+            } else {
+                for (const auto &parameter : candidate.params)
+                    if (parameter.type.isService())
+                        fail(candidate.token, "service capability must be the leading exclusive parameter");
+            }
+            if (borrowedCount && !serviceFunction) {
                 if (borrowedCount != 1 || candidate.params.empty() || !candidate.params.front().borrowed ||
                     !candidate.receiverClass.empty() || candidate.constructor || !candidate.templateArguments.empty() ||
                     !candidate.templateParameters.empty() || !owningClass(candidate.params.front().type) ||
@@ -2015,7 +2109,8 @@ public:
             lowered.name = function.name;
             lowered.moduleScope = function.moduleScope;
             lowered.result = function.result;
-            const bool borrowed = !function.params.empty() && function.params.front().borrowed;
+            const bool borrowed = !function.params.empty() && function.params.front().borrowed &&
+                                  !function.params.front().type.isService();
             if (!function.receiverClass.empty())
                 lowered.receiver = ir::Receiver{
                     function.receiverClass, !function.receiverConst, function.constructor, function.publicAccess};
@@ -2026,11 +2121,11 @@ public:
             }
             result = function.result;
             for (const auto &parameter : function.params)
-                if (!parameter.borrowed)
+                if (!parameter.borrowed || parameter.type.isService())
                     lowered.parameters.push_back(parameter.type);
             for (std::size_t index = 0; index < function.params.size(); ++index) {
                 const auto &parameter = function.params[index];
-                if (parameter.borrowed) {
+                if (parameter.borrowed && !parameter.type.isService()) {
                     Local alias;
                     alias.name = parameter.name;
                     alias.type = parameter.type;
@@ -2047,7 +2142,9 @@ public:
                                       function.token,
                                       true,
                                       !parameter.type.isClass() && !parameter.type.isBytes());
-                if (parameter.type.isRegion())
+                if (parameter.type.isService())
+                    emit(ir::BindServiceParameter{parameterIndex, offset(local), service::Kind::Console});
+                else if (parameter.type.isRegion())
                     emit(ir::BindRegionParameter{parameterIndex, offset(local)});
                 else if (parameter.type.isBytes()) {
                     locals[local].owner = 0;

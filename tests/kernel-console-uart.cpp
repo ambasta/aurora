@@ -12,12 +12,14 @@ struct Ports {
     static inline std::deque<std::uint8_t> input;
     static inline std::string output;
     static inline std::uint8_t error{}, error_after_read{}, error_after_write{};
+    static inline bool transmit_ready{true};
     static inline unsigned writes{}, inject_at{}, lsr_reads{}, rx_flushes{};
     static inline std::uint8_t last_fcr{}, expected_trigger{};
     static auto read(unsigned port) -> std::uint8_t {
         if (port == 0x3fd) {
             ++lsr_reads;
-            const auto value = static_cast<std::uint8_t>(0x20 | (!input.empty() ? 1 : 0) | error);
+            const auto value =
+                static_cast<std::uint8_t>((transmit_ready ? 0x20 : 0) | (!input.empty() ? 1 : 0) | error);
             error = 0;
             return value;
         }
@@ -50,7 +52,9 @@ struct Suite {
     static auto reset() -> void {
         Ports::input.clear(); Ports::output.clear(); Ports::error = 0; Ports::error_after_read = 0;
         Ports::error_after_write = 0; Ports::writes = 0; Ports::inject_at = 0;
-        Ports::lsr_reads = 0; Ports::rx_flushes = 0;
+        Ports::lsr_reads = 0;
+        Ports::rx_flushes = 0;
+        Ports::transmit_ready = true;
         Uart::initialize_input(); need(Ports::last_fcr == (Ports::expected_trigger | 7));
     }
     static auto queue(std::string_view bytes) -> void {
@@ -125,6 +129,37 @@ struct Suite {
                 command(line, "status\n", Event::status);
             }
         }
+        // Copied transport observations are canonical, editor-independent, and
+        // preserve damage across the delimiter boundary and output polling.
+        reset();
+        auto sample = Uart::next();
+        need(!sample.present && sample.byte == 0 && !sample.damaged);
+        Ports::error = 2;
+        sample = Uart::next();
+        need(!sample.present && sample.byte == 0 && sample.damaged);
+        sample = Uart::next();
+        need(!sample.present && sample.byte == 0 && !sample.damaged);
+        for (const auto delimiter : {'\r', '\n'}) {
+            reset();
+            Ports::input.push_back(delimiter);
+            Ports::error_after_read = 8;
+            sample = Uart::next();
+            need(sample.present && sample.byte == delimiter && sample.damaged);
+            sample = Uart::next();
+            need(!sample.present && sample.byte == 0 && sample.damaged);
+            sample = Uart::next();
+            need(!sample.present && sample.byte == 0 && !sample.damaged);
+        }
+        reset();
+        Ports::transmit_ready = false;
+        Ports::error = 4;
+        need(Uart::try_put('x') == aurora::console::PutResult::timeout);
+        need(Ports::output.empty() && Ports::lsr_reads == 1000001);
+        sample = Uart::next();
+        need(!sample.present && sample.byte == 0 && sample.damaged);
+        Ports::transmit_ready = true;
+        need(Uart::try_put('y') == aurora::console::PutResult::success);
+        need(Ports::output == "y");
         reset(); Line line; command(line, "status\n", Event::status);
         Uart::number(UINT64_MAX); need(Ports::output == "18446744073709551615"); need(Ports::lsr_reads >= 20);
         return observations;

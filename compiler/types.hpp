@@ -30,7 +30,8 @@ enum class TypeKind {
     U8,
     ByteSpan,
     ByteRegion,
-    OwnedBytes
+    OwnedBytes,
+    ConsoleSession
 };
 enum class TemplateArgumentKind { Type, Value };
 inline constexpr int maximumTemplateNesting = 4;
@@ -94,6 +95,9 @@ class Type {
     bool isRegion() const {
         return kind == TypeKind::ByteRegion;
     }
+    bool isService() const {
+        return kind == TypeKind::ConsoleSession;
+    }
     bool isBytes() const {
         return kind == TypeKind::OwnedBytes;
     }
@@ -111,7 +115,7 @@ class Type {
         type.length = count;
         return type;
     }
-    static const Type I64, U64, U8, Bool, Own, Ref, MutRef, ByteSpan, ByteRegion, OwnedBytes;
+    static const Type I64, U64, U8, Bool, Own, Ref, MutRef, ByteSpan, ByteRegion, OwnedBytes, ConsoleSession;
 };
 inline const Type Type::I64{TypeKind::I64};
 inline const Type Type::U64{TypeKind::U64};
@@ -123,6 +127,7 @@ inline const Type Type::MutRef{TypeKind::MutRef};
 inline const Type Type::ByteSpan{TypeKind::ByteSpan};
 inline const Type Type::ByteRegion{TypeKind::ByteRegion};
 inline const Type Type::OwnedBytes{TypeKind::OwnedBytes};
+inline const Type Type::ConsoleSession{TypeKind::ConsoleSession};
 inline std::string typeName(const Type &type) {
     switch (type.kind) {
     case TypeKind::I64:
@@ -143,6 +148,8 @@ inline std::string typeName(const Type &type) {
         return "builtin::span<const u8>";
     case TypeKind::ByteRegion:
         return "builtin::ByteRegion";
+    case TypeKind::ConsoleSession:
+        return "builtin::ConsoleSession";
     case TypeKind::OwnedBytes:
         return "builtin::OwnedBytes";
     case TypeKind::Parameter:

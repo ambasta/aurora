@@ -30,6 +30,12 @@ on UART interrupts while idle. See the [console contract](../docs/kernel-console
 for its trust boundary and focused checks. `make console-uefi` adds a normal-payload
 serial prompt with admitted LAPIC-woken polling and UART interrupts disabled; see
 the [UEFI contract](../docs/uefi-console.md) and [results](../docs/uefi-console-results.md).
+The simple UEFI profile now owns its line editor, command parsing and human
+presentation in one persistent Aurora frame, using the
+[sealed console service](../docs/native-console-service.md). Its trusted adapter
+retains boot, MMIO, interrupt/wake and quiescence authority. BIOS and the protected
+command profile have separate, explicitly retained legacy editors.
+
 The ordinary run commands remain self-tests. Neither console is a desktop or general process shell.
 
 From the repository root:

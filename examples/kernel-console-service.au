@@ -1,0 +1,588 @@
+module kernel_console_service;
+
+// The editor, command policy and presentation live for one Aurora invocation.
+// Only the leading sealed borrow can perform console transport operations.
+enum class ConsoleEvent {
+    ignored,
+    echo,
+    erased,
+    empty,
+    unknown,
+    help,
+    status,
+    exit,
+    rejected
+};
+
+class Line64 {
+    array<u8, 64> bytes;
+    i64 length;
+    bool rejected;
+    bool after_cr;
+
+    auto finish() -> ConsoleEvent {
+        ConsoleEvent event = ConsoleEvent::unknown;
+        if (rejected) {
+            event = ConsoleEvent::rejected;
+        } else {
+            if (length == 0) {
+                event = ConsoleEvent::empty;
+            } else {
+                if (length == 4) {
+                    if (bytes[0] == 'h' && bytes[1] == 'e' && bytes[2] == 'l' && bytes[3] == 'p') {
+                        event = ConsoleEvent::help;
+                    } else {
+                        if (bytes[0] == 'e' && bytes[1] == 'x' && bytes[2] == 'i' && bytes[3] == 't') {
+                            event = ConsoleEvent::exit;
+                        }
+                    }
+                } else {
+                    if (length == 6) {
+                        if (bytes[0] == 's' && bytes[1] == 't' && bytes[2] == 'a' && bytes[3] == 't' && bytes[4] == 'u'
+                            && bytes[5] == 's') {
+                            event = ConsoleEvent::status;
+                        }
+                    }
+                }
+            }
+        }
+        i64 index = 0;
+        while (index < 64) {
+            bytes[index] = '\0';
+            index = index + 1;
+        }
+        length = 0;
+        rejected = false;
+        return event;
+    }
+public:
+    Line64() : bytes{}, length(0), rejected(false), after_cr(false) {
+    }
+
+    auto reject() -> bool {
+        rejected = true;
+        return true;
+    }
+    auto consume(u8 byte) -> ConsoleEvent {
+        const bool suppressed_lf = after_cr && byte == '\n';
+        after_cr = byte == '\r';
+        if (suppressed_lf) {
+            return ConsoleEvent::ignored;
+        }
+        if (byte == '\n' || byte == '\r') {
+            return finish();
+        }
+        if (rejected) {
+            return ConsoleEvent::ignored;
+        }
+        if (byte == '\b' || byte == '\x7f') {
+            if (length == 0) {
+                return ConsoleEvent::ignored;
+            }
+            length = length - 1;
+            bytes[length] = '\0';
+            return ConsoleEvent::erased;
+        }
+        if (byte < ' ' || byte > '~' || length == 64) {
+            rejected = true;
+            return ConsoleEvent::ignored;
+        }
+        bytes[length] = byte;
+        length = length + 1;
+        return ConsoleEvent::echo;
+    }
+};
+
+auto emit_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
+    i64 index = 0;
+    while (index < text.size()) {
+        if (session.put(text.at(index)) == builtin::ConsolePutResult::timeout) {
+            return false;
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+auto show_ready(builtin::ConsoleSession& session) -> bool {
+    array<u8, 58> text = {
+        'A',
+        'U',
+        'R',
+        'O',
+        'R',
+        'A',
+        '_',
+        'C',
+        'O',
+        'N',
+        'S',
+        'O',
+        'L',
+        'E',
+        '_',
+        'R',
+        'E',
+        'A',
+        'D',
+        'Y',
+        ':',
+        ' ',
+        'U',
+        'E',
+        'F',
+        'I',
+        ',',
+        ' ',
+        'A',
+        'S',
+        'C',
+        'I',
+        'I',
+        ',',
+        ' ',
+        '6',
+        '4',
+        '-',
+        'b',
+        'y',
+        't',
+        'e',
+        ' ',
+        'l',
+        'i',
+        'n',
+        'e',
+        's',
+        '\r',
+        '\n',
+        'a',
+        'u',
+        'r',
+        'o',
+        'r',
+        'a',
+        '>',
+        ' '
+    };
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto show_prompt(builtin::ConsoleSession& session) -> bool {
+    array<u8, 8> text = {
+        'a',
+        'u',
+        'r',
+        'o',
+        'r',
+        'a',
+        '>',
+        ' '
+    };
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto show_newline(builtin::ConsoleSession& session) -> bool {
+    array<u8, 2> text = {
+        '\r',
+        '\n'
+    };
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto show_erased(builtin::ConsoleSession& session) -> bool {
+    array<u8, 3> text = {
+        '\b',
+        ' ',
+        '\b'
+    };
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto show_help(builtin::ConsoleSession& session) -> bool {
+    array<u8, 81> text = {
+        'h',
+        'e',
+        'l',
+        'p',
+        ' ',
+        ' ',
+        ' ',
+        ' ',
+        'S',
+        'h',
+        'o',
+        'w',
+        ' ',
+        'c',
+        'o',
+        'm',
+        'm',
+        'a',
+        'n',
+        'd',
+        's',
+        '\r',
+        '\n',
+        's',
+        't',
+        'a',
+        't',
+        'u',
+        's',
+        ' ',
+        ' ',
+        'S',
+        'h',
+        'o',
+        'w',
+        ' ',
+        'b',
+        'o',
+        'o',
+        't',
+        ' ',
+        's',
+        't',
+        'a',
+        't',
+        'e',
+        '\r',
+        '\n',
+        'e',
+        'x',
+        'i',
+        't',
+        ' ',
+        ' ',
+        ' ',
+        ' ',
+        'C',
+        'l',
+        'o',
+        's',
+        'e',
+        ' ',
+        't',
+        'h',
+        'i',
+        's',
+        ' ',
+        'Q',
+        'E',
+        'M',
+        'U',
+        ' ',
+        's',
+        'e',
+        's',
+        's',
+        'i',
+        'o',
+        'n',
+        '\r',
+        '\n'
+    };
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto show_status(builtin::ConsoleSession& session) -> bool {
+    array<u8, 92> text = {
+        's',
+        't',
+        'a',
+        't',
+        'u',
+        's',
+        ':',
+        ' ',
+        'b',
+        'o',
+        'o',
+        't',
+        ' ',
+        's',
+        'e',
+        'l',
+        'f',
+        '-',
+        't',
+        'e',
+        's',
+        't',
+        's',
+        ' ',
+        'p',
+        'a',
+        's',
+        's',
+        'e',
+        'd',
+        ';',
+        ' ',
+        'U',
+        'E',
+        'F',
+        'I',
+        ' ',
+        's',
+        'e',
+        'r',
+        'i',
+        'a',
+        'l',
+        ' ',
+        'c',
+        'o',
+        'n',
+        's',
+        'o',
+        'l',
+        'e',
+        ';',
+        ' ',
+        't',
+        'i',
+        'm',
+        'e',
+        'r',
+        '-',
+        'w',
+        'o',
+        'k',
+        'e',
+        'n',
+        ' ',
+        'p',
+        'o',
+        'l',
+        'l',
+        'i',
+        'n',
+        'g',
+        ';',
+        ' ',
+        'l',
+        'i',
+        'n',
+        'e',
+        ' ',
+        'c',
+        'a',
+        'p',
+        'a',
+        'c',
+        'i',
+        't',
+        'y',
+        '=',
+        '6',
+        '4',
+        '\r',
+        '\n'
+    };
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto show_unknown(builtin::ConsoleSession& session) -> bool {
+    array<u8, 29> text = {
+        'U',
+        'n',
+        'k',
+        'n',
+        'o',
+        'w',
+        'n',
+        ' ',
+        'c',
+        'o',
+        'm',
+        'm',
+        'a',
+        'n',
+        'd',
+        '.',
+        ' ',
+        'T',
+        'y',
+        'p',
+        'e',
+        ' ',
+        'h',
+        'e',
+        'l',
+        'p',
+        '.',
+        '\r',
+        '\n'
+    };
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto show_rejected(builtin::ConsoleSession& session) -> bool {
+    array<u8, 65> text = {
+        'L',
+        'i',
+        'n',
+        'e',
+        ' ',
+        'r',
+        'e',
+        'j',
+        'e',
+        'c',
+        't',
+        'e',
+        'd',
+        ':',
+        ' ',
+        't',
+        'o',
+        'o',
+        ' ',
+        'l',
+        'o',
+        'n',
+        'g',
+        ',',
+        ' ',
+        'n',
+        'o',
+        'n',
+        '-',
+        'A',
+        'S',
+        'C',
+        'I',
+        'I',
+        '/',
+        'c',
+        'o',
+        'n',
+        't',
+        'r',
+        'o',
+        'l',
+        ' ',
+        'b',
+        'y',
+        't',
+        'e',
+        ',',
+        ' ',
+        'o',
+        'r',
+        ' ',
+        'U',
+        'A',
+        'R',
+        'T',
+        ' ',
+        'e',
+        'r',
+        'r',
+        'o',
+        'r',
+        '.',
+        '\r',
+        '\n'
+    };
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto show_exit(builtin::ConsoleSession& session) -> bool {
+    array<u8, 21> text = {
+        'A',
+        'U',
+        'R',
+        'O',
+        'R',
+        'A',
+        '_',
+        'C',
+        'O',
+        'N',
+        'S',
+        'O',
+        'L',
+        'E',
+        '_',
+        'E',
+        'X',
+        'I',
+        'T',
+        '\r',
+        '\n'
+    };
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
+    Line64 line = Line64();
+    if (!show_ready(session)) {
+        return builtin::ConsoleCompletion::output_failure;
+    }
+    while (true) {
+        const builtin::ConsoleSample sample = session.next();
+        if (sample.damaged) {
+            line.reject();
+        }
+        if (sample.byte_present) {
+            const ConsoleEvent event = line.consume(sample.byte);
+            bool okay = true;
+            if (event == ConsoleEvent::echo) {
+                okay = session.put(sample.byte) == builtin::ConsolePutResult::success;
+            } else {
+                if (event == ConsoleEvent::erased) {
+                    okay = show_erased(session);
+                } else {
+                    if (event != ConsoleEvent::ignored) {
+                        okay = show_newline(session);
+                        if (okay) {
+                            if (event == ConsoleEvent::help) {
+                                okay = show_help(session);
+                            } else {
+                                if (event == ConsoleEvent::status) {
+                                    okay = show_status(session);
+                                } else {
+                                    if (event == ConsoleEvent::unknown) {
+                                        okay = show_unknown(session);
+                                    } else {
+                                        if (event == ConsoleEvent::rejected) {
+                                            okay = show_rejected(session);
+                                        } else {
+                                            if (event == ConsoleEvent::exit) {
+                                                if (!show_exit(session)) {
+                                                    return builtin::ConsoleCompletion::output_failure;
+                                                }
+                                                return builtin::ConsoleCompletion::requested_exit;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (okay) {
+                            okay = show_prompt(session);
+                        }
+                    }
+                }
+            }
+            if (!okay) {
+                return builtin::ConsoleCompletion::output_failure;
+            }
+        }
+    }
+    return builtin::ConsoleCompletion::output_failure;
+}
+
+// Existing copied bootstrap self-test, independently callable by the host.
+auto aurora_kernel_value() -> i64 {
+    own<i64> seed = own(40);
+    {
+        mutref<i64> edit = borrow_mut(seed);
+        write(edit, read(edit) + 2);
+    }
+    own<i64> answer = move(seed);
+    return read(answer);
+}

@@ -241,6 +241,8 @@ def main():
             begin = len(transcript)
             os.write(master, b"exit\n")
             receive_until(b"AURORA_CONSOLE_EXIT\r\n", begin)
+            if uefi:
+                receive_until(b" timer=masked isr=0 irr=0 uart_irq=0\r\n", begin)
             need(process.wait(timeout=3) == 33, "console exit command did not close QEMU cleanly")
             text = bytes(transcript).decode("ascii")
             need(text.count("AURORA_CONSOLE_READY:") == 1, "console restarted unexpectedly")

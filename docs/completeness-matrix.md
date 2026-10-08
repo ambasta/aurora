@@ -4,24 +4,31 @@
 
 This is the canonical project-level status and contract index. Update this section
 in place; the checkpoint summaries below are historical, not an accumulating
-list of current limitations. Integration started from accepted PR91 / main
-`1024f40ebe87bfdbd6ca04820a9ec4651da9922c` (2026-10-08). The integrated source
-also contains terminal-event, structural-formatter and protected-console work
-with the bounded qualification noted below.
+list of current limitations. This source is integrated with accepted PR96 / main
+`49aafc20bb171c7a88746a89a0d593b888e46bd1` (2026-10-08), preserving terminal-event,
+structural-formatter, protected-console, byte-literal and JSON-report work.
+The persistent simple-UEFI Aurora console service has the bounded qualification
+noted below.
 None of the six destination goals is complete. A bounded feature or passing test
 suite does not establish production safety, whole-system readiness or physical
 hardware support.
 
 | Destination | Implemented foundation | Remaining acceptance gap |
 |---|---|---|
-| Modern safe kernel | BIOS/UEFI emulator boot, protected-domain fixtures, bounded scheduling and copied request/reply IPC; five Aurora policies, including client-disposal and terminal-event classification, within trusted C++/assembly adapters | General protected-program lifecycle, capability/file services, SMP, broader native implementation and assurance |
-| Safe C++-like language with TypeScript-like types | Checked values, modules, classes, bounded generics/overloads, readonly views, runtime-sized byte ownership, move-only classes and synchronous owning-object helpers | General ownership/borrowing, concurrency, key/mapped/conditional types, richer checked reflection, optimizer and self-hosting; no general safety/performance proof |
+| Modern safe kernel | BIOS/UEFI emulator boot, protected-domain fixtures, bounded scheduling and copied request/reply IPC; five Aurora policies plus a persistent Aurora-owned simple-UEFI console, within trusted C++/assembly hardware adapters | General protected-program lifecycle, capability/file services, SMP, broader native implementation and assurance |
+| Safe C++-like language with TypeScript-like types | Checked values, modules, classes, bounded generics/overloads, readonly views, runtime-sized byte ownership, move-only classes, synchronous owning-object helpers and sealed exclusive ConsoleSession borrows | General ownership/borrowing, concurrency, key/mapped/conditional types, richer checked reflection, optimizer and self-hosting; no general safety/performance proof |
 | Ideal filesystem and XFS compatibility | Host crash model, runtime-capacity RAM sector device, offline XFS geometry/root/inline-extent readers | Real transport, mounted file services, persistence/recovery/GC and XFS read-write; no target filesystem is usable yet |
 | Framework Laptop 13 AMD system | Emulator boot/discovery, owned page/pin preparation and test-only AMD translation/event/completion references | Actual DMA conformance/isolation, active drivers, device power/recovery and complete-machine physical qualification; no supported physical tuple |
 | Native binutils/glibc/Mesa alternatives | Host-bootstrap compiler, Aurora core/byte/text/JSON modules and bounded package metadata tools | Native assembler/linker/toolchain, complete platform runtime and standard library, graphics stack and reproducible native rebuilds; no C/POSIX/ABI compatibility promise |
-| Useful apps, terminal and tiling desktop | BIOS/UEFI serial diagnostic prompts; scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
+| Useful apps, terminal and tiling desktop | Aurora-owned simple-UEFI serial editor/presentation; BIOS diagnostic prompt and scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
 
 ### Current contract map
+
+The simple-UEFI console owns its complete Line64 editor, command parser and
+presentation in one Aurora frame. The [sealed service contract](../compiler/SERVICES.md)
+keeps copied reports separate from authority; the [kernel contract](native-console-service.md)
+records exact hosted, linked-stack/image, five-profile PTY and restoration scope.
+BIOS/protected editors, general services and physical hardware remain separate.
 
 ASCII byte character literals provide a bounded compiler/JSON increment: single-quoted ASCII and explicit byte escapes have exact `u8` type, lossless spans and unchanged checked operations. Two JSON quote append sites use the syntax. See the [source contract](../compiler/BYTES.md#ascii-byte-character-literals). No Unicode character type, strings or new kernel/hardware qualification is implied.
 
@@ -39,7 +46,8 @@ old results paragraph or its “not implemented” list.
   [owning classes](../compiler/OWNING-CLASSES.md),
   [readonly owner views](../compiler/READONLY-OWNED-SPANS.md),
   [method spans](../compiler/METHOD-SPANS.md) and
-  [owning-object helpers](../compiler/BORROWED-OBJECTS.md).
+  [owning-object helpers](../compiler/BORROWED-OBJECTS.md) and
+  [sealed service borrows](../compiler/SERVICES.md).
 - Library: [API index](../library/README.md), [ByteBuffer](byte-buffer.md),
   [JSON validation](json-profile.md), [scalar codecs](json-codecs.md),
   [integer codecs](json-integers.md), [lookup](json-lookup.md) and
@@ -50,7 +58,8 @@ old results paragraph or its “not implemented” list.
   [CPU-only owned-byte resize](kernel-owned-resize.md) and
   [serial console](kernel-console-contract.md),
   [terminal-event policy](kernel-terminal-event-contract.md) and
-  [protected command console](program-console-contract.md).
+  [protected command console](program-console-contract.md), plus the
+  [persistent native console](native-console-service.md).
 - Storage and hardware: [storage requirements](../storage/design/requirements.md),
   [RAM sector I/O](block-io-contract.md), [offline XFS file reading](xfs-file-contract.md),
   [Framework target](framework-13-7840u.md) and [AMD qualification](amd-support.md).

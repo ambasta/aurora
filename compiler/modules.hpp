@@ -186,6 +186,7 @@ class ModuleResolver {
     Function *activeFunction = nullptr;
     const ClassDefinition *activeClass = nullptr;
     bool initializingReceiver = false, classTypesResolved = false;
+    bool consoleTypesUsed = false;
     class Declaration {
     public:
         Kind kind;
@@ -384,7 +385,8 @@ class ModuleResolver {
                 const bool valueBoundary =
                     function.result.isClass() || function.result.isResource() ||
                     std::any_of(function.params.begin(), function.params.end(), [](const Param &parameter) {
-                        return parameter.type.isClass() || parameter.type.isSpan() || parameter.type.isResource();
+                        return parameter.type.isClass() || parameter.type.isSpan() || parameter.type.isResource() ||
+                               parameter.type.isService();
                     });
                 function.name =
                     add(Kind::Function, function.scope, function.token.text, function.exported, valueBoundary);
@@ -473,6 +475,10 @@ class ModuleResolver {
                              const ModuleLoader::Unit &unit,
                              const std::string &scope,
                              std::vector<TemplateRequest> &requests) {
+        if (type.isService() || service::copiedType(type)) {
+            consoleTypesUsed = true;
+            return;
+        }
         if (type.kind == TypeKind::Parameter)
             throw Error("unsubstituted class template parameter: " + type.className);
         if (!type.elementParameter.empty() || !type.lengthParameter.empty())
@@ -711,6 +717,14 @@ class ModuleResolver {
         return &inserted.first->second;
     }
     void resolveType(Type &type, const ModuleLoader::Unit &unit, const std::string &scope) {
+        // Named-field construction spells the builtin class as a source name;
+        // typed declarations already carry the canonical compiler identity.
+        if (type == Type("builtin::ConsoleSample"))
+            type = service::sampleType();
+        if (type.isService() || service::copiedType(type)) {
+            consoleTypesUsed = true;
+            return;
+        }
         if (type.kind == TypeKind::Parameter)
             throw Error("unsubstituted class template parameter: " + type.className);
         if (!type.elementParameter.empty() || !type.lengthParameter.empty())
@@ -764,6 +778,8 @@ class ModuleResolver {
         while (!pending.empty()) {
             const auto current = std::move(pending.back());
             pending.pop_back();
+            if (service::copiedType(current))
+                continue;
             if ((!current.isClass() && !current.isEnum()) || !visited.insert(current.className).second)
                 continue;
             // Authority is limited to exact arguments already checked in the
@@ -831,7 +847,7 @@ class ModuleResolver {
                 activeClass = &definition;
                 auto resolve = [&](Type &type) {
                     resolveType(type, unit, definition.scope);
-                    if ((type.isClass() || type.isEnum()) && !classDeclaration(type))
+                    if ((type.isClass() || type.isEnum()) && !service::copiedType(type) && !classDeclaration(type))
                         throw Error("unknown nominal type in class declaration: " + typeName(type));
                 };
                 for (auto &field : definition.fields) {
@@ -944,6 +960,8 @@ class ModuleResolver {
                 activeFunction = &function;
                 auto resolve = [&](Type &type) {
                     resolveType(type, unit, function.scope);
+                    if (service::copiedType(type))
+                        return;
                     if (type.isClass() || type.isEnum()) {
                         const auto *declaration = classDeclaration(type);
                         if (!declaration)
@@ -1113,11 +1131,26 @@ class ModuleResolver {
             value->reflectedType = type;
 
         } else if (value->op == "name") {
-            sourceName(value->token.text);
+            if (!value->token.text.starts_with("builtin::ConsolePutResult::") &&
+                !value->token.text.starts_with("builtin::ConsoleCompletion::"))
+                sourceName(value->token.text);
             const auto separator = value->token.text.rfind("::");
             if (separator != std::string::npos) {
                 const auto enumName = value->token.text.substr(0, separator);
                 const auto caseName = value->token.text.substr(separator + 2);
+                if (enumName == "builtin::ConsolePutResult" || enumName == "builtin::ConsoleCompletion") {
+                    const bool put = enumName == "builtin::ConsolePutResult";
+                    const bool first = caseName == (put ? "success" : "requested_exit");
+                    const bool second = caseName == (put ? "timeout" : "output_failure");
+                    if (!first && !second)
+                        throw Error("unknown sealed service enum case: " + value->token.text);
+                    consoleTypesUsed = true;
+                    value->op = "enum_case";
+                    value->reflectedType = put ? service::putResultType() : service::completionType();
+                    value->resolvedName = value->reflectedType.className;
+                    value->enumOrdinal = second ? 1 : 0;
+                    return;
+                }
                 const auto *declaration = lookup(unit, scope, enumName, Kind::Enum);
                 if (declaration) {
                     const auto &cases = declaration->enumDefinition->cases;
@@ -1217,6 +1250,30 @@ public:
         for (const auto &name : graph.order)
             for (auto &definition : graph.units.at(name)->program.enums)
                 result.enums.push_back(std::move(definition));
+        if (consoleTypesUsed) {
+            ClassDefinition sample(Token(std::string(service::sampleName), 0));
+            for (const auto &[name, type] : std::vector<std::pair<std::string, Type>>{
+                     {"byte_present", Type::Bool}, {"byte", Type::U8}, {"damaged", Type::Bool}}) {
+                Field field(Token(name, 0), type);
+                field.publicAccess = true;
+                sample.fields.push_back(std::move(field));
+            }
+            result.classes.push_back(std::move(sample));
+            EnumDefinition put(Token(std::string(service::putResultName), 0));
+            put.cases = {Token("success", 0), Token("timeout", 0)};
+            result.enums.push_back(std::move(put));
+            EnumDefinition completion(Token(std::string(service::completionName), 0));
+            completion.cases = {Token("requested_exit", 0), Token("output_failure", 0)};
+            result.enums.push_back(std::move(completion));
+            // Copied observations are ordinary globally visible builtin data.
+            // The ConsoleSession capability itself never receives a descriptor.
+            for (auto &[scope, visible] : result.reflectionAccess) {
+                (void)scope;
+                visible.insert(std::string(service::sampleName));
+                visible.insert(std::string(service::putResultName));
+                visible.insert(std::string(service::completionName));
+            }
+        }
         if (result.functions.empty())
             throw Error("module graph must contain a function");
         return result;

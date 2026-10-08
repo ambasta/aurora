@@ -101,6 +101,13 @@ public:
     bool called = false;
     bool operator==(const ObjectLoan &) const = default;
 };
+class ServiceLoan {
+public:
+    int offset;
+    std::size_t site;
+    bool called = false;
+    bool operator==(const ServiceLoan &) const = default;
+};
 class State {
 public:
     std::optional<Value> current;
@@ -115,6 +122,8 @@ public:
     std::set<int> activeObjects;
     std::map<int, std::size_t> activeArrays; // array base -> BeginArray site
     std::map<int, SpanCapability> activeSpans;
+    std::map<int, std::size_t> activeServices;
+    std::map<int, ServiceLoan> serviceLoans;
     std::map<int, RegionIdentity> activeRegions;
     std::map<int, ByteBinding> activeBytes;
     std::map<int, ObjectLoan> objectLoans;
@@ -158,6 +167,11 @@ public:
 inline bool scalarValueType(const Type &type, const std::map<std::string, int> &enumCases) {
     return scalar(type) ||
            (type.isEnum() && type == Type::enumeration(type.className) && enumCases.contains(type.className));
+}
+inline bool serviceSignature(const Function &function) {
+    return std::any_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
+        return type.isService();
+    });
 }
 inline bool resourceSignature(const Function &function,
                               const std::map<std::string, std::vector<ClassField>> &fields = {}) {
@@ -208,6 +222,19 @@ inline void verifyFunction(Function &function,
     const bool owningConstructor =
         function.receiver && function.receiver->constructor && owningClass(classFields, function.receiver->className);
     const bool resourceFunction = resourceSignature(function, classFields);
+    const bool serviceFunction = serviceSignature(function);
+    if (serviceFunction) {
+        require(!function.receiver && !function.borrowedParameter && !resourceFunction &&
+                    !function.parameters.empty() && function.parameters.front() == Type::ConsoleSession,
+                "service signature requires one leading sealed capability and no receiver or region");
+        for (std::size_t index = 1; index < function.parameters.size(); ++index)
+            require(scalarValueType(function.parameters[index], enumCases) ||
+                        function.parameters[index] == Type::ByteSpan,
+                    "service signature requires later scalar, enum or readonly span arguments");
+        require(scalarValueType(function.result, enumCases) || function.result == service::sampleType(),
+                "service signature has unsupported result");
+    }
+    require(serviceFunction || function.serviceSlots.empty(), "service spills without a service signature");
     if (function.borrowedParameter) {
         require(function.receiver && !function.receiver->constructor &&
                     owningClass(classFields, function.receiver->className),
@@ -235,6 +262,11 @@ inline void verifyFunction(Function &function,
     auto boundaryType = [&](const Type &type, bool parameter) {
         if (scalarValueType(type, enumCases))
             return;
+        if (type.isService()) {
+            require(parameter && serviceFunction && type == Type::ConsoleSession,
+                    "service capability cannot cross an ordinary boundary or return");
+            return;
+        }
         if (type.isResource()) {
             require(resourceFunction && (type == Type::OwnedBytes || (parameter && type == Type::ByteRegion)),
                     "invalid resource boundary type");
@@ -370,6 +402,8 @@ inline void verifyFunction(Function &function,
             require(resourceStorage.insert(byte).second, "overlapping region or owned byte spills");
         }
     };
+    for (int base : function.serviceSlots)
+        reserveResource(base, service::capabilityBytes, "service");
     for (int base : function.regionSlots)
         reserveResource(base, 8, "region");
     for (const auto &[base, mutableValue] : function.byteSlots) {
@@ -392,8 +426,10 @@ inline void verifyFunction(Function &function,
     std::set<int> spanParameterSlots;
     std::set<int> byteParameterSlots;
     std::optional<int> regionParameterSlot;
+    std::optional<int> serviceParameterSlot;
     std::map<int, int> spanParameterOrigins; // source position -> root spill
     for (std::size_t index = 0; index < function.code.size(); ++index) {
+        const auto *serviceBinding = std::get_if<BindServiceParameter>(&function.code[index]);
         const auto *binding = std::get_if<BindParameter>(&function.code[index]);
         const auto *objectBinding = std::get_if<BindObjectParameter>(&function.code[index]);
         const auto *spanBinding = std::get_if<BindSpanParameter>(&function.code[index]);
@@ -402,7 +438,11 @@ inline void verifyFunction(Function &function,
         const auto *ownedObjectBinding = std::get_if<BindOwnedObjectParameter>(&function.code[index]);
         if (index < function.parameters.size()) {
             const auto &type = function.parameters[index];
-            if (type.isRegion()) {
+            if (type.isService()) {
+                require(serviceBinding && serviceBinding->index == 0 && index == 0 && !serviceParameterSlot,
+                        "service binding must uniquely begin entry prefix");
+                serviceParameterSlot = serviceBinding->offset;
+            } else if (type.isRegion()) {
                 require(regionBinding && regionBinding->index == 0 && index == 0,
                         "region parameter binding must begin the entry prefix");
                 require(!regionParameterSlot, "duplicate region parameter binding");
@@ -431,7 +471,8 @@ inline void verifyFunction(Function &function,
                 require(scalarParameterSlots.insert(binding->offset).second, "scalar parameter bindings overlap");
             }
         } else
-            require(!binding && !objectBinding && !spanBinding && !regionBinding && !byteBinding && !ownedObjectBinding,
+            require(!binding && !objectBinding && !spanBinding && !regionBinding && !byteBinding &&
+                        !ownedObjectBinding && !serviceBinding,
                     "parameter binding outside entry prefix");
     }
     std::map<int, std::size_t> labels;
@@ -510,7 +551,7 @@ inline void verifyFunction(Function &function,
                state.objectClassesInitialized.size() + state.receiverClassesInitialized.size() +
                state.receiverClassesMaybeInitialized.size() + state.activeArrays.size() + state.activeSpans.size() +
                state.activeRegions.size() + state.activeBytes.size() + state.ownedObjects.size() +
-               state.objectLoans.size();
+               state.objectLoans.size() + state.activeServices.size() + state.serviceLoans.size();
     };
     retainedValueFacts = facts(*states[0]);
     auto initializationPayload = [](const State &state) {
@@ -554,6 +595,8 @@ inline void verifyFunction(Function &function,
                 "incompatible active array lifetimes at control-flow join");
         require(existing.activeSpans == state.activeSpans,
                 "incompatible active span capabilities at control-flow join");
+        require(existing.activeServices == state.activeServices && existing.serviceLoans == state.serviceLoans,
+                "incompatible service provenance or loans at control-flow join");
         require(existing.activeRegions == state.activeRegions,
                 "incompatible active region authority at control-flow join");
         require(existing.activeBytes == state.activeBytes,
@@ -1022,6 +1065,7 @@ inline void verifyFunction(Function &function,
                                           SpanCapability{false, root, rootSite, 0, 0, index, binding.token, ordinal});
             };
             auto closedOwnedObjects = [&]() {
+                require(state.serviceLoans.empty(), "return with active synchronous service loan");
                 require(state.objectLoans.empty(), "return with active synchronous object loan");
                 for (const auto &[base, unused] : state.ownedObjects) {
                     (void)unused;
@@ -1184,6 +1228,7 @@ inline void verifyFunction(Function &function,
                         require(functions.contains(operation.callee), "unknown call target");
                         const auto &target = *functions.at(operation.callee);
                         require(!target.receiver, "plain call cannot target receiver function");
+                        require(!serviceSignature(target), "plain call cannot bypass a service loan");
                         require(!resourceSignature(target, classFields), "plain call cannot target resource signature");
                         require(scalarValueType(target.result, enumCases) &&
                                     std::all_of(target.parameters.begin(),
@@ -1200,6 +1245,7 @@ inline void verifyFunction(Function &function,
                         require(functions.contains(operation.callee), "unknown aggregate call target");
                         const auto &target = *functions.at(operation.callee);
                         require(!target.receiver, "aggregate call cannot target receiver function");
+                        require(!serviceSignature(target), "aggregate call cannot bypass a service loan");
                         require(!resourceSignature(target, classFields),
                                 "aggregate call cannot target resource signature");
                         require(target.result.isClass() || std::any_of(target.parameters.begin(),
@@ -1943,6 +1989,92 @@ inline void verifyFunction(Function &function,
                                 "return with active span or byte array lifetime");
                         require(state.stack.empty(), "unbalanced stack at owned byte return");
                         fallsThrough = false;
+                    } else if constexpr (std::is_same_v<Op, BindServiceParameter>) {
+                        require(serviceFunction && index == 0 && operation.index == 0 &&
+                                    operation.kind == service::Kind::Console &&
+                                    serviceParameterSlot == operation.offset &&
+                                    function.serviceSlots.contains(operation.offset) && state.activeServices.empty(),
+                                "service binding requires exact authorized leading parameter");
+                        state.activeServices.emplace(operation.offset, index);
+                    } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
+                        require(operation.loanId > 0 && state.serviceLoans.empty() &&
+                                    state.activeServices.contains(operation.offset),
+                                "service loan requires unsuspended parameter authority");
+                        state.serviceLoans.emplace(
+                            operation.loanId,
+                            ServiceLoan{operation.offset, state.activeServices.at(operation.offset), false});
+                    } else if constexpr (std::is_same_v<Op, ReleaseServiceLoan>) {
+                        require(state.serviceLoans.contains(operation.loanId) &&
+                                    state.serviceLoans.at(operation.loanId).called,
+                                "service release requires exactly one completed helper call");
+                        state.serviceLoans.erase(operation.loanId);
+                    } else if constexpr (std::is_same_v<Op, ServiceOperation>) {
+                        require(state.activeServices.contains(operation.offset) && state.serviceLoans.empty(),
+                                "service operation requires active unsuspended capability provenance");
+                        require(operation.operation == service::Operation::Next ||
+                                    operation.operation == service::Operation::Put,
+                                "unknown sealed service operation");
+                        if (operation.operation == service::Operation::Put) {
+                            current(Type::U8);
+                            require(operation.resultOffset == 0 &&
+                                        enumCases.contains(std::string(service::putResultName)),
+                                    "put requires closed enum result and no object storage");
+                            state.current = Value{service::putResultType(), {}};
+                        } else {
+                            const int base = operation.resultOffset;
+                            require(function.objectSlots.contains(base) &&
+                                        function.objectSlots.at(base).className == service::sampleName &&
+                                        state.activeObjects.contains(base) &&
+                                        !state.maybeConstructedObjects.contains(base),
+                                    "next requires exact pristine active copied sample object");
+                            for (std::size_t field = 0; field < 3; ++field)
+                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
+                                        "next cannot overwrite initialized sample storage");
+                            markObject(base);
+                            state.current.reset();
+                        }
+                    } else if constexpr (std::is_same_v<Op, ServiceCall>) {
+                        require(functions.contains(operation.callee), "unknown service helper target");
+                        const auto &target = *functions.at(operation.callee);
+                        require(serviceSignature(target) && !target.receiver &&
+                                    state.serviceLoans.contains(operation.loanId),
+                                "service helper requires service target and acquired loan");
+                        auto &loan = state.serviceLoans.at(operation.loanId);
+                        require(!loan.called && state.activeServices.contains(loan.offset) &&
+                                    state.activeServices.at(loan.offset) == loan.site,
+                                "service helper requires an unused loan with exact provenance");
+                        require(operation.spanArguments.size() == target.parameters.size() &&
+                                    operation.spanArguments[0] == 0,
+                                "service helper argument vector mismatch");
+                        for (std::size_t reverse = target.parameters.size(); reverse > 1; --reverse) {
+                            const auto position = reverse - 1;
+                            const auto &type = target.parameters[position];
+                            const int base = operation.spanArguments[position];
+                            if (type.isSpan()) {
+                                require(state.activeSpans.contains(base), "service span argument is not active");
+                            } else {
+                                require(base == 0 && scalarValueType(type, enumCases) && pop().type == type,
+                                        "service scalar argument mismatch");
+                            }
+                        }
+                        if (target.result.isClass()) {
+                            const int base = operation.resultOffset;
+                            require(function.objectSlots.contains(base) && target.result == service::sampleType() &&
+                                        function.objectSlots.at(base).className == service::sampleName &&
+                                        state.activeObjects.contains(base) &&
+                                        !state.maybeConstructedObjects.contains(base),
+                                    "service helper requires pristine copied sample destination");
+                            for (std::size_t field = 0; field < 3; ++field)
+                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
+                                        "service helper destination already initialized");
+                            markObject(base);
+                            state.current.reset();
+                        } else {
+                            require(operation.resultOffset == 0 && scalarValueType(target.result, enumCases),
+                                    "service scalar result mismatch");
+                            state.current = Value{target.result, {}};
+                        }
+                        loan.called = true;
                     } else if constexpr (std::is_same_v<Op, BindRegionParameter>) {
                         require(resourceFunction && operation.index == 0 &&
                                     function.parameters.front() == Type::ByteRegion,
@@ -2077,7 +2209,8 @@ inline ValidatedModule validate(Module module) {
         verification::require(verification::symbol(function.name) && function.name != "aurora_reflect_size" &&
                                   function.name != "aurora_reflect_field_count" &&
                                   !function.name.starts_with("__au_reflect_") &&
-                                  !function.name.starts_with("__au_runtime_bytes_"),
+                                  !function.name.starts_with("__au_runtime_bytes_") &&
+                                  !function.name.starts_with("__au_runtime_console_"),
                               "invalid or reserved function symbol");
         verification::require(functions.emplace(function.name, &function).second, "duplicate function");
     }
@@ -2184,6 +2317,22 @@ inline ValidatedModule validate(Module module) {
     };
     for (const auto &[name, fields] : module.classFields)
         depth(name, 1);
+    if (module.classLayouts.contains(std::string(service::sampleName))) {
+        verification::require(module.classLayouts.at(std::string(service::sampleName)) ==
+                                  std::vector<Type>{Type::Bool, Type::U8, Type::Bool},
+                              "noncanonical sealed ConsoleSample layout");
+        const auto &fields = module.classFields.at(std::string(service::sampleName));
+        verification::require(fields.size() == 3, "noncanonical sealed ConsoleSample fields");
+        for (std::size_t index = 0; index < fields.size(); ++index)
+            verification::require(!fields[index].array && fields[index].firstLeaf == static_cast<int>(index) &&
+                                      fields[index].length == 1 &&
+                                      fields[index].elementType ==
+                                          module.classLayouts.at(std::string(service::sampleName))[index],
+                                  "noncanonical sealed ConsoleSample field shape");
+    }
+    for (const auto name : {service::putResultName, service::completionName})
+        if (module.enumCases.contains(std::string(name)))
+            verification::require(module.enumCases.at(std::string(name)) == 2, "noncanonical sealed service enum");
     const auto canonicalStorage = computeClassStorageLayouts(module.classLayouts, module.classFields);
     for (const auto &[name, fields] : module.classFields) {
         const bool composed = std::any_of(fields.begin(), fields.end(), [](const ClassField &field) {
@@ -2224,6 +2373,8 @@ inline ValidatedModule validate(Module module) {
                 target = &call->callee;
             if (const auto *call = std::get_if<AggregateCall>(&instruction))
                 target = &call->callee;
+            if (const auto *call = std::get_if<ServiceCall>(&instruction))
+                target = &call->callee;
             if (const auto *call = std::get_if<ResourceCall>(&instruction))
                 target = &call->callee;
             if (target) {
@@ -2232,6 +2383,22 @@ inline ValidatedModule validate(Module module) {
                 callers[next].push_back(index);
             }
         }
+    std::vector<bool> serviceReachable(module.functions.size(), false);
+    std::vector<std::size_t> servicePending;
+    for (std::size_t index = 0; index < module.functions.size(); ++index)
+        if (verification::serviceSignature(module.functions[index])) {
+            serviceReachable[index] = true;
+            servicePending.push_back(index);
+        }
+    while (!servicePending.empty()) {
+        const auto current = servicePending.back();
+        servicePending.pop_back();
+        for (const auto child : calls[current])
+            if (!serviceReachable[child]) {
+                serviceReachable[child] = true;
+                servicePending.push_back(child);
+            }
+    }
     std::vector<bool> visited(module.functions.size(), false);
     std::vector<std::size_t> finishOrder;
     for (std::size_t start = 0; start < module.functions.size(); ++start) {
@@ -2266,7 +2433,7 @@ inline ValidatedModule validate(Module module) {
             const auto index = pending.back();
             pending.pop_back();
             ++componentSize;
-            hasReceiver |= module.functions[index].receiver.has_value();
+            hasReceiver |= module.functions[index].receiver.has_value() || serviceReachable[index];
             selfEdge |= std::find(calls[index].begin(), calls[index].end(), index) != calls[index].end();
             for (const auto next : callers[index])
                 if (!visited[next]) {
