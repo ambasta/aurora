@@ -247,16 +247,16 @@ public:
                                         const LocalApicAdmission *apic,
                                         const FramebufferAdmission *framebuffer) const -> bool {
         if (!apic || !framebuffer || framebuffer_ || !RuntimeLayout::valid(arena) || used_ == 0 ||
-            used_ > Handoff::table_pages || base_ != arena + Handoff::tables_offset ||
-            h.get(0) != Handoff::magic || h.get(8, 4) != 6 || h.get(12, 4) != Handoff::header ||
-            h.get(16) != Handoff::arena_bytes || h.get(24) != arena || !h.get(32) ||
-            h.get(32) > MemoryMap::max_bytes || h.get(40) < 40 || h.get(40) > 256 || h.get(48, 4) != 1 ||
-            h.get(52, 4) < 1 || h.get(52, 4) > 3 || !h.get(56) || h.get(56) > Handoff::payload_limit ||
-            h.get(56) > h.get(80) || !h.get(64) || h.get(64) % 4096 || h.get(72) % 4096 || h.get(80) % 4096 ||
-            h.get(64) > h.get(72) || h.get(72) > h.get(80) || h.get(80) > Handoff::payload_limit ||
-            h.get(88) != base_ || h.get(96) != used_ || h.get(104) != arena + Handoff::payload_offset ||
-            !h.get(112) || h.get(120) != arena + Handoff::framebuffer_record_offset ||
-            apic->owned_arena() != arena || framebuffer->owned_arena() != arena)
+            used_ > Handoff::table_pages || base_ != arena + Handoff::tables_offset || h.get(0) != Handoff::magic ||
+            h.get(8, 4) != 6 || h.get(12, 4) != Handoff::header || h.get(16) != Handoff::arena_bytes ||
+            h.get(24) != arena || !h.get(32) || h.get(32) > MemoryMap::max_bytes || h.get(40) < 40 || h.get(40) > 256 ||
+            h.get(48, 4) != 1 || h.get(52, 4) < 1 || h.get(52, 4) > 3 || !h.get(56) ||
+            h.get(56) > Handoff::payload_limit || h.get(56) > h.get(80) || !h.get(64) || h.get(64) % 4096 ||
+            h.get(72) % 4096 || h.get(80) % 4096 || h.get(64) > h.get(72) || h.get(72) > h.get(80) ||
+            h.get(80) > Handoff::payload_limit || h.get(88) != base_ || h.get(96) != used_ ||
+            h.get(104) != arena + Handoff::payload_offset || !h.get(112) ||
+            h.get(120) != arena + Handoff::framebuffer_record_offset || apic->owned_arena() != arena ||
+            framebuffer->owned_arena() != arena)
             return false;
         const auto &geometry = framebuffer->geometry();
         const auto physical = geometry.base(), bytes = geometry.mapped_bytes();
@@ -280,13 +280,17 @@ public:
             !disjoint(physical, bytes, LocalApicAdmission::physical_address, LocalApicAdmission::page_size) ||
             !disjoint(physical, bytes, 0xfec00000ULL, 4096) ||
             !disjoint(physical, bytes, 0xe0000000ULL, 0x10000000ULL) ||
-            !disjoint(LocalApicAdmission::physical_address, LocalApicAdmission::page_size, arena, Handoff::arena_bytes) ||
+            !disjoint(
+                LocalApicAdmission::physical_address, LocalApicAdmission::page_size, arena, Handoff::arena_bytes) ||
             !disjoint(graphics_guard, graphics_span, arena, Handoff::arena_bytes) ||
             !disjoint(graphics_guard, graphics_span, window_address, 4096) ||
-            !disjoint(graphics_guard, graphics_span, LocalApicAdmission::virtual_address, LocalApicAdmission::page_size) ||
+            !disjoint(
+                graphics_guard, graphics_span, LocalApicAdmission::virtual_address, LocalApicAdmission::page_size) ||
             !disjoint(LocalApicAdmission::virtual_address, LocalApicAdmission::page_size, window_address, 4096) ||
-            !apic->admits(interrupt_address, LocalApicAdmission::physical_address,
-                          LocalApicAdmission::page_size, LocalApicAdmission::leaf_flags))
+            !apic->admits(interrupt_address,
+                          LocalApicAdmission::physical_address,
+                          LocalApicAdmission::page_size,
+                          LocalApicAdmission::leaf_flags))
             return false;
         // Admit only intermediate paths needed by exact arena leaves or the
         // three reserved device/window apertures. This also rejects extra empty

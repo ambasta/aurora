@@ -53,7 +53,8 @@ template <class Transport, class Platform> class Session final {
 
 public:
     // Trusted host entry validation only; no source-visible operation or effects.
-    static auto preflight(const void *grant, std::uint64_t generation, std::uint64_t width, std::uint64_t height) -> void {
+    static auto preflight(const void *grant, std::uint64_t generation, std::uint64_t width, std::uint64_t height)
+        -> void {
         validate(grant, generation, false);
         require(width == grant_.width && height == grant_.height);
     }

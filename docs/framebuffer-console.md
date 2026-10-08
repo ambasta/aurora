@@ -185,8 +185,15 @@ The capture draft separates a bounded pre-store release byte
 from editor input, emits completed-sample/store markers, and leaves terminal or
 failed scanout intact for external physical capture and normal-image restoration.
 
-The opt-in hosted gate is `python3 tests/kernel-graphical-console.py
---run /absolute/path/to/reviewed/aurorac`. The actual generated consumer passed
+`make test-graphical-console` now shares the controlled build-once compiler and
+includes the paired paging model and ordinary/optimized admission controls.
+Meson `slow`/`full` includes the complete hosted runner; `dev`/`full` includes
+paging and admission controls. A directly pinned run uses
+`python3 -B -O tests/kernel-graphical-console.py --run /path/to/aurorac
+--compiler-sha256 REVIEWED_SHA256`; a controlled `--developer-build-receipt`
+is also supported. Registration alone is not aggregate qualification.
+
+The earlier actual generated consumer passed
 67 hosted cases: 39 transcript/geometry cases, six baseline/output-failure cases,
 and 22 pre-entry denials. Intermediate and final pixels, exact ordered stores,
 untouched guards/padding, bounded completion and no-retry behavior were checked

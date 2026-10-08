@@ -475,13 +475,13 @@ class Controls(unittest.TestCase):
         return paths[0], json.loads(paths[0].read_text())
 
     def test_every_subprocess_uses_retained_build_temporary_root(self):
-        os.environ.update(TMPDIR='/unrelated-user-tmp', TMP='/other-tmp', TEMP='/another-tmp')
+        os.environ.update(TMPDIR="/unrelated-user-tmp", TMP="/other-tmp", TEMP="/another-tmp")
         calls = self.simulate()
         path, record = self.latest_attempt()
-        expected = str(path.parent / 'tmp')
+        expected = str(path.parent / "tmp")
         self.assertTrue(Path(expected).is_dir())
         for _, _, env in calls:
-            for name in ('TMPDIR', 'TMP', 'TEMP'):
+            for name in ("TMPDIR", "TMP", "TEMP"):
                 self.assertEqual(env[name], expected)
 
     def test_failed_build_preserves_plan(self):
@@ -1288,6 +1288,7 @@ class Controls(unittest.TestCase):
                     "test-uefi-user-phases",
                     "test-client-disposal",
                     "test-terminal-event",
+                    "test-graphical-console",
                     "test-kernel",
                     "test-division",
                     "test-uefi-runtime",
@@ -1331,6 +1332,9 @@ class Controls(unittest.TestCase):
             {
                 "test-ipc-transaction",
                 "test-client-disposal",
+                "test-graphical-console",
+                "test-graphical-paging",
+                "test-graphical-controls",
                 "test-native-cap-contracts",
                 "test-emulator-clock",
                 "run",

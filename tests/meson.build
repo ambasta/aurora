@@ -304,6 +304,22 @@ endforeach
 test('display-renderer-native', python,
      args: ['-B', files('kernel-display-renderer.py'), aurorac], depends: aurorac,
      suite: ['full', 'slow'], env: oracle_env, timeout: 300)
+# The complete generated graphical consumer remains outside fast developer feedback.
+# Its driver builds consumer/harness artifacts per invocation, never aurorac itself.
+test('graphical-console-native', python,
+     args: ['-B', '-O', files('kernel-graphical-console.py'), '--run', aurorac,
+            '--developer-selected-compiler'], depends: aurorac,
+     suite: ['full', 'slow'], env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
+graphical_paging = executable('graphical-paging', 'kernel-graphical-paging.cpp',
+                            native: true, install: false, link_args: ['-no-pie'])
+test('graphical-paging', graphical_paging, suite: ['full', 'dev'], timeout: 120)
+test('graphical-admission-controls', python,
+     args: ['-B', files('kernel-graphical-admission-controls.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+test('graphical-admission-controls-optimized', python,
+     args: ['-B', '-O', files('kernel-graphical-admission-controls.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+
 # Previously Make-only complete source oracles. Keep exhaustive sweeps in slow.
 foreach runner : [
   'templates', 'function_templates', 'function_overloads', 'fixed_containers',
