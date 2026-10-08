@@ -51,40 +51,42 @@ def main():
     try:
         positive = run(["nm", "-a", str(build / "language.o")], out / "positive-symbols.txt")
         ADMISSION.validate_symbols(positive)
-        source = (ROOT / "examples/kernel-owned-bytes.au").read_text()
-        needle = "builtin::OwnedBytes second = region.try_allocate(length);"
-        if source.count(needle) != 1:
-            raise ValueError("Resize rejection fixture anchor changed")
-        resize = out / "resize.au"
-        resize.write_text(source.replace(needle, "first.try_resize(length + 1);\n    " + needle))
-        run([str(compiler), str(resize), "-o", str(out / "resize.s")], out / "resize-compile.log")
+        # The real resize helper must link. An unrelated runtime import remains
+        # rejected at BOTH closed object admission and the actual freestanding link.
+        if "__au_runtime_bytes_resize" not in positive:
+            raise ValueError("Resize is not exercised by the admitted graph")
+        linker = ["ld", "-nostdlib", "-T", str(ROOT / "kernel/uefi/payload.ld"), "-z", "max-page-size=0x1000"]
         run(
-            [
-                "as",
-                "--64",
-                str(out / "resize.s"),
-                str(ROOT / "kernel/uefi/owned-bytes-entry.S"),
-                "-o",
-                str(out / "resize.o"),
-            ],
-            out / "resize-assemble.log",
+            linker + list(map(str, objects)) + [str(build / "language.o"), "-o", str(out / "accepted-resize.elf")],
+            out / "resize-link.log",
         )
-        symbols = run(["nm", "-a", str(out / "resize.o")], out / "resize-symbols.txt")
+        if run(["nm", "-u", str(out / "accepted-resize.elf")], out / "resize-undefined.txt").strip():
+            raise ValueError("Admitted resize has unresolved symbols")
+        unknown = out / "unknown.s"
+        unknown.write_text(
+            (build / "language.s")
+            .read_text()
+            .replace("call __au_runtime_bytes_resize", "call __au_runtime_bytes_unknown")
+        )
+        run(
+            ["as", "--64", str(unknown), str(ROOT / "kernel/uefi/owned-bytes-entry.S"), "-o", str(out / "unknown.o")],
+            out / "unknown-assemble.log",
+        )
+        symbols = run(["nm", "-a", str(out / "unknown.o")], out / "unknown-symbols.txt")
         try:
             ADMISSION.validate_symbols(symbols)
         except ValueError as error:
-            if "Unsupported kernel owned-byte runtime import: __au_runtime_bytes_resize" not in str(error):
-                raise ValueError("Resize failed for a different admission reason") from error
+            if "Unsupported kernel owned-byte runtime import: __au_runtime_bytes_unknown" not in str(error):
+                raise ValueError("Unknown import failed for a different admission reason") from error
         else:
-            raise ValueError("Unsupported resize reached kernel runtime admission")
-        linker = ["ld", "-nostdlib", "-T", str(ROOT / "kernel/uefi/payload.ld"), "-z", "max-page-size=0x1000"]
+            raise ValueError("Unknown runtime import reached kernel admission")
         failed = run(
-            linker + list(map(str, objects)) + [str(out / "resize.o"), "-o", str(out / "rejected-resize.elf")],
-            out / "resize-link.log",
+            linker + list(map(str, objects)) + [str(out / "unknown.o"), "-o", str(out / "rejected-unknown.elf")],
+            out / "unknown-link.log",
             expected=1,
         )
-        if "undefined reference to `__au_runtime_bytes_resize'" not in failed:
-            raise ValueError("Resize kernel link failed for an unexpected reason")
+        if "undefined reference to `__au_runtime_bytes_unknown'" not in failed:
+            raise ValueError("Unknown import link failed for an unexpected reason")
         extra = out / "extra.au"
         extra.write_text("module extra;\nauto unrelated_scalar() -> i64 { return 42; }\n")
         run([str(compiler), str(extra), "-o", str(out / "extra.s")], out / "extra-compile.log")
@@ -98,12 +100,16 @@ def main():
         )
         if "multiple definition of `aurora_reflect_size'" not in failed:
             raise ValueError("Mixed graph link failed for an unexpected reason")
-        if any(path.exists() for path in (out / "rejected-resize.elf", out / "rejected-mixed.elf")):
+        if any(path.exists() for path in (out / "rejected-unknown.elf", out / "rejected-mixed.elf")):
             raise ValueError("Rejected link retained an executable output")
         if before != {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}:
             raise ValueError("Compile-only rejection inputs changed")
-        result.update(status="passed", positive_profiles=1, resize_admission_rejections=1, negative_links=2)
-        print("PASS: actual profile admission, explicit resize import rejection and two negative ELF links")
+        result.update(
+            status="passed", positive_profiles=1, resize_links=1, unsupported_import_rejections=1, negative_links=2
+        )
+        print(
+            "PASS: actual profile admission, real resize link and unsupported import rejection and two negative ELF links"
+        )
     except BaseException as error:
         result.update(status="failed", error=str(error))
         raise

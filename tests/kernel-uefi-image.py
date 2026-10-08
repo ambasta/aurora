@@ -152,6 +152,7 @@ def owned_bytes_symbols(symbols):
         "__au_runtime_bytes_set",
         "__au_runtime_bytes_drop",
         "__au_runtime_bytes_borrow_length",
+        "__au_runtime_bytes_resize",
         "__au_runtime_bytes_kernel_fault",
     )
     for name in required:
@@ -170,7 +171,6 @@ def owned_bytes_symbols(symbols):
         "uefi_runtime_enter",
         "uefi_console_interrupt",
         "__au_runtime_bytes_test_entry",
-        "__au_runtime_bytes_resize",
         "malloc",
         "free",
         "calloc",

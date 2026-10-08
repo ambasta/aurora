@@ -1,5 +1,12 @@
 # Completeness and acceptance matrix
 
+## Raw kernel owner resize — candidate 2026-10-08
+
+The [bounded replacement contract](kernel-owned-resize.md) extends the existing
+CPU-only adapter using the same four records and sixteen pages. Implementation
+and adversarial tests are in progress; no current host, linked-stack or guest
+qualification is claimed yet. Complete ByteBuffer graphs remain separate.
+
 ## Checked JSON integer codecs — 2026-10-08
 
 The [integer codec contract](json-integers.md) adds exact integer-spelling checked

@@ -571,7 +571,9 @@ def generated_records(source, functions, symbols, instructions):
         "Unexpected generated function inventory",
     )
     records = {}
-    runtime = {"__au_runtime_bytes_" + suffix for suffix in ("allocate", "at", "set", "drop", "borrow_length")}
+    runtime = {
+        "__au_runtime_bytes_" + suffix for suffix in ("allocate", "at", "set", "drop", "borrow_length", "resize")
+    }
     for name in (ENTRY, TRANSFER, CONSUMER):
         body = bodies[name]
         require(body[:2] == ["pushq %rbp", "movq %rsp, %rbp"], "Unknown generated frame prologue")

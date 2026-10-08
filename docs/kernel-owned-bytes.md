@@ -73,9 +73,9 @@ The shared `runtime/bytes_abi.hpp` is the unchanged 32-byte compiler-private own
 layout and helper declarations, including hosted resize. The hosted allocator
 implementation and its resize semantics remain separate. The kernel profile
 supports allocation, copied read/write, validated readonly logical borrowing and
-normal drop. `try_resize` is
-explicitly rejected by object-import admission and unresolved at the actual
-kernel link; there is no resize success/failure stub. Mutable/general escaping borrowing,
+normal drop. `try_resize` now has a candidate real replacement implementation described in
+[the resize contract](kernel-owned-resize.md). Its six-helper admission and new
+guest qualification remain pending; historical five-helper evidence is not reused. Mutable/general escaping borrowing,
 DMA/BAR/IOMMU activation, concurrency, exception unwinding and mixed graphs remain
 out of scope.
 
@@ -125,7 +125,7 @@ Whole-page scrub, untouched neighbor poison and actual foreign lease identities
 are checked before holder release and explicit region close. Existing length
 cases remain; successful-empty ownership adds no page. Exact totals are nine
 allocations and nine releases. Quota, pool, stack and region implementation do
-not change. Resize and unrelated imports still reject; no stubs are supplied.
+not change. This historical checkpoint rejected resize and unrelated imports; no stubs were supplied.
 
 The dependency is the freshly reconstructed owned-span compiler/runtime.
 The exact image/import/linked-stack checks and independent source review passed

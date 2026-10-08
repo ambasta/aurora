@@ -134,10 +134,76 @@ bool zero(std::span<std::byte> backing, std::size_t size) noexcept {
         return false;
     }
     Serial::text("AURORA_UEFI_OWNED_BYTES_VIEWS: crossing=4095,4096 empty=1 allocations=9 releases=9 used=0\r\n");
+    std::uint64_t total = 9;
+    for (std::size_t scenario = 0; scenario < 4; ++scenario) {
+        // Acquire actual independent holders before freeing the exact pages
+        // available to this transaction. No copied address grants authority.
+        for (std::size_t index = 0; index < backing.size(); ++index) {
+            data[index] = std::byte{0xa5};
+        }
+        for (std::size_t index = 0; index < holders.size(); ++index) {
+            holders[index].reset();
+            auto lease = pool.acquire();
+            if (!lease || pool.address(*lease) != base + index * Region::page_bytes) {
+                return false;
+            }
+            holders[index].emplace(std::move(*lease));
+        }
+        const std::size_t held = scenario == 0 ? 0 : scenario == 1 ? 8 : scenario == 2 ? 14 : 13;
+        for (std::size_t index = 0; index < holders.size(); ++index) {
+            const bool available = scenario == 0 || (scenario == 1 ? index % 2 == 1 : index >= held);
+            if (available) {
+                if (!pool.release(*holders[index])) {
+                    return false;
+                }
+                holders[index].reset();
+            }
+        }
+        const auto selector = scenario < 2 ? 1 : static_cast<std::int64_t>(scenario);
+        if (__au_runtime_bytes_kernel_entry(byte_region.id(), 4097, selector) != 42) {
+            return false;
+        }
+        total += scenario < 2 ? 6 : 1;
+        const auto resized = byte_region.metrics();
+        if (pool.used() != held || resized.used != 0 || resized.live_allocations != 0 || resized.held_pages != 0 ||
+            resized.retained_pages != 0 || resized.successful_allocations != total || resized.releases != total ||
+            resized.peak_live_allocations != 2 || resized.peak_used != payload_quota || resized.peak_held_pages != 4) {
+            return false;
+        }
+        for (std::size_t index = 0; index < holders.size(); ++index) {
+            const bool touched = scenario == 0   ? index < 4
+                                 : scenario == 1 ? (index == 1 || index == 3 || index == 5 || index == 7)
+                                                 : index >= held;
+            const auto expected = touched ? std::byte{0} : std::byte{0xa5};
+            for (std::size_t byte = 0; byte < Region::page_bytes; ++byte) {
+                if (data[index * Region::page_bytes + byte] != expected) {
+                    return false;
+                }
+            }
+            if (holders[index] && pool.address(*holders[index]) != base + index * Region::page_bytes) {
+                return false;
+            }
+        }
+        for (auto &holder : holders) {
+            if (holder && !pool.release(*holder)) {
+                return false;
+            }
+        }
+        if (pool.used() != 0) {
+            return false;
+        }
+        Serial::text("AURORA_UEFI_OWNED_BYTES_RESIZE: case=");
+        Serial::number(scenario);
+        Serial::text(" prefix=1 zero=1 preserved=1 allocations=");
+        Serial::number(total);
+        Serial::text(" releases=");
+        Serial::number(total);
+        Serial::text(" used=0\r\n");
+    }
     if (!byte_region.close() || byte_region.is_open() || byte_region.faulted() || pool.used() != 0) {
         return false;
     }
-    Serial::text("AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=9 releases=9\r\n");
+    Serial::text("AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=23 releases=23\r\n");
     return true;
 }
 } // namespace aurora::uefi
