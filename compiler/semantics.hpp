@@ -2,6 +2,7 @@
 #include "ir_layout.hpp"
 #include "ir_verify.hpp"
 #include "syntax.hpp"
+#include "byte_literal.hpp"
 #include <algorithm>
 #include <bit>
 #include <limits>
@@ -1028,6 +1029,12 @@ class SemanticAnalyzer {
         return selected->result;
     }
     ir::Constant literal(const Token &token) {
+        if (!token.text.empty() && token.text.front() == '\'') {
+            const auto value = decodeByteLiteral(token.text);
+            if (!value)
+                fail(token, "invalid byte literal");
+            return {*value, Type::U8};
+        }
         const bool byteValue = token.text.ends_with("u8");
         const bool unsignedValue = byteValue || token.text.ends_with("u64");
         const auto suffixLength = byteValue ? 2 : unsignedValue ? 3 : 0;
@@ -1060,7 +1067,7 @@ class SemanticAnalyzer {
             emit(ir::EnumConstant{e->reflectedType, e->enumOrdinal});
             return e->reflectedType;
         }
-        if (e->op == "number") {
+        if (e->op == "number" || e->op == "byte") {
             const auto value = literal(e->token);
             emit(ir::Constant{value.value, value.type});
             return value.type;
@@ -1300,7 +1307,7 @@ class SemanticAnalyzer {
             return {name == "true", Type::Bool};
         if (e->op == "enum_case")
             return {e->enumOrdinal, e->reflectedType};
-        if (e->op == "number")
+        if (e->op == "number" || e->op == "byte")
             return literal(e->token);
         if (e->op == "call" && (name == "size_of" || name == "type_id" || name == "field_count"))
             return {reflectedValue(e), Type::I64};

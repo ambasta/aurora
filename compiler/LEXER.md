@@ -13,6 +13,10 @@ may include Unicode or arbitrary non-LF values, as before. Block comments and
 other unsupported syntax are not newly accepted. Lexical errors remain fatal
 and structured; a failed scan is never presented as a complete lossless result.
 
+Single-quoted [byte literals](BYTES.md#ascii-byte-character-literals) are one
+lossless token, including escapes and delimiters. Malformed spellings use AU1002
+with the attempted literal span; quote-like bytes inside comments stay trivia.
+
 The legacy `lex(contents, path)` API wraps the same scanner with
 `TriviaRetention::Discard` and returns only tokens. Compilation therefore does
 not retain a trivia vector. `Parser` owns a copy of those tokens, so consuming

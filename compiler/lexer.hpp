@@ -1,5 +1,6 @@
 #pragma once
 #include "types.hpp"
+#include "byte_literal.hpp"
 #include <cctype>
 #include <vector>
 
@@ -64,6 +65,31 @@ inline LexedSource lexSource(std::shared_ptr<const SourceText> source,
             while (index < s.size() && s[index] != '\n')
                 ++index;
             trivia(TriviaKind::LineComment, begin);
+            continue;
+        }
+        if (byte == '\'') {
+            ++index;
+            bool closed = false;
+            while (index < s.size() && s[index] != '\n' && s[index] != '\r') {
+                const auto current = s[index++];
+                if (current == '\'') {
+                    closed = true;
+                    break;
+                }
+                if (current == '\\' && index < s.size() && s[index] != '\n' && s[index] != '\r')
+                    ++index;
+            }
+            // Consume a suffix as part of the invalid spelling, never as a name.
+            const auto asciiSuffix = [](unsigned char value) {
+                return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
+                       (value >= '0' && value <= '9') || value == '_';
+            };
+            while (closed && index < s.size() && asciiSuffix(static_cast<unsigned char>(s[index])))
+                ++index;
+            const auto text = s.substr(begin.offset, index - begin.offset);
+            if (!closed || !decodeByteLiteral(text))
+                throw Error(DiagnosticCode::InvalidByteLiteral, "invalid byte literal", span(begin));
+            out.tokens.emplace_back(text, span(begin));
             continue;
         }
         if (std::isalpha(byte) || byte == '_') {

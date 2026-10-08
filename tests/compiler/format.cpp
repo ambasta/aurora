@@ -145,6 +145,17 @@ void structuralWrapping() {
                         }),
             "oversized member atom lost its long-line finding");
 }
+void byteLiterals() {
+    golden("module x;auto f()->u8{return '[';}", "module x;\nauto f() -> u8 {\n    return '[';\n}\n");
+    golden(R"(module x;auto f()->u8{return '~'&('\xff');})",
+           "module x;\nauto f() -> u8 {\n    return '~' & ('\\xff');\n}\n");
+    verify(R"(module x;auto f()->bool{return '/'=='/' // preserve '/'
+&&'\''!='\\'&&'{'!='}'&&'('!=')'&&'<'!='>'&&'"'=='"';})",
+           "byte-operators.au");
+    verify(R"(module x;auto f()->u8{const array<u8,4> a={'\0','\n','\xFF',' '};return a[0];})", "byte-array.au");
+    for (const std::string spelling : {"''", "'ab'", "'\\x100'", "'\\q'", "'a'u8"})
+        rejected("module x;auto f()->u8{return " + spelling + ";}", aurora::DiagnosticCode::InvalidByteLiteral);
+}
 void cases() {
     qualifiedNames();
     structuralWrapping();
@@ -290,6 +301,7 @@ void cases() {
 } // namespace
 int main(int argc, char **argv) {
     try {
+        byteLiterals();
         cases();
         for (int index = 1; index < argc; ++index)
             verify(read(argv[index]), argv[index]);

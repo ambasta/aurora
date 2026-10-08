@@ -22,6 +22,7 @@ foreach entry : [
     ['unsigned-integers', 'compiler/unsigned.py', 'core'],
     ['modules', 'modules/run.py', 'core'],
     ['source-depth', 'modules/robustness.py', 'core'],
+    ['byte-literals', 'compiler/byte_literals.py', 'bytes'],
     ['byte-codec', 'compiler/byte_codec.py', 'bytes'],
     ['binary-buffer', 'compiler/binary_buffer.py', 'bytes'],
     ['byte-buffer', 'compiler/byte_buffer.py', 'bytes'],

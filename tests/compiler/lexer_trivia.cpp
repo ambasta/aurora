@@ -1,6 +1,7 @@
 #include "lexer.hpp"
 #include "parser.hpp"
 #include <algorithm>
+#include <clocale>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -93,6 +94,66 @@ void verify(const std::string &source, const std::string &path) {
     }
     require(next == source.size() && reconstructed == source, "lossless source reconstruction");
 }
+void byteLiterals() {
+    const std::string prefix = "// header\r\n\t";
+    const std::string digits = "0123456789abcdef";
+    for (unsigned value = 0; value != 256; ++value) {
+        const auto spelling = "'\\x" + std::string(1, digits[value >> 4]) + digits[value & 15] + "'";
+        require(aurora::decodeByteLiteral(spelling) == value, "hex byte decoder value");
+        verify(prefix + spelling + "+'[' // keep 'quotes' / punctuation\r\n", "byte.au");
+        const auto lexed = aurora::lexSource(prefix + spelling, "byte.au");
+        require(lexed.tokens[0].text == spelling && lexed.tokens[0].span.begin.line == 2 &&
+                    lexed.tokens[0].span.begin.column == 2 &&
+                    lexed.tokens[0].span.end.offset - lexed.tokens[0].span.begin.offset == spelling.size(),
+                "hex literal spelling or location");
+    }
+    for (unsigned value = 0; value != 256; ++value) {
+        const auto spelling = "'" + std::string(1, static_cast<char>(value)) + "'";
+        const bool valid = value >= 32 && value <= 126 && value != 39 && value != 92;
+        require(aurora::decodeByteLiteral(spelling).has_value() == valid, "raw byte decoder acceptance");
+        if (valid) {
+            verify(prefix + spelling, "raw-byte.au");
+            continue;
+        }
+        for (const auto retention : {aurora::TriviaRetention::Keep, aurora::TriviaRetention::Discard}) {
+            try {
+                aurora::lexSource(prefix + spelling, "raw-byte.au", retention);
+                throw std::runtime_error("invalid raw byte accepted");
+            } catch (const aurora::Error &error) {
+                require(error.diagnostic.code == aurora::DiagnosticCode::InvalidByteLiteral &&
+                            error.diagnostic.span.begin.offset == prefix.size() &&
+                            error.diagnostic.span.begin.line == 2 && error.diagnostic.span.begin.column == 2 &&
+                            error.diagnostic.span.end.offset <= prefix.size() + spelling.size(),
+                        "raw-byte diagnostic code, location or bounds");
+            }
+        }
+    }
+    for (const std::string spelling :
+         {"'\\''", "'\\\\'", "'\\0'", "'\\n'", "'\\r'", "'\\t'", "'\\a'", "'\\b'", "'\\f'", "'\\v'"})
+        verify(prefix + spelling + "/'/'// trailing\n'{'=='{'", "escaped-byte.au");
+    for (const std::string spelling : {"''",
+                                       "'abc'",
+                                       "'\\x100'",
+                                       "'\\u1234'",
+                                       "'\\q'",
+                                       "'a'u8",
+                                       "'a'_suffix",
+                                       "'\\x'",
+                                       "'\\x0'",
+                                       "'\\xGG'",
+                                       "'unclosed",
+                                       "'\\"}) {
+        try {
+            aurora::lexSource(prefix + spelling, "invalid-byte.au");
+            throw std::runtime_error("invalid byte spelling accepted");
+        } catch (const aurora::Error &error) {
+            require(error.diagnostic.code == aurora::DiagnosticCode::InvalidByteLiteral &&
+                        error.diagnostic.span.begin.offset == prefix.size() &&
+                        error.diagnostic.span.end.offset == prefix.size() + spelling.size(),
+                    "invalid byte spelling must retain full attempted token span");
+        }
+    }
+}
 void cases() {
     for (const std::string source : {"",
                                      "//",
@@ -140,6 +201,16 @@ void cases() {
 } // namespace
 int main(int argc, char **argv) {
     try {
+        const std::string originalLocale = std::setlocale(LC_CTYPE, nullptr);
+        for (const auto *locale : {"C", "C.utf8", "en_US", "en_US.utf8", "tr_TR", "tr_TR.utf8"}) {
+            if (std::setlocale(LC_CTYPE, locale)) {
+                byteLiterals();
+                std::cout << "PASS byte literal locale " << locale << '\n';
+            } else {
+                std::cout << "SKIP unavailable byte literal locale " << locale << '\n';
+            }
+        }
+        require(std::setlocale(LC_CTYPE, originalLocale.c_str()) != nullptr, "cannot restore locale");
         cases();
         for (int index = 1; index < argc; ++index) {
             std::ifstream input(argv[index], std::ios::binary);

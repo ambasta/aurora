@@ -26,6 +26,55 @@ existing named class and closed enum types. Enums still do not satisfy Scalar.
 The appended builtin ID is 11; byte-array IDs are 3000000+N. Old type IDs and old
 specializations retain their identities. There is no new constant-evaluation language.
 
+## ASCII byte character literals
+
+Single-quoted literals such as `'['`, `'"'` and `'a'` have exactly type `u8`,
+just like `91u8`, `34u8` and `97u8`. No suffix is required or accepted. They work
+in scalar expressions, comparisons, static assertions, array initializers,
+constructor arguments and returns under the existing exact-type rules. Explicit
+`i64(...)` or `u64(...)` conversion is still required to widen them; unary minus,
+implicit promotions and identity conversions remain rejected.
+
+An unescaped body is exactly one printable ASCII byte (`0x20` through `0x7e`),
+other than single quote or backslash. The complete escape set is `\'`, `\\`,
+`\0`, `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v` and `\xHH`. The hex escape
+requires exactly two hexadecimal digits, accepts either digit case and denotes
+any byte from `0x00` through `0xff`. Double quote is written directly as `'"'`;
+`\"` is not an additional escape.
+
+Empty or multibyte bodies, suffixes, raw control bytes, raw non-ASCII text,
+unterminated literals, malformed escapes and extra hexadecimal digits reject
+with lexical diagnostic AU1002. Octal escapes, Unicode escapes, code points,
+grapheme literals and strings are not introduced. `\xFF` is byte value 255,
+not a Unicode character or a UTF-8 encoder.
+
+The shared lexer retains the exact source spelling and half-open byte span;
+formatting never replaces a character spelling with a number or splits it.
+Malformed literal spans start at the opening quote and end after the attempted
+spelling, stopping before an unescaped or escaped CR/LF or at EOF when no closing
+quote exists. Constants lower through the existing typed-u8 IR and checked
+arithmetic. The two quote append calls in `std.json_write` exercise the new
+spelling without changing the writer's transactional behavior.
+
+### Byte spelling acceptance boundary
+
+The focused native gate checks 366 values, four attributed checked traps,
+157 lexical and nine exact-type rejections. All 361 accepted spellings emit
+byte-identical assembly to their decimal `u8` equivalents. Lossless spans and
+formatter token/comment preservation and idempotence cover 100 source files;
+byte scanner checks also run in each available C, UTF-8, English and Turkish
+locale. Both quote spellings produce identical assembly for the complete JSON
+writer import closure, whose native string-append tests remain in force.
+
+The joined compiler preserves exact assembly for all 38 predecessor kernel
+policy, protected-program and kernel-example roots. This is compiler-output
+preservation, not a new guest execution or physical-hardware qualification.
+Typed IR, u8 representation and the backend are unchanged; no new ABI, cast,
+Unicode type or ownership operation is introduced. The feature is registered
+in the complete Meson developer/byte/full suites and compiler Make test graph.
+Both final integrated `dev` and `slow` suites and independent review remain
+mandatory before merge; focused results never substitute for those gates.
+
 ## Physical representation gate
 
 The implemented representation uses size/alignment one for u8 and stride
