@@ -115,8 +115,12 @@ case "${KERNEL_USER_PROBE_MODE:-0}" in
     [0-6]) extra+=("-DAURORA_USER_PROBE_MODE=${KERNEL_USER_PROBE_MODE:-0}");;
     *) echo 'Invalid controlled user probe mode' >&2; exit 2;;
 esac
+for flag in INPUT OUTPUT; do
+    variable="KERNEL_TEST_TERMINAL_EVENT_${flag}"
+    if [[ "${!variable:-0}" == 1 ]]; then extra+=("-DAURORA_TERMINAL_EVENT_${flag}"); fi
+done
 for source in main interrupts protection user-program address-spaces apic scheduler; do
-"$cxx" -std=c++23 -Wall -Wextra -Werror -O2 -ffreestanding -fno-exceptions -fno-rtti \
+"$cxx" -std=c++23 -Wall -Wextra -Werror -O2 -fstack-usage -ffreestanding -fno-exceptions -fno-rtti \
     -fno-stack-protector -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables \
     -Ibuild -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns "${extra[@]}" -c "kernel/$source.cpp" -o "build/kernel-$source.o"
 done

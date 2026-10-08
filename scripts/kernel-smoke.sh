@@ -40,6 +40,8 @@ case "$mode" in
   --user-code-write) build_environment+=(KERNEL_USER_PROBE_MODE=4) ;;
   --user-nx) build_environment+=(KERNEL_USER_PROBE_MODE=5) ;;
   --user-io) build_environment+=(KERNEL_USER_PROBE_MODE=6) ;;
+  --program-terminal-input) build_environment+=(KERNEL_TEST_TERMINAL_EVENT_INPUT=1) ;;
+  --program-terminal-output) build_environment+=(KERNEL_TEST_TERMINAL_EVENT_OUTPUT=1) ;;
   --program-bad-return) build_environment+=(KERNEL_TEST_PROGRAM_BAD_RETURN=1) ;;
   --program-unknown-trap) build_environment+=(KERNEL_TEST_PROGRAM_UNKNOWN_TRAP=1) ;;
   --program-kernel-trap) build_environment+=(KERNEL_TEST_PROGRAM_KERNEL_TRAP=1) ;;

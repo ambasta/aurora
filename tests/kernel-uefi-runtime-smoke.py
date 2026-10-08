@@ -5,7 +5,7 @@ spec=importlib.util.spec_from_file_location('pci',Path(__file__).with_name('kern
 pci=importlib.util.module_from_spec(spec);spec.loader.exec_module(pci)
 need=pci.need
 SUCCESS_MODES=('runtime','runtime-span')
-MODES=SUCCESS_MODES+('runtime-code','runtime-stack','runtime-kernel','runtime-window','runtime-root','runtime-kernel-trap','runtime-entry-stack','runtime-write','runtime-nx','runtime-return','runtime-unknown','runtime-syscall','runtime-sysenter')
+MODES=SUCCESS_MODES+('runtime-terminal-input','runtime-terminal-output','runtime-code','runtime-stack','runtime-kernel','runtime-window','runtime-root','runtime-kernel-trap','runtime-entry-stack','runtime-write','runtime-nx','runtime-return','runtime-unknown','runtime-syscall','runtime-sysenter')
 BASE=0x10000000000
 STACK=0x10000200000
 SUFFIX='AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n'
@@ -81,7 +81,7 @@ def validate(status,text,mode,metadata,*,retained=0,final_slot=0):
                 err={'runtime-code':20,'runtime-stack':4,'runtime-kernel':5,'runtime-window':4,'runtime-write':7,'runtime-nx':21}[mode]
                 target=address if mode in ('runtime-code','runtime-nx') else image['probe_pc']
                 need((vector,error,rip,cr2)==(14,err,target,address),'Wrong protection fault/site')
-            elif mode=='runtime-root': need((vector,error,rip)==(129,0,image['return_pc']),'Wrong return-root probe')
+            elif mode in ('runtime-root','runtime-terminal-input','runtime-terminal-output'): need((vector,error,rip)==(129,0,image['return_pc']),'Wrong return-root probe')
             elif mode=='runtime-kernel-trap': need((vector,error,rip)==(6,0,image['bounds_pc']),'Wrong known kernel UD2')
             elif mode=='runtime-entry-stack': need((vector,error,rip,cr2)==(8,0,image['return_pc']-2,arena+0x84000-8),'Missing exact entry-stack double fault')
             elif mode=='runtime-return': need((vector,error,rip)==(129,0,image['probe_pc']) and rip!=image['return_pc'],'Wrong forged return site')

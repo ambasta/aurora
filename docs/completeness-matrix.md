@@ -45,6 +45,17 @@ No general references, nested owning composition, full-native, sanitizer or new
 guest/hardware qualification is claimed.
 
 
+## Native copied terminal-event classification — 2026-10-08
+
+The live shared BIOS/UEFI classifier now requires the Aurora copied-fact policy;
+frame, image, domain/root authority and run-state commits remain C++. Independent
+finite/full-width, hostile-adapter and fatal hosted-sanitizer gates passed, as did
+all 41 dev and 12 slow tests on the final integrated source. Fresh exact linked
+stack/PIC/PE admission covered 48 images; all 46 selected guests and both final
+normal restoration boots passed. See the compact
+[contract and qualification](kernel-terminal-event-contract.md). This is not a
+full kernel rewrite, all-mode/full-native sweep or physical-hardware claim.
+
 ## Native client-disposal plan — focused gates passed
 
 A copied Aurora decision selects the real dispatcher recovery plan after trusted

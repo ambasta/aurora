@@ -25,6 +25,8 @@ FAULTS = {
     "--user-code-write": (14, 7, 3, 0x1D0000, 4),
     "--user-nx": (14, 21, 3, 0x1E0000, 5),
     "--user-io": (13, 0, 3, None, 6),
+    "--program-terminal-input": (129, 0, 3, None, None),
+    "--program-terminal-output": (129, 0, 3, None, None),
     "--program-bad-return": (129, 0, 3, None, None),
     "--program-unknown-trap": (6, 0, 3, None, None),
     "--program-kernel-trap": (6, 0, 0, None, None),
@@ -174,8 +176,8 @@ def validate_mode(status: int, transcript: str, mode: str, metadata: dict | None
             require(rip == image["bounds"], "Kernel-origin fault is not the exact known compiler trap")
         elif mode == "--program-unknown-trap":
             require(rip not in (image["bounds"], image["overflow"], image["return"]), "Unknown trap was actually authorized")
-        elif mode == "--domain-root-mismatch":
-            require(rip == image["return"], "CR3 mismatch must reject an otherwise authorized return PC")
+        elif mode in ("--domain-root-mismatch", "--program-terminal-input", "--program-terminal-output"):
+            require(rip == image["return"], "Controlled refusal must reject an otherwise authorized return PC")
         elif mode == "--program-bad-return":
             require(rip != image["return"], "Bad return matched authorized continuation")
     if isinstance(denied, int):
