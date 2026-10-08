@@ -36,7 +36,9 @@ struct Fixture {
     alignas(page_bytes) std::array<std::byte, page_count * page_bytes> backing;
     std::array<std::optional<PageLease>, page_count> holders;
     Region region;
-    Fixture() {
+    std::int64_t mode;
+    std::size_t held;
+    explicit Fixture(std::int64_t input) : mode(input), held(input == 4 ? 14 : input == 5 ? 13 : input == 6 ? 0 : 8) {
         require(pool.initialize(base, page_count), "initialize real pool");
         for (std::size_t index = 0; index < page_count; ++index) {
             std::fill(page(index).begin(), page(index).end(), sentinel(index));
@@ -44,10 +46,12 @@ struct Fixture {
             require(lease.has_value() && pool.address(*lease) == base + index * page_bytes, "real holder address");
             holders[index].emplace(std::move(*lease));
         }
-        for (std::size_t index = 1; index < page_count; index += 2) {
-            require(pool.release(*holders[index]), "release odd holder");
+        for (std::size_t index = 0; index < page_count; ++index) {
+            if (mode >= 4 ? index >= held : index % 2 == 1) {
+                require(pool.release(*holders[index]), "release available holder");
+            }
         }
-        require(pool.used() == 8, "eight real holders");
+        require(pool.used() == held, "exact real holders");
         require(region.open(pool, backing, base, 8194), "open kernel authority");
     }
     std::span<std::byte> page(std::size_t index) {
@@ -55,17 +59,18 @@ struct Fixture {
     }
     bool pages_match(bool allocated) {
         for (std::size_t index = 0; index < page_count; ++index) {
-            const bool payload = allocated && (index == 1 || index == 3 || index == 5 || index == 7);
+            const bool payload = allocated && (mode >= 4 ? (mode == 6 ? index < 4 : index >= held)
+                                                         : (index == 1 || index == 3 || index == 5 || index == 7));
             const auto expected = payload ? std::byte{0} : sentinel(index);
             if (!std::all_of(page(index).begin(), page(index).end(), [expected](std::byte value) {
                     return value == expected;
                 })) {
                 return false;
             }
-            if (index % 2 == 0 && pool.address(*holders[index]) != base + index * page_bytes) {
+            if (holders[index]->valid() && pool.address(*holders[index]) != base + index * page_bytes) {
                 return false;
             }
-            if (index % 2 == 1 && (holders[index]->valid() || pool.address(*holders[index]).has_value())) {
+            if (!holders[index]->valid() && pool.address(*holders[index]).has_value()) {
                 return false;
             }
         }
@@ -79,26 +84,30 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
     std::_Exit(90);
 }
 int main(int argc, char **argv) {
-    require(argc == 2 && argv[1][0] >= '0' && argv[1][0] <= '2' && argv[1][1] == '\0', "exact mode");
+    require(argc == 2 && argv[1][0] >= '0' && argv[1][0] <= '6' && argv[1][1] == '\0', "exact mode");
     const std::int64_t mode = argv[1][0] - '0';
-    const std::int64_t length = mode == 0 ? 4097 : mode == 1 ? 0 : -1;
-    Fixture fixture;
-    const auto result = __au_runtime_bytes_kernel_entry(fixture.region.id(), length, 0);
+    const std::int64_t length = mode == 1 ? 0 : mode == 2 ? -1 : 4097;
+    Fixture fixture(mode);
+    const std::int64_t selector = mode == 3 || mode == 6 ? 1 : mode == 4 ? 2 : mode == 5 ? 3 : 0;
+    const auto result = __au_runtime_bytes_kernel_entry(fixture.region.id(), length, selector);
     require(result == (mode == 2 ? -1 : 42), "unexpected result for independently supplied length");
     Metrics expected;
     expected.quota = 8194;
-    expected.successful_allocations = mode == 0 ? 2 : mode == 1 ? 1 : 0;
+    expected.successful_allocations = mode == 0 ? 2 : mode == 1 ? 1 : mode == 2 ? 0 : mode == 3 || mode == 6 ? 6 : 1;
     expected.releases = expected.successful_allocations;
-    expected.peak_live_allocations = expected.successful_allocations;
-    expected.peak_used = mode == 0 ? 8194 : 0;
+    expected.peak_live_allocations = mode >= 3 ? 1 : expected.successful_allocations;
+    expected.peak_used = mode == 0 ? 8194 : mode < 3 ? 0 : mode == 3 || mode == 6 ? 4098 : 4097;
     expected.last_allocation_id = expected.successful_allocations;
     expected.last_released_id = expected.successful_allocations;
-    expected.peak_held_pages = mode == 0 ? 4 : 0;
+    expected.peak_held_pages = mode == 0 || mode == 3 || mode == 6 ? 4 : mode >= 4 ? 2 : 0;
     require(fixture.region.metrics() == expected, "exact metrics including no view-induced allocations/releases");
-    require(fixture.pool.used() == 8 && fixture.pages_match(mode == 0), "all pages and foreign leases preserved");
+    require(fixture.pool.used() == fixture.held && fixture.pages_match(mode == 0 || mode >= 3),
+            "all pages and foreign leases preserved");
     require(fixture.region.close(), "explicit grant close");
-    for (std::size_t index = 0; index < page_count; index += 2) {
-        require(fixture.pool.release(*fixture.holders[index]), "release original holder");
+    for (std::size_t index = 0; index < page_count; ++index) {
+        if (fixture.holders[index]->valid()) {
+            require(fixture.pool.release(*fixture.holders[index]), "release original holder");
+        }
     }
     require(fixture.pool.used() == 0, "zero final pool use");
     std::printf("PASS UEFI owner-view host fixture: mode=%lld checks=%llu exact metrics/pages/leases\n",

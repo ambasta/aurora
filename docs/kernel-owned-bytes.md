@@ -15,7 +15,7 @@ mixed independently generated scalar/resource graphs remain unsupported.
 The source entry stays local, and only a scalar status crosses the private bridge.
 No descriptor, pointer, span or physical address crosses the private grant bridge.
 
-The next acceptance gate is focused native ownership/failure coverage, explicit
+The acceptance gate is focused native ownership/failure coverage, explicit
 unsupported-import rejection, complete linked stack/authority/image admission,
 independent review, and an actual bounded QEMU boot followed by normal restoration.
 See [the results](kernel-owned-bytes-results.md) for the accepted evidence scope.
@@ -73,9 +73,10 @@ The shared `runtime/bytes_abi.hpp` is the unchanged 32-byte compiler-private own
 layout and helper declarations, including hosted resize. The hosted allocator
 implementation and its resize semantics remain separate. The kernel profile
 supports allocation, copied read/write, validated readonly logical borrowing and
-normal drop. `try_resize` is
-explicitly rejected by object-import admission and unresolved at the actual
-kernel link; there is no resize success/failure stub. Mutable/general escaping borrowing,
+normal drop and failure-safe replacement resize. The
+[resize contract](kernel-owned-resize.md) and [focused results](kernel-owned-resize-results.md)
+cover fresh six-helper admission and bounded guest qualification; historical
+five-helper evidence is not reused. Mutable/general escaping borrowing,
 DMA/BAR/IOMMU activation, concurrency, exception unwinding and mixed graphs remain
 out of scope.
 
@@ -112,7 +113,8 @@ adapter passes establish a real guest result or physical-hardware support.
 
 ## Reconstructed readonly-owner consumer
 
-The candidate extends this same exclusive profile to exactly five imports:
+The earlier reconstructed readonly-owner checkpoint extended this same exclusive
+profile to exactly five imports:
 allocate, at, set, drop and borrow_length. A real Aurora consumer copies and
 narrows the existing 56-byte logical span, reads every byte and checks logical
 4,095/4,096 across a physical page boundary. Its return value is the observed
@@ -125,7 +127,7 @@ Whole-page scrub, untouched neighbor poison and actual foreign lease identities
 are checked before holder release and explicit region close. Existing length
 cases remain; successful-empty ownership adds no page. Exact totals are nine
 allocations and nine releases. Quota, pool, stack and region implementation do
-not change. Resize and unrelated imports still reject; no stubs are supplied.
+not change. This historical checkpoint rejected resize and unrelated imports; no stubs were supplied.
 
 The dependency is the freshly reconstructed owned-span compiler/runtime.
 The exact image/import/linked-stack checks and independent source review passed

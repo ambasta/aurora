@@ -74,9 +74,15 @@ public:
 
 #ifdef AURORA_KERNEL_BYTES_TESTING
     // A hosted-only CPU readback corruption, never a hardware completion signal.
-    void fail_scrub_for_test(std::size_t page_ordinal) noexcept {
+    void fail_scrub_for_test(std::size_t page_ordinal, std::size_t successful_scrubs = 0) noexcept {
         failed_scrub_ = page_ordinal;
+        scrub_skip_ = successful_scrubs;
     }
+    [[nodiscard]] std::size_t retained_records_for_test() const noexcept;
+    [[nodiscard]] std::size_t preparing_records_for_test() const noexcept;
+    [[nodiscard]] bool inactive_records_clean_for_test() const noexcept;
+    [[nodiscard]] bool advance_counters_for_test(std::uint64_t allocations, std::uint64_t releases) noexcept;
+
 #endif
 
 private:
@@ -106,12 +112,13 @@ private:
     Region *next_ = nullptr;
 #ifdef AURORA_KERNEL_BYTES_TESTING
     std::size_t failed_scrub_ = pool_pages;
+    std::size_t scrub_skip_ = 0;
 #endif
 
     [[nodiscard]] bool backing_valid() const noexcept;
     [[nodiscard]] std::optional<std::span<std::byte>> page(Allocation &allocation, std::size_t index) noexcept;
     [[nodiscard]] bool scrub(Allocation &allocation) noexcept;
-    void release_pages(Allocation &allocation) noexcept;
+    void release_pages(Allocation &allocation, Allocation *transaction_peer = nullptr) noexcept;
     [[noreturn]] void retain(Allocation &allocation) noexcept;
 };
 

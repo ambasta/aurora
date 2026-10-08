@@ -1,5 +1,15 @@
 # Completeness and acceptance matrix
 
+## Raw kernel owner resize — 2026-10-08
+
+The [bounded replacement contract](kernel-owned-resize.md) extends the existing
+CPU-only adapter using the same four records and sixteen pages. Fresh ordinary
+and fatal host sanitizer checks, independent source/linked-stack admission and
+actual owned-bytes/runtime-span/normal guests pass, including exact restoration.
+See [focused results and retained corrections](kernel-owned-resize-results.md).
+Complete ByteBuffer graphs remain separate.
+
+
 ## Bounded JSON lookup — 2026-10-08
 
 Root decoded-name member and array-index lookup share the iterative validator;

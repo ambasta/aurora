@@ -111,7 +111,11 @@ def validate(status, text, mode):
             "holders=8 preserved=1 releases=8 used=0"
         ),
         "AURORA_UEFI_OWNED_BYTES_VIEWS: crossing=4095,4096 empty=1 allocations=9 releases=9 used=0",
-        "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=9 releases=9",
+        "AURORA_UEFI_OWNED_BYTES_RESIZE: case=0 prefix=1 zero=1 preserved=1 allocations=15 releases=15 used=0",
+        "AURORA_UEFI_OWNED_BYTES_RESIZE: case=1 prefix=1 zero=1 preserved=1 allocations=21 releases=21 used=0",
+        "AURORA_UEFI_OWNED_BYTES_RESIZE: case=2 prefix=1 zero=1 preserved=1 allocations=22 releases=22 used=0",
+        "AURORA_UEFI_OWNED_BYTES_RESIZE: case=3 prefix=1 zero=1 preserved=1 allocations=23 releases=23 used=0",
+        "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=23 releases=23",
     ]
     actual_owned = [line.strip() for line in text.splitlines() if "AURORA_UEFI_OWNED_BYTES" in line]
     need(actual_owned == (owned_lines if mode == "owned-bytes" else []), "Wrong owned-byte lifecycle evidence")
@@ -171,7 +175,11 @@ def self_test():
         "AURORA_UEFI_OWNED_BYTES_FRAGMENTED: length=4097 owners=2 pages=1,3,5,7 "
         "holders=8 preserved=1 releases=8 used=0\n"
         "AURORA_UEFI_OWNED_BYTES_VIEWS: crossing=4095,4096 empty=1 allocations=9 releases=9 used=0\n"
-        "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=9 releases=9\n"
+        "AURORA_UEFI_OWNED_BYTES_RESIZE: case=0 prefix=1 zero=1 preserved=1 allocations=15 releases=15 used=0\n"
+        "AURORA_UEFI_OWNED_BYTES_RESIZE: case=1 prefix=1 zero=1 preserved=1 allocations=21 releases=21 used=0\n"
+        "AURORA_UEFI_OWNED_BYTES_RESIZE: case=2 prefix=1 zero=1 preserved=1 allocations=22 releases=22 used=0\n"
+        "AURORA_UEFI_OWNED_BYTES_RESIZE: case=3 prefix=1 zero=1 preserved=1 allocations=23 releases=23 used=0\n"
+        "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=23 releases=23\n"
     )
     cases["owned-bytes"] = (33, success.replace("AURORA_UEFI_LANGUAGE_OK:", records + "AURORA_UEFI_LANGUAGE_OK:"))
     cases["stale-exhausted"] = (

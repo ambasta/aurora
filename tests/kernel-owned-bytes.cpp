@@ -144,6 +144,7 @@ struct FaultObservation {
     NativeOwner expected_other{};
     const PageLease *foreign_lease = nullptr;
     std::optional<std::uint64_t> foreign_address{};
+    std::optional<std::size_t> retained_records{};
 
     void immutable(Fixture &fixture, NativeOwner *descriptor = nullptr) {
         mode = Mode::immutable;
@@ -174,7 +175,9 @@ struct FaultObservation {
         }
         // The fail-stop hook only observes. It never closes a region, acquires
         // or releases a lease, reenters the runtime, or unwinds owner storage.
-        return region->faulted() && region->is_open() && region->metrics() == metrics && arena->backing == backing;
+        return region->faulted() && region->is_open() && region->metrics() == metrics && arena->backing == backing &&
+               region->preparing_records_for_test() == 0 && region->inactive_records_clean_for_test() &&
+               (!retained_records || region->retained_records_for_test() == *retained_records);
     }
 };
 
@@ -926,6 +929,8 @@ void retained_rollback() {
     }
 }
 
+#include "kernel-owned-resize.inc"
+
 void identity_ceilings() {
     // Run last. Production-width exhaustion is permanent in this process, not
     // simulated by narrowing IDs or resetting the runtime globals afterward.
@@ -942,6 +947,10 @@ void identity_ceilings() {
             "last two production-width allocation identities succeed without narrowing");
     const auto metrics = penultimate.region.metrics();
     const auto backing = penultimate.arena.backing;
+    require(__au_runtime_bytes_resize(&first, 1) && !__au_runtime_bytes_resize(&first, 0) &&
+                __au_runtime_bytes_resize(&last, 0) && !__au_runtime_bytes_resize(&last, 1) &&
+                penultimate.region.metrics() == metrics,
+            "identity exhaustion preserves validated same-size only");
     for (const auto length : {std::int64_t{-1}, std::int64_t{0}, std::int64_t{1}}) {
         NativeOwner failed;
         __au_runtime_bytes_allocate(penultimate.region.id(), length, &failed);
@@ -1000,6 +1009,13 @@ int main() {
     bounds_faults();
     retained_initialization_and_drop();
     retained_rollback();
+    resize_boundaries();
+    resize_live_hygiene();
+    resize_quota_peers();
+    resize_resource_failures();
+    resize_fragmentation();
+    resize_descriptor_faults();
+    resize_retention();
     identity_ceilings();
     std::printf("PASS kernel owned bytes: %llu checks, %llu isolated exact faults\n",
                 static_cast<unsigned long long>(checks),

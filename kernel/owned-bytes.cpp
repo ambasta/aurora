@@ -44,6 +44,12 @@ std::optional<std::span<std::byte>> Region::page(Allocation &allocation, std::si
 }
 
 bool Region::scrub(Allocation &allocation) noexcept {
+#ifdef AURORA_KERNEL_BYTES_TESTING
+    const bool inject = scrub_skip_ == 0;
+    if (scrub_skip_ != 0) {
+        --scrub_skip_;
+    }
+#endif
     // Validate every lease before any write; verify every page before any release.
     for (std::size_t index = 0; index < allocation.count; ++index) {
         if (!page(allocation, index)) {
@@ -56,7 +62,7 @@ bool Region::scrub(Allocation &allocation) noexcept {
             data[offset] = std::byte{0};
         }
 #ifdef AURORA_KERNEL_BYTES_TESTING
-        if (index == failed_scrub_) {
+        if (inject && index == failed_scrub_) {
             data[page_bytes - 1] = std::byte{1};
         }
 #endif
@@ -85,14 +91,20 @@ bool Region::scrub(Allocation &allocation) noexcept {
     __au_runtime_bytes_kernel_fault(3);
 }
 
-void Region::release_pages(Allocation &allocation) noexcept {
+void Region::release_pages(Allocation &allocation, Allocation *transaction_peer) noexcept {
     if (!scrub(allocation)) {
+        if (transaction_peer != nullptr) {
+            transaction_peer->state = State::retained;
+        }
         retain(allocation);
     }
     // No callbacks or concurrent pool mutation occur after the full preflight.
     // A failed release breaks the trusted lifetime contract: retain what remains.
     for (std::size_t index = 0; index < allocation.count; ++index) {
         if (!pool_->release(*allocation.pages[index])) {
+            if (transaction_peer != nullptr) {
+                transaction_peer->state = State::retained;
+            }
             retain(allocation);
         }
         allocation.pages[index].reset();
@@ -287,6 +299,106 @@ public:
         return 1;
     }
 
+    static std::uint64_t resize(NativeOwner *owner, std::int64_t length) noexcept {
+        Region *target = nullptr;
+        auto *record = allocation(owner, target);
+        // Even invalid and same-size requests must validate current authority.
+        if (record == nullptr || length < 0) {
+            return 0;
+        }
+        if (length == record->length) {
+            return 1;
+        }
+        const auto count = static_cast<std::uint64_t>(length);
+        const auto old_count = static_cast<std::uint64_t>(record->length);
+        if (target->metrics_.used < old_count || target->metrics_.used > target->metrics_.quota) {
+            __au_runtime_bytes_kernel_fault(1);
+        }
+        const auto other_used = target->metrics_.used - old_count;
+        if (count > Region::backing_bytes || count > target->metrics_.quota - other_used || allocation_ids_exhausted ||
+            target->metrics_.successful_allocations == UINT64_MAX || target->metrics_.releases == UINT64_MAX) {
+            return 0;
+        }
+        Region::Allocation *replacement = nullptr;
+        for (auto &candidate : target->allocations_) {
+            if (candidate.state == Region::State::empty) {
+                replacement = &candidate;
+                break;
+            }
+        }
+        if (replacement == nullptr) {
+            return 0;
+        }
+        // Staging is private: no ID, logical quota or live owner is published.
+        // page() validates its leases without assuming committed accounting.
+        replacement->state = Region::State::preparing;
+        const auto required = count / Region::page_bytes + (count % Region::page_bytes != 0 ? 1 : 0);
+        while (replacement->count < required) {
+            auto lease = target->pool_->acquire();
+            if (!lease) {
+                target->release_pages(*replacement, record);
+                replacement->id = 0;
+                replacement->length = 0;
+                replacement->state = Region::State::empty;
+                return 0;
+            }
+            replacement->pages[replacement->count++].emplace(std::move(*lease));
+            ++target->metrics_.held_pages;
+        }
+        // Validate the complete source before copying or retiring anything.
+        for (std::size_t index = 0; index < record->count; ++index) {
+            if (!target->page(*record, index)) {
+                replacement->state = Region::State::retained;
+                target->retain(*record);
+            }
+        }
+        if (!target->scrub(*replacement)) {
+            record->state = Region::State::retained;
+            target->retain(*replacement);
+        }
+        const auto prefix = count < old_count ? count : old_count;
+        for (std::size_t offset = 0; offset < prefix;) {
+            const auto index = offset / Region::page_bytes;
+            const auto source = target->page(*record, index);
+            const auto destination = target->page(*replacement, index);
+            if (!source || !destination) {
+                record->state = Region::State::retained;
+                target->retain(*replacement);
+            }
+            const auto remaining = prefix - offset;
+            const auto chunk = remaining < Region::page_bytes ? remaining : Region::page_bytes;
+            for (std::size_t byte = 0; byte < chunk; ++byte) {
+                (*destination)[byte] = (*source)[byte];
+            }
+            offset += chunk;
+        }
+        const auto staging_peak = target->metrics_.held_pages;
+        const auto retired_id = record->id;
+        // All recoverable failures precede retirement. A scrub/lease failure
+        // is terminal and retains BOTH transaction records, never false success.
+        target->release_pages(*record, replacement);
+        record->id = 0;
+        record->length = 0;
+        record->state = Region::State::empty;
+        replacement->id = next_allocation_id;
+        replacement->length = length;
+        replacement->state = Region::State::live;
+        target->metrics_.used = other_used + count;
+        ++target->metrics_.successful_allocations;
+        ++target->metrics_.releases;
+        if (target->metrics_.used > target->metrics_.peak_used) {
+            target->metrics_.peak_used = target->metrics_.used;
+        }
+        if (staging_peak > target->metrics_.peak_held_pages) {
+            target->metrics_.peak_held_pages = staging_peak;
+        }
+        target->metrics_.last_allocation_id = replacement->id;
+        target->metrics_.last_released_id = retired_id;
+        commit_id(next_allocation_id, allocation_ids_exhausted);
+        *owner = NativeOwner{target->id_, replacement->id, length, 1};
+        return 1;
+    }
+
     static void drop(NativeOwner *owner) noexcept {
         if (owner == nullptr) {
             __au_runtime_bytes_kernel_fault(1);
@@ -311,6 +423,48 @@ public:
         *owner = NativeOwner{};
     }
 };
+
+#ifdef AURORA_KERNEL_BYTES_TESTING
+std::size_t Region::retained_records_for_test() const noexcept {
+    std::size_t count = 0;
+    for (const auto &record : allocations_) {
+        count += record.state == State::retained ? 1 : 0;
+    }
+    return count;
+}
+std::size_t Region::preparing_records_for_test() const noexcept {
+    std::size_t count = 0;
+    for (const auto &record : allocations_) {
+        count += record.state == State::preparing ? 1 : 0;
+    }
+    return count;
+}
+bool Region::inactive_records_clean_for_test() const noexcept {
+    for (const auto &record : allocations_) {
+        if (record.state != State::empty) {
+            continue;
+        }
+        if (record.id != 0 || record.length != 0 || record.count != 0) {
+            return false;
+        }
+        for (const auto &page : record.pages) {
+            if (page) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+bool Region::advance_counters_for_test(std::uint64_t allocations, std::uint64_t releases) noexcept {
+    if (!open_ || faulted_ || allocations < metrics_.successful_allocations || releases < metrics_.releases ||
+        allocations < releases || allocations - releases != metrics_.live_allocations) {
+        return false;
+    }
+    metrics_.successful_allocations = allocations;
+    metrics_.releases = releases;
+    return true;
+}
+#endif
 
 #ifdef AURORA_KERNEL_BYTES_TESTING
 namespace testing {
@@ -342,6 +496,10 @@ extern "C" std::uint64_t __au_runtime_bytes_at(const NativeOwner *owner, std::in
 
 extern "C" std::uint64_t __au_runtime_bytes_set(NativeOwner *owner, std::int64_t index, std::uint64_t value) noexcept {
     return kernel::bytes::RuntimeAccess::set(owner, index, value);
+}
+
+extern "C" std::uint64_t __au_runtime_bytes_resize(NativeOwner *owner, std::int64_t length) noexcept {
+    return kernel::bytes::RuntimeAccess::resize(owner, length);
 }
 
 extern "C" void __au_runtime_bytes_drop(NativeOwner *owner) noexcept {

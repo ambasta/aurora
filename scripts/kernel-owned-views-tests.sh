@@ -17,7 +17,7 @@ case "${SANITIZE:-0}" in
 esac
 "${CXX:-g++}" "${flags[@]}" tests/kernel-uefi-owned-views.cpp kernel/owned-bytes.cpp \
     "$build_dir/language.o" -o "$build_dir/native"
-for mode in 0 1 2; do
+for mode in 0 1 2 3 4 5 6; do
     ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=1" \
     UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" "$build_dir/native" "$mode"
 done
