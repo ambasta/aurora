@@ -1,5 +1,15 @@
 # Completeness and acceptance matrix
 
+## Native client-disposal plan — unverified candidate
+
+A small copied Aurora decision now selects the existing dispatcher recovery
+plan after trusted owner/quiescence checks. Receipt handling, mailbox effects,
+revocation and domain authority remain in the bootstrap adapter. Independent
+native/hostile tests, exact stack/image review and actual guest qualification
+remain pending. See [contract](kernel-client-disposal-contract.md) and
+[status](kernel-client-disposal-results.md). This is not a full dispatcher port.
+
+
 ## Raw kernel owner resize — 2026-10-08
 
 The [bounded replacement contract](kernel-owned-resize.md) extends the existing

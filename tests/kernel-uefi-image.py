@@ -168,6 +168,7 @@ def owned_bytes_symbols(symbols):
         "aurora_kernel_budget_tick",
         "aurora_kernel_round_robin_next",
         "aurora_kernel_ipc_transition",
+        "aurora_kernel_client_disposal",
         "uefi_runtime_enter",
         "uefi_console_interrupt",
         "__au_runtime_bytes_test_entry",
@@ -186,7 +187,7 @@ def owned_bytes_symbols(symbols):
     )
 
 
-def main(require_ipc=False, require_owned_bytes=False):
+def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
     pe_path = BUILD / "esp/EFI/BOOT/BOOTX64.EFI"
     data = pe_path.read_bytes()
     binary = (BUILD / "payload.bin").read_bytes()
@@ -241,6 +242,22 @@ def main(require_ipc=False, require_owned_bytes=False):
         need(
             0 < policy_symbols.get("aurora_kernel_ipc_transition", 0) < policy_symbols["__payload_text_end"],
             "Aurora transaction entry outside owned payload RX",
+        )
+    if require_disposal:
+        need(require_ipc, "Disposal profile requires the IPC authority graph")
+        # User-run recovery must contain a genuine copied-plan call. Other
+        # dispatcher profiles do not necessarily instantiate dispose_client.
+        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
+        need(
+            policy_call_present(policy_relocations, "aurora_kernel_client_disposal"),
+            "User recovery does not call the actual Aurora disposal entry",
+        )
+        policy_symbols = {
+            row.split()[2]: int(row.split()[0], 16) for row in symbols.splitlines() if len(row.split()) == 3
+        }
+        need(
+            0 < policy_symbols.get("aurora_kernel_client_disposal", 0) < policy_symbols["__payload_text_end"],
+            "Aurora disposal entry outside owned payload RX",
         )
     for name in names:
         relocations = subprocess.check_output(["readelf", "-rW", str(BUILD / f"{name}.o")], text=True)
@@ -307,6 +324,10 @@ def main(require_ipc=False, require_owned_bytes=False):
 if __name__ == "__main__":
     import sys
 
-    if sys.argv[1:] not in ([], ["--ipc-policy"], ["--owned-bytes"]):
+    if sys.argv[1:] not in ([], ["--ipc-policy"], ["--owned-bytes"], ["--ipc-policy", "--disposal-policy"]):
         raise SystemExit("Expected optional --ipc-policy or --owned-bytes")
-    main(require_ipc=sys.argv[1:] == ["--ipc-policy"], require_owned_bytes=sys.argv[1:] == ["--owned-bytes"])
+    main(
+        require_ipc="--ipc-policy" in sys.argv[1:],
+        require_owned_bytes=sys.argv[1:] == ["--owned-bytes"],
+        require_disposal="--disposal-policy" in sys.argv[1:],
+    )

@@ -25,8 +25,9 @@ case "${UEFI_MODE:-normal}" in
    if [[ "$UEFI_MODE" == bar-write || "$UEFI_MODE" == bar-revoked || "$UEFI_MODE" == bar-alias ]]; then flag="${UEFI_MODE#bar-}"; extra+=("-DAURORA_BAR_${flag^^}"); fi ;;
  bar-capture) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_ADMISSION -DAURORA_UEFI_BAR_CAPTURE) ;;
  bar-state) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_ADMISSION) ;;
- user-phases|user-context|user-retire-pending|user-request-budget|user-completion-budget|user-request-bounds|user-completion-bounds|user-request-overflow|user-completion-overflow|user-pending|user-role|user-phase|user-transaction|user-epoch|user-root|user-unknown|user-stale-grant)
+ user-disposal-input|user-disposal-output|user-phases|user-context|user-retire-pending|user-request-budget|user-completion-budget|user-request-bounds|user-completion-bounds|user-request-overflow|user-completion-overflow|user-pending|user-role|user-phase|user-transaction|user-epoch|user-root|user-unknown|user-stale-grant)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET -DAURORA_UEFI_DISPATCH -DAURORA_UEFI_USER_BUDGET)
+   if [[ "$UEFI_MODE" == user-disposal-* ]]; then extra+=(-DAURORA_USER_REQUEST_BOUNDS); fi
    flag="${UEFI_MODE#user-}"; flag="${flag//-/_}"; extra+=("-DAURORA_USER_${flag^^}"); ;;
  dispatch|dispatch-budget|dispatch-fault|dispatch-mixed|dispatch-pending|dispatch-cross-reply|dispatch-client-owner|dispatch-stale|dispatch-duplicate|dispatch-full|dispatch-root|dispatch-peer-code|dispatch-policy-cursor|dispatch-policy-mask|dispatch-policy-output)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET -DAURORA_UEFI_DISPATCH)
@@ -190,6 +191,9 @@ image_policy=()
 case "${UEFI_MODE:-normal}" in
     ipc*|budget*|dispatch*|user-*) image_policy+=(--ipc-policy) ;;
     owned-bytes) image_policy+=(--owned-bytes) ;;
+esac
+case "${UEFI_MODE:-normal}" in
+    user-request-*|user-completion-*|user-retire-pending|user-stale-grant|user-disposal-*) image_policy+=(--disposal-policy) ;;
 esac
 python3 tests/kernel-uefi-image.py "${image_policy[@]}"
 

@@ -833,3 +833,18 @@ gate; the interrupted attempt remains unaccepted. This fresh current-main
 composition is unqualified and needs new linked review and native/runtime
 integration. See the [dated results](../docs/kernel-ipc-transition-integration-results.md).
 
+
+## Copied client-disposal recovery-plan candidate
+
+The existing `Dispatcher::dispose_client` now depends on a copied Aurora plan
+before choosing empty disposal, retained completion receipt, cancellation plus
+consumption, or consumption of an existing terminal result. Trusted live owner,
+quiescence, selected-client, grant, exact transaction and receipt checks still
+guard real effects, revocation and retirement. Existing committed-prefix failure
+semantics are preserved. This is a narrow policy port, not a dispatcher rewrite.
+
+See [contract](../docs/kernel-client-disposal-contract.md) and
+[unfinished qualification](../docs/kernel-client-disposal-results.md).
+`make test-client-disposal` runs the bounded focused native oracle, copied-value
+and rejection checks and hostile actual-dispatcher controls with the shared
+selected compiler. Existing user-run gates remain part of qualification.
