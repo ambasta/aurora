@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "scope": "Exact reviewed patch and historical diagnostic fixture bytes; static integrity is not runtime qualification.",
+  "sha256": {
+    "tests/iommu/fixtures/command-stop-diagnostic.py": "841d56660647dc0a7fa3fec159dce9e30566ce1a25ccd14478d4be69317c6bf1",
+    "tests/iommu/fixtures/frozen-import.py": "a380e4792cd50417b457e638fdfeb6e3f5efd3b8126dcf8915a0c88ef0c27e28",
+    "tests/iommu/fixtures/transport-import-v1.py": "52f40383a50ddf437c9f240733af93f0722c3ae54092309f933ca658461dde80",
+    "tools/qemu-amdvi/patches/0001-event-record-transport.patch": "28ce96258f888457a937e204327326512a7b269291d12366bdb0567663b217e0",
+    "tools/qemu-amdvi/patches/0002-mode1-requester-permissions-v2.patch": "54cbc3e2555f15ad925c8be710284046135997956fee4edd50f2f2d2942d9641",
+    "tools/qemu-amdvi/patches/0003-command-stop-v1.patch": "0f3e51a4dea545092114a049a4781a01fe909f759b39cb6580cf9d41ef63c360"
+  }
+}

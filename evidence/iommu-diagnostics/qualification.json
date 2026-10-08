@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "recorded_date": "2026-10-08",
+  "aurora_integration_base": "9a8c2805cad581cad92b79b042b13aad07d6b530",
+  "aurora_base_tree": "eea6eb57787372f9871eb97d09cc31c7777e63f2",
+  "qemu_upstream_commit": "98f88efe8f07067667b8d9b1a5ce9551d34036c1",
+  "debian_source_version": "1:10.0.13+ds-0+deb13u1",
+  "historical_runs": [
+    {
+      "profile": "stock",
+      "cases": 17,
+      "passed": 3,
+      "failed": 14,
+      "status": "accepted_completed_diagnostic_with_failures",
+      "report_sha256": "f01d4bd981c137546388aeeb71ff554fe30d3c121ade18a8376e47262a30623f",
+      "binary_sha256": "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067",
+      "harness_sha256": "a380e4792cd50417b457e638fdfeb6e3f5efd3b8126dcf8915a0c88ef0c27e28",
+      "independent_decision_sha256": "60a51b87c8169acc5648617c654c8bea4d16fff4119e620547fbad2defb8d47d"
+    },
+    {
+      "profile": "event-only",
+      "cases": 17,
+      "passed": 4,
+      "failed": 13,
+      "status": "accepted_completed_diagnostic_with_failures",
+      "report_sha256": "b5b294cf1592b06b045dadf99ebebd9da326bdb85f48626100e6b44466ec1377",
+      "binary_sha256": "c913dc868adfab82e2a99cf9e9d74b03a96b7da4e71d3ccd2ce248ab3607b0f9",
+      "harness_sha256": "a380e4792cd50417b457e638fdfeb6e3f5efd3b8126dcf8915a0c88ef0c27e28",
+      "independent_decision_sha256": "60a51b87c8169acc5648617c654c8bea4d16fff4119e620547fbad2defb8d47d"
+    },
+    {
+      "profile": "combined-v2",
+      "cases": 17,
+      "passed": 4,
+      "failed": 13,
+      "status": "accepted_completed_diagnostic_with_failures",
+      "report_sha256": "8aa0dfc17c59cfec53dd88916fac188a3b23330349df02cc9290852a8a6e8677",
+      "binary_sha256": "81eb4ea516d85888112356f6a371c72e8fb1aa6c68a5819ecb5ec4fef8286ea7",
+      "harness_sha256": "a380e4792cd50417b457e638fdfeb6e3f5efd3b8126dcf8915a0c88ef0c27e28",
+      "independent_decision_sha256": "60a51b87c8169acc5648617c654c8bea4d16fff4119e620547fbad2defb8d47d"
+    },
+    {
+      "profile": "aligned-access-v1-on-combined-v2",
+      "cases": 13,
+      "passed": 13,
+      "failed": 0,
+      "status": "accepted_bounded_runtime",
+      "report_sha256": "5c9be627f155fc88df523d3271e572081556fdb517c7393ba978b39423007970",
+      "binary_sha256": "81eb4ea516d85888112356f6a371c72e8fb1aa6c68a5819ecb5ec4fef8286ea7",
+      "harness_sha256": "52f40383a50ddf437c9f240733af93f0722c3ae54092309f933ca658461dde80",
+      "independent_decision_sha256": "cb44c2e48d726fa4e5b6bf4a228d88ddc50dbc9fadbcc3a9a0f72864f87a5e65"
+    },
+    {
+      "profile": "command-stop-v1",
+      "cases": 30,
+      "passed": 30,
+      "failed": 0,
+      "status": "accepted_bounded_runtime",
+      "report_sha256": "b8047663ea45b8c9322a3af3253c63ae18f9ba961409bb948e3e0db17fd9284c",
+      "binary_sha256": "e19fa6c25b2eb8198d79284d7f1b161359c96db7c6c9f1147810ef5004a565f4",
+      "harness_sha256": "841d56660647dc0a7fa3fec159dce9e30566ce1a25ccd14478d4be69317c6bf1",
+      "independent_decision_sha256": "fd4bfbe298f7d492f83226be1a76cc366e8fa38d44e0bbdc9589d0f161db74a5"
+    },
+    {
+      "profile": "aligned-access-v1-on-command-stop-v1",
+      "cases": 13,
+      "passed": 13,
+      "failed": 0,
+      "status": "accepted_bounded_runtime",
+      "report_sha256": "ce64240fa4c0ce6e050f8f1c2f3564c91b3f24d46aa325af8f14d1cb45d8bda9",
+      "outer_terminal_sha256": "6ea0235496491b7d8bcb2cc44eb7f6922cfcfa486a50c8fdcd6b6ccd30e32b53",
+      "binary_sha256": "e19fa6c25b2eb8198d79284d7f1b161359c96db7c6c9f1147810ef5004a565f4",
+      "harness_sha256": "c9d211f2672755734af2944be10664b3612fe83a01368412e9b568cd57a7280e",
+      "independent_decision_sha256": "5eb941bdcd482cb893a8b31ffe7be2aad597164aef71c8bd69314e3a9d8d42fb",
+      "retargeted_from_harness_sha256": "52f40383a50ddf437c9f240733af93f0722c3ae54092309f933ca658461dde80",
+      "retarget_only_fields": [
+        "PROFILE",
+        "BINARY_SHA256"
+      ]
+    }
+  ],
+  "command_source_review_sha256": "dad875046a95a89bc860aa995f0ab29a3af30779d3eb925e50beaf29057a5808",
+  "command_build_receipt_sha256": "1990d8703fa2b375dd01549a763a597745b4841e46bc9780afc38c4aea27d04a",
+  "granularity_outer_terminal_sha256": "ed6ae12c361384e0732564518bd766a96312e7b20a5ca219271ec520f9320117",
+  "command_outer_terminal_sha256": "5fa7e97741103d5c90180d141784d74c858f82d088dcea921ef614eff57d707c",
+  "pending_gates": [
+    "independent review of this additive Aurora result update",
+    "final-source Meson dev and slow",
+    "any newly required complete root native or affected emulator qualification"
+  ],
+  "qualification_boundary": [
+    "common 40-bit ordinary memory and no exclusion",
+    "dispatch-default opcodes 0,9-15 only for command stopping",
+    "no new native/kernel/full aggregate run",
+    "no proved internal cache hit or general requester invalidation",
+    "no full-capacity fill, general IRQ/ATS, overflow restart or STATUS/W1C",
+    "no physical DMA/drain/reclamation or Aurora production device authority"
+  ],
+  "preservation": "Earlier failures retain original expectations and dispositions. Summaries identify external preserved evidence; raw reports and private workspace paths are not published.",
+  "same_binary_composition": {
+    "status": "accepted_bounded_same_binary_composition",
+    "profiles": [
+      "aligned-access-v1-on-command-stop-v1",
+      "command-stop-v1"
+    ],
+    "verified_preexecution_identities": 43,
+    "new_43_case_aggregate": false,
+    "access_qtest_pairs": 2744,
+    "access_checks": 2321,
+    "access_snapshots": 75,
+    "access_dma_operations": 88,
+    "baseline_comparison": "All complete access case results and raw qtest streams equal the accepted combined-v2 baseline."
+  }
+}

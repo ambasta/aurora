@@ -413,6 +413,22 @@ separate full D/P native, five-entrypoint fatal ASan/UBSan, runtime-premise,
 addendum. The fresh current-main composition changes executable source and
 requires new qualification; none of those receipts establishes a rerun here.
 
+## Compiler-free IOMMU model diagnostics
+
+`make test-iommu-diagnostics` runs ordinary and optimized Python artifact identity,
+strict source-patch parser and authored RAM/register mock controls. It selects no
+compiler and invokes no QEMU, image, native model or hardware. The root aggregate
+includes this prerequisite under `aurora-test-context`; it is not a compiler-consuming
+dispatch goal. Meson registers both modes in `dev` and `full` without an `aurorac`
+dependency. Meson's existing project setup still probes/requires C++; the direct
+Make/Python route is the configuration-free, compiler-free entrypoint.
+
+Historical runtime fixtures are exact immutable inputs with model-specific pins.
+They are never default test commands. The [diagnostic contract](iommu-dma-conformance.md)
+keeps mock outcomes, recorded runtime reports, independent acceptance and pending
+new-source aggregate gates distinct. No historical report supplies a new native,
+kernel or hardware qualification.
+
 ## Native-free emulator clock contract gate
 
 Current-main addendum (2026-10-06): the composed clock and firmware suites now

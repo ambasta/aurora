@@ -331,3 +331,14 @@ test('compiler-test-inventory', python,
 test('program-console-entrypoints', python,
      args: ['-B', files('kernel-program-console-entrypoints.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 60)
+
+# Compiler-free model-fixture integrity/mocks. No emulator or hardware acceptance.
+foreach mode : ['ordinary', 'optimized']
+    diagnostic_args = ['-B']
+    if mode == 'optimized'
+        diagnostic_args += ['-O']
+    endif
+    diagnostic_args += [files('iommu-diagnostics.py')]
+    test('iommu-diagnostics-' + mode, python, args: diagnostic_args,
+         suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+endforeach

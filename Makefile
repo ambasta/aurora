@@ -110,7 +110,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-client-disposal test-terminal-event test-native-cap-contracts \
     run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
     program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream \
-    test-developer-commands test-inventory: aurora-test-context
+    test-developer-commands test-inventory test-iommu-diagnostics: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -504,6 +504,14 @@ test-emulator-clock:
 	PYTHONDONTWRITEBYTECODE=1 python3 -O tests/kernel-emulator-clock.py
 
 test: test-emulator-clock
+
+# Static identities and authored byte/register mocks only; never launches QEMU.
+.PHONY: test-iommu-diagnostics
+test-iommu-diagnostics:
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/iommu-diagnostics.py
+	PYTHONDONTWRITEBYTECODE=1 python3 -O tests/iommu-diagnostics.py
+
+test: test-iommu-diagnostics
 
 # Compiler-owned Aurora source formatter; focused checks, not native acceptance.
 .PHONY: formatter test-formatter test-lint

@@ -1,0 +1,88 @@
+--- a/hw/i386/amd_iommu.c
++++ b/hw/i386/amd_iommu.c
+@@ -145,10 +145,10 @@
+             ((oldval & romask) | (val & ~romask)) & ~(val & w1cmask));
+ }
+ 
+-/* OR a 64-bit register with a 64-bit value */
++/* Test a mask in a 64-bit register. */
+ static bool amdvi_test_mask(AMDVIState *s, hwaddr addr, uint64_t val)
+ {
+-    return amdvi_readq(s, addr) | val;
++    return (amdvi_readq(s, addr) & val) != 0;
+ }
+ 
+ /* OR a 64-bit register with a 64-bit value storing result in the register */
+@@ -179,35 +179,47 @@
+ 
+ static void amdvi_log_event(AMDVIState *s, uint64_t *evt)
+ {
++    uint32_t ring_bytes = s->evtlog_len * AMDVI_EVENT_LEN;
++    uint32_t next_tail;
++    uint64_t le_evt[2] = { cpu_to_le64(evt[0]), cpu_to_le64(evt[1]) };
+     /* event logging not enabled */
+     if (!s->evtlog_enabled || amdvi_test_mask(s, AMDVI_MMIO_STATUS,
+         AMDVI_MMIO_STATUS_EVT_OVF)) {
+         return;
+     }
+ 
+-    /* event log buffer full */
+-    if (s->evtlog_tail >= s->evtlog_len) {
++    /* EventLen counts records; pointers are byte offsets. Keep one slot free. */
++    next_tail = s->evtlog_tail + AMDVI_EVENT_LEN;
++    if (next_tail == ring_bytes) {
++        next_tail = 0;
++    }
++    if (s->evtlog_tail >= ring_bytes || s->evtlog_head >= ring_bytes ||
++        next_tail == s->evtlog_head) {
+         amdvi_assign_orq(s, AMDVI_MMIO_STATUS, AMDVI_MMIO_STATUS_EVT_OVF);
+-        /* generate interrupt */
++        if (s->evtlog_intr) {
++            amdvi_generate_msi_interrupt(s);
++        }
++        return;
++    }
++
++    if (dma_memory_write(&address_space_memory, s->evtlog + s->evtlog_tail,
++                         le_evt, AMDVI_EVENT_LEN, MEMTXATTRS_UNSPECIFIED)) {
++        trace_amdvi_evntlog_fail(s->evtlog, s->evtlog_tail);
++    }
++
++    s->evtlog_tail = next_tail;
++    amdvi_writeq_raw(s, AMDVI_MMIO_EVENT_TAIL, s->evtlog_tail);
++    amdvi_assign_orq(s, AMDVI_MMIO_STATUS, AMDVI_MMIO_STATUS_EVT_INT);
++    if (s->evtlog_intr) {
+         amdvi_generate_msi_interrupt(s);
+-        return;
+-    }
+-
+-    if (dma_memory_write(&address_space_memory, s->evtlog + s->evtlog_tail,
+-                         evt, AMDVI_EVENT_LEN, MEMTXATTRS_UNSPECIFIED)) {
+-        trace_amdvi_evntlog_fail(s->evtlog, s->evtlog_tail);
+-    }
+-
+-    s->evtlog_tail += AMDVI_EVENT_LEN;
+-    amdvi_assign_orq(s, AMDVI_MMIO_STATUS, AMDVI_MMIO_STATUS_COMP_INT);
+-    amdvi_generate_msi_interrupt(s);
++    }
+ }
+ 
+ static void amdvi_setevent_bits(uint64_t *buffer, uint64_t value, int start,
+                                 int length)
+ {
+     int index = start / 64, bitpos = start % 64;
+-    uint64_t mask = MAKE_64BIT_MASK(start, length);
++    uint64_t mask = MAKE_64BIT_MASK(bitpos, length);
+     buffer[index] &= ~mask;
+     buffer[index] |= (value << bitpos) & mask;
+ }
+--- a/hw/i386/amd_iommu.h
++++ b/hw/i386/amd_iommu.h
+@@ -111,6 +111,7 @@
+ #define AMDVI_MMIO_STATUS_CMDBUF_RUN  (1 << 4)
+ #define AMDVI_MMIO_STATUS_EVT_RUN     (1 << 3)
+ #define AMDVI_MMIO_STATUS_COMP_INT    (1 << 2)
++#define AMDVI_MMIO_STATUS_EVT_INT     (1 << 1)
+ #define AMDVI_MMIO_STATUS_EVT_OVF     (1 << 0)
+ 
+ #define AMDVI_CMDBUF_ID_BYTE              0x07

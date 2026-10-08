@@ -1,0 +1,291 @@
+--- a/hw/i386/amd_iommu.c
++++ b/hw/i386/amd_iommu.c
+@@ -75,6 +75,7 @@
+     uint64_t perms;             /* access permissions  */
+     uint64_t translated_addr;   /* translated address  */
+     uint64_t page_mask;         /* physical page size  */
++    bool bounded_mode1;         /* fill used the bounded ordinary-memory walk */
+ } AMDVIIOTLBEntry;
+ 
+ uint64_t amdvi_extended_feature_register(AMDVIState *s)
+@@ -254,6 +255,23 @@
+     pci_word_test_and_set_mask(s->pci.dev.config + PCI_STATUS,
+             PCI_STATUS_SIG_TARGET_ABORT);
+ }
++/* Ordinary untranslated memory fault, without PASID or guest translation.
++ * Only the caller's architecturally defined PR/PE/RW/RZ bits are supplied.
++ */
++static void amdvi_memory_page_fault(AMDVIState *s, uint16_t devid,
++                                   uint16_t domid, hwaddr addr, uint16_t info)
++{
++    uint64_t evt[2];
++
++    /* No caller can set I, TR, GN or unrelated event fields. */
++    assert(!(info & ~AMDVI_EVENT_IOPF_MEMORY_FLAGS));
++    amdvi_encode_event(evt, devid, addr, AMDVI_EVENT_IOPF | info);
++    amdvi_setevent_bits(evt, domid, 32, 16);
++    amdvi_log_event(s, evt);
++    pci_word_test_and_set_mask(s->pci.dev.config + PCI_STATUS,
++                              PCI_STATUS_SIG_TARGET_ABORT);
++}
++
+ /*
+  * log a master abort accessing device table
+  *  @devtab : address of device table entry
+@@ -369,7 +387,7 @@
+ 
+ static void amdvi_update_iotlb(AMDVIState *s, uint16_t devid,
+                                uint64_t gpa, IOMMUTLBEntry to_cache,
+-                               uint16_t domid)
++                               uint16_t domid, bool bounded_mode1)
+ {
+     /* don't cache erroneous translations */
+     if (to_cache.perm != IOMMU_NONE) {
+@@ -385,6 +403,7 @@
+         }
+ 
+         entry->domid = domid;
++        entry->bounded_mode1 = bounded_mode1;
+         entry->perms = to_cache.perm;
+         entry->translated_addr = to_cache.translated_addr;
+         entry->page_mask = to_cache.addr_mask;
+@@ -875,8 +894,8 @@
+     return true;
+ }
+ 
+-/* get a device table entry given the devid */
+-static bool amdvi_get_dte(AMDVIState *s, int devid, uint64_t *entry)
++/* Fetch without validating: ordinary memory tests V before reserved bits. */
++static bool amdvi_read_dte(AMDVIState *s, int devid, uint64_t *entry)
+ {
+     uint32_t offset = devid * AMDVI_DEVTAB_ENTRY_SIZE;
+ 
+@@ -889,6 +908,15 @@
+     }
+ 
+     *entry = le64_to_cpu(*entry);
++    return true;
++}
++
++/* Keep the existing IRQ caller's unconditional validation ordering. */
++static bool amdvi_get_dte(AMDVIState *s, int devid, uint64_t *entry)
++{
++    if (!amdvi_read_dte(s, devid, entry)) {
++        return false;
++    }
+     if (!amdvi_validate_dte(s, devid, entry)) {
+         trace_amdvi_invalid_dte(entry[0]);
+         return false;
+@@ -938,12 +966,120 @@
+     return pte;
+ }
+ 
++/* This is a profile predicate, not an architectural reserved-bit mask. */
++static bool amdvi_bounded_dte(AMDVIState *s, const uint64_t *dte)
++{
++    return !(dte[0] & ~0x600ffffffffffe03ULL) &&
++           !(dte[1] & ~0xffffULL) && !dte[2] && !dte[3] &&
++           !(amdvi_readq(s, AMDVI_MMIO_EXCL_BASE) &
++             AMDVI_MMIO_EXCL_ENABLED_MASK);
++}
++
++static bool amdvi_bounded_memory(hwaddr addr)
++{
++    return addr < (1ULL << 40) &&
++           !(addr >= 0xfee00000ULL && addr <= 0xfeefffffULL) &&
++           !(addr >= 0xfd00000000ULL && addr <= 0xffffffffffULL);
++}
++
++typedef enum AMDVIBoundedWalkResult {
++    AMDVI_BOUNDED_FAULT,
++    AMDVI_BOUNDED_SUCCESS,
++    AMDVI_BOUNDED_LEGACY_LEAF,
++} AMDVIBoundedWalkResult;
++
++/* On continuation, return the already-read leaf to the original walker.
++ * Early parent/range faults do not inspect a leaf's unsupported attributes.
++ */
++static AMDVIBoundedWalkResult
++amdvi_page_walk_4k(AMDVIAddressSpace *as, uint64_t *dte, IOMMUTLBEntry *ret,
++                   unsigned perms, hwaddr addr, uint64_t *legacy_leaf)
++{
++    AMDVIState *s = as->iommu_state;
++    uint16_t devid = PCI_BUILD_BDF(as->bus_num, as->devfn);
++    uint16_t domid = dte[1] & AMDVI_DEV_DOMID_ID_MASK;
++    unsigned rights = amdvi_get_perms(dte[0]);
++    uint16_t rw = (perms & AMDVI_PERM_WRITE) ? AMDVI_EVENT_IOPF_RW : 0;
++    uint64_t pte, pte_addr;
++
++    if (addr >= (1ULL << 21)) {
++        amdvi_memory_page_fault(s, devid, domid, addr,
++            AMDVI_EVENT_IOPF_PR | rw |
++            ((perms & rights) != perms ? AMDVI_EVENT_IOPF_PE : 0));
++        return AMDVI_BOUNDED_FAULT;
++    }
++    /* Early parent denial is permitted; no multifault priority is imposed. */
++    if ((perms & rights) != perms) {
++        amdvi_memory_page_fault(s, devid, domid, addr,
++                               AMDVI_EVENT_IOPF_PR | AMDVI_EVENT_IOPF_PE | rw);
++        return AMDVI_BOUNDED_FAULT;
++    }
++    pte_addr = (dte[0] & AMDVI_DEV_PT_ROOT_MASK) + ((addr >> 12) * 8);
++    if (dma_memory_read(&address_space_memory, pte_addr, &pte, sizeof(pte),
++                        MEMTXATTRS_UNSPECIFIED)) {
++        amdvi_log_pagetab_error(s, devid, pte_addr, 0);
++        return AMDVI_BOUNDED_FAULT;
++    }
++    pte = le64_to_cpu(pte);
++    if (!(pte & 1)) {
++        /* Other PR-clear payload is ignored; PR=0 has no PE/RW/RZ claim. */
++        amdvi_memory_page_fault(s, devid, domid, addr, 0);
++        return AMDVI_BOUNDED_FAULT;
++    }
++    if (get_pte_translation_mode(pte) != 0 ||
++        (pte & (3ULL << 59)) ||
++        !amdvi_bounded_memory((pte & AMDVI_DEV_PT_ROOT_MASK) |
++                              (addr & ~AMDVI_PAGE_MASK_4K))) {
++        *legacy_leaf = pte;
++        return AMDVI_BOUNDED_LEGACY_LEAF;
++    }
++    rights &= amdvi_get_perms(pte);
++    if (pte & GENMASK64(58, 52)) {
++        amdvi_memory_page_fault(s, devid, domid, addr,
++            AMDVI_EVENT_IOPF_PR | AMDVI_EVENT_IOPF_RZ | rw |
++            ((perms & rights) != perms ? AMDVI_EVENT_IOPF_PE : 0));
++        return AMDVI_BOUNDED_FAULT;
++    }
++    if ((perms & rights) != perms) {
++        amdvi_memory_page_fault(s, devid, domid, addr,
++                               AMDVI_EVENT_IOPF_PR | AMDVI_EVENT_IOPF_PE | rw);
++        return AMDVI_BOUNDED_FAULT;
++    }
++    ret->iova = addr & AMDVI_PAGE_MASK_4K;
++    ret->translated_addr = pte & AMDVI_DEV_PT_ROOT_MASK;
++    ret->addr_mask = ~AMDVI_PAGE_MASK_4K;
++    ret->perm = rights;
++    return AMDVI_BOUNDED_SUCCESS;
++}
++
+ static void amdvi_page_walk(AMDVIAddressSpace *as, uint64_t *dte,
+                             IOMMUTLBEntry *ret, unsigned perms,
+-                            hwaddr addr)
++                            hwaddr addr, bool *bounded_mode1)
+ {
+     unsigned level, present, pte_perms, oldlevel;
+     uint64_t pte = dte[0], pte_addr, page_mask;
++
++    *bounded_mode1 = false;
++    if ((pte & AMDVI_DEV_TRANSLATION_VALID) &&
++        get_pte_translation_mode(pte) == 1 &&
++        amdvi_bounded_memory(addr) &&
++        amdvi_bounded_dte(as->iommu_state, dte) &&
++        (pte & AMDVI_DEV_PT_ROOT_MASK) < (1ULL << 40)) {
++        AMDVIBoundedWalkResult result =
++            amdvi_page_walk_4k(as, dte, ret, perms, addr, &pte);
++
++        switch (result) {
++        case AMDVI_BOUNDED_SUCCESS:
++            *bounded_mode1 = true;
++            return;
++        case AMDVI_BOUNDED_FAULT:
++            return;
++        case AMDVI_BOUNDED_LEGACY_LEAF:
++            /* Parent was present/permitted. Resume after its single fetch. */
++            oldlevel = 1;
++            goto legacy_leaf;
++        }
++    }
+ 
+     /* make sure the DTE has TV = 1 */
+     if (pte & AMDVI_DEV_TRANSLATION_VALID) {
+@@ -975,6 +1111,7 @@
+                 return;
+             }
+             oldlevel = level;
++legacy_leaf:
+             level = get_pte_translation_mode(pte);
+         } while (level > 0 && level < 7);
+ 
+@@ -1003,12 +1140,28 @@
+ {
+     AMDVIState *s = as->iommu_state;
+     uint16_t devid = PCI_BUILD_BDF(as->bus_num, as->devfn);
+-    AMDVIIOTLBEntry *iotlb_entry = amdvi_iotlb_lookup(s, addr, devid);
++    AMDVIIOTLBEntry *iotlb_entry;
++    unsigned perms = is_write ? AMDVI_PERM_WRITE : AMDVI_PERM_READ;
++    uint16_t rw = is_write ? AMDVI_EVENT_IOPF_RW : 0;
+     uint64_t entry[4];
+-
++    bool bounded_mode1 = false;
++    bool ordinary_memory = amdvi_bounded_memory(addr);
++
++    if (ordinary_memory && devid >= s->devtab_len) {
++        /* No DTE was fetched: DomainID=0; PR/PE/RW/RZ are unclaimed. */
++        amdvi_memory_page_fault(s, devid, 0, addr, 0);
++        return;
++    }
++    iotlb_entry = amdvi_iotlb_lookup(s, addr, devid);
+     if (iotlb_entry) {
+         trace_amdvi_iotlb_hit(PCI_BUS_NUM(devid), PCI_SLOT(devid),
+                 PCI_FUNC(devid), addr, iotlb_entry->translated_addr);
++        if (ordinary_memory && iotlb_entry->bounded_mode1 &&
++            (perms & iotlb_entry->perms) != perms) {
++            amdvi_memory_page_fault(s, devid, iotlb_entry->domid, addr,
++                                   AMDVI_EVENT_IOPF_PR | AMDVI_EVENT_IOPF_PE | rw);
++            return;
++        }
+         ret->iova = addr & ~iotlb_entry->page_mask;
+         ret->translated_addr = iotlb_entry->translated_addr;
+         ret->addr_mask = iotlb_entry->page_mask;
+@@ -1016,7 +1169,12 @@
+         return;
+     }
+ 
+-    if (!amdvi_get_dte(s, devid, entry)) {
++    if (!amdvi_read_dte(s, devid, entry)) {
++        return;
++    }
++    if ((!ordinary_memory || (entry[0] & AMDVI_DEV_VALID)) &&
++        !amdvi_validate_dte(s, devid, entry)) {
++        trace_amdvi_invalid_dte(entry[0]);
+         return;
+     }
+ 
+@@ -1025,11 +1183,17 @@
+         goto out;
+     }
+ 
+-    amdvi_page_walk(as, entry, ret,
+-                    is_write ? AMDVI_PERM_WRITE : AMDVI_PERM_READ, addr);
++    if (ordinary_memory && amdvi_bounded_dte(s, entry) &&
++        !(entry[0] & AMDVI_DEV_TRANSLATION_VALID)) {
++        /* DTE permissions are not meaningful when TV=0. */
++        amdvi_memory_page_fault(s, devid, entry[1] & AMDVI_DEV_DOMID_ID_MASK,
++                               addr, AMDVI_EVENT_IOPF_PR | rw);
++        return;
++    }
++    amdvi_page_walk(as, entry, ret, perms, addr, &bounded_mode1);
+ 
+     amdvi_update_iotlb(s, devid, addr, *ret,
+-                       entry[1] & AMDVI_DEV_DOMID_ID_MASK);
++                       entry[1] & AMDVI_DEV_DOMID_ID_MASK, bounded_mode1);
+     return;
+ 
+ out:
+--- a/hw/i386/amd_iommu.h
++++ b/hw/i386/amd_iommu.h
+@@ -146,6 +146,14 @@
+ #define AMDVI_EVENT_ILLEGAL_DEVTAB_ENTRY  (0x1U << 12)
+ #define AMDVI_EVENT_IOPF                  (0x2U << 12)
+ #define   AMDVI_EVENT_IOPF_I              (1U << 3)
++#define   AMDVI_EVENT_IOPF_PR             (1U << 4)
++#define   AMDVI_EVENT_IOPF_RW             (1U << 5)
++#define   AMDVI_EVENT_IOPF_PE             (1U << 6)
++#define   AMDVI_EVENT_IOPF_RZ             (1U << 7)
++#define   AMDVI_EVENT_IOPF_MEMORY_FLAGS  (AMDVI_EVENT_IOPF_PR | \
++                                         AMDVI_EVENT_IOPF_RW | \
++                                         AMDVI_EVENT_IOPF_PE | \
++                                         AMDVI_EVENT_IOPF_RZ)
+ #define AMDVI_EVENT_DEV_TAB_HW_ERROR      (0x3U << 12)
+ #define AMDVI_EVENT_PAGE_TAB_HW_ERROR     (0x4U << 12)
+ #define AMDVI_EVENT_ILLEGAL_COMMAND_ERROR (0x5U << 12)
