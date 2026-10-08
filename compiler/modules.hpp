@@ -366,6 +366,10 @@ class ModuleResolver {
                 if (count > 1 && unit.root && function.scope.empty() && function.token.text == "answer")
                     throw Error("bootstrap answer entrypoint cannot be overloaded");
                 if (count > 1) {
+                    if (std::any_of(function.params.begin(), function.params.end(), [](const Param &parameter) {
+                            return parameter.borrowed;
+                        }))
+                        throw Error("borrowed-object functions cannot be overloaded: " + qualified);
                     if (!table.contains(qualified))
                         add(Kind::Function, function.scope, function.token.text, function.exported, true);
                     auto &declaration = table.at(qualified);

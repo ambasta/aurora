@@ -33,14 +33,17 @@ until the compiler can emit dependency files itself.
 
 ## Choose the checks for the change
 
-`dev` is the quick feedback set (38 tests). `slow` holds nine longer exhaustive
+`dev` is the quick feedback set (40 tests). `slow` holds eleven longer exhaustive
 integration or ABI runners: block-io, sector-window, xfs-sector, xfs-file,
-method-spans-abi, json-profile, json-codecs, json-integers and json-lookup.
+method-spans-abi, json-profile, json-codecs, json-integers, json-lookup,
+borrowed-objects and borrowed-objects-abi.
+The borrowed-object smoke and malformed-IR gates remain in `dev`; the complete
+source/helper runner and handwritten ABI sweep remain in `slow`.
 The existing json-owned runner remains in `dev` for representative JSON and
 real owner-window coverage, alongside core/value/owner and partial package checks.
 No runner is sampled or weakened to meet a timing target.
 
-`full` and an unfiltered `meson test` both run all 47 registered tests when the
+`full` and an unfiltered `meson test` both run all 51 registered tests when the
 optional LSP is disabled. `dev` and `slow` are a disjoint, complete partition.
 The existing `core`, `bytes`, `compiler` and `packages` memberships are preserved,
 so dependency-selected suites still include their longer checks. In particular,

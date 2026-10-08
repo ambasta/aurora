@@ -16,12 +16,12 @@ class Local {
 public:
     std::string name;
     Type type;
-    int offset = 0, owner = -1, shared = 0;
+    int offset = 0, owner = -1, shared = 0, objectShared = 0;
     // -1 is an incoming span parameter; -2 is the implicit receiver.
     int spanOrigin = -1, spanField = -1;
     bool spanTemporaryParent = false;
     bool mut = false, live = true, exclusive = false;
-    bool resourceActive = false;
+    bool resourceActive = false, borrowedObject = false, objectExclusive = false;
 };
 class SemanticAnalyzer {
     std::vector<Function> sourceFunctions;
@@ -42,7 +42,7 @@ class SemanticAnalyzer {
     std::vector<Local> locals;
     std::vector<std::map<std::string, int>> scopes;
     ir::Function lowered;
-    int slot = 0, label = 0;
+    int slot = 0, label = 0, nextObjectLoan = 1;
     Type result = Type::I64;
     const Function *currentFunction = nullptr;
     AnalysisMode mode;
@@ -253,6 +253,8 @@ class SemanticAnalyzer {
         int i = find(e->token);
         if (!locals[i].live)
             fail(e->token, "use after move of '" + e->token.text + "'");
+        if (locals[i].objectExclusive)
+            fail(e->token, "owning object is exclusively borrowed for a call");
         if (lintFunction)
             readLocals.insert(i);
         return i;
@@ -327,7 +329,12 @@ class SemanticAnalyzer {
                    (fieldIndex < 0 || local.spanField == fieldIndex);
         });
     }
+    void requireNoObjectLoan(int root, const Token &token) {
+        if (root >= 0 && (locals[root].objectShared || locals[root].objectExclusive))
+            fail(token, "cannot mutate or move an owning object while borrowed");
+    }
     void requireUnborrowed(int root, int fieldIndex, const Token &token) {
+        requireNoObjectLoan(root, token);
         if (hasSpanBorrow(root, fieldIndex))
             fail(token, "cannot mutate or move an owner while a readonly span is live");
     }
@@ -401,6 +408,8 @@ class SemanticAnalyzer {
                 origin = member ? -2 : source(target);
             } else if (target->op == "member" && target->args[0]->op == "name") {
                 origin = source(target->args[0]);
+                if (locals[origin].borrowedObject)
+                    fail(target->token, "borrowed object parameters support public methods, not field access");
                 member = &field(locals[origin].type, target->token);
             } else
                 fail(value->token,
@@ -497,6 +506,8 @@ class SemanticAnalyzer {
         match(locals[local].type, expected, value->token);
         if (!ownerType(expected))
             fail(value->token, "move requires an owning value");
+        if (locals[local].borrowedObject)
+            fail(value->token, "borrowed object parameters cannot transfer ownership");
         if (!locals[local].mut)
             fail(value->token, "cannot move a const owner");
         requireUnborrowed(local, -1, value->token);
@@ -694,6 +705,8 @@ class SemanticAnalyzer {
                 }
             } else if (target->op == "member" && target->args[0]->op == "name") {
                 receiver = source(target->args[0]);
+                if (locals[receiver].borrowedObject)
+                    fail(target->token, "borrowed object parameters support public methods, not field projections");
                 receiverOffset = offset(receiver);
                 mutableReceiver = locals[receiver].mut;
                 member = &field(locals[receiver].type, target->token);
@@ -711,6 +724,8 @@ class SemanticAnalyzer {
         auto requireLiveReceiver = [&] {
             if (receiver >= 0 && !locals[receiver].live)
                 fail(value->token, "method arguments consumed the receiver or its containing object");
+            if (receiver >= 0 && locals[receiver].objectExclusive)
+                fail(value->token, "owning object is exclusively borrowed for a call");
         };
         if (type.isBytes()) {
             if (resultBinding || implicit)
@@ -864,17 +879,37 @@ class SemanticAnalyzer {
         if (resultBinding)
             match(callee.result, resultBinding->type, expression->token);
         arity(expression, callee.params.size());
-        std::vector<int> arguments(callee.params.size(), 0);
-        std::vector<int> spanArguments(callee.params.size(), 0), spanBorrows;
+        const bool borrowed = !callee.params.empty() && callee.params.front().borrowed;
+        const std::size_t first = borrowed ? 1 : 0;
+        int root = -1, loanId = 0;
+        if (borrowed) {
+            const auto &argument = expression->args.front();
+            if (argument->op != "name")
+                fail(argument->token, "borrowed object argument requires a complete named owning object");
+            root = source(argument);
+            match(locals[root].type, callee.params.front().type, argument->token);
+            const bool mutableLoan = !callee.params.front().borrowConst;
+            if (mutableLoan) {
+                if (!locals[root].mut)
+                    fail(argument->token, "mutable borrowed parameter requires a mutable owning object");
+                requireUnborrowed(root, -1, argument->token);
+                locals[root].objectExclusive = true;
+            } else
+                ++locals[root].objectShared;
+            loanId = nextObjectLoan++;
+            emit(ir::AcquireObjectLoan{loanId, offset(root), mutableLoan});
+        }
+        std::vector<int> arguments(callee.params.size() - first, 0);
+        std::vector<int> spanArguments(callee.params.size() - first, 0), spanBorrows;
         std::vector<int> snapshots;
-        bool aggregate = callee.result.isClass();
-        for (std::size_t index = 0; index < callee.params.size(); ++index) {
+        bool aggregate = !borrowed && callee.result.isClass();
+        for (std::size_t index = first; index < callee.params.size(); ++index) {
             const auto &type = callee.params[index].type;
             const auto &argument = expression->args[index];
             if (type.isSpan()) {
                 aggregate = true;
                 const int borrowed = acquireSpan(argument);
-                spanArguments[index] = offset(borrowed);
+                spanArguments[index - first] = offset(borrowed);
                 spanBorrows.push_back(borrowed);
             } else if (type.isClass()) {
                 aggregate = true;
@@ -884,7 +919,7 @@ class SemanticAnalyzer {
                 match(locals[original].type, type, argument->token);
                 const int snapshot = add("", type, false, argument->token, false);
                 copyClass(original, snapshot, argument->token);
-                arguments[index] = offset(snapshot);
+                arguments[index - first] = offset(snapshot);
                 snapshots.push_back(offset(snapshot));
             } else {
                 match(this->expression(argument), type, argument->token);
@@ -895,7 +930,19 @@ class SemanticAnalyzer {
         if (resultBinding)
             destination = offset(
                 add(resultBinding->name, resultBinding->type, resultBinding->mutableValue, resultBinding->token));
-        if (aggregate)
+        if (borrowed) {
+            emit(ir::BorrowedCall{callee.name,
+                                  offset(root),
+                                  loanId,
+                                  aggregate ? arguments : std::vector<int>{},
+                                  destination,
+                                  spanBorrows.empty() ? std::vector<int>{} : spanArguments});
+            emit(ir::ReleaseObjectLoan{loanId});
+            if (callee.params.front().borrowConst)
+                --locals[root].objectShared;
+            else
+                locals[root].objectExclusive = false;
+        } else if (aggregate)
             emit(ir::AggregateCall{callee.name, arguments, destination, spanArguments});
         else
             emit(ir::Call{callee.name});
@@ -1036,6 +1083,8 @@ class SemanticAnalyzer {
             if (e->args[0]->op != "name")
                 fail(e->token, "field access currently requires a class local");
             int local = source(e->args[0]);
+            if (locals[local].borrowedObject)
+                fail(e->token, "borrowed object parameters support public methods, not field access");
             const auto &member = field(locals[local].type, e->token);
             if (member.type.isArray() || member.type.isClass() || member.type.isResource())
                 fail(e->token, "aggregate fields require a fresh typed class projection or checked indexing");
@@ -1123,6 +1172,8 @@ class SemanticAnalyzer {
                 for (std::size_t index = 0; index < before.size(); ++index) {
                     if (locals[index].shared != before[index].shared ||
                         locals[index].exclusive != before[index].exclusive ||
+                        locals[index].objectShared != before[index].objectShared ||
+                        locals[index].objectExclusive != before[index].objectExclusive ||
                         locals[index].spanOrigin != before[index].spanOrigin ||
                         locals[index].spanField != before[index].spanField ||
                         locals[index].owner != before[index].owner)
@@ -1303,6 +1354,8 @@ class SemanticAnalyzer {
         std::sort(leaving.rbegin(), leaving.rend());
         for (int local : leaving) {
             auto &l = locals[local];
+            if (l.borrowedObject)
+                continue;
             if (ownerType(l.type)) {
                 if (!terminal)
                     endOwner(local);
@@ -1360,6 +1413,8 @@ class SemanticAnalyzer {
                 if (expression->args[0]->op != "name")
                     fail(expression->token, "class projection requires a named local receiver");
                 const int local = source(expression->args[0]);
+                if (locals[local].borrowedObject)
+                    fail(expression->token, "borrowed object parameters support public methods, not field projections");
                 original = offset(local);
                 member = &field(locals[local].type, expression->token);
             } else {
@@ -1646,7 +1701,9 @@ class SemanticAnalyzer {
                              "loop backedge cannot move an outer owner; moves require a "
                              "returning path");
                     if (incoming[index].shared != locals[index].shared ||
-                        incoming[index].exclusive != locals[index].exclusive)
+                        incoming[index].exclusive != locals[index].exclusive ||
+                        incoming[index].objectShared != locals[index].objectShared ||
+                        incoming[index].objectExclusive != locals[index].objectExclusive)
                         fail(s->token, "loop backedge must preserve outer borrow state");
                 }
                 emit(ir::Jump{start});
@@ -1662,8 +1719,11 @@ class SemanticAnalyzer {
             const int local = find(Token(s->name, s->token.line));
             if (!locals[local].live)
                 fail(s->token, "use after move of '" + s->name + "'");
+            if (locals[local].borrowedObject)
+                fail(s->token, "borrowed object parameters support public methods, not field assignment");
             if (!locals[local].mut)
                 fail(s->token, "field assignment requires a mutable class local");
+            requireNoObjectLoan(local, s->token);
             const auto &member = field(locals[local].type, Token(s->fieldName, s->token.line));
             if (member.type.isClass()) {
                 assignClassField(offset(local), member, s->expr);
@@ -1674,6 +1734,7 @@ class SemanticAnalyzer {
             match(expression(s->expr), member.type, s->token);
             if (!locals[local].live)
                 fail(s->token, "field assignment value consumed the containing object");
+            requireNoObjectLoan(local, s->token);
             emit(ir::Store{fieldOffset(local, member), member.type});
             return false;
         }
@@ -1720,6 +1781,8 @@ class SemanticAnalyzer {
                     locals[i] = yes[i];
                 } else if (!yesReturn && !noReturn) {
                     if (locals[i].shared != yes[i].shared || locals[i].exclusive != yes[i].exclusive ||
+                        locals[i].objectShared != yes[i].objectShared ||
+                        locals[i].objectExclusive != yes[i].objectExclusive ||
                         locals[i].spanOrigin != yes[i].spanOrigin || locals[i].spanField != yes[i].spanField ||
                         locals[i].owner != yes[i].owner)
                         fail(s->token, "continuing branches must preserve the same borrow state");
@@ -1827,11 +1890,36 @@ public:
                 fail(sourceFunctions[i].token, "at most six parameters supported");
             const auto &candidate = sourceFunctions[i];
             checkTemplateOwners(candidate.templateArguments, candidate.token);
+            const auto borrowedCount =
+                std::count_if(candidate.params.begin(), candidate.params.end(), [](const Param &parameter) {
+                    return parameter.borrowed;
+                });
+            if (borrowedCount) {
+                if (borrowedCount != 1 || candidate.params.empty() || !candidate.params.front().borrowed ||
+                    !candidate.receiverClass.empty() || candidate.constructor || !candidate.templateArguments.empty() ||
+                    !candidate.templateParameters.empty() || !owningClass(candidate.params.front().type) ||
+                    (!scalarValue(candidate.result) && !candidate.result.isClass()) || owningClass(candidate.result))
+                    fail(candidate.token,
+                         "borrowed functions require one leading concrete owning-class reference "
+                         "and a scalar or copied result");
+                const auto &definition = classDefinition(candidate.params.front().type, candidate.token);
+                if (!definition.templateArguments.empty() || !definition.templateParameters.empty())
+                    fail(candidate.token, "borrowed parameters cannot name a class template");
+                for (std::size_t index = 1; index < candidate.params.size(); ++index) {
+                    const auto &type = candidate.params[index].type;
+                    if ((!scalarValue(type) && !type.isClass() && !type.isSpan()) || owningClass(type))
+                        fail(candidate.token,
+                             "later borrowed-function parameters require scalar, copied class or readonly span values");
+                }
+            }
+            for (const auto &parameter : candidate.params)
+                if (parameter.borrowConst && !parameter.borrowed)
+                    fail(candidate.token, "const borrowed permission requires a borrowed parameter");
             const bool resourceConstructor = candidate.constructor && owningClass(Type(candidate.receiverClass));
             const bool resource =
                 candidate.result.isResource() || owningClass(candidate.result) ||
                 std::any_of(candidate.params.begin(), candidate.params.end(), [&](const Param &parameter) {
-                    return parameter.type.isResource() || owningClass(parameter.type);
+                    return !parameter.borrowed && (parameter.type.isResource() || owningClass(parameter.type));
                 });
             if (resource || resourceConstructor) {
                 if ((!candidate.receiverClass.empty() && !resourceConstructor) ||
@@ -1899,17 +1987,37 @@ public:
             scopes.clear();
             scopes.emplace_back();
             slot = 0;
+            nextObjectLoan = 1;
             lowered = ir::Function{};
             lowered.name = function.name;
             lowered.moduleScope = function.moduleScope;
             lowered.result = function.result;
+            const bool borrowed = !function.params.empty() && function.params.front().borrowed;
             if (!function.receiverClass.empty())
-                lowered.receiver = ir::Receiver{function.receiverClass, !function.receiverConst, function.constructor};
+                lowered.receiver = ir::Receiver{
+                    function.receiverClass, !function.receiverConst, function.constructor, function.publicAccess};
+            else if (borrowed) {
+                lowered.receiver =
+                    ir::Receiver{function.params.front().type.className, !function.params.front().borrowConst, false};
+                lowered.borrowedParameter = true;
+            }
             result = function.result;
             for (const auto &parameter : function.params)
-                lowered.parameters.push_back(parameter.type);
+                if (!parameter.borrowed)
+                    lowered.parameters.push_back(parameter.type);
             for (std::size_t index = 0; index < function.params.size(); ++index) {
                 const auto &parameter = function.params[index];
+                if (parameter.borrowed) {
+                    Local alias;
+                    alias.name = parameter.name;
+                    alias.type = parameter.type;
+                    alias.mut = !parameter.borrowConst;
+                    alias.borrowedObject = true;
+                    scopes.back()[parameter.name] = static_cast<int>(locals.size());
+                    locals.push_back(std::move(alias));
+                    continue;
+                }
+                const int parameterIndex = static_cast<int>(index) - (borrowed ? 1 : 0);
                 const int local = add(parameter.name,
                                       parameter.type,
                                       ownerType(parameter.type),
@@ -1917,20 +2025,19 @@ public:
                                       true,
                                       !parameter.type.isClass() && !parameter.type.isBytes());
                 if (parameter.type.isRegion())
-                    emit(ir::BindRegionParameter{static_cast<int>(index), offset(local)});
+                    emit(ir::BindRegionParameter{parameterIndex, offset(local)});
                 else if (parameter.type.isBytes()) {
                     locals[local].owner = 0;
-                    emit(ir::BindBytesParameter{static_cast<int>(index), offset(local)});
+                    emit(ir::BindBytesParameter{parameterIndex, offset(local)});
                 } else if (parameter.type.isSpan())
-                    emit(ir::BindSpanParameter{static_cast<int>(index), offset(local)});
+                    emit(ir::BindSpanParameter{parameterIndex, offset(local)});
                 else if (owningClass(parameter.type)) {
                     locals[local].owner = 0;
-                    emit(
-                        ir::BindOwnedObjectParameter{static_cast<int>(index), offset(local), parameter.type.className});
+                    emit(ir::BindOwnedObjectParameter{parameterIndex, offset(local), parameter.type.className});
                 } else if (parameter.type.isClass())
-                    emit(ir::BindObjectParameter{static_cast<int>(index), offset(local), parameter.type.className});
+                    emit(ir::BindObjectParameter{parameterIndex, offset(local), parameter.type.className});
                 else
-                    emit(ir::BindParameter{static_cast<int>(index), offset(local), parameter.type});
+                    emit(ir::BindParameter{parameterIndex, offset(local), parameter.type});
             }
             if (function.constructor) {
                 const auto &definition = classDefinition(Type(function.receiverClass), function.token);

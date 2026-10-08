@@ -1,5 +1,18 @@
 # Completeness and acceptance matrix
 
+## Synchronous borrowed owning-object helpers — 2026-10-08
+
+One leading `T&`/`const T&` free-function formal supports reusable public-method
+helpers without ownership transfer or new class layout. `std.json_write` composes
+the existing scalar encoder and atomic ByteBuffer append. Fresh full source/native,
+independent IR/ABI, 40 dev and 11 slow Meson checks, pinned focused Make and formatter
+gates passed; all 29 existing kernel assemblies are unchanged. Existing repaired
+suite routing, GNU-stack/diagnostic/NVMe fixes and native client disposal are
+preserved. See [exact evidence and limits](borrowed-objects-results.md).
+No general references, nested owning composition, full-native, sanitizer or new
+guest/hardware qualification is claimed.
+
+
 ## Native client-disposal plan — focused gates passed
 
 A copied Aurora decision selects the real dispatcher recovery plan after trusted

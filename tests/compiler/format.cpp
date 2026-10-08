@@ -103,6 +103,12 @@ void qualifiedNames() {
 }
 void cases() {
     qualifiedNames();
+    golden("module x;auto f(const pkg::Buffer& input,builtin::span<const u8> bytes,u64 mask)->u64{"
+           "return mask&7u64;}",
+           "module x;\nauto f(const pkg::Buffer& input, builtin::span<const u8> bytes, u64 mask) -> u64 {\n"
+           "    return mask & 7u64;\n}\n");
+    golden("module x;auto f(pkg::Buffer & output,u64 value)->u64{return value & 3u64;}",
+           "module x;\nauto f(pkg::Buffer& output, u64 value) -> u64 {\n    return value & 3u64;\n}\n");
     golden("module x;auto f()->i64{return 1+2;}", "module x;\nauto f() -> i64 {\n    return 1 + 2;\n}\n");
     golden("// header\r\nmodule x;// module\nauto f()->i64{ // body\nreturn -42; // result\n}// eof",
            "// header\r\nmodule x; // module\nauto f() -> i64 { // body\n    return -42; // result\n} // eof\n");

@@ -504,12 +504,21 @@ public:
         }
         return s;
     }
-    void parameters(Function &function, bool allowClass = false) {
+    void parameters(Function &function, bool allowClass = false, bool allowBorrow = false) {
         need("(");
         if (!eat(")")) {
             do {
                 Param parameter;
+                parameter.borrowConst = eat("const");
                 parameter.type = type();
+                if (peek().text == "&") {
+                    parameter.borrowSpan = take().span;
+                    parameter.borrowed = true;
+                    if (!allowBorrow || !function.params.empty() || !templateParameters.empty() ||
+                        !parameter.type.isClass() || !parameter.type.templateArguments.empty())
+                        fail("borrowed parameters require one leading concrete owning class on an ordinary function");
+                } else if (parameter.borrowConst)
+                    fail("const parameter spelling requires a leading owning-class reference");
                 parameter.name = ident().text;
                 // Nominal names are unresolved here; module resolution permits
                 // enum method arguments and class constructor/function arguments.
@@ -713,7 +722,7 @@ public:
             function.templateParameters = declaredParameters;
             if (templateParameters.contains(function.token.text))
                 fail("function name cannot shadow a template parameter");
-            parameters(function, true);
+            parameters(function, true, true);
             need("->");
             function.result = type();
             if (!scalarOrParameter(function.result) && !function.result.isClass() && !function.result.isBytes())

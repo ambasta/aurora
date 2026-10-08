@@ -63,7 +63,7 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - meson test -C build/meson --suite packages --num-processes 2: partial semantic package feedback
 - meson test -C build/meson --suite dev --num-processes 2: quick cross-component feedback
 - meson test -C build/meson --suite slow --num-processes 2: longer integration/ABI sweeps
-- meson test -C build/meson --suite full --num-processes 2: all 47 registered non-LSP tests
+- meson test -C build/meson --suite full --num-processes 2: all 51 registered non-LSP tests
 - make test: fresh current-source compiler once, then the complete root native graph
 - make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>: explicitly
   pinned root native graph; optional ACCEPTANCE_COMPILER selects a reviewed prebuilt

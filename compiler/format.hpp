@@ -96,6 +96,9 @@ class Roles {
             statement(child);
     }
     void function(const Function &value) {
+        for (const auto &parameter : value.params)
+            if (parameter.borrowed)
+                references.insert(parameter.borrowSpan.begin.offset);
         for (const auto &initializer : value.initializers)
             expression(initializer.second);
         for (const auto &child : value.body)
@@ -103,7 +106,7 @@ class Roles {
     }
 
 public:
-    std::set<std::size_t> unary, binary, initializers, enums;
+    std::set<std::size_t> unary, binary, initializers, enums, references;
     Roles(const std::vector<Token> &input, const Program &program) : tokens(input) {
         for (const auto &value : program.functions)
             function(value);
@@ -250,6 +253,8 @@ inline std::string layout(const LexedSource &source, const Program &program) {
         if (text == ";" || text == "," || text == ")" || text == "]" || text == "." || text == "::" || templateClose ||
             previous == "(" || previous == "[" || previous == "." || previous == "::" || previousUnary ||
             previousTemplateOpen || closesEmpty)
+            space = false;
+        if (roles.references.contains(piece.span.begin.offset))
             space = false;
         if (text == "(" || text == "[")
             space = previous == "if" || previous == "while";

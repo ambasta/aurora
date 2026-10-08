@@ -49,7 +49,7 @@ auto answer(i64 input) -> i64 {
 ```
 
 - Each file declares `module name;` or an importable `export module name;`. Named imports, export visibility and namespace blocks now work with explicit `--module-root` directories; see MODULES.md. Separate binary compilation/linking remains deferred.
-- Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar, bounded inline class, or readonly byte-span parameters work on ordinary functions, including synchronous forwarding and ordinary recursion. The span boundary is an independently reviewed milestone014 candidate; see SPANS.md. Class values use a separate checked native value-call convention; see VALUE-CALLS.md. Copied parameters are immutable; the bounded owning parameters described below are mutable; an explicit parameter `const` qualifier is not parsed yet. This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
+- Functions use `auto name(Type parameter) -> ReturnType`. Up to six scalar, bounded inline class, or readonly byte-span parameters work on ordinary functions, including synchronous forwarding and ordinary recursion. The span boundary is an independently reviewed milestone014 candidate; see SPANS.md. Class values use a separate checked native value-call convention; see VALUE-CALLS.md. Copied parameters are immutable; the bounded owning parameters described below are mutable; an explicit parameter `const` qualifier is limited to the leading owning-object `const T&` subset described in [BORROWED-OBJECTS.md](BORROWED-OBJECTS.md). This restriction is intentionally narrower than standard C++. Local `auto` deduction is not implemented yet.
 - Local declarations are `const Type name = initializer;` or `Type name = initializer;`. Initialization is mandatory. Const scalar/aggregate locals cannot be assigned; unqualified scalar locals and scalar fields/elements of unqualified aggregates can be assigned. Ownership binding rules are stricter below.
 - Scalar types are `i64`, `u64`, `u8` and `bool` since milestone013. There are explicit ownership/reference types, local class values and fixed-size scalar arrays.
 - Blocks, `if (bool) { ... } else { ... }`, `while (bool) { ... }`, `return`, and `static_assert` are supported. `break`, `continue`, and `for` are deferred.
@@ -97,7 +97,7 @@ Classes are private by default and end with `;`. `public:` and `private:` contro
 Numeric/bool fields use `i64`, `u64`, `u8` or `bool` and have unique names. Private fixed scalar-array fields now have the complete-construction and checked-access contract in [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md). Named construction uses `Point{.x = 20, .y = 22}`. Each field must be initialized exactly once; named fields may appear in any order and evaluate in written order. Unknown fields, missing fields and type mismatches are rejected.
 
 `const Point snapshot = current;` copies every scalar leaf into independent storage. Mutating the original does not change the copy. Field writes require a non-const class local. Whole-class reassignment is deferred. Ordinary functions now accept and return bounded inline class values as independent copies. The developing composition subset adds exact-type class fields and readonly class constructor parameters, plus projection into fresh locals; see [COMPOSED-VALUES.md](COMPOSED-VALUES.md). Ordinary methods now accept immutable copied class parameters under the
-[verified M022 contract](METHOD-VALUES.md), including copied class results. Resource fields and class borrow targets remain unsupported. `own<Point>` is rejected.
+[verified M022 contract](METHOD-VALUES.md), including copied class results. Direct private OwnedBytes fields follow [OWNING-CLASSES.md](OWNING-CLASSES.md); the bounded leading owning-object borrow subset is described in [BORROWED-OBJECTS.md](BORROWED-OBJECTS.md). General class references remain unsupported. `own<Point>` is rejected.
 
 U8 leaves occupy one byte; all earlier scalar storage, including bool and enums, remains eight bytes. Canonical class layouts record natural field alignment, explicit byte offsets and tail padding separately from logical leaf counts. Empty standalone classes retain eight bytes; nested empty children preserve their zero-payload logical completion rule. All layouts without u8 retain their earlier representation. This is an internal layout, not a C or C++ ABI promise. The current development contract and pending acceptance are in [BYTES.md](BYTES.md). Private fields participate in size but are excluded from field-count reflection and cannot be read by external member syntax. Methods of the declaring class can access private fields.
 
@@ -148,7 +148,8 @@ A private direct OwnedBytes field makes a concrete class move-only. Explicit
 constructor/local/function transfers, borrowed methods and reverse field cleanup
 follow the [bounded owning-class contract](OWNING-CLASSES.md). Sector512 and other
 resource-free classes remain independent copied values. Owner fields expose no
-pointer or view; region creation, general resource classes and kernel allocation
+pointer; bounded readonly views follow [READONLY-OWNED-SPANS.md](READONLY-OWNED-SPANS.md).
+Region creation, general resource classes and kernel allocation
 remain outside this hosted increment.
 
 ## Temporary machine integration
@@ -280,3 +281,12 @@ payload views, kernel allocation or a public foreign ABI. The failure-safe
 identity, prefix preservation, zero-filled growth and final-logical-quota semantics.
 Its focused qualification is recorded separately in
 [resize results](../docs/owned-bytes-resize-results.md).
+
+## Synchronous owning-object helpers
+
+One leading named `T&` or `const T&` parameter lets an ordinary free function
+synchronously use an existing owning object through its public methods. Authority
+is acquired before later arguments, never transferred, stored or returned.
+See [the bounded contract](BORROWED-OBJECTS.md) and
+[fresh focused results](../docs/borrowed-objects-results.md). General references,
+escaping borrows and nested owning composition remain unsupported.

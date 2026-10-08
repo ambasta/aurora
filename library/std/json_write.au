@@ -1,0 +1,63 @@
+export module std.json_write;
+import std.json;
+import std.array;
+import std.binary;
+import std.byte_buffer;
+
+export namespace std {
+    enum class JsonAppendStatus {
+        success,
+        invalid_scalar,
+        append_failed
+    };
+
+    // A copied observation. It retains no borrow or allocation authority.
+    // Publicly constructed reports are not proof that any append took place.
+    class JsonAppendResult {
+        JsonAppendStatus outcome;
+        i64 count;
+    public:
+        JsonAppendResult(JsonAppendStatus status, i64 appended) : outcome(status), count(appended) {
+        }
+
+        auto status() const -> JsonAppendStatus {
+            if (outcome == JsonAppendStatus::success && (count < 1 || count > 6)) {
+                return JsonAppendStatus::append_failed;
+            }
+            return outcome;
+        }
+
+        auto appended_bytes() const -> i64 {
+            if (status() != JsonAppendStatus::success) {
+                return 0;
+            }
+            return count;
+        }
+    };
+
+    // Append one canonical escaped scalar, without surrounding JSON quotes.
+    // Invalid scalars leave output untouched. Recoverable append failure preserves
+    // output size, capacity, bytes and committed region accounting. Side effects
+    // of completed arguments are not rolled back. Fail-stop faults do not unwind.
+    auto append_json_scalar(ByteBuffer& output, u64 scalar) -> JsonAppendResult {
+        const JsonEscapeResult escaped = escape_json_scalar(scalar);
+        if (escaped.status() != JsonEscapeStatus::success) {
+            const JsonAppendResult result = JsonAppendResult(JsonAppendStatus::invalid_scalar, 0);
+            return result;
+        }
+        builtin::array<u8, 6> bytes = {0u8, 0u8, 0u8, 0u8, 0u8, 0u8};
+        i64 index = 0;
+        while (index < escaped.size()) {
+            bytes[index] = escaped.byte_or(index, 0u8);
+            index = index + 1;
+        }
+        const builtin::span<const u8> all = borrow_bytes(bytes);
+        const builtin::span<const u8> populated = all.subspan(0, escaped.size());
+        if (!output.try_append_bytes(populated)) {
+            const JsonAppendResult result = JsonAppendResult(JsonAppendStatus::append_failed, 0);
+            return result;
+        }
+        const JsonAppendResult result = JsonAppendResult(JsonAppendStatus::success, escaped.size());
+        return result;
+    }
+}

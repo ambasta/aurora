@@ -222,3 +222,27 @@ test(
     depends: aurorac, suite: ['full', 'slow', 'bytes'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 600, is_parallel: true,
 )
+
+# Keep routine borrowed-object feedback small; full owner/helper and literal ABI
+# sweeps remain explicit slow coverage. Full/unfiltered runs retain every gate.
+test('borrowed-objects-smoke', python,
+     args: ['-B', '-O', files('compiler/borrowed_objects.py'), aurorac, '--smoke'],
+     depends: aurorac, suite: ['full', 'dev', 'bytes'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
+test('borrowed-objects', python,
+     args: ['-B', '-O', files('compiler/borrowed_objects.py'), aurorac],
+     depends: aurorac, suite: ['full', 'slow', 'bytes'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true)
+borrowed_objects_ir = executable(
+    'borrowed-objects-ir', 'compiler/borrowed_objects_ir.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('borrowed-objects-ir', borrowed_objects_ir, suite: ['full', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
+borrowed_objects_abi = executable(
+    'borrowed-objects-abi', 'compiler/borrowed_objects_abi.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('borrowed-objects-abi', python,
+     args: ['-B', '-O', files('compiler/borrowed_objects_abi.py'), borrowed_objects_abi],
+     depends: borrowed_objects_abi, suite: ['full', 'slow', 'core', 'bytes', 'compiler'],
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
