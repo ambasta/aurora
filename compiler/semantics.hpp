@@ -373,9 +373,15 @@ class SemanticAnalyzer {
             if (value->args[0]->op == "name") {
                 parent = source(value->args[0]);
                 if (!locals[parent].type.isSpan())
-                    fail(value->token, "subspan requires a live readonly span");
+                    fail(value->token,
+                         "subspan requires a named live readonly span or a directly derived temporary view");
             } else {
                 parent = acquireSpan(value->args[0]);
+                const int root = locals[parent].spanOrigin;
+                if (root == -1 || (root >= 0 && byteArray(locals[root].type)))
+                    fail(value->token,
+                         "temporary subspan chains require an owned-byte origin; array and parameter "
+                         "views require a named parent span");
                 temporaryParent = true;
             }
             origin = locals[parent].spanOrigin;
@@ -397,7 +403,9 @@ class SemanticAnalyzer {
                 origin = source(target->args[0]);
                 member = &field(locals[origin].type, target->token);
             } else
-                fail(value->token, "borrow_bytes requires a named byte owner or direct private owned-byte field");
+                fail(value->token,
+                     "borrow_bytes requires a named local byte array, a named owned-byte value or a direct private "
+                     "owned-byte field");
             if (member) {
                 if (!member->type.isBytes())
                     fail(value->token, "borrow_bytes fields require direct private owned-byte storage");
@@ -466,6 +474,20 @@ class SemanticAnalyzer {
         for (std::size_t index = locals.size(); index > 0; --index)
             if (locals[index - 1].live && byteArray(locals[index - 1].type))
                 emit(ir::EndArray{locals[index - 1].offset});
+    }
+    void endReturnObjects() {
+        // Named copied locals and readonly copied parameters also end before a
+        // span result leaves the invocation. Unnamed call snapshots already end
+        // at their call sites and must not be ended twice.
+        std::set<int> active;
+        for (const auto &scope : scopes)
+            for (const auto &[name, local] : scope) {
+                (void)name;
+                if (locals[local].live && locals[local].type.isClass() && !owningClass(locals[local].type))
+                    active.insert(local);
+            }
+        for (auto local = active.rbegin(); local != active.rend(); ++local)
+            emit(ir::EndObject{offset(*local)});
     }
     int movedOwner(ExpressionPtr value, const Type &expected) {
         if (value->op != "call" || value->token.text != "move")
@@ -755,8 +777,10 @@ class SemanticAnalyzer {
         requireVisibleType(callee.result, value->token);
         for (const auto &parameter : callee.params)
             requireVisibleType(parameter.type, value->token);
-        if ((callee.result.isClass() || callee.result.isSpan()) && !resultBinding)
-            fail(value->token, "class or span-returning method requires a typed local initializer or span argument");
+        if (callee.result.isClass() && !resultBinding)
+            fail(value->token, "class-returning method requires a typed local initializer");
+        if (callee.result.isSpan() && !resultBinding)
+            fail(value->token, "span-returning method requires a typed local initializer or span argument");
         if (callee.result.isSpan()) {
             if (result.isSpan())
                 fail(value->token, "span-result methods cannot forward another method's returned view");
@@ -1466,6 +1490,7 @@ class SemanticAnalyzer {
                 lowered.receiverSpanField = fieldIndex;
                 endReturnBorrows(local);
                 endReturnBytes();
+                endReturnObjects();
                 emit(ir::ReturnSpan{offset(local)});
                 for (std::size_t index = locals.size(); index > 0; --index)
                     if (locals[index - 1].live && locals[index - 1].type.isSpan())

@@ -36,3 +36,13 @@ byte_buffer_assembly = custom_target(
     build_by_default: true,
     install: false,
 )
+
+json_assembly = custom_target(
+    'json-example',
+    input: 'json.au',
+    output: 'json.s',
+    command: [aurorac, '--module-root', meson.project_source_root() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+    depend_files: files('../std/json.au', '../std/utf8.au', '../std/array.au'),
+    build_by_default: true,
+    install: false,
+)

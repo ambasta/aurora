@@ -119,6 +119,18 @@ def cases():
         "overloaded-returned-argument": program(
             CREATE + "return length(item.bytes());", box() + LENGTH + "auto length(i64 value) -> i64 { return value; }"
         ),
+        "returned-view-copied-parameter": program(
+            CREATE + f"const Flag index = Flag(1); const {SPAN} bytes = item.bytes(index); return bytes.size();",
+            "class Flag { i64 value; public: Flag(i64 input) : value(input) {} "
+            "auto get() const -> i64 { return value; } };"
+            + box(params="Flag index", view="return borrow_bytes(payload).subspan(index.get(), 1);"),
+        ),
+        "returned-view-copied-local": program(
+            CREATE + f"const {SPAN} bytes = item.bytes(); return bytes.size();",
+            "class Flag { i64 value; public: Flag(i64 input) : value(input) {} "
+            "auto get() const -> i64 { return value; } };"
+            + box(view="const Flag index = Flag(1); return borrow_bytes(payload).subspan(index.get(), 1);"),
+        ),
         "returned-view-post-scope": program(
             CREATE + f"{{ const {SPAN} bytes = item.bytes(); bytes.size(); }} item.resize(); return item.touch();",
             box(),
@@ -142,6 +154,11 @@ def cases():
         "subspan-offset-consumption": program(
             ALLOCATE + f"const {SPAN} bytes = borrow_bytes(owner).subspan(consume(region, move(owner)), 0); return 0;",
             CONSUME,
+        ),
+        "return-owner-while-borrowed": program(
+            "return 0;",
+            f"auto bounce({REGION} region, {OWNER} owner) -> {OWNER} {{ "
+            f"const {SPAN} bytes = borrow_bytes(owner); return move(owner); }}",
         ),
         "mutable-span": program(ALLOCATE + f"{SPAN} bytes = borrow_bytes(owner); return 0;"),
         "span-rebind": program(
@@ -211,6 +228,17 @@ def cases():
             box(params="i64 count", view="return borrow_bytes(payload).subspan(0, count);")
             + f"auto consume_box({REGION} region, Box value) -> i64 {{ return 0; }}",
         ),
+        "array-temporary-borrow": program(
+            f"builtin::array<u8, 1> data = {{1u8}}; const {SPAN} bytes = borrow_bytes(data).subspan(0, 1); return 0;"
+        ),
+        "array-temporary-chain": program(
+            f"builtin::array<u8, 1> data = {{1u8}}; const {SPAN} bytes = borrow_bytes(data); "
+            f"const {SPAN} child = bytes.subspan(0, 1).subspan(0, 1); return 0;"
+        ),
+        "parameter-temporary-chain": program(
+            "return 0;",
+            f"auto window({SPAN} bytes) -> i64 {{ const {SPAN} child = bytes.subspan(0, 1).subspan(0, 1); return 0; }}",
+        ),
         "array-field-origin": program(
             "return 0;",
             "class Value { builtin::array<u8, 1> data; public: Value() : data{} {} "
@@ -234,6 +262,9 @@ REJECTION_DIAGNOSTICS = {
     "temporary-receiver": "method receiver requires a class local",
     "receiver-consumed-in-argument": "method arguments consumed the receiver",
     "array-field-origin": "borrow_bytes fields require direct private owned-byte storage",
+    "array-temporary-borrow": "temporary subspan chains require an owned-byte origin",
+    "array-temporary-chain": "temporary subspan chains require an owned-byte origin",
+    "parameter-temporary-chain": "temporary subspan chains require an owned-byte origin",
 }
 
 
@@ -264,7 +295,15 @@ def main():
             outcomes.append({"name": name, "expected_acceptance": expected, "returncode": run.returncode})
             if (run.returncode == 0) != expected:
                 raise RuntimeError(f"{name}: expected {'acceptance' if expected else 'rejection'}: {run.stderr}")
-            if not expected:
+            if path.read_text() != source:
+                raise RuntimeError(f"{name}: compiler changed the source")
+            assembly = path.with_suffix(".s")
+            if expected:
+                if not assembly.is_file() or not assembly.stat().st_size:
+                    raise RuntimeError(f"{name}: accepted source produced no assembly")
+            else:
+                if run.returncode != 1 or assembly.exists():
+                    raise RuntimeError(f"{name}: rejection did not fail closed with exit 1")
                 diagnostic = REJECTION_DIAGNOSTICS.get(
                     name, "cannot mutate or move an owner while a readonly span is live"
                 )

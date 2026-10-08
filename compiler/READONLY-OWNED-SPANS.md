@@ -72,8 +72,7 @@ transport the entire record without owner transfer or cleanup.
 
 The previous unpublished candidate was lost when its execution filesystem rolled
 back. This source is a fresh reconstruction from accepted PR76; historical source
-hashes and test evidence do not qualify it. The initial compile-only source gate
-is diagnostic progress, not independent acceptance. Fresh native, ABI, malformed
-IR, adapter, sanitizer and affected existing guest gates are required before merge.
+hashes and test evidence do not qualify it. Fresh native, ABI, malformed IR, adapter, sanitizer and affected existing guest
+regressions are recorded in the [results](../docs/readonly-owned-spans-results.md).
 No new guest-owned-span admission, kernel resize, JSON parser, self-hosting,
 physical-hardware support or production memory-safety proof is claimed.

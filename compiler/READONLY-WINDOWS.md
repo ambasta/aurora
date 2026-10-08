@@ -1,5 +1,11 @@
 # Bounded checked readonly byte windows
 
+The [readonly owned-view extension](READONLY-OWNED-SPANS.md) now adds runtime
+owner origins and narrow const receiver-field results using the same span type.
+Historical qualification and representation details on this page describe their
+original checkpoints; the extension's source/ABI contract and fresh results are
+separate. Existing array-only temporary-chain restrictions remain unchanged.
+
 Status: the bounded feature passed isolated compiler/provenance gates and fresh
 combined native plus all170+2 actual emulator gates, with independent review.
 Development began from PR21; integration used the accepted PR22 kernel checkpoint

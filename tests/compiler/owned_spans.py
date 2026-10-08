@@ -6,10 +6,13 @@ from __future__ import annotations
 import argparse
 from contextlib import nullcontext
 import hashlib
+import signal
 from pathlib import Path
 import tempfile
 
 from byte_buffer import BufferSuite
+from owned_bytes import command
+from unsigned_oracle import require
 
 SPAN = "builtin::span<const u8>"
 OWNER = "builtin::OwnedBytes"
@@ -27,6 +30,21 @@ def program(body, helpers="", imports=""):
 
 
 class Suite(BufferSuite):
+    runtime_traps = 0
+
+    def failed_borrow(self, executable):
+        if self.compile_only:
+            self.skipped_native += 1
+            return
+        result = command([executable, 0, 0, 0])
+        require(
+            result.returncode == -signal.SIGABRT
+            and result.stdout == b""
+            and result.stderr == b"aurora owned bytes: bounds\n",
+            f"failed borrow: wrong adapter trap {result.returncode}: {result.stderr!r}",
+        )
+        self.runtime_traps += 1
+
     def trap(self, *args, **kwargs):
         if self.compile_only:
             self.skipped_native += 1
@@ -108,7 +126,7 @@ def native_cases(s):
         {OWNER} a=region.try_allocate(1); const {SPAN} v=borrow_bytes(a); return v.size();
     """),
     )
-    s.trap(p, 0, 0, 0)
+    s.failed_borrow(p)
     p = s.compile(
         "nested-owner-window",
         program(f"""
@@ -130,8 +148,8 @@ def receiver_cases(s):
             const {SPAN} v=borrow_bytes(payload); const {SPAN} w=v.subspan(start,count); return w;
         }}
         auto first() const -> i64 {{ const {SPAN} v=view(0,1); return i64(v.at(0)); }}
-        auto write(i64 at,u8 value)->bool{{return payload.set(at,value);}}
-    }}
+        auto set_byte(i64 at,u8 value)->bool{{return payload.set(at,value);}}
+    }};
     """
     p = s.compile(
         "receiver-subspan",
@@ -141,7 +159,7 @@ def receiver_cases(s):
         Slice box=Slice(region,move(a));
         const i64 first=box.first();
         {{ const {SPAN} v=box.view(1,3); const {SPAN} w=v.subspan(1,1); if(w.at(0)!=42u8){{return -1;}} }}
-        box.write(0,23u8); const Slice moved=move(box);
+        box.set_byte(0,23u8); const Slice moved=move(box);
         const {SPAN} v=moved.view(0,4); return first+i64(v.at(0))+v.size();
     """,
             helpers,
@@ -149,13 +167,13 @@ def receiver_cases(s):
     )
     s.run(p, 4, 0, 0, 44, 1, 1)
     helpers2 = f"""
-    class Flag {{ i64 value; public: Flag(i64 x):value(x){{}} auto get() const->i64{{return value;}} }}
+    class Flag {{ i64 value; public: Flag(i64 x):value(x){{}} auto get() const->i64{{return value;}} }};
     class Slice {{ {OWNER} payload; public:
         Slice(builtin::ByteRegion region,{OWNER} input):payload(move(input)){{}}
         auto view(Flag f) const -> {SPAN} {{
             const {SPAN} all=borrow_bytes(payload); const {SPAN} part=all.subspan(f.get(),1); return part;
         }}
-    }}
+    }};
     """
     p = s.compile(
         "receiver-class-argument-hidden-result",
@@ -240,7 +258,8 @@ def main():
         rejection_cases(s)
         print(
             f"PASS owned spans: {s.programs} programs, {s.native} native cases, "
-            f"{s.traps} exact traps, {s.rejections} rejections, {s.skipped_native} skipped"
+            f"{s.traps} exact bounds traps, {s.runtime_traps} exact adapter traps, "
+            f"{s.rejections} rejections, {s.skipped_native} skipped"
         )
         print("compiler_sha256=" + hashlib.sha256(a.compiler.read_bytes()).hexdigest())
 

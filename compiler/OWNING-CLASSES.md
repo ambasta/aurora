@@ -1,5 +1,11 @@
 # Bounded owning classes
 
+The [readonly owned-view extension](READONLY-OWNED-SPANS.md) now adds runtime
+owner origins and narrow const receiver-field results using the same span type.
+Historical qualification and representation details on this page describe their
+original checkpoints; the extension's source/ABI contract and fresh results are
+separate. Existing array-only temporary-chain restrictions remain unchanged.
+
 This candidate extends the [owned-byte contract](OWNED-BYTES.md) to direct private
 class fields. Independent review and the [focused checks](../docs/owning-classes-results.md)
 passed. It is not a general resource-class, user-destructor, borrowed-view or

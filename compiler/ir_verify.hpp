@@ -223,11 +223,10 @@ inline void verifyFunction(Function &function,
             return;
         }
         if (type.isSpan()) {
-            require(type == Type::ByteSpan &&
-                        ((parameter && !function.receiver) ||
-                         (!parameter && function.receiver && !function.receiver->mutableValue &&
-                          !function.receiver->constructor && function.receiverSpanField &&
-                          owningClass(classFields, function.receiver->className))),
+            require(type == Type::ByteSpan && ((parameter && !function.receiver) ||
+                                               (!parameter && function.receiver && !function.receiver->mutableValue &&
+                                                !function.receiver->constructor && function.receiverSpanField &&
+                                                owningClass(classFields, function.receiver->className))),
                     "readonly span boundary requires ordinary parameter or const owning receiver result");
             return;
         }
@@ -334,7 +333,8 @@ inline void verifyFunction(Function &function,
     }
     std::set<int> spanStorage;
     for (int base : function.spanSlots) {
-        require(base >= spanBytes && base <= function.frameBytes && base % 8 == 0, "invalid span spill extent or alignment");
+        require(base >= spanBytes && base <= function.frameBytes && base % 8 == 0,
+                "invalid span spill extent or alignment");
         for (int byte = base - spanBytes + 1; byte <= base; ++byte) {
             require(!occupiedSlotBytes.contains(byte) && !objectStorage.contains(byte) && !arrayStorage.contains(byte),
                     "span spill overlaps scalar, object or array storage");
@@ -977,8 +977,8 @@ inline void verifyFunction(Function &function,
                 const auto &binding = accessBytes(root, ordinal, false);
                 spanTarget(result);
                 const auto rootSite = ordinal == -1 ? binding.site : state.ownedObjects.at(root).site;
-                state.activeSpans.emplace(
-                    result, SpanCapability{false, root, rootSite, 0, 0, index, binding.token, ordinal});
+                state.activeSpans.emplace(result,
+                                          SpanCapability{false, root, rootSite, 0, 0, index, binding.token, ordinal});
             };
             auto closedOwnedObjects = [&]() {
                 for (const auto &[base, unused] : state.ownedObjects) {
@@ -1750,9 +1750,8 @@ inline void verifyFunction(Function &function,
                         }
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnSpan>) {
-                        require(function.result == Type::ByteSpan && function.receiverSpanField &&
-                                    function.receiver && !function.receiver->constructor &&
-                                    !function.receiver->mutableValue,
+                        require(function.result == Type::ByteSpan && function.receiverSpanField && function.receiver &&
+                                    !function.receiver->constructor && !function.receiver->mutableValue,
                                 "span return requires const owning receiver field summary");
                         const auto &capability = span(operation.offset);
                         const auto &owner = accessBytes(0, *function.receiverSpanField, false);
@@ -1764,12 +1763,17 @@ inline void verifyFunction(Function &function,
                         require(state.activeBytes.empty() && state.activeArrays.empty() && state.activeObjects.empty(),
                                 "span return with unrelated active local lifetime");
                         closedOwnedObjects();
-                        // Receiver-derived ancestors remain live until the hidden
-                        // result is copied. Only that invocation authority can end here.
+                        // The returned record and its exact receiver-derived ancestor
+                        // chain remain live until the hidden result is copied. Other
+                        // views require explicit cleanup, even when they borrow this.
+                        std::set<int> retained;
+                        for (int base = operation.offset; base != 0; base = span(base).parent)
+                            require(retained.insert(base).second, "cyclic returned span parent chain");
                         for (const auto &[base, active] : state.activeSpans) {
                             span(base);
-                            require(active.ownedToken && active.origin == 0 && active.ownedField >= 0 &&
-                                        active.ownedToken->region.borrowed,
+                            require(retained.contains(base) && active.ownedToken && active.origin == 0 &&
+                                        active.ownedField == *function.receiverSpanField &&
+                                        active.ownedToken == owner.token && active.ownedToken->region.borrowed,
                                     "span return with unrelated active span lifetime");
                         }
                         fallsThrough = false;

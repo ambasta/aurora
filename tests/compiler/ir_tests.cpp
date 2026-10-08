@@ -21,8 +21,10 @@ Module baseline() {
     module.functions.push_back(std::move(function));
     return module;
 }
-void rejectModule(const std::string &name, Module module,
-                  const std::function<void(Module &)> &mutate, const std::string &expected) {
+void rejectModule(const std::string &name,
+                  Module module,
+                  const std::function<void(Module &)> &mutate,
+                  const std::string &expected) {
     mutate(module);
     try {
         auto checked = validate(std::move(module));
@@ -36,8 +38,7 @@ void rejectModule(const std::string &name, Module module,
     }
     throw Error(name + ": malformed IR was accepted");
 }
-void reject(const std::string &name, const std::function<void(Module &)> &mutate,
-            const std::string &expected) {
+void reject(const std::string &name, const std::function<void(Module &)> &mutate, const std::string &expected) {
     rejectModule(name, baseline(), mutate, expected);
 }
 Module receiverBaseline() {
@@ -90,30 +91,43 @@ Module valueBaseline() {
     caller.name = "test";
     caller.result = Type::I64;
     caller.frameBytes = 48;
-    caller.slots = {{16, Type::I64},  {8, Type::Bool}, {32, Type::I64},
-                    {24, Type::Bool}, {48, Type::I64}, {40, Type::Bool}};
-    caller.objectSlots = {{16, ObjectSlot{"Pair", false}},
-                          {32, ObjectSlot{"Pair", false}},
-                          {48, ObjectSlot{"Pair", false}}};
-    caller.code = {BeginObject{16},         Constant{12, Type::I64},
-                   Store{16, Type::I64},    Constant{1, Type::Bool},
-                   Store{8, Type::Bool},    BeginObject{32},
-                   Constant{20, Type::I64}, Store{32, Type::I64},
-                   Constant{0, Type::Bool}, Store{24, Type::Bool},
-                   Constant{10, Type::I64}, Push{},
-                   Constant{1, Type::Bool}, Push{},
-                   BeginObject{48},         AggregateCall{"copy_pair", {16, 0, 32, 0}, 48},
-                   Load{48, Type::I64},     Return{}};
+    caller.slots = {
+        {16, Type::I64}, {8, Type::Bool}, {32, Type::I64}, {24, Type::Bool}, {48, Type::I64}, {40, Type::Bool}};
+    caller.objectSlots = {
+        {16, ObjectSlot{"Pair", false}}, {32, ObjectSlot{"Pair", false}}, {48, ObjectSlot{"Pair", false}}};
+    caller.code = {BeginObject{16},
+                   Constant{12, Type::I64},
+                   Store{16, Type::I64},
+                   Constant{1, Type::Bool},
+                   Store{8, Type::Bool},
+                   BeginObject{32},
+                   Constant{20, Type::I64},
+                   Store{32, Type::I64},
+                   Constant{0, Type::Bool},
+                   Store{24, Type::Bool},
+                   Constant{10, Type::I64},
+                   Push{},
+                   Constant{1, Type::Bool},
+                   Push{},
+                   BeginObject{48},
+                   AggregateCall{"copy_pair", {16, 0, 32, 0}, 48},
+                   Load{48, Type::I64},
+                   Return{}};
     aurora::ir::Function copy;
     copy.name = "copy_pair";
     copy.result = Type("Pair");
     copy.parameters = {Type("Pair"), Type::I64, Type("Pair"), Type::Bool};
     copy.frameBytes = 64;
-    copy.slots = {{16, Type::I64},  {8, Type::Bool},  {24, Type::I64}, {40, Type::I64},
-                  {32, Type::Bool}, {48, Type::Bool}, {64, Type::I64}, {56, Type::Bool}};
-    copy.objectSlots = {{16, ObjectSlot{"Pair", false}},
-                        {40, ObjectSlot{"Pair", false}},
-                        {64, ObjectSlot{"Pair", false}}};
+    copy.slots = {{16, Type::I64},
+                  {8, Type::Bool},
+                  {24, Type::I64},
+                  {40, Type::I64},
+                  {32, Type::Bool},
+                  {48, Type::Bool},
+                  {64, Type::I64},
+                  {56, Type::Bool}};
+    copy.objectSlots = {
+        {16, ObjectSlot{"Pair", false}}, {40, ObjectSlot{"Pair", false}}, {64, ObjectSlot{"Pair", false}}};
     copy.code = {BindObjectParameter{0, 16, "Pair"},
                  BindParameter{1, 24, Type::I64},
                  BindObjectParameter{2, 40, "Pair"},
@@ -139,8 +153,7 @@ AggregateCall &valueCall(Module &module) {
             return *call;
     throw Error("missing aggregate test call");
 }
-void rejectValue(const std::string &name, const std::function<void(Module &)> &mutate,
-                 const std::string &expected) {
+void rejectValue(const std::string &name, const std::function<void(Module &)> &mutate, const std::string &expected) {
     rejectModule(name, valueBaseline(), mutate, expected);
 }
 Module emptyValueBaseline() {
@@ -151,8 +164,8 @@ Module emptyValueBaseline() {
     entry.result = Type::I64;
     entry.frameBytes = 16;
     entry.objectSlots = {{8, ObjectSlot{"Empty", false}}, {16, ObjectSlot{"Empty", false}}};
-    entry.code = {BeginObject{8}, BeginObject{16}, AggregateCall{"copy_empty", {8}, 16},
-                  Constant{42, Type::I64}, Return{}};
+    entry.code = {
+        BeginObject{8}, BeginObject{16}, AggregateCall{"copy_empty", {8}, 16}, Constant{42, Type::I64}, Return{}};
     aurora::ir::Function copy;
     copy.name = "copy_empty";
     copy.result = Type("Empty");
@@ -167,8 +180,7 @@ Module emptyValueBaseline() {
     module.functions = {entry, copy, make};
     return module;
 }
-void rejectReceiver(const std::string &name, const std::function<void(Module &)> &mutate,
-                    const std::string &expected) {
+void rejectReceiver(const std::string &name, const std::function<void(Module &)> &mutate, const std::string &expected) {
     rejectModule(name, receiverBaseline(), mutate, expected);
 }
 void accept(const std::string &name, Module module) {
@@ -184,18 +196,26 @@ Module unsignedBinary(Binary operation) {
     auto &function = module.functions[0];
     function.result = Type::U64;
     const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
-    function.code = {Constant{std::bit_cast<std::int64_t>(UINT64_MAX), Type::U64}, Push{},
+    function.code = {Constant{std::bit_cast<std::int64_t>(UINT64_MAX), Type::U64},
+                     Push{},
                      Constant{shift ? 0 : 1, shift ? Type::I64 : Type::U64},
-                     BinaryValue{operation, Type::U64}, Return{}};
+                     BinaryValue{operation, Type::U64},
+                     Return{}};
     return module;
 }
 Module unsignedOperations() {
     Module module;
     int index = 0;
-    for (const auto operation :
-         {Binary::CheckedAdd, Binary::CheckedSubtract, Binary::CheckedMultiply,
-          Binary::CheckedDivide, Binary::CheckedRemainder, Binary::BitAnd, Binary::BitOr,
-          Binary::BitXor, Binary::ShiftLeft, Binary::ShiftRight}) {
+    for (const auto operation : {Binary::CheckedAdd,
+                                 Binary::CheckedSubtract,
+                                 Binary::CheckedMultiply,
+                                 Binary::CheckedDivide,
+                                 Binary::CheckedRemainder,
+                                 Binary::BitAnd,
+                                 Binary::BitOr,
+                                 Binary::BitXor,
+                                 Binary::ShiftLeft,
+                                 Binary::ShiftRight}) {
         const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
         const auto right = shift ? Type::I64 : Type::U64;
         auto function = unsignedBinary(operation).functions[0];
@@ -211,9 +231,12 @@ Module unsignedOperations() {
                          Return{}};
         module.functions.push_back(std::move(function));
     }
-    for (const auto operation :
-         {Comparison::Equal, Comparison::NotEqual, Comparison::Less, Comparison::Greater,
-          Comparison::LessEqual, Comparison::GreaterEqual}) {
+    for (const auto operation : {Comparison::Equal,
+                                 Comparison::NotEqual,
+                                 Comparison::Less,
+                                 Comparison::Greater,
+                                 Comparison::LessEqual,
+                                 Comparison::GreaterEqual}) {
         auto function = module.functions[0];
         function.name = "unsigned_compare" + std::to_string(static_cast<int>(operation));
         function.result = Type::Bool;
@@ -223,70 +246,87 @@ Module unsignedOperations() {
     auto function = module.functions[0];
     function.name = "unsigned_not";
     function.parameters = {Type::U64};
-    function.code = {BindParameter{0, 8, Type::U64}, Load{8, Type::U64}, UnaryValue{Unary::BitNot},
-                     Return{}};
+    function.code = {BindParameter{0, 8, Type::U64}, Load{8, Type::U64}, UnaryValue{Unary::BitNot}, Return{}};
     module.functions.push_back(function);
     for (const auto &source : {Type::I64, Type::U64}) {
         function.name = source == Type::I64 ? "signed_to_unsigned" : "unsigned_to_signed";
         function.result = source == Type::I64 ? Type::U64 : Type::I64;
         function.parameters = {source};
         function.slots = {{8, source}};
-        function.code = {BindParameter{0, 8, source}, Load{8, source},
-                         Convert{source, function.result}, Return{}};
+        function.code = {BindParameter{0, 8, source}, Load{8, source}, Convert{source, function.result}, Return{}};
         module.functions.push_back(function);
     }
     return module;
 }
 void unsignedTests() {
     accept("unsigned operation callable fixture", unsignedOperations());
-    for (const auto operation :
-         {Binary::CheckedAdd, Binary::CheckedSubtract, Binary::CheckedMultiply,
-          Binary::CheckedDivide, Binary::CheckedRemainder, Binary::BitAnd, Binary::BitOr,
-          Binary::BitXor, Binary::ShiftLeft, Binary::ShiftRight}) {
+    for (const auto operation : {Binary::CheckedAdd,
+                                 Binary::CheckedSubtract,
+                                 Binary::CheckedMultiply,
+                                 Binary::CheckedDivide,
+                                 Binary::CheckedRemainder,
+                                 Binary::BitAnd,
+                                 Binary::BitOr,
+                                 Binary::BitXor,
+                                 Binary::ShiftLeft,
+                                 Binary::ShiftRight}) {
         const auto name = "u64 binary " + std::to_string(static_cast<int>(operation));
         const auto module = unsignedBinary(operation);
         accept(name, module);
         rejectModule(
-            name + " signed left", module,
-            [](Module &m) { std::get<Constant>(m.functions[0].code[0]).type = Type::I64; },
+            name + " signed left",
+            module,
+            [](Module &m) {
+                std::get<Constant>(m.functions[0].code[0]).type = Type::I64;
+            },
             "left operand");
         rejectModule(
-            name + " bool right", module,
-            [](Module &m) { m.functions[0].code[2] = Constant{1, Type::Bool}; },
+            name + " bool right",
+            module,
+            [](Module &m) {
+                m.functions[0].code[2] = Constant{1, Type::Bool};
+            },
             "mistyped current");
         rejectModule(
-            name + " missing left", module,
-            [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 1); },
+            name + " missing left",
+            module,
+            [](Module &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin() + 1);
+            },
             "stack underflow");
         rejectModule(
-            name + " bool operation type", module,
+            name + " bool operation type",
+            module,
             [](Module &m) {
                 std::get<BinaryValue>(m.functions[0].code[3]).operandType = Type::Bool;
             },
             "invalid binary operand type");
         rejectModule(
-            name + " invalid operation", module,
+            name + " invalid operation",
+            module,
             [](Module &m) {
                 std::get<BinaryValue>(m.functions[0].code[3]).operation = static_cast<Binary>(-1);
             },
             "invalid binary operation");
         rejectModule(
-            name + " forged scalar type", module,
+            name + " forged scalar type",
+            module,
             [](Module &m) {
                 std::get<BinaryValue>(m.functions[0].code[3]).operandType.className = "X";
             },
             "invalid binary operand type");
         const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
         rejectModule(
-            name + " wrong right signedness", module,
+            name + " wrong right signedness",
+            module,
             [shift](Module &m) {
                 std::get<Constant>(m.functions[0].code[2]).type = shift ? Type::U64 : Type::I64;
             },
             "mistyped current");
-        if (operation == Binary::BitAnd || operation == Binary::BitOr ||
-            operation == Binary::BitXor || shift)
+        if (operation == Binary::BitAnd || operation == Binary::BitOr || operation == Binary::BitXor || shift)
             rejectModule(
-                name + " signed operation type", module,
+                name + " signed operation type",
+                module,
                 [](Module &m) {
                     std::get<BinaryValue>(m.functions[0].code[3]).operandType = Type::I64;
                 },
@@ -296,12 +336,10 @@ void unsignedTests() {
             const auto guard = emission.find("ja .Laurora_shift_count_trap");
             const auto instruction =
                 emission.find(operation == Binary::ShiftLeft ? "shlq %cl, %rax" : "shrq %cl, %rax");
-            if (guard == std::string::npos || instruction == std::string::npos ||
-                guard >= instruction)
+            if (guard == std::string::npos || instruction == std::string::npos || guard >= instruction)
                 throw Error("shift guard must precede hardware count masking");
             if (operation == Binary::ShiftLeft &&
-                emission.find("cmpq %rdx, %r11\n    jne .Laurora_overflow_trap") ==
-                    std::string::npos)
+                emission.find("cmpq %rdx, %r11\n    jne .Laurora_overflow_trap") == std::string::npos)
                 throw Error("left shift must check every discarded bit");
             ++passed;
             std::cout << "PASS IR " << name << " native guard order\n";
@@ -310,8 +348,7 @@ void unsignedTests() {
             const auto division = emission.find("divq %r11");
             if (guard == std::string::npos || division == std::string::npos || guard >= division ||
                 emission.find("xorq %rdx, %rdx\n    divq %r11") == std::string::npos ||
-                emission.find("idivq") != std::string::npos ||
-                emission.find("cmpq $-1, %r11") != std::string::npos)
+                emission.find("idivq") != std::string::npos || emission.find("cmpq $-1, %r11") != std::string::npos)
                 throw Error("unsigned division must clear high dividend and guard zero");
             ++passed;
             std::cout << "PASS IR " << name << " native division guard\n";
@@ -326,28 +363,40 @@ void unsignedTests() {
         const auto name = typeName(source) + " checked conversion";
         accept(name, module);
         rejectModule(
-            name + " wrong source value", module,
-            [result](Module &m) { std::get<Constant>(m.functions[0].code[0]).type = result; },
+            name + " wrong source value",
+            module,
+            [result](Module &m) {
+                std::get<Constant>(m.functions[0].code[0]).type = result;
+            },
             "mistyped current");
-        for (const auto &target :
-             {Type::Bool, Type::Ref, Type::MutRef, Type::Own, Type("Pair"),
-              Type::array(TypeKind::U64, 1), Type(static_cast<TypeKind>(99))}) {
+        for (const auto &target : {Type::Bool,
+                                   Type::Ref,
+                                   Type::MutRef,
+                                   Type::Own,
+                                   Type("Pair"),
+                                   Type::array(TypeKind::U64, 1),
+                                   Type(static_cast<TypeKind>(99))}) {
             rejectModule(
-                name + " invalid target " + typeName(target), module,
+                name + " invalid target " + typeName(target),
+                module,
                 [target](Module &m) {
                     std::get<Convert>(m.functions[0].code[1]).resultType = target;
                 },
                 "invalid checked conversion types");
             rejectModule(
-                name + " invalid source " + typeName(target), module,
+                name + " invalid source " + typeName(target),
+                module,
                 [target](Module &m) {
                     std::get<Convert>(m.functions[0].code[1]).sourceType = target;
                 },
                 "invalid checked conversion types");
         }
         rejectModule(
-            name + " identity rejected", module,
-            [source](Module &m) { std::get<Convert>(m.functions[0].code[1]).resultType = source; },
+            name + " identity rejected",
+            module,
+            [source](Module &m) {
+                std::get<Convert>(m.functions[0].code[1]).resultType = source;
+            },
             "invalid checked conversion types");
     }
     for (const auto operation : {Unary::CheckedNegate, Unary::LogicalNot})
@@ -364,43 +413,58 @@ void unsignedTests() {
                 m.functions[0].code = {Constant{1, source}, UnaryValue{Unary::BitNot}, Return{}};
             },
             "mistyped current");
-    for (const auto operation :
-         {Comparison::Equal, Comparison::NotEqual, Comparison::Less, Comparison::Greater,
-          Comparison::LessEqual, Comparison::GreaterEqual}) {
+    for (const auto operation : {Comparison::Equal,
+                                 Comparison::NotEqual,
+                                 Comparison::Less,
+                                 Comparison::Greater,
+                                 Comparison::LessEqual,
+                                 Comparison::GreaterEqual}) {
         auto module = unsignedBinary(Binary::CheckedAdd);
         module.functions[0].result = Type::Bool;
         module.functions[0].code[3] = Compare{operation, Type::U64};
         const auto name = "u64 comparison " + std::to_string(static_cast<int>(operation));
         accept(name, module);
         rejectModule(
-            name + " signed left", module,
-            [](Module &m) { std::get<Constant>(m.functions[0].code[0]).type = Type::I64; },
+            name + " signed left",
+            module,
+            [](Module &m) {
+                std::get<Constant>(m.functions[0].code[0]).type = Type::I64;
+            },
             "comparison type mismatch");
         rejectModule(
-            name + " signed right", module,
-            [](Module &m) { std::get<Constant>(m.functions[0].code[2]).type = Type::I64; },
+            name + " signed right",
+            module,
+            [](Module &m) {
+                std::get<Constant>(m.functions[0].code[2]).type = Type::I64;
+            },
             "mistyped current");
         rejectModule(
-            name + " invalid enum", module,
+            name + " invalid enum",
+            module,
             [](Module &m) {
                 std::get<Compare>(m.functions[0].code[3]).operation = static_cast<Comparison>(-1);
             },
             "invalid comparison");
         rejectModule(
-            name + " reference forgery", module,
-            [](Module &m) { std::get<Compare>(m.functions[0].code[3]).operandType = Type::Ref; },
+            name + " reference forgery",
+            module,
+            [](Module &m) {
+                std::get<Compare>(m.functions[0].code[3]).operandType = Type::Ref;
+            },
             "non-scalar comparison");
     }
     auto call = unsignedOperations();
     auto entry = baseline().functions[0];
     entry.result = Type::U64;
-    entry.code = {Constant{-1, Type::U64}, Push{},  Constant{0, Type::U64}, Push{},
-                  Call{"unsigned_op0"},    Return{}};
+    entry.code = {Constant{-1, Type::U64}, Push{}, Constant{0, Type::U64}, Push{}, Call{"unsigned_op0"}, Return{}};
     call.functions.push_back(entry);
     accept("u64 scalar call boundary", call);
     rejectModule(
-        "signed argument cannot cross u64 scalar call boundary", call,
-        [](Module &m) { std::get<Constant>(m.functions.back().code[0]).type = Type::I64; },
+        "signed argument cannot cross u64 scalar call boundary",
+        call,
+        [](Module &m) {
+            std::get<Constant>(m.functions.back().code[0]).type = Type::I64;
+        },
         "call argument type mismatch");
     auto receiver = receiverBaseline();
     receiver.classLayouts["Pair"][0] = Type::U64;
@@ -417,24 +481,34 @@ void unsignedTests() {
     receiver.functions[3].result = Type::U64;
     accept("u64 nominal receiver construction and forwarding", receiver);
     rejectModule(
-        "u64 receiver field cannot be loaded as signed", receiver,
-        [](Module &m) { m.functions[2].code[0] = ReceiverLoad{0, Type::I64}; },
+        "u64 receiver field cannot be loaded as signed",
+        receiver,
+        [](Module &m) {
+            m.functions[2].code[0] = ReceiverLoad{0, Type::I64};
+        },
         "receiver field type/layout mismatch");
     reject(
         "conversion roundtrip cannot preserve bounds token",
         [](Module &m) {
-            m.functions[0].code = {Constant{42, Type::I64},       Store{8, Type::I64},
-                                   Constant{0, Type::I64},        BoundsGuard{8, 1, Type::I64},
-                                   Convert{Type::I64, Type::U64}, Convert{Type::U64, Type::I64},
-                                   IndexLoad{8, 1, Type::I64},    Return{}};
+            m.functions[0].code = {Constant{42, Type::I64},
+                                   Store{8, Type::I64},
+                                   Constant{0, Type::I64},
+                                   BoundsGuard{8, 1, Type::I64},
+                                   Convert{Type::I64, Type::U64},
+                                   Convert{Type::U64, Type::I64},
+                                   IndexLoad{8, 1, Type::I64},
+                                   Return{}};
         },
         "bounds token");
     auto array = baseline();
     array.functions[0].result = Type::U64;
     array.functions[0].slots[8] = Type::U64;
-    array.functions[0].code = {Constant{-1, Type::U64},    Store{8, Type::U64},
-                               Constant{0, Type::I64},     BoundsGuard{8, 1, Type::U64},
-                               IndexLoad{8, 1, Type::U64}, Return{}};
+    array.functions[0].code = {Constant{-1, Type::U64},
+                               Store{8, Type::U64},
+                               Constant{0, Type::I64},
+                               BoundsGuard{8, 1, Type::U64},
+                               IndexLoad{8, 1, Type::U64},
+                               Return{}};
     accept("u64 array guarded load", array);
     auto arrayStore = array;
     arrayStore.functions[0].code = {Constant{0, Type::U64},
@@ -448,18 +522,33 @@ void unsignedTests() {
                                     Return{}};
     accept("u64 array guarded store", arrayStore);
     rejectModule(
-        "u64 array store requires matching token", arrayStore,
-        [](Module &m) { m.functions[0].code[3] = Constant{0, Type::I64}; }, "bounds token");
+        "u64 array store requires matching token",
+        arrayStore,
+        [](Module &m) {
+            m.functions[0].code[3] = Constant{0, Type::I64};
+        },
+        "bounds token");
     rejectModule(
-        "u64 array index cannot be u64", array,
-        [](Module &m) { std::get<Constant>(m.functions[0].code[2]).type = Type::U64; },
+        "u64 array index cannot be u64",
+        array,
+        [](Module &m) {
+            std::get<Constant>(m.functions[0].code[2]).type = Type::U64;
+        },
         "mistyped current");
     rejectModule(
-        "u64 array token cannot alias signed layout", array,
-        [](Module &m) { m.functions[0].code[4] = IndexLoad{8, 1, Type::I64}; }, "slot type/layout");
+        "u64 array token cannot alias signed layout",
+        array,
+        [](Module &m) {
+            m.functions[0].code[4] = IndexLoad{8, 1, Type::I64};
+        },
+        "slot type/layout");
     rejectModule(
-        "u64 payload cannot mint borrow capability", array,
-        [](Module &m) { m.functions[0].code[4] = BorrowHandle{8, Type::Ref}; }, "slot type/layout");
+        "u64 payload cannot mint borrow capability",
+        array,
+        [](Module &m) {
+            m.functions[0].code[4] = BorrowHandle{8, Type::Ref};
+        },
+        "slot type/layout");
 }
 // Canonical numerical byte values remain wide in registers and pack into byte
 // storage. These fixtures are the compiler's source ABI, not a foreign ABI.
@@ -468,9 +557,11 @@ Module byteBinary(Binary operation) {
     auto &function = module.functions[0];
     function.result = Type::U8;
     const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
-    function.code = {Constant{255, Type::U8}, Push{},
+    function.code = {Constant{255, Type::U8},
+                     Push{},
                      Constant{shift ? 0 : 1, shift ? Type::I64 : Type::U8},
-                     BinaryValue{operation, Type::U8}, Return{}};
+                     BinaryValue{operation, Type::U8},
+                     Return{}};
     return module;
 }
 Module byteValueBaseline() {
@@ -522,10 +613,16 @@ Module byteReceiverBaseline() {
 }
 Module byteOperations() {
     Module module;
-    for (const auto operation :
-         {Binary::CheckedAdd, Binary::CheckedSubtract, Binary::CheckedMultiply,
-          Binary::CheckedDivide, Binary::CheckedRemainder, Binary::BitAnd, Binary::BitOr,
-          Binary::BitXor, Binary::ShiftLeft, Binary::ShiftRight}) {
+    for (const auto operation : {Binary::CheckedAdd,
+                                 Binary::CheckedSubtract,
+                                 Binary::CheckedMultiply,
+                                 Binary::CheckedDivide,
+                                 Binary::CheckedRemainder,
+                                 Binary::BitAnd,
+                                 Binary::BitOr,
+                                 Binary::BitXor,
+                                 Binary::ShiftLeft,
+                                 Binary::ShiftRight}) {
         const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
         const auto right = shift ? Type::I64 : Type::U8;
         auto function = byteBinary(operation).functions[0];
@@ -541,9 +638,12 @@ Module byteOperations() {
                          Return{}};
         module.functions.push_back(std::move(function));
     }
-    for (const auto operation :
-         {Comparison::Equal, Comparison::NotEqual, Comparison::Less, Comparison::Greater,
-          Comparison::LessEqual, Comparison::GreaterEqual}) {
+    for (const auto operation : {Comparison::Equal,
+                                 Comparison::NotEqual,
+                                 Comparison::Less,
+                                 Comparison::Greater,
+                                 Comparison::LessEqual,
+                                 Comparison::GreaterEqual}) {
         auto function = module.functions[0];
         function.name = "byte_compare" + std::to_string(static_cast<int>(operation));
         function.result = Type::Bool;
@@ -554,8 +654,7 @@ Module byteOperations() {
     function.name = "byte_not";
     function.parameters = {Type::U8};
     function.slots = {{8, Type::U8}};
-    function.code = {BindParameter{0, 8, Type::U8}, Load{8, Type::U8},
-                     UnaryValue{Unary::BitNot, Type::U8}, Return{}};
+    function.code = {BindParameter{0, 8, Type::U8}, Load{8, Type::U8}, UnaryValue{Unary::BitNot, Type::U8}, Return{}};
     module.functions.push_back(function);
     for (const auto &wide : {Type::I64, Type::U64})
         for (bool narrow : {false, true}) {
@@ -565,8 +664,7 @@ Module byteOperations() {
             function.result = result;
             function.parameters = {source};
             function.slots = {{8, source}};
-            function.code = {BindParameter{0, 8, source}, Load{8, source}, Convert{source, result},
-                             Return{}};
+            function.code = {BindParameter{0, 8, source}, Load{8, source}, Convert{source, result}, Return{}};
             module.functions.push_back(function);
         }
     function = baseline().functions[0];
@@ -589,8 +687,7 @@ Module byteOperations() {
     module.functions.push_back(function);
     for (auto fixture : {byteValueBaseline(), byteReceiverBaseline()}) {
         module.classLayouts.insert(fixture.classLayouts.begin(), fixture.classLayouts.end());
-        module.functions.insert(module.functions.end(), fixture.functions.begin(),
-                                fixture.functions.end());
+        module.functions.insert(module.functions.end(), fixture.functions.begin(), fixture.functions.end());
     }
     return module;
 }
@@ -610,53 +707,73 @@ void byteTests() {
                 module.functions[0].code = {Constant{value, Type::U8}, Return{}};
             },
             "noncanonical u8");
-    for (const auto operation :
-         {Binary::CheckedAdd, Binary::CheckedSubtract, Binary::CheckedMultiply,
-          Binary::CheckedDivide, Binary::CheckedRemainder, Binary::BitAnd, Binary::BitOr,
-          Binary::BitXor, Binary::ShiftLeft, Binary::ShiftRight}) {
+    for (const auto operation : {Binary::CheckedAdd,
+                                 Binary::CheckedSubtract,
+                                 Binary::CheckedMultiply,
+                                 Binary::CheckedDivide,
+                                 Binary::CheckedRemainder,
+                                 Binary::BitAnd,
+                                 Binary::BitOr,
+                                 Binary::BitXor,
+                                 Binary::ShiftLeft,
+                                 Binary::ShiftRight}) {
         const auto name = "u8 binary " + std::to_string(static_cast<int>(operation));
         const auto module = byteBinary(operation);
         accept(name, module);
         for (const auto &type : {Type::I64, Type::U64, Type::Bool}) {
             rejectModule(
-                name + " mixed left " + typeName(type), module,
-                [type](Module &m) { m.functions[0].code[0] = Constant{1, type}; }, "left operand");
+                name + " mixed left " + typeName(type),
+                module,
+                [type](Module &m) {
+                    m.functions[0].code[0] = Constant{1, type};
+                },
+                "left operand");
             const bool shift = operation == Binary::ShiftLeft || operation == Binary::ShiftRight;
             if (shift && type == Type::I64)
                 continue;
             rejectModule(
-                name + " mixed right " + typeName(type), module,
-                [type](Module &m) { m.functions[0].code[2] = Constant{1, type}; },
+                name + " mixed right " + typeName(type),
+                module,
+                [type](Module &m) {
+                    m.functions[0].code[2] = Constant{1, type};
+                },
                 "mistyped current");
         }
         rejectModule(
-            name + " missing left", module,
-            [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 1); },
+            name + " missing left",
+            module,
+            [](Module &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin() + 1);
+            },
             "stack underflow");
         rejectModule(
-            name + " bool operand type", module,
+            name + " bool operand type",
+            module,
             [](Module &m) {
                 std::get<BinaryValue>(m.functions[0].code[3]).operandType = Type::Bool;
             },
             "invalid binary operand type");
         rejectModule(
-            name + " forged u8 type", module,
+            name + " forged u8 type",
+            module,
             [](Module &m) {
                 std::get<BinaryValue>(m.functions[0].code[3]).operandType.className = "X";
             },
             "invalid binary operand type");
         if (operation == Binary::ShiftLeft || operation == Binary::ShiftRight)
             rejectModule(
-                name + " byte count", module,
-                [](Module &m) { m.functions[0].code[2] = Constant{1, Type::U8}; },
+                name + " byte count",
+                module,
+                [](Module &m) {
+                    m.functions[0].code[2] = Constant{1, Type::U8};
+                },
                 "mistyped current");
     }
     for (const auto operation : {Unary::CheckedNegate, Unary::LogicalNot}) {
         reject(
             "u8 rejects signed/bool unary operation",
             [operation](Module &m) {
-                m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{operation, Type::U8},
-                                       Return{}};
+                m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{operation, Type::U8}, Return{}};
             },
             "invalid unary operand type");
         reject(
@@ -670,8 +787,7 @@ void byteTests() {
         reject(
             "u8 not rejects operand type " + typeName(type),
             [type](Module &m) {
-                m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{Unary::BitNot, type},
-                                       Return{}};
+                m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{Unary::BitNot, type}, Return{}};
             },
             "invalid unary operand type");
     reject(
@@ -685,8 +801,7 @@ void byteTests() {
         [](Module &m) {
             auto forged = Type::U8;
             forged.templateArguments = {TypeKind::U8};
-            m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{Unary::BitNot, forged},
-                                   Return{}};
+            m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{Unary::BitNot, forged}, Return{}};
         },
         "invalid unary operand type");
     for (const auto &wide : {Type::I64, Type::U64})
@@ -699,19 +814,28 @@ void byteTests() {
             const auto name = typeName(source) + " checked conversion to " + typeName(result);
             accept(name, module);
             rejectModule(
-                name + " mistyped source", module,
-                [result](Module &m) { m.functions[0].code[0] = Constant{1, result}; },
+                name + " mistyped source",
+                module,
+                [result](Module &m) {
+                    m.functions[0].code[0] = Constant{1, result};
+                },
                 "mistyped current");
-            for (const auto &invalid : {Type::Bool, Type::Ref, Type::Own, Type("Pair"),
-                                        Type::enumeration("E"), Type::array(TypeKind::U8, 1)}) {
+            for (const auto &invalid : {Type::Bool,
+                                        Type::Ref,
+                                        Type::Own,
+                                        Type("Pair"),
+                                        Type::enumeration("E"),
+                                        Type::array(TypeKind::U8, 1)}) {
                 rejectModule(
-                    name + " invalid source " + typeName(invalid), module,
+                    name + " invalid source " + typeName(invalid),
+                    module,
                     [invalid](Module &m) {
                         std::get<Convert>(m.functions[0].code[1]).sourceType = invalid;
                     },
                     "invalid checked conversion types");
                 rejectModule(
-                    name + " invalid target " + typeName(invalid), module,
+                    name + " invalid target " + typeName(invalid),
+                    module,
                     [invalid](Module &m) {
                         std::get<Convert>(m.functions[0].code[1]).resultType = invalid;
                     },
@@ -727,15 +851,22 @@ void byteTests() {
     reject(
         "u8 conversion cannot preserve bounds token",
         [](Module &m) {
-            m.functions[0].code = {Constant{42, Type::I64},      Store{8, Type::I64},
-                                   Constant{0, Type::I64},       BoundsGuard{8, 1, Type::I64},
-                                   Convert{Type::I64, Type::U8}, Convert{Type::U8, Type::I64},
-                                   IndexLoad{8, 1, Type::I64},   Return{}};
+            m.functions[0].code = {Constant{42, Type::I64},
+                                   Store{8, Type::I64},
+                                   Constant{0, Type::I64},
+                                   BoundsGuard{8, 1, Type::I64},
+                                   Convert{Type::I64, Type::U8},
+                                   Convert{Type::U8, Type::I64},
+                                   IndexLoad{8, 1, Type::I64},
+                                   Return{}};
         },
         "bounds token");
-    for (const auto operation :
-         {Comparison::Equal, Comparison::NotEqual, Comparison::Less, Comparison::Greater,
-          Comparison::LessEqual, Comparison::GreaterEqual}) {
+    for (const auto operation : {Comparison::Equal,
+                                 Comparison::NotEqual,
+                                 Comparison::Less,
+                                 Comparison::Greater,
+                                 Comparison::LessEqual,
+                                 Comparison::GreaterEqual}) {
         auto module = byteBinary(Binary::CheckedAdd);
         module.functions[0].result = Type::Bool;
         module.functions[0].code[3] = Compare{operation, Type::U8};
@@ -743,52 +874,76 @@ void byteTests() {
         accept(name, module);
         for (const auto &wide : {Type::I64, Type::U64}) {
             rejectModule(
-                name + " mixed left " + typeName(wide), module,
-                [wide](Module &m) { m.functions[0].code[0] = Constant{255, wide}; },
+                name + " mixed left " + typeName(wide),
+                module,
+                [wide](Module &m) {
+                    m.functions[0].code[0] = Constant{255, wide};
+                },
                 "comparison type mismatch");
             rejectModule(
-                name + " mixed right " + typeName(wide), module,
-                [wide](Module &m) { m.functions[0].code[2] = Constant{1, wide}; },
+                name + " mixed right " + typeName(wide),
+                module,
+                [wide](Module &m) {
+                    m.functions[0].code[2] = Constant{1, wide};
+                },
                 "mistyped current");
         }
     }
     auto call = byteOperations();
     auto entry = baseline().functions[0];
     entry.result = Type::U8;
-    entry.code = {Constant{255, Type::U8}, Push{},  Constant{0, Type::U8}, Push{},
-                  Call{"byte_op0"},        Return{}};
+    entry.code = {Constant{255, Type::U8}, Push{}, Constant{0, Type::U8}, Push{}, Call{"byte_op0"}, Return{}};
     call.functions.push_back(entry);
     accept("u8 scalar call boundary", call);
     rejectModule(
-        "u8 call rejects wide argument", call,
-        [](Module &m) { m.functions.back().code[0] = Constant{255, Type::U64}; },
+        "u8 call rejects wide argument",
+        call,
+        [](Module &m) {
+            m.functions.back().code[0] = Constant{255, Type::U64};
+        },
         "call argument type mismatch");
     rejectModule(
-        "u8 return rejects wide payload", call,
-        [](Module &m) { m.functions.back().result = Type::U64; }, "mistyped current");
+        "u8 return rejects wide payload",
+        call,
+        [](Module &m) {
+            m.functions.back().result = Type::U64;
+        },
+        "mistyped current");
     rejectModule(
-        "u8 parameter binding must match signature", call,
-        [](Module &m) { std::get<BindParameter>(m.functions[0].code[0]).type = Type::U64; },
+        "u8 parameter binding must match signature",
+        call,
+        [](Module &m) {
+            std::get<BindParameter>(m.functions[0].code[0]).type = Type::U64;
+        },
         "parameter type mismatch");
     auto aggregate = byteValueBaseline();
     accept("u8 aggregate argument and result mixed-width slots", aggregate);
     rejectModule(
-        "u8 aggregate scalar argument rejects wide payload", aggregate,
-        [](Module &m) { m.functions[0].code[10] = Constant{10, Type::U64}; },
+        "u8 aggregate scalar argument rejects wide payload",
+        aggregate,
+        [](Module &m) {
+            m.functions[0].code[10] = Constant{10, Type::U64};
+        },
         "aggregate scalar argument type mismatch");
     rejectModule(
-        "u8 aggregate leaf cannot have wide slot", aggregate,
-        [](Module &m) { m.functions[0].slots[16] = Type::U64; },
+        "u8 aggregate leaf cannot have wide slot",
+        aggregate,
+        [](Module &m) {
+            m.functions[0].slots[16] = Type::U64;
+        },
         "object field slot type/layout mismatch");
     auto receiver = byteReceiverBaseline();
     accept("u8 receiver construction and forwarding", receiver);
     rejectModule(
-        "u8 receiver load rejects wide type", receiver,
-        [](Module &m) { m.functions[2].code[0] = ReceiverLoad{0, Type::U64}; },
+        "u8 receiver load rejects wide type",
+        receiver,
+        [](Module &m) {
+            m.functions[2].code[0] = ReceiverLoad{0, Type::U64};
+        },
         "receiver field type/layout mismatch");
     const auto assembly = X86Emitter{}.emit(validate(byteOperations()));
-    for (const auto &fragment : {"xorq $255, %rax", "cmpq $7, %rax", "cmpq $255, %rax",
-                                 "movb %dil, -8(%rbp)", "movzbq (%rcx,%rax,1), %rax"})
+    for (const auto &fragment :
+         {"xorq $255, %rax", "cmpq $7, %rax", "cmpq $255, %rax", "movb %dil, -8(%rbp)", "movzbq (%rcx,%rax,1), %rax"})
         if (assembly.find(fragment) == std::string::npos)
             throw Error(std::string("u8 width or packed storage emission mismatch: ") + fragment);
     ++passed;
@@ -796,8 +951,8 @@ void byteTests() {
 }
 Module arrayReceiverBaseline() {
     Module module;
-    module.classLayouts["ArrayBox"] = {Type::I64,  Type::I64,  Type::I64, Type::Bool,
-                                       Type::Bool, Type::Bool, Type::I64, Type::I64};
+    module.classLayouts["ArrayBox"] = {
+        Type::I64, Type::I64, Type::I64, Type::Bool, Type::Bool, Type::Bool, Type::I64, Type::I64};
     module.classFields["ArrayBox"] = {{Type::I64, 0, 1, false},
                                       {Type::I64, 1, 2, true},
                                       {Type::Bool, 3, 1, false},
@@ -825,9 +980,15 @@ Module arrayReceiverBaseline() {
     constructor.name = "construct_array";
     constructor.result = Type::I64;
     constructor.receiver = Receiver{"ArrayBox", true, true};
-    constructor.code = {Constant{7, Type::I64},  ReceiverStore{0, Type::I64},  ReceiverArrayZero{1},
-                        Constant{1, Type::Bool}, ReceiverStore{2, Type::Bool}, ReceiverArrayZero{3},
-                        ReceiverArrayZero{4},    Constant{0, Type::I64},       Return{}};
+    constructor.code = {Constant{7, Type::I64},
+                        ReceiverStore{0, Type::I64},
+                        ReceiverArrayZero{1},
+                        Constant{1, Type::Bool},
+                        ReceiverStore{2, Type::Bool},
+                        ReceiverArrayZero{3},
+                        ReceiverArrayZero{4},
+                        Constant{0, Type::I64},
+                        Return{}};
     aurora::ir::Function getter;
     getter.name = "get_array";
     getter.result = Type::I64;
@@ -835,8 +996,8 @@ Module arrayReceiverBaseline() {
     getter.frameBytes = 16;
     getter.slots[8] = Type::I64;
     getter.receiver = Receiver{"ArrayBox", false, false};
-    getter.code = {BindParameter{0, 8, Type::I64}, Load{8, Type::I64}, ReceiverBoundsGuard{1},
-                   ReceiverIndexLoad{1}, Return{}};
+    getter.code = {
+        BindParameter{0, 8, Type::I64}, Load{8, Type::I64}, ReceiverBoundsGuard{1}, ReceiverIndexLoad{1}, Return{}};
     aurora::ir::Function setter;
     setter.name = "set_array";
     setter.result = Type::I64;
@@ -873,27 +1034,31 @@ Module arrayNativeModule() {
     mapping.name = "array_bool_setter";
     mapping.result = Type::I64;
     mapping.receiver->mutableValue = true;
-    mapping.code = {
-        Constant{1, Type::I64}, ReceiverBoundsGuard{3}, Push{},  Constant{1, Type::Bool},
-        ReceiverIndexStore{3},  Constant{0, Type::I64}, Return{}};
+    mapping.code = {Constant{1, Type::I64},
+                    ReceiverBoundsGuard{3},
+                    Push{},
+                    Constant{1, Type::Bool},
+                    ReceiverIndexStore{3},
+                    Constant{0, Type::I64},
+                    Return{}};
     module.functions.push_back(mapping);
     auto entry = module.functions[0];
     entry.name = "array_scalar_mapping";
-    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64},
-                  MethodCall{"array_scalar_getter", 64}, Return{}};
+    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64}, MethodCall{"array_scalar_getter", 64}, Return{}};
     module.functions.push_back(entry);
     entry.name = "array_bool_mapping";
     entry.result = Type::Bool;
-    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64},
-                  MethodCall{"array_bool_getter", 64}, Return{}};
+    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64}, MethodCall{"array_bool_getter", 64}, Return{}};
     module.functions.push_back(entry);
     entry.name = "array_bool_zero";
-    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64},
-                  MethodCall{"array_bool_index_getter", 64}, Return{}};
+    entry.code = {
+        BeginObject{64}, MethodCall{"construct_array", 64}, MethodCall{"array_bool_index_getter", 64}, Return{}};
     module.functions.push_back(entry);
     entry.name = "array_bool_store";
-    entry.code = {BeginObject{64}, MethodCall{"construct_array", 64},
-                  MethodCall{"array_bool_setter", 64}, MethodCall{"array_bool_index_getter", 64},
+    entry.code = {BeginObject{64},
+                  MethodCall{"construct_array", 64},
+                  MethodCall{"array_bool_setter", 64},
+                  MethodCall{"array_bool_index_getter", 64},
                   Return{}};
     module.functions.push_back(entry);
     entry.name = "array_dynamic";
@@ -916,8 +1081,8 @@ Module arrayNativeModule() {
     explosive.name = "array_explosive_rhs";
     explosive.receiver.reset();
     explosive.parameters.clear();
-    explosive.code = {Constant{1, Type::I64}, Push{}, Constant{0, Type::I64},
-                      BinaryValue{Binary::CheckedDivide}, Return{}};
+    explosive.code = {
+        Constant{1, Type::I64}, Push{}, Constant{0, Type::I64}, BinaryValue{Binary::CheckedDivide}, Return{}};
     module.functions.push_back(explosive);
     entry.name = "array_store_dynamic";
     entry.code = {BindParameter{0, 72, Type::I64},
@@ -957,68 +1122,106 @@ Module arrayNativeModule() {
         entry.code.push_back(Store{128 - static_cast<int>(leaf * 8), type});
     }
     entry.code.insert(entry.code.end(),
-                      {BeginObject{192}, AggregateCall{"copy_array_box", {128}, 192},
-                       Constant{1, Type::I64}, Push{}, Constant{99, Type::I64}, Push{},
-                       MethodCall{"set_array", 64}, Constant{1, Type::I64}, Push{},
-                       MethodCall{"get_array", 192}, Return{}});
+                      {BeginObject{192},
+                       AggregateCall{"copy_array_box", {128}, 192},
+                       Constant{1, Type::I64},
+                       Push{},
+                       Constant{99, Type::I64},
+                       Push{},
+                       MethodCall{"set_array", 64},
+                       Constant{1, Type::I64},
+                       Push{},
+                       MethodCall{"get_array", 192},
+                       Return{}});
     module.functions.push_back(entry);
     return module;
 }
 void arrayReceiverTests() {
     accept("logical array fields constructor and checked methods", arrayReceiverBaseline());
     accept("array fields copied through complete private value ABI", arrayNativeModule());
-    auto rejectArray = [](const std::string &name, const std::function<void(Module &)> &mutate,
-                          const std::string &expected) {
-        rejectModule(name, arrayReceiverBaseline(), mutate, expected);
-    };
+    auto rejectArray =
+        [](const std::string &name, const std::function<void(Module &)> &mutate, const std::string &expected) {
+            rejectModule(name, arrayReceiverBaseline(), mutate, expected);
+        };
     rejectArray(
         "logical fields unknown nominal layout",
-        [](Module &m) { m.classFields["Unknown"] = m.classFields.at("ArrayBox"); },
+        [](Module &m) {
+            m.classFields["Unknown"] = m.classFields.at("ArrayBox");
+        },
         "unknown class layout");
     for (int first : {-1, 0, 2, 8192})
         rejectArray(
             "logical array range offset " + std::to_string(first),
-            [=](Module &m) { m.classFields["ArrayBox"][1].firstLeaf = first; },
+            [=](Module &m) {
+                m.classFields["ArrayBox"][1].firstLeaf = first;
+            },
             "invalid logical class field shape");
     for (int length : {-1, 0, 65})
         rejectArray(
             "logical array length " + std::to_string(length),
-            [=](Module &m) { m.classFields["ArrayBox"][1].length = length; },
+            [=](Module &m) {
+                m.classFields["ArrayBox"][1].length = length;
+            },
             "invalid logical class field shape");
     rejectArray(
         "logical scalar range cannot hide array",
-        [](Module &m) { m.classFields["ArrayBox"][1].array = false; },
+        [](Module &m) {
+            m.classFields["ArrayBox"][1].array = false;
+        },
         "invalid logical class field shape");
     rejectArray(
         "logical arrays require scalar leaves",
-        [](Module &m) { m.classFields["ArrayBox"][1].elementType = Type::Own; },
+        [](Module &m) {
+            m.classFields["ArrayBox"][1].elementType = Type::Own;
+        },
         "invalid logical class field shape");
     rejectArray(
         "logical array leaf payload matches layout",
-        [](Module &m) { m.classLayouts["ArrayBox"][2] = Type::U64; }, "leaf type mismatch");
+        [](Module &m) {
+            m.classLayouts["ArrayBox"][2] = Type::U64;
+        },
+        "leaf type mismatch");
     rejectArray(
         "logical array range cannot escape layout",
-        [](Module &m) { m.classFields["ArrayBox"].back().length = 3; }, "range exceeds layout");
+        [](Module &m) {
+            m.classFields["ArrayBox"].back().length = 3;
+        },
+        "range exceeds layout");
     rejectArray(
-        "logical fields cover every leaf", [](Module &m) { m.classFields["ArrayBox"].pop_back(); },
+        "logical fields cover every leaf",
+        [](Module &m) {
+            m.classFields["ArrayBox"].pop_back();
+        },
         "do not cover complete layout");
     rejectArray(
         "explicit empty shape cannot hide payload",
-        [](Module &m) { m.classFields["ArrayBox"].clear(); }, "do not cover complete layout");
+        [](Module &m) {
+            m.classFields["ArrayBox"].clear();
+        },
+        "do not cover complete layout");
     rejectArray(
-        "absent shape cannot forge array access", [](Module &m) { m.classFields.clear(); },
+        "absent shape cannot forge array access",
+        [](Module &m) {
+            m.classFields.clear();
+        },
         "requires array field");
     rejectArray(
         "scalar receiver load cannot access array",
-        [](Module &m) { m.functions[2].code[2] = ReceiverLoad{1, Type::I64}; },
+        [](Module &m) {
+            m.functions[2].code[2] = ReceiverLoad{1, Type::I64};
+        },
         "receiver field type/layout");
     rejectArray(
         "scalar receiver init cannot partially initialize array",
-        [](Module &m) { m.functions[1].code[2] = ReceiverStore{1, Type::I64}; },
+        [](Module &m) {
+            m.functions[1].code[2] = ReceiverStore{1, Type::I64};
+        },
         "receiver field type/layout");
     rejectArray(
         "array constructor must initialize every field",
-        [](Module &m) { m.functions[1].code.erase(m.functions[1].code.begin() + 5); },
+        [](Module &m) {
+            m.functions[1].code.erase(m.functions[1].code.begin() + 5);
+        },
         "before all fields initialized");
     rejectArray(
         "array constructor rejects repeated zero",
@@ -1029,35 +1232,36 @@ void arrayReceiverTests() {
     rejectArray(
         "array constructor conditional missing zero",
         [](Module &m) {
-            m.functions[1].code.insert(m.functions[1].code.begin() + 2,
-                                       {Constant{1, Type::Bool}, BranchFalse{1}});
+            m.functions[1].code.insert(m.functions[1].code.begin() + 2, {Constant{1, Type::Bool}, BranchFalse{1}});
             m.functions[1].code.insert(m.functions[1].code.begin() + 5, Label{1});
         },
         "before all fields initialized");
     rejectArray(
         "array constructor conditional duplicate zero",
         [](Module &m) {
-            m.functions[1].code.insert(
-                m.functions[1].code.begin() + 3,
-                {Constant{1, Type::Bool}, BranchFalse{1}, ReceiverArrayZero{1}, Label{1}});
+            m.functions[1].code.insert(m.functions[1].code.begin() + 3,
+                                       {Constant{1, Type::Bool}, BranchFalse{1}, ReceiverArrayZero{1}, Label{1}});
         },
         "array initialized more than once");
     rejectArray(
         "array constructor loop cannot repeat initialization",
         [](Module &m) {
             m.functions[1].code.insert(m.functions[1].code.begin() + 2, Label{1});
-            m.functions[1].code.insert(
-                m.functions[1].code.begin() + 4,
-                {Constant{1, Type::Bool}, BranchFalse{2}, Jump{1}, Label{2}});
+            m.functions[1].code.insert(m.functions[1].code.begin() + 4,
+                                       {Constant{1, Type::Bool}, BranchFalse{2}, Jump{1}, Label{2}});
         },
         "array initialized more than once");
     rejectArray(
         "array zero requires constructor",
-        [](Module &m) { m.functions[2].code[2] = ReceiverArrayZero{1}; },
+        [](Module &m) {
+            m.functions[2].code[2] = ReceiverArrayZero{1};
+        },
         "zero requires constructor");
     rejectArray(
         "array write requires mutable receiver",
-        [](Module &m) { m.functions[3].receiver->mutableValue = false; },
+        [](Module &m) {
+            m.functions[3].receiver->mutableValue = false;
+        },
         "write through const receiver");
     for (const auto &[name, operation] :
          std::vector<std::pair<std::string, Instruction>>{{"zero", ReceiverArrayZero{1}},
@@ -1066,25 +1270,27 @@ void arrayReceiverTests() {
                                                           {"store", ReceiverIndexStore{1}}}) {
         rejectArray(
             "array " + name + " requires receiver",
-            [=](Module &m) { m.functions[0].code.insert(m.functions[0].code.begin(), operation); },
+            [=](Module &m) {
+                m.functions[0].code.insert(m.functions[0].code.begin(), operation);
+            },
             "without bound receiver");
     }
-    for (const auto &[name, operation] : std::vector<std::pair<std::string, Instruction>>{
-             {"zero", ReceiverArrayZero{0}},
-             {"guard", ReceiverBoundsGuard{0}},
-             {"load", ReceiverIndexLoad{0}},
-             {"store", ReceiverIndexStore{0}},
-             {"guard negative field", ReceiverBoundsGuard{-1}},
-             {"guard past field", ReceiverBoundsGuard{5}}}) {
+    for (const auto &[name, operation] :
+         std::vector<std::pair<std::string, Instruction>>{{"zero", ReceiverArrayZero{0}},
+                                                          {"guard", ReceiverBoundsGuard{0}},
+                                                          {"load", ReceiverIndexLoad{0}},
+                                                          {"store", ReceiverIndexStore{0}},
+                                                          {"guard negative field", ReceiverBoundsGuard{-1}},
+                                                          {"guard past field", ReceiverBoundsGuard{5}}}) {
         rejectArray(
             "array operation rejects scalar or invalid " + name,
-            [=](Module &m) { m.functions[2].code[2] = operation; },
+            [=](Module &m) {
+                m.functions[2].code[2] = operation;
+            },
             name.find("field") == std::string::npos ? "requires array field" : "field type/layout");
     }
-    for (const auto &[name, operation] :
-         std::vector<std::pair<std::string, Instruction>>{{"guard", ReceiverBoundsGuard{1}},
-                                                          {"load", ReceiverIndexLoad{1}},
-                                                          {"store", ReceiverIndexStore{1}}}) {
+    for (const auto &[name, operation] : std::vector<std::pair<std::string, Instruction>>{
+             {"guard", ReceiverBoundsGuard{1}}, {"load", ReceiverIndexLoad{1}}, {"store", ReceiverIndexStore{1}}}) {
         rejectArray(
             "constructor cannot use indexed " + name,
             [=](Module &m) {
@@ -1094,19 +1300,34 @@ void arrayReceiverTests() {
     }
     rejectArray(
         "receiver index requires signed i64",
-        [](Module &m) { m.functions[2].code[1] = Constant{0, Type::U64}; }, "mistyped current");
+        [](Module &m) {
+            m.functions[2].code[1] = Constant{0, Type::U64};
+        },
+        "mistyped current");
     rejectArray(
         "receiver load requires bounds evidence",
-        [](Module &m) { m.functions[2].code[2] = Constant{0, Type::I64}; }, "bounds token");
+        [](Module &m) {
+            m.functions[2].code[2] = Constant{0, Type::I64};
+        },
+        "bounds token");
     rejectArray(
         "receiver store requires saved evidence",
-        [](Module &m) { m.functions[3].code[3] = Constant{0, Type::I64}; }, "bounds token");
+        [](Module &m) {
+            m.functions[3].code[3] = Constant{0, Type::I64};
+        },
+        "bounds token");
     rejectArray(
         "same shape other field cannot reuse load token",
-        [](Module &m) { m.functions[2].code[3] = ReceiverIndexLoad{4}; }, "bounds token");
+        [](Module &m) {
+            m.functions[2].code[3] = ReceiverIndexLoad{4};
+        },
+        "bounds token");
     rejectArray(
         "same shape other field cannot reuse store token",
-        [](Module &m) { m.functions[3].code[6] = ReceiverIndexStore{4}; }, "bounds token");
+        [](Module &m) {
+            m.functions[3].code[6] = ReceiverIndexStore{4};
+        },
+        "bounds token");
     rejectArray(
         "bool array store rejects integer payload",
         [](Module &m) {
@@ -1117,16 +1338,14 @@ void arrayReceiverTests() {
     rejectArray(
         "scalar arithmetic cannot retain receiver bounds",
         [](Module &m) {
-            m.functions[2].code.insert(m.functions[2].code.begin() + 3,
-                                       UnaryValue{Unary::CheckedNegate});
+            m.functions[2].code.insert(m.functions[2].code.begin() + 3, UnaryValue{Unary::CheckedNegate});
         },
         "bounds token");
     rejectArray(
         "conversion roundtrip cannot retain receiver bounds",
         [](Module &m) {
-            m.functions[2].code.insert(
-                m.functions[2].code.begin() + 3,
-                {Convert{Type::I64, Type::U64}, Convert{Type::U64, Type::I64}});
+            m.functions[2].code.insert(m.functions[2].code.begin() + 3,
+                                       {Convert{Type::I64, Type::U64}, Convert{Type::U64, Type::I64}});
         },
         "bounds token");
     rejectArray(
@@ -1140,16 +1359,21 @@ void arrayReceiverTests() {
         "slot reload cannot retain receiver bounds",
         [](Module &m) {
             m.functions[2].slots[16] = Type::I64;
-            m.functions[2].code.insert(m.functions[2].code.begin() + 3,
-                                       {Store{16, Type::I64}, Load{16, Type::I64}});
+            m.functions[2].code.insert(m.functions[2].code.begin() + 3, {Store{16, Type::I64}, Load{16, Type::I64}});
         },
         "bounds token");
     rejectArray(
         "local token cannot authorize receiver access",
-        [](Module &m) { m.functions[2].code[2] = BoundsGuard{8, 1, Type::I64}; }, "bounds token");
+        [](Module &m) {
+            m.functions[2].code[2] = BoundsGuard{8, 1, Type::I64};
+        },
+        "bounds token");
     rejectArray(
         "receiver token cannot authorize local access",
-        [](Module &m) { m.functions[2].code[3] = IndexLoad{8, 1, Type::I64}; }, "bounds token");
+        [](Module &m) {
+            m.functions[2].code[3] = IndexLoad{8, 1, Type::I64};
+        },
+        "bounds token");
     rejectArray(
         "array receiver nominal mismatch rejected",
         [](Module &m) {
@@ -1169,17 +1393,24 @@ void arrayReceiverTests() {
     accept("saved receiver token survives scalar RHS call", saved);
     helper.name = "array_rhs_method";
     helper.receiver = Receiver{"ArrayBox", true, false};
-    helper.code = {Constant{1, Type::I64},  ReceiverBoundsGuard{4}, Push{},
-                   Constant{42, Type::I64}, ReceiverIndexStore{4},  Return{}};
+    helper.code = {Constant{1, Type::I64},
+                   ReceiverBoundsGuard{4},
+                   Push{},
+                   Constant{42, Type::I64},
+                   ReceiverIndexStore{4},
+                   Return{}};
     saved.functions.push_back(helper);
     saved.functions[3].code[5] = MethodCall{"array_rhs_method", 0};
     accept("saved receiver token survives mutable receiver reborrow", saved);
     rejectModule(
-        "returned scalar cannot forge receiver token", saved,
-        [](Module &m) { m.functions[2].code[2] = Call{"array_rhs"}; }, "bounds token");
+        "returned scalar cannot forge receiver token",
+        saved,
+        [](Module &m) {
+            m.functions[2].code[2] = Call{"array_rhs"};
+        },
+        "bounds token");
     auto restored = arrayReceiverBaseline();
-    restored.functions[2].code.insert(restored.functions[2].code.begin() + 3,
-                                      {Push{}, Constant{99, Type::I64}, Pop{}});
+    restored.functions[2].code.insert(restored.functions[2].code.begin() + 3, {Push{}, Constant{99, Type::I64}, Pop{}});
     accept("unchanged receiver token survives push and pop", restored);
     auto joined = arrayReceiverBaseline();
     joined.functions[2].code = {BindParameter{0, 8, Type::I64},
@@ -1196,11 +1427,19 @@ void arrayReceiverTests() {
                                 Return{}};
     accept("same receiver field bounds evidence survives CFG join", joined);
     rejectModule(
-        "cross-field bounds evidence cannot survive CFG join", joined,
-        [](Module &m) { m.functions[2].code[8] = ReceiverBoundsGuard{4}; }, "mistyped current");
+        "cross-field bounds evidence cannot survive CFG join",
+        joined,
+        [](Module &m) {
+            m.functions[2].code[8] = ReceiverBoundsGuard{4};
+        },
+        "mistyped current");
     rejectModule(
-        "branch cannot bypass receiver bounds check", joined,
-        [](Module &m) { m.functions[2].code[8] = Constant{0, Type::I64}; }, "mistyped current");
+        "branch cannot bypass receiver bounds check",
+        joined,
+        [](Module &m) {
+            m.functions[2].code[8] = Constant{0, Type::I64};
+        },
+        "mistyped current");
     for (const auto &type : {Type::I64, Type::U64, Type::Bool}) {
         auto module = baseline();
         module.classLayouts["Capacity"] = std::vector<Type>(64, type);
@@ -1223,12 +1462,12 @@ void arrayReceiverTests() {
         module.functions.push_back(copy);
         accept(typeName(type) + " array 64-leaf boundary", module);
         rejectModule(
-            typeName(type) + " array plus scalar exceeds boundary", module,
+            typeName(type) + " array plus scalar exceeds boundary",
+            module,
             [=](Module &m) {
                 m.classLayouts["Capacity"].push_back(type);
                 m.classFields["Capacity"].push_back({type, 64, 1, false});
-                m.functions[1].code.insert(m.functions[1].code.end() - 2,
-                                           {Constant{0, type}, ReceiverStore{1, type}});
+                m.functions[1].code.insert(m.functions[1].code.end() - 2, {Constant{0, type}, ReceiverStore{1, type}});
             },
             "exceeds 64 scalar fields");
         module.functions.pop_back();
@@ -1239,11 +1478,18 @@ void arrayReceiverTests() {
         accept(typeName(type) + " local class may exceed boundary leaf cap", module);
     }
     const auto assembly = X86Emitter{}.emit(validate(arrayNativeModule()));
-    for (const std::string fragment :
-         {"movq $0, 8(%r10)", "movq $0, 16(%r10)", "movq %rax, 24(%r10)", "movq $0, 32(%r10)",
-          "movq $0, 40(%r10)", "movq $0, 48(%r10)", "movq $0, 56(%r10)",
-          "cmpq $2, %rax\n    jae .Laurora_bounds_trap", "movq 8(%r10,%rax,8), %rax",
-          "movq %rax, 8(%r10,%rcx,8)", "movq 32(%r10,%rax,8), %rax", "movq %rax, 32(%r10,%rcx,8)"})
+    for (const std::string fragment : {"movq $0, 8(%r10)",
+                                       "movq $0, 16(%r10)",
+                                       "movq %rax, 24(%r10)",
+                                       "movq $0, 32(%r10)",
+                                       "movq $0, 40(%r10)",
+                                       "movq $0, 48(%r10)",
+                                       "movq $0, 56(%r10)",
+                                       "cmpq $2, %rax\n    jae .Laurora_bounds_trap",
+                                       "movq 8(%r10,%rax,8), %rax",
+                                       "movq %rax, 8(%r10,%rcx,8)",
+                                       "movq 32(%r10,%rax,8), %rax",
+                                       "movq %rax, 32(%r10,%rcx,8)"})
         if (assembly.find(fragment) == std::string::npos)
             throw Error("array receiver emission missing " + fragment);
     ++passed;
@@ -1268,19 +1514,22 @@ Module composedBaseline() {
                            {"Other", {Type::I64, Type::Bool}},
                            {"Empty", {}},
                            {"Outer", {Type::I64, Type::I64, Type::Bool}}};
-    module.classFields["Outer"] = {
-        {Type::I64, 0, 1, false}, {Type("Leaf"), 1, 2, false}, {Type("Empty"), 3, 0, false}};
+    module.classFields["Outer"] = {{Type::I64, 0, 1, false}, {Type("Leaf"), 1, 2, false}, {Type("Empty"), 3, 0, false}};
     aurora::ir::Function entry;
     entry.name = "test";
     entry.result = Type::I64;
     entry.frameBytes = 160;
-    entry.objectSlots = {{16, {"Leaf", true}},    {32, {"Leaf", false}},  {56, {"Outer", false}},
-                         {72, {"Leaf", true}},    {96, {"Outer", false}}, {104, {"Empty", false}},
-                         {128, {"Outer", false}}, {152, {"Outer", false}}};
+    entry.objectSlots = {{16, {"Leaf", true}},
+                         {32, {"Leaf", false}},
+                         {56, {"Outer", false}},
+                         {72, {"Leaf", true}},
+                         {96, {"Outer", false}},
+                         {104, {"Empty", false}},
+                         {128, {"Outer", false}},
+                         {152, {"Outer", false}}};
     for (const auto &[base, object] : entry.objectSlots)
         for (std::size_t leaf = 0; leaf < module.classLayouts.at(object.className).size(); ++leaf)
-            entry.slots[base - static_cast<int>(leaf * 8)] =
-                module.classLayouts.at(object.className)[leaf];
+            entry.slots[base - static_cast<int>(leaf * 8)] = module.classLayouts.at(object.className)[leaf];
     entry.code = {BeginObject{16},
                   Constant{42, Type::I64},
                   Store{16, Type::I64},
@@ -1356,10 +1605,8 @@ Module composedEmptyBaseline() {
     entry.name = "test";
     entry.result = Type::I64;
     entry.frameBytes = 32;
-    entry.objectSlots = {{8, {"Empty", false}},
-                         {16, {"OuterEmpty", false}},
-                         {24, {"Empty", false}},
-                         {32, {"OuterEmpty", false}}};
+    entry.objectSlots = {
+        {8, {"Empty", false}}, {16, {"OuterEmpty", false}}, {24, {"Empty", false}}, {32, {"OuterEmpty", false}}};
     entry.code = {BeginObject{8},
                   BeginObject{16},
                   MethodCall{"construct_empty_outer", 16, {8}},
@@ -1376,8 +1623,8 @@ Module composedEmptyBaseline() {
     constructor.receiver = Receiver{"OuterEmpty", true, true};
     constructor.frameBytes = 16;
     constructor.objectSlots = {{8, {"Empty", false}}};
-    constructor.code = {BindObjectParameter{0, 8, "Empty"}, InitializeObjectField{0, 0, 8},
-                        Constant{0, Type::I64}, Return{}};
+    constructor.code = {
+        BindObjectParameter{0, 8, "Empty"}, InitializeObjectField{0, 0, 8}, Constant{0, Type::I64}, Return{}};
     module.functions = {entry, constructor};
     return module;
 }
@@ -1397,8 +1644,8 @@ Module composedNativeModule() {
     entry = module.functions[0];
     entry.name = "nested_projection_independence";
     entry.code.resize(22);
-    entry.code.insert(entry.code.end(), {Constant{99, Type::I64}, Store{72, Type::I64},
-                                         MethodCall{"get_outer", 128}, Return{}});
+    entry.code.insert(entry.code.end(),
+                      {Constant{99, Type::I64}, Store{72, Type::I64}, MethodCall{"get_outer", 128}, Return{}});
     module.functions.push_back(entry);
     entry.name = "nested_bool_mapping";
     entry.result = Type::Bool;
@@ -1410,8 +1657,7 @@ Module composedNativeModule() {
     auto relay = module.functions[3];
     relay.name = "nested_receiver_constructor";
     relay.frameBytes = 64;
-    relay.slots = {
-        {16, Type::I64}, {8, Type::Bool}, {48, Type::I64}, {40, Type::I64}, {32, Type::Bool}};
+    relay.slots = {{16, Type::I64}, {8, Type::Bool}, {48, Type::I64}, {40, Type::I64}, {32, Type::Bool}};
     relay.objectSlots = {{16, {"Leaf", false}}, {24, {"Empty", false}}, {48, {"Outer", false}}};
     relay.code = {BeginObject{16},
                   ObjectFieldCopy{0, 1, 16},
@@ -1447,10 +1693,10 @@ void composedTests() {
     accept("composed nominal copies and mixed constructor record", composedBaseline());
     accept("composed empty class has logical initialization", composedEmptyBaseline());
     accept("composed receiver and ordinary call native fixtures", composedNativeModule());
-    auto rejectComposed = [&](const std::string &name, const std::function<void(Module &)> &change,
-                              const std::string &expected) {
-        rejectModule(name, composedBaseline(), change, expected);
-    };
+    auto rejectComposed =
+        [&](const std::string &name, const std::function<void(Module &)> &change, const std::string &expected) {
+            rejectModule(name, composedBaseline(), change, expected);
+        };
     for (const int index : {-1, 3, 99})
         rejectComposed(
             "projection invalid logical index " + std::to_string(index),
@@ -1460,30 +1706,45 @@ void composedTests() {
             "logical field index");
     rejectComposed(
         "projection scalar field rejected",
-        [](Module &m) { std::get<ObjectFieldCopy>(m.functions[0].code[21]).fieldIndex = 0; },
+        [](Module &m) {
+            std::get<ObjectFieldCopy>(m.functions[0].code[21]).fieldIndex = 0;
+        },
         "projection requires class field");
     rejectComposed(
         "projection wrong nominal child",
-        [](Module &m) { m.functions[0].objectSlots[72].className = "Other"; },
+        [](Module &m) {
+            m.functions[0].objectSlots[72].className = "Other";
+        },
         "copy nominal class mismatch");
     rejectComposed(
         "whole copy equal-byte nominal forgery",
-        [](Module &m) { m.functions[0].objectSlots[32].className = "Other"; },
+        [](Module &m) {
+            m.functions[0].objectSlots[32].className = "Other";
+        },
         "copy nominal class mismatch");
     rejectComposed(
         "projection interior source",
-        [](Module &m) { std::get<ObjectFieldCopy>(m.functions[0].code[21]).sourceOffset = 120; },
+        [](Module &m) {
+            std::get<ObjectFieldCopy>(m.functions[0].code[21]).sourceOffset = 120;
+        },
         "exact object slot");
     rejectComposed(
         "projection interior result",
-        [](Module &m) { std::get<ObjectFieldCopy>(m.functions[0].code[21]).resultOffset = 64; },
+        [](Module &m) {
+            std::get<ObjectFieldCopy>(m.functions[0].code[21]).resultOffset = 64;
+        },
         "exact object slot");
     rejectComposed(
         "projection aliases owner",
-        [](Module &m) { std::get<ObjectFieldCopy>(m.functions[0].code[21]).resultOffset = 128; },
+        [](Module &m) {
+            std::get<ObjectFieldCopy>(m.functions[0].code[21]).resultOffset = 128;
+        },
         "projection source aliases result");
     rejectComposed(
-        "whole copy aliases source", [](Module &m) { m.functions[0].code[6] = CopyObject{16, 16}; },
+        "whole copy aliases source",
+        [](Module &m) {
+            m.functions[0].code[6] = CopyObject{16, 16};
+        },
         "copy source aliases result");
     rejectComposed(
         "copy inactive source",
@@ -1493,17 +1754,20 @@ void composedTests() {
         "outside active lifetime");
     rejectComposed(
         "copy inactive result",
-        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 5); },
+        [](Module &m) {
+            m.functions[0].code.erase(m.functions[0].code.begin() + 5);
+        },
         "outside active lifetime");
     rejectComposed(
         "copy partially initialized source",
-        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 4); },
+        [](Module &m) {
+            m.functions[0].code.erase(m.functions[0].code.begin() + 4);
+        },
         "not fully initialized");
     rejectComposed(
         "copy partially initialized result",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 6,
-                                       {Constant{0, Type::I64}, Store{32, Type::I64}});
+            m.functions[0].code.insert(m.functions[0].code.begin() + 6, {Constant{0, Type::I64}, Store{32, Type::I64}});
         },
         "pristine result");
     rejectComposed(
@@ -1538,22 +1802,30 @@ void composedTests() {
         [](Module &m) {
             m.functions[0].objectSlots[56].mutableValue = true;
             m.functions[0].code.insert(m.functions[0].code.begin() + 16,
-                                       {Constant{0, Type::I64}, BoundsGuard{48, 1, Type::I64},
-                                        Push{}, Constant{3, Type::I64},
+                                       {Constant{0, Type::I64},
+                                        BoundsGuard{48, 1, Type::I64},
+                                        Push{},
+                                        Constant{3, Type::I64},
                                         IndexStore{48, 1, Type::I64}});
         },
         "indexed store cannot write nested class field");
     rejectComposed(
         "class receiver scalar store forgery",
-        [](Module &m) { m.functions[1].code[9] = ReceiverStore{1, Type::I64}; },
+        [](Module &m) {
+            m.functions[1].code[9] = ReceiverStore{1, Type::I64};
+        },
         "receiver field type/layout mismatch");
     rejectComposed(
         "constructor class field absent",
-        [](Module &m) { m.functions[1].code.erase(m.functions[1].code.begin() + 9); },
+        [](Module &m) {
+            m.functions[1].code.erase(m.functions[1].code.begin() + 9);
+        },
         "returns before all fields initialized");
     rejectComposed(
         "constructor empty class field absent",
-        [](Module &m) { m.functions[1].code.erase(m.functions[1].code.begin() + 10); },
+        [](Module &m) {
+            m.functions[1].code.erase(m.functions[1].code.begin() + 10);
+        },
         "returns before all class fields initialized");
     for (const int field : {1, 2})
         rejectComposed(
@@ -1571,7 +1843,9 @@ void composedTests() {
         "requires bound constructor receiver");
     rejectComposed(
         "class initialization scalar logical field rejected",
-        [](Module &m) { std::get<InitializeObjectField>(m.functions[1].code[9]).fieldIndex = 0; },
+        [](Module &m) {
+            std::get<InitializeObjectField>(m.functions[1].code[9]).fieldIndex = 0;
+        },
         "requires class field");
     rejectComposed(
         "class initialization wrong nominal child",
@@ -1585,26 +1859,39 @@ void composedTests() {
         "initializer nominal class mismatch");
     rejectComposed(
         "constructor receiver projection rejected",
-        [](Module &m) { m.functions[1].code[9] = ObjectFieldCopy{0, 1, 24}; },
+        [](Module &m) {
+            m.functions[1].code[9] = ObjectFieldCopy{0, 1, 24};
+        },
         "cannot project receiver");
     rejectComposed(
         "constructor argument missing vector",
-        [](Module &m) { composedCall(m).objectArguments.clear(); },
+        [](Module &m) {
+            composedCall(m).objectArguments.clear();
+        },
         "argument vector size mismatch");
     rejectComposed(
         "constructor scalar argument object forgery",
-        [](Module &m) { composedCall(m).objectArguments[3] = 104; }, "scalar constructor argument");
+        [](Module &m) {
+            composedCall(m).objectArguments[3] = 104;
+        },
+        "scalar constructor argument");
     rejectComposed(
         "constructor argument mutable snapshot",
-        [](Module &m) { m.functions[0].objectSlots[32].mutableValue = true; },
+        [](Module &m) {
+            m.functions[0].objectSlots[32].mutableValue = true;
+        },
         "snapshot must be readonly");
     rejectComposed(
         "constructor argument aliases receiver",
-        [](Module &m) { composedCall(m).objectArguments[1] = 56; },
+        [](Module &m) {
+            composedCall(m).objectArguments[1] = 56;
+        },
         "receiver aliases argument snapshot");
     rejectComposed(
         "constructor argument reused snapshot",
-        [](Module &m) { composedCall(m).objectArguments[1] = 104; },
+        [](Module &m) {
+            composedCall(m).objectArguments[1] = 104;
+        },
         "argument snapshots must be distinct");
     rejectComposed(
         "constructor argument wrong nominal class",
@@ -1615,15 +1902,21 @@ void composedTests() {
         "argument nominal class mismatch");
     rejectComposed(
         "constructor argument incomplete snapshot",
-        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 6); },
+        [](Module &m) {
+            m.functions[0].code.erase(m.functions[0].code.begin() + 6);
+        },
         "not fully initialized");
     rejectComposed(
         "constructor argument scalar operand missing",
-        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 14); },
+        [](Module &m) {
+            m.functions[0].code.erase(m.functions[0].code.begin() + 14);
+        },
         "value stack underflow");
     rejectComposed(
         "constructor parameter mutable rejected",
-        [](Module &m) { m.functions[1].objectSlots[24].mutableValue = true; },
+        [](Module &m) {
+            m.functions[1].objectSlots[24].mutableValue = true;
+        },
         "object parameter must be readonly");
     rejectComposed(
         "ordinary method copied arguments require complete receiver",
@@ -1634,22 +1927,33 @@ void composedTests() {
         "method receiver object not fully initialized");
     rejectComposed(
         "constructor class result rejected",
-        [](Module &m) { m.functions[1].result = Type("Outer"); },
+        [](Module &m) {
+            m.functions[1].result = Type("Outer");
+        },
         "receiver signature requires scalar, enum or class values");
     rejectComposed(
         "nested metadata wrong flattened length",
-        [](Module &m) { m.classFields["Outer"][1].length = 1; },
+        [](Module &m) {
+            m.classFields["Outer"][1].length = 1;
+        },
         "nested class field length mismatch");
     rejectComposed(
-        "nested metadata wrong leaf type", [](Module &m) { m.classLayouts["Leaf"][0] = Type::U64; },
+        "nested metadata wrong leaf type",
+        [](Module &m) {
+            m.classLayouts["Leaf"][0] = Type::U64;
+        },
         "nested class field leaf type mismatch");
     rejectComposed(
         "nested metadata missing class",
-        [](Module &m) { m.classFields["Outer"][1].elementType = Type("Missing"); },
+        [](Module &m) {
+            m.classFields["Outer"][1].elementType = Type("Missing");
+        },
         "invalid nominal nested class field");
     rejectComposed(
         "nested metadata array class forbidden",
-        [](Module &m) { m.classFields["Outer"][1].array = true; },
+        [](Module &m) {
+            m.classFields["Outer"][1].array = true;
+        },
         "invalid nominal nested class field");
     rejectComposed(
         "nested metadata unresolved specialization",
@@ -1658,19 +1962,29 @@ void composedTests() {
         },
         "invalid nominal nested class field");
     rejectComposed(
-        "nested metadata overlap", [](Module &m) { m.classFields["Outer"][1].firstLeaf = 0; },
+        "nested metadata overlap",
+        [](Module &m) {
+            m.classFields["Outer"][1].firstLeaf = 0;
+        },
         "invalid logical class field shape");
     rejectComposed(
-        "nested metadata negative length", [](Module &m) { m.classFields["Outer"][2].length = -1; },
+        "nested metadata negative length",
+        [](Module &m) {
+            m.classFields["Outer"][2].length = -1;
+        },
         "nested class field length mismatch");
     for (const Type &invalid : {Type::Ref, Type::MutRef, Type::Own})
         rejectComposed(
             "nested metadata nonvalue " + typeName(invalid),
-            [=](Module &m) { m.classFields["Outer"][1].elementType = invalid; },
+            [=](Module &m) {
+                m.classFields["Outer"][1].elementType = invalid;
+            },
             "invalid logical class field shape");
     rejectComposed(
         "empty nested self cycle",
-        [](Module &m) { m.classFields["Empty"] = {{Type("Empty"), 0, 0, false}}; },
+        [](Module &m) {
+            m.classFields["Empty"] = {{Type("Empty"), 0, 0, false}};
+        },
         "cyclic nested class layout");
     rejectComposed(
         "empty nested indirect cycle",
@@ -1684,12 +1998,12 @@ void composedTests() {
     depth.classLayouts["D1"] = {Type::I64};
     for (int count = 2; count <= 4; ++count) {
         depth.classLayouts["D" + std::to_string(count)] = {Type::I64};
-        depth.classFields["D" + std::to_string(count)] = {
-            {Type("D" + std::to_string(count - 1)), 0, 1, false}};
+        depth.classFields["D" + std::to_string(count)] = {{Type("D" + std::to_string(count - 1)), 0, 1, false}};
     }
     accept("nested depth exactly four", depth);
     rejectModule(
-        "nested depth five rejected", depth,
+        "nested depth five rejected",
+        depth,
         [](Module &m) {
             m.classLayouts["D5"] = {Type::I64};
             m.classFields["D5"] = {{Type("D4"), 0, 1, false}};
@@ -1701,27 +2015,34 @@ void composedTests() {
     capacity.classFields["Parent"] = {{Type("Child"), 0, 64, false}};
     accept("composed capacity exactly 64 scalar leaves", capacity);
     rejectModule(
-        "composed capacity 65 leaves rejected", capacity,
+        "composed capacity 65 leaves rejected",
+        capacity,
         [](Module &m) {
             m.classLayouts["Parent"].push_back(Type::I64);
             m.classFields["Parent"].push_back({Type::I64, 64, 1, false});
         },
         "exceeds 64 scalar leaves");
-    auto rejectEmpty = [&](const std::string &name, const std::function<void(Module &)> &change,
-                           const std::string &expected) {
-        rejectModule(name, composedEmptyBaseline(), change, expected);
-    };
+    auto rejectEmpty =
+        [&](const std::string &name, const std::function<void(Module &)> &change, const std::string &expected) {
+            rejectModule(name, composedEmptyBaseline(), change, expected);
+        };
     rejectEmpty(
         "empty nested copy cannot forge initialization",
-        [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 2); },
+        [](Module &m) {
+            m.functions[0].code.erase(m.functions[0].code.begin() + 2);
+        },
         "nested class field not completely initialized");
     rejectEmpty(
         "empty nested constructor missing logical initialization",
-        [](Module &m) { m.functions[1].code.erase(m.functions[1].code.begin() + 1); },
+        [](Module &m) {
+            m.functions[1].code.erase(m.functions[1].code.begin() + 1);
+        },
         "returns before all class fields initialized");
     rejectEmpty(
         "empty nested destination still owns one storage word",
-        [](Module &m) { m.functions[0].slots[16] = Type::I64; },
+        [](Module &m) {
+            m.functions[0].slots[16] = Type::I64;
+        },
         "scalar slot overlaps empty object");
     rejectEmpty(
         "empty nested duplicate whole copy rejected",
@@ -1748,14 +2069,12 @@ void composedTests() {
     rejectEmpty(
         "empty nested logical completion reset by lifetime",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 3,
-                                       {EndObject{16}, BeginObject{16}});
+            m.functions[0].code.insert(m.functions[0].code.begin() + 3, {EndObject{16}, BeginObject{16}});
         },
         "nested class field not completely initialized");
     const auto assembly = X86Emitter{}.emit(validate(composedBaseline()));
     const auto start = assembly.find("construct_outer:\n");
-    if (start == std::string::npos ||
-        assembly.find("movq %r10, -56(%rbp)", start) == std::string::npos ||
+    if (start == std::string::npos || assembly.find("movq %r10, -56(%rbp)", start) == std::string::npos ||
         assembly.find("movq %r11, -64(%rbp)", start) == std::string::npos)
         throw Error("constructor receiver and packed argument record share private storage");
     ++passed;
@@ -1802,8 +2121,8 @@ MethodCall &namedMethodCall(aurora::ir::Function &function, const std::string &n
             return *call;
     throw Error("missing IR test method call " + name);
 }
-void addObject(Module &module, aurora::ir::Function &function, int base, const std::string &name,
-               bool mutableValue = false) {
+void addObject(
+    Module &module, aurora::ir::Function &function, int base, const std::string &name, bool mutableValue = false) {
     function.objectSlots[base] = ObjectSlot{name, mutableValue};
     const auto &layout = module.classLayouts.at(name);
     for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
@@ -1819,12 +2138,9 @@ Module methodResultBaseline() {
     module.classLayouts = {{"Empty", {}},
                            {"Leaf", {mode, Type::I64, Type::I64, Type::Bool}},
                            {"Outer", {Type::I64, mode, Type::I64, Type::I64, Type::Bool}}};
-    module.classFields["Leaf"] = {{mode, 0, 1, false},
-                                  {Type::I64, 1, 2, true},
-                                  {Type::Bool, 3, 1, false},
-                                  {Type("Empty"), 4, 0, false}};
-    module.classFields["Outer"] = {
-        {Type::I64, 0, 1, false}, {Type("Leaf"), 1, 4, false}, {Type("Empty"), 5, 0, false}};
+    module.classFields["Leaf"] = {
+        {mode, 0, 1, false}, {Type::I64, 1, 2, true}, {Type::Bool, 3, 1, false}, {Type("Empty"), 4, 0, false}};
+    module.classFields["Outer"] = {{Type::I64, 0, 1, false}, {Type("Leaf"), 1, 4, false}, {Type("Empty"), 5, 0, false}};
     aurora::ir::Function leaf;
     leaf.name = "construct_leaf";
     leaf.result = Type::I64;
@@ -1902,8 +2218,8 @@ Module methodResultBaseline() {
     aurora::ir::Function clobber;
     clobber.name = "clobber_scalar";
     clobber.result = Type::I64;
-    clobber.code = {Constant{81, Type::I64}, Push{}, Constant{9, Type::I64},
-                    BinaryValue{Binary::CheckedDivide}, Return{}};
+    clobber.code = {
+        Constant{81, Type::I64}, Push{}, Constant{9, Type::I64}, BinaryValue{Binary::CheckedDivide}, Return{}};
     auto identity = enumBaseline().functions[1];
     aurora::ir::Function method;
     method.name = "snapshot_outer";
@@ -1975,8 +2291,7 @@ Module methodResultBaseline() {
     empty.receiver = Receiver{"Outer", false, false};
     empty.frameBytes = 16;
     addObject(module, empty, 8, "Empty");
-    empty.code = {BeginObject{8}, ObjectFieldCopy{0, 2, 8}, Call{"clobber_scalar"},
-                  ReturnObject{8}};
+    empty.code = {BeginObject{8}, ObjectFieldCopy{0, 2, 8}, Call{"clobber_scalar"}, ReturnObject{8}};
     aurora::ir::Function entry;
     entry.name = "test";
     entry.result = Type::I64;
@@ -2028,20 +2343,19 @@ Module methodResultBaseline() {
                   ObjectFieldCopy{152, 1, 184},
                   Load{168, Type::I64},
                   Return{}};
-    module.functions = {entry,   leaf,     outer,  setter, getter, copy,
-                        clobber, identity, method, relay,  empty,  enumGetter};
+    module.functions = {entry, leaf, outer, setter, getter, copy, clobber, identity, method, relay, empty, enumGetter};
     return module;
 }
 Module methodResultNativeModule() {
     auto module = methodResultBaseline();
     auto entry = module.functions[0];
-    for (const auto &[name, offset, type] : std::vector<std::tuple<std::string, int, Type>>{
-             {"method_result_header", 152, Type::I64},
-             {"method_result_first_array", 176, Type::I64},
-             {"method_result_enum", 184, Type::enumeration("Mode")},
-             {"method_result_bool", 160, Type::Bool},
-             {"method_source_snapshot", 24, Type::I64},
-             {"method_source_header", 112, Type::I64}}) {
+    for (const auto &[name, offset, type] :
+         std::vector<std::tuple<std::string, int, Type>>{{"method_result_header", 152, Type::I64},
+                                                         {"method_result_first_array", 176, Type::I64},
+                                                         {"method_result_enum", 184, Type::enumeration("Mode")},
+                                                         {"method_result_bool", 160, Type::Bool},
+                                                         {"method_source_snapshot", 24, Type::I64},
+                                                         {"method_source_header", 112, Type::I64}}) {
         entry.name = name;
         entry.result = type;
         entry.code[entry.code.size() - 2] = Load{offset, type};
@@ -2051,8 +2365,13 @@ Module methodResultNativeModule() {
     entry.name = "method_result_independence";
     entry.code.resize(entry.code.size() - 2);
     entry.code.insert(entry.code.end(),
-                      {Constant{1, Type::I64}, Push{}, Constant{-13, Type::I64}, Push{},
-                       MethodCall{"set_leaf", 184}, Load{128, Type::I64}, Return{}});
+                      {Constant{1, Type::I64},
+                       Push{},
+                       Constant{-13, Type::I64},
+                       Push{},
+                       MethodCall{"set_leaf", 184},
+                       Load{128, Type::I64},
+                       Return{}});
     module.functions.push_back(entry);
     entry = module.functions[0];
     entry.name = "method_forwarded_result";
@@ -2062,9 +2381,9 @@ Module methodResultNativeModule() {
     entry = module.functions[0];
     entry.name = "method_empty_result";
     entry.code.resize(entry.code.size() - 2);
-    entry.code.insert(entry.code.end(),
-                      {BeginObject{192}, MethodCall{"snapshot_empty", 112, {}, 192},
-                       Constant{42, Type::I64}, Return{}});
+    entry.code.insert(
+        entry.code.end(),
+        {BeginObject{192}, MethodCall{"snapshot_empty", 112, {}, 192}, Constant{42, Type::I64}, Return{}});
     module.functions.push_back(entry);
     entry.name = "method_empty_from_result";
     namedMethodCall(entry, "snapshot_empty").receiverOffset = 152;
@@ -2121,8 +2440,7 @@ Module packedMethodModule() {
                 },
                 instruction);
         for (std::size_t index = 0; index < function.code.size(); ++index)
-            if (auto *call = std::get_if<MethodCall>(&function.code[index]);
-                call && call->callee == "set_leaf")
+            if (auto *call = std::get_if<MethodCall>(&function.code[index]); call && call->callee == "set_leaf")
                 std::get<Constant>(function.code[index - 2]).type = Type::U8;
         if (function.name == "set_leaf") {
             function.parameters[1] = Type::U8;
@@ -2134,13 +2452,13 @@ Module packedMethodModule() {
     module.functions[0].name = "packed_result_array";
     module.functions[0].result = Type::U8;
     auto entry = module.functions[0];
-    for (const auto &[name, offset, type] : std::vector<std::tuple<std::string, int, Type>>{
-             {"packed_result_header", 152, Type::I64},
-             {"packed_result_first", 176, Type::U8},
-             {"packed_result_enum", 184, Type::enumeration("Mode")},
-             {"packed_result_bool", 168, Type::Bool},
-             {"packed_source_array", 31, Type::U8},
-             {"packed_source_header", 112, Type::I64}}) {
+    for (const auto &[name, offset, type] :
+         std::vector<std::tuple<std::string, int, Type>>{{"packed_result_header", 152, Type::I64},
+                                                         {"packed_result_first", 176, Type::U8},
+                                                         {"packed_result_enum", 184, Type::enumeration("Mode")},
+                                                         {"packed_result_bool", 168, Type::Bool},
+                                                         {"packed_source_array", 31, Type::U8},
+                                                         {"packed_source_header", 112, Type::I64}}) {
         entry.name = name;
         entry.result = type;
         entry.code[entry.code.size() - 2] = Load{offset, type};
@@ -2150,8 +2468,13 @@ Module packedMethodModule() {
     entry.name = "packed_result_independence";
     entry.code.resize(entry.code.size() - 2);
     entry.code.insert(entry.code.end(),
-                      {Constant{1, Type::I64}, Push{}, Constant{255, Type::U8}, Push{},
-                       MethodCall{"set_leaf", 184}, Load{135, Type::U8}, Return{}});
+                      {Constant{1, Type::I64},
+                       Push{},
+                       Constant{255, Type::U8},
+                       Push{},
+                       MethodCall{"set_leaf", 184},
+                       Load{135, Type::U8},
+                       Return{}});
     module.functions.push_back(entry);
     entry = module.functions[0];
     entry.name = "packed_forwarded_result";
@@ -2163,9 +2486,9 @@ Module packedMethodModule() {
     entry.name = "packed_empty_result";
     entry.result = Type::I64;
     entry.code.resize(entry.code.size() - 2);
-    entry.code.insert(entry.code.end(),
-                      {BeginObject{192}, MethodCall{"snapshot_empty", 152, {}, 192},
-                       Constant{42, Type::I64}, Return{}});
+    entry.code.insert(
+        entry.code.end(),
+        {BeginObject{192}, MethodCall{"snapshot_empty", 152, {}, 192}, Constant{42, Type::I64}, Return{}});
     module.functions.push_back(entry);
     // A three-byte aggregate verifies that record slots use its reserved extent,
     // and that copies preserve high-bit byte values in a compact leaf sequence.
@@ -2185,8 +2508,7 @@ Module packedMethodModule() {
     tiny.result = Type::U8;
     tiny.frameBytes = 16;
     tiny.objectSlots = {{8, ObjectSlot{"Tiny", false}}, {16, ObjectSlot{"Tiny", false}}};
-    tiny.slots = {{8, Type::U8},  {7, Type::U8},  {6, Type::U8},
-                  {16, Type::U8}, {15, Type::U8}, {14, Type::U8}};
+    tiny.slots = {{8, Type::U8}, {7, Type::U8}, {6, Type::U8}, {16, Type::U8}, {15, Type::U8}, {14, Type::U8}};
     tiny.code = {BeginObject{8},
                  Constant{7, Type::U8},
                  Store{8, Type::U8},
@@ -2205,68 +2527,103 @@ void packedStorageTests() {
     const auto module = packedMethodModule();
     accept("packed bytes preserve composed receiver/results and tiny aggregate", module);
     const auto checked = validate(module).get();
-    const std::map<std::string, ClassStorage> expected = {
-        {"Empty", {{}, {}, 8, 8, 8}},
-        {"Leaf", {{0, 8, 9, 16}, {0, 8, 16, 24}, 24, 8, 24}},
-        {"Outer", {{0, 8, 16, 17, 24}, {0, 8, 32}, 32, 8, 32}},
-        {"Tiny", {{0, 1, 2}, {0}, 3, 1, 8}}};
+    const std::map<std::string, ClassStorage> expected = {{"Empty", {{}, {}, 8, 8, 8}},
+                                                          {"Leaf", {{0, 8, 9, 16}, {0, 8, 16, 24}, 24, 8, 24}},
+                                                          {"Outer", {{0, 8, 16, 17, 24}, {0, 8, 32}, 32, 8, 32}},
+                                                          {"Tiny", {{0, 1, 2}, {0}, 3, 1, 8}}};
     if (checked.classStorage != expected)
         throw Error("packed class storage does not match explicit byte layout oracle");
     ++passed;
     std::cout << "PASS IR canonical mixed/nested/empty/tiny class byte layout\n";
     accept("explicit canonical class storage metadata", checked);
     for (const auto &name : {"Empty", "Leaf", "Outer", "Tiny"}) {
-        for (const auto member :
-             {&ClassStorage::sizeBytes, &ClassStorage::alignment, &ClassStorage::reservedBytes})
+        for (const auto member : {&ClassStorage::sizeBytes, &ClassStorage::alignment, &ClassStorage::reservedBytes})
             rejectModule(
-                std::string("forged class physical extent ") + name, checked,
-                [name, member](Module &m) { ++(m.classStorage[name].*member); },
+                std::string("forged class physical extent ") + name,
+                checked,
+                [name, member](Module &m) {
+                    ++(m.classStorage[name].*member);
+                },
                 "noncanonical class storage metadata");
         rejectModule(
-            std::string("missing class physical metadata ") + name, checked,
-            [name](Module &m) { m.classStorage.erase(name); },
+            std::string("missing class physical metadata ") + name,
+            checked,
+            [name](Module &m) {
+                m.classStorage.erase(name);
+            },
             "noncanonical class storage metadata");
     }
     for (int offset : {-1, 0, 7, 16, 65536})
         rejectModule(
-            "forged packed leaf offset " + std::to_string(offset), checked,
-            [offset](Module &m) { m.classStorage["Leaf"].leafOffsets[2] = offset; },
+            "forged packed leaf offset " + std::to_string(offset),
+            checked,
+            [offset](Module &m) {
+                m.classStorage["Leaf"].leafOffsets[2] = offset;
+            },
             "noncanonical class storage metadata");
     rejectModule(
-        "forged logical field physical offset", checked,
-        [](Module &m) { m.classStorage["Outer"].fieldOffsets[1] = 1; },
+        "forged logical field physical offset",
+        checked,
+        [](Module &m) {
+            m.classStorage["Outer"].fieldOffsets[1] = 1;
+        },
         "noncanonical class storage metadata");
     rejectModule(
-        "forged extra physical class", checked,
-        [](Module &m) { m.classStorage["Unknown"] = ClassStorage{{}, {}, 8, 8, 8}; },
+        "forged extra physical class",
+        checked,
+        [](Module &m) {
+            m.classStorage["Unknown"] = ClassStorage{{}, {}, 8, 8, 8};
+        },
         "noncanonical class storage metadata");
     rejectModule(
-        "packed byte overlaps wide slot", module,
-        [](Module &m) { m.functions[0].slots[167] = Type::U8; }, "overlapping scalar slot storage");
+        "packed byte overlaps wide slot",
+        module,
+        [](Module &m) {
+            m.functions[0].slots[167] = Type::U8;
+        },
+        "overlapping scalar slot storage");
     rejectModule(
-        "packed byte cannot occupy object padding", module,
-        [](Module &m) { m.functions[0].slots[174] = Type::U8; },
+        "packed byte cannot occupy object padding",
+        module,
+        [](Module &m) {
+            m.functions[0].slots[174] = Type::U8;
+        },
         "scalar slot overlaps empty object or padding");
     rejectModule(
-        "packed leaf must use canonical offset", module,
+        "packed leaf must use canonical offset",
+        module,
         [](Module &m) {
             m.functions[0].slots.erase(175);
             m.functions[0].slots[174] = Type::U8;
         },
         "object field slot type/layout mismatch");
     rejectModule(
-        "tiny rounded reservation padding cannot be a scalar", module,
-        [](Module &m) { namedFunction(m, "packed_tiny_roundtrip").slots[5] = Type::U8; },
+        "tiny rounded reservation padding cannot be a scalar",
+        module,
+        [](Module &m) {
+            namedFunction(m, "packed_tiny_roundtrip").slots[5] = Type::U8;
+        },
         "scalar slot overlaps empty object or padding");
     rejectModule(
-        "packed object invalid minimum offset", module,
-        [](Module &m) { m.functions[0].objectSlots[INT32_MIN] = ObjectSlot{"Outer", false}; },
+        "packed object invalid minimum offset",
+        module,
+        [](Module &m) {
+            m.functions[0].objectSlots[INT32_MIN] = ObjectSlot{"Outer", false};
+        },
         "invalid object layout offset");
     rejectModule(
-        "u8 slot zero offset", module, [](Module &m) { m.functions[0].slots[0] = Type::U8; },
+        "u8 slot zero offset",
+        module,
+        [](Module &m) {
+            m.functions[0].slots[0] = Type::U8;
+        },
         "invalid slot offset");
     rejectModule(
-        "u8 slot exceeds frame", module, [](Module &m) { m.functions[0].slots[193] = Type::U8; },
+        "u8 slot exceeds frame",
+        module,
+        [](Module &m) {
+            m.functions[0].slots[193] = Type::U8;
+        },
         "invalid slot offset");
     auto emptyChild = module;
     emptyChild.classLayouts["EmptyShell"] = {};
@@ -2284,38 +2641,53 @@ void enumAndMethodResultTests() {
     const auto mode = Type::enumeration("Mode");
     const auto other = Type::enumeration("OtherMode");
     accept("enum constant store call and equality", enumBaseline());
-    auto rejectEnum = [&](const std::string &name, const std::function<void(Module &)> &change,
-                          const std::string &expected) {
-        rejectModule(name, enumBaseline(), change, expected);
-    };
+    auto rejectEnum =
+        [&](const std::string &name, const std::function<void(Module &)> &change, const std::string &expected) {
+            rejectModule(name, enumBaseline(), change, expected);
+        };
     for (const int value : {-1, 2, 256})
         rejectEnum(
             "enum undeclared case " + std::to_string(value),
-            [=](Module &m) { std::get<EnumConstant>(m.functions[0].code[0]).caseIndex = value; },
+            [=](Module &m) {
+                std::get<EnumConstant>(m.functions[0].code[0]).caseIndex = value;
+            },
             "not a declared case");
     for (const auto &type : {Type::I64, Type::Bool, Type("Mode"), Type::enumeration("Unknown")})
         rejectEnum(
             "enum constant wrong type " + typeName(type),
-            [=](Module &m) { std::get<EnumConstant>(m.functions[0].code[0]).type = type; },
+            [=](Module &m) {
+                std::get<EnumConstant>(m.functions[0].code[0]).type = type;
+            },
             "invalid enum constant type");
     rejectEnum(
         "enum constant malformed metadata",
-        [](Module &m) { std::get<EnumConstant>(m.functions[0].code[0]).type.length = 1; },
+        [](Module &m) {
+            std::get<EnumConstant>(m.functions[0].code[0]).type.length = 1;
+        },
         "invalid enum constant type");
     rejectEnum(
         "integer constant cannot forge enum",
-        [=](Module &m) { m.functions[0].code[0] = Constant{1, mode}; }, "invalid constant type");
+        [=](Module &m) {
+            m.functions[0].code[0] = Constant{1, mode};
+        },
+        "invalid constant type");
     rejectEnum(
         "cross enum store rejected",
-        [=](Module &m) { m.functions[0].code[0] = EnumConstant{other, 1}; },
+        [=](Module &m) {
+            m.functions[0].code[0] = EnumConstant{other, 1};
+        },
         "mistyped current value");
     rejectEnum(
         "cross enum call rejected",
-        [=](Module &m) { m.functions[0].code[2] = EnumConstant{other, 1}; },
+        [=](Module &m) {
+            m.functions[0].code[2] = EnumConstant{other, 1};
+        },
         "call argument type mismatch");
     rejectEnum(
         "cross enum comparison rejected",
-        [=](Module &m) { m.functions[0].code[6] = EnumConstant{other, 1}; },
+        [=](Module &m) {
+            m.functions[0].code[6] = EnumConstant{other, 1};
+        },
         "mistyped current value");
     rejectEnum(
         "cross enum comparison stack rejected",
@@ -2328,35 +2700,52 @@ void enumAndMethodResultTests() {
          {Comparison::Less, Comparison::Greater, Comparison::LessEqual, Comparison::GreaterEqual})
         rejectEnum(
             "enum ordering rejected " + std::to_string(static_cast<int>(operation)),
-            [=](Module &m) { std::get<Compare>(m.functions[0].code[7]).operation = operation; },
+            [=](Module &m) {
+                std::get<Compare>(m.functions[0].code[7]).operation = operation;
+            },
             "ordered bool comparison or enum comparison");
     rejectEnum(
         "enum arithmetic rejected",
-        [=](Module &m) { m.functions[0].code[7] = BinaryValue{Binary::CheckedAdd, mode}; },
+        [=](Module &m) {
+            m.functions[0].code[7] = BinaryValue{Binary::CheckedAdd, mode};
+        },
         "invalid binary operand type");
     rejectEnum(
         "enum local arrays rejected",
         [=](Module &m) {
-            m.functions[0].code = {EnumConstant{mode, 1},  Store{8, mode},
-                                   Constant{0, Type::I64}, BoundsGuard{8, 1, mode},
-                                   IndexLoad{8, 1, mode},  Return{}};
+            m.functions[0].code = {EnumConstant{mode, 1},
+                                   Store{8, mode},
+                                   Constant{0, Type::I64},
+                                   BoundsGuard{8, 1, mode},
+                                   IndexLoad{8, 1, mode},
+                                   Return{}};
         },
         "invalid array shape");
     rejectEnum(
         "unknown enum slot rejected",
-        [](Module &m) { m.functions[0].slots[8] = Type::enumeration("Unknown"); },
+        [](Module &m) {
+            m.functions[0].slots[8] = Type::enumeration("Unknown");
+        },
         "invalid slot payload type");
     rejectEnum(
         "unknown enum boundary rejected",
-        [](Module &m) { m.functions[0].result = Type::enumeration("Unknown"); },
+        [](Module &m) {
+            m.functions[0].result = Type::enumeration("Unknown");
+        },
         "invalid value boundary type");
     for (const int cases : {0, -1, 257})
         rejectEnum(
             "enum case count bound " + std::to_string(cases),
-            [=](Module &m) { m.enumCases["Mode"] = cases; }, "invalid nominal enum declaration");
+            [=](Module &m) {
+                m.enumCases["Mode"] = cases;
+            },
+            "invalid nominal enum declaration");
     for (const auto &name : {std::string{}, std::string(4097, 'E')})
         rejectEnum(
-            "enum name bounds", [=](Module &m) { m.enumCases[name] = 1; },
+            "enum name bounds",
+            [=](Module &m) {
+                m.enumCases[name] = 1;
+            },
             "invalid nominal enum declaration");
     rejectEnum(
         "enum declaration count cap",
@@ -2366,7 +2755,10 @@ void enumAndMethodResultTests() {
         },
         "too many enum declarations");
     rejectEnum(
-        "enum class nominal name collision", [](Module &m) { m.classLayouts["Mode"] = {}; },
+        "enum class nominal name collision",
+        [](Module &m) {
+            m.classLayouts["Mode"] = {};
+        },
         "class and enum nominal names overlap");
     auto maximum = enumBaseline();
     maximum.enumCases["Mode"] = 256;
@@ -2377,10 +2769,10 @@ void enumAndMethodResultTests() {
 
     accept("method result with composed enum array empty descendants", methodResultBaseline());
     accept("method result native combined fixtures", methodResultNativeModule());
-    auto rejectResult = [&](const std::string &name, const std::function<void(Module &)> &change,
-                            const std::string &expected) {
-        rejectModule(name, methodResultBaseline(), change, expected);
-    };
+    auto rejectResult =
+        [&](const std::string &name, const std::function<void(Module &)> &change, const std::string &expected) {
+            rejectModule(name, methodResultBaseline(), change, expected);
+        };
     for (const int offset : {0, 144, -152, 200})
         rejectResult(
             "method result exact destination " + std::to_string(offset),
@@ -2390,7 +2782,9 @@ void enumAndMethodResultTests() {
             "method result requires exact object slot");
     rejectResult(
         "method result aliases receiver",
-        [](Module &m) { namedMethodCall(m.functions[0], "snapshot_outer").resultOffset = 112; },
+        [](Module &m) {
+            namedMethodCall(m.functions[0], "snapshot_outer").resultOffset = 112;
+        },
         "method result aliases receiver");
     rejectResult(
         "method result physical overlap",
@@ -2403,10 +2797,10 @@ void enumAndMethodResultTests() {
         "method result inactive destination",
         [](Module &m) {
             auto &code = m.functions[0].code;
-            code.erase(std::remove_if(code.begin(), code.end(),
+            code.erase(std::remove_if(code.begin(),
+                                      code.end(),
                                       [](const Instruction &instruction) {
-                                          const auto *begin =
-                                              std::get_if<BeginObject>(&instruction);
+                                          const auto *begin = std::get_if<BeginObject>(&instruction);
                                           return begin && begin->offset == 152;
                                       }),
                        code.end());
@@ -2428,18 +2822,22 @@ void enumAndMethodResultTests() {
     rejectResult(
         "method result conditional partial destination",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 31,
-                                       {Constant{1, Type::Bool}, BranchFalse{7},
-                                        Constant{0, Type::I64}, Store{152, Type::I64}, Label{7}});
+            m.functions[0].code.insert(
+                m.functions[0].code.begin() + 31,
+                {Constant{1, Type::Bool}, BranchFalse{7}, Constant{0, Type::I64}, Store{152, Type::I64}, Label{7}});
         },
         "method result requires uninitialized object");
     rejectResult(
         "method result scalar call destination forbidden",
-        [](Module &m) { namedMethodCall(m.functions[0], "construct_outer").resultOffset = 152; },
+        [](Module &m) {
+            namedMethodCall(m.functions[0], "construct_outer").resultOffset = 152;
+        },
         "scalar method result cannot name object storage");
     rejectResult(
         "method result const receiver blocks mutable method",
-        [](Module &m) { namedFunction(m, "snapshot_outer").receiver->mutableValue = true; },
+        [](Module &m) {
+            namedFunction(m, "snapshot_outer").receiver->mutableValue = true;
+        },
         "const object cannot supply mutable receiver");
     rejectResult(
         "method result forwarding const receiver blocks mutable method",
@@ -2468,11 +2866,15 @@ void enumAndMethodResultTests() {
         "nested class field leaf type mismatch");
     rejectResult(
         "method result enum arrays remain forbidden",
-        [=](Module &m) { m.classFields["Leaf"][0].array = true; },
+        [=](Module &m) {
+            m.classFields["Leaf"][0].array = true;
+        },
         "invalid logical class field shape");
     rejectResult(
         "method result unknown enum layout leaf",
-        [](Module &m) { m.classLayouts["Leaf"][0] = Type::enumeration("Missing"); },
+        [](Module &m) {
+            m.classLayouts["Leaf"][0] = Type::enumeration("Missing");
+        },
         "non-scalar class layout field");
     rejectResult(
         "method result cannot omit empty constructor child",
@@ -2483,15 +2885,21 @@ void enumAndMethodResultTests() {
         "constructor returns before all class fields initialized");
     rejectResult(
         "method result wrong enum scalar argument",
-        [=](Module &m) { m.functions[0].code[33] = EnumConstant{other, 1}; },
+        [=](Module &m) {
+            m.functions[0].code[33] = EnumConstant{other, 1};
+        },
         "method argument type mismatch");
     rejectResult(
         "constructor record wrong enum argument",
-        [=](Module &m) { m.functions[0].code[2] = EnumConstant{other, 1}; },
+        [=](Module &m) {
+            m.functions[0].code[2] = EnumConstant{other, 1};
+        },
         "method argument type mismatch");
     rejectResult(
         "method class argument requires snapshot vector",
-        [](Module &m) { namedFunction(m, "snapshot_outer").parameters[1] = Type("Empty"); },
+        [](Module &m) {
+            namedFunction(m, "snapshot_outer").parameters[1] = Type("Empty");
+        },
         "object argument vector size mismatch");
     rejectResult(
         "method object-argument vector not repurposed as result",
@@ -2501,48 +2909,62 @@ void enumAndMethodResultTests() {
         "receiver object argument vector size mismatch");
     rejectResult(
         "method result cannot expose scalar current value",
-        [](Module &m) { m.functions[0].code.insert(m.functions[0].code.begin() + 36, Push{}); },
+        [](Module &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 36, Push{});
+        },
         "push without current value");
     rejectResult(
         "method enum receiver field nominal mismatch",
-        [=](Module &m) { namedFunction(m, "get_leaf_mode").code[0] = ReceiverLoad{0, other}; },
+        [=](Module &m) {
+            namedFunction(m, "get_leaf_mode").code[0] = ReceiverLoad{0, other};
+        },
         "receiver field type/layout mismatch");
     rejectResult(
         "constructor enum receiver store nominal mismatch",
-        [=](Module &m) { namedFunction(m, "construct_leaf").code[3] = EnumConstant{other, 1}; },
+        [=](Module &m) {
+            namedFunction(m, "construct_leaf").code[3] = EnumConstant{other, 1};
+        },
         "mistyped current value");
     rejectResult(
         "method enum return nominal mismatch",
-        [=](Module &m) { namedFunction(m, "get_leaf_mode").result = other; },
+        [=](Module &m) {
+            namedFunction(m, "get_leaf_mode").result = other;
+        },
         "mistyped current value");
     rejectResult(
         "method empty result already complete",
         [](Module &m) {
             auto &code = m.functions[0].code;
             code.insert(code.end() - 2,
-                        {BeginObject{192}, MethodCall{"snapshot_empty", 112, {}, 192},
+                        {BeginObject{192},
+                         MethodCall{"snapshot_empty", 112, {}, 192},
                          MethodCall{"snapshot_empty", 112, {}, 192}});
         },
         "method result object already initialized");
     rejectResult(
         "method aggregate result cannot use scalar return",
-        [](Module &m) { namedFunction(m, "snapshot_empty").code.back() = Return{}; },
+        [](Module &m) {
+            namedFunction(m, "snapshot_empty").code.back() = Return{};
+        },
         "scalar return cannot return class value");
     rejectResult(
         "method result source partial object",
-        [](Module &m) { namedFunction(m, "snapshot_outer").code[21] = Constant{0, Type::I64}; },
+        [](Module &m) {
+            namedFunction(m, "snapshot_outer").code[21] = Constant{0, Type::I64};
+        },
         "load before initialization");
     rejectResult(
         "method result cannot hide receiver recursion",
         [](Module &m) {
-            namedMethodCall(namedFunction(m, "relay_outer"), "snapshot_outer").callee =
-                "relay_outer";
+            namedMethodCall(namedFunction(m, "relay_outer"), "snapshot_outer").callee = "relay_outer";
         },
         "recursive receiver call cycle");
     const auto assembly = X86Emitter{}.emit(validate(methodResultBaseline()));
-    for (const auto &fragment :
-         {"movq %r10, -168(%rbp)", "movq %r11, -176(%rbp)", "leaq -152(%rbp), %r11",
-          "movq %rdi, -8(%rbp)", "movq %rsi, -16(%rbp)"})
+    for (const auto &fragment : {"movq %r10, -168(%rbp)",
+                                 "movq %r11, -176(%rbp)",
+                                 "leaq -152(%rbp), %r11",
+                                 "movq %rdi, -8(%rbp)",
+                                 "movq %rsi, -16(%rbp)"})
         if (assembly.find(fragment) == std::string::npos)
             throw Error(std::string("method result ABI emission mismatch: ") + fragment);
     ++passed;
@@ -2643,14 +3065,19 @@ Module spanCallModule() {
     aurora::ir::Function mixed;
     mixed.name = "span_mixed_callee";
     mixed.result = Type("SpanPacket");
-    mixed.parameters = {Type::U8,  Type::ByteSpan, Type("SpanPacket"),
-                        Type::I64, Type::ByteSpan, Type::Bool};
+    mixed.parameters = {Type::U8, Type::ByteSpan, Type("SpanPacket"), Type::I64, Type::ByteSpan, Type::Bool};
     mixed.frameBytes = 640;
-    mixed.slots = {{1, Type::U8},   {56, Type::U8},   {48, Type::I64}, {40, Type::U8},
-                   {64, Type::I64}, {96, Type::Bool}, {128, Type::U8}, {120, Type::I64},
-                   {112, Type::U8}, {136, Type::I64}};
-    mixed.objectSlots = {{56, ObjectSlot{"SpanPacket", false}},
-                         {128, ObjectSlot{"SpanPacket", false}}};
+    mixed.slots = {{1, Type::U8},
+                   {56, Type::U8},
+                   {48, Type::I64},
+                   {40, Type::U8},
+                   {64, Type::I64},
+                   {96, Type::Bool},
+                   {128, Type::U8},
+                   {120, Type::I64},
+                   {112, Type::U8},
+                   {136, Type::I64}};
+    mixed.objectSlots = {{56, ObjectSlot{"SpanPacket", false}}, {128, ObjectSlot{"SpanPacket", false}}};
     mixed.spanSlots = {256, 384};
     mixed.code = {BindParameter{0, 1, Type::U8},
                   BindSpanParameter{1, 256},
@@ -2699,65 +3126,83 @@ Module spanCallModule() {
     forwarding.frameBytes = 640;
     forwarding.spanSlots.insert({448, 512});
     forwarding.code.resize(6);
-    for (const auto &op : std::vector<Instruction>{
-             BeginObject{128}, ReborrowSpan{256, 448}, ReborrowSpan{384, 512}, Load{1, Type::U8},
-             Push{}, Load{64, Type::I64}, Push{}, Load{96, Type::Bool}, Push{},
-             AggregateCall{"span_mixed_callee", {0, 0, 56, 0, 0, 0}, 128, {0, 448, 0, 0, 512, 0}},
-             EndSpan{512}, EndSpan{448}, EndSpan{384}, EndSpan{256}, ReturnObject{128}})
+    for (const auto &op :
+         std::vector<Instruction>{BeginObject{128},
+                                  ReborrowSpan{256, 448},
+                                  ReborrowSpan{384, 512},
+                                  Load{1, Type::U8},
+                                  Push{},
+                                  Load{64, Type::I64},
+                                  Push{},
+                                  Load{96, Type::Bool},
+                                  Push{},
+                                  AggregateCall{"span_mixed_callee", {0, 0, 56, 0, 0, 0}, 128, {0, 448, 0, 0, 512, 0}},
+                                  EndSpan{512},
+                                  EndSpan{448},
+                                  EndSpan{384},
+                                  EndSpan{256},
+                                  ReturnObject{128}})
         forwarding.code.push_back(op);
     module.functions.push_back(forwarding);
     aurora::ir::Function caller;
     caller.name = "span_mixed_sum";
     caller.result = Type::I64;
     caller.frameBytes = 640;
-    caller.slots = {{8, Type::U8},  {7, Type::U8},   {6, Type::U8},    {32, Type::U8},
-                    {31, Type::U8}, {30, Type::U8},  {56, Type::U8},   {48, Type::I64},
-                    {40, Type::U8}, {112, Type::U8}, {104, Type::I64}, {96, Type::U8}};
+    caller.slots = {{8, Type::U8},
+                    {7, Type::U8},
+                    {6, Type::U8},
+                    {32, Type::U8},
+                    {31, Type::U8},
+                    {30, Type::U8},
+                    {56, Type::U8},
+                    {48, Type::I64},
+                    {40, Type::U8},
+                    {112, Type::U8},
+                    {104, Type::I64},
+                    {96, Type::U8}};
     caller.arraySlots = {{8, 3}, {32, 3}};
     caller.spanSlots = {256, 576};
-    caller.objectSlots = {{56, ObjectSlot{"SpanPacket", false}},
-                          {112, ObjectSlot{"SpanPacket", false}}};
-    caller.code = {
-        BeginArray{8},
-        Constant{11, Type::U8},
-        Store{8, Type::U8},
-        Constant{128, Type::U8},
-        Store{7, Type::U8},
-        Constant{255, Type::U8},
-        Store{6, Type::U8},
-        BeginArray{32},
-        Constant{100, Type::U8},
-        Store{32, Type::U8},
-        Constant{200, Type::U8},
-        Store{31, Type::U8},
-        Constant{255, Type::U8},
-        Store{30, Type::U8},
-        BeginObject{56},
-        Constant{42, Type::U8},
-        Store{56, Type::U8},
-        Constant{13, Type::I64},
-        Store{48, Type::I64},
-        Constant{77, Type::U8},
-        Store{40, Type::U8},
-        BorrowSpan{8, 256},
-        BorrowSpan{32, 576},
-        BeginObject{112},
-        Constant{31, Type::U8},
-        Push{},
-        Constant{19, Type::I64},
-        Push{},
-        Constant{1, Type::Bool},
-        Push{},
-        AggregateCall{"span_mixed_forward", {0, 0, 56, 0, 0, 0}, 112, {0, 256, 0, 0, 576, 0}},
-        EndSpan{576},
-        EndSpan{256},
-        EndArray{32},
-        EndArray{8},
-        Load{104, Type::I64},
-        Return{}};
+    caller.objectSlots = {{56, ObjectSlot{"SpanPacket", false}}, {112, ObjectSlot{"SpanPacket", false}}};
+    caller.code = {BeginArray{8},
+                   Constant{11, Type::U8},
+                   Store{8, Type::U8},
+                   Constant{128, Type::U8},
+                   Store{7, Type::U8},
+                   Constant{255, Type::U8},
+                   Store{6, Type::U8},
+                   BeginArray{32},
+                   Constant{100, Type::U8},
+                   Store{32, Type::U8},
+                   Constant{200, Type::U8},
+                   Store{31, Type::U8},
+                   Constant{255, Type::U8},
+                   Store{30, Type::U8},
+                   BeginObject{56},
+                   Constant{42, Type::U8},
+                   Store{56, Type::U8},
+                   Constant{13, Type::I64},
+                   Store{48, Type::I64},
+                   Constant{77, Type::U8},
+                   Store{40, Type::U8},
+                   BorrowSpan{8, 256},
+                   BorrowSpan{32, 576},
+                   BeginObject{112},
+                   Constant{31, Type::U8},
+                   Push{},
+                   Constant{19, Type::I64},
+                   Push{},
+                   Constant{1, Type::Bool},
+                   Push{},
+                   AggregateCall{"span_mixed_forward", {0, 0, 56, 0, 0, 0}, 112, {0, 256, 0, 0, 576, 0}},
+                   EndSpan{576},
+                   EndSpan{256},
+                   EndArray{32},
+                   EndArray{8},
+                   Load{104, Type::I64},
+                   Return{}};
     module.functions.push_back(caller);
-    for (const auto &[name, offset] : std::vector<std::pair<std::string, int>>{
-             {"span_mixed_first", 112}, {"span_mixed_last", 96}}) {
+    for (const auto &[name, offset] :
+         std::vector<std::pair<std::string, int>>{{"span_mixed_first", 112}, {"span_mixed_last", 96}}) {
         auto projection = caller;
         projection.name = name;
         projection.result = Type::U8;
@@ -2777,187 +3222,348 @@ void spanTests() {
                                 const std::function<void(aurora::ir::Function &)> &mutate,
                                 const std::string &expected) {
         rejectModule(
-            name, spanBaseline(), [&](Module &module) { mutate(module.functions[0]); }, expected);
+            name,
+            spanBaseline(),
+            [&](Module &module) {
+                mutate(module.functions[0]);
+            },
+            expected);
     };
     for (int base : {-1, 0, 8, 15, 17, 56})
         rejectSpan(
             "invalid span spill " + std::to_string(base),
-            [=](auto &f) { f.spanSlots.insert(base); }, "span spill");
+            [=](auto &f) {
+                f.spanSlots.insert(base);
+            },
+            "span spill");
     rejectSpan(
-        "overlapping span spills", [](auto &f) { f.spanSlots.insert(264); },
+        "overlapping span spills",
+        [](auto &f) {
+            f.spanSlots.insert(264);
+        },
         "overlapping span spills");
     rejectSpan(
-        "span overlaps byte scalar", [](auto &f) { f.slots[212] = Type::U8; },
+        "span overlaps byte scalar",
+        [](auto &f) {
+            f.slots[212] = Type::U8;
+        },
         "span spill overlaps");
     rejectSpan(
-        "span overlaps wide scalar interior", [](auto &f) { f.slots[208] = Type::I64; },
+        "span overlaps wide scalar interior",
+        [](auto &f) {
+            f.slots[208] = Type::I64;
+        },
         "span spill overlaps");
     for (int length : {-1, 0, 9, 4097})
         rejectSpan(
             "invalid byte origin extent " + std::to_string(length),
-            [=](auto &f) { f.arraySlots[8] = length; }, "byte array origin extent");
-    rejectSpan("origin past frame", [](auto &f) { f.arraySlots[648] = 1; }, "origin extent");
+            [=](auto &f) {
+                f.arraySlots[8] = length;
+            },
+            "byte array origin extent");
     rejectSpan(
-        "overlapping byte origins", [](auto &f) { f.arraySlots[7] = 2; },
+        "origin past frame",
+        [](auto &f) {
+            f.arraySlots[648] = 1;
+        },
+        "origin extent");
+    rejectSpan(
+        "overlapping byte origins",
+        [](auto &f) {
+            f.arraySlots[7] = 2;
+        },
         "overlapping byte array origins");
     rejectSpan(
-        "missing byte origin element", [](auto &f) { f.slots.erase(7); }, "exact u8 element slots");
+        "missing byte origin element",
+        [](auto &f) {
+            f.slots.erase(7);
+        },
+        "exact u8 element slots");
     rejectSpan(
-        "wrong byte origin element type", [](auto &f) { f.slots[8] = Type::I64; },
+        "wrong byte origin element type",
+        [](auto &f) {
+            f.slots[8] = Type::I64;
+        },
         "overlapping scalar slot");
     rejectSpan(
-        "span spill scalar payload", [](auto &f) { f.slots[48] = Type::ByteSpan; },
+        "span spill scalar payload",
+        [](auto &f) {
+            f.slots[48] = Type::ByteSpan;
+        },
         "invalid slot payload type");
     rejectSpan(
-        "missing byte origin declaration", [](auto &f) { f.arraySlots.clear(); },
+        "missing byte origin declaration",
+        [](auto &f) {
+            f.arraySlots.clear();
+        },
         "exact byte array origin");
     rejectSpan(
-        "borrow scalar origin", [](auto &f) { f.code[7] = BorrowSpan{7, 256}; },
+        "borrow scalar origin",
+        [](auto &f) {
+            f.code[7] = BorrowSpan{7, 256};
+        },
         "exact local byte array origin");
     rejectSpan(
-        "borrow origin outside frame", [](auto &f) { f.code[7] = BorrowSpan{64, 256}; },
+        "borrow origin outside frame",
+        [](auto &f) {
+            f.code[7] = BorrowSpan{64, 256};
+        },
         "exact local byte array origin");
     rejectSpan(
-        "borrow requires typed spill", [](auto &f) { f.code[7] = BorrowSpan{8, 32}; },
+        "borrow requires typed spill",
+        [](auto &f) {
+            f.code[7] = BorrowSpan{8, 32};
+        },
         "exact typed spill");
     rejectSpan(
-        "array write before lifetime", [](auto &f) { f.code.erase(f.code.begin()); },
+        "array write before lifetime",
+        [](auto &f) {
+            f.code.erase(f.code.begin());
+        },
         "array element access outside active lifetime");
     rejectSpan(
-        "array read after lifetime", [](auto &f) { f.code[14] = Load{8, Type::U8}; },
+        "array read after lifetime",
+        [](auto &f) {
+            f.code[14] = Load{8, Type::U8};
+        },
         "array element access outside active lifetime");
     rejectSpan(
-        "array begin twice", [](auto &f) { f.code[7] = BeginArray{8}; },
+        "array begin twice",
+        [](auto &f) {
+            f.code[7] = BeginArray{8};
+        },
         "array lifetime already active");
     rejectSpan(
-        "array end unknown origin", [](auto &f) { f.code[13] = EndArray{7}; },
+        "array end unknown origin",
+        [](auto &f) {
+            f.code[13] = EndArray{7};
+        },
         "exact byte array origin");
     rejectSpan(
-        "array end twice", [](auto &f) { f.code[14] = EndArray{8}; },
+        "array end twice",
+        [](auto &f) {
+            f.code[14] = EndArray{8};
+        },
         "array lifetime is not active");
     rejectSpan(
-        "array end with direct borrow", [](auto &f) { f.code[8] = EndArray{8}; },
+        "array end with direct borrow",
+        [](auto &f) {
+            f.code[8] = EndArray{8};
+        },
         "array lifetime ends with live readonly span");
     rejectSpan(
-        "array end with derived borrow", [](auto &f) { f.code[11] = EndArray{8}; },
+        "array end with derived borrow",
+        [](auto &f) {
+            f.code[11] = EndArray{8};
+        },
         "array lifetime ends with live readonly span");
     rejectSpan(
-        "partial byte array initialization", [](auto &f) { f.code.erase(f.code.begin() + 6); },
+        "partial byte array initialization",
+        [](auto &f) {
+            f.code.erase(f.code.begin() + 6);
+        },
         "array element not initialized");
     rejectSpan(
-        "borrow ended array", [](auto &f) { f.code.insert(f.code.begin() + 7, EndArray{8}); },
+        "borrow ended array",
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 7, EndArray{8});
+        },
         "active byte array origin");
     rejectSpan(
         "borrow after rebegin needs new initialization",
-        [](auto &f) { f.code.insert(f.code.begin() + 7, {EndArray{8}, BeginArray{8}}); },
+        [](auto &f) {
+            f.code.insert(f.code.begin() + 7, {EndArray{8}, BeginArray{8}});
+        },
         "array element not initialized");
     rejectSpan(
-        "overwrite live span", [](auto &f) { f.code[8] = BorrowSpan{8, 256}; },
+        "overwrite live span",
+        [](auto &f) {
+            f.code[8] = BorrowSpan{8, 256};
+        },
         "span spill is already active");
     rejectSpan(
-        "reborrow self", [](auto &f) { f.code[8] = ReborrowSpan{256, 256}; },
+        "reborrow self",
+        [](auto &f) {
+            f.code[8] = ReborrowSpan{256, 256};
+        },
         "span spill is already active");
     rejectSpan(
-        "reborrow unknown spill", [](auto &f) { f.code[8] = ReborrowSpan{32, 320}; },
+        "reborrow unknown spill",
+        [](auto &f) {
+            f.code[8] = ReborrowSpan{32, 320};
+        },
         "exact typed spill");
     rejectSpan(
-        "reborrow inactive spill", [](auto &f) { f.code[8] = ReborrowSpan{320, 256}; },
+        "reborrow inactive spill",
+        [](auto &f) {
+            f.code[8] = ReborrowSpan{320, 256};
+        },
         "span capability is not active");
     rejectSpan(
-        "end parent before child", [](auto &f) { f.code[11] = EndSpan{256}; },
+        "end parent before child",
+        [](auto &f) {
+            f.code[11] = EndSpan{256};
+        },
         "live child reborrow");
     rejectSpan(
-        "end span twice", [](auto &f) { f.code[12] = EndSpan{320}; },
-        "span capability is not active");
-    rejectSpan("end unknown spill", [](auto &f) { f.code[11] = EndSpan{32}; }, "exact typed spill");
-    rejectSpan(
-        "load inactive span", [](auto &f) { f.code[7] = SpanLoad{256}; },
-        "span capability is not active");
-    rejectSpan(
-        "length inactive span", [](auto &f) { f.code[7] = SpanLength{256}; },
+        "end span twice",
+        [](auto &f) {
+            f.code[12] = EndSpan{320};
+        },
         "span capability is not active");
     rejectSpan(
-        "load after end span", [](auto &f) { f.code[13] = SpanLoad{320}; },
+        "end unknown spill",
+        [](auto &f) {
+            f.code[11] = EndSpan{32};
+        },
+        "exact typed spill");
+    rejectSpan(
+        "load inactive span",
+        [](auto &f) {
+            f.code[7] = SpanLoad{256};
+        },
         "span capability is not active");
     rejectSpan(
-        "load span with unsigned index", [](auto &f) { f.code[9] = Constant{1, Type::U64}; },
+        "length inactive span",
+        [](auto &f) {
+            f.code[7] = SpanLength{256};
+        },
+        "span capability is not active");
+    rejectSpan(
+        "load after end span",
+        [](auto &f) {
+            f.code[13] = SpanLoad{320};
+        },
+        "span capability is not active");
+    rejectSpan(
+        "load span with unsigned index",
+        [](auto &f) {
+            f.code[9] = Constant{1, Type::U64};
+        },
         "mistyped current value");
     rejectSpan(
-        "load span with byte index", [](auto &f) { f.code[9] = Constant{1, Type::U8}; },
+        "load span with byte index",
+        [](auto &f) {
+            f.code[9] = Constant{1, Type::U8};
+        },
         "mistyped current value");
     rejectSpan(
-        "load span with bool index", [](auto &f) { f.code[9] = Constant{1, Type::Bool}; },
+        "load span with bool index",
+        [](auto &f) {
+            f.code[9] = Constant{1, Type::Bool};
+        },
         "mistyped current value");
     rejectSpan(
-        "write owner with direct span", [](auto &f) { f.code[8] = Store{8, Type::U8}; },
+        "write owner with direct span",
+        [](auto &f) {
+            f.code[8] = Store{8, Type::U8};
+        },
         "write to byte array with live readonly span");
     rejectSpan(
-        "write owner with derived span", [](auto &f) { f.code[11] = Store{7, Type::U8}; },
+        "write owner with derived span",
+        [](auto &f) {
+            f.code[11] = Store{7, Type::U8};
+        },
         "write to byte array with live readonly span");
     rejectSpan(
         "indexed write owner with span",
         [](auto &f) {
             f.code.insert(f.code.begin() + 9,
-                          {Constant{0, Type::I64}, BoundsGuard{8, 3, Type::U8}, Push{},
-                           Constant{22, Type::U8}, IndexStore{8, 3, Type::U8}});
+                          {Constant{0, Type::I64},
+                           BoundsGuard{8, 3, Type::U8},
+                           Push{},
+                           Constant{22, Type::U8},
+                           IndexStore{8, 3, Type::U8}});
         },
         "write to byte array with live readonly span");
     rejectSpan(
         "indexed subrange write owner with span",
         [](auto &f) {
             f.code.insert(f.code.begin() + 9,
-                          {Constant{0, Type::I64}, BoundsGuard{7, 2, Type::U8}, Push{},
-                           Constant{22, Type::U8}, IndexStore{7, 2, Type::U8}});
+                          {Constant{0, Type::I64},
+                           BoundsGuard{7, 2, Type::U8},
+                           Push{},
+                           Constant{22, Type::U8},
+                           IndexStore{7, 2, Type::U8}});
         },
         "write to byte array with live readonly span");
     rejectSpan(
-        "return with active child span", [](auto &f) { f.code[11] = Return{}; },
+        "return with active child span",
+        [](auto &f) {
+            f.code[11] = Return{};
+        },
         "return with active span or byte array lifetime");
     rejectSpan(
-        "return with active parent span", [](auto &f) { f.code[12] = Return{}; },
+        "return with active parent span",
+        [](auto &f) {
+            f.code[12] = Return{};
+        },
         "return with active span or byte array lifetime");
     rejectSpan(
-        "return with active byte origin", [](auto &f) { f.code[13] = Return{}; },
+        "return with active byte origin",
+        [](auto &f) {
+            f.code[13] = Return{};
+        },
         "return with active span or byte array lifetime");
     rejectSpan(
-        "scalar load cannot expose span pointer", [](auto &f) { f.code[9] = Load{24, Type::I64}; },
+        "scalar load cannot expose span pointer",
+        [](auto &f) {
+            f.code[9] = Load{24, Type::I64};
+        },
         "slot type/layout mismatch");
     rejectSpan(
         "scalar store cannot overwrite span length",
-        [](auto &f) { f.code[10] = Store{16, Type::I64}; }, "slot type/layout mismatch");
+        [](auto &f) {
+            f.code[10] = Store{16, Type::I64};
+        },
+        "slot type/layout mismatch");
     rejectSpan(
         "span constant cannot mint capability",
-        [](auto &f) { f.code[9] = Constant{0, Type::ByteSpan}; }, "invalid constant type");
+        [](auto &f) {
+            f.code[9] = Constant{0, Type::ByteSpan};
+        },
+        "invalid constant type");
     rejectSpan(
         "span cannot become scalar through conversion",
-        [](auto &f) { f.code[9] = Convert{Type::ByteSpan, Type::I64}; },
+        [](auto &f) {
+            f.code[9] = Convert{Type::ByteSpan, Type::I64};
+        },
         "invalid checked conversion types");
     rejectSpan(
         "scalar cannot become span through conversion",
-        [](auto &f) { f.code[10] = Convert{Type::I64, Type::ByteSpan}; },
+        [](auto &f) {
+            f.code[10] = Convert{Type::I64, Type::ByteSpan};
+        },
         "invalid checked conversion types");
     rejectSpan(
         "span cannot use scalar comparison",
-        [](auto &f) { f.code[10] = Compare{Comparison::Equal, Type::ByteSpan}; },
+        [](auto &f) {
+            f.code[10] = Compare{Comparison::Equal, Type::ByteSpan};
+        },
         "non-scalar comparison");
     rejectSpan(
-        "span cannot be function result", [](auto &f) { f.result = Type::ByteSpan; },
+        "span cannot be function result",
+        [](auto &f) {
+            f.result = Type::ByteSpan;
+        },
         "readonly span boundary");
     rejectSpan(
-        "bind span outside entry", [](auto &f) { f.code[7] = BindSpanParameter{0, 256}; },
+        "bind span outside entry",
+        [](auto &f) {
+            f.code[7] = BindSpanParameter{0, 256};
+        },
         "parameter binding outside entry prefix");
     rejectSpan(
         "span branch lifetime mismatch",
         [](auto &f) {
-            f.code.insert(f.code.begin() + 9,
-                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320}, Label{7}});
+            f.code.insert(f.code.begin() + 9, {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320}, Label{7}});
         },
         "incompatible active span capabilities");
     rejectSpan(
         "span branch origin mismatch",
         [](auto &f) {
-            f.code.insert(f.code.begin() + 9, {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320},
-                                               BorrowSpan{8, 320}, Label{7}});
+            f.code.insert(f.code.begin() + 9,
+                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320}, BorrowSpan{8, 320}, Label{7}});
         },
         "incompatible active span capabilities");
     rejectSpan(
@@ -2969,27 +3575,32 @@ void spanTests() {
     rejectSpan(
         "array branch lifetime mismatch",
         [](auto &f) {
-            f.code.insert(f.code.begin() + 14, {Constant{1, Type::Bool}, BranchFalse{7},
-                                                BeginArray{8}, Label{7}, Constant{128, Type::U8}});
+            f.code.insert(f.code.begin() + 14,
+                          {Constant{1, Type::Bool}, BranchFalse{7}, BeginArray{8}, Label{7}, Constant{128, Type::U8}});
         },
         "incompatible active array lifetimes");
 
-    const auto rejectCall = [&](const std::string &name,
-                                const std::function<void(Module &)> &mutate,
-                                const std::string &expected) {
-        rejectModule(name, spanCallModule(), mutate, expected);
-    };
+    const auto rejectCall =
+        [&](const std::string &name, const std::function<void(Module &)> &mutate, const std::string &expected) {
+            rejectModule(name, spanCallModule(), mutate, expected);
+        };
     rejectCall(
         "plain call cannot supply span",
-        [](Module &m) { m.functions[5].code[11] = Call{"span_forward"}; },
+        [](Module &m) {
+            m.functions[5].code[11] = Call{"span_forward"};
+        },
         "plain call cannot target aggregate signature");
     rejectCall(
         "missing positional span arguments",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments.clear(); },
+        [](Module &m) {
+            std::get<AggregateCall>(m.functions[5].code[11]).spanArguments.clear();
+        },
         "span call argument vector size mismatch");
     rejectCall(
         "short positional span arguments",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments = {256}; },
+        [](Module &m) {
+            std::get<AggregateCall>(m.functions[5].code[11]).spanArguments = {256};
+        },
         "span call argument vector size mismatch");
     rejectCall(
         "long positional span arguments",
@@ -2999,23 +3610,33 @@ void spanTests() {
         "span call argument vector size mismatch");
     rejectCall(
         "missing positional object arguments for span call",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).objectArguments.clear(); },
+        [](Module &m) {
+            std::get<AggregateCall>(m.functions[5].code[11]).objectArguments.clear();
+        },
         "aggregate call argument vector size mismatch");
     rejectCall(
         "span argument cannot borrow ordinary scalar slot",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[0] = 56; },
+        [](Module &m) {
+            std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[0] = 56;
+        },
         "exact typed spill");
     rejectCall(
         "span argument cannot use inactive spill",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[0] = 320; },
+        [](Module &m) {
+            std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[0] = 320;
+        },
         "span capability is not active");
     rejectCall(
         "scalar argument cannot also name capability",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[1] = 256; },
+        [](Module &m) {
+            std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[1] = 256;
+        },
         "non-span argument cannot name span storage");
     rejectCall(
         "span argument cannot also name object",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).objectArguments[0] = 8; },
+        [](Module &m) {
+            std::get<AggregateCall>(m.functions[5].code[11]).objectArguments[0] = 8;
+        },
         "span argument cannot name object storage");
     rejectCall(
         "ended capability cannot cross call",
@@ -3031,27 +3652,39 @@ void spanTests() {
         "write to byte array with live readonly span");
     rejectCall(
         "span parameter missing canonical prefix",
-        [](Module &m) { m.functions[3].code[0] = BeginArray{8}; },
+        [](Module &m) {
+            m.functions[3].code[0] = BeginArray{8};
+        },
         "span parameter bindings must form the entry prefix");
     rejectCall(
         "span parameter wrong source position",
-        [](Module &m) { m.functions[3].code[0] = BindSpanParameter{1, 256}; },
+        [](Module &m) {
+            m.functions[3].code[0] = BindSpanParameter{1, 256};
+        },
         "span parameter bindings must form the entry prefix");
     rejectCall(
         "span parameter cannot use scalar binding",
-        [](Module &m) { m.functions[3].code[0] = BindParameter{0, 24, Type::ByteSpan}; },
+        [](Module &m) {
+            m.functions[3].code[0] = BindParameter{0, 24, Type::ByteSpan};
+        },
         "span parameter bindings must form the entry prefix");
     rejectCall(
         "scalar parameter cannot use span binding",
-        [](Module &m) { m.functions[3].code[1] = BindSpanParameter{1, 256}; },
+        [](Module &m) {
+            m.functions[3].code[1] = BindSpanParameter{1, 256};
+        },
         "parameter bindings must form the entry prefix");
     rejectCall(
         "span parameter cannot bind scalar storage",
-        [](Module &m) { m.functions[3].code[0] = BindSpanParameter{0, 8}; },
+        [](Module &m) {
+            m.functions[3].code[0] = BindSpanParameter{0, 8};
+        },
         "span parameter requires exact typed spill");
     rejectCall(
         "span parameter cannot be rebound",
-        [](Module &m) { m.functions[4].code.insert(m.functions[4].code.begin() + 6, EndSpan{256}); },
+        [](Module &m) {
+            m.functions[4].code.insert(m.functions[4].code.begin() + 6, EndSpan{256});
+        },
         "live child reborrow");
     rejectCall(
         "span parameter rebinding after end",
@@ -3062,7 +3695,9 @@ void spanTests() {
         "span parameter cannot be rebound");
     rejectCall(
         "receiver span parameter prohibited",
-        [](Module &m) { m.functions[3].receiver = Receiver{"SpanPacket", false, false}; },
+        [](Module &m) {
+            m.functions[3].receiver = Receiver{"SpanPacket", false, false};
+        },
         "readonly span boundary");
     rejectCall(
         "constructor span parameter prohibited",
@@ -3074,7 +3709,9 @@ void spanTests() {
         "readonly span boundary");
     rejectCall(
         "class field cannot contain span",
-        [](Module &m) { m.classLayouts["Bad"] = {Type::ByteSpan}; },
+        [](Module &m) {
+            m.classLayouts["Bad"] = {Type::ByteSpan};
+        },
         "non-scalar class layout field");
     rejectCall(
         "span spill overlaps object reservation padding",
@@ -3089,7 +3726,7 @@ void spanTests() {
         "object leaf cannot mint local byte origin",
         [](Module &m) {
             auto &f = m.functions[8];
-            f.arraySlots[648] = 1;
+            f.arraySlots[56] = 1;
         },
         "byte array origin overlaps object storage");
     rejectCall(
@@ -3108,7 +3745,9 @@ void spanTests() {
         "return with active span or byte array lifetime");
     rejectCall(
         "two span parameters cannot bind same spill",
-        [](Module &m) { m.functions[6].code[4] = BindSpanParameter{4, 256}; },
+        [](Module &m) {
+            m.functions[6].code[4] = BindSpanParameter{4, 256};
+        },
         "span parameter bindings overlap");
 
     auto writes = spanBaseline();
@@ -3119,19 +3758,16 @@ void spanTests() {
     reads.functions[0].code.insert(reads.functions[0].code.begin() + 9, Load{8, Type::U8});
     accept("owner read with live readonly span", reads);
     auto reuse = spanBaseline();
-    reuse.functions[0].code.insert(reuse.functions[0].code.begin() + 13,
-                                   {BorrowSpan{8, 256}, EndSpan{256}});
+    reuse.functions[0].code.insert(reuse.functions[0].code.begin() + 13, {BorrowSpan{8, 256}, EndSpan{256}});
     accept("ended local span spill can begin a later lifetime", reuse);
     auto loop = spanBaseline();
-    loop.functions[0].code.insert(
-        loop.functions[0].code.begin() + 9,
-        {Label{7}, Constant{0, Type::Bool}, BranchFalse{8}, Jump{7}, Label{8}});
+    loop.functions[0].code.insert(loop.functions[0].code.begin() + 9,
+                                  {Label{7}, Constant{0, Type::Bool}, BranchFalse{8}, Jump{7}, Label{8}});
     accept("unchanged readonly span capabilities across loop", loop);
     auto freshLoop = spanBaseline();
-    freshLoop.functions[0].code.insert(freshLoop.functions[0].code.begin() + 7,
-                                       {Label{7}, BorrowSpan{8, 256}, EndSpan{256},
-                                        Constant{0, Type::Bool}, BranchFalse{8}, Jump{7},
-                                        Label{8}});
+    freshLoop.functions[0].code.insert(
+        freshLoop.functions[0].code.begin() + 7,
+        {Label{7}, BorrowSpan{8, 256}, EndSpan{256}, Constant{0, Type::Bool}, BranchFalse{8}, Jump{7}, Label{8}});
     accept("span reborrow lifetime closes on backedge", freshLoop);
 
     // A storage address alone is not the identity of a continuing lifetime.
@@ -3140,25 +3776,39 @@ void spanTests() {
         "restarted array and span lifetimes cannot join previous lifetimes",
         [](auto &f) {
             f.code.insert(f.code.begin() + 9,
-                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320}, EndSpan{256},
-                           EndArray{8}, BeginArray{8}, Constant{43, Type::U8}, Store{8, Type::U8},
-                           Store{7, Type::U8}, Store{6, Type::U8}, BorrowSpan{8, 256},
-                           ReborrowSpan{256, 320}, Label{7}});
+                          {Constant{1, Type::Bool},
+                           BranchFalse{7},
+                           EndSpan{320},
+                           EndSpan{256},
+                           EndArray{8},
+                           BeginArray{8},
+                           Constant{43, Type::U8},
+                           Store{8, Type::U8},
+                           Store{7, Type::U8},
+                           Store{6, Type::U8},
+                           BorrowSpan{8, 256},
+                           ReborrowSpan{256, 320},
+                           Label{7}});
         },
         "incompatible active array lifetimes");
     rejectSpan(
         "restarted child span cannot join previous lifetime in same spill",
         [](auto &f) {
-            f.code.insert(f.code.begin() + 9, {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320},
-                                               ReborrowSpan{256, 320}, Label{7}});
+            f.code.insert(f.code.begin() + 9,
+                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320}, ReborrowSpan{256, 320}, Label{7}});
         },
         "incompatible active span capabilities");
     rejectSpan(
         "restarted parent authority cannot join previous reborrow tree",
         [](auto &f) {
             f.code.insert(f.code.begin() + 9,
-                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320}, EndSpan{256},
-                           BorrowSpan{8, 256}, ReborrowSpan{256, 320}, Label{7}});
+                          {Constant{1, Type::Bool},
+                           BranchFalse{7},
+                           EndSpan{320},
+                           EndSpan{256},
+                           BorrowSpan{8, 256},
+                           ReborrowSpan{256, 320},
+                           Label{7}});
         },
         "incompatible active span capabilities");
     auto closedLoop = spanBaseline();
@@ -3182,15 +3832,13 @@ void spanTests() {
                    Return{}};
     accept("fully ended array and span sites can be reused on loop backedge", closedLoop);
     auto childLoop = spanBaseline();
-    childLoop.functions[0].code.insert(childLoop.functions[0].code.begin() + 8,
-                                       {Label{7}, ReborrowSpan{256, 320}, EndSpan{320},
-                                        Constant{0, Type::Bool}, BranchFalse{8}, Jump{7},
-                                        Label{8}});
+    childLoop.functions[0].code.insert(
+        childLoop.functions[0].code.begin() + 8,
+        {Label{7}, ReborrowSpan{256, 320}, EndSpan{320}, Constant{0, Type::Bool}, BranchFalse{8}, Jump{7}, Label{8}});
     accept("fully ended child reborrow site can be reused with live parent", childLoop);
 
     const auto assembly = X86Emitter{}.emit(validate(spanCallModule()));
-    for (const auto &name :
-         {"span_read", "span_forward", "span_mixed_callee", "span_mixed_forward"})
+    for (const auto &name : {"span_read", "span_forward", "span_mixed_callee", "span_mixed_forward"})
         if (assembly.find(std::string(".local ") + name + "\n") == std::string::npos)
             throw Error("span signatures must have local linkage");
     ++passed;
@@ -3199,8 +3847,7 @@ void spanTests() {
     const auto bounds = assembly.find("jae .Laurora_bounds_trap", compare);
     const auto pointer = assembly.find("movq -312(%rbp), %rcx", compare);
     const auto payload = assembly.find("movzbq (%rcx,%rax,1), %rax", compare);
-    if (compare == std::string::npos ||
-        !(compare < bounds && bounds < pointer && pointer < payload))
+    if (compare == std::string::npos || !(compare < bounds && bounds < pointer && pointer < payload))
         throw Error("span bounds check must precede pointer and payload loads");
     ++passed;
     std::cout << "PASS IR span negative and upper bounds precede pointer load\n";
@@ -3223,28 +3870,27 @@ void initializationPayloadMetricTests() {
             const int alternate = branch * 2;
             const int join = alternate + 1;
             function.code.insert(function.code.end(),
-                                 {Constant{1, Type::Bool}, BranchFalse{alternate},
-                                  Constant{1, Type::I64}, Jump{join}, Label{alternate},
-                                  Constant{2, Type::I64}, Label{join}});
+                                 {Constant{1, Type::Bool},
+                                  BranchFalse{alternate},
+                                  Constant{1, Type::I64},
+                                  Jump{join},
+                                  Label{alternate},
+                                  Constant{2, Type::I64},
+                                  Label{join}});
         }
         function.code.push_back(Return{});
-        std::map<std::string, const aurora::ir::Function *> functions{
-            {function.name, &function}};
+        std::map<std::string, const aurora::ir::Function *> functions{{function.name, &function}};
         verification::Metrics metrics;
         verification::verifyFunction(function, functions, &metrics);
         const auto count = static_cast<std::size_t>(slotCount);
         const auto words = count / 64 + (count % 64 != 0);
-        if (metrics.snapshots != 7 || metrics.peakOperandDepth != 0 ||
-            metrics.peakRetainedValueFacts != 12 * count ||
-            metrics.peakRetainedInitializationPayloadBytes !=
-                7 * 2 * words * sizeof(std::uint64_t))
+        if (metrics.snapshots != 7 || metrics.peakOperandDepth != 0 || metrics.peakRetainedValueFacts != 12 * count ||
+            metrics.peakRetainedInitializationPayloadBytes != 7 * 2 * words * sizeof(std::uint64_t))
             throw Error("retained initialization payload differs from exact dense word storage");
         ++passed;
-        std::cout << "PASS IR initialization payload for " << count
-                  << " slots: snapshots=" << metrics.snapshots
+        std::cout << "PASS IR initialization payload for " << count << " slots: snapshots=" << metrics.snapshots
                   << ", retained facts=" << metrics.peakRetainedValueFacts
-                  << ", initialization payload bytes="
-                  << metrics.peakRetainedInitializationPayloadBytes << '\n';
+                  << ", initialization payload bytes=" << metrics.peakRetainedInitializationPayloadBytes << '\n';
     }
 }
 
@@ -3294,19 +3940,26 @@ int main(int argc, char **argv) {
         for (const auto operation : {Binary::CheckedDivide, Binary::CheckedRemainder}) {
             const auto name = operation == Binary::CheckedDivide ? "division" : "remainder";
             auto arithmetic = baseline();
-            arithmetic.functions[0].code = {Constant{84, Type::I64}, Push{}, Constant{2, Type::I64},
-                                            BinaryValue{operation}, Return{}};
+            arithmetic.functions[0].code = {
+                Constant{84, Type::I64}, Push{}, Constant{2, Type::I64}, BinaryValue{operation}, Return{}};
             accept(std::string("typed checked ") + name, arithmetic);
             rejectModule(
-                std::string(name) + " bool right operand", arithmetic,
-                [](Module &module) { module.functions[0].code[2] = Constant{1, Type::Bool}; },
+                std::string(name) + " bool right operand",
+                arithmetic,
+                [](Module &module) {
+                    module.functions[0].code[2] = Constant{1, Type::Bool};
+                },
                 "mistyped current");
             rejectModule(
-                std::string(name) + " bool left operand", arithmetic,
-                [](Module &module) { module.functions[0].code[0] = Constant{1, Type::Bool}; },
+                std::string(name) + " bool left operand",
+                arithmetic,
+                [](Module &module) {
+                    module.functions[0].code[0] = Constant{1, Type::Bool};
+                },
                 "noninteger left operand");
             rejectModule(
-                std::string(name) + " missing left operand", arithmetic,
+                std::string(name) + " missing left operand",
+                arithmetic,
                 [](Module &module) {
                     module.functions[0].code.erase(module.functions[0].code.begin() + 1);
                 },
@@ -3315,65 +3968,120 @@ int main(int argc, char **argv) {
             const auto zero = emission.find("jz .Laurora_division_zero_trap");
             const auto checked = emission.find("cmpq $-1, %r11");
             const auto division = emission.find("idivq %r11");
-            if (zero == std::string::npos || checked == std::string::npos ||
-                division == std::string::npos || !(zero < checked && checked < division))
+            if (zero == std::string::npos || checked == std::string::npos || division == std::string::npos ||
+                !(zero < checked && checked < division))
                 throw Error("native division must retain zero and overflow checks before IDIV");
             ++passed;
             std::cout << "PASS IR " << name << " guard ordering\n";
         }
         accept("typed load/store", baseline());
-        reject("empty module", [](Module &m) { m.functions.clear(); }, "empty module");
         reject(
-            "symbol injection", [](Module &m) { m.functions[0].name = "x:\n.include \"bad\""; },
+            "empty module",
+            [](Module &m) {
+                m.functions.clear();
+            },
+            "empty module");
+        reject(
+            "symbol injection",
+            [](Module &m) {
+                m.functions[0].name = "x:\n.include \"bad\"";
+            },
             "function symbol");
         reject(
-            "reserved symbol", [](Module &m) { m.functions[0].name = "aurora_reflect_size"; },
+            "reserved symbol",
+            [](Module &m) {
+                m.functions[0].name = "aurora_reflect_size";
+            },
             "function symbol");
         reject(
-            "duplicate function", [](Module &m) { m.functions.push_back(m.functions[0]); },
+            "duplicate function",
+            [](Module &m) {
+                m.functions.push_back(m.functions[0]);
+            },
             "duplicate function");
-        reject("bad frame", [](Module &m) { m.functions[0].frameBytes = 8; }, "frame size");
         reject(
-            "oversized frame", [](Module &m) { m.functions[0].frameBytes = 65552; }, "frame size");
-        reject("bad slot", [](Module &m) { m.functions[0].slots[7] = Type::I64; }, "slot offset");
+            "bad frame",
+            [](Module &m) {
+                m.functions[0].frameBytes = 8;
+            },
+            "frame size");
         reject(
-            "slot past frame", [](Module &m) { m.functions[0].slots[24] = Type::I64; },
+            "oversized frame",
+            [](Module &m) {
+                m.functions[0].frameBytes = 65552;
+            },
+            "frame size");
+        reject(
+            "bad slot",
+            [](Module &m) {
+                m.functions[0].slots[7] = Type::I64;
+            },
+            "slot offset");
+        reject(
+            "slot past frame",
+            [](Module &m) {
+                m.functions[0].slots[24] = Type::I64;
+            },
             "slot offset");
         reject(
             "noncanonical bool",
-            [](Module &m) { m.functions[0].code[0] = Constant{2, Type::Bool}; },
+            [](Module &m) {
+                m.functions[0].code[0] = Constant{2, Type::Bool};
+            },
             "noncanonical bool");
         reject(
             "load uninitialized",
             [](Module &m) {
-                m.functions[0].code.erase(m.functions[0].code.begin(),
-                                          m.functions[0].code.begin() + 2);
+                m.functions[0].code.erase(m.functions[0].code.begin(), m.functions[0].code.begin() + 2);
             },
             "load before initialization");
         reject(
-            "load wrong type", [](Module &m) { m.functions[0].code[2] = Load{8, Type::Bool}; },
+            "load wrong type",
+            [](Module &m) {
+                m.functions[0].code[2] = Load{8, Type::Bool};
+            },
             "slot type/layout");
         reject(
-            "store wrong type", [](Module &m) { m.functions[0].code[0] = Constant{1, Type::Bool}; },
+            "store wrong type",
+            [](Module &m) {
+                m.functions[0].code[0] = Constant{1, Type::Bool};
+            },
             "mistyped current");
         reject(
             "stack underflow",
-            [](Module &m) { m.functions[0].code.insert(m.functions[0].code.begin(), Pop{}); },
+            [](Module &m) {
+                m.functions[0].code.insert(m.functions[0].code.begin(), Pop{});
+            },
             "stack underflow");
         reject(
             "push undefined",
-            [](Module &m) { m.functions[0].code.insert(m.functions[0].code.begin(), Push{}); },
+            [](Module &m) {
+                m.functions[0].code.insert(m.functions[0].code.begin(), Push{});
+            },
             "push without");
         reject(
             "unbalanced return",
-            [](Module &m) { m.functions[0].code.insert(m.functions[0].code.end() - 1, Push{}); },
+            [](Module &m) {
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, Push{});
+            },
             "unbalanced stack");
         reject(
-            "wrong return", [](Module &m) { m.functions[0].result = Type::Bool; },
+            "wrong return",
+            [](Module &m) {
+                m.functions[0].result = Type::Bool;
+            },
             "mistyped current");
-        reject("fallthrough", [](Module &m) { m.functions[0].code.pop_back(); }, "fallthrough");
         reject(
-            "unknown jump", [](Module &m) { m.functions[0].code.push_back(Jump{99}); },
+            "fallthrough",
+            [](Module &m) {
+                m.functions[0].code.pop_back();
+            },
+            "fallthrough");
+        reject(
+            "unknown jump",
+            [](Module &m) {
+                m.functions[0].code.push_back(Jump{99});
+            },
             "unknown jump");
         reject(
             "duplicate label",
@@ -3383,21 +4091,28 @@ int main(int argc, char **argv) {
             "duplicate or invalid label");
         reject(
             "unreachable operation",
-            [](Module &m) { m.functions[0].code.push_back(Constant{0, Type::I64}); },
+            [](Module &m) {
+                m.functions[0].code.push_back(Constant{0, Type::I64});
+            },
             "unreachable semantic");
         reject(
             "unreachable bad parameter",
-            [](Module &m) { m.functions[0].code.push_back(BindParameter{999, 8, Type::I64}); },
+            [](Module &m) {
+                m.functions[0].code.push_back(BindParameter{999, 8, Type::I64});
+            },
             "outside entry prefix");
         reject(
             "jump over stack effect",
             [](Module &m) {
-                m.functions[0].code = {Constant{42, Type::I64},    Jump{1}, Push{}, Label{1},
-                                       MetadataQuery{Query::Size}, Return{}};
+                m.functions[0].code = {
+                    Constant{42, Type::I64}, Jump{1}, Push{}, Label{1}, MetadataQuery{Query::Size}, Return{}};
             },
             "unreachable semantic");
         reject(
-            "missing parameter prefix", [](Module &m) { m.functions[0].parameters = {Type::I64}; },
+            "missing parameter prefix",
+            [](Module &m) {
+                m.functions[0].parameters = {Type::I64};
+            },
             "entry prefix");
         reject(
             "parameter rebound after call",
@@ -3405,9 +4120,12 @@ int main(int argc, char **argv) {
                 auto &f = m.functions[0];
                 f.parameters = {Type::Bool};
                 f.slots[8] = Type::Bool;
-                f.code = {BindParameter{0, 8, Type::Bool}, Constant{42, Type::I64},
-                          MetadataQuery{Query::Size},      BindParameter{0, 8, Type::Bool},
-                          Constant{42, Type::I64},         Return{}};
+                f.code = {BindParameter{0, 8, Type::Bool},
+                          Constant{42, Type::I64},
+                          MetadataQuery{Query::Size},
+                          BindParameter{0, 8, Type::Bool},
+                          Constant{42, Type::I64},
+                          Return{}};
             },
             "outside entry prefix");
         reject(
@@ -3419,47 +4137,47 @@ int main(int argc, char **argv) {
         reject(
             "bad unary enum",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                           UnaryValue{static_cast<Unary>(99)});
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, UnaryValue{static_cast<Unary>(99)});
             },
             "invalid unary");
         reject(
             "bad binary enum",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                           BinaryValue{static_cast<Binary>(99)});
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, BinaryValue{static_cast<Binary>(99)});
             },
             "invalid binary");
         reject(
             "bad query enum",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                           MetadataQuery{static_cast<Query>(99)});
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, MetadataQuery{static_cast<Query>(99)});
             },
             "unknown metadata");
         reject(
-            "bad descriptor", [](Module &m) { m.descriptors[-1] = Descriptor{8, 0}; },
+            "bad descriptor",
+            [](Module &m) {
+                m.descriptors[-1] = Descriptor{8, 0};
+            },
             "invalid metadata");
         reject(
             "borrow uninitialized payload",
             [](Module &m) {
-                m.functions[0].code = {BorrowHandle{8, Type::Ref}, Constant{42, Type::I64},
-                                       Return{}};
+                m.functions[0].code = {BorrowHandle{8, Type::Ref}, Constant{42, Type::I64}, Return{}};
             },
             "uninitialized payload");
         reject(
             "unchecked index",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                           IndexLoad{8, 1, Type::I64});
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, IndexLoad{8, 1, Type::I64});
             },
             "bounds token");
         reject(
             "guard invalidated by value change",
             [](Module &m) {
                 m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                           {Constant{0, Type::I64}, BoundsGuard{8, 1, Type::I64},
-                                            Constant{1, Type::I64}, IndexLoad{8, 1, Type::I64}});
+                                           {Constant{0, Type::I64},
+                                            BoundsGuard{8, 1, Type::I64},
+                                            Constant{1, Type::I64},
+                                            IndexLoad{8, 1, Type::I64}});
             },
             "bounds token");
         reject(
@@ -3512,23 +4230,24 @@ int main(int argc, char **argv) {
             [](Module &m) {
                 auto &f = m.functions[0];
                 f.slots[16] = Type::I64;
-                f.code = {Constant{42, Type::I64},     Store{8, Type::I64},
-                          Constant{0, Type::I64},      BoundsGuard{16, 2, Type::I64},
-                          IndexLoad{16, 2, Type::I64}, Return{}};
+                f.code = {Constant{42, Type::I64},
+                          Store{8, Type::I64},
+                          Constant{0, Type::I64},
+                          BoundsGuard{16, 2, Type::I64},
+                          IndexLoad{16, 2, Type::I64},
+                          Return{}};
             },
             "array element not initialized");
         reject(
             "array layout underflow",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                           BoundsGuard{8, 2, Type::I64});
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, BoundsGuard{8, 2, Type::I64});
             },
             "layout underflow");
         reject(
             "store without checked index",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                           {Push{}, IndexStore{8, 1, Type::I64}});
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, {Push{}, IndexStore{8, 1, Type::I64}});
             },
             "bounds token");
         reject(
@@ -3592,14 +4311,22 @@ int main(int argc, char **argv) {
 
         accept("constructor, const object and receiver forwarding", receiverBaseline());
         rejectReceiver(
-            "missing class layout", [](Module &m) { m.classLayouts.clear(); },
+            "missing class layout",
+            [](Module &m) {
+                m.classLayouts.clear();
+            },
             "unknown object class");
         rejectReceiver(
-            "non-scalar class layout", [](Module &m) { m.classLayouts["Pair"][0] = Type::Ref; },
+            "non-scalar class layout",
+            [](Module &m) {
+                m.classLayouts["Pair"][0] = Type::Ref;
+            },
             "non-scalar class layout");
         rejectReceiver(
             "unknown bound receiver nominal type",
-            [](Module &m) { m.functions[2].receiver->className = "Unknown"; },
+            [](Module &m) {
+                m.functions[2].receiver->className = "Unknown";
+            },
             "unknown receiver class");
         rejectReceiver(
             "forged object type",
@@ -3609,10 +4336,16 @@ int main(int argc, char **argv) {
             },
             "nominal class mismatch");
         rejectReceiver(
-            "forged object scalar layout", [](Module &m) { m.functions[0].slots[8] = Type::I64; },
+            "forged object scalar layout",
+            [](Module &m) {
+                m.functions[0].slots[8] = Type::I64;
+            },
             "object field slot type/layout mismatch");
         rejectReceiver(
-            "missing object field slot", [](Module &m) { m.functions[0].slots.erase(8); },
+            "missing object field slot",
+            [](Module &m) {
+                m.functions[0].slots.erase(8);
+            },
             "object field slot type/layout mismatch");
         rejectReceiver(
             "overlapping object layouts",
@@ -3630,7 +4363,9 @@ int main(int argc, char **argv) {
             "invalid object layout offset");
         rejectReceiver(
             "object base outside frame",
-            [](Module &m) { m.functions[0].objectSlots[24] = ObjectSlot{"Pair", true}; },
+            [](Module &m) {
+                m.functions[0].objectSlots[24] = ObjectSlot{"Pair", true};
+            },
             "invalid object layout offset");
         rejectReceiver(
             "receiver load without bound receiver",
@@ -3641,51 +4376,68 @@ int main(int argc, char **argv) {
         rejectReceiver(
             "receiver store without bound receiver",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin() + 2,
-                                           ReceiverStore{0, Type::I64});
+                m.functions[0].code.insert(m.functions[0].code.begin() + 2, ReceiverStore{0, Type::I64});
             },
             "without bound receiver");
         rejectReceiver(
             "negative receiver field",
-            [](Module &m) { m.functions[2].code[0] = ReceiverLoad{-1, Type::I64}; },
+            [](Module &m) {
+                m.functions[2].code[0] = ReceiverLoad{-1, Type::I64};
+            },
             "receiver field type/layout");
         rejectReceiver(
             "receiver field past layout",
-            [](Module &m) { m.functions[2].code[0] = ReceiverLoad{2, Type::I64}; },
+            [](Module &m) {
+                m.functions[2].code[0] = ReceiverLoad{2, Type::I64};
+            },
             "receiver field type/layout");
         rejectReceiver(
             "receiver field type forged",
-            [](Module &m) { m.functions[2].code[0] = ReceiverLoad{1, Type::I64}; },
+            [](Module &m) {
+                m.functions[2].code[0] = ReceiverLoad{1, Type::I64};
+            },
             "receiver field type/layout");
         rejectReceiver(
             "receiver cannot become scalar",
-            [](Module &m) { m.functions[2].code[0] = ReceiverLoad{0, Type::Ref}; },
+            [](Module &m) {
+                m.functions[2].code[0] = ReceiverLoad{0, Type::Ref};
+            },
             "receiver field type/layout");
         rejectReceiver(
             "receiver write through readonly capability",
             [](Module &m) {
-                m.functions[2].code = {Constant{42, Type::I64}, ReceiverStore{0, Type::I64},
-                                       Return{}};
+                m.functions[2].code = {Constant{42, Type::I64}, ReceiverStore{0, Type::I64}, Return{}};
             },
             "write through const receiver");
         rejectReceiver(
             "scalar call receiver bypass",
-            [](Module &m) { m.functions[0].code[6] = Call{"get_pair"}; },
+            [](Module &m) {
+                m.functions[0].code[6] = Call{"get_pair"};
+            },
             "plain call cannot target receiver");
         rejectReceiver(
             "method call scalar target",
-            [](Module &m) { m.functions[0].code[6] = MethodCall{"test", 16}; },
+            [](Module &m) {
+                m.functions[0].code[6] = MethodCall{"test", 16};
+            },
             "method call requires receiver target");
         rejectReceiver(
-            "unknown method", [](Module &m) { m.functions[0].code[6] = MethodCall{"missing", 16}; },
+            "unknown method",
+            [](Module &m) {
+                m.functions[0].code[6] = MethodCall{"missing", 16};
+            },
             "unknown method call target");
         rejectReceiver(
             "method requires exact object base",
-            [](Module &m) { m.functions[0].code[6] = MethodCall{"get_pair", 8}; },
+            [](Module &m) {
+                m.functions[0].code[6] = MethodCall{"get_pair", 8};
+            },
             "not an object slot");
         rejectReceiver(
             "method rejects negative base",
-            [](Module &m) { m.functions[0].code[6] = MethodCall{"get_pair", -16}; },
+            [](Module &m) {
+                m.functions[0].code[6] = MethodCall{"get_pair", -16};
+            },
             "invalid method receiver offset");
         rejectReceiver(
             "receiver cannot alias arbitrary scalar",
@@ -3696,7 +4448,9 @@ int main(int argc, char **argv) {
             "not an object slot");
         rejectReceiver(
             "forwarding requires receiver",
-            [](Module &m) { m.functions[0].code[6] = MethodCall{"get_pair", 0}; },
+            [](Module &m) {
+                m.functions[0].code[6] = MethodCall{"get_pair", 0};
+            },
             "forwarding without bound receiver");
         rejectReceiver(
             "forwarding preserves nominal identity",
@@ -3707,55 +4461,71 @@ int main(int argc, char **argv) {
             "forwarded receiver nominal class mismatch");
         rejectReceiver(
             "const receiver cannot forward exclusively",
-            [](Module &m) { m.functions[2].receiver->mutableValue = true; },
+            [](Module &m) {
+                m.functions[2].receiver->mutableValue = true;
+            },
             "const receiver cannot forward mutable");
         rejectReceiver(
             "const local cannot supply mutable receiver",
-            [](Module &m) { m.functions[3].receiver->mutableValue = true; },
+            [](Module &m) {
+                m.functions[3].receiver->mutableValue = true;
+            },
             "const object cannot supply mutable");
         rejectReceiver(
             "constructor requires mutable receiver",
-            [](Module &m) { m.functions[1].receiver->mutableValue = false; },
+            [](Module &m) {
+                m.functions[1].receiver->mutableValue = false;
+            },
             "invalid constructor receiver signature");
         rejectReceiver(
             "constructor requires i64 internal result",
-            [](Module &m) { m.functions[1].result = Type::Bool; },
+            [](Module &m) {
+                m.functions[1].result = Type::Bool;
+            },
             "invalid constructor receiver signature");
         rejectReceiver(
             "constructor missing field",
             [](Module &m) {
-                m.functions[1].code.erase(m.functions[1].code.begin() + 4,
-                                          m.functions[1].code.begin() + 6);
+                m.functions[1].code.erase(m.functions[1].code.begin() + 4, m.functions[1].code.begin() + 6);
             },
             "before all fields initialized");
         rejectReceiver(
             "constructor duplicate field",
             [](Module &m) {
-                m.functions[1].code.insert(m.functions[1].code.begin() + 4,
-                                           ReceiverStore{0, Type::I64});
+                m.functions[1].code.insert(m.functions[1].code.begin() + 4, ReceiverStore{0, Type::I64});
             },
             "field initialized more than once");
         rejectReceiver(
             "constructor receiver read even after final write",
-            [](Module &m) { m.functions[1].code[6] = ReceiverLoad{0, Type::I64}; },
+            [](Module &m) {
+                m.functions[1].code[6] = ReceiverLoad{0, Type::I64};
+            },
             "constructor cannot read receiver");
         rejectReceiver(
             "constructor cannot forward receiver",
-            [](Module &m) { m.functions[1].code[6] = MethodCall{"get_pair", 0}; },
+            [](Module &m) {
+                m.functions[1].code[6] = MethodCall{"get_pair", 0};
+            },
             "constructor cannot forward receiver");
         rejectReceiver(
             "ordinary method cannot forward as constructor",
             [](Module &m) {
-                m.functions[3].code = {Constant{42, Type::I64},         Push{},
-                                       Constant{1, Type::Bool},         Push{},
-                                       MethodCall{"construct_pair", 0}, Return{}};
+                m.functions[3].code = {Constant{42, Type::I64},
+                                       Push{},
+                                       Constant{1, Type::Bool},
+                                       Push{},
+                                       MethodCall{"construct_pair", 0},
+                                       Return{}};
             },
             "constructor cannot forward receiver");
         rejectReceiver(
             "method requires full object initialization",
             [](Module &m) {
-                m.functions[0].code = {BeginObject{16}, Constant{42, Type::I64},
-                                       Store{16, Type::I64}, MethodCall{"get_pair", 16}, Return{}};
+                m.functions[0].code = {BeginObject{16},
+                                       Constant{42, Type::I64},
+                                       Store{16, Type::I64},
+                                       MethodCall{"get_pair", 16},
+                                       Return{}};
             },
             "object not fully initialized");
         rejectReceiver(
@@ -3768,18 +4538,24 @@ int main(int argc, char **argv) {
             "constructor cannot run twice",
             [](Module &m) {
                 m.functions[0].code.insert(m.functions[0].code.begin() + 6,
-                                           {Constant{42, Type::I64}, Push{},
-                                            Constant{1, Type::Bool}, Push{},
+                                           {Constant{42, Type::I64},
+                                            Push{},
+                                            Constant{1, Type::Bool},
+                                            Push{},
                                             MethodCall{"construct_pair", 16}});
             },
             "constructor called more than once");
         rejectReceiver(
             "constructor argument type",
-            [](Module &m) { m.functions[0].code[3] = Constant{1, Type::I64}; },
+            [](Module &m) {
+                m.functions[0].code[3] = Constant{1, Type::I64};
+            },
             "method argument type mismatch");
         rejectReceiver(
             "constructor argument underflow",
-            [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 4); },
+            [](Module &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin() + 4);
+            },
             "method argument type mismatch");
         rejectReceiver(
             "const object field direct overwrite",
@@ -3791,16 +4567,17 @@ int main(int argc, char **argv) {
             "const object field indexed overwrite",
             [](Module &m) {
                 m.functions[0].code.insert(m.functions[0].code.begin() + 6,
-                                           {Constant{0, Type::I64}, BoundsGuard{16, 1, Type::I64},
-                                            Push{}, Constant{1, Type::I64},
+                                           {Constant{0, Type::I64},
+                                            BoundsGuard{16, 1, Type::I64},
+                                            Push{},
+                                            Constant{1, Type::I64},
                                             IndexStore{16, 1, Type::I64}});
             },
             "indexed write to const object");
         rejectReceiver(
             "object cannot forge scalar borrow capability",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin() + 6,
-                                           BorrowHandle{16, Type::Ref});
+                m.functions[0].code.insert(m.functions[0].code.begin() + 6, BorrowHandle{16, Type::Ref});
             },
             "object field cannot become a scalar borrow handle");
         rejectReceiver(
@@ -3813,19 +4590,27 @@ int main(int argc, char **argv) {
             "parameter cannot bind object field");
         rejectReceiver(
             "self-recursive receiver",
-            [](Module &m) { m.functions[2].code = {MethodCall{"get_pair", 0}, Return{}}; },
+            [](Module &m) {
+                m.functions[2].code = {MethodCall{"get_pair", 0}, Return{}};
+            },
             "recursive receiver call cycle");
         rejectReceiver(
             "mutually recursive receivers",
-            [](Module &m) { m.functions[2].code = {MethodCall{"relay_pair", 0}, Return{}}; },
+            [](Module &m) {
+                m.functions[2].code = {MethodCall{"relay_pair", 0}, Return{}};
+            },
             "recursive receiver call cycle");
         rejectReceiver(
             "receiver recursion through scalar intermediary",
-            [](Module &m) { m.functions[2].code = {Call{"test"}, Return{}}; },
+            [](Module &m) {
+                m.functions[2].code = {Call{"test"}, Return{}};
+            },
             "recursive receiver call cycle");
         rejectReceiver(
             "unreachable receiver instruction",
-            [](Module &m) { m.functions[2].code.push_back(ReceiverStore{0, Type::I64}); },
+            [](Module &m) {
+                m.functions[2].code.push_back(ReceiverStore{0, Type::I64});
+            },
             "unreachable semantic instruction");
         rejectReceiver(
             "constructor conditional field omitted",
@@ -3881,9 +4666,9 @@ int main(int argc, char **argv) {
             [](Module &m) {
                 auto &f = m.functions[0];
                 f.objectSlots[16].mutableValue = true;
-                f.code.insert(f.code.begin() + 1,
-                              {Constant{1, Type::Bool}, BranchFalse{1}, Constant{42, Type::I64},
-                               Store{16, Type::I64}, Label{1}});
+                f.code.insert(
+                    f.code.begin() + 1,
+                    {Constant{1, Type::Bool}, BranchFalse{1}, Constant{42, Type::I64}, Store{16, Type::I64}, Label{1}});
             },
             "requires uninitialized object");
         auto aggregateReceiver = receiverBaseline();
@@ -3898,20 +4683,21 @@ int main(int argc, char **argv) {
         auto mutableReceiver = receiverBaseline();
         mutableReceiver.functions[0].objectSlots[16].mutableValue = true;
         mutableReceiver.functions[3].receiver->mutableValue = true;
-        mutableReceiver.functions[3].code = {Constant{41, Type::I64},   ReceiverStore{0, Type::I64},
-                                             Constant{42, Type::I64},   ReceiverStore{0, Type::I64},
-                                             MethodCall{"get_pair", 0}, Return{}};
+        mutableReceiver.functions[3].code = {Constant{41, Type::I64},
+                                             ReceiverStore{0, Type::I64},
+                                             Constant{42, Type::I64},
+                                             ReceiverStore{0, Type::I64},
+                                             MethodCall{"get_pair", 0},
+                                             Return{}};
         accept("mutable receiver reborrow downgrades and returns", mutableReceiver);
         auto scalarHelper = receiverBaseline();
         auto helper = baseline().functions[0];
         helper.name = "helper";
         scalarHelper.functions.push_back(helper);
-        scalarHelper.functions[2].code.insert(scalarHelper.functions[2].code.begin(),
-                                              Call{"helper"});
+        scalarHelper.functions[2].code.insert(scalarHelper.functions[2].code.begin(), Call{"helper"});
         accept("receiver function ordinary scalar helper", scalarHelper);
         auto scalarRecursive = baseline();
-        scalarRecursive.functions[0].code.insert(scalarRecursive.functions[0].code.begin(),
-                                                 Call{"test"});
+        scalarRecursive.functions[0].code.insert(scalarRecursive.functions[0].code.begin(), Call{"test"});
         accept("pure scalar recursion stays supported", scalarRecursive);
         auto branchConstructor = receiverBaseline();
         branchConstructor.functions[1].code = {BindParameter{0, 8, Type::I64},
@@ -3933,27 +4719,34 @@ int main(int argc, char **argv) {
         auto emptyReceiver = receiverBaseline();
         emptyReceiver.classLayouts["Pair"].clear();
         emptyReceiver.functions[0].slots.clear();
-        emptyReceiver.functions[1].code = {BindParameter{0, 8, Type::I64},
-                                           BindParameter{1, 16, Type::Bool}, Constant{0, Type::I64},
-                                           Return{}};
+        emptyReceiver.functions[1].code = {
+            BindParameter{0, 8, Type::I64}, BindParameter{1, 16, Type::Bool}, Constant{0, Type::I64}, Return{}};
         emptyReceiver.functions[2].code = {Constant{42, Type::I64}, Return{}};
         accept("empty object reserves private receiver storage", emptyReceiver);
         rejectModule(
-            "empty object constructor cannot repeat", emptyReceiver,
+            "empty object constructor cannot repeat",
+            emptyReceiver,
             [](Module &m) {
                 m.functions[0].code.insert(m.functions[0].code.begin() + 6,
-                                           {Constant{42, Type::I64}, Push{},
-                                            Constant{1, Type::Bool}, Push{},
+                                           {Constant{42, Type::I64},
+                                            Push{},
+                                            Constant{1, Type::Bool},
+                                            Push{},
                                             MethodCall{"construct_pair", 16}});
             },
             "constructor called more than once");
         rejectModule(
-            "empty object cannot alias scalar slot", emptyReceiver,
-            [](Module &m) { m.functions[0].slots[16] = Type::I64; },
+            "empty object cannot alias scalar slot",
+            emptyReceiver,
+            [](Module &m) {
+                m.functions[0].slots[16] = Type::I64;
+            },
             "scalar slot overlaps empty object");
         rejectReceiver(
             "object method before lifetime begin",
-            [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin()); },
+            [](Module &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin());
+            },
             "outside active object lifetime");
         rejectReceiver(
             "object field store before lifetime begin",
@@ -3964,16 +4757,14 @@ int main(int argc, char **argv) {
         rejectReceiver(
             "object field load after lifetime end",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin() + 6,
-                                           {EndObject{16}, Load{16, Type::I64}});
+                m.functions[0].code.insert(m.functions[0].code.begin() + 6, {EndObject{16}, Load{16, Type::I64}});
             },
             "outside active lifetime");
         rejectReceiver(
             "object indexed access after lifetime end",
             [](Module &m) {
-                m.functions[0].code.insert(
-                    m.functions[0].code.begin() + 6,
-                    {EndObject{16}, Constant{0, Type::I64}, BoundsGuard{16, 1, Type::I64}});
+                m.functions[0].code.insert(m.functions[0].code.begin() + 6,
+                                           {EndObject{16}, Constant{0, Type::I64}, BoundsGuard{16, 1, Type::I64}});
             },
             "outside active lifetime");
         rejectReceiver(
@@ -3997,13 +4788,14 @@ int main(int argc, char **argv) {
         rejectReceiver(
             "object double end",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin() + 6,
-                                           {EndObject{16}, EndObject{16}});
+                m.functions[0].code.insert(m.functions[0].code.begin() + 6, {EndObject{16}, EndObject{16}});
             },
             "lifetime is not active");
         rejectReceiver(
             "object begin requires exact base",
-            [](Module &m) { m.functions[0].code[0] = BeginObject{8}; },
+            [](Module &m) {
+                m.functions[0].code[0] = BeginObject{8};
+            },
             "lifetime operation requires exact object slot");
         rejectReceiver(
             "object end requires exact base",
@@ -4014,24 +4806,23 @@ int main(int argc, char **argv) {
         rejectReceiver(
             "new lifetime cannot inherit initialized fields",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin() + 6,
-                                           {EndObject{16}, BeginObject{16}});
+                m.functions[0].code.insert(m.functions[0].code.begin() + 6, {EndObject{16}, BeginObject{16}});
             },
             "object not fully initialized");
         rejectReceiver(
             "branch cannot skip lifetime end",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                           {Constant{1, Type::Bool}, BranchFalse{1}, EndObject{16},
-                                            Label{1}, Constant{42, Type::I64}});
+                m.functions[0].code.insert(
+                    m.functions[0].code.end() - 1,
+                    {Constant{1, Type::Bool}, BranchFalse{1}, EndObject{16}, Label{1}, Constant{42, Type::I64}});
             },
             "incompatible active object lifetimes");
         rejectReceiver(
             "branch cannot skip lifetime begin",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin(),
-                                           {Constant{1, Type::Bool}, BranchFalse{1}, Jump{2},
-                                            Label{1}, BeginObject{16}, Label{2}});
+                m.functions[0].code.insert(
+                    m.functions[0].code.begin(),
+                    {Constant{1, Type::Bool}, BranchFalse{1}, Jump{2}, Label{1}, BeginObject{16}, Label{2}});
             },
             "incompatible active object lifetimes");
         rejectReceiver(
@@ -4039,15 +4830,18 @@ int main(int argc, char **argv) {
             [](Module &m) {
                 auto &code = m.functions[0].code;
                 code.insert(code.begin(), Label{1});
-                code.insert(code.end() - 1,
-                            {Constant{1, Type::Bool}, BranchFalse{1}, Constant{42, Type::I64}});
+                code.insert(code.end() - 1, {Constant{1, Type::Bool}, BranchFalse{1}, Constant{42, Type::I64}});
             },
             "incompatible active object lifetimes");
         auto lifetimeReuse = receiverBaseline();
-        lifetimeReuse.functions[0].code.insert(
-            lifetimeReuse.functions[0].code.begin() + 6,
-            {EndObject{16}, BeginObject{16}, Constant{42, Type::I64}, Push{},
-             Constant{1, Type::Bool}, Push{}, MethodCall{"construct_pair", 16}});
+        lifetimeReuse.functions[0].code.insert(lifetimeReuse.functions[0].code.begin() + 6,
+                                               {EndObject{16},
+                                                BeginObject{16},
+                                                Constant{42, Type::I64},
+                                                Push{},
+                                                Constant{1, Type::Bool},
+                                                Push{},
+                                                MethodCall{"construct_pair", 16}});
         accept("new lifetime permits constructing same storage again", lifetimeReuse);
         auto lifetimeLoop = receiverBaseline();
         lifetimeLoop.functions[0].code.insert(lifetimeLoop.functions[0].code.begin(), Label{1});
@@ -4073,10 +4867,20 @@ int main(int argc, char **argv) {
         six.code.insert(six.code.end(), {MethodCall{"get_pair", 0}, Return{}});
         auto &sixCaller = sixArguments.functions[0];
         sixCaller.code.insert(sixCaller.code.begin() + 6,
-                              {Constant{99, Type::I64}, Push{}, Constant{1, Type::I64}, Push{},
-                               Constant{2, Type::I64}, Push{}, Constant{3, Type::I64}, Push{},
-                               Constant{4, Type::I64}, Push{}, Constant{5, Type::I64}, Push{},
-                               Constant{6, Type::I64}, Push{}});
+                              {Constant{99, Type::I64},
+                               Push{},
+                               Constant{1, Type::I64},
+                               Push{},
+                               Constant{2, Type::I64},
+                               Push{},
+                               Constant{3, Type::I64},
+                               Push{},
+                               Constant{4, Type::I64},
+                               Push{},
+                               Constant{5, Type::I64},
+                               Push{},
+                               Constant{6, Type::I64},
+                               Push{}});
         sixCaller.code.insert(sixCaller.code.end() - 1, Pop{});
         accept("six scalar method arguments with odd live operand depth", sixArguments);
         const auto receiverAssembly = X86Emitter{}.emit(validate(receiverBaseline()));
@@ -4106,7 +4910,8 @@ int main(int argc, char **argv) {
         }
         accept("deep receiver-to-scalar call graph uses iterative verification", deepCalls);
         rejectModule(
-            "deep scalar bridge cannot hide receiver cycle", deepCalls,
+            "deep scalar bridge cannot hide receiver cycle",
+            deepCalls,
             [](Module &m) {
                 const auto name = m.functions.back().name;
                 m.functions.back() = m.functions[0];
@@ -4118,29 +4923,53 @@ int main(int argc, char **argv) {
 
         accept("class arguments and result use independent value storage", valueBaseline());
         rejectValue(
-            "unknown value call", [](Module &m) { valueCall(m).callee = "missing"; },
+            "unknown value call",
+            [](Module &m) {
+                valueCall(m).callee = "missing";
+            },
             "unknown aggregate call");
         rejectValue(
             "missing value argument vector",
-            [](Module &m) { valueCall(m).objectArguments.clear(); }, "vector size");
+            [](Module &m) {
+                valueCall(m).objectArguments.clear();
+            },
+            "vector size");
         rejectValue(
             "extra value argument vector entry",
-            [](Module &m) { valueCall(m).objectArguments.push_back(0); }, "vector size");
+            [](Module &m) {
+                valueCall(m).objectArguments.push_back(0);
+            },
+            "vector size");
         rejectValue(
             "scalar argument cannot contain object base",
-            [](Module &m) { valueCall(m).objectArguments[1] = 16; }, "scalar argument cannot");
+            [](Module &m) {
+                valueCall(m).objectArguments[1] = 16;
+            },
+            "scalar argument cannot");
         rejectValue(
             "class argument cannot be scalar zero",
-            [](Module &m) { valueCall(m).objectArguments[0] = 0; }, "exact object slot");
+            [](Module &m) {
+                valueCall(m).objectArguments[0] = 0;
+            },
+            "exact object slot");
         rejectValue(
             "class argument cannot be negative",
-            [](Module &m) { valueCall(m).objectArguments[0] = -16; }, "exact object slot");
+            [](Module &m) {
+                valueCall(m).objectArguments[0] = -16;
+            },
+            "exact object slot");
         rejectValue(
             "class argument requires exact base",
-            [](Module &m) { valueCall(m).objectArguments[0] = 8; }, "exact object slot");
+            [](Module &m) {
+                valueCall(m).objectArguments[0] = 8;
+            },
+            "exact object slot");
         rejectValue(
             "argument snapshots cannot alias",
-            [](Module &m) { valueCall(m).objectArguments[2] = 16; }, "snapshots must be distinct");
+            [](Module &m) {
+                valueCall(m).objectArguments[2] = 16;
+            },
+            "snapshots must be distinct");
         rejectValue(
             "argument nominal class identity",
             [](Module &m) {
@@ -4150,7 +4979,9 @@ int main(int argc, char **argv) {
             "argument nominal class");
         rejectValue(
             "argument snapshot readonly",
-            [](Module &m) { m.functions[0].objectSlots[16].mutableValue = true; },
+            [](Module &m) {
+                m.functions[0].objectSlots[16].mutableValue = true;
+            },
             "snapshot must be readonly");
         rejectValue(
             "argument snapshot inactive",
@@ -4160,7 +4991,9 @@ int main(int argc, char **argv) {
             "argument outside active");
         rejectValue(
             "argument snapshot partially initialized",
-            [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 4); },
+            [](Module &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin() + 4);
+            },
             "argument object not fully");
         rejectValue(
             "argument snapshot uninitialized",
@@ -4171,23 +5004,39 @@ int main(int argc, char **argv) {
             "argument object not fully");
         rejectValue(
             "argument scalar type mismatch",
-            [](Module &m) { m.functions[0].code[12] = Constant{1, Type::I64}; },
+            [](Module &m) {
+                m.functions[0].code[12] = Constant{1, Type::I64};
+            },
             "scalar argument type");
         rejectValue(
             "argument missing scalar operand",
-            [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 13); },
+            [](Module &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin() + 13);
+            },
             "scalar argument type");
         rejectValue(
-            "result cannot be zero", [](Module &m) { valueCall(m).resultOffset = 0; },
+            "result cannot be zero",
+            [](Module &m) {
+                valueCall(m).resultOffset = 0;
+            },
             "result requires exact");
         rejectValue(
-            "result cannot be negative", [](Module &m) { valueCall(m).resultOffset = -48; },
+            "result cannot be negative",
+            [](Module &m) {
+                valueCall(m).resultOffset = -48;
+            },
             "result requires exact");
         rejectValue(
-            "result cannot be interior field", [](Module &m) { valueCall(m).resultOffset = 40; },
+            "result cannot be interior field",
+            [](Module &m) {
+                valueCall(m).resultOffset = 40;
+            },
             "result requires exact");
         rejectValue(
-            "result cannot alias snapshot", [](Module &m) { valueCall(m).resultOffset = 16; },
+            "result cannot alias snapshot",
+            [](Module &m) {
+                valueCall(m).resultOffset = 16;
+            },
             "result aliases argument");
         rejectValue(
             "result nominal class identity",
@@ -4198,7 +5047,9 @@ int main(int argc, char **argv) {
             "result nominal class");
         rejectValue(
             "result lifetime required",
-            [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 14); },
+            [](Module &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin() + 14);
+            },
             "result outside active");
         rejectValue(
             "result pristine field requirement",
@@ -4211,8 +5062,10 @@ int main(int argc, char **argv) {
             "result cannot initialize twice",
             [](Module &m) {
                 m.functions[0].code.insert(m.functions[0].code.begin() + 16,
-                                           {Constant{10, Type::I64}, Push{},
-                                            Constant{1, Type::Bool}, Push{},
+                                           {Constant{10, Type::I64},
+                                            Push{},
+                                            Constant{1, Type::Bool},
+                                            Push{},
                                             AggregateCall{"copy_pair", {16, 0, 32, 0}, 48}});
             },
             "result object already initialized");
@@ -4221,23 +5074,35 @@ int main(int argc, char **argv) {
             [](Module &m) {
                 auto &code = m.functions[0].code;
                 code.insert(code.begin() + 16,
-                            {Constant{1, Type::Bool}, BranchFalse{1}, EndObject{48},
-                             BeginObject{48}, Label{1}, Constant{10, Type::I64}, Push{},
-                             Constant{1, Type::Bool}, Push{},
+                            {Constant{1, Type::Bool},
+                             BranchFalse{1},
+                             EndObject{48},
+                             BeginObject{48},
+                             Label{1},
+                             Constant{10, Type::I64},
+                             Push{},
+                             Constant{1, Type::Bool},
+                             Push{},
                              AggregateCall{"copy_pair", {16, 0, 32, 0}, 48}});
             },
             "result object already initialized");
         rejectValue(
             "result scalar current cannot carry class capability",
-            [](Module &m) { m.functions[0].code.erase(m.functions[0].code.begin() + 16); },
+            [](Module &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin() + 16);
+            },
             "mistyped current");
         rejectValue(
             "plain call cannot bypass value ABI",
-            [](Module &m) { m.functions[0].code[15] = Call{"copy_pair"}; },
+            [](Module &m) {
+                m.functions[0].code[15] = Call{"copy_pair"};
+            },
             "plain call cannot target aggregate");
         rejectValue(
             "object return exact slot",
-            [](Module &m) { m.functions[1].code.back() = ReturnObject{56}; },
+            [](Module &m) {
+                m.functions[1].code.back() = ReturnObject{56};
+            },
             "return requires exact");
         rejectValue(
             "object return nominal identity",
@@ -4254,35 +5119,51 @@ int main(int argc, char **argv) {
             "return outside active");
         rejectValue(
             "object return complete initialization",
-            [](Module &m) { m.functions[1].code.erase(m.functions[1].code.end() - 2); },
+            [](Module &m) {
+                m.functions[1].code.erase(m.functions[1].code.end() - 2);
+            },
             "returned object not fully");
         rejectValue(
             "object return balanced scalar stack",
-            [](Module &m) { m.functions[1].code.insert(m.functions[1].code.end() - 1, Push{}); },
+            [](Module &m) {
+                m.functions[1].code.insert(m.functions[1].code.end() - 1, Push{});
+            },
             "unbalanced stack at object return");
         rejectValue(
             "scalar return cannot bypass value ABI",
-            [](Module &m) { m.functions[1].code.back() = Return{}; },
+            [](Module &m) {
+                m.functions[1].code.back() = Return{};
+            },
             "scalar return cannot return class");
         rejectValue(
             "object return cannot bypass scalar result",
-            [](Module &m) { m.functions[0].code.back() = ReturnObject{48}; },
+            [](Module &m) {
+                m.functions[0].code.back() = ReturnObject{48};
+            },
             "object return requires class");
         rejectValue(
             "object bind cannot use scalar instruction",
-            [](Module &m) { m.functions[1].code[0] = BindParameter{0, 16, Type("Pair")}; },
+            [](Module &m) {
+                m.functions[1].code[0] = BindParameter{0, 16, Type("Pair")};
+            },
             "entry prefix");
         rejectValue(
             "scalar bind cannot use object instruction",
-            [](Module &m) { m.functions[1].code[1] = BindObjectParameter{1, 16, "Pair"}; },
+            [](Module &m) {
+                m.functions[1].code[1] = BindObjectParameter{1, 16, "Pair"};
+            },
             "entry prefix");
         rejectValue(
             "object bind wrong index",
-            [](Module &m) { m.functions[1].code[0] = BindObjectParameter{1, 16, "Pair"}; },
+            [](Module &m) {
+                m.functions[1].code[0] = BindObjectParameter{1, 16, "Pair"};
+            },
             "entry prefix");
         rejectValue(
             "object bind wrong declared class",
-            [](Module &m) { m.functions[1].code[0] = BindObjectParameter{0, 16, "Other"}; },
+            [](Module &m) {
+                m.functions[1].code[0] = BindObjectParameter{0, 16, "Other"};
+            },
             "object parameter type");
         rejectValue(
             "object bind wrong slot class",
@@ -4293,28 +5174,32 @@ int main(int argc, char **argv) {
             "object parameter nominal");
         rejectValue(
             "object bind requires exact slot",
-            [](Module &m) { m.functions[1].code[0] = BindObjectParameter{0, 8, "Pair"}; },
+            [](Module &m) {
+                m.functions[1].code[0] = BindObjectParameter{0, 8, "Pair"};
+            },
             "object parameter requires exact");
         rejectValue(
             "object bind readonly requirement",
-            [](Module &m) { m.functions[1].objectSlots[16].mutableValue = true; },
+            [](Module &m) {
+                m.functions[1].objectSlots[16].mutableValue = true;
+            },
             "object parameter must be readonly");
         rejectValue(
             "object parameters cannot alias",
-            [](Module &m) { m.functions[1].code[2] = BindObjectParameter{2, 16, "Pair"}; },
+            [](Module &m) {
+                m.functions[1].code[2] = BindObjectParameter{2, 16, "Pair"};
+            },
             "object parameter bindings overlap");
         rejectValue(
             "object bind outside prefix",
             [](Module &m) {
-                m.functions[1].code.insert(m.functions[1].code.begin() + 4,
-                                           BindObjectParameter{0, 16, "Pair"});
+                m.functions[1].code.insert(m.functions[1].code.begin() + 4, BindObjectParameter{0, 16, "Pair"});
             },
             "outside entry prefix");
         rejectValue(
             "object parameter cannot restart lifetime",
             [](Module &m) {
-                m.functions[1].code.insert(m.functions[1].code.begin() + 4,
-                                           {EndObject{16}, BeginObject{16}});
+                m.functions[1].code.insert(m.functions[1].code.begin() + 4, {EndObject{16}, BeginObject{16}});
             },
             "parameter lifetime cannot restart");
         rejectValue(
@@ -4335,38 +5220,60 @@ int main(int argc, char **argv) {
             "scalar value-call parameter indexed immutable",
             [](Module &m) {
                 m.functions[1].code.insert(m.functions[1].code.begin() + 4,
-                                           {Constant{0, Type::I64}, BoundsGuard{24, 1, Type::I64},
-                                            Push{}, Constant{9, Type::I64},
+                                           {Constant{0, Type::I64},
+                                            BoundsGuard{24, 1, Type::I64},
+                                            Push{},
+                                            Constant{9, Type::I64},
                                             IndexStore{24, 1, Type::I64}});
             },
             "indexed write to immutable scalar");
         rejectValue(
             "method aggregate result signature denied",
-            [](Module &m) { m.functions[1].receiver = Receiver{"Pair", false, false}; },
+            [](Module &m) {
+                m.functions[1].receiver = Receiver{"Pair", false, false};
+            },
             "aggregate call cannot target receiver");
         rejectValue(
             "value-call hidden frame slot inaccessible",
-            [](Module &m) { m.functions[1].slots[72] = Type::I64; }, "invalid slot offset");
+            [](Module &m) {
+                m.functions[1].slots[72] = Type::I64;
+            },
+            "invalid slot offset");
         rejectValue(
             "value-call class capabilities are not scalar slots",
-            [](Module &m) { m.functions[1].slots[16] = Type("Pair"); }, "invalid slot payload");
+            [](Module &m) {
+                m.functions[1].slots[16] = Type("Pair");
+            },
+            "invalid slot payload");
         rejectValue(
             "value signature cannot contain reference",
-            [](Module &m) { m.functions[0].parameters = {Type::Ref}; },
+            [](Module &m) {
+                m.functions[0].parameters = {Type::Ref};
+            },
             "invalid value boundary type");
         rejectValue(
             "value signature cannot contain mutable reference",
-            [](Module &m) { m.functions[0].result = Type::MutRef; }, "invalid value boundary type");
+            [](Module &m) {
+                m.functions[0].result = Type::MutRef;
+            },
+            "invalid value boundary type");
         rejectValue(
             "value signature cannot contain owner",
-            [](Module &m) { m.functions[0].result = Type::Own; }, "invalid value boundary type");
+            [](Module &m) {
+                m.functions[0].result = Type::Own;
+            },
+            "invalid value boundary type");
         rejectValue(
             "value signature cannot contain array",
-            [](Module &m) { m.functions[0].result = Type::array(TypeKind::I64, 1); },
+            [](Module &m) {
+                m.functions[0].result = Type::array(TypeKind::I64, 1);
+            },
             "invalid value boundary type");
         rejectValue(
             "value signature unknown nominal type",
-            [](Module &m) { m.functions[0].result = Type("Missing"); },
+            [](Module &m) {
+                m.functions[0].result = Type("Missing");
+            },
             "unknown value boundary class");
         rejectValue(
             "value signature malformed class payload",
@@ -4377,7 +5284,9 @@ int main(int argc, char **argv) {
             "invalid value boundary type");
         rejectValue(
             "value signature at most six parameters",
-            [](Module &m) { m.functions[0].parameters = std::vector<Type>(7, Type("Pair")); },
+            [](Module &m) {
+                m.functions[0].parameters = std::vector<Type>(7, Type("Pair"));
+            },
             "too many parameters");
         rejectValue(
             "value boundary at most 64 fields",
@@ -4389,8 +5298,7 @@ int main(int argc, char **argv) {
         reject(
             "aggregate call cannot replace scalar call",
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin(),
-                                           AggregateCall{"test", {}, 0});
+                m.functions[0].code.insert(m.functions[0].code.begin(), AggregateCall{"test", {}, 0});
             },
             "requires aggregate signature");
         auto scalarValueResult = valueBaseline();
@@ -4401,24 +5309,30 @@ int main(int argc, char **argv) {
         scalarValueResult.functions[0].code.erase(scalarValueResult.functions[0].code.begin() + 16);
         accept("value arguments with scalar result", scalarValueResult);
         rejectModule(
-            "scalar result rejects object result storage", scalarValueResult,
-            [](Module &m) { valueCall(m).resultOffset = 48; }, "scalar result cannot name");
+            "scalar result rejects object result storage",
+            scalarValueResult,
+            [](Module &m) {
+                valueCall(m).resultOffset = 48;
+            },
+            "scalar result cannot name");
         auto reusableValueResult = valueBaseline();
-        reusableValueResult.functions[0].code.insert(
-            reusableValueResult.functions[0].code.begin() + 16,
-            {EndObject{48}, BeginObject{48}, Constant{10, Type::I64}, Push{},
-             Constant{1, Type::Bool}, Push{}, AggregateCall{"copy_pair", {16, 0, 32, 0}, 48}});
+        reusableValueResult.functions[0].code.insert(reusableValueResult.functions[0].code.begin() + 16,
+                                                     {EndObject{48},
+                                                      BeginObject{48},
+                                                      Constant{10, Type::I64},
+                                                      Push{},
+                                                      Constant{1, Type::Bool},
+                                                      Push{},
+                                                      AggregateCall{"copy_pair", {16, 0, 32, 0}, 48}});
         accept("result storage reused only after lifetime transition", reusableValueResult);
         auto mutableValueResult = valueBaseline();
         mutableValueResult.functions[0].objectSlots[48].mutableValue = true;
-        mutableValueResult.functions[0].code.insert(
-            mutableValueResult.functions[0].code.begin() + 16,
-            {Constant{43, Type::I64}, Store{48, Type::I64}});
+        mutableValueResult.functions[0].code.insert(mutableValueResult.functions[0].code.begin() + 16,
+                                                    {Constant{43, Type::I64}, Store{48, Type::I64}});
         accept("returned value has caller-selected mutability", mutableValueResult);
         auto retainedGuard = valueBaseline();
-        retainedGuard.functions[0].code.insert(
-            retainedGuard.functions[0].code.begin() + 10,
-            {Constant{0, Type::I64}, BoundsGuard{16, 1, Type::I64}, Push{}});
+        retainedGuard.functions[0].code.insert(retainedGuard.functions[0].code.begin() + 10,
+                                               {Constant{0, Type::I64}, BoundsGuard{16, 1, Type::I64}, Push{}});
         retainedGuard.functions[0].code.insert(retainedGuard.functions[0].code.end() - 1,
                                                {Pop{}, IndexLoad{16, 1, Type::I64}});
         accept("saved bounds token survives value call", retainedGuard);
@@ -4429,22 +5343,25 @@ int main(int argc, char **argv) {
         auto emptyValues = emptyValueBaseline();
         accept("empty values use reserved distinct storage", emptyValues);
         rejectModule(
-            "empty value result cannot initialize twice", emptyValues,
+            "empty value result cannot initialize twice",
+            emptyValues,
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin() + 3,
-                                           AggregateCall{"copy_empty", {8}, 16});
+                m.functions[0].code.insert(m.functions[0].code.begin() + 3, AggregateCall{"copy_empty", {8}, 16});
             },
             "result object already initialized");
         rejectModule(
-            "empty parameter cannot become result target", emptyValues,
+            "empty parameter cannot become result target",
+            emptyValues,
             [](Module &m) {
-                m.functions[1].code.insert(m.functions[1].code.begin() + 1,
-                                           AggregateCall{"make_empty", {}, 8});
+                m.functions[1].code.insert(m.functions[1].code.begin() + 1, AggregateCall{"make_empty", {}, 8});
             },
             "result object already initialized");
         rejectModule(
-            "empty result cannot alias empty argument", emptyValues,
-            [](Module &m) { std::get<AggregateCall>(m.functions[0].code[2]).resultOffset = 8; },
+            "empty result cannot alias empty argument",
+            emptyValues,
+            [](Module &m) {
+                std::get<AggregateCall>(m.functions[0].code[2]).resultOffset = 8;
+            },
             "result aliases argument");
         auto largeValue = emptyValues;
         largeValue.classLayouts["Empty"] = std::vector<Type>(64, Type::I64);
@@ -4455,17 +5372,16 @@ int main(int argc, char **argv) {
         }
         auto &largeEntry = largeValue.functions[0];
         largeEntry.frameBytes = 1024;
-        largeEntry.objectSlots = {{512, ObjectSlot{"Empty", false}},
-                                  {1024, ObjectSlot{"Empty", false}}};
+        largeEntry.objectSlots = {{512, ObjectSlot{"Empty", false}}, {1024, ObjectSlot{"Empty", false}}};
         largeEntry.code = {BeginObject{512}, Constant{42, Type::I64}};
         for (int field = 0; field < 64; ++field) {
             largeEntry.slots[512 - field * 8] = Type::I64;
             largeEntry.slots[1024 - field * 8] = Type::I64;
             largeEntry.code.push_back(Store{512 - field * 8, Type::I64});
         }
-        largeEntry.code.insert(largeEntry.code.end(),
-                               {BeginObject{1024}, AggregateCall{"copy_empty", {512}, 1024},
-                                Load{520, Type::I64}, Return{}});
+        largeEntry.code.insert(
+            largeEntry.code.end(),
+            {BeginObject{1024}, AggregateCall{"copy_empty", {512}, 1024}, Load{520, Type::I64}, Return{}});
         auto &largeCopy = largeValue.functions[1];
         largeCopy.frameBytes = 512;
         largeCopy.objectSlots[512] = ObjectSlot{"Empty", false};
@@ -4493,26 +5409,32 @@ int main(int argc, char **argv) {
         valueBridge.frameBytes = 16;
         valueBridge.objectSlots[16] = ObjectSlot{"Pair", false};
         valueBridge.slots = {{16, Type::I64}, {8, Type::Bool}};
-        valueBridge.code = {BindObjectParameter{0, 16, "Pair"}, MethodCall{"get_pair", 16},
-                            Return{}};
+        valueBridge.code = {BindObjectParameter{0, 16, "Pair"}, MethodCall{"get_pair", 16}, Return{}};
         receiverValueCycle.functions.push_back(valueBridge);
         rejectModule(
-            "aggregate edge cannot conceal receiver recursion", receiverValueCycle, [](Module &) {},
+            "aggregate edge cannot conceal receiver recursion",
+            receiverValueCycle,
+            [](Module &) {
+            },
             "recursive receiver call cycle");
-        receiverValueCycle.functions.back().code = {BindObjectParameter{0, 16, "Pair"},
-                                                    Load{16, Type::I64}, Return{}};
+        receiverValueCycle.functions.back().code = {BindObjectParameter{0, 16, "Pair"}, Load{16, Type::I64}, Return{}};
         accept("receiver may call acyclic ordinary value helper", receiverValueCycle);
         rejectModule(
-            "receiver aggregate parameter requires explicit snapshot vector", receiverValueCycle,
+            "receiver aggregate parameter requires explicit snapshot vector",
+            receiverValueCycle,
             [](Module &m) {
                 m.functions.back().receiver = Receiver{"Pair", false, false};
                 m.functions[2].code[5] = MethodCall{"value_bridge", 16};
             },
             "receiver object argument vector size mismatch");
         const auto valueAssembly = X86Emitter{}.emit(validate(valueBaseline()));
-        for (const auto &fragment :
-             {".local copy_pair", "movq %r11, -72(%rbp)", "movq %r10, -80(%rbp)", "movq %rsp, %r11",
-              "leaq -48(%rbp), %r10", "movq 40(%r11), %rax", "movq %rax, 8(%r10)"})
+        for (const auto &fragment : {".local copy_pair",
+                                     "movq %r11, -72(%rbp)",
+                                     "movq %r10, -80(%rbp)",
+                                     "movq %rsp, %r11",
+                                     "leaq -48(%rbp), %r10",
+                                     "movq 40(%r11), %rax",
+                                     "movq %rax, 8(%r10)"})
             if (valueAssembly.find(fragment) == std::string::npos)
                 throw Error(std::string("private value-call ABI emission mismatch: ") + fragment);
         ++passed;
@@ -4539,9 +5461,9 @@ int main(int argc, char **argv) {
         largeFunction.code.insert(largeFunction.code.end(),
                                   {Constant{elementCount - 1, Type::I64},
                                    BoundsGuard{elementCount * 8, elementCount, Type::I64},
-                                   IndexLoad{elementCount * 8, elementCount, Type::I64}, Return{}});
-        std::map<std::string, const aurora::ir::Function *> largeFunctions{
-            {"test", &largeFunction}};
+                                   IndexLoad{elementCount * 8, elementCount, Type::I64},
+                                   Return{}});
+        std::map<std::string, const aurora::ir::Function *> largeFunctions{{"test", &largeFunction}};
         verification::Metrics metrics;
         verification::verifyFunction(largeFunction, largeFunctions, &metrics);
         if (metrics.peakOperandDepth != elementCount || metrics.snapshots > 8 ||
@@ -4553,33 +5475,46 @@ int main(int argc, char **argv) {
         std::cout << "PASS IR bounded maximum initializer: snapshots=" << metrics.snapshots
                   << ", peak operand depth=" << metrics.peakOperandDepth
                   << ", retained facts=" << metrics.peakRetainedValueFacts
-                  << ", initialization payload bytes="
-                  << metrics.peakRetainedInitializationPayloadBytes << '\n';
+                  << ", initialization payload bytes=" << metrics.peakRetainedInitializationPayloadBytes << '\n';
         reject(
             "query cannot change module view",
             [](Module &m) {
                 m.descriptorViews[1] = {};
-                m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                           MetadataQuery{Query::Size, 1});
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, MetadataQuery{Query::Size, 1});
             },
             "changes defining-module scope");
         reject(
-            "unknown function module view", [](Module &m) { m.functions[0].moduleScope = 1; },
+            "unknown function module view",
+            [](Module &m) {
+                m.functions[0].moduleScope = 1;
+            },
             "unknown function module scope");
         reject(
             "view cannot name missing descriptor",
-            [](Module &m) { m.descriptorViews[0].insert(999); }, "missing descriptor");
+            [](Module &m) {
+                m.descriptorViews[0].insert(999);
+            },
+            "missing descriptor");
         reject(
-            "module view scope cap", [](Module &m) { m.descriptorViews[64] = {}; },
+            "module view scope cap",
+            [](Module &m) {
+                m.descriptorViews[64] = {};
+            },
             "invalid reflection scope");
         reject(
             "scoped helper name reserved",
-            [](Module &m) { m.functions[0].name = "__au_reflect_s1_size"; }, "function symbol");
+            [](Module &m) {
+                m.functions[0].name = "__au_reflect_s1_size";
+            },
+            "function symbol");
         auto guarded = baseline();
         guarded.functions[0].code.insert(guarded.functions[0].code.end() - 1,
-                                         {Constant{0, Type::I64}, BoundsGuard{8, 1, Type::I64},
-                                          Push{}, Constant{42, Type::I64},
-                                          MetadataQuery{Query::Size}, IndexStore{8, 1, Type::I64}});
+                                         {Constant{0, Type::I64},
+                                          BoundsGuard{8, 1, Type::I64},
+                                          Push{},
+                                          Constant{42, Type::I64},
+                                          MetadataQuery{Query::Size},
+                                          IndexStore{8, 1, Type::I64}});
         accept("saved guard survives RHS query", std::move(guarded));
         auto structural = baseline();
         structural.functions[0].code.push_back(Jump{1});
@@ -4591,11 +5526,15 @@ int main(int argc, char **argv) {
         std::cout << "PASS IR unreachable structural cleanup\n";
         reject(
             "unsubstituted template parameter result",
-            [](Module &m) { m.functions[0].result = Type(TypeKind::Parameter); },
+            [](Module &m) {
+                m.functions[0].result = Type(TypeKind::Parameter);
+            },
             "invalid value boundary type");
         reject(
             "unsubstituted template parameter slot",
-            [](Module &m) { m.functions[0].slots[8] = Type(TypeKind::Parameter); },
+            [](Module &m) {
+                m.functions[0].slots[8] = Type(TypeKind::Parameter);
+            },
             "invalid slot payload type");
         reject(
             "unsubstituted template parameter constant",
@@ -4605,11 +5544,15 @@ int main(int argc, char **argv) {
             "invalid constant type");
         rejectValue(
             "unresolved specialization arguments on result",
-            [](Module &m) { m.functions[1].result.templateArguments = {TypeKind::I64}; },
+            [](Module &m) {
+                m.functions[1].result.templateArguments = {TypeKind::I64};
+            },
             "invalid value boundary type");
         rejectValue(
             "unresolved specialization arguments on parameter",
-            [](Module &m) { m.functions[1].parameters[0].templateArguments = {TypeKind::I64}; },
+            [](Module &m) {
+                m.functions[1].parameters[0].templateArguments = {TypeKind::I64};
+            },
             "invalid value boundary type");
         // Nested syntax is frontend-only. Even a tree whose leaf types and
         // apparent layout are otherwise valid cannot reach the concrete IR.
@@ -4622,7 +5565,9 @@ int main(int argc, char **argv) {
         };
         rejectValue(
             "unresolved nested specialization result",
-            [&](Module &m) { m.functions[1].result.templateArguments = {nestedArgument()}; },
+            [&](Module &m) {
+                m.functions[1].result.templateArguments = {nestedArgument()};
+            },
             "invalid value boundary type");
         rejectValue(
             "unresolved nested specialization parameter",
@@ -4632,13 +5577,14 @@ int main(int argc, char **argv) {
             "invalid value boundary type");
         reject(
             "unresolved nested specialization scalar slot",
-            [&](Module &m) { m.functions[0].slots[8].templateArguments = {nestedArgument()}; },
+            [&](Module &m) {
+                m.functions[0].slots[8].templateArguments = {nestedArgument()};
+            },
             "invalid slot payload type");
         reject(
             "unresolved nested specialization scalar constant",
             [&](Module &m) {
-                std::get<Constant>(m.functions[0].code[0]).type.templateArguments =
-                    {nestedArgument()};
+                std::get<Constant>(m.functions[0].code[0]).type.templateArguments = {nestedArgument()};
             },
             "invalid constant type");
         rejectValue(
@@ -4664,11 +5610,15 @@ int main(int argc, char **argv) {
             "forwarded receiver nominal class mismatch");
         rejectValue(
             "function-template unresolved value parameter",
-            [](Module &m) { m.functions[1].parameters[0] = Type(TypeKind::Parameter); },
+            [](Module &m) {
+                m.functions[1].parameters[0] = Type(TypeKind::Parameter);
+            },
             "invalid aggregate parameter type");
         rejectValue(
             "function-template unresolved scalar parameter",
-            [](Module &m) { m.functions[1].parameters[1] = Type(TypeKind::Parameter); },
+            [](Module &m) {
+                m.functions[1].parameters[1] = Type(TypeKind::Parameter);
+            },
             "invalid aggregate parameter type");
         rejectValue(
             "function-template dependent class result metadata",

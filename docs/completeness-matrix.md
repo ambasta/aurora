@@ -1,5 +1,31 @@
 # Completeness and acceptance matrix
 
+## Reconstructed readonly owned-byte views — 2026-10-08
+
+The [bounded extension](../compiler/READONLY-OWNED-SPANS.md) provides one logical
+readonly span representation over arrays, hosted byte owners and fragmented
+kernel-owned pages. Const receiver-field results let ByteBuffer expose only its
+logical prefix to existing consumers. Exact root/field authority freezes live
+owners and prevents lifetime escape. This is a fresh reconstruction after loss
+of an unpublished source tree; old accepted hashes do not qualify these bytes.
+Fresh core/bytes, native consumers, private ABI, host sanitizers and existing
+UEFI regressions passed with independent source/evidence review; see the
+[results and preserved corrections](readonly-owned-spans-results.md).
+No new guest owner-span capability, kernel resize, general returned borrowing,
+self-hosting or full-native acceptance is claimed.
+
+## Bounded native JSON reconstruction — candidate 2026-10-08
+
+A reconstructed Aurora scanner and iterative whole-document validator reuse
+existing readonly array spans and UTF-8 decoding. Explicit input/depth/token/
+number-spelling limits, scalar-valid escapes and copied diagnostics are specified
+in the [contract](json-profile.md). Fresh normal/optimized runs each passed 2,111
+cases, 10,768 full-width observations and 50 rejections, with independent source
+and retained-evidence review. The [results](json-profile-results.md) record fresh
+selected dependencies, public focused Make and the lost-history distinction.
+No owner-view dependency, compiler
+change, DOM, numeric conversion, host replacement or full-native claim follows.
+
 ## Hosted growable byte buffer — 2026-10-07
 
 `std::ByteBuffer` is an Aurora-authored move-only collection over the existing

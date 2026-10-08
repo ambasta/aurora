@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-08",
+  "scope": "fresh independently reviewed array-backed native JSON focused checkpoint",
+  "base_commit": "a38447a8d5edd2575fa4f7e4a230b74ee2437308",
+  "base_tree": "31785f0d160f824b6a209d2b9dd5fba86aae9b04",
+  "compiler_sha256": "6756e670ccfd2dc1d94a48672915852697ab2ec08df0c09da471e37491f8afc5",
+  "library_sha256": "027de8b7c06fc2adb819eb33a4a1acad12f02da84f9b85f7f6c68fc0ac503b35",
+  "runner_sha256": "42885297af4a68eccd87f6fa4acfcac5e424883eb8e2a4c12d4685778e4ad39d",
+  "normal_and_optimized_each": {
+    "cases": 2111,
+    "batches": 136,
+    "full_i64_observations": 10768,
+    "source_rejections": 50,
+    "command_receipts": 1002
+  },
+  "strict_decoder_audit": {
+    "accepted": 220,
+    "rejected": 577,
+    "explicit_exclusions": 41
+  },
+  "limits": {
+    "window_bytes": 4096,
+    "open_containers": 32,
+    "tokens": 1024,
+    "number_spelling_bytes": 128
+  },
+  "receipt_identities": {
+    "normal": {
+      "recovery_relative_path": "native-001/manifest.json",
+      "sha256": "26f76e8aba6595a1f57b95fee7d9007c29155004e6fa5bcd93c509b622a4b3b1"
+    },
+    "optimized": {
+      "recovery_relative_path": "native-optimized-001/manifest.json",
+      "sha256": "032f3e4dad9effbcda44cc0fcacca0b9fc8dc014b0b1a33720ba6c023685aee8"
+    },
+    "public_make": {
+      "recovery_relative_path": "source/build/test-contract-qj3aoyfp/run.json",
+      "sha256": "225cbc718fa524a464ab6a94c723449a7e449bf58d5f6a4c76dc64c5e76b03c2"
+    },
+    "dependency_replay": {
+      "recovery_relative_path": "dependencies-receipted-002/receipt.json",
+      "sha256": "6f6b90d4c9fbab7a95215f67152588e73e9ec141b263812c9174a3b922ca6222"
+    },
+    "meson_configuration": {
+      "recovery_relative_path": "meson-routing-001/receipt.json",
+      "sha256": "b6ea96aa237f0966bce905ac48cf5d404e9d1411e7b362d83cdaf1612e1c4c63"
+    }
+  },
+  "historical_evidence": "Old unpublished workspace/evidence lost; no historical execution credit transferred",
+  "owned_input_scope": "deferred; valid oversized array window unavailable, branch source-reviewed only",
+  "not_claimed": [
+    "full-native aggregate",
+    "Meson native execution",
+    "sanitizer",
+    "emulator/hardware",
+    "new compiler semantics",
+    "numeric conversion",
+    "DOM/decoded strings",
+    "host nlohmann replacement"
+  ]
+}
