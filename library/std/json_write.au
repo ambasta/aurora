@@ -11,20 +11,30 @@ export namespace std {
         invalid_scalar,
         append_failed
     };
+}
 
+namespace std::detail {
+    auto normalize_json_append_status(JsonAppendStatus status, i64 appended) -> JsonAppendStatus {
+        if (status == JsonAppendStatus::success && (appended < 1 || appended > 6)) {
+            return JsonAppendStatus::append_failed;
+        }
+        return status;
+    }
+}
+
+export namespace std {
     // A copied observation. It retains no borrow or allocation authority.
     // Publicly constructed reports are not proof that any append took place.
+    // Construction establishes the status invariant; no method mutates either field.
     class JsonAppendResult {
         JsonAppendStatus outcome;
         i64 count;
     public:
-        JsonAppendResult(JsonAppendStatus status, i64 appended) : outcome(status), count(appended) {
+        JsonAppendResult(JsonAppendStatus status, i64 appended) :
+            outcome(detail::normalize_json_append_status(status, appended)), count(appended) {
         }
 
         auto status() const -> JsonAppendStatus {
-            if (outcome == JsonAppendStatus::success && (count < 1 || count > 6)) {
-                return JsonAppendStatus::append_failed;
-            }
             return outcome;
         }
 
@@ -76,19 +86,29 @@ export namespace std {
         overflow,
         append_failed
     };
+}
 
+namespace std::detail {
+    auto normalize_json_string_append_status(JsonStringAppendStatus status, i64 appended) -> JsonStringAppendStatus {
+        if (status == JsonStringAppendStatus::success && appended < 2) {
+            return JsonStringAppendStatus::append_failed;
+        }
+        return status;
+    }
+}
+
+export namespace std {
     // A copied observation, not evidence that a particular output was changed.
+    // Construction establishes the status invariant; no method mutates either field.
     class JsonStringAppendResult {
         JsonStringAppendStatus outcome;
         i64 count;
     public:
-        JsonStringAppendResult(JsonStringAppendStatus status, i64 appended) : outcome(status), count(appended) {
+        JsonStringAppendResult(JsonStringAppendStatus status, i64 appended) :
+            outcome(detail::normalize_json_string_append_status(status, appended)), count(appended) {
         }
 
         auto status() const -> JsonStringAppendStatus {
-            if (outcome == JsonStringAppendStatus::success && count < 2) {
-                return JsonStringAppendStatus::append_failed;
-            }
             return outcome;
         }
 

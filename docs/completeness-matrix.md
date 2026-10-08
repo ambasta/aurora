@@ -25,6 +25,11 @@ hardware support.
 
 ASCII byte character literals provide a bounded compiler/JSON increment: single-quoted ASCII and explicit byte escapes have exact `u8` type, lossless spans and unchanged checked operations. Two JSON quote append sites use the syntax. See the [source contract](../compiler/BYTES.md#ascii-byte-character-literals). No Unicode character type, strings or new kernel/hardware qualification is implied.
 
+The two JSON append reports normalize invalid success counts once at construction
+and expose plain status reads while preserving failure-count masking and public
+constructor behavior. See the [invariant proof and bounded oracle](json-string-write.md#copied-append-report-invariants).
+This library-only pilot adds no compiler semantics or broad optimization claim.
+
 Use these entrypoints for exact supported APIs; do not infer a current API from an
 old results paragraph or its “not implemented” list.
 

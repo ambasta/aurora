@@ -145,6 +145,69 @@ class StringSuite(BorrowSuite):
             require(not self.omitted_programs and not self.omitted_rejections, "full profile omitted fixtures")
 
 
+def result_constructor_cases(suite):
+    # Independent public-contract oracle, including every declared status and
+    # both signed extrema. No implementation normalization helper is called.
+    counts = (MIN_I64, MIN_I64 + 1, -1, 0, 1, 2, 3, 5, 6, 7, 9, MAX_I64 - 1, MAX_I64)
+    for stem, statuses, minimum, maximum in (
+        ("JsonAppend", ("success", "invalid_scalar", "append_failed"), 1, 6),
+        (
+            "JsonStringAppend",
+            ("success", "out_of_range", "invalid_utf8", "truncated", "overflow", "append_failed"),
+            2,
+            MAX_I64,
+        ),
+    ):
+        result, status_type = f"std::{stem}Result", f"std::{stem}Status"
+        helper = f"""
+        class Snapshot {{
+            {result} saved;
+        public:
+            Snapshot({result} input) : saved(input) {{}}
+            auto get() const -> {result} {{ const {result} value = saved; return value; }}
+            auto replace({result} input) -> bool {{ saved = input; return true; }}
+        }};
+        auto copied({result} input) -> {result} {{ return input; }}
+        auto constructed({status_type} status, i64 count) -> {result} {{
+            return {result}(status, count);
+        }}
+        auto composed({status_type} status, i64 count) -> Snapshot {{
+            const {result} initial = constructed(status, count);
+            const {result} value = copied(initial);
+            return Snapshot(value);
+        }}
+        """
+        for status in statuses:
+            body = f"""
+            const {result} direct = {result}({status_type}::{status}, n);
+            Snapshot nested = composed({status_type}::success, 3);
+            if (!nested.replace(direct)) {{ return 0; }}
+            const Snapshot returned_nested = composed({status_type}::{status}, n);
+            const {result} projected = returned_nested.get();
+            const {result} returned = nested.get();
+            const {result} copy = copied(returned);
+            i64 repeat = 0;
+            while (repeat < 3) {{
+            """
+            for name in ("direct", "returned", "copy", "projected"):
+                body += f"""
+                if (flag == 1) {{
+                    if ({name}.status() != {status_type}::success || {name}.appended_bytes() != n) {{ return 0; }}
+                }} else {{
+                    if ({name}.status() != {status_type}::{"append_failed" if status == "success" else status} ||
+                        {name}.appended_bytes() != 0) {{ return 0; }}
+                    // Failure masking must happen before potentially overflowing consumer arithmetic.
+                    if ({MAX_I64} + {name}.appended_bytes() != {MAX_I64} ||
+                        {MIN_I64} - {name}.appended_bytes() != {MIN_I64}) {{ return 0; }}
+                }}
+                """
+            body += "repeat = repeat + 1; } return 42;"
+            exe = suite.compile(f"constructor-oracle-{stem}-{status}", program(body, helper))
+            for count in counts:
+                success = status == "success" and minimum <= count <= maximum
+                suite.run(exe, 0, count, int(success), 42, 0, 0)
+
+
 def canonical_cases(suite):
     fixtures = [
         (b"", 0, 0),
@@ -548,6 +611,20 @@ def rejection_cases(suite):
         source = program(f"{RESULT} result = {RESULT}({STATUS}::success, 2); result.{field} = {value}; return 0;")
         suite.reject("private-result-write-" + field, source, "private")
 
+    for field, value in (("outcome", "std::JsonAppendStatus::success"), ("count", "3")):
+        declaration = "std::JsonAppendResult result = std::JsonAppendResult(std::JsonAppendStatus::success, 3);"
+        source = program(declaration + f"result.{field} = {value}; return 0;")
+        suite.reject("private-scalar-result-write-" + field, source, "private")
+        source = program(declaration + f"if (result.{field} == {value}) {{ return 1; }} return 0;")
+        suite.reject("private-scalar-result-read-" + field, source, "private")
+
+    for name, status in (
+        ("normalize_json_append_status", "std::JsonAppendStatus"),
+        ("normalize_json_string_append_status", "std::JsonStringAppendStatus"),
+    ):
+        source = program(f"const {status} result = std::detail::{name}({status}::success, 3); return 0;")
+        suite.reject("private-normalizer-" + name, source)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -611,6 +688,7 @@ def main():
             )
             + "\n"
         )
+        result_constructor_cases(suite)
         canonical_cases(suite)
         byte_and_boundary_cases(suite)
         invalid_and_window_cases(suite)
