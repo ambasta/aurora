@@ -17,3 +17,7 @@ python3 tests/kernel-schedule-smoke.py --self-test
 
 # Same real page allocator, with the bounded CPU-only byte-owner adapter.
 ./scripts/kernel-owned-bytes-tests.sh
+
+# Firmware framebuffer admission and the actual output-only Aurora consumer.
+./scripts/kernel-framebuffer-tests.sh
+python3 -B tests/kernel-display-renderer.py "$compiler"

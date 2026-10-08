@@ -459,8 +459,14 @@ def recursion_proof(functions, symbols, instructions, starts):
         if symbol.address <= address < symbol.address + symbol.size
     ]
     saves = ["%r15", "%r14", "%r13", "%r12", "%rbp", "%rbx"]
+    ordinary = [("push", register) for register in saves]
+    interleaved = ordinary[:2] + [("mov", "%ecx,%r14d")] + ordinary[2:]
+    # GCC's framebuffer-aware body moves the level after saving r14, before
+    # the remaining four saves. Both exact sequences preserve the same carrier;
+    # all restoration, clobber, entry-level and decrement checks below remain.
     require(
-        [(row.op, row.args) for row in body_code[:6]] == [("push", register) for register in saves],
+        [(row.op, row.args) for row in body_code[:6]] == ordinary
+        or [(row.op, row.args) for row in body_code[:7]] == interleaved,
         "Verifier level carrier lacks exact callee-saved prologue",
     )
     restored = [("pop", register) for register in reversed(saves)]
@@ -874,6 +880,32 @@ def self_test():
         "Wrong concrete four-level stack proof",
     )
     positives += 1
+    interleaved_walk = list(walk)
+    interleaved_walk.insert(2, interleaved_walk.pop(6))
+    mixed_graph = {"root": graph["root"], WALK: interleaved_walk}
+    mixed_functions, mixed_symbols, mixed_code, mixed_starts = fixture(mixed_graph)
+    mixed_levels, _ = recursion_proof(mixed_functions, mixed_symbols, mixed_code, mixed_starts)
+    require(
+        calculate(mixed_functions, {}, mixed_levels, "root")["peak"] == 232, "Wrong interleaved-save four-level proof"
+    )
+    positives += 1
+    for label, index, op, operands in [
+        ("interleaved move before save", 1, "mov", "%ecx,%r14d"),
+        ("interleaved wrong level source", 2, "mov", "%edx,%r14d"),
+        ("interleaved wrong saved register", 1, "push", "%r13"),
+        ("interleaved changed restore", 15, "pop", "%rax"),
+        ("interleaved increment", 9, "lea", "0x1(%r14),%ecx"),
+    ]:
+        changed_code = dict(mixed_code)
+        changed_code[100 + index] = Instruction(100 + index, 1, op, operands)
+
+        def check_interleaved(changed_code=changed_code):
+            changed_functions = {
+                name: analyze_function(symbol, changed_code, mixed_starts) for name, symbol in mixed_symbols.items()
+            }
+            recursion_proof(changed_functions, mixed_symbols, changed_code, mixed_starts)
+
+        rejects(label, check_interleaved)
     for label, address, op, operands in [
         ("entry level four", 0, "mov", "$0x4,%ecx"),
         ("unknown entry", 0, "mov", "%eax,%ecx"),

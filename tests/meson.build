@@ -275,6 +275,33 @@ test('console-service-admission-controls', python,
      args: ['-B', '-O', files('kernel-console-service-admission.py')],
      suite: ['full', 'dev'], timeout: 120)
 
+# Second sealed kind reuses the service verifier and private bridge.
+display_service_ir = executable(
+    'display-service-ir', 'compiler/display_service_ir.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('display-service-ir', display_service_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
+test('display-service-source-native', python,
+     args: ['-B', '-O', files('compiler/display_service.py'), aurorac],
+     depends: aurorac, suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 300)
+
+# Output-only framebuffer boundary and its actual Aurora software renderer.
+foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'framebuffer-pixels']
+    framebuffer_model = executable(
+        'uefi-' + model, 'kernel-uefi-' + model + '.cpp',
+        native: true, install: false, link_args: ['-no-pie'],
+    )
+    test('uefi-' + model, framebuffer_model, suite: ['full', 'dev'], timeout: 120)
+endforeach
+display_session = executable('display-session', 'kernel-display-session.cpp', native: true, install: false)
+test('display-session', display_session, suite: ['full', 'dev'], timeout: 120)
+foreach control : ['kernel-framebuffer-admission.py', 'kernel_framebuffer_probe_oracle.py', 'test_framebuffer_capture.py']
+    test(control, python, args: ['-B', files(control)], suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+endforeach
+test('display-renderer-native', python,
+     args: ['-B', files('kernel-display-renderer.py'), aurorac], depends: aurorac,
+     suite: ['full', 'slow'], env: oracle_env, timeout: 300)
 # Previously Make-only complete source oracles. Keep exhaustive sweeps in slow.
 foreach runner : [
   'templates', 'function_templates', 'function_overloads', 'fixed_containers',

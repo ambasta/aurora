@@ -122,7 +122,7 @@ int main() {
         m.functions[0].code.erase(m.functions[0].code.begin());
     });
     bad(sample(), [](auto &m) {
-        std::get<BindServiceParameter>(m.functions[0].code[0]).kind = static_cast<service::Kind>(1);
+        std::get<BindServiceParameter>(m.functions[0].code[0]).kind = static_cast<service::Kind>(999);
     });
     bad(sample(), [](auto &m) {
         std::get<BindServiceParameter>(m.functions[0].code[0]).offset = 8;
@@ -147,7 +147,7 @@ int main() {
         std::get<ServiceOperation>(m.functions[0].code[2]).offset = 32;
     });
     bad(sample(), [](auto &m) {
-        std::get<ServiceOperation>(m.functions[0].code[2]).operation = static_cast<service::Operation>(2);
+        std::get<ServiceOperation>(m.functions[0].code[2]).operation = static_cast<service::Operation>(999);
     });
     bad(sample(), [](auto &m) {
         std::get<ServiceOperation>(m.functions[0].code[2]).resultOffset = 32;
@@ -209,4 +209,5 @@ int main() {
                                Return{}};
     });
     std::cout << "PASS sealed console service IR: " << checks << " independent checks\n";
+    return 0;
 }

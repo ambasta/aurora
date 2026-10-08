@@ -101,10 +101,16 @@ public:
     bool called = false;
     bool operator==(const ObjectLoan &) const = default;
 };
+class ServiceIdentity {
+public:
+    std::size_t site;
+    service::Kind kind;
+    bool operator==(const ServiceIdentity &) const = default;
+};
 class ServiceLoan {
 public:
     int offset;
-    std::size_t site;
+    ServiceIdentity identity;
     bool called = false;
     bool operator==(const ServiceLoan &) const = default;
 };
@@ -122,7 +128,7 @@ public:
     std::set<int> activeObjects;
     std::map<int, std::size_t> activeArrays; // array base -> BeginArray site
     std::map<int, SpanCapability> activeSpans;
-    std::map<int, std::size_t> activeServices;
+    std::map<int, ServiceIdentity> activeServices;
     std::map<int, ServiceLoan> serviceLoans;
     std::map<int, RegionIdentity> activeRegions;
     std::map<int, ByteBinding> activeBytes;
@@ -225,13 +231,14 @@ inline void verifyFunction(Function &function,
     const bool serviceFunction = serviceSignature(function);
     if (serviceFunction) {
         require(!function.receiver && !function.borrowedParameter && !resourceFunction &&
-                    !function.parameters.empty() && function.parameters.front() == Type::ConsoleSession,
+                    !function.parameters.empty() && function.parameters.front().isService(),
                 "service signature requires one leading sealed capability and no receiver or region");
         for (std::size_t index = 1; index < function.parameters.size(); ++index)
             require(scalarValueType(function.parameters[index], enumCases) ||
                         function.parameters[index] == Type::ByteSpan,
                     "service signature requires later scalar, enum or readonly span arguments");
-        require(scalarValueType(function.result, enumCases) || function.result == service::sampleType(),
+        require(scalarValueType(function.result, enumCases) ||
+                    (function.parameters.front() == Type::ConsoleSession && function.result == service::sampleType()),
                 "service signature has unsupported result");
     }
     require(serviceFunction || function.serviceSlots.empty(), "service spills without a service signature");
@@ -263,7 +270,7 @@ inline void verifyFunction(Function &function,
         if (scalarValueType(type, enumCases))
             return;
         if (type.isService()) {
-            require(parameter && serviceFunction && type == Type::ConsoleSession,
+            require(parameter && serviceFunction && type == function.parameters.front(),
                     "service capability cannot cross an ordinary boundary or return");
             return;
         }
@@ -1225,6 +1232,8 @@ inline void verifyFunction(Function &function,
                                 "invalid borrow-handle type");
                         state.current = Value{operation.referenceType, {}};
                     } else if constexpr (std::is_same_v<Op, Call>) {
+                        require(!operation.callee.starts_with("__au_runtime_"),
+                                "ordinary call cannot target runtime symbol");
                         require(functions.contains(operation.callee), "unknown call target");
                         const auto &target = *functions.at(operation.callee);
                         require(!target.receiver, "plain call cannot target receiver function");
@@ -1991,30 +2000,40 @@ inline void verifyFunction(Function &function,
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, BindServiceParameter>) {
                         require(serviceFunction && index == 0 && operation.index == 0 &&
-                                    operation.kind == service::Kind::Console &&
+                                    operation.kind == service::kind(function.parameters.front()) &&
                                     serviceParameterSlot == operation.offset &&
                                     function.serviceSlots.contains(operation.offset) && state.activeServices.empty(),
                                 "service binding requires exact authorized leading parameter");
-                        state.activeServices.emplace(operation.offset, index);
+                        state.activeServices.emplace(operation.offset, ServiceIdentity{index, operation.kind});
                     } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
                         require(operation.loanId > 0 && state.serviceLoans.empty() &&
-                                    state.activeServices.contains(operation.offset),
+                                    state.activeServices.contains(operation.offset) &&
+                                    state.activeServices.at(operation.offset).kind == operation.kind,
                                 "service loan requires unsuspended parameter authority");
                         state.serviceLoans.emplace(
                             operation.loanId,
                             ServiceLoan{operation.offset, state.activeServices.at(operation.offset), false});
                     } else if constexpr (std::is_same_v<Op, ReleaseServiceLoan>) {
                         require(state.serviceLoans.contains(operation.loanId) &&
-                                    state.serviceLoans.at(operation.loanId).called,
+                                    state.serviceLoans.at(operation.loanId).called &&
+                                    state.serviceLoans.at(operation.loanId).identity.kind == operation.kind,
                                 "service release requires exactly one completed helper call");
                         state.serviceLoans.erase(operation.loanId);
                     } else if constexpr (std::is_same_v<Op, ServiceOperation>) {
                         require(state.activeServices.contains(operation.offset) && state.serviceLoans.empty(),
                                 "service operation requires active unsuspended capability provenance");
-                        require(operation.operation == service::Operation::Next ||
-                                    operation.operation == service::Operation::Put,
-                                "unknown sealed service operation");
-                        if (operation.operation == service::Operation::Put) {
+                        require(state.activeServices.at(operation.offset).kind == operation.kind &&
+                                    service::description(operation.operation).kind == operation.kind,
+                                "service operation kind does not match active capability");
+                        if (operation.operation == service::Operation::Pixel) {
+                            for (int argument = 4; argument >= 0; --argument)
+                                require(pop().type == (argument < 2 ? Type::U64 : Type::U8),
+                                        "pixel argument type mismatch");
+                            require(operation.resultOffset == 0 &&
+                                        enumCases.contains(std::string(service::displayPutResultName)),
+                                    "pixel requires closed enum result and no object storage");
+                            state.current = Value{service::displayPutResultType(), {}};
+                        } else if (operation.operation == service::Operation::Put) {
                             current(Type::U8);
                             require(operation.resultOffset == 0 &&
                                         enumCases.contains(std::string(service::putResultName)),
@@ -2041,7 +2060,9 @@ inline void verifyFunction(Function &function,
                                 "service helper requires service target and acquired loan");
                         auto &loan = state.serviceLoans.at(operation.loanId);
                         require(!loan.called && state.activeServices.contains(loan.offset) &&
-                                    state.activeServices.at(loan.offset) == loan.site,
+                                    state.activeServices.at(loan.offset) == loan.identity &&
+                                    loan.identity.kind == operation.kind &&
+                                    operation.kind == service::kind(target.parameters.front()),
                                 "service helper requires an unused loan with exact provenance");
                         require(operation.spanArguments.size() == target.parameters.size() &&
                                     operation.spanArguments[0] == 0,
@@ -2209,8 +2230,7 @@ inline ValidatedModule validate(Module module) {
         verification::require(verification::symbol(function.name) && function.name != "aurora_reflect_size" &&
                                   function.name != "aurora_reflect_field_count" &&
                                   !function.name.starts_with("__au_reflect_") &&
-                                  !function.name.starts_with("__au_runtime_bytes_") &&
-                                  !function.name.starts_with("__au_runtime_console_"),
+                                  !function.name.starts_with("__au_runtime_"),
                               "invalid or reserved function symbol");
         verification::require(functions.emplace(function.name, &function).second, "duplicate function");
     }
@@ -2330,7 +2350,10 @@ inline ValidatedModule validate(Module module) {
                                           module.classLayouts.at(std::string(service::sampleName))[index],
                                   "noncanonical sealed ConsoleSample field shape");
     }
-    for (const auto name : {service::putResultName, service::completionName})
+    for (const auto name : {service::putResultName,
+                            service::completionName,
+                            service::displayPutResultName,
+                            service::displayCompletionName})
         if (module.enumCases.contains(std::string(name)))
             verification::require(module.enumCases.at(std::string(name)) == 2, "noncanonical sealed service enum");
     const auto canonicalStorage = computeClassStorageLayouts(module.classLayouts, module.classFields);

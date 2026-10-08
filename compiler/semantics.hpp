@@ -736,7 +736,7 @@ class SemanticAnalyzer {
         if (type.isService()) {
             if (implicit || receiver < 0 || receiverFieldIndex != -1 || locals[receiver].exclusive)
                 fail(value->token, "service operation requires an active named exclusive service parameter");
-            if (value->token.text == "next") {
+            if (type == Type::ConsoleSession && value->token.text == "next") {
                 arity(value, 1);
                 if (!resultBinding)
                     fail(value->token, "next requires a typed ConsoleSample initializer");
@@ -749,7 +749,7 @@ class SemanticAnalyzer {
                 emit(ir::ServiceOperation{receiverOffset, service::Operation::Next, offset(destination)});
                 return service::sampleType();
             }
-            if (value->token.text == "put") {
+            if (type == Type::ConsoleSession && value->token.text == "put") {
                 arity(value, 2);
                 if (resultBinding)
                     fail(value->token, "put returns a scalar enum, not a copied report");
@@ -757,7 +757,18 @@ class SemanticAnalyzer {
                 emit(ir::ServiceOperation{receiverOffset, service::Operation::Put, 0});
                 return service::putResultType();
             }
-            fail(value->token, "unknown sealed ConsoleSession operation");
+            if (type == Type::DisplaySession && value->token.text == "pixel") {
+                arity(value, 6);
+                if (resultBinding)
+                    fail(value->token, "pixel returns a scalar enum, not a copied report");
+                for (std::size_t index = 1; index < 6; ++index) {
+                    match(expression(value->args[index]), index < 3 ? Type::U64 : Type::U8, value->token);
+                    push();
+                }
+                emit(ir::ServiceOperation{receiverOffset, service::Operation::Pixel, 0, service::Kind::Display});
+                return service::displayPutResultType();
+            }
+            fail(value->token, "unknown operation for sealed service kind");
         }
         if (type.isBytes()) {
             if (resultBinding || implicit)
@@ -912,12 +923,12 @@ class SemanticAnalyzer {
         if (value->args[0]->op != "name")
             fail(value->token, "service forwarding requires a named exclusive service parameter");
         const int root = source(value->args[0]);
-        match(locals[root].type, Type::ConsoleSession, value->token);
+        match(locals[root].type, callee.params.front().type, value->token);
         if (locals[root].exclusive)
             fail(value->token, "service authority is suspended during synchronous forwarding");
         locals[root].exclusive = true;
         const int loan = nextObjectLoan++;
-        emit(ir::AcquireServiceLoan{loan, offset(root)});
+        emit(ir::AcquireServiceLoan{loan, offset(root), service::kind(locals[root].type)});
         std::vector<int> spans(callee.params.size(), 0), borrowedSpans;
         for (std::size_t index = 1; index < callee.params.size(); ++index) {
             const auto &argument = value->args[index];
@@ -934,8 +945,8 @@ class SemanticAnalyzer {
         int destination = 0;
         if (binding)
             destination = offset(add(binding->name, binding->type, binding->mutableValue, binding->token));
-        emit(ir::ServiceCall{callee.name, loan, destination, spans});
-        emit(ir::ReleaseServiceLoan{loan});
+        emit(ir::ServiceCall{callee.name, loan, destination, spans, service::kind(locals[root].type)});
+        emit(ir::ReleaseServiceLoan{loan, service::kind(locals[root].type)});
         locals[root].exclusive = false;
         for (auto it = borrowedSpans.rbegin(); it != borrowedSpans.rend(); ++it)
             releaseSpan(*it, true);
@@ -1999,9 +2010,10 @@ public:
                 if (borrowedCount != 1 || !candidate.params.front().borrowed || candidate.params.front().borrowConst ||
                     !candidate.receiverClass.empty() || candidate.constructor || !candidate.templateArguments.empty() ||
                     !candidate.templateParameters.empty() ||
-                    (!scalarValue(candidate.result) && candidate.result != service::sampleType()))
+                    (!scalarValue(candidate.result) && !(candidate.params.front().type == Type::ConsoleSession &&
+                                                         candidate.result == service::sampleType())))
                     fail(candidate.token,
-                         "service functions require one leading exclusive ConsoleSession reference and copied result");
+                         "service functions require one leading exclusive sealed service reference and copied result");
                 for (std::size_t index = 1; index < candidate.params.size(); ++index)
                     if (!scalarValue(candidate.params[index].type) && !candidate.params[index].type.isSpan())
                         fail(candidate.token,
@@ -2143,7 +2155,7 @@ public:
                                       true,
                                       !parameter.type.isClass() && !parameter.type.isBytes());
                 if (parameter.type.isService())
-                    emit(ir::BindServiceParameter{parameterIndex, offset(local), service::Kind::Console});
+                    emit(ir::BindServiceParameter{parameterIndex, offset(local), service::kind(parameter.type)});
                 else if (parameter.type.isRegion())
                     emit(ir::BindRegionParameter{parameterIndex, offset(local)});
                 else if (parameter.type.isBytes()) {

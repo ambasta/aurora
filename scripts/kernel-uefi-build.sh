@@ -13,6 +13,10 @@ flags=(-std=c++23 -O2 -fstack-usage -Wall -Wextra -Werror -ffreestanding -fno-ex
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ framebuffer|framebuffer-record|framebuffer-permissions|framebuffer-stale)
+   extra+=(-DAURORA_UEFI_FRAMEBUFFER -DAURORA_UEFI_FRAMEBUFFER_FIXTURE -DAURORA_UEFI_FRAMEBUFFER_CAPTURE)
+   if [[ "$UEFI_MODE" != framebuffer ]]; then flag="${UEFI_MODE#framebuffer-}"; extra+=("-DAURORA_FRAMEBUFFER_${flag^^}"); fi ;;
+ framebuffer-probe) extra+=(-DAURORA_UEFI_FRAMEBUFFER -DAURORA_UEFI_FRAMEBUFFER_PROBE) ;;
  owned-bytes) extra+=(-DAURORA_UEFI_OWNED_BYTES) ;;
  console|console-service-stale|console-service-reentry|console-service-timeout|console-service-report)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_CONSOLE)
@@ -72,6 +76,13 @@ case "${UEFI_MODE:-normal}" in
  nx) extra+=(-DAURORA_UEFI_NX) ;;
  *) echo 'Unknown UEFI build mode' >&2; exit 2 ;;
 esac
+case "${UEFI_MODE:-normal}" in
+ framebuffer|framebuffer-record|framebuffer-permissions|framebuffer-stale)
+    framebuffer_provenance=()
+    for flag in "${flags[@]}" "${extra[@]}"; do framebuffer_provenance+=("--flag=$flag"); done
+    python3 -B scripts/kernel_framebuffer_admission.py begin --mode "$UEFI_MODE" \
+        --compiler "$compiler" --cxx "$cxx" "${framebuffer_provenance[@]}" ;;
+esac
 if [[ "${UEFI_MODE:-normal}" == program-* ]]; then
  provenance_flags=()
  for flag in "${flags[@]}" "${extra[@]}"; do provenance_flags+=("--flag=$flag"); done
@@ -123,6 +134,12 @@ if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "$
 fi
 console_objects=()
 language_entry=examples/kernel.au
+framebuffer_objects=()
+if [[ "${UEFI_MODE:-normal}" == framebuffer || "${UEFI_MODE:-normal}" == framebuffer-record || "${UEFI_MODE:-normal}" == framebuffer-permissions || "${UEFI_MODE:-normal}" == framebuffer-stale ]]; then
+    language_entry=examples/kernel-display-service.au
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/framebuffer.cpp -o build/uefi/framebuffer.o
+    framebuffer_objects+=(build/uefi/framebuffer.o)
+fi
 if [[ "${UEFI_MODE:-normal}" == program-* ]]; then language_entry=examples/kernel-program-console.au; fi
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then language_entry=examples/kernel-owned-bytes.au; fi
 if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
@@ -132,7 +149,9 @@ if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-ser
     console_objects+=(build/uefi/console-entry.o build/uefi/console.o)
 fi
 "$compiler" --module-root kernel/policies "$language_entry" -o build/uefi/language.s
-if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
+if (( ${#framebuffer_objects[@]} )); then
+    as --64 build/uefi/language.s kernel/uefi/display-service-entry.S -o build/uefi/language.o
+elif [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     as --64 build/uefi/language.s kernel/uefi/owned-bytes-entry.S -o build/uefi/language.o
     python3 tests/kernel-uefi-owned-bytes-admission.py build/uefi/language.o
 elif [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
@@ -155,7 +174,7 @@ fi
 ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 \
     build/uefi/payload-entry.o build/uefi/memory.o build/uefi/payload.o build/uefi/acpi.o \
     build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" "${console_objects[@]}" \
-    build/uefi/language.o "${owned_bytes_objects[@]}" -o build/uefi/payload.elf
+    build/uefi/language.o "${owned_bytes_objects[@]}" "${framebuffer_objects[@]}" -o build/uefi/payload.elf
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     python3 tests/kernel-uefi-owned-bytes-stack.py build/uefi build/uefi/owned-bytes-stack.json
 fi
@@ -252,3 +271,9 @@ if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-ser
     python3 -B scripts/kernel_console_service_admission.py end-build --mode "$UEFI_MODE"
     python3 -B scripts/kernel_console_service_admission.py emit --mode "$UEFI_MODE"
 fi
+
+case "${UEFI_MODE:-normal}" in
+ framebuffer|framebuffer-record|framebuffer-permissions|framebuffer-stale)
+    python3 -B scripts/kernel_framebuffer_admission.py end --mode "$UEFI_MODE"
+    python3 -B scripts/kernel_framebuffer_admission.py emit --mode "$UEFI_MODE" ;;
+esac

@@ -245,16 +245,19 @@ class AcquireServiceLoan {
 public:
     int loanId;
     int offset;
+    service::Kind kind = service::Kind::Console;
 };
 class ReleaseServiceLoan {
 public:
     int loanId;
+    service::Kind kind = service::Kind::Console;
 };
 class ServiceOperation {
 public:
     int offset;
     service::Operation operation;
-    int resultOffset; // exact pristine ConsoleSample for next, zero for put
+    int resultOffset; // exact pristine ConsoleSample for next, zero for scalar operations
+    service::Kind kind = service::Kind::Console;
 };
 class ServiceCall {
 public:
@@ -262,6 +265,7 @@ public:
     int loanId;
     int resultOffset;
     std::vector<int> spanArguments; // full parameter positions, capability/scalars zero
+    service::Kind kind = service::Kind::Console;
 };
 class BindRegionParameter {
 public:
