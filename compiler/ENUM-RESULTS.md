@@ -41,7 +41,8 @@ contract.
 
 ## Complete copied method results
 
-A method may return a complete named class local. Its caller must initialize a
+A method may return a complete named class local or a
+[direct copied-class constructor](VALUE-CALLS.md#source-contract). Its caller must initialize a
 fresh explicitly typed local from that call. This includes composed classes with
 private array, enum and empty-class descendants. The result has independent
 storage; changing the original receiver or the extracted copy cannot change the

@@ -1,5 +1,19 @@
 # Completeness and acceptance matrix
 
+## Direct copied constructor returns — 2026-10-08
+
+Ordinary functions and methods can return a directly constructed copied class
+without a named result local. Shared constructor lowering preserves privacy,
+nominal types, argument snapshots, initialization and cleanup; typed IR checks
+are unchanged. Eleven `std.json_write` report returns use the
+[canonical contract](../compiler/VALUE-CALLS.md#source-contract).
+The final formatter-repair join passes all 41 developer and 12 slow Meson tests,
+118 template checks and 972 typed IR checks. Its complete JSON-writer import
+closure emits byte-identical assembly to the named-local spelling. No owning
+temporaries, general class expressions, new full-root-native release, sanitizer,
+kernel or hardware qualification is claimed.
+
+
 ## Formatter and unsupported-field diagnostics — 2026-10-08
 
 Binary operators keep spaces before parenthesized operands, unary operators stay

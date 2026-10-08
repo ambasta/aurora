@@ -4310,6 +4310,64 @@ int main(int argc, char **argv) {
         accept("identical guards join safely", std::move(joinedGuard));
 
         accept("constructor, const object and receiver forwarding", receiverBaseline());
+        // Direct source constructor returns use these existing operations; no
+        // verifier relaxation or special temporary capability is permitted.
+        auto directConstructorReturn = receiverBaseline();
+        directConstructorReturn.functions[0].result = Type("Pair");
+        directConstructorReturn.functions[0].code.resize(6);
+        directConstructorReturn.functions[0].code.push_back(ReturnObject{16});
+        accept("direct constructor result uses complete active object", directConstructorReturn);
+        auto directEmptyComposedReturn = composedEmptyBaseline();
+        directEmptyComposedReturn.functions[0].result = Type("OuterEmpty");
+        directEmptyComposedReturn.functions[0].code.resize(3);
+        directEmptyComposedReturn.functions[0].code.push_back(EndObject{8});
+        directEmptyComposedReturn.functions[0].code.push_back(ReturnObject{16});
+        accept("direct composed empty result ends argument snapshot", directEmptyComposedReturn);
+        rejectModule(
+            "direct composed empty result cannot omit logical initialization",
+            directEmptyComposedReturn,
+            [](Module &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin() + 2);
+            },
+            "nested class field not completely initialized");
+
+        rejectModule(
+            "direct constructor result lifetime ended",
+            directConstructorReturn,
+            [](Module &m) {
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, EndObject{16});
+            },
+            "return outside active lifetime");
+        rejectModule(
+            "direct constructor result initialization omitted",
+            directConstructorReturn,
+            [](Module &m) {
+                m.functions[0].code = {BeginObject{16}, ReturnObject{16}};
+            },
+            "returned object not fully initialized");
+        rejectModule(
+            "direct constructor result nominal mismatch",
+            directConstructorReturn,
+            [](Module &m) {
+                m.classLayouts["Other"] = m.classLayouts["Pair"];
+                m.functions[0].result = Type("Other");
+            },
+            "object return nominal class mismatch");
+        rejectModule(
+            "direct constructor result retains no operand stack",
+            directConstructorReturn,
+            [](Module &m) {
+                m.functions[0].code.insert(m.functions[0].code.end() - 1, Push{});
+            },
+            "unbalanced stack at object return");
+        rejectModule(
+            "direct constructor result cannot hide incomplete constructor",
+            directConstructorReturn,
+            [](Module &m) {
+                m.functions[1].code.erase(m.functions[1].code.begin() + 5);
+            },
+            "returns before all fields initialized");
+
         rejectReceiver(
             "missing class layout",
             [](Module &m) {

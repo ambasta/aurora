@@ -327,7 +327,7 @@ for label, body, helpers, error in [
     ("constructor designated initialization bypass", "Pair<i64,u64> a=Pair<i64,u64>{.first=1,.second=2u64};return 42;", "", "designated"),
     ("constructor deduction unsupported", "Pair<i64,u64> a=Pair(1,2u64);return 42;", "", ("template", "constructor", "argument")),
     ("temporary generic argument", "return consume(Pair<i64,u64>(1,2u64));", "auto consume(Pair<i64,u64> p)->i64{return 42;}", "complete local name"),
-    ("temporary generic result", "Pair<i64,u64> a=make();return 42;", "auto make()->Pair<i64,u64>{return Pair<i64,u64>(1,2u64);}", "complete local name"),
+    ("direct generic result nominal mismatch", "Pair<u64,i64> a=make();return 42;", "auto make()->Pair<u64,i64>{return Pair<i64,u64>(1,2u64);}", "expected"),
     ("immutable generic parameter", "Pair<i64,u64> a=Pair<i64,u64>(1,2u64);return change(a);", "auto change(Pair<i64,u64> p)->i64{p.first=42;return 42;}", "mutable class local"),
     ("const generic field write", "const Pair<i64,u64> a=Pair<i64,u64>(1,2u64);a.first=42;return 42;", "", "mutable class local"),
 ]:
@@ -466,5 +466,9 @@ template <Scalar T> class Holder { public: T value;
 };
 auto test()->u64 { const Holder<u64> x=Holder<u64>{.value=0u64}; return x.compute(18446744073709551615u64); }
 """, expected=(1<<64)-1)
+
+check("direct generic constructor result", program(
+    "Pair<i64,u64> a=make();return a.first+i64(a.second);",
+    helpers="auto make()->Pair<i64,u64>{return Pair<i64,u64>(20,22u64);}"))
 
 print(f"{COUNT} scalar template checks passed")
