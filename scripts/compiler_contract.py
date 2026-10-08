@@ -573,6 +573,9 @@ def run(args):
         except BlockingIOError as error:
             raise ContractError('another supervised test run owns this source tree') from error
         work = Path(tempfile.mkdtemp(prefix='test-contract-', dir=build))
+        temporary = work / 'tmp'
+        temporary.mkdir()
+        env.update(TMPDIR=str(temporary), TMP=str(temporary), TEMP=str(temporary))
         compiler = work / 'aurorac'; depfile = work / 'compiler.d'
         planned = None if prebuilt else build_argv(cxx, flags, str(compiler), str(depfile))
         original = file_record(prebuilt) if prebuilt else None

@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# Execute a separately reviewed image, preserve raw PTY evidence, restore normal.
+# Routine smoke rebuilds locally; explicit qualification uses reviewed prebuilt bytes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-if (( $# > 1 )); then echo 'Expected one reviewed program profile' >&2; exit 2; fi
-mode="${1:-program-console}"
-if [[ -n "${AURORA_TEST_CONTEXT:-}" || -n "${UEFI_MODE:-}" ]]; then
-    echo 'Unset AURORA_TEST_CONTEXT and UEFI_MODE before PTY acceptance.' >&2; exit 2
+source scripts/kernel-program-console-common.sh
+qualification=false
+if [[ "${1:-}" == --qualification ]]; then qualification=true; shift; fi
+if (( $# > 1 )); then
+    program_console_fail 'usage: scripts/kernel-program-console-smoke.sh [--qualification] [PROFILE]'; exit 1
 fi
-# Preflight cannot alter the image or start a guest. Never compute this pin here.
-python3 -B scripts/kernel_program_console_admission.py reviewed --mode "$mode"
-command -v "${QEMU:-qemu-system-x86_64}" >/dev/null
-source scripts/uefi-firmware.sh
-uefi_firmware_select
+mode="${1:-program-console}"
+program_console_controls "$mode"
+# Reviewed qualification never rebuilds or restages the approved image before
+# execution. In particular, no local digest is computed to manufacture approval.
+if [[ "$qualification" == true ]]; then
+    command -v python3 >/dev/null || { program_console_blocked 'missing dependency: python3'; exit 2; }
+    python3 -B scripts/kernel_program_console_admission.py reviewed --mode "$mode"
+fi
+program_console_preflight
 restore() {
     local status=$? restored
     trap - EXIT INT TERM
@@ -25,7 +30,19 @@ restore() {
     fi
     exit "$status"
 }
+# Synchronous builds finish before handled interruption can restore their outputs.
+# Preflight rejection above never modifies images or triggers restoration.
 trap restore EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-python3 -B tests/kernel-program-console-pty.py --mode "$mode"
+args=(--mode "$mode")
+if [[ "$qualification" == true ]]; then
+    args+=(--qualification)
+else
+    if UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh; then :; else
+        status=$?; echo "FAIL: protected-console image build/admission exited $status" >&2; exit "$status"
+    fi
+fi
+if python3 -B tests/kernel-program-console-pty.py "${args[@]}"; then :; else
+    status=$?; echo "FAIL: protected-console PTY exited $status" >&2; exit "$status"
+fi

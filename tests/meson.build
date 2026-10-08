@@ -274,3 +274,33 @@ test('console-service-source-native', python,
 test('console-service-admission-controls', python,
      args: ['-B', '-O', files('kernel-console-service-admission.py')],
      suite: ['full', 'dev'], timeout: 120)
+
+# Previously Make-only complete source oracles. Keep exhaustive sweeps in slow.
+foreach runner : [
+  'templates', 'function_templates', 'function_overloads', 'fixed_containers',
+  'composed_values', 'nested_values', 'decimal_values', 'enum_composition',
+  'method_values', 'u8_numeric', 'readonly_spans', 'utf8', 'utf8_encoding',
+  'integer_oracle', 'unsigned_oracle',
+]
+  test(runner.replace('_', '-'), python,
+       args: ['-B', '-O', files('compiler/' + runner + '.py'), aurorac],
+       depends: aurorac, suite: ['full', 'slow', 'compiler'], env: oracle_env,
+       workdir: meson.current_build_dir(), timeout: 900, is_parallel: true)
+endforeach
+
+# Public Make routing must be exercised by the required developer suite.
+test('developer-commands', python, args: ['-B', files('developer-commands.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+test('developer-commands-optimized', python, args: ['-B', '-O', files('developer-commands.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+test('console-routing', python, args: ['-B', files('kernel-console-routing.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+
+test('compiler-test-inventory', python,
+     args: ['-B', files('test-inventory.py'), '--meson-info',
+            meson.project_build_root() / 'meson-info' / 'intro-tests.json'],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+
+test('program-console-entrypoints', python,
+     args: ['-B', files('kernel-program-console-entrypoints.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 60)

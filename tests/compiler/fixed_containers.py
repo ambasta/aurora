@@ -391,8 +391,6 @@ def rejection_cases(suite):
         ("no wrapper builtin len", "std::array<i64,2> a=std::array<i64,2>();return len(a);", "", "array"),
         ("no wrapper borrow", "std::array<i64,2> a=std::array<i64,2>();const ref<i64> r=borrow(a);return read(r);", "", ("own", "borrow")),
         ("no at result borrow", "std::array<i64,2> a=std::array<i64,2>();const ref<i64> r=borrow(a.at(0));return read(r);", "", ("local", "borrow")),
-        ("no temporary result escape", "std::array<i64,2> a=make();return a.at(0);",
-         "auto make()->std::array<i64,2>{return std::array<i64,2>();}", ("local", "construction")),
         ("no temporary parameter bypass", "return consume(std::array<i64,2>());",
          "auto consume(std::array<i64,2> a)->i64{return a.at(0);}", ("local", "construction")),
         ("no constructor arguments", "std::array<i64,2> a=std::array<i64,2>(42);return 42;", "", ("argument", "constructor")),
@@ -402,6 +400,11 @@ def rejection_cases(suite):
         ("no qualified builtin constructor", "builtin::array<i64,2> a=builtin::array<i64,2>();return 42;", "", ("array", "constructor", "unknown", "reserved")),
     ):
         suite.check(label, program(body, helpers=helpers), error=error)
+
+    suite.check("direct array construction return copies initialized storage", program(
+        "std::array<i64,2> a=make();std::array<i64,2> b=make();"
+        "a.set(0,42);return a.at(0)+a.at(1)+b.at(0)+b.at(1);",
+        helpers="auto make()->std::array<i64,2>{return std::array<i64,2>();}"))
 
     invalid_fields = (
         ("missing array initialization", "class Bad{builtin::array<i64,2> data;public:Bad(){} };"),

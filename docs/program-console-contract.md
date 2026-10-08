@@ -50,9 +50,12 @@ prompt. Unknown sites, malformed frames, privilege/root/owner mismatches fail st
 
 ## Admission and evidence
 
-No guest may execute before independent review of exact generated image metadata,
-PIC/relocations, PE permissions, bounded stack call paths including interrupt
-reserve, and IRQ mappings in both roots. Existing profiles must remain unchanged.
+First-change qualification requires independent review of exact generated image
+metadata, PIC/relocations, PE permissions, bounded stack call paths including
+interrupt reserve, and IRQ mappings in both roots before its qualification guest.
+Routine developer launch and smoke instead rebuild locally and pass those
+automated admission checks; they do not establish independent qualification.
+Existing profiles must remain unchanged.
 Run focused model/host and sanitizer tests before actual original-clock OVMF PTY
 acceptance. Cover empty/64/65 bytes, editing, CRLF/UART rejection, repeated commands,
 known request/service/completion faults and budget exhaustion, pending IRQ ownership
@@ -112,13 +115,15 @@ are retained in the external checkpoint evidence package. The first build's
 unused-stack-accessor failure was corrected by checking the actual kernel stack;
 no failed command is reported as a passing build.
 
-## Exact build and review gate
+## Routine local admission and separate first-change qualification
 
 `scripts/kernel-uefi-build.sh` records program-profile source inputs, Aurora/host
 compiler hashes and selected flags before compilation, verifies they did not
 change during compilation, and binds the resulting objects, stack records, user
 images and EFI image in `build/uefi/program-build.json`. Profile builds do not
-start a guest. Emitting admission evidence rejects missing or stale provenance.
+start a guest. Every program-profile build automatically emits admission evidence
+and rejects missing or stale provenance, unsupported decoder instructions, image
+violations and exhausted stack budgets before any public launch can proceed.
 
 `python3 -B scripts/kernel_program_console_admission.py emit --mode program-console`
 prepares `build/uefi/program-console-admission.json`. It rechecks PE/PIC and user
@@ -131,12 +136,60 @@ retains its machine-level decreasing-level proof. Unknown indirect branches are
 rejected; the terminal classifier's one six-entry PIC switch has a checked bound,
 read-only table, in-function instruction targets and all target paths decoded.
 
-Evidence generation is not independent approval. The launch and PTY routes must
-call `reviewed --mode PROFILE` with `PROGRAM_CONSOLE_REVIEW_SHA256` supplied by an
-independent reviewer. This checks the exact receipt, profile, provenance and every
-recorded source/object/image hash. It never derives or fills the approval itself.
+Ordinary developer commands need no historical or assistant-issued digest:
+
+```sh
+make program-console-uefi
+make smoke-program-console-uefi
+./scripts/kernel-program-console-smoke.sh program-pending
+```
+
+They preflight tools, firmware and inherited controls, build the selected local
+profile and verify the complete current-source/output receipt before execution.
+The stack decoder remains fail closed, including its narrowly reviewed copied-IF
+instruction normalization. There is no generic unsupported-instruction exemption.
+Smoke uses the same original-clock PTY and hostile transcript oracles as before,
+rechecks image/source identity afterward and rebuilds the normal image on success,
+failure or handled interruption. That restoration is a build, not a normal boot.
+Prerequisite rejection occurs before image mutation or restoration. Unavailable
+tools/firmware are `BLOCKED` (exit 2); invalid controls, build/admission failures,
+wrong guest exits or failed oracles are `FAIL`, including a build/check exit 2.
+Neither outcome is a skipped or successful guest test.
+
+Evidence generation is not independent approval. First-change qualification is
+explicit, against an already built image that the reviewer inspected:
+
+```sh
+UEFI_MODE=program-console ./scripts/kernel-uefi-build.sh
+# An independent reviewer inspects the resulting admission evidence and supplies its digest.
+PROGRAM_CONSOLE_REVIEW_SHA256=<independently-reviewed-digest> make qualify-program-console-uefi
+# For another separately built/reviewed profile:
+PROGRAM_CONSOLE_REVIEW_SHA256=<independently-reviewed-digest> \
+    ./scripts/kernel-program-console-smoke.sh --qualification program-pending
+```
+
+Only this explicit route uses `reviewed --mode PROFILE`; it never computes or
+fills its own approval and never rebuilds the reviewed image before the guest.
+Missing approval blocks qualification; a malformed/mismatched pin fails it.
+The review checks the exact receipt, selected profile, provenance and complete
+source/object/image inventory, again after execution. A supplied pin does not
+silently turn an ordinary developer run into qualification.
+
+Each PTY attempt retains a fresh directory under `build/program-console-evidence`
+with the original admission bytes, clock command, raw transcript, stderr and
+metrics. Developer metrics have `purpose: developer` and
+`qualification_eligible: false`; only a passing explicitly pinned guest may have
+`qualification_eligible: true`. A successful guest metric does not override a
+failed wrapper/restoration result or replace independent review/final merge gates.
 The `diagnose` action produces stack diagnostics only, without an admission
 receipt, and can inspect an old image while implementation continues.
+
+Compiler-free regression controls are in `tests/kernel-program-admission.py`
+and `tests/kernel-program-console-entrypoints.py`. They reject changed source,
+image, compiler, profile, incomplete receipt coverage and fabricated approval;
+record public build/check/PTY routes, no-rebuild qualification and restoration;
+and distinguish unavailable prerequisites from actual failures. These synthetic
+controls do not establish a new guest, compiler/toolchain or hardware qualification.
 
 ## Pre-guest review repairs
 

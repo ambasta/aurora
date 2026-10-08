@@ -1,0 +1,534 @@
+{
+  "binary_buffer.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "block_io.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "borrowed_objects.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "borrowed_objects_abi.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "byte_buffer.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "byte_codec.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "byte_literals.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "classes.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "composed_values.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "console_service.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "decimal_values.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "diagnostics.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "enum_composition.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "equivalence.py": {
+    "kind": "supplemental-runner",
+    "make": false,
+    "meson": false,
+    "reason": "Requires a separate baseline compiler; differential evidence, not a semantics oracle.",
+    "root_make": false
+  },
+  "fixed_containers.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "format.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Focused Make formatter/linter gate, outside the root native aggregate; separate tools required.",
+    "root_make": false
+  },
+  "function_overloads.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "function_overloads_independent.py": {
+    "kind": "supplemental-runner",
+    "make": false,
+    "meson": false,
+    "reason": "Independent standalone overload qualification runner.",
+    "root_make": false
+  },
+  "function_templates.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "integer_oracle.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "integers.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "ir_exhaustive.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "json_codecs.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "json_codecs_owned.py": {
+    "kind": "supplemental-runner",
+    "make": false,
+    "meson": false,
+    "reason": "Supplemental historical independently pinned owner join.",
+    "root_make": false
+  },
+  "json_integers.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "json_lookup.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "json_owned.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "json_profile.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "json_string_write.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "lint.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Focused Make formatter/linter gate, outside the root native aggregate; separate tools required.",
+    "root_make": false
+  },
+  "logical_spans_abi.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "method_spans.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "method_spans_abi.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "method_values.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "method_values_abi.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "nested_values.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "owned_bytes.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "owned_mutation.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "owned_mutation_abi.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "owned_spans.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "owned_spans_kernel.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "owned_spans_source.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "owning_classes.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "owning_classes_abi.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "package_graph.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "package_identity.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "package_manifest.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "packed_values.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "readonly_spans.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "readonly_windows.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "readonly_windows_ir_native.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "run.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "sector.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "sector_values.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "sector_values_abi.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "sector_window.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "short_circuit.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "short_circuit_ir_native.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "source_overlays.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "storage_binary.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "templates.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "token_scan.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "u8_numeric.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "unsigned.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "unsigned_oracle.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "utf8.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "utf8_encoding.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "utf8_lines.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "utf8_range.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "value_calls.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "xfs_file.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "xfs_geometry.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "xfs_root.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "xfs_root_api.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "xfs_root_entry.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": false,
+    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
+    "root_make": true
+  },
+  "xfs_sector.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  }
+}

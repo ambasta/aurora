@@ -178,9 +178,12 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 -B -O ../tests/compiler/sector_values.py $(abspath $(OUT))
 	python3 ../tests/compiler/readonly_spans.py $(abspath $(OUT))
 	python3 -O ../tests/compiler/storage_binary.py $(abspath $(OUT))
-	python3 -O ../tests/compiler/xfs_geometry.py $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS) --mutation-controls $(XFS_GEOMETRY_TEST_FLAGS)
-	python3 -O ../tests/compiler/utf8.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS)
-	python3 -O ../tests/compiler/utf8_encoding.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))xfs-geometry.XXXXXXXX")"; \
+	python3 -O ../tests/compiler/xfs_geometry.py $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS) --mutation-controls $(XFS_GEOMETRY_TEST_FLAGS) --artifacts "$$work/native"
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))utf8.XXXXXXXX")"; \
+	python3 -O ../tests/compiler/utf8.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS) --artifacts "$$work/native"
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))utf8-encoding.XXXXXXXX")"; \
+	python3 -O ../tests/compiler/utf8_encoding.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS) --artifacts "$$work/native"
 	python3 -O ../fixtures/xfs-offline/verify_native.py --compiler $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS)
 	CXX="$(CXX)" python3 ../tests/compiler/unsigned_oracle.py $(abspath $(OUT))
 	CXX="$(CXX)" python3 ../tests/compiler/integer_oracle.py $(abspath $(OUT))
@@ -194,7 +197,8 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	CXX="$(CXX)" python3 ../tests/compiler/ir_exhaustive.py $(abspath $(dir $(OUT))ir-tests)
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_values_ir.cpp -o $(dir $(OUT))method-values-ir-tests
 	$(dir $(OUT))method-values-ir-tests
-	python3 -O ../tests/compiler/method_values_abi.py $(abspath $(dir $(OUT))method-values-ir-tests)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))method-values-abi.XXXXXXXX")"; \
+	python3 -O ../tests/compiler/method_values_abi.py $(abspath $(dir $(OUT))method-values-ir-tests) --work-dir "$$work/native"
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_mutation_ir.cpp -o $(dir $(OUT))owned-mutation-ir-tests
 	$(dir $(OUT))owned-mutation-ir-tests
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_bytes_ir.cpp -o $(dir $(OUT))owned-bytes-ir-tests
@@ -204,9 +208,11 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_spans_ir.cpp -o $(dir $(OUT))method-spans-ir-tests
 	$(dir $(OUT))method-spans-ir-tests
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_spans_abi.cpp -o $(dir $(OUT))method-spans-abi-tests
-	python3 -B -O ../tests/compiler/method_spans_abi.py $(abspath $(dir $(OUT))method-spans-abi-tests)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))method-spans-abi.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/method_spans_abi.py $(abspath $(dir $(OUT))method-spans-abi-tests) --artifacts "$$work/native"
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/logical_spans_abi.cpp -o $(dir $(OUT))logical-spans-abi-tests
-	python3 -B -O ../tests/compiler/logical_spans_abi.py $(abspath $(dir $(OUT))logical-spans-abi-tests)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))logical-spans-abi.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/logical_spans_abi.py $(abspath $(dir $(OUT))logical-spans-abi-tests) --artifacts "$$work/native"
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owning_classes_ir.cpp -o $(dir $(OUT))owning-classes-ir-tests
 	$(dir $(OUT))owning-classes-ir-tests
 	python3 -B -O ../tests/compiler/owning_classes_abi.py $(abspath $(dir $(OUT))owning-classes-ir-tests)
@@ -245,15 +251,18 @@ test-initialization-facts:
 
 .PHONY: test-utf8
 test-utf8: $(OUT)
-	python3 -O ../tests/compiler/utf8.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))utf8.XXXXXXXX")"; \
+	python3 -O ../tests/compiler/utf8.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS) --artifacts "$$work/native"
 
 .PHONY: test-utf8-encoding
 test-utf8-encoding: $(OUT)
-	python3 -O ../tests/compiler/utf8_encoding.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))utf8-encoding.XXXXXXXX")"; \
+	python3 -O ../tests/compiler/utf8_encoding.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS) --artifacts "$$work/native"
 
 .PHONY: test-xfs-geometry
 test-xfs-geometry: $(OUT)
-	python3 -O ../tests/compiler/xfs_geometry.py $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS) --mutation-controls $(XFS_GEOMETRY_TEST_FLAGS)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))xfs-geometry.XXXXXXXX")"; \
+	python3 -O ../tests/compiler/xfs_geometry.py $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS) --mutation-controls $(XFS_GEOMETRY_TEST_FLAGS) --artifacts "$$work/native"
 
 .PHONY: test-xfs-root
 test-xfs-root: $(OUT)
@@ -347,23 +356,27 @@ test-lint: $(FORMAT_OUT) $(OUT)
 .PHONY: test-json
 test: test-json
 test-json: $(OUT)
-	python3 -B -O ../tests/compiler/json_profile.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-profile.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/json_profile.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"
 	python3 -B -O ../tests/compiler/json_owned.py "$(abspath $(OUT))"
 
 .PHONY: test-json-codecs
 test: test-json-codecs
 test-json-codecs: $(OUT)
-	python3 -B -O ../tests/compiler/json_codecs.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-codecs.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/json_codecs.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"
 
 .PHONY: test-json-integers
 test: test-json-integers
 test-json-integers: $(OUT)
-	python3 -B -O ../tests/compiler/json_integers.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-integers.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/json_integers.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"
 
 .PHONY: test-json-lookup
 test: test-json-lookup
 test-json-lookup: $(OUT)
-	python3 -B -O ../tests/compiler/json_lookup.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS)
+	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-lookup.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/json_lookup.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"
 
 .PHONY: test-borrowed-objects
 test: test-borrowed-objects

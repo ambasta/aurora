@@ -525,6 +525,9 @@ def rejection_cases(suite):
     suite.reject("nonempty template constructor body remains unsupported", p("return 42;", COPY +
         "template<Value T>class Bad{public:Bad(){copy<i64>(42);} };"))
     prefix = "Leaf source=Leaf(42u8);"
+    suite.check("class return constructor copies complete value", p(
+        prefix + "Leaf result=make<Leaf>(source);source.set(0u8);return i64(result.get());",
+        LEAF + "template<Value T>auto make(T x)->Leaf{return Leaf(42u8);}"))
     for label, body, generic in (
         ("mutable parameter field", "return mutate<Leaf>(source);", "template<Value T>auto mutate(T x)->i64{x.value=1u8;return 42;}"),
         ("mutable parameter method", "return mutate<Leaf>(source);", "template<Value T>auto mutate(T x)->i64{x.set(1u8);return 42;}"),
@@ -532,7 +535,6 @@ def rejection_cases(suite):
         ("class argument temporary", "Leaf result=copy<Leaf>(Leaf(42u8));return 42;", COPY),
         ("class nested result argument", "Leaf result=copy<Leaf>(copy<Leaf>(source));return 42;", COPY),
         ("class direct result return", "Leaf result=wrap(source);return 42;", COPY + "auto wrap(Leaf x)->Leaf{return copy<Leaf>(x);}"),
-        ("class return constructor", "Leaf result=make<Leaf>(source);return 42;", "template<Value T>auto make(T x)->Leaf{return Leaf(42u8);}"),
         ("wrong nominal argument", "Empty result=copy<Empty>(source);return 42;", COPY),
         ("wrong nominal result", "Empty result=copy<Leaf>(source);return 42;", COPY),
         ("resource result", "return bad<i64>(42);", "template<Value T>auto bad(T x)->own<i64>{return new i64(x);}"),

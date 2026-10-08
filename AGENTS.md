@@ -41,7 +41,8 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    including after conflict resolution or another source change. Focused checks
    supplement these gates; they never replace them. Keep `dev` fast and retain
    exhaustive integration/ABI coverage in `slow`, without sampling away tests.
-   Before every release, also run the complete root `make test` native graph
+   Before every compiler-affecting merge and every release, also run the complete
+   root `make test` native graph. Meson does not yet cover every Make runner. Run it
    under the shared build-once compiler contract, plus actual emulator gates for
    kernel-affecting qualification. For independently pinned native acceptance,
    use `make test-acceptance` with an externally reviewed
@@ -65,7 +66,7 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - meson test -C build/meson --suite packages --num-processes 2: partial semantic package feedback
 - meson test -C build/meson --suite dev --num-processes 2: quick cross-component feedback
 - meson test -C build/meson --suite slow --num-processes 2: longer integration/ABI sweeps
-- meson test -C build/meson --suite full --num-processes 2: all 53 registered non-LSP tests
+- meson test -C build/meson --suite full --num-processes 2: all registered non-LSP tests (see Meson introspection)
 - make test: fresh current-source compiler once, then the complete root native graph
 - make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>: explicitly
   pinned root native graph; optional ACCEPTANCE_COMPILER selects a reviewed prebuilt

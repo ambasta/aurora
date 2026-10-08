@@ -714,12 +714,15 @@ def rejection_cases(suite):
     ):
         suite.check(label, program(body, BASE, helpers), reject=True)
     for label, declaration in (
-        ("direct class construction return", "auto make()const->Leaf{return Leaf(Status::ok,42u64);}"),
         ("wrong nominal class return", "auto make()const->Packet{Leaf value=Leaf(Status::ok,42u64);return value;}"),
         ("wrong nominal enum return", "auto status()const->Status{return Other::ok;}"),
     ):
         suite.check(label + " remains rejected", program("return 42;", BASE +
                     "class Invalid{public:Invalid(){}" + declaration + "};"), reject=True)
+    suite.check("direct class construction return preserves enum payload", program(
+        "Maker maker=Maker();Leaf result=maker.make();"
+        "if(result.status()!=Status::ok){return 1;}return i64(result.get());", BASE +
+        "class Maker{public:Maker(){}auto make()const->Leaf{return Leaf(Status::ok,42u64);}};"))
     suite.check("copied class method parameter preserves enum payload", program(
         "Leaf source=Leaf(Status::ok,42u64);Receiver receiver=Receiver();Leaf result=receiver.take(source);"
         "source.change(Status::error);if(result.status()!=Status::ok){return 1;}return i64(result.get());", BASE +

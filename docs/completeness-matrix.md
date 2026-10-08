@@ -4,11 +4,15 @@
 
 This is the canonical project-level status and contract index. Update this section
 in place; the checkpoint summaries below are historical, not an accumulating
-list of current limitations. This source is integrated with accepted PR96 / main
-`49aafc20bb171c7a88746a89a0d593b888e46bd1` (2026-10-08), preserving terminal-event,
+list of current limitations. This source is integrated with accepted PR97 / main
+`916fd18f18995241c1da367db6a04e7eb3cfce63` (2026-10-08), preserving terminal-event,
 structural-formatter, protected-console, byte-literal and JSON-report work.
 The persistent simple-UEFI Aurora console service has the bounded qualification
 noted below.
+Compiler-affecting merges require final integrated `dev`, `slow`, and complete
+root `make test`; the checked runner inventory explicitly records remaining Meson
+gaps. Public protected-console commands build and check local artifacts; separately
+pinned first-image qualification remains an explicit opt-in gate.
 None of the six destination goals is complete. A bounded feature or passing test
 suite does not establish production safety, whole-system readiness or physical
 hardware support.

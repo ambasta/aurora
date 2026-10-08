@@ -245,6 +245,7 @@ fi
 
 if [[ "${UEFI_MODE:-normal}" == program-* ]]; then
     python3 -B scripts/kernel_program_console_admission.py end-build --mode "$UEFI_MODE"
+    python3 -B scripts/kernel_program_console_admission.py emit --mode "$UEFI_MODE"
 fi
 
 if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
