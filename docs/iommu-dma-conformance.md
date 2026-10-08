@@ -8,7 +8,8 @@ physical isolation/drain/reclamation and AMD hardware support remain unqualified
 The integration is based on Aurora main after PR99,
 `9a8c2805cad581cad92b79b042b13aad07d6b530`. New source/static/mock integration checks
 must be distinguished from the independently reviewed historical emulator runs.
-No new complete Meson dev/slow, root native, kernel or guest gate is claimed here.
+The model diagnostics below do not qualify Aurora's final integrated source.
+Final-source Meson dev/slow and any required root native/kernel gates remain pending.
 
 ## Mechanism and trust boundary
 
@@ -144,6 +145,29 @@ prevent completion, but these records are not presented as a clean firmware
 fixture. Original failures, failed build/preparation attempts and old reports stay
 unchanged when a later separately versioned diagnostic succeeds.
 
+### Final-model composition: independently accepted 13/13 and 30/30
+
+A new, separately supervised aligned-access run passed all 13 cases on final
+command-stop binary
+`e19fa6c25b2eb8198d79284d7f1b161359c96db7c6c9f1147810ef5004a565f4`.
+Independent offline reconstruction accepted all 2,744 qtest request/reply pairs,
+2,321 checks, 75 complete snapshots and 88 DMA operations. Every complete case
+result and every raw qtest stream equals the accepted combined-v2 baseline.
+All 43 retained pre-execution identities across this run and the separately
+accepted 30-case command suite bind that same final binary. This closes the
+bounded same-binary composition gate; it is not a newly executed 43-case aggregate,
+full architectural conformance, Aurora native/kernel or physical qualification.
+
+The new external harness changes only `PROFILE` and `BINARY_SHA256` from the
+historical aligned-access fixture. Its SHA-256 is
+`c9d211f2672755734af2944be10664b3612fe83a01368412e9b568cd57a7280e`;
+the published fixture remains byte-identical at
+`52f40383a50ddf437c9f240733af93f0722c3ae54092309f933ca658461dde80`
+with its original combined-v2 runtime pin. The new report, terminal and independent
+decision identities are in [qualification.json](../evidence/iommu-diagnostics/qualification.json).
+The missing firmware warning, historical 17-case failures, model-only event
+interpretations and all exclusions above remain unchanged.
+
 ## Developer use and remaining qualification
 
 `make test-iommu-diagnostics` runs exact artifact/source controls and authored
@@ -160,13 +184,8 @@ supervisor, binary download or hidden target substitution. A new build or path/p
 cannot borrow historical acceptance. The model README describes reconstruction,
 build instructions and target preparation without embedding private paths.
 
-The accepted 13-case run used combined-v2, while 30/30 used the final command-stop
-binary. The same 13-case access suite has not yet run on that final binary; a
-separately reviewed same-model composition regression remains pending. Neither
-accepted suite supplies that missing result.
-
-Before merge, obtain independent integration review and complete final-source
-Meson `dev` and `slow` per AGENTS.md. Complete root native and affected emulator
+Before merge, independently review this additive result update and complete
+final-source Meson `dev` and `slow` per AGENTS.md. Complete root native and affected emulator
 qualification remain separate gates; no old receipt qualifies the changed test
 routing. Future model qualification still needs actual cache-hit observations,
 requester/bus boundaries, excluded-path regressions, broader permissions, command

@@ -85,6 +85,9 @@ the next system-level integration target. Actual DMA conformance remains blocked
 CPU-only preparation, test-only oracles and bounded model diagnostics do not clear
 that gate. The [emulated DMA diagnostic contract](iommu-dma-conformance.md) records
 exact patch/fixture scope, preserved failures and separate runtime acceptance.
+Its 13-case access and 30-case command suites now share the final reviewed model
+binary; this bounded composition is not a new 43-case aggregate or final-source
+Meson `dev`/`slow` qualification, which remains pending.
 Display/input,
 terminal sessions and desktop work depend on usable native service boundaries.
 Terminal-event and the joined structural formatter retain their scoped evidence.
