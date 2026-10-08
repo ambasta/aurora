@@ -685,7 +685,9 @@ public:
                         definition.methods.push_back(std::move(method));
                         continue;
                     }
+                    auto fieldTypeSpan = peek().span;
                     auto fieldType = type();
+                    fieldTypeSpan.end = tokens.at(position - 1).span.end;
                     auto fieldName = ident();
                     if (fieldType.isArray()) {
                         if (publicAccess)
@@ -701,7 +703,11 @@ public:
                         if (!declaredParameters.empty())
                             fail("owning class templates are unsupported");
                     } else if (!scalarOrParameter(fieldType) && !fieldType.isClass())
-                        fail("class fields require scalar, class, private fixed-array or private owned-byte storage");
+                        throw Error(DiagnosticCode::UnexpectedToken,
+                                    "unsupported class field type '" + typeName(fieldType) +
+                                        "': class fields require scalar, class, private fixed-array or private "
+                                        "owned-byte storage",
+                                    fieldTypeSpan);
                     need(";");
                     definition.fields.emplace_back(fieldName, fieldType);
                     definition.fields.back().publicAccess = publicAccess;

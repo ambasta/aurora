@@ -48,6 +48,31 @@ def main():
             cases += 1
             return result
 
+        repository = pathlib.Path(__file__).resolve().parents[2]
+        for relative in (
+            "library/examples/json_integers.au",
+            "library/examples/ram_sector_record.au",
+            "library/std/json.au",
+            "library/std/json_write.au",
+        ):
+            run(["--check", repository / relative], 0)
+
+        unsupported = root / "field.au"
+        field_text = "module x; class Bad { builtin::span<const u8> view; };"
+        unsupported.write_text(field_text)
+        field = json.loads(run(["--check", "--diagnostics=json", unsupported], 2, "AU2001").stderr)["diagnostics"][0]
+        require(
+            field["message"] == "unsupported class field type 'builtin::span<const u8>': "
+            "class fields require scalar, class, private fixed-array or private owned-byte storage",
+            "specific unsupported field type diagnostic",
+        )
+        require(
+            field["range"]["start"]["offset"] == field_text.index("builtin")
+            and field["range"]["end"]["offset"] == field_text.index(" view"),
+            "field type diagnostic range",
+        )
+        require(unsupported.read_text() == field_text, "field rejection changed source")
+
         formatted = run([source], 0).stdout
         require(formatted == b"module x;\nauto f() -> i64 {\n    return 1 + 2;\n}\n", "CLI golden differs")
         require(source.read_bytes() == before, "formatter changed input")

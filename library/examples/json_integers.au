@@ -19,8 +19,8 @@ auto json_integers_example(builtin::ByteRegion region, i64 initial_capacity, i64
         return -1;
     }
     const std::DecimalEncodingResult zero = std::format_decimal_i64(parsed_zero.value_or(1));
-    if (signed_value.status() != std::DecimalEncodingStatus::success || unsigned_value.status() != std::
-        DecimalEncodingStatus::success || zero.status() != std::DecimalEncodingStatus::success) {
+    if (signed_value.status() != std::DecimalEncodingStatus::success || unsigned_value.status() !=
+        std::DecimalEncodingStatus::success || zero.status() != std::DecimalEncodingStatus::success) {
         return -2;
     }
     // Three fixed-width encodings and four punctuation bytes have a proved <=64

@@ -66,6 +66,11 @@ name, never immediately before or after `::`. Explicitly anchored line comments
 remain hard boundaries. A qualified name wider than the target stays intact and
 retains the existing long-line finding.
 
+Parenthesized operands retain a space after binary operators, including `&&`
+and `||`. Unary operators remain attached, for example `!(condition)` and
+`-(value)`. AST roles distinguish binary and unary uses; calls, indexing and
+constructor argument lists retain their existing layout.
+
 Layout is deliberately simple: it does not optimize line breaking, invent blank
 separators, sort declarations or imports, reflow comments, or normalize the token
 stream. For example, lexical
@@ -137,3 +142,24 @@ rerun; the formatter does not replace those checks.
 
 The [blank-line regression results](../docs/formatter-blank-lines-results.md)
 record the shared CLI/LSP preservation fix and its focused validation.
+
+## Parenthesized operands and unsupported fields — 2026-10-08
+
+The binary-parenthesis rule repairs logical and arithmetic operands without
+changing tokens. Four affected committed library/example sources have been
+passed through the fixed formatter, also removing stale qualified-name wraps.
+Goldens cover both logical operators, arithmetic and unary controls; CLI checks
+keep those four sources canonical. The existing corpus checks still require
+source-token/comment equivalence, reparsing and idempotence.
+
+Unsupported class fields now name their type and highlight its complete source
+range, rather than the following semicolon. `builtin::span<const u8> view;`
+remains unsupported as a class field. The shared parser retains AU2001 and its
+supported-storage explanation. Public/private/default visibility, other excluded
+storage types, CLI text/JSON parity and unchanged source/output are covered.
+The two package exact-message fixtures retain their case sources and identities;
+full-corpus hash updates were checked by restoring exactly the prior messages.
+
+Acceptance requires the focused formatter/diagnostic controls and both complete
+Meson `dev` and `slow` suites on the final integrated source. This repair does
+not claim a full `make test`, LSP-process, sanitizer, emulator or hardware run.

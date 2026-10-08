@@ -103,6 +103,14 @@ void qualifiedNames() {
 }
 void cases() {
     qualifiedNames();
+    golden("module x;auto f(i64 a,i64 b)->bool{return a==1&&(b<1)||!(a==2);}",
+           "module x;\nauto f(i64 a, i64 b) -> bool {\n"
+           "    return a == 1 && (b < 1) || !(a == 2);\n}\n");
+    golden("module x;auto f(i64 a,i64 b)->bool{return a==1||(b<1)&&!(a==2);}",
+           "module x;\nauto f(i64 a, i64 b) -> bool {\n"
+           "    return a == 1 || (b < 1) && !(a == 2);\n}\n");
+    golden("module x;auto f(i64 a)->i64{return a+(2)*-(3);}",
+           "module x;\nauto f(i64 a) -> i64 {\n    return a + (2) * -(3);\n}\n");
     golden("module x;auto f(const pkg::Buffer& input,builtin::span<const u8> bytes,u64 mask)->u64{"
            "return mask&7u64;}",
            "module x;\nauto f(const pkg::Buffer& input, builtin::span<const u8> bytes, u64 mask) -> u64 {\n"
