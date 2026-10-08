@@ -45,13 +45,17 @@ no cases are sampled away to meet a timing target. Fifteen formerly Make-only
 compiler source/oracle runners are now in `slow`, including constructor-return
 regressions in templates, arrays, decimals and enum composition.
 
-The checked inventory is `tests/compiler-test-inventory.json`: all 76 compiler
-Python files are runnable, including files imported as helpers. 73 have direct
-Make recipes: 71 are reachable from the root native graph and formatter/linter
-checks are focused targets. Three are supplemental/differential runners requiring independent
-inputs or qualification. 56 scripts are registered in Meson and 20 remain explicit
-gaps, including fixture-based ABI/IR, formatter/linter, artifact-managed UTF-8/XFS,
-and supplemental qualifications. Package dev registrations are partial selections;
+The checked inventory is `tests/compiler-test-inventory.json`: all 79 compiler
+Python files are runnable, including files imported as helpers. 75 have direct
+Make recipes: 73 are reachable from the root native graph and formatter/linter
+checks are focused targets. Three are supplemental/differential runners requiring
+independent inputs or qualification. The fourth file without a direct recipe,
+`service_group.py`, runs as a mandatory child of `display_service.py` in both Make
+and Meson; its false direct-membership flags do not mean it is skipped.
+58 scripts are directly registered in Meson and 21 lack direct registration,
+including that composed child and the 20 separately documented fixture-based
+ABI/IR, formatter/linter, artifact-managed UTF-8/XFS and supplemental gaps.
+Package dev registrations are partial selections;
 script registration alone does not imply complete native coverage. The inventory
 gate compares the actual Meson introspection commands and both Makefiles against
 that classification, failing on added/removed script membership or changed literal
@@ -64,6 +68,11 @@ Meson invocation using its actual introspection file.
 partition those registrations, not the complete Make graph. Use `meson test -C
 build/meson --list` for the current test count. Existing `core`, `bytes`, `compiler`
 and `packages` memberships remain available. Optional LSP tests use `lsp`.
+The graphical-profile metadata controls add ordinary and optimized Python entries
+to `dev`/`full` and the root developer-command target. They check source inventories,
+mode separation and staging dependencies without building or running a guest;
+their registration is not graphical-profile qualification. They do not change
+the compiler-runner inventory or the `slow` suite.
 Use two workers to bound compiler/test memory; cold builds are separate from warm
 runs. Keep full Make and Meson phases sequential, with source unchanged throughout.
 

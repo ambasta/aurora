@@ -8,6 +8,7 @@ native aggregate, firmware or emulator acceptance.
 from pathlib import Path
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -280,10 +281,21 @@ class DeveloperCommands(unittest.TestCase):
             self.run_script(name, env={"CXX": cxx, "FAKE_STATUS": "79"}, expected=79)
         self.assertEqual(self.calls(), [f"make|{self.repo}|-C compiler|{cxx}|", f"make|{self.repo}|-C compiler|{cxx}|"])
         # This is a source-routing assertion, not proof of a successful build.
-        for name, count in (("kernel-build.sh", 1), ("kernel-uefi-build.sh", 5)):
+        for name in ("kernel-build.sh", "kernel-uefi-build.sh"):
             source = (self.scripts / name).read_text()
             self.assertNotIn("\ng++ ", source)
-            self.assertEqual(source.count('\n"$cxx" '), count)
+            if name == "kernel-build.sh":
+                self.assertEqual(source.count('\n"$cxx" '), 1)
+                continue
+            # Include indented profile-specific compiles, not just the five
+            # common translation units. This checks routing, never execution.
+            rows = re.findall(r'^\s*"\$cxx" [^\n]* -c (\S+) -o (\S+)$', source, re.MULTILINE)
+            expected = [("kernel/uefi/" + name + ".cpp", "build/uefi/" + name + ".o")
+                        for name in ("payload", "acpi", "pci", "runtime", "loader",
+                                     "framebuffer", "console", "graphical-console")]
+            expected += [("kernel/owned-bytes.cpp", "build/uefi/owned-bytes-runtime.o"),
+                         ("kernel/uefi/owned-bytes.cpp", "build/uefi/owned-bytes-profile.o")]
+            self.assertCountEqual(rows, expected)
 
     def test_make_help_and_run_selectors(self):
         self.assertIsNotNone(MAKE)

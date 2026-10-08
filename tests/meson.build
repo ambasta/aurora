@@ -318,6 +318,14 @@ foreach runner : [
 endforeach
 
 # Public Make routing must be exercised by the required developer suite.
+test('graphical-image-policy', python, args: ['-B', files('kernel-graphical-image-policy.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+test('graphical-image-policy-optimized', python, args: ['-B', '-O', files('kernel-graphical-image-policy.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+test('graphical-profile-metadata', python, args: ['-B', files('kernel-graphical-profile-metadata.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+test('graphical-profile-metadata-optimized', python, args: ['-B', '-O', files('kernel-graphical-profile-metadata.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 test('developer-commands', python, args: ['-B', files('developer-commands.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 test('developer-commands-optimized', python, args: ['-B', '-O', files('developer-commands.py')],

@@ -9,7 +9,7 @@
 #endif
 #include "../console.hpp"
 namespace aurora::uefi {
-#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE)
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
 namespace { constinit std::optional<Topology> copied_topology; }
 auto discovered_topology() -> const std::optional<Topology>& { return copied_topology; }
 #endif
@@ -97,7 +97,7 @@ public:
 #else
 auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
 #endif
-#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE)
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
     copied_topology.reset();
 #endif
     std::uint32_t a,b,c,d;
@@ -273,7 +273,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     if (!discover_pci(arena,handoff,*mcfg,physical_bits,pool)) return false;
 #endif
 #endif
-#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE)
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
     copied_topology.emplace(*topology);
 #endif
     return true;

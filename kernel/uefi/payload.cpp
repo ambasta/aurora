@@ -1,7 +1,11 @@
+#include "graphical-profile.hpp"
 #include "handoff.hpp"
 #include "tables.hpp"
 #include "acpi.hpp"
 #include "runtime.hpp"
+#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
+#include "graphical-console.hpp"
+#endif
 #ifdef AURORA_UEFI_FRAMEBUFFER_FIXTURE
 #include "framebuffer.hpp"
 #endif
@@ -20,7 +24,9 @@ using U64 = std::uint64_t;
 auto payload_entry() -> void asm("uefi_payload_entry") __attribute__((visibility("hidden")));
 auto generic_fault() -> void asm("uefi_payload_fault") __attribute__((visibility("hidden")));
 auto page_fault() -> void asm("uefi_payload_page_fault") __attribute__((visibility("hidden")));
-#if defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE)
+#if defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+auto language_value() -> long long asm("__au_runtime_graphical_value");
+#elif defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE)
 auto language_value() -> long long asm("__au_runtime_display_value");
 #elif defined(AURORA_UEFI_CONSOLE)
 auto language_value() -> long long asm("__au_runtime_console_value");
@@ -66,7 +72,11 @@ auto payload_fail(U64 vector, U64 error, U64 rip) -> void {
     Serial::text(" cr2=");
     Serial::number(cr2);
     Serial::text("\r\n");
+#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
+    aurora::uefi::graphical_console_fault();
+#else
     fail("exception");
+#endif
 }
 auto payload_main(U64, U64) -> void asm("uefi_payload_main");
 auto payload_main(U64 arena, U64 size) -> void {
@@ -192,6 +202,9 @@ auto payload_main(U64 arena, U64 size) -> void {
         fail("compiled language result");
 #endif
     Serial::text("AURORA_UEFI_LANGUAGE_OK: value=42\r\nAURORA_UEFI_OK\r\n");
+#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
+    aurora::uefi::run_graphical_console(arena, h);
+#endif
 #ifdef AURORA_UEFI_CONSOLE
     aurora::uefi::run_console(arena, h);
 #endif

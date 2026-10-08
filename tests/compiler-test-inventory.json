@@ -398,6 +398,20 @@
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
   },
+  "service_group.py": {
+    "kind": "runner",
+    "make": false,
+    "meson": false,
+    "reason": "Composed child executed by display_service.py in Make and Meson; not directly named by either registration inventory.",
+    "root_make": false
+  },
+  "service_group_ir_abi.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Direct Make/root and Meson runner for cumulative hostile service-group IR plus native private-ABI execution.",
+    "root_make": true
+  },
   "short_circuit.py": {
     "kind": "runner",
     "make": true,

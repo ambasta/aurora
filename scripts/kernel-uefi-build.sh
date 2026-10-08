@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# The combined profile must use its own fail-closed admission path. Building
+# creates evidence requiring independent review; no receipt here permits a guest.
+if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
+    # A failed new attempt must not leave a previous combined receipt current.
+    # Exact metadata only: preserve images/objects and external run evidence.
+    rm -f -- build/uefi/graphical-console-admission.json \
+        build/uefi/graphical-console-build.json build/uefi/graphical-console-build-start.json
+    if [[ ! -f scripts/kernel_graphical_console_admission.py ]]; then
+        echo 'Missing combined graphical image/stack admission checker' >&2
+        exit 2
+    fi
+fi
 cxx="${CXX:-g++}"
 for tool in "$cxx" make as ld objcopy objdump nm readelf python3; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 2; }; done
 export CXX="$cxx"
@@ -13,6 +25,9 @@ flags=(-std=c++23 -O2 -fstack-usage -Wall -Wextra -Werror -ffreestanding -fno-ex
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ graphical-console|graphical-console-capture)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_GRAPHICAL_CONSOLE -DAURORA_UEFI_GRAPHICAL_FIXTURE)
+   if [[ "$UEFI_MODE" == graphical-console-capture ]]; then extra+=(-DAURORA_UEFI_GRAPHICAL_CAPTURE); fi ;;
  framebuffer|framebuffer-record|framebuffer-permissions|framebuffer-stale)
    extra+=(-DAURORA_UEFI_FRAMEBUFFER -DAURORA_UEFI_FRAMEBUFFER_FIXTURE -DAURORA_UEFI_FRAMEBUFFER_CAPTURE)
    if [[ "$UEFI_MODE" != framebuffer ]]; then flag="${UEFI_MODE#framebuffer-}"; extra+=("-DAURORA_FRAMEBUFFER_${flag^^}"); fi ;;
@@ -95,6 +110,12 @@ if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-ser
  python3 -B scripts/kernel_console_service_admission.py begin-build --mode "$UEFI_MODE" \
    --compiler "$compiler" --cxx "$cxx" "${provenance_flags[@]}"
 fi
+if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
+ provenance_flags=()
+ for flag in "${flags[@]}" "${extra[@]}"; do provenance_flags+=("--flag=$flag"); done
+ python3 -B scripts/kernel_graphical_console_admission.py begin --mode "$UEFI_MODE" \
+   --compiler "$compiler" --cxx "$cxx" --linker "$UEFI_LINKER" "${provenance_flags[@]}"
+fi
 runtime_objects=()
 if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* || "${UEFI_MODE:-normal}" == dispatch* || "${UEFI_MODE:-normal}" == user-* || "${UEFI_MODE:-normal}" == program-* ]]; then
  mode="${UEFI_MODE#runtime-}"
@@ -148,8 +169,16 @@ if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-ser
     "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/console.cpp -o build/uefi/console.o
     console_objects+=(build/uefi/console-entry.o build/uefi/console.o)
 fi
+if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
+    language_entry=examples/kernel-graphical-console.au
+    as --64 kernel/uefi/console-entry.S -o build/uefi/console-entry.o
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/graphical-console.cpp -o build/uefi/graphical-console.o
+    console_objects+=(build/uefi/console-entry.o build/uefi/graphical-console.o)
+fi
 "$compiler" --module-root kernel/policies "$language_entry" -o build/uefi/language.s
-if (( ${#framebuffer_objects[@]} )); then
+if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
+    as --64 build/uefi/language.s kernel/uefi/graphical-console-entry.S -o build/uefi/language.o
+elif (( ${#framebuffer_objects[@]} )); then
     as --64 build/uefi/language.s kernel/uefi/display-service-entry.S -o build/uefi/language.o
 elif [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     as --64 build/uefi/language.s kernel/uefi/owned-bytes-entry.S -o build/uefi/language.o
@@ -250,6 +279,7 @@ image_policy=()
 case "${UEFI_MODE:-normal}" in
     ipc*|budget*|dispatch*|user-*|program-*) image_policy+=(--ipc-policy) ;;
     owned-bytes) image_policy+=(--owned-bytes) ;;
+    graphical-console|graphical-console-capture) image_policy+=(--graphical-console) ;;
 esac
 case "${UEFI_MODE:-normal}" in
     user-request-*|user-completion-*|user-retire-pending|user-stale-grant|user-disposal-*) image_policy+=(--disposal-policy) ;;
@@ -277,3 +307,8 @@ case "${UEFI_MODE:-normal}" in
     python3 -B scripts/kernel_framebuffer_admission.py end --mode "$UEFI_MODE"
     python3 -B scripts/kernel_framebuffer_admission.py emit --mode "$UEFI_MODE" ;;
 esac
+
+if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
+    python3 -B scripts/kernel_graphical_console_admission.py end --mode "$UEFI_MODE"
+    python3 -B scripts/kernel_graphical_console_admission.py emit --mode "$UEFI_MODE"
+fi

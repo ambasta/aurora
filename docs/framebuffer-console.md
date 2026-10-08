@@ -149,3 +149,52 @@ separate normal image then actually booted through the standard normal oracle
 `87d128213af579dec28b8f5f1850ad4c030ec560ddb1fec9bf574669571d98f6`.
 No new CPU/GPU device activation, DMA/IOMMU progress, physical hardware support,
 interactive graphical input or general compositor follows from this checkpoint.
+
+## Unqualified serial-input graphical session
+
+A separate unqualified draft combines distinct ConsoleSession and DisplaySession
+borrows in one synchronous invocation. `examples/kernel-graphical-console.au`
+reuses the exact Aurora Line64 editor and project font, adding all printable ASCII,
+two rows of 68 text cells, an underline cursor and dirty-cell redraw. The prompt
+accepts 64 bytes, BS/DEL, CR/LF/CRLF and the existing help/status/exit commands;
+invalid/damaged/overflow lines reject until submission. The second row retains
+only the latest response. There is no scrolling terminal or keyboard driver.
+
+The viewport is 408x18 pixels at (32,128), requiring at least 440x146 geometry.
+Outside pixels and padding remain untouched. At most 80 byte events and 96 copied
+samples yield at most 82 changed paint passes and 992,938 pixel stores, below the
+unchanged million-store cap. Source exhaustion renders a final response; the
+separate native 4096-total-wake ceiling fail-stops without inventing input.
+Closed graphical completion values are independently checked and explicitly
+mapped when both original sessions close. Pixel failure stops without retry or
+rollback. No source capability contains or replaces the other.
+
+The new native source profile uses handoff v6, independent Console/Display
+preflight, exact paired LAPIC/framebuffer whole-tree verification and observational
+timer/interrupt/UART quiet checks. Versions 1–5 retain their original contracts.
+The 1 MiB arena, 16 page-table pages and 16 KiB stack stay unchanged; combined
+linked-stack/interrupt/fault bounds have not yet been measured or admitted.
+
+Developer entry remains `UEFI_MODE=graphical-console ./scripts/kernel-uefi-build.sh`
+(with `graphical-console-capture` reserved for controlled capture). The combined linked-stack/image checker has independent source review and
+focused hostile controls. Both modes require their own begin/end/emit admission;
+every new attempt invalidates prior combined receipts before build work. Missing
+or failed checks reject. Automatic evidence still requires independent exact-image
+review and cannot authorize a guest or borrow a legacy profile's qualification.
+The capture draft separates a bounded pre-store release byte
+from editor input, emits completed-sample/store markers, and leaves terminal or
+failed scanout intact for external physical capture and normal-image restoration.
+
+The opt-in hosted gate is `python3 tests/kernel-graphical-console.py
+--run /absolute/path/to/reviewed/aurorac`. The actual generated consumer passed
+67 hosted cases: 39 transcript/geometry cases, six baseline/output-failure cases,
+and 22 pre-entry denials. Intermediate and final pixels, exact ordered stores,
+untouched guards/padding, bounded completion and no-retry behavior were checked
+against a separate model. Independent receipt/source review confirmed that scope;
+most successful raw outputs were compacted into comparison receipts and hashes.
+
+Native mapping/timer/lifecycle mutations, exact linked-stack/image admission,
+PTY-to-physical-pixel/screenshot correlation for editing and responses, guest
+no-write failures, actual normal restoration, final dev/slow/root Make and
+independent review remain required. Hosted tests and earlier static-frame/serial
+profile evidence do not establish interactive graphical guest qualification.

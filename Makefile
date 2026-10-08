@@ -188,6 +188,10 @@ kernel-uefi:
 
 # Synthetic shortcut checks also run in the native aggregate.
 test-developer-commands:
+	python3 -B tests/kernel-graphical-image-policy.py
+	python3 -B -O tests/kernel-graphical-image-policy.py
+	python3 -B tests/kernel-graphical-profile-metadata.py
+	python3 -B -O tests/kernel-graphical-profile-metadata.py
 	python3 -B tests/developer-commands.py
 	python3 -B -O tests/developer-commands.py
 	python3 -B tests/uefi-firmware.py

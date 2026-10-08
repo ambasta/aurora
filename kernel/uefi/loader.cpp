@@ -3,6 +3,10 @@
 #include "uefi-user-images.hpp"
 #endif
 #include "tables.hpp"
+#include "graphical-profile.hpp"
+#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
+#include "framebuffer-loader.hpp"
+#endif
 #ifdef AURORA_UEFI_FRAMEBUFFER
 #include "framebuffer-loader.hpp"
 #if defined(AURORA_UEFI_ACPI) || defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_BAR_CAPTURE) ||                   \
@@ -97,7 +101,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture())
         fail("bounded BAR firmware capture");
 #endif
-#ifdef AURORA_UEFI_FRAMEBUFFER
+#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
     std::uint32_t graphics_a, graphics_b, graphics_c, graphics_d;
     asm volatile("cpuid"
                  : "=a"(graphics_a), "=b"(graphics_b), "=c"(graphics_c), "=d"(graphics_d)
@@ -199,8 +203,12 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     put(handoff, 8, 4, 4);
     put(handoff, 120, arena + Handoff::bar_record_offset);
 #endif
-#ifdef AURORA_UEFI_FRAMEBUFFER
+#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
+    put(handoff, 8, 6, 4);
+#else
     put(handoff, 8, 5, 4);
+#endif
     put(handoff, 120, arena + Handoff::framebuffer_record_offset);
 #endif
     put(handoff, 16, Handoff::arena_bytes);
@@ -224,12 +232,12 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #ifdef AURORA_UEFI_ACPI
     if (!tables.prepare_window())
         fail("firmware window tables");
-#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE)
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
     if (!tables.prepare_interrupts())
         fail("interrupt tables");
 #endif
 #endif
-#ifdef AURORA_UEFI_FRAMEBUFFER
+#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
     if (!tables.prepare_framebuffer(framebuffer->geometry()))
         fail("framebuffer table budget");
     asm volatile("cpuid" : "=a"(graphics_a), "=b"(graphics_b), "=c"(graphics_c), "=d"(graphics_d) : "a"(1U), "c"(0));
@@ -297,8 +305,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
             fail("RSDP source range");
         put(handoff, 112, rsdp);
 #endif
-#ifdef AURORA_UEFI_FRAMEBUFFER
-#ifdef AURORA_UEFI_FRAMEBUFFER_FIXTURE
+#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE) || defined(AURORA_UEFI_GRAPHICAL_FIXTURE)
         const auto graphics_grant = aurora::uefi::FramebufferAdmission::authorize_q35_ovmf_std_vga_fixture(
             *framebuffer,
             span(arena + Handoff::map_offset, size),

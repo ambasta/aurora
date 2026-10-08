@@ -50,6 +50,10 @@ template <class Transport, class Platform> class Session final {
     }
 
 public:
+    // Trusted host entry validation only; no source-visible operation or effects.
+    static auto preflight(const void *grant, std::uint64_t generation) -> void {
+        validate(grant, generation, false);
+    }
     [[nodiscard]] static auto open() -> ServiceArgument {
         // Reject exhausted identity before even a platform quiescence hook,
         // which may itself stop an admitted timer.

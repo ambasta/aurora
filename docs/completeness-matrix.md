@@ -28,6 +28,12 @@ hardware support.
 
 ### Current contract map
 
+A separate [bounded graphical-console source draft](framebuffer-console.md#unqualified-serial-input-graphical-session) combines
+Aurora-owned Line64 editing and dirty cells under distinct Console/Display borrows.
+Its generated consumer passed 67 scoped hosted cases; native image/linked-stack
+admission and transcript-to-physical-pixel guest evidence remain pending.
+Existing static-frame and serial-profile evidence does not transfer.
+
 This isolated next-language checkpoint adds an unqualified explicit leading group
 of distinct ConsoleSession/DisplaySession borrows for the planned graphical line
 editor. Both formal orders and singleton/pair forwarding retain separate sealed
