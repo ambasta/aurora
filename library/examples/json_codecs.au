@@ -117,7 +117,10 @@ auto json_codecs_example(builtin::ByteRegion region, i64 initial_capacity, i64 o
     if (observation == -2) {
         return output.size();
     }
-    if (observation < decoded.size() && observation >= 0) {
+    if (observation < 0) {
+        return 256;
+    }
+    if (observation < decoded.size()) {
         const std::ByteReadResult byte = decoded.read_u8(observation);
         return i64(byte.value_or(256u64));
     }
