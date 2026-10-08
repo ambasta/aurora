@@ -140,3 +140,11 @@ test(
     depends: owning_classes_ir, suite: ['dev', 'core', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
 )
+
+# Meson owns compiler dependencies; this records observed artifact stability only.
+test(
+    'json-profile', python,
+    args: ['-B', '-O', files('compiler/json_profile.py'), aurorac, '--developer-selected-compiler'],
+    depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
+    workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
+)
