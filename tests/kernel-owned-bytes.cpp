@@ -2,6 +2,8 @@
 // Host sanitizers instrument these C++ sources, never generated Aurora assembly.
 #include "../kernel/owned-bytes.hpp"
 
+using aurora::hosted::bytes::__au_runtime_bytes_borrow_length;
+
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -269,6 +271,67 @@ void admission() {
     require(!region.open(arena.pool, arena.backing, arena.base, arena_bytes), "live region cannot be rebound");
     require(region.id() == id && region.metrics() == opened, "rebind refusal preserves original grant");
     require(region.close() && region.close(), "explicit empty close is idempotent");
+}
+
+void readonly_descriptor_snapshots() {
+    for (const std::int64_t length : {0, 1, 4095, 4096, 4097, 8193}) {
+        Fixture fixture;
+        NativeOwner owner;
+        __au_runtime_bytes_allocate(fixture.region.id(), length, &owner);
+        const NativeOwner snapshot = owner;
+        const auto metrics = fixture.region.metrics();
+        require(__au_runtime_bytes_borrow_length(&owner) == length, "borrow returns logical owner length");
+        require(__au_runtime_bytes_borrow_length(&snapshot) == length, "snapshot validates without ownership transfer");
+        require(fixture.region.metrics() == metrics, "borrow preserves every allocation metric");
+        if (length) {
+            require(__au_runtime_bytes_set(&owner, length - 1, 213) == 1, "seed last logical byte");
+            require(__au_runtime_bytes_at(&snapshot, length - 1) == 213, "snapshot reads leased backing");
+        }
+        __au_runtime_bytes_drop(&owner);
+        require(fixture.region.close(), "snapshot imposes no resource obligation");
+    }
+    expect_fault("borrow failed allocation", 2, [] {
+        Fixture fixture;
+        NativeOwner owner;
+        __au_runtime_bytes_allocate(fixture.region.id(), -1, &owner);
+        __au_runtime_bytes_borrow_length(&owner);
+    });
+    expect_fault("borrow null descriptor", 1, [] {
+        __au_runtime_bytes_borrow_length(nullptr);
+    });
+    for (int field = 0; field < 4; ++field) {
+        expect_fault("borrow forged descriptor word", 1, [=] {
+            Fixture fixture;
+            NativeOwner owner;
+            __au_runtime_bytes_allocate(fixture.region.id(), 1, &owner);
+            if (field == 0)
+                owner.region = 0;
+            if (field == 1)
+                owner.allocation = 0;
+            if (field == 2)
+                owner.length = 2;
+            if (field == 3)
+                owner.success = 2;
+            __au_runtime_bytes_borrow_length(&owner);
+        });
+    }
+    expect_fault("borrow stale released snapshot", 1, [] {
+        Fixture fixture;
+        NativeOwner owner;
+        __au_runtime_bytes_allocate(fixture.region.id(), 1, &owner);
+        const NativeOwner snapshot = owner;
+        __au_runtime_bytes_drop(&owner);
+        __au_runtime_bytes_borrow_length(&snapshot);
+    });
+    expect_fault("borrow snapshot from closed grant", 1, [] {
+        Fixture fixture;
+        NativeOwner owner;
+        __au_runtime_bytes_allocate(fixture.region.id(), 0, &owner);
+        const NativeOwner snapshot = owner;
+        __au_runtime_bytes_drop(&owner);
+        require(fixture.region.close(), "close borrowed snapshot grant");
+        __au_runtime_bytes_borrow_length(&snapshot);
+    });
 }
 
 void runtime_lengths_and_pages() {
@@ -926,6 +989,7 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
 }
 
 int main() {
+    readonly_descriptor_snapshots();
     admission();
     runtime_lengths_and_pages();
     quota_and_metadata_failure();

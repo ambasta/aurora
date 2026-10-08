@@ -13,6 +13,7 @@ exact named UD2 site with actual SIGILL termination. Explicit require() checks
 remain active under python -O. These are bounded bootstrap ABI observations,
 not a public Aurora ABI or a safety/performance proof.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,8 +34,17 @@ class ProbeTrap(Enum):
     SHIFT = ".Laurora_shift_count_trap"
 
 
-KINDS = ("scalar", "aggregate", "aggregate_result", "method", "method_value",
-         "method_result", "metadata", "span", "subspan")
+KINDS = (
+    "scalar",
+    "aggregate",
+    "aggregate_result",
+    "method",
+    "method_value",
+    "method_result",
+    "metadata",
+    "span",
+    "subspan",
+)
 PREFIX = (1 << 40) + 17
 
 
@@ -50,8 +60,7 @@ def align_check():
 
 def replace_body(assembly, symbol, body):
     pattern = rf"(^{re.escape(symbol)}:\n).*?(^\.size {re.escape(symbol)},[^\n]*\n)"
-    result, count = re.subn(pattern, lambda match: match[1] + body + match[2],
-                           assembly, flags=re.MULTILINE | re.DOTALL)
+    result, count = re.subn(pattern, lambda match: match[1] + body + match[2], assembly, flags=re.MULTILINE | re.DOTALL)
     require(count == 1, f"expected exactly one generated body for {symbol}, got {count}")
     return result
 
@@ -86,15 +95,28 @@ def instrument(assembly):
             else:
                 body += "    movq %rdx, %rax\n"
         elif kind == "span":
-            body += """    movq 0(%r11), %rdx
-    cmpq $3, 8(%r11)
+            body += """    cmpq $0, 0(%r11)
+    jne .Lsc_argument_trap
+    cmpq $0, 16(%r11)
+    jne .Lsc_argument_trap
+    cmpq $0, 24(%r11)
+    jne .Lsc_argument_trap
+    cmpq $0, 32(%r11)
+    jne .Lsc_argument_trap
+    movq 8(%r11), %rdx
+    addq 40(%r11), %rdx
+    cmpq $3, 48(%r11)
     je .Lsc_full_span
-    cmpq $1, 8(%r11)
+    cmpq $1, 48(%r11)
+    jne .Lsc_argument_trap
+    cmpq $1, 40(%r11)
     jne .Lsc_argument_trap
     cmpb $22, 0(%rdx)
     jne .Lsc_argument_trap
     jmp .Lsc_span_boolean
 .Lsc_full_span:
+    cmpq $0, 40(%r11)
+    jne .Lsc_argument_trap
     cmpb $11, 0(%rdx)
     jne .Lsc_argument_trap
     cmpb $22, 1(%rdx)
@@ -102,7 +124,7 @@ def instrument(assembly):
     cmpb $33, 2(%rdx)
     jne .Lsc_argument_trap
 .Lsc_span_boolean:
-    movq 16(%r11), %rax
+    movq 56(%r11), %rax
     cmpq $1, %rax
     ja .Lsc_argument_trap
 """
@@ -113,7 +135,9 @@ def instrument(assembly):
 """
         body += "    incq sc_probe_count(%rip)\n    ret\n"
         assembly = replace_body(assembly, "sc_probe_" + kind, body)
-    metadata = align_check() + """    xorq %rax, %rax
+    metadata = (
+        align_check()
+        + """    xorq %rax, %rax
     cmpq $18, %rdi
     je .Lsc_metadata_done
     cmpq $17, %rdi
@@ -123,8 +147,11 @@ def instrument(assembly):
     incq sc_probe_count(%rip)
     ret
 """
+    )
     assembly = replace_body(assembly, "aurora_reflect_size", metadata)
-    return assembly + """
+    return (
+        assembly
+        + """
 .data
 .align 8
 sc_probe_count:
@@ -135,6 +162,7 @@ sc_probe_count:
 .Lsc_argument_trap:
     ud2
 """
+    )
 
 
 def model(shape, a, b, c):
@@ -172,7 +200,8 @@ def wrapper(name, target, values, encoded=True):
 def cases():
     tests = []
     for kind, shape, depth, values in itertools.product(
-            KINDS, ("and", "or", "nested"), range(4), itertools.product((0, 1), repeat=3)):
+        KINDS, ("and", "or", "nested"), range(4), itertools.product((0, 1), repeat=3)
+    ):
         truth, effects = model(shape, *values)
         result = sum(PREFIX + index for index in range(depth)) + int(truth)
         if kind.startswith("method"):
@@ -185,8 +214,7 @@ def cases():
         for values in itertools.product((0, 1), repeat=3):
             truth, effects = model("nested", *values)
             tests.append((target, values, int(truth) * 1000 + effects, f"{target}{values}"))
-    for trap, shape, depth in itertools.product(
-            ("bounds", "overflow", "zero", "shift"), ("and", "or"), (1, 2)):
+    for trap, shape, depth in itertools.product(("bounds", "overflow", "zero", "shift"), ("and", "or"), (1, 2)):
         target = f"sc_trap_{trap}_{shape}_{depth}"
         skip = int(shape == "or")
         value = (sum(PREFIX + index for index in range(depth)) + skip) * 1000
@@ -196,8 +224,7 @@ def cases():
 
 def required_traps(runner, assembly):
     count = 0
-    for trap, shape, depth in itertools.product(
-            ("bounds", "overflow", "zero", "shift"), ("and", "or"), (1, 2)):
+    for trap, shape, depth in itertools.product(("bounds", "overflow", "zero", "shift"), ("and", "or"), (1, 2)):
         target = f"sc_trap_{trap}_{shape}_{depth}"
         execute = int(shape == "and")
         code = wrapper("sc_required_trap", target, (execute, 0, 0))
@@ -266,10 +293,13 @@ def main():
     validate_values(observed, expected, names)
     traps = required_traps(runner, assembly)
     (arguments.artifacts / "cases.tsv").write_text(
-        "case\texpected_i64\n" + "".join(f"{name}\t{value}\n" for name, value in zip(names, expected)))
-    summary = (f"PASS short-circuit direct IR native: {len(tests)} value/effect cases; "
-               "9 call kinds, 4 retained stack depths, full truth tables; "
-               f"{traps} exact required-RHS traps; 2 exact fault controls and 1 legal alignment control")
+        "case\texpected_i64\n" + "".join(f"{name}\t{value}\n" for name, value in zip(names, expected))
+    )
+    summary = (
+        f"PASS short-circuit direct IR native: {len(tests)} value/effect cases; "
+        "9 call kinds, 4 retained stack depths, full truth tables; "
+        f"{traps} exact required-RHS traps; 2 exact fault controls and 1 legal alignment control"
+    )
     (arguments.artifacts / "summary.txt").write_text(summary + "\n")
     print(summary)
 

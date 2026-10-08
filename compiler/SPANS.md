@@ -1,5 +1,11 @@
 # Readonly whole-array byte spans: milestone014
 
+The [readonly owned-view extension](READONLY-OWNED-SPANS.md) now adds runtime
+owner origins and narrow const receiver-field results using the same span type.
+Historical qualification and representation details on this page describe their
+original checkpoints; the extension's source/ABI contract and fresh results are
+separate. Existing array-only temporary-chain restrictions remain unchanged.
+
 This development candidate adds a narrow synchronous borrowing boundary, not a
 general reference, slice, heap-buffer or lifetime-generic system. Independent compiler review and complete author release/sanitizer targets passed
 on the corrected candidate. Final parent aggregate and 147-mode kernel integration passed; see docs/verification.md. Milestone013 archives are unchanged.
@@ -29,11 +35,12 @@ state and IR validates explicit capability lifetimes before native emission.
 
 Ordinary functions may receive `builtin::span<const u8>` parameters and forward
 reborrows synchronously. A parameter's capability lasts only for its invocation.
-Span values cannot be returned, stored in classes, assigned into outer bindings,
+Ordinary functions cannot return spans. Spans cannot be stored in classes or assigned into outer bindings,
 passed as class-method/constructor parameters, used as template arguments,
 reflected, compared, converted or treated as scalar values. No global storage,
 mutable span, raw base address or arbitrary pointer/length constructor exists.
-Const class receivers do not create exceptions to private-field borrowing rules.
+Private array-field borrowing remains unsupported; direct private OwnedBytes
+fields use the bounded receiver rules of the extension.
 
 Arguments evaluate left-to-right. Acquiring a direct temporary borrow at an
 argument position keeps it live through later argument evaluation and the complete
@@ -63,7 +70,7 @@ UD2 before loading the base pointer or calculating the payload address. Span
 capabilities never inhabit scalar value/operand slots. A declared spill alone
 cannot manufacture a capability or establish initialized entry authority.
 
-The private call record gives each span a typed sixteen-byte pointer/length
+The original milestone014 private record gave each span a sixteen-byte pointer/length
 reservation. Spill bytes are disjoint from scalar, object and other capability
 storage. The signature still permits at most six source parameters; spans do not
 expand into extra scalar argument registers. Scalar positions retain their existing

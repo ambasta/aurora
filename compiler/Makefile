@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -100,7 +100,7 @@ export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_G
 .PHONY: aurora-test-context
 all test test-modules test-storage test-initialization-facts test-utf8 test-utf8-encoding \
     test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads \
-    test-readonly-windows test-short-circuit test-token-scan test-json: aurora-test-context
+    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs: aurora-test-context
 aurora-test-context:
 	python3 -B ../scripts/compiler_contract.py check --repo-root "$(abspath ..)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -163,6 +163,10 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 ../tests/compiler/byte_codec.py $(abspath $(OUT))
 	python3 -B ../tests/compiler/binary_buffer.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/byte_buffer.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/owned_spans.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/owned_spans_source.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/owned_spans_kernel.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/owned_spans_kernel.py $(abspath $(OUT)) --receiver-bound
 	python3 -B ../tests/compiler/sector.py $(abspath $(OUT))
 	python3 -B ../tests/compiler/block_io.py $(abspath $(OUT))
 	python3 -B ../tests/compiler/sector_window.py $(abspath $(OUT))
@@ -193,6 +197,10 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	$(dir $(OUT))owned-mutation-ir-tests
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_bytes_ir.cpp -o $(dir $(OUT))owned-bytes-ir-tests
 	$(dir $(OUT))owned-bytes-ir-tests
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_spans_ir.cpp -o $(dir $(OUT))owned-spans-ir-tests
+	$(dir $(OUT))owned-spans-ir-tests
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/logical_spans_abi.cpp -o $(dir $(OUT))logical-spans-abi-tests
+	python3 -B -O ../tests/compiler/logical_spans_abi.py $(abspath $(dir $(OUT))logical-spans-abi-tests)
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owning_classes_ir.cpp -o $(dir $(OUT))owning-classes-ir-tests
 	$(dir $(OUT))owning-classes-ir-tests
 	python3 -B -O ../tests/compiler/owning_classes_abi.py $(abspath $(dir $(OUT))owning-classes-ir-tests)
@@ -334,5 +342,11 @@ test-lint: $(FORMAT_OUT) $(OUT)
 test: test-json
 test-json: $(OUT)
 	python3 -B -O ../tests/compiler/json_profile.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS)
+	python3 -B -O ../tests/compiler/json_owned.py "$(abspath $(OUT))"
+
+.PHONY: test-json-codecs
+test: test-json-codecs
+test-json-codecs: $(OUT)
+	python3 -B -O ../tests/compiler/json_codecs.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS)
 
 endif # controlled outer dispatcher / original inner graph

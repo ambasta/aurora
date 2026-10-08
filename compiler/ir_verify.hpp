@@ -37,21 +37,6 @@ public:
     std::optional<BoundsEvidence> guard;
     bool operator==(const Value &) const = default;
 };
-// Static creation sites distinguish lifetimes restarted in the same storage on
-// different control-flow paths. They are not dynamic invocation generations:
-// a loop may reuse one creation site after ending every derived capability.
-// Origins name a local array or bound parameter, with its own creation site;
-// direct-parent storage and site preserve exact lexical reborrow authority.
-class SpanCapability {
-public:
-    bool parameterOrigin;
-    int origin;
-    std::size_t originSite;
-    int parent;
-    std::size_t parentSite;
-    std::size_t site;
-    bool operator==(const SpanCapability &) const = default;
-};
 // Region identity comes only from an entry binding. Ownership tokens are minted
 // internally from instruction sites, never supplied by an IR operand or runtime
 // descriptor. A failed allocation still creates one live logical ownership token.
@@ -68,6 +53,25 @@ public:
     RegionIdentity region;
     int fieldOrdinal = -1; // distinct tokens for one call or parameter owning several fields
     bool operator==(const ByteToken &) const = default;
+};
+// Static creation sites distinguish lifetimes restarted in the same storage on
+// different control-flow paths. They are not dynamic invocation generations:
+// a loop may reuse one creation site after ending every derived capability.
+// Origins name a local array or bound parameter, with its own creation site;
+// direct-parent storage and site preserve exact lexical reborrow authority.
+class SpanCapability {
+public:
+    bool parameterOrigin;
+    int origin;
+    std::size_t originSite;
+    int parent;
+    std::size_t parentSite;
+    std::size_t site;
+    // Owned views capture the exact owner token and direct-field selector. The
+    // origin/site still identify the lifetime of the standalone binding or root.
+    std::optional<ByteToken> ownedToken = {};
+    int ownedField = -1;
+    bool operator==(const SpanCapability &) const = default;
 };
 enum class ByteDisposition {
     Pristine,
@@ -219,8 +223,11 @@ inline void verifyFunction(Function &function,
             return;
         }
         if (type.isSpan()) {
-            require(type == Type::ByteSpan && parameter && !function.receiver,
-                    "readonly span is only an ordinary function parameter");
+            require(type == Type::ByteSpan && ((parameter && !function.receiver) ||
+                                               (!parameter && function.receiver && !function.receiver->mutableValue &&
+                                                !function.receiver->constructor && function.receiverSpanField &&
+                                                owningClass(classFields, function.receiver->className))),
+                    "readonly span boundary requires ordinary parameter or const owning receiver result");
             return;
         }
         require(!function.receiver || parameter || !function.receiver->constructor,
@@ -236,6 +243,8 @@ inline void verifyFunction(Function &function,
         require(storage.at(type.className).reservedBytes <= maximumCopiedClassBytes,
                 "value boundary class storage exceeds 520 bytes");
     };
+    require(!function.receiverSpanField || function.result == Type::ByteSpan,
+            "receiver span field summary requires span result");
     boundaryType(function.result, false);
     require(function.parameters.size() <= 6, "too many parameters");
     for (const auto &type : function.parameters)
@@ -267,6 +276,12 @@ inline void verifyFunction(Function &function,
         }
         require(!receiver.constructor || (receiver.mutableValue && function.result == Type::I64),
                 "invalid constructor receiver signature");
+    }
+    if (function.receiverSpanField) {
+        const int field = *function.receiverSpanField;
+        require(receiverFields && field >= 0 && static_cast<std::size_t>(field) < receiverFields->size() &&
+                    (*receiverFields)[field].elementType == Type::OwnedBytes && !(*receiverFields)[field].array,
+                "receiver span field summary requires exact direct owned byte field");
     }
     // Physical reservation and logical completion are separate. Every occupied
     // scalar byte is disjoint; object padding (including empty storage) has no slot.
@@ -318,8 +333,9 @@ inline void verifyFunction(Function &function,
     }
     std::set<int> spanStorage;
     for (int base : function.spanSlots) {
-        require(base >= 16 && base <= function.frameBytes && base % 8 == 0, "invalid span spill extent or alignment");
-        for (int byte = base - 15; byte <= base; ++byte) {
+        require(base >= spanBytes && base <= function.frameBytes && base % 8 == 0,
+                "invalid span spill extent or alignment");
+        for (int byte = base - spanBytes + 1; byte <= base; ++byte) {
             require(!occupiedSlotBytes.contains(byte) && !objectStorage.contains(byte) && !arrayStorage.contains(byte),
                     "span spill overlaps scalar, object or array storage");
             require(spanStorage.insert(byte).second, "overlapping span spills");
@@ -588,7 +604,7 @@ inline void verifyFunction(Function &function,
                 const int base = arrayBases.at(offset);
                 for (const auto &[unused, capability] : state.activeSpans) {
                     (void)unused;
-                    require(capability.parameterOrigin || capability.origin != base,
+                    require(capability.ownedToken || capability.parameterOrigin || capability.origin != base,
                             "write to byte array with live readonly span");
                 }
             };
@@ -596,7 +612,33 @@ inline void verifyFunction(Function &function,
                 require(function.spanSlots.contains(base), "span requires exact typed spill");
                 require(state.activeSpans.contains(base), "span capability is not active");
                 const auto &capability = state.activeSpans.at(base);
-                if (capability.parameterOrigin) {
+                if (capability.ownedToken) {
+                    require(!capability.parameterOrigin, "owned span cannot have parameter origin");
+                    const ByteBinding *owner = nullptr;
+                    if (capability.ownedField == -1) {
+                        const auto binding = state.activeBytes.find(capability.origin);
+                        require(binding != state.activeBytes.end() && binding->second.site == capability.originSite,
+                                "span owned byte origin lifetime is not active");
+                        owner = &binding->second;
+                    } else {
+                        const auto root = state.ownedObjects.find(capability.origin);
+                        require(root != state.ownedObjects.end() && root->second.site == capability.originSite &&
+                                    root->second.disposition == ByteDisposition::Live &&
+                                    root->second.fields.contains(capability.ownedField),
+                                "span owning root lifetime is not active");
+                        owner = &root->second.fields.at(capability.ownedField);
+                    }
+                    require(owner->disposition == ByteDisposition::Live && owner->token == capability.ownedToken,
+                            "span owner token is not active");
+                    const auto &identity = capability.ownedToken->region;
+                    if (identity.borrowed)
+                        require(capability.origin == 0 && capability.ownedField >= 0 && function.receiver,
+                                "span borrowed receiver provenance mismatch");
+                    else
+                        require(state.activeRegions.contains(identity.offset) &&
+                                    state.activeRegions.at(identity.offset) == identity,
+                                "span owner region identity is not active");
+                } else if (capability.parameterOrigin) {
                     require(spanParameterOrigins.contains(capability.origin), "span parameter origin does not exist");
                     const auto root = state.activeSpans.find(spanParameterOrigins.at(capability.origin));
                     require(root != state.activeSpans.end() && root->second.site == capability.originSite &&
@@ -614,7 +656,9 @@ inline void verifyFunction(Function &function,
                             "span direct parent lifetime is not active");
                     require(parent->second.parameterOrigin == capability.parameterOrigin &&
                                 parent->second.origin == capability.origin &&
-                                parent->second.originSite == capability.originSite,
+                                parent->second.originSite == capability.originSite &&
+                                parent->second.ownedToken == capability.ownedToken &&
+                                parent->second.ownedField == capability.ownedField,
                             "span direct parent origin mismatch");
                 }
                 return capability;
@@ -623,6 +667,14 @@ inline void verifyFunction(Function &function,
                 require(function.spanSlots.contains(base), "span requires exact typed spill");
                 require(!spanParameterSlots.contains(base), "span parameter cannot be rebound");
                 require(!state.activeSpans.contains(base), "span spill is already active");
+            };
+            auto ownerWritable = [&](int root, std::optional<int> field = {}) {
+                for (const auto &[unused, capability] : state.activeSpans) {
+                    (void)unused;
+                    require(!capability.ownedToken || capability.origin != root ||
+                                (field && capability.ownedField != *field),
+                            "owned byte or root mutation with live readonly span");
+                }
             };
             auto region = [&](int base) -> RegionIdentity {
                 require(function.regionSlots.contains(base), "region requires exact typed spill");
@@ -642,6 +694,8 @@ inline void verifyFunction(Function &function,
                         "owned byte region identity does not match active authority");
                 require(!mutableAccess || function.byteSlots.at(base),
                         "const owned byte binding cannot be mutated or moved");
+                if (mutableAccess)
+                    ownerWritable(base, -1);
                 return binding;
             };
             auto byteTarget = [&](int base) -> ByteBinding & {
@@ -676,6 +730,7 @@ inline void verifyFunction(Function &function,
                 binding.token = token;
             };
             auto consumeBytes = [&](int base) {
+                ownerWritable(base, -1);
                 auto &binding = byteBinding(base);
                 binding.disposition = ByteDisposition::Consumed;
                 binding.token.reset();
@@ -852,6 +907,7 @@ inline void verifyFunction(Function &function,
                 object.disposition = ByteDisposition::Live;
             };
             auto consumeObject = [&](int base) {
+                ownerWritable(base);
                 auto &object = state.ownedObjects.at(base);
                 object.disposition = ByteDisposition::Consumed;
                 for (auto &[unused, field] : object.fields) {
@@ -865,6 +921,8 @@ inline void verifyFunction(Function &function,
                 require(slot.className == name && owningClass(classFields, name),
                         "owning object nominal class mismatch");
                 require(!mutableAccess || slot.mutableValue, "const owning object cannot be moved or mutated");
+                if (mutableAccess)
+                    ownerWritable(base);
                 const auto &object = state.ownedObjects.at(base);
                 std::optional<RegionIdentity> origin;
                 for (const auto &[unused, field] : object.fields) {
@@ -878,12 +936,10 @@ inline void verifyFunction(Function &function,
                 require(origin.has_value(), "owning object has no resource fields");
                 return *origin;
             };
-            auto accessBytes = [&](int base, int ordinal, bool mutableAccess) {
+            auto accessBytes = [&](int base, int ordinal, bool mutableAccess) -> const ByteBinding & {
                 require(ordinal >= -1, "invalid owned byte field selector");
-                if (ordinal == -1) {
-                    bytes(base, mutableAccess);
-                    return;
-                }
+                if (ordinal == -1)
+                    return bytes(base, mutableAccess);
                 require(base >= 0, "invalid owned byte object root");
                 if (base == 0) {
                     const auto &field = receiverShape(ordinal);
@@ -913,6 +969,16 @@ inline void verifyFunction(Function &function,
                 else
                     require(!field.token->region.borrowed && region(field.token->region.offset) == field.token->region,
                             "resource field region is not active");
+                if (mutableAccess)
+                    ownerWritable(base, ordinal);
+                return field;
+            };
+            auto borrowOwned = [&](int root, int ordinal, int result) {
+                const auto &binding = accessBytes(root, ordinal, false);
+                spanTarget(result);
+                const auto rootSite = ordinal == -1 ? binding.site : state.ownedObjects.at(root).site;
+                state.activeSpans.emplace(result,
+                                          SpanCapability{false, root, rootSite, 0, 0, index, binding.token, ordinal});
             };
             auto closedOwnedObjects = [&]() {
                 for (const auto &[base, unused] : state.ownedObjects) {
@@ -1284,6 +1350,7 @@ inline void verifyFunction(Function &function,
                         state.current = Value{Type::Bool, {}};
                     } else if constexpr (std::is_same_v<Op, EndBytes>) {
                         byteBinding(operation.offset);
+                        ownerWritable(operation.offset, -1);
                         state.activeBytes.erase(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BeginArray> || std::is_same_v<Op, EndArray>) {
                         require(function.arraySlots.contains(operation.offset),
@@ -1295,7 +1362,8 @@ inline void verifyFunction(Function &function,
                             require(state.activeArrays.contains(operation.offset), "array lifetime is not active");
                             for (const auto &[unused, capability] : state.activeSpans) {
                                 (void)unused;
-                                require(capability.parameterOrigin || capability.origin != operation.offset,
+                                require(capability.ownedToken || capability.parameterOrigin ||
+                                            capability.origin != operation.offset,
                                         "array lifetime ends with live readonly span");
                             }
                             state.activeArrays.erase(operation.offset);
@@ -1318,6 +1386,8 @@ inline void verifyFunction(Function &function,
                                                                  0,
                                                                  0,
                                                                  index});
+                    } else if constexpr (std::is_same_v<Op, BorrowOwnedSpan>) {
+                        borrowOwned(operation.offset, operation.fieldIndex, operation.resultOffset);
                     } else if constexpr (std::is_same_v<Op, ReborrowSpan> || std::is_same_v<Op, Subspan>) {
                         if constexpr (std::is_same_v<Op, Subspan>) {
                             current(Type::I64);
@@ -1325,15 +1395,12 @@ inline void verifyFunction(Function &function,
                             // A narrowed view creates no scalar bounds evidence.
                             state.current = Value{Type::I64, {}};
                         }
-                        const auto capability = span(operation.sourceOffset);
+                        auto capability = span(operation.sourceOffset);
                         spanTarget(operation.resultOffset);
-                        state.activeSpans.emplace(operation.resultOffset,
-                                                  SpanCapability{capability.parameterOrigin,
-                                                                 capability.origin,
-                                                                 capability.originSite,
-                                                                 operation.sourceOffset,
-                                                                 capability.site,
-                                                                 index});
+                        capability.parent = operation.sourceOffset;
+                        capability.parentSite = capability.site;
+                        capability.site = index;
+                        state.activeSpans.emplace(operation.resultOffset, capability);
                     } else if constexpr (std::is_same_v<Op, EndSpan>) {
                         span(operation.offset);
                         for (const auto &[unused, capability] : state.activeSpans) {
@@ -1362,6 +1429,7 @@ inline void verifyFunction(Function &function,
                                 beginOwnedObject(operation.offset, name);
                         } else {
                             require(state.activeObjects.contains(operation.offset), "object lifetime is not active");
+                            ownerWritable(operation.offset);
                             state.activeObjects.erase(operation.offset);
                             state.ownedObjects.erase(operation.offset);
                         }
@@ -1524,7 +1592,10 @@ inline void verifyFunction(Function &function,
                         require(!resourceSignature(target, classFields),
                                 "method call cannot target resource signature or owning constructor");
                         require((scalarValueType(target.result, enumCases) ||
-                                 (!target.receiver->constructor && target.result.isClass())) &&
+                                 (!target.receiver->constructor && target.result.isClass()) ||
+                                 (target.result == Type::ByteSpan && target.receiverSpanField &&
+                                  !target.receiver->mutableValue && !target.receiver->constructor &&
+                                  owningClass(classFields, target.receiver->className))) &&
                                     std::all_of(target.parameters.begin(),
                                                 target.parameters.end(),
                                                 [&](const Type &type) {
@@ -1567,6 +1638,8 @@ inline void verifyFunction(Function &function,
                         }
                         require(operation.receiverOffset >= 0, "invalid method receiver offset");
                         require(operation.receiverFieldIndex >= -1, "invalid method receiver field index");
+                        if (receiver.mutableValue)
+                            ownerWritable(operation.receiverOffset);
                         if (operation.receiverFieldIndex >= 0) {
                             require(!receiver.constructor, "nested receiver cannot call constructor");
                             const auto &field = completeClassField(
@@ -1606,7 +1679,13 @@ inline void verifyFunction(Function &function,
                                 logicalComplete(operation.receiverOffset);
                             }
                         }
-                        if (target.result.isClass()) {
+                        if (target.result == Type::ByteSpan) {
+                            require(operation.receiverFieldIndex == -1,
+                                    "span result requires direct owning receiver root");
+                            require(target.receiverSpanField.has_value(), "span result lacks receiver field summary");
+                            borrowOwned(operation.receiverOffset, *target.receiverSpanField, operation.resultOffset);
+                            state.current.reset();
+                        } else if (target.result.isClass()) {
                             const int base = operation.resultOffset;
                             require(base != operation.receiverOffset, "method result aliases receiver");
                             require(!argumentStorage.contains(base), "method result aliases argument snapshot");
@@ -1668,6 +1747,34 @@ inline void verifyFunction(Function &function,
                                             field.token->region == region(*regionParameterSlot),
                                         "constructor returns before all resource fields initialized");
                             }
+                        }
+                        fallsThrough = false;
+                    } else if constexpr (std::is_same_v<Op, ReturnSpan>) {
+                        require(function.result == Type::ByteSpan && function.receiverSpanField && function.receiver &&
+                                    !function.receiver->constructor && !function.receiver->mutableValue,
+                                "span return requires const owning receiver field summary");
+                        const auto &capability = span(operation.offset);
+                        const auto &owner = accessBytes(0, *function.receiverSpanField, false);
+                        require(capability.ownedToken && capability.origin == 0 &&
+                                    capability.ownedField == *function.receiverSpanField &&
+                                    capability.ownedToken == owner.token,
+                                "span return does not match receiver field summary and token");
+                        require(state.stack.empty(), "unbalanced stack at span return");
+                        require(state.activeBytes.empty() && state.activeArrays.empty() && state.activeObjects.empty(),
+                                "span return with unrelated active local lifetime");
+                        closedOwnedObjects();
+                        // The returned record and its exact receiver-derived ancestor
+                        // chain remain live until the hidden result is copied. Other
+                        // views require explicit cleanup, even when they borrow this.
+                        std::set<int> retained;
+                        for (int base = operation.offset; base != 0; base = span(base).parent)
+                            require(retained.insert(base).second, "cyclic returned span parent chain");
+                        for (const auto &[base, active] : state.activeSpans) {
+                            span(base);
+                            require(retained.contains(base) && active.ownedToken && active.origin == 0 &&
+                                        active.ownedField == *function.receiverSpanField &&
+                                        active.ownedToken == owner.token && active.ownedToken->region.borrowed,
+                                    "span return with unrelated active span lifetime");
                         }
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnObject>) {

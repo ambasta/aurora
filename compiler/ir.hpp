@@ -7,6 +7,7 @@
 #include <vector>
 
 namespace aurora::ir {
+inline constexpr int spanBytes = 56;
 // Operations describe language semantics, never target-register names or assembly text.
 enum class Unary {
     CheckedNegate,
@@ -131,8 +132,8 @@ public:
     std::string callee;
 };
 // Readonly byte spans have typed, non-scalar spills. Only an active fully
-// initialized local byte array or an existing readonly capability can mint one.
-// The base addresses pointer storage; the next word holds the bounded length.
+// initialized origin or an existing readonly capability can mint one.
+// One seven-word record holds kind, immutable payload, logical start and length.
 class BeginArray {
 public:
     int offset;
@@ -145,6 +146,16 @@ class BorrowSpan {
 public:
     int arrayOffset;
     int resultOffset;
+};
+class BorrowOwnedSpan {
+public:
+    int offset;
+    int fieldIndex; // -1 standalone; otherwise exact direct owned field, root zero is receiver
+    int resultOffset;
+};
+class ReturnSpan {
+public:
+    int offset;
 };
 class ReborrowSpan {
 public:
@@ -418,6 +429,8 @@ using Instruction = std::variant<Constant,
                                  BeginArray,
                                  EndArray,
                                  BorrowSpan,
+                                 BorrowOwnedSpan,
+                                 ReturnSpan,
                                  ReborrowSpan,
                                  Subspan,
                                  EndSpan,
@@ -464,12 +477,13 @@ public:
     // Empty copyable classes reserve a word but expose no payload.
     std::map<int, ObjectSlot> objectSlots;
     // Local u8 arrays declare exact byte extents, with one matching scalar slot
-    // per element. Capability spills reserve 16 disjoint bytes and no scalar slot.
+    // per element. Capability spills reserve spanBytes disjoint bytes and no scalar slot.
     std::map<int, int> arraySlots;
     std::set<int> spanSlots;
     std::set<int> regionSlots;     // private eight-byte authority spills
     std::map<int, bool> byteSlots; // private 32-byte owner spills, mutable binding
     std::optional<Receiver> receiver;
+    std::optional<int> receiverSpanField;
     int frameBytes = 0;
     std::vector<Instruction> code;
 };

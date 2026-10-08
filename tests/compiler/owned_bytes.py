@@ -669,6 +669,17 @@ class Suite:
         for length, index in ((0, 0), (1, 1), (2, -1)):
             self.trap(resized_bounds, 4, length, index)
 
+        borrowed = self.compile(
+            "borrow-view",
+            program(f"""
+            {OWNER} a = region.try_allocate(1);
+            a.set(0, 42u8);
+            const builtin::span<const u8> s = borrow_bytes(a);
+            return i64(s.at(0));
+        """),
+        )
+        self.run(borrowed, 1, 0, 0, 42, 1, 1, release_order=[1])
+
         consume = f"auto consume({REGION} r,{OWNER} b)->i64{{return 0;}}"
         declarations = f"{OWNER} a = region.try_allocate(1);"
         bad = {
@@ -693,7 +704,7 @@ class Suite:
             "resize-extra-length": "a.try_resize(1,2); return 0;",
             "resize-bool-result": "i64 bad_size=a.try_resize(2); return bad_size;",
             "scalar-conversion": "return i64(a);",
-            "borrow-view": "const builtin::span<const u8> s=borrow_bytes(a); return 0;",
+            "write-borrowed-owner": "const builtin::span<const u8> s=borrow_bytes(a); a.set(0, 1u8); return 0;",
             "reflect-owner": f"return size_of({OWNER});",
             "forge-region": f"{REGION} r=1; return 0;",
             "rebind-owner": "a=move(a); return 0;",

@@ -981,8 +981,9 @@ void cleanupAndReturnTests() {
         },
         "span or byte array lifetime");
     auto spanReturn = arrayReturn;
-    spanReturn.functions[0].spanSlots.insert(168);
-    insertBefore<EndArray>(spanReturn.functions[0], {BorrowSpan{144, 168}, EndSpan{168}});
+    spanReturn.functions[0].frameBytes = 208;
+    spanReturn.functions[0].spanSlots.insert(200);
+    insertBefore<EndArray>(spanReturn.functions[0], {BorrowSpan{144, 200}, EndSpan{200}});
     accept("owner return follows complete span and array cleanup", spanReturn);
     reject(
         "owner return cannot leak active span and origin",

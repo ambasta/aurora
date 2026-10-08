@@ -111,6 +111,19 @@ auto json_codecs_example(builtin::ByteRegion region, i64 initial_capacity, i64 o
     if (!output.try_append(34u8)) {
         return -11;
     }
+    // Accepted receiver-bound views expose logical bytes, never spare capacity.
+    {
+        const builtin::span<const u8> wire = output.bytes();
+        const std::JsonResult valid = std::validate_json(wire, 0, wire.size());
+        if (valid.status() != std::JsonStatus::success) {
+            return -100;
+        }
+        const builtin::span<const u8> text = decoded.bytes();
+        const std::Utf8ValidationResult utf8_valid = std::validate_utf8(text, 0, text.size(), true);
+        if (utf8_valid.status() != std::Utf8Status::success) {
+            return -101;
+        }
+    }
     if (observation == -1) {
         return decoded.size();
     }

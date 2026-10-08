@@ -160,3 +160,9 @@ Direct native runner: `python3 -B tests/compiler/json_profile.py COMPILER
 --compiler-sha256 REVIEWED_DIGEST --artifacts FRESH_DIRECTORY`, repeated with `-O`.
 `--self-test-only` runs compiler-free oracle controls only. Generated sources,
 assembly, complete observations, diagnostics and identities remain retained.
+
+## Unverified scalar-codec follow-on
+
+The [candidate scalar codecs](json-codecs.md) share string escape reading with
+this scanner. Their fresh regression gates are pending; historical scanner
+evidence does not qualify modified source. Token/document limits are unchanged.
