@@ -1612,17 +1612,21 @@ inline void verifyFunction(Function &function,
                                           : operation.objectArguments.empty(),
                                 (receiver.constructor ? "constructor object argument vector size mismatch"
                                                       : "receiver object argument vector size mismatch"));
-                        const bool spanParameters = std::any_of(
-                            target.parameters.begin(), target.parameters.end(), [](const Type &type) { return type.isSpan(); });
+                        const bool spanParameters =
+                            std::any_of(target.parameters.begin(), target.parameters.end(), [](const Type &type) {
+                                return type.isSpan();
+                            });
                         require((!spanParameters && operation.spanArguments.empty()) ||
                                     operation.spanArguments.size() == target.parameters.size(),
                                 "method span argument vector size mismatch");
                         std::set<int> argumentStorage;
                         for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
                             const auto &type = target.parameters[arg - 1];
-                            const int capability = operation.spanArguments.empty() ? 0 : operation.spanArguments[arg - 1];
+                            const int capability =
+                                operation.spanArguments.empty() ? 0 : operation.spanArguments[arg - 1];
                             if (type.isSpan()) {
-                                require(operation.objectArguments[arg - 1] == 0, "span method argument cannot name object storage");
+                                require(operation.objectArguments[arg - 1] == 0,
+                                        "span method argument cannot name object storage");
                                 span(capability);
                                 continue;
                             }

@@ -1,9 +1,10 @@
-# Synchronous readonly method span parameters — unverified candidate
+# Synchronous readonly method span parameters
 
-This draft extends nonconstructor methods with readonly byte-span parameters.
-It is not accepted until source/native, malformed-IR, handwritten-ABI and direct
-regression gates pass fresh independent review. Runtime layout and helpers are
-unchanged. No new kernel capability or general object reference is introduced.
+This extension adds nonconstructor methods with readonly byte-span parameters.
+Fresh focused source/native, malformed-IR, handwritten-ABI and direct regression
+results are recorded [separately](../docs/method-spans-results.md). Runtime layout
+and helpers are unchanged. No new kernel capability or general object reference
+is introduced.
 
 Arguments evaluate left-to-right after resolving receiver identity. Each span
 acquires authority at its evaluation position and retains it through the call.

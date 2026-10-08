@@ -775,7 +775,8 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::MethodCall>) {
                     const auto &target = *functions.at(operation.callee);
                     const bool aggregate = classParameters(target);
-                    const int recordBytes = aggregate ? packArguments(target, operation.objectArguments, operation.spanArguments) : 0;
+                    const int recordBytes =
+                        aggregate ? packArguments(target, operation.objectArguments, operation.spanArguments) : 0;
                     if (!aggregate)
                         for (std::size_t index = argumentCounts.at(operation.callee); index > 0; --index)
                             pop(argumentRegisters[index - 1]);

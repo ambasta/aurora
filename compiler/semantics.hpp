@@ -844,9 +844,12 @@ class SemanticAnalyzer {
                     *spanLocal = local;
             }
         }
-        emit(ir::MethodCall{
-            callee.name, receiverOffset, packed ? arguments : std::vector<int>{}, destination, receiverFieldIndex,
-            spanBorrows.empty() ? std::vector<int>{} : spanArguments});
+        emit(ir::MethodCall{callee.name,
+                            receiverOffset,
+                            packed ? arguments : std::vector<int>{},
+                            destination,
+                            receiverFieldIndex,
+                            spanBorrows.empty() ? std::vector<int>{} : spanArguments});
         for (int snapshot : snapshots)
             emit(ir::EndObject{snapshot});
         for (auto it = spanBorrows.rbegin(); it != spanBorrows.rend(); ++it)

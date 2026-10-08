@@ -447,7 +447,7 @@ def rejection_cases(suite):
     suite.reject("const sibling cannot forward to mutable sibling",p("return 42;",COUNTER+
         "class Receiver{public:Receiver(){}auto take(Counter x)->Counter{return x;}"
         "auto bad(Counter x)const->Counter{const Counter result=take(x);return result;}};"))
-    for type_name in ("own<i64>","ref<i64>","mut<i64>","builtin::array<u8,1>","builtin::span<const u8>"):
+    for type_name in ("own<i64>","ref<i64>","mut<i64>","builtin::array<u8,1>","builtin::span<u8>"):
         suite.reject("unsupported ordinary method parameter " + type_name,p("return 42;",
             f"class Receiver{{public:Receiver(){{}}auto take({type_name} x)const->i64{{return 42;}}}};"))
     suite.reject("copied parameter name shadows sibling method callable",p("return 42;",COUNTER+

@@ -54,7 +54,9 @@ fields must belong to the supplied region. Owning parameters are mutable. Const
 owners may be read and dropped, but cannot be moved or written.
 
 Methods borrow the receiver synchronously. Existing scalar/enum and copied-class
-parameters/results remain supported. Methods can read payload.ok(), size() and
+parameters/results remain supported. Nonconstructor methods additionally accept
+[readonly span parameters](METHOD-SPANS.md); mutable receiver calls require a root
+disjoint from every live input view, including empty views. Methods can read payload.ok(), size() and
 at(index); mutable methods can call payload.set(index, value) and
 payload.try_resize(length). Resize preserves the field's ownership token and region,
 with failure-safe replacement behavior from the owned-byte contract. Scalar arguments
