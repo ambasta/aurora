@@ -152,9 +152,19 @@ pointer; bounded readonly views follow [READONLY-OWNED-SPANS.md](READONLY-OWNED-
 Region creation, general resource classes and kernel allocation
 remain outside this hosted increment.
 
+## Sealed synchronous console service
+
+A host-granted leading `builtin::ConsoleSession&` gives one exclusive synchronous
+borrow. Its closed `next()` and `put(u8)` operations return copied observations or
+explicit success/timeout status. Named helper forwarding suspends the caller;
+the capability cannot be constructed, copied, stored, returned or reflected.
+Copied reports remain ordinary data with consistent module-visible reflection.
+See [the exact source, IR and private-ABI contract](SERVICES.md) and the
+[persistent simple-UEFI consumer](../docs/native-console-service.md).
+
 ## Temporary machine integration
 
-The bootstrap assembly boundary currently passes six scalar arguments in RDI, RSI, RDX, RCX, R8, R9 and returns RAX. It preserves RBP, does not touch RBX/R12–R15, and aligns RSP to sixteen bytes immediately before calls. Scalar-only programs generate no red zone, libc, heap allocation, SIMD or runtime-library calls. Resource programs explicitly link the hosted byte adapter described below. External assembly callers must provide canonical zero/one bools and correct stack alignment.
+The bootstrap assembly boundary currently passes six scalar arguments in RDI, RSI, RDX, RCX, R8, R9 and returns RAX. It preserves RBP, does not touch RBX/R12–R15, and aligns RSP to sixteen bytes immediately before calls. Scalar-only programs generate no red zone, libc, heap allocation, SIMD or runtime-library calls. Resource programs explicitly link the hosted byte adapter described below. Sealed console graphs use their separate checked service adapter and private source-symbol linkage without an owned-byte allocator dependency. External assembly callers must provide canonical zero/one bools and correct stack alignment.
 
 These temporary register choices are implementation machinery, not a source-level C ABI or binary interoperability promise. Only scalar-signature unqualified root functions retain unmangled names for the temporary bootstrap assembly bridge. Imported/namespaced functions use length-prefixed Aurora-native symbols. The compiler emits a complete import graph with per-defining-module reflection helpers; separately linking overlapping compiled graphs is not supported yet. A versioned Aurora-native ABI remains to be designed.
 

@@ -1,12 +1,25 @@
 #pragma once
 #include "console.hpp"
-#include "console-line.hpp"
+#include <array>
+#include <cstdint>
 #include <optional>
+#include <string_view>
 
 namespace aurora::console {
 // A UART LSR read can clear receive-error bits even when performed for TX.
 // Every console read of LSR, including echo/presentation, shares this sticky
-// latch. Only poll() transfers the observed error into the current Line.
+// latch. next() transfers damage as a copied observation; no editor is owned here.
+class Sample final {
+public:
+    bool present{};
+    std::uint8_t byte{};
+    bool damaged{};
+};
+enum class PutResult : std::uint8_t {
+    success,
+    timeout
+};
+
 enum class FifoTrigger : std::uint8_t { one = 0, fourteen = 0xc0 };
 
 template<class Ports = hardware::Io, FifoTrigger Trigger = FifoTrigger::one>
@@ -26,12 +39,6 @@ class Uart final {
         }
         return value;
     }
-    static auto reject_if_needed(Line& line, bool retain = false) -> void {
-        if (receive_error_) {
-            line.reject();
-            if (!retain) { receive_error_ = false; }
-        }
-    }
 
 public:
     // Session setup only; never clear this between receive/echo operations.
@@ -41,24 +48,46 @@ public:
         static_cast<void>(status());
         static_cast<void>(Ports::read(0x3fa));
     }
-    [[nodiscard]] static auto poll(Line& line) -> std::optional<std::uint8_t> {
+    [[nodiscard]] static auto next() -> Sample {
         const auto before = status();
-        reject_if_needed(line);
-        if ((before & 1) == 0) { return std::nullopt; }
+        const bool prior_damage = receive_error_;
+        receive_error_ = false;
+        if ((before & 1) == 0) {
+            return {false, 0, prior_damage};
+        }
         const auto byte = Ports::read(0x3f8);
         static_cast<void>(status());
-        // Popping a delimiter can expose an error belonging to the next FIFO
-        // byte. Poison that next line too, after finish() clears this old line.
-        reject_if_needed(line, byte == 10 || byte == 13);
-        return byte;
+        const bool damage = prior_damage || receive_error_;
+        // A post-pop error can belong to the next FIFO byte. Keep it latched
+        // across a delimiter so the next Aurora iteration poisons the new line.
+        if (byte != 10 && byte != 13) {
+            receive_error_ = false;
+        }
+        return {true, byte, damage};
     }
-    static auto put(std::uint8_t value) -> void {
+    [[nodiscard]] static auto try_put(std::uint8_t value) -> PutResult {
         for (unsigned remaining = 1000000; remaining > 0; --remaining) {
             if (status() & 0x20) {
                 Ports::write(0x3f8, value);
-                return;
+                return PutResult::success;
             }
         }
+        return PutResult::timeout;
+    }
+    // Legacy BIOS/protected-console adapters remain explicit. The native
+    // simple-UEFI service uses next()/try_put(), never these editor wrappers.
+    template <class Editor> [[nodiscard]] static auto poll(Editor &line) -> std::optional<std::uint8_t> {
+        const auto sample = next();
+        if (sample.damaged) {
+            line.reject();
+        }
+        if (!sample.present) {
+            return std::nullopt;
+        }
+        return sample.byte;
+    }
+    static auto put(std::uint8_t value) -> void {
+        static_cast<void>(try_put(value));
     }
     static auto text(std::string_view value) -> void {
         for (const auto byte : value) { put(static_cast<std::uint8_t>(byte)); }

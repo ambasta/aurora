@@ -16,6 +16,7 @@ class X86Emitter {
     int callRecordSaveOffset = 0;
     int resultSaveOffset = 0;
     bool ownedSpanRuntime = false;
+    std::map<int, int> serviceLoanOffsets;
     const ir::Function *currentFunction = nullptr;
     const std::map<std::string, std::vector<Type>> *classLayouts = nullptr;
     const std::map<std::string, std::vector<ir::ClassField>> *classFields = nullptr;
@@ -128,7 +129,7 @@ class X86Emitter {
         if (function.result.isClass() || function.result.isBytes() || function.result.isSpan())
             return true;
         for (const auto &type : function.parameters)
-            if (type.isClass() || type.isSpan() || type.isResource())
+            if (type.isClass() || type.isSpan() || type.isResource() || type.isService())
                 return true;
         return false;
     }
@@ -138,7 +139,8 @@ class X86Emitter {
         });
     }
     int argumentBytes(const Type &type) const {
-        return type.isBytes()   ? 32
+        return type.isService() ? service::capabilityBytes
+               : type.isBytes() ? 32
                : type.isClass() ? classStorage->at(type.className).reservedBytes
                : type.isSpan()  ? ir::spanBytes
                                 : 8;
@@ -199,6 +201,32 @@ class X86Emitter {
         }
         line("movq %rsp, %r11");
         return recordBytes;
+    }
+    int packService(const ir::Function &target, const ir::ServiceCall &operation) {
+        for (std::size_t reverse = target.parameters.size(); reverse > 1; --reverse)
+            if (!target.parameters[reverse - 1].isSpan())
+                pop(argumentRegisters[reverse - 1]);
+        const int bytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
+        reserveStack(bytes);
+        for (int byte = 0; byte < bytes; byte += 8)
+            line("movq $0, " + std::to_string(byte) + "(%rsp)");
+        const int capability = serviceLoanOffsets.at(operation.loanId);
+        for (int byte = 0; byte < service::capabilityBytes; byte += 8) {
+            line("movq " + address(capability - byte) + ", %rax");
+            line("movq %rax, " + std::to_string(byte) + "(%rsp)");
+        }
+        for (std::size_t index = 1; index < target.parameters.size(); ++index) {
+            const int offset = recordOffset(target, index);
+            if (target.parameters[index].isSpan()) {
+                for (int byte = 0; byte < ir::spanBytes; byte += 8) {
+                    line("movq " + address(operation.spanArguments[index] - byte) + ", %rax");
+                    line("movq %rax, " + std::to_string(offset + byte) + "(%rsp)");
+                }
+            } else
+                storeArgument(target.parameters[index], index, std::to_string(offset) + "(%rsp)");
+        }
+        line("movq %rsp, %r11");
+        return bytes;
     }
     void clearBytesOwner(int offset) {
         for (int byte = 0; byte < 32; byte += 8)
@@ -565,6 +593,50 @@ class X86Emitter {
                         line("leaq " + address(operation.resultOffset) + ", %r10");
                     call(operation.callee);
                     line("addq $" + std::to_string(recordBytes) + ", %rsp");
+                } else if constexpr (std::is_same_v<Op, ir::BindServiceParameter>) {
+                    line("movq " + address(callRecordSaveOffset) + ", %r11");
+                    for (int byte = 0; byte < service::capabilityBytes; byte += 8) {
+                        line("movq " + std::to_string(byte) + "(%r11), %rax");
+                        line("movq %rax, " + address(operation.offset - byte));
+                    }
+                } else if constexpr (std::is_same_v<Op, ir::AcquireServiceLoan>) {
+                    serviceLoanOffsets[operation.loanId] = operation.offset;
+                } else if constexpr (std::is_same_v<Op, ir::ReleaseServiceLoan>) {
+                    // Static provenance is checked across joins independently.
+                } else if constexpr (std::is_same_v<Op, ir::ServiceCall>) {
+                    const auto &target = *functions.at(operation.callee);
+                    const int recordBytes = packService(target, operation);
+                    if (target.result.isClass())
+                        line("leaq " + address(operation.resultOffset) + ", %r10");
+                    call(operation.callee);
+                    line("addq $" + std::to_string(recordBytes) + ", %rsp");
+                } else if constexpr (std::is_same_v<Op, ir::ServiceOperation>) {
+                    line("movq " + address(operation.offset) + ", %rdi");
+                    line("movq " + address(operation.offset - 8) + ", %rsi");
+                    if (operation.operation == service::Operation::Put) {
+                        line("movq %rax, %rdx");
+                        call(std::string(service::operations[1].hostSymbol));
+                        line("cmpq $1, %rax");
+                        line("ja .Laurora_bounds_trap");
+                    } else {
+                        line("leaq " + address(operation.resultOffset) + ", %rdx");
+                        // Raw host report is three complete words; validation
+                        // precedes publication as a copied bool/u8/bool object.
+                        for (int byte = 0; byte < 24; byte += 8)
+                            line("movq $0, " + address(operation.resultOffset - byte));
+                        call(std::string(service::operations[0].hostSymbol));
+                        line("cmpq $1, " + address(operation.resultOffset));
+                        line("ja .Laurora_bounds_trap");
+                        line("cmpq $255, " + address(operation.resultOffset - 8));
+                        line("ja .Laurora_bounds_trap");
+                        line("cmpq $1, " + address(operation.resultOffset - 16));
+                        line("ja .Laurora_bounds_trap");
+                        line("movq " + address(operation.resultOffset) + ", %rax");
+                        line("negq %rax");
+                        line("notq %rax");
+                        line("andq " + address(operation.resultOffset - 8) + ", %rax");
+                        line("jne .Laurora_bounds_trap");
+                    }
                 } else if constexpr (std::is_same_v<Op, ir::BindRegionParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     line("movq (%r11), %rax");
@@ -923,16 +995,24 @@ public:
                                   std::holds_alternative<ir::ReturnOwnedObject>(op);
                        });
             });
+        const bool serviceGraph =
+            std::any_of(module.functions.begin(), module.functions.end(), [](const auto &function) {
+                return std::any_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
+                    return type.isService();
+                });
+            });
+        const bool privateGraph = resourceGraph || serviceGraph;
         ownedSpanRuntime = resourceGraph;
         output << "# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n";
         for (const auto &function : module.functions) {
             stackDepth = 0;
+            serviceLoanOffsets.clear();
             divisionIndex = 0;
             currentFunction = &function;
             const bool aggregate = aggregateSignature(function);
             // Receiver and aggregate entry points use a private compiler ABI and cannot be
             // exposed as ordinary scalar-callable external symbols.
-            output << (resourceGraph || function.receiver || aggregate || function.name.starts_with("__au_o_")
+            output << (privateGraph || function.receiver || aggregate || function.name.starts_with("__au_o_")
                            ? ".local "
                            : ".globl ")
                    << function.name << "\n.type " << function.name << ", @function\n"

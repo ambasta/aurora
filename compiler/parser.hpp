@@ -1,5 +1,6 @@
 #pragma once
 #include "syntax.hpp"
+#include "services.hpp"
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -235,6 +236,14 @@ public:
                 need(">");
                 return Type::ByteSpan;
             }
+            if (eat("ConsoleSession"))
+                return Type::ConsoleSession;
+            if (eat("ConsoleSample"))
+                return service::sampleType();
+            if (eat("ConsolePutResult"))
+                return service::putResultType();
+            if (eat("ConsoleCompletion"))
+                return service::completionType();
             if (eat("ByteRegion"))
                 return Type::ByteRegion;
             if (eat("OwnedBytes"))
@@ -519,7 +528,8 @@ public:
                     parameter.borrowSpan = take().span;
                     parameter.borrowed = true;
                     if (!allowBorrow || !function.params.empty() || !templateParameters.empty() ||
-                        !parameter.type.isClass() || !parameter.type.templateArguments.empty())
+                        (!parameter.type.isClass() && !parameter.type.isService()) ||
+                        !parameter.type.templateArguments.empty())
                         fail("borrowed parameters require one leading concrete owning class on an ordinary function");
                 } else if (parameter.borrowConst)
                     fail("const parameter spelling requires a leading owning-class reference");
@@ -527,7 +537,8 @@ public:
                 // Nominal names are unresolved here; module resolution permits
                 // enum method arguments and class constructor/function arguments.
                 if (!scalarOrParameter(parameter.type) && !parameter.type.isClass() && !parameter.type.isSpan() &&
-                    !(allowClass && parameter.type.isResource()))
+                    !(allowClass && parameter.type.isResource()) && !parameter.type.isService() &&
+                    !parameter.type.isEnum())
                     fail(allowClass ? "only scalar function parameters or scalar-field class values are "
                                       "supported"
                                     : "only scalar or enum method parameters are supported");
@@ -682,7 +693,7 @@ public:
                             need("->");
                             method.result = type();
                             if (!scalarOrParameter(method.result) && !method.result.isClass() &&
-                                !method.result.isSpan())
+                                !method.result.isSpan() && !method.result.isEnum())
                                 fail("only scalar, enum, class or readonly span method results are supported");
                             method.body = block();
                         }
@@ -706,7 +717,7 @@ public:
                             fail("owned byte fields must be private");
                         if (!declaredParameters.empty())
                             fail("owning class templates are unsupported");
-                    } else if (!scalarOrParameter(fieldType) && !fieldType.isClass())
+                    } else if (!scalarOrParameter(fieldType) && !fieldType.isClass() && !fieldType.isEnum())
                         throw Error(DiagnosticCode::UnsupportedFieldType,
                                     "unsupported class field type '" + typeName(fieldType) +
                                         "': class fields require scalar, class, private fixed-array or private "
@@ -735,7 +746,8 @@ public:
             parameters(function, true, true);
             need("->");
             function.result = type();
-            if (!scalarOrParameter(function.result) && !function.result.isClass() && !function.result.isBytes())
+            if (!scalarOrParameter(function.result) && !function.result.isClass() && !function.result.isBytes() &&
+                !function.result.isEnum())
                 fail("only scalar function results or scalar-field class values are supported");
             function.body = block();
             if (declaredParameters.empty())

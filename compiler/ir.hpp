@@ -1,5 +1,6 @@
 #pragma once
 #include "types.hpp"
+#include "services.hpp"
 #include <map>
 #include <optional>
 #include <set>
@@ -232,6 +233,36 @@ class EndBytes {
 public:
     int offset; // closes pristine, moved or live binding; preserves scalar state
 };
+// Service authority has no scalar representation. Entry binding is the sole
+// provenance root; synchronous loans suspend it until the matching release.
+class BindServiceParameter {
+public:
+    int index;
+    int offset;
+    service::Kind kind;
+};
+class AcquireServiceLoan {
+public:
+    int loanId;
+    int offset;
+};
+class ReleaseServiceLoan {
+public:
+    int loanId;
+};
+class ServiceOperation {
+public:
+    int offset;
+    service::Operation operation;
+    int resultOffset; // exact pristine ConsoleSample for next, zero for put
+};
+class ServiceCall {
+public:
+    std::string callee;
+    int loanId;
+    int resultOffset;
+    std::vector<int> spanArguments; // full parameter positions, capability/scalars zero
+};
 class BindRegionParameter {
 public:
     int index;
@@ -412,7 +443,12 @@ public:
     int offset;
     Type type;
 };
-using Instruction = std::variant<Constant,
+using Instruction = std::variant<BindServiceParameter,
+                                 AcquireServiceLoan,
+                                 ReleaseServiceLoan,
+                                 ServiceOperation,
+                                 ServiceCall,
+                                 Constant,
                                  EnumConstant,
                                  Load,
                                  Store,
@@ -507,6 +543,7 @@ public:
     // per element. Capability spills reserve spanBytes disjoint bytes and no scalar slot.
     std::map<int, int> arraySlots;
     std::set<int> spanSlots;
+    std::set<int> serviceSlots;    // sealed sixteen-byte grant/generation spills
     std::set<int> regionSlots;     // private eight-byte authority spills
     std::map<int, bool> byteSlots; // private 32-byte owner spills, mutable binding
     std::optional<Receiver> receiver;

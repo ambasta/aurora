@@ -3,7 +3,7 @@
 #include "apic-timer-io.hpp"
 #include "console-context.hpp"
 #include "tables.hpp"
-#include "../console-presentation.hpp"
+#include "../console-session.hpp"
 #include "../console-uart.hpp"
 
 namespace aurora::uefi {
@@ -14,8 +14,6 @@ using hardware::Io;
 // Polling uses fourteen-byte batches; the BIOS IRQ adapter keeps its one-byte trigger.
 using Serial = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;
 using Timer = LocalApicTimerIo;
-using Display = console::Presentation<Serial>;
-constexpr auto platform = console::Platform::uefi;
 constexpr std::uint32_t polling_count = 1250000;
 U64 owned_arena{}, kernel_root{}, wait_stack{}, wakes{}, expected_wake{};
 bool ready{}, waiting{};
@@ -65,6 +63,45 @@ __attribute__((noinline)) auto wait_for_sample() -> void {
     require(wakes == expected_wake && quiet(), "poll completion");
 }
 
+// Fault-only transport injection is selected by exact image-build provenance.
+// Normal builds call the real UART for every operation.
+class ServiceTransport final {
+public:
+    static auto next() -> console::Sample {
+        return Serial::next();
+    }
+    static auto try_put(std::uint8_t byte) -> console::PutResult {
+#ifdef AURORA_CONSOLE_SERVICE_TIMEOUT
+        static unsigned emitted = 0;
+        if (emitted == 17) {
+            return console::PutResult::timeout;
+        }
+        ++emitted;
+#endif
+        return Serial::try_put(byte);
+    }
+};
+#ifdef AURORA_CONSOLE_SERVICE_REENTRY
+console::ServiceArgument reentry_argument{};
+#endif
+class ServicePlatform final {
+public:
+    static auto quiet() -> bool {
+        return aurora::uefi::quiet();
+    }
+    static auto wait() -> void;
+    [[noreturn]] static auto fail() -> void {
+        aurora::uefi::fail("console service authority");
+    }
+};
+using Service = console::Session<ServiceTransport, ServicePlatform>;
+auto ServicePlatform::wait() -> void {
+#ifdef AURORA_CONSOLE_SERVICE_REENTRY
+    static_cast<void>(Service::put(reentry_argument.grant, reentry_argument.generation, 'x'));
+#endif
+    wait_for_sample();
+}
+
 auto establish_timer(const Bytes& handoff) -> void {
     require(Timer::irq_off() && root() == kernel_root && discovered_topology().has_value(), "timer discovery");
     std::uint32_t a, b, c, d;
@@ -89,6 +126,22 @@ auto establish_timer(const Bytes& handoff) -> void {
     require(Timer::initialize(Timer::read(0x30)), "timer initial quiescence");
     ready = true;
 }
+} // namespace
+
+auto service_entry(const console::ServiceArgument *) -> U64 asm("__au_runtime_console_entry")
+    __attribute__((visibility("hidden")));
+
+auto service_next(const void *, U64, console::RawSample *) -> void asm("__au_runtime_console_next")
+    __attribute__((visibility("hidden")));
+auto service_next(const void *grant, U64 generation, console::RawSample *output) -> void {
+    *output = Service::next(grant, generation);
+#ifdef AURORA_CONSOLE_SERVICE_REPORT
+    output->damaged = 2; // Must trap in generated code before the editor sees it.
+#endif
+}
+auto service_put(const void *, U64, U64) -> U64 asm("__au_runtime_console_put") __attribute__((visibility("hidden")));
+auto service_put(const void *grant, U64 generation, U64 byte) -> U64 {
+    return Service::put(grant, generation, byte);
 }
 
 auto interrupt_entry() -> void asm("uefi_console_interrupt") __attribute__((visibility("hidden")));
@@ -142,25 +195,30 @@ auto interrupt_dispatch(U64 frame) -> void {
     require(Io::read(0x3f9) == 0, "UART interrupts disabled");
     Serial::initialize_input();
     Serial::text("AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0\r\n");
-    console::Line line;
-    Display::ready(platform);
+    auto argument = Service::open();
+#ifdef AURORA_CONSOLE_SERVICE_STALE
+    const auto prior = argument;
+    static_cast<void>(Service::close(argument, 0));
+    argument = Service::open();
+    argument = prior; // Captured generation must not refresh when grant storage is reused.
+#endif
+#ifdef AURORA_CONSOLE_SERVICE_REENTRY
+    reentry_argument = argument;
+#endif
+    const auto completion = Service::close(argument, service_entry(&argument));
+    require(quiet() && Io::read(0x3f9) == 0, "exit quiescence");
+    if (completion == console::Completion::output_failure) {
+        // A partial response cannot be rolled back or blindly replayed. Avoid
+        // depending on the failed output channel to terminate this session.
+        Io::write(0xf4, 0x11);
+    } else {
+        Serial::text("AURORA_UEFI_CONSOLE_QUIET: wakes=");
+        Serial::number(wakes);
+        Serial::text(" timer=masked isr=0 irr=0 uart_irq=0\r\n");
+        Io::write(0xf4, 0x10);
+    }
     for (;;) {
-        require(quiet(), "receive quiescence");
-        const auto byte = Serial::poll(line);
-        if (!byte) {
-            wait_for_sample();
-            continue;
-        }
-        const auto event = line.consume(*byte);
-        if (event == console::Event::exit) {
-            require(quiet() && Io::read(0x3f9) == 0, "exit quiescence");
-            Serial::text("AURORA_UEFI_CONSOLE_QUIET: wakes="); Serial::number(wakes);
-            Serial::text(" timer=masked isr=0 irr=0 uart_irq=0\r\n");
-        }
-        if (!Display::render(event, *byte, platform)) {
-            Io::write(0xf4, 0x10);
-            for (;;) { asm volatile("cli; hlt"); }
-        }
+        asm volatile("cli; hlt");
     }
 }
 }

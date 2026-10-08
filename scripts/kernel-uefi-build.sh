@@ -14,7 +14,9 @@ extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
  owned-bytes) extra+=(-DAURORA_UEFI_OWNED_BYTES) ;;
- console) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_CONSOLE) ;;
+ console|console-service-stale|console-service-reentry|console-service-timeout|console-service-report)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_CONSOLE)
+   if [[ "$UEFI_MODE" != console ]]; then flag="${UEFI_MODE#console-service-}"; extra+=("-DAURORA_CONSOLE_SERVICE_${flag^^}"); fi ;;
  program-console|program-request-fault|program-service-fault|program-completion-fault|program-request-budget|program-service-budget|program-completion-budget|program-pending|program-owner|program-ordinal|program-unknown|program-transaction)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET -DAURORA_UEFI_USER_BUDGET -DAURORA_UEFI_PROGRAM_CONSOLE)
    if [[ "$UEFI_MODE" != program-console ]]; then flag="${UEFI_MODE#program-}"; flag="${flag//-/_}"; extra+=("-DAURORA_PROGRAM_${flag^^}"); fi ;;
@@ -76,6 +78,12 @@ if [[ "${UEFI_MODE:-normal}" == program-* ]]; then
  python3 -B scripts/kernel_program_console_admission.py begin-build --mode "$UEFI_MODE" \
    --compiler "$compiler" --cxx "$cxx" "${provenance_flags[@]}"
 fi
+if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
+ provenance_flags=()
+ for flag in "${flags[@]}" "${extra[@]}"; do provenance_flags+=("--flag=$flag"); done
+ python3 -B scripts/kernel_console_service_admission.py begin-build --mode "$UEFI_MODE" \
+   --compiler "$compiler" --cxx "$cxx" "${provenance_flags[@]}"
+fi
 runtime_objects=()
 if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* || "${UEFI_MODE:-normal}" == dispatch* || "${UEFI_MODE:-normal}" == user-* || "${UEFI_MODE:-normal}" == program-* ]]; then
  mode="${UEFI_MODE#runtime-}"
@@ -117,8 +125,8 @@ console_objects=()
 language_entry=examples/kernel.au
 if [[ "${UEFI_MODE:-normal}" == program-* ]]; then language_entry=examples/kernel-program-console.au; fi
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then language_entry=examples/kernel-owned-bytes.au; fi
-if [[ "${UEFI_MODE:-normal}" == console ]]; then
-    language_entry=examples/kernel-console.au
+if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
+    language_entry=examples/kernel-console-service.au
     as --64 kernel/uefi/console-entry.S -o build/uefi/console-entry.o
     "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/console.cpp -o build/uefi/console.o
     console_objects+=(build/uefi/console-entry.o build/uefi/console.o)
@@ -127,6 +135,8 @@ fi
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     as --64 build/uefi/language.s kernel/uefi/owned-bytes-entry.S -o build/uefi/language.o
     python3 tests/kernel-uefi-owned-bytes-admission.py build/uefi/language.o
+elif [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
+    as --64 build/uefi/language.s kernel/uefi/console-service-entry.S -o build/uefi/language.o
 else
     as --64 build/uefi/language.s -o build/uefi/language.o
 fi
@@ -235,4 +245,9 @@ fi
 
 if [[ "${UEFI_MODE:-normal}" == program-* ]]; then
     python3 -B scripts/kernel_program_console_admission.py end-build --mode "$UEFI_MODE"
+fi
+
+if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
+    python3 -B scripts/kernel_console_service_admission.py end-build --mode "$UEFI_MODE"
+    python3 -B scripts/kernel_console_service_admission.py emit --mode "$UEFI_MODE"
 fi

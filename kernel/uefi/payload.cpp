@@ -17,7 +17,9 @@ using U64 = std::uint64_t;
 auto payload_entry() -> void asm("uefi_payload_entry") __attribute__((visibility("hidden")));
 auto generic_fault() -> void asm("uefi_payload_fault") __attribute__((visibility("hidden")));
 auto page_fault() -> void asm("uefi_payload_page_fault") __attribute__((visibility("hidden")));
-#ifndef AURORA_UEFI_OWNED_BYTES
+#if defined(AURORA_UEFI_CONSOLE)
+auto language_value() -> long long asm("__au_runtime_console_value");
+#elif !defined(AURORA_UEFI_OWNED_BYTES)
 auto language_value() -> long long asm("aurora_kernel_value");
 #endif
 namespace {

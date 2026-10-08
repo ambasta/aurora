@@ -229,8 +229,28 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
         names += ["console", "console-entry"]
         need("uefi_runtime_enter" not in symbols, "Console linked a user runtime")
         console_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "console.o")], text=True)
-        for entry in ("aurora_console_byte", "aurora_console_command"):
-            need(policy_call_present(console_calls, entry), "Console must call the actual Aurora policy: " + entry)
+        need(policy_call_present(console_calls, "__au_runtime_console_entry"),
+             "Console host must call the actual sealed service bridge")
+        language_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "language.o")], text=True)
+        for entry in ("__au_runtime_console_next", "__au_runtime_console_put"):
+            need(policy_call_present(language_calls, entry), "Aurora service must use the closed operation: " + entry)
+        for legacy in ("aurora_console_byte", "aurora_console_command"):
+            need(legacy not in symbols, "Native console retained legacy policy wrapper: " + legacy)
+        for object_name in ("payload", "acpi", "pci", "runtime", "console", "loader"):
+            host_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / (object_name + ".o"))], text=True)
+            for legacy in ("aurora::console::Line::", "aurora::console::Presentation<",
+                           "aurora_console_byte", "aurora_console_command", "__au_runtime_bytes_"):
+                need(legacy not in host_calls, "Native console retained a legacy/owner reference in " + object_name)
+            host_bytes = (BUILD / (object_name + ".o")).read_bytes()
+            for response in (b"Unknown command.", b"Line rejected:", b"Show commands", b"line capacity=64", b"aurora> "):
+                need(response not in host_bytes, "Human command presentation remains in C++ " + object_name)
+        language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "language.o")], text=True)
+        allowed_globals = {"__au_runtime_console_entry", "__au_runtime_console_value",
+                           "aurora_reflect_size", "aurora_reflect_field_count"}
+        for row in language_symbols.splitlines():
+            fields = row.split()
+            if len(fields) == 3 and fields[1] == "T":
+                need(fields[2] in allowed_globals, "Native service exposed a source entry: " + fields[2])
     if "uefi_service_drain_begin" in symbols:
         policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
         need(budget_call_present(policy_relocations), "Service timer does not call the actual Aurora budget entry")
