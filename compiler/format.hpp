@@ -257,7 +257,8 @@ inline std::string layout(const LexedSource &source, const Program &program) {
         if (roles.references.contains(piece.span.begin.offset))
             space = false;
         if (text == "(" || text == "[")
-            space = previous == "if" || previous == "while";
+            space = previous == "if" || previous == "while" ||
+                    (text == "(" && roles.binary.contains(previousSpan.begin.offset));
         if (templateOpen)
             space = previous == "template";
         if (text == ":")

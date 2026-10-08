@@ -36,23 +36,25 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 2. Implement running mechanisms, not unused scaffolding presented as functionality.
 3. Add positive, negative, regression and adversarial tests. Check metadata against
    actual generated layout/behavior. Fail closed for unsupported syntax/semantics.
-4. For ordinary edits, run dependency-selected checks: use the named Meson core,
-   bytes, packages, dev or slow suites for covered compiler/library changes, and the relevant
-   focused checks for other components. Inspect the changed code's dependencies;
-   add a missing focused safety test rather than relying on unrelated suites.
-   Leaf documentation edits need content/link review, not a fresh full native run.
-   Use make test explicitly for full native qualification under the shared
-   build-once compiler contract, plus actual emulator gates for kernel-affecting
-   qualification. For independently pinned native acceptance, use make
-   test-acceptance with an externally reviewed ACCEPTANCE_COMPILER_SHA256.
-   Full qualification requires a newly completed matching run.json; Make exit zero
-   alone is not evidence. Fault gates must fail as intended and restore a normal
-   image afterward. Focused passes never replace an explicitly required full gate.
+4. Run dependency-selected focused checks while developing. Before every merge,
+   complete both Meson `dev` and `slow` suites on the final integrated source,
+   including after conflict resolution or another source change. Focused checks
+   supplement these gates; they never replace them. Keep `dev` fast and retain
+   exhaustive integration/ABI coverage in `slow`, without sampling away tests.
+   Before every release, also run the complete root `make test` native graph
+   under the shared build-once compiler contract, plus actual emulator gates for
+   kernel-affecting qualification. For independently pinned native acceptance,
+   use `make test-acceptance` with an externally reviewed
+   `ACCEPTANCE_COMPILER_SHA256`. Full native qualification requires a newly
+   completed matching `run.json`; Make exit zero alone is not evidence. Fault
+   gates must fail as intended and restore a normal image afterward.
 5. Review changes independently before considering a milestone verified. Record
    reproduced defects and fixes, commands, source revision, tool versions and limits.
 6. Update implementation docs and the completeness matrix in the same change.
-7. Keep changes reviewable. Verified functional checkpoints may use ready-for-review
-   pull requests; unfinished milestones remain draft, per the user's latest approval.
+7. Keep changes reviewable. Use a clean, independently reviewed squash merge so
+   work-in-progress checkpoints do not enter main. Do not rewrite existing history.
+   Verified functional checkpoints may use ready-for-review pull requests;
+   unfinished milestones remain draft, per the user's latest approval.
    Never force-push, merge, or publish a release without the applicable authorization.
 
 ## Validation
@@ -63,7 +65,7 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - meson test -C build/meson --suite packages --num-processes 2: partial semantic package feedback
 - meson test -C build/meson --suite dev --num-processes 2: quick cross-component feedback
 - meson test -C build/meson --suite slow --num-processes 2: longer integration/ABI sweeps
-- meson test -C build/meson --suite full --num-processes 2: all 51 registered non-LSP tests
+- meson test -C build/meson --suite full --num-processes 2: all 53 registered non-LSP tests
 - make test: fresh current-source compiler once, then the complete root native graph
 - make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>: explicitly
   pinned root native graph; optional ACCEPTANCE_COMPILER selects a reviewed prebuilt

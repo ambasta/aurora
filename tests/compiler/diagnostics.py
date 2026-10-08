@@ -80,6 +80,21 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     require(plain.stdout == plain.stderr == "", "successful text check must be quiet")
     run(["--check", "--diagnostics=text", source], 0, json_mode=False)
 
+    field_text = "module x; class Bad { builtin::span<const u8> view; };"
+    source.write_text(field_text)
+    field = check(source, 1, "AU2001")
+    require(
+        field["message"] == "unsupported class field type 'builtin::span<const u8>': "
+        "class fields require scalar, class, private fixed-array or private owned-byte storage",
+        "specific unsupported class field type",
+    )
+    require(
+        field["range"]["start"]["offset"] == field_text.index("builtin")
+        and field["range"]["end"]["offset"] == field_text.index(" view"),
+        "complete field type range",
+    )
+    require(source.read_text() == field_text, "field rejection changed source")
+
     bad = "// café 😀\r\n\tmodule demo;\r\n@"
     source.write_text(bad)
     diagnostic = check(source, 1, "AU1001")

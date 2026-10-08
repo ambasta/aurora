@@ -234,8 +234,8 @@ export namespace std {
                 return JsonStatus::invalid_window;
             }
             if (outcome == JsonStatus::success) {
-                if (scalar > 1114111u64 ||(scalar >= 55296u64 && scalar <= 57343u64) || consumed < 1 || consumed > 12 ||
-                    error != 0) {
+                if (scalar > 1114111u64 || (scalar >= 55296u64 && scalar <= 57343u64) || consumed < 1 || consumed > 12
+                    || error != 0) {
                     return JsonStatus::invalid_window;
                 }
                 return outcome;
@@ -330,16 +330,16 @@ export namespace std {
                 if (error != 0 || consumed < length || consumed - length > offset) {
                     return JsonStatus::invalid_window;
                 }
-                if (outcome == JsonStatus::success &&(category == JsonTokenKind::none || length == 0)) {
+                if (outcome == JsonStatus::success && (category == JsonTokenKind::none || length == 0)) {
                     return JsonStatus::invalid_window;
                 }
-                if (outcome == JsonStatus::end_of_input &&(category != JsonTokenKind::none || length != 0)) {
+                if (outcome == JsonStatus::end_of_input && (category != JsonTokenKind::none || length != 0)) {
                     return JsonStatus::invalid_window;
                 }
                 return outcome;
             }
-            if (outcome == JsonStatus::token_limit || outcome == JsonStatus::depth_limit || outcome == JsonStatus::
-                invalid_structure) {
+            if (outcome == JsonStatus::token_limit || outcome == JsonStatus::depth_limit || outcome ==
+                JsonStatus::invalid_structure) {
                 return JsonStatus::invalid_window;
             }
             if (category != JsonTokenKind::none || offset != 0 || length != 0 || consumed != 0) {
@@ -394,7 +394,7 @@ export namespace std {
             if (error < 0 || tokens < 0 || tokens > 1024 || peak < 0 || peak > 32) {
                 return JsonStatus::invalid_window;
             }
-            if (outcome == JsonStatus::success &&(error != 0 || tokens == 0)) {
+            if (outcome == JsonStatus::success && (error != 0 || tokens == 0)) {
                 return JsonStatus::invalid_window;
             }
             return outcome;
@@ -556,7 +556,7 @@ namespace std {
                         const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, escape);
                         return result;
                     }
-                    scalar = 65536 +(scalar - 55296) * 1024 + low - 56320;
+                    scalar = 65536 + (scalar - 55296) * 1024 + low - 56320;
                 }
                 const JsonScalarResult result = JsonScalarResult(JsonStatus::success, u64(scalar), index - start, 0);
                 return result;
@@ -636,7 +636,7 @@ namespace std {
                     if (json_digit(byte)) {
                         next = 5;
                     }
-                    if (state == 5 &&(byte == 101u8 || byte == 69u8)) {
+                    if (state == 5 && (byte == 101u8 || byte == 69u8)) {
                         next = 6;
                     }
                 }
@@ -644,7 +644,7 @@ namespace std {
                     if (json_digit(byte)) {
                         next = 8;
                     }
-                    if (state == 6 &&(byte == 43u8 || byte == 45u8)) {
+                    if (state == 6 && (byte == 43u8 || byte == 45u8)) {
                         next = 7;
                     }
                 }
@@ -1200,8 +1200,8 @@ namespace std {
                 const JsonResult document = JsonResult(JsonStatus::success, 0, tokens, peak);
                 JsonLookupStatus outcome = JsonLookupStatus::success;
                 i64 error = 0;
-                if ((mode == 1u8 && root_kind != JsonValueKind::object) ||(mode == 2u8 && root_kind != JsonValueKind::
-                    array_value)) {
+                if ((mode == 1u8 && root_kind != JsonValueKind::object) || (mode == 2u8 && root_kind !=
+                    JsonValueKind::array_value)) {
                     outcome = JsonLookupStatus::wrong_root;
                 } else {
                     if (mode == 1u8 && matching_keys == 2) {
@@ -1244,8 +1244,8 @@ namespace std {
             if (depth == 0 && !root_complete) {
                 root_kind = json_value_kind(kind);
             }
-            if (mode == 1u8 && depth == 1 &&(before_state == 4u8 || before_state == 5u8) && kind == JsonTokenKind::
-                string) {
+            if (mode == 1u8 && depth == 1 && (before_state == 4u8 || before_state == 5u8) && kind ==
+                JsonTokenKind::string) {
                 member_matches = false;
                 if (matching_keys < 2) {
                     member_matches = json_key_equal(bytes, token.byte_offset() + 1, token.byte_count() - 2, key,
@@ -1339,8 +1339,9 @@ namespace std {
                         peak = depth;
                     }
                 } else {
-                    if (kind != JsonTokenKind::string && kind != JsonTokenKind::number && kind != JsonTokenKind::
-                        true_value && kind != JsonTokenKind::false_value && kind != JsonTokenKind::null_value) {
+                    if (kind != JsonTokenKind::string && kind != JsonTokenKind::number && kind !=
+                        JsonTokenKind::true_value && kind != JsonTokenKind::false_value && kind !=
+                        JsonTokenKind::null_value) {
                         valid = false;
                     }
                 }
@@ -1359,7 +1360,7 @@ namespace std {
                 if (mode == 1u8 && before_state == 7u8 && member_matches && matching_keys == 1) {
                     select = true;
                 }
-                if (mode == 2u8 &&(before_state == 1u8 || before_state == 2u8)) {
+                if (mode == 2u8 && (before_state == 1u8 || before_state == 2u8)) {
                     if (element_index == wanted) {
                         select = true;
                     }

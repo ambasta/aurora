@@ -75,6 +75,29 @@ void checkParserRanges() {
                 "nesting diagnostic code and range");
     }
 }
+void checkUnsupportedFieldTypes() {
+    for (const auto &type : {"builtin::span<const u8>", "builtin::ByteRegion", "own<i64>", "ref<i64>", "mutref<i64>"}) {
+        for (const auto &access : {"", "public:", "private:"}) {
+            const std::string text = "module x; class Bad { " + std::string(access) + type + " view; };";
+            try {
+                aurora::Parser(aurora::lex(text, "field.au")).parse();
+                require(false, "unsupported field type accepted");
+            } catch (const aurora::Error &error) {
+                require(error.diagnostic.code == aurora::DiagnosticCode::UnexpectedToken,
+                        "field rejection retains parser diagnostic family");
+                require(
+                    std::string(error.what()) ==
+                        "unsupported class field type '" + std::string(type) +
+                            "': class fields require scalar, class, private fixed-array or private owned-byte storage",
+                    "field rejection must identify its unsupported type, not the following semicolon");
+                const auto &span = error.diagnostic.span;
+                require(span.source && span.source->path == "field.au" && span.begin.offset == text.find(type) &&
+                            span.end.offset == text.find(type) + std::string(type).size(),
+                        "field rejection highlights the entire unsupported type");
+            }
+        }
+    }
+}
 void checkTruncatedSource() {
     const std::string complete =
         "module sample; auto sample() -> i64 { const array<i64, 2> x = {1, 2}; return (x[0]); }";
@@ -156,6 +179,7 @@ int main() {
         checkPositions();
         checkParserRanges();
         checkTruncatedSource();
+        checkUnsupportedFieldTypes();
         checkErrors();
         checkTextRendering();
         std::cerr << "PASS shared lexer/parser diagnostic ranges\n";

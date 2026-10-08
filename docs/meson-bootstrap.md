@@ -33,17 +33,24 @@ until the compiler can emit dependency files itself.
 
 ## Choose the checks for the change
 
-`dev` is the quick feedback set (40 tests). `slow` holds eleven longer exhaustive
+Before every merge, run both complete `dev` and `slow` suites on the final
+integrated source, including after conflict resolution. Focused checks are
+additional. Before releases, also complete root `make test`; a Meson pass is not
+full-native release qualification. Squash verified changes without rewriting
+existing main history.
+
+
+`dev` is the quick feedback set (41 tests). `slow` holds twelve longer exhaustive
 integration or ABI runners: block-io, sector-window, xfs-sector, xfs-file,
 method-spans-abi, json-profile, json-codecs, json-integers, json-lookup,
-borrowed-objects and borrowed-objects-abi.
+borrowed-objects, borrowed-objects-abi and json-string-write.
 The borrowed-object smoke and malformed-IR gates remain in `dev`; the complete
 source/helper runner and handwritten ABI sweep remain in `slow`.
 The existing json-owned runner remains in `dev` for representative JSON and
 real owner-window coverage, alongside core/value/owner and partial package checks.
 No runner is sampled or weakened to meet a timing target.
 
-`full` and an unfiltered `meson test` both run all 51 registered tests when the
+`full` and an unfiltered `meson test` both run all 53 registered tests when the
 optional LSP is disabled. `dev` and `slow` are a disjoint, complete partition.
 The existing `core`, `bytes`, `compiler` and `packages` memberships are preserved,
 so dependency-selected suites still include their longer checks. In particular,
@@ -68,8 +75,9 @@ Package changes can start with the partial `packages` suite described below. A f
 Run `dev` for a quick cross-component pass. Run `slow` as well, or `full`,
 when qualifying all registered coverage; a `dev` pass alone does not cover the
 exhaustive JSON/storage/ABI sweeps. The Make full-native graph remains separate.
-For leaf documentation edits, review content, commands and links; do not rebuild
-the compiler or require the full native aggregate without a relevant reason.
+For leaf documentation edits, also review content, commands and links. The final
+pre-merge `dev` and `slow` gate still applies; root `make test` is required before
+a release, not every ordinary edit.
 
 ## Named coverage
 

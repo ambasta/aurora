@@ -610,7 +610,7 @@ def negative_cases():
         (
             "span-cannot-be-field",
             PREFIX + "class Leak{builtin::span<const u8> value;};",
-            "class fields require scalar, class, private fixed-array or private owned-byte storage (found ';')",
+            "unsupported class field type 'builtin::span<const u8>': class fields require scalar, class, private fixed-array or private owned-byte storage",
         ),
         (
             "manifest-enum-no-conversion",

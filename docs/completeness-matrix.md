@@ -1,5 +1,13 @@
 # Completeness and acceptance matrix
 
+## Formatter and unsupported-field diagnostics — 2026-10-08
+
+Binary operators keep spaces before parenthesized operands, unary operators stay
+attached, and four affected library/example files have canonical qualified names.
+Unsupported class-field types receive a type-located AU2001 diagnostic without
+expanding the accepted language. See the [repair scope and required gates](../compiler/FORMAT.md#parenthesized-operands-and-unsupported-fields--2026-10-08).
+
+
 ## Transactional quoted UTF-8 append — 2026-10-08
 
 `std.json_write` now composes a complete validation/measurement pass, one atomic
