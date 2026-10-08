@@ -55,7 +55,60 @@ void rejected(const std::string &text, aurora::DiagnosticCode expected) {
         require(error.diagnostic.code == expected, "original diagnostic code was not retained");
     }
 }
+void qualifiedNames() {
+    const auto unbroken = [](const std::string &text) {
+        const auto formatted = aurora::format::source(text);
+        const auto tokens = aurora::lexSource(formatted.text).tokens;
+        for (std::size_t index = 1; index + 1 < tokens.size(); ++index)
+            if (tokens[index].text == "::")
+                require(tokens[index - 1].span.end.line == tokens[index].span.begin.line &&
+                            tokens[index].span.end.line == tokens[index + 1].span.begin.line,
+                        "formatter soft-wrapped inside a qualified name: " + formatted.text);
+        verify(text, "qualified-boundary.au");
+        return formatted;
+    };
+    const auto name = std::string(100, 'f');
+    golden("module x;auto " + name + "()->std::ByteWriteStatus{return std::ByteWriteStatus::success;}",
+           "module x;\nauto " + name +
+               "() ->\n    std::ByteWriteStatus {\n"
+               "    return std::ByteWriteStatus::success;\n}\n");
+    // Sweep the soft limit through every part of multi-scope types, calls and
+    // enum values. The formatter must wrap before the group, never at ::.
+    for (std::size_t width = 60; width <= 130; ++width) {
+        const std::string padding(width, 'f');
+        unbroken("module x;auto " + padding +
+                 "()->outer::inner::ByteWriteStatus{"
+                 "return outer::inner::ByteWriteStatus::success;}");
+        unbroken("module x;auto f()->i64{return " + padding + "(outer::inner::value());}");
+        unbroken("module x;auto f()->i64{const i64 " + padding + "=outer::inner::Value::ready;return 0;}");
+    }
+    // Original newlines around a scope token are canonicalized without changing
+    // tokens. An explicitly anchored comment remains an intentional hard break.
+    unbroken("module x;auto f()->std::\nByteWriteStatus{return std\n::ByteWriteStatus::success;}");
+    for (const auto &qualified : {"std // before scope\n::ByteWriteStatus",
+                                  "std:: // after scope\nByteWriteStatus",
+                                  "outer::inner // middle scope\n::ByteWriteStatus"})
+        verify("module x;auto f()->" + std::string(qualified) + "{return 0;}", "qualified-comments.au");
+    std::string oversized = "outer";
+    for (int count = 0; count < 256; ++count)
+        oversized += "::nested";
+    const auto longName = unbroken("module x;auto f()->" + oversized + "{return 0;}");
+    require(longName.text.find(oversized) != std::string::npos, "oversized qualified name was split");
+    require(std::any_of(longName.remainingFindings.begin(),
+                        longName.remainingFindings.end(),
+                        [](const auto &finding) {
+                            return finding.code == "AUF1001";
+                        }),
+            "oversized qualified group must retain the soft-width finding");
+}
 void cases() {
+    qualifiedNames();
+    golden("module x;auto f(const pkg::Buffer& input,builtin::span<const u8> bytes,u64 mask)->u64{"
+           "return mask&7u64;}",
+           "module x;\nauto f(const pkg::Buffer& input, builtin::span<const u8> bytes, u64 mask) -> u64 {\n"
+           "    return mask & 7u64;\n}\n");
+    golden("module x;auto f(pkg::Buffer & output,u64 value)->u64{return value & 3u64;}",
+           "module x;\nauto f(pkg::Buffer& output, u64 value) -> u64 {\n    return value & 3u64;\n}\n");
     golden("module x;auto f()->i64{return 1+2;}", "module x;\nauto f() -> i64 {\n    return 1 + 2;\n}\n");
     golden("// header\r\nmodule x;// module\nauto f()->i64{ // body\nreturn -42; // result\n}// eof",
            "// header\r\nmodule x; // module\nauto f() -> i64 { // body\n    return -42; // result\n} // eof\n");

@@ -2,6 +2,7 @@ module kernel;
 import kernel.interrupt_budget;
 import kernel.round_robin;
 import kernel.ipc_transition;
+import kernel.client_disposal;
 
 auto aurora_kernel_value() -> i64 {
     static_assert(size_of(i64) == 8);
@@ -48,4 +49,17 @@ auto aurora_kernel_ipc_transition(u64 operation, u64 phase, u64 state, u64 scrub
     if (decision.effect() == kernel::TransactionEffect::cancel_request) { effect = 6u64; }
     if (decision.effect() == kernel::TransactionEffect::recycle_record) { effect = 7u64; }
     return 2u64 | (decision.next() << 8) | (effect << 16);
+}
+
+// Private recovery-plan transport; no receipt, payload or authority is copied.
+auto aurora_kernel_client_disposal(u64 phase, u64 state) -> u64 {
+    const kernel::DisposalDecision decision = kernel::client_disposal(phase, state);
+    if (decision.action() == kernel::DisposalAction::invalid) { return 0u64; }
+    if (decision.action() == kernel::DisposalAction::refused) { return 1u64; }
+    u64 effect = 0u64;
+    if (decision.effect() == kernel::DisposalEffect::empty) { effect = 1u64; }
+    if (decision.effect() == kernel::DisposalEffect::retained_receipt) { effect = 2u64; }
+    if (decision.effect() == kernel::DisposalEffect::cancel_consume) { effect = 3u64; }
+    if (decision.effect() == kernel::DisposalEffect::consume_terminal) { effect = 4u64; }
+    return 2u64 | (effect << 8);
 }

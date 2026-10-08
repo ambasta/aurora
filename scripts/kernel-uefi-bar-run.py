@@ -26,6 +26,10 @@ MODES = (
 CLEAN = ("bar-read", "bar-prepare", "bar-write", "bar-revoked", "bar-alias")
 
 
+class MissingPrerequisite(ValueError):
+    """An unavailable external input, before any build or guest has started."""
+
+
 def module(name):
     spec = importlib.util.spec_from_file_location(name, ROOT / "tests" / f"kernel-uefi-{name}.py")
     result = importlib.util.module_from_spec(spec)
@@ -44,16 +48,24 @@ def record(path):
 def required(env, name, explanation):
     value = env.get(name, "")
     if not value:
-        raise ValueError(f"Set {name}: {explanation}. See docs/smoke-entrypoint-repair.md.")
+        raise MissingPrerequisite(f"Set {name}: {explanation}. See docs/smoke-entrypoint-repair.md.")
     return value
 
 
 def input_path(value, label, directory=False):
-    path = Path(value).resolve()
-    if not (path.is_dir() if directory else path.is_file()) or not os.access(path, os.R_OK):
-        raise ValueError(f"{label} must name a readable {'directory' if directory else 'file'}: {path}")
-    if any(character in str(path) for character in (",", "\n", "\r")):
-        raise ValueError(f"{label} cannot contain commas or line breaks in QEMU option paths")
+    try:
+        path = Path(value).resolve()
+        if any(character in str(path) for character in (",", "\n", "\r")):
+            raise ValueError(f"{label} cannot contain commas or line breaks in QEMU option paths")
+        unavailable = f"{label} must name a readable {'directory' if directory else 'file'}: {path}"
+        if not path.exists():
+            raise MissingPrerequisite(unavailable)
+        if not (path.is_dir() if directory else path.is_file()):
+            raise ValueError(unavailable)
+        if not os.access(path, os.R_OK):
+            raise MissingPrerequisite(unavailable)
+    except (FileNotFoundError, PermissionError) as error:
+        raise MissingPrerequisite(f"Unavailable {label} prerequisite: {error}") from error
     return path
 
 
@@ -78,9 +90,20 @@ def preflight(mode, output, env):
     # A normal installed command name is supported, but its exact binary still
     # has to satisfy the existing provenance pin. Discovery is not qualification.
     command = env.get("QEMU") or "qemu-system-x86_64"
+    if any(character in command for character in (",", "\n", "\r")):
+        raise ValueError("QEMU cannot contain commas or line breaks in its executable path")
     executable = shutil.which(command, path=env.get("PATH"))
     if executable is None:
-        raise ValueError(f"Missing dependency: {command}; set QEMU to the qualified QEMU executable")
+        # An explicitly selected existing path of the wrong kind/permission is
+        # invalid configuration, not an absent executable discovered on PATH.
+        if env.get("QEMU") and os.sep in command:
+            try:
+                selected = Path(command)
+                if selected.exists():
+                    raise ValueError(f"QEMU must name an executable file: {selected}")
+            except (FileNotFoundError, PermissionError) as error:
+                raise MissingPrerequisite(f"Unavailable QEMU prerequisite: {error}") from error
+        raise MissingPrerequisite(f"Missing dependency: {command}; set QEMU to the qualified QEMU executable")
     qemu = input_path(executable, "QEMU")
     data = input_path(required(env, "QEMU_DATA", "the matching qualified QEMU data directory"), "QEMU_DATA", True)
     coverage_path = input_path(
@@ -91,8 +114,19 @@ def preflight(mode, output, env):
     trace = module("bar-trace")
     try:
         coverage = trace.load_coverage(coverage_path)
+        # read_control's semantic validator also rejects a wrong-kind directory.
+        # Preserve genuinely absent/unreadable external controls as prerequisites,
+        # without classifying malformed evidence or pin mismatches as a skip.
+        if isinstance(coverage, dict) and "msix_control" in coverage:
+            control = Path(coverage["msix_control"])
+            if not control.exists() or not os.access(control, os.R_OK):
+                raise MissingPrerequisite(f"Coverage MSI-X control directory unavailable: {control}")
         trace.validate_coverage(coverage)
         events = input_path(coverage_path.parent / json.loads(coverage_path.read_text())["events"], "coverage events")
+    except MissingPrerequisite:
+        raise
+    except (FileNotFoundError, PermissionError) as error:
+        raise MissingPrerequisite(f"Unavailable AURORA_BAR_COVERAGE prerequisite: {error}") from error
     except (KeyError, TypeError, OSError, ValueError) as error:
         raise ValueError(f"Invalid AURORA_BAR_COVERAGE: {error}") from error
     pinned = [("QEMU", qemu, "qemu"), ("trace events", events, "events")]
@@ -121,6 +155,8 @@ def preflight(mode, output, env):
     # The retained provenance contract binds this runtime override explicitly.
     required(env, "LD_LIBRARY_PATH", "the qualified QEMU runtime library directory")
     compiler = Path(env.get("AURORAC") or ROOT / "build/aurorac").resolve()
+    if env.get("AURORAC") and not compiler.exists():
+        raise MissingPrerequisite(f"AURORAC must name an executable compiler: {compiler}")
     if env.get("AURORAC") and (not compiler.is_file() or not os.access(compiler, os.X_OK)):
         raise ValueError(f"AURORAC must name an executable compiler: {compiler}")
     return dict(
@@ -311,6 +347,9 @@ def main():
     previous_term = signal.signal(signal.SIGTERM, interrupted)
     try:
         run(args.mode, Path(args.output))
+    except MissingPrerequisite as error:
+        print(f"BLOCKED: BAR runner: {error}", file=sys.stderr)
+        return 2
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(f"FAIL: BAR runner: {error}", file=sys.stderr)
         return 2

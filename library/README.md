@@ -499,3 +499,15 @@ after complete validation; matching duplicate names report ambiguity. The
 [bounded contract](../docs/json-lookup.md) and
 [focused qualification](../docs/json-lookup-results.md) cover independent Unicode,
 ordered-duplicate/range, owner-lifetime and real ByteBuffer extraction checks.
+
+## JSON append helper
+
+The separate `std.json_write` module composes `std.json` and `std.byte_buffer`.
+`append_json_scalar(ByteBuffer& output, u64 scalar)` appends one canonical escaped
+Unicode scalar without surrounding quotes and returns a copied `JsonAppendResult`.
+Invalid scalars leave output unchanged. Recoverable bulk-append allocation failure
+preserves size, capacity, bytes and committed accounting; completed argument side
+effects are outside rollback and fail-stop faults do not unwind. This adds no
+allocation dependency to importing `std.json` alone, complete string serializer,
+DOM or second buffer abstraction. See the [borrowed-object contract](../compiler/BORROWED-OBJECTS.md)
+for qualification and limitations.

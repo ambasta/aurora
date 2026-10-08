@@ -37,7 +37,7 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 3. Add positive, negative, regression and adversarial tests. Check metadata against
    actual generated layout/behavior. Fail closed for unsupported syntax/semantics.
 4. For ordinary edits, run dependency-selected checks: use the named Meson core,
-   bytes, packages or dev suites for covered compiler/library changes, and the relevant
+   bytes, packages, dev or slow suites for covered compiler/library changes, and the relevant
    focused checks for other components. Inspect the changed code's dependencies;
    add a missing focused safety test rather than relying on unrelated suites.
    Leaf documentation edits need content/link review, not a fresh full native run.
@@ -61,7 +61,9 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
   class/value, integer, module/depth and initialization checks, incrementally built
 - meson test -C build/meson --suite bytes --num-processes 2: complete byte/storage runners
 - meson test -C build/meson --suite packages --num-processes 2: partial semantic package feedback
-- meson test -C build/meson --suite dev --num-processes 2: core, bytes and partial packages
+- meson test -C build/meson --suite dev --num-processes 2: quick cross-component feedback
+- meson test -C build/meson --suite slow --num-processes 2: longer integration/ABI sweeps
+- meson test -C build/meson --suite full --num-processes 2: all 51 registered non-LSP tests
 - make test: fresh current-source compiler once, then the complete root native graph
 - make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>: explicitly
   pinned root native graph; optional ACCEPTANCE_COMPILER selects a reviewed prebuilt

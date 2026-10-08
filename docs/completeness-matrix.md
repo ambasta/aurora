@@ -1,10 +1,41 @@
 # Completeness and acceptance matrix
 
-## Borrowed owning-object helpers — unverified candidate
+## Synchronous borrowed owning-object helpers — 2026-10-08
 
-A bounded leading `T&`/`const T&` free-function parameter and resource-dependent
-JSON append helper are being implemented. See the [candidate contract](../compiler/BORROWED-OBJECTS.md).
-No new verification or compiler/kernel qualification is claimed yet.
+One leading `T&`/`const T&` free-function formal supports reusable public-method
+helpers without ownership transfer or new class layout. `std.json_write` composes
+the existing scalar encoder and atomic ByteBuffer append. Fresh full source/native,
+independent IR/ABI, 40 dev and 11 slow Meson checks, pinned focused Make and formatter
+gates passed; all 29 existing kernel assemblies are unchanged. Existing repaired
+suite routing, GNU-stack/diagnostic/NVMe fixes and native client disposal are
+preserved. See [exact evidence and limits](borrowed-objects-results.md).
+No general references, nested owning composition, full-native, sanitizer or new
+guest/hardware qualification is claimed.
+
+
+## Native client-disposal plan — focused gates passed
+
+A copied Aurora decision selects the real dispatcher recovery plan after trusted
+owner/quiescence checks. Receipt handling, mailbox effects, revocation and domain
+authority remain in the bootstrap adapter. Independent native/hostile/copy gates,
+fatal host sanitizers, current linked stack/image admission and 37 actual focused
+guest/restoration executions and final independent source/evidence review passed.
+See [contract](kernel-client-disposal-contract.md) and
+[results](kernel-client-disposal-results.md). This is not a full dispatcher port
+or fresh full-native/all-mode qualification. The PR88 repaired-main join preserves
+all 21 repair paths and freshly passes dev plus affected controls. Existing guest
+and stack evidence applies through independently checked unchanged execution
+inputs and byte-identical representative rebuilds; see the results for exact scope.
+
+
+## Developer-suite and tooling repairs — 2026-10-08
+
+Current package diagnostics and the single compiler-owned GNU-stack note restore
+all 47 registered tests under genuine GNU assembler 2.47. Quick `dev` coverage is
+38 tests; nine longer sweeps remain in `slow`, and `full`/unfiltered Meson retain
+all 47. Joined formatter and NVMe-preflight controls plus focused public Make
+gates pass. See [the measured qualification and limits](developer-suite-repair-results.md).
+This is not a new root full-native, full-package or hardware acceptance claim.
 
 ## Raw kernel owner resize — 2026-10-08
 

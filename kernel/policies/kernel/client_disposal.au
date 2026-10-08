@@ -1,0 +1,42 @@
+export module kernel.client_disposal;
+
+// Copied recovery facts only. Identity, quiescence and all effects stay trusted.
+export namespace kernel {
+    enum class DisposalAction { invalid, refused, accepted };
+    enum class DisposalEffect { none, empty, retained_receipt, cancel_consume, consume_terminal };
+
+    class DisposalDecision {
+        DisposalAction outcome;
+        DisposalEffect treatment;
+    public:
+        DisposalDecision(DisposalAction action, DisposalEffect effect)
+            : outcome(action), treatment(effect) {}
+        auto action() const -> DisposalAction { return outcome; }
+        auto effect() const -> DisposalEffect { return treatment; }
+    };
+
+    auto client_disposal(u64 phase, u64 state) -> DisposalDecision {
+        if (phase > 3u64 || state > 5u64) {
+            const DisposalDecision invalid = DisposalDecision(DisposalAction::invalid, DisposalEffect::none);
+            return invalid;
+        }
+        if (phase != 0u64) {
+            const DisposalDecision refused = DisposalDecision(DisposalAction::refused, DisposalEffect::none);
+            return refused;
+        }
+        if (state == 0u64) {
+            const DisposalDecision empty = DisposalDecision(DisposalAction::accepted, DisposalEffect::empty);
+            return empty;
+        }
+        if (state == 5u64) {
+            const DisposalDecision retained = DisposalDecision(DisposalAction::accepted, DisposalEffect::retained_receipt);
+            return retained;
+        }
+        if (state == 1u64 || state == 2u64) {
+            const DisposalDecision cancelled = DisposalDecision(DisposalAction::accepted, DisposalEffect::cancel_consume);
+            return cancelled;
+        }
+        const DisposalDecision terminal = DisposalDecision(DisposalAction::accepted, DisposalEffect::consume_terminal);
+        return terminal;
+    }
+}

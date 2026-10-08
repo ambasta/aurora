@@ -558,7 +558,9 @@ def negative_cases():
         "live named span owner mutation": "cannot mutate a byte array while a span is live",
         "live reborrow owner mutation": "cannot mutate a byte array while a span is live",
         "borrow cannot escape as return": "only scalar function results or scalar-field class values are supported",
-        "span field cannot escape": "class fields require scalar, class or private fixed-array storage",
+        "span field cannot escape": (
+            "class fields require scalar, class, private fixed-array or private owned-byte storage"
+        ),
         "private status field rejected": "private class field is inaccessible",
         "private name field rejected": "private class field is inaccessible",
         "private numeric field rejected": "private class field is inaccessible",
@@ -573,7 +575,7 @@ def negative_cases():
         "signed version fallback rejected": "expected u64, got i64",
         "private owned name storage excluded": "private class field is inaccessible",
         "const returned copy cannot mutate": "mutable method requires a mutable receiver",
-        "span cannot be forged from result": "borrow_bytes requires a named local byte array",
+        "span cannot be forged from result": "borrow_bytes requires a named local byte array or owned bytes",
         "constructor-bearing designated initialization rejected": (
             "constructor-bearing class rejects designated initialization"
         ),

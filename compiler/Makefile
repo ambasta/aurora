@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -100,7 +100,7 @@ export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_G
 .PHONY: aurora-test-context
 all test test-modules test-storage test-initialization-facts test-utf8 test-utf8-encoding \
     test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads \
-    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup: aurora-test-context
+    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects: aurora-test-context
 aurora-test-context:
 	python3 -B ../scripts/compiler_contract.py check --repo-root "$(abspath ..)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -363,5 +363,17 @@ test-json-integers: $(OUT)
 test: test-json-lookup
 test-json-lookup: $(OUT)
 	python3 -B -O ../tests/compiler/json_lookup.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS)
+
+.PHONY: test-borrowed-objects
+test: test-borrowed-objects
+test-borrowed-objects: $(OUT)
+	@set -eu; \
+	work="$$(mktemp -d "$(dir $(abspath $(OUT)))borrowed-objects.XXXXXXXX")"; \
+	python3 -B -O ../tests/compiler/borrowed_objects.py "$(abspath $(OUT))" --artifacts "$$work/source"; \
+	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/borrowed_objects_ir.cpp -o "$$work/ir-tests"; \
+	"$$work/ir-tests"; \
+	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/borrowed_objects_abi.cpp -o "$$work/abi-tests"; \
+	python3 -B -O ../tests/compiler/borrowed_objects_abi.py "$$work/abi-tests" --artifacts "$$work/abi"; \
+	printf 'PASS borrowed objects Make recipe: %s\n' "$$work"
 
 endif # controlled outer dispatcher / original inner graph

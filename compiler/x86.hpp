@@ -365,8 +365,7 @@ class X86Emitter {
         std::visit(
             [&](const auto &operation) {
                 using Op = std::decay_t<decltype(operation)>;
-                if constexpr (std::is_same_v<Op, ir::AcquireObjectLoan> ||
-                              std::is_same_v<Op, ir::ReleaseObjectLoan>) {
+                if constexpr (std::is_same_v<Op, ir::AcquireObjectLoan> || std::is_same_v<Op, ir::ReleaseObjectLoan>) {
                     // Validated synchronous authority has no runtime ownership record.
                 } else if constexpr (std::is_same_v<Op, ir::Constant>) {
                     line("movabsq $" + std::to_string(operation.value) + ", %rax");
@@ -775,8 +774,7 @@ class X86Emitter {
                     storeValue(field.elementType,
                                std::to_string(receiverStorage().fieldOffsets[operation.fieldIndex]) + "(%r10,%rcx," +
                                    std::to_string(ir::storageWidth(field.elementType)) + ")");
-                } else if constexpr (std::is_same_v<Op, ir::MethodCall> ||
-                                     std::is_same_v<Op, ir::BorrowedCall>) {
+                } else if constexpr (std::is_same_v<Op, ir::MethodCall> || std::is_same_v<Op, ir::BorrowedCall>) {
                     const auto &target = *functions.at(operation.callee);
                     const bool aggregate = classParameters(target);
                     const int recordBytes =

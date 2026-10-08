@@ -509,7 +509,8 @@ inline void verifyFunction(Function &function,
                state.maybeConstructedObjects.size() + state.activeObjects.size() +
                state.objectClassesInitialized.size() + state.receiverClassesInitialized.size() +
                state.receiverClassesMaybeInitialized.size() + state.activeArrays.size() + state.activeSpans.size() +
-               state.activeRegions.size() + state.activeBytes.size() + state.ownedObjects.size() + state.objectLoans.size();
+               state.activeRegions.size() + state.activeBytes.size() + state.ownedObjects.size() +
+               state.objectLoans.size();
     };
     retainedValueFacts = facts(*states[0]);
     auto initializationPayload = [](const State &state) {
@@ -559,8 +560,7 @@ inline void verifyFunction(Function &function,
                 "incompatible owned byte lifetimes or ownership at control-flow join");
         require(existing.ownedObjects == state.ownedObjects,
                 "incompatible owning object lifetimes or field ownership at control-flow join");
-        require(existing.objectLoans == state.objectLoans,
-                "incompatible object loans at control-flow join");
+        require(existing.objectLoans == state.objectLoans, "incompatible object loans at control-flow join");
         require(existing.stack == state.stack, "incompatible value/guard stacks at control-flow join");
         State merged = existing;
         if (merged.current != state.current)
@@ -610,8 +610,7 @@ inline void verifyFunction(Function &function,
                 for (const auto &[id, loan] : state.objectLoans) {
                     if (loan.root != root || (borrowedCall && id == borrowedCall->loanId))
                         continue;
-                    require(!writing && !loan.mutableValue,
-                            "object access conflicts with active synchronous loan");
+                    require(!writing && !loan.mutableValue, "object access conflicts with active synchronous loan");
                 }
             };
             auto activeObjectField = [&](int offset) {
@@ -976,8 +975,8 @@ inline void verifyFunction(Function &function,
                 require(origin.has_value(), "owning object has no resource fields");
                 return *origin;
             };
-            auto accessBytes = [&](int base, int ordinal, bool mutableAccess,
-                                   bool verifiedMethodView = false) -> const ByteBinding & {
+            auto accessBytes =
+                [&](int base, int ordinal, bool mutableAccess, bool verifiedMethodView = false) -> const ByteBinding & {
                 loanAccess(base, mutableAccess);
                 require(ordinal >= -1, "invalid owned byte field selector");
                 if (ordinal == -1)
@@ -1655,11 +1654,11 @@ inline void verifyFunction(Function &function,
                         require(owningClass(classFields, name) && state.ownedObjects.contains(operation.root),
                                 "object loan requires exact owning root");
                         const auto &object = state.ownedObjects.at(operation.root);
-                        require(object.disposition == ByteDisposition::Live,
-                                "object loan requires complete live root");
+                        require(object.disposition == ByteDisposition::Live, "object loan requires complete live root");
                         if (operation.mutableValue)
                             ownerWritable(operation.root);
-                        state.objectLoans.emplace(operation.loanId,
+                        state.objectLoans.emplace(
+                            operation.loanId,
                             ObjectLoan{operation.root, object.site, name, operation.mutableValue, false});
                     } else if constexpr (std::is_same_v<Op, ReleaseObjectLoan>) {
                         require(state.objectLoans.contains(operation.loanId), "release requires active object loan");
@@ -1802,7 +1801,8 @@ inline void verifyFunction(Function &function,
                             require(operation.receiverFieldIndex == -1,
                                     "span result requires direct owning receiver root");
                             require(target.receiverSpanField.has_value(), "span result lacks receiver field summary");
-                            borrowOwned(operation.receiverOffset, *target.receiverSpanField, operation.resultOffset, true);
+                            borrowOwned(
+                                operation.receiverOffset, *target.receiverSpanField, operation.resultOffset, true);
                             state.current.reset();
                         } else if (target.result.isClass()) {
                             const int base = operation.resultOffset;

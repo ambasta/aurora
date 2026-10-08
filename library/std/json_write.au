@@ -1,5 +1,7 @@
 export module std.json_write;
 import std.json;
+import std.array;
+import std.binary;
 import std.byte_buffer;
 
 export namespace std {
@@ -10,6 +12,7 @@ export namespace std {
     };
 
     // A copied observation. It retains no borrow or allocation authority.
+    // Publicly constructed reports are not proof that any append took place.
     class JsonAppendResult {
         JsonAppendStatus outcome;
         i64 count;
@@ -18,11 +21,14 @@ export namespace std {
         }
 
         auto status() const -> JsonAppendStatus {
+            if (outcome == JsonAppendStatus::success && (count < 1 || count > 6)) {
+                return JsonAppendStatus::append_failed;
+            }
             return outcome;
         }
 
         auto appended_bytes() const -> i64 {
-            if (outcome != JsonAppendStatus::success) {
+            if (status() != JsonAppendStatus::success) {
                 return 0;
             }
             return count;

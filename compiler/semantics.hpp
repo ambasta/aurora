@@ -1890,13 +1890,14 @@ public:
                 fail(sourceFunctions[i].token, "at most six parameters supported");
             const auto &candidate = sourceFunctions[i];
             checkTemplateOwners(candidate.templateArguments, candidate.token);
-            const auto borrowedCount = std::count_if(candidate.params.begin(), candidate.params.end(),
-                                                     [](const Param &parameter) { return parameter.borrowed; });
+            const auto borrowedCount =
+                std::count_if(candidate.params.begin(), candidate.params.end(), [](const Param &parameter) {
+                    return parameter.borrowed;
+                });
             if (borrowedCount) {
                 if (borrowedCount != 1 || candidate.params.empty() || !candidate.params.front().borrowed ||
-                    !candidate.receiverClass.empty() || candidate.constructor ||
-                    !candidate.templateArguments.empty() || !candidate.templateParameters.empty() ||
-                    !owningClass(candidate.params.front().type) ||
+                    !candidate.receiverClass.empty() || candidate.constructor || !candidate.templateArguments.empty() ||
+                    !candidate.templateParameters.empty() || !owningClass(candidate.params.front().type) ||
                     (!scalarValue(candidate.result) && !candidate.result.isClass()) || owningClass(candidate.result))
                     fail(candidate.token,
                          "borrowed functions require one leading concrete owning-class reference "
@@ -1993,14 +1994,11 @@ public:
             lowered.result = function.result;
             const bool borrowed = !function.params.empty() && function.params.front().borrowed;
             if (!function.receiverClass.empty())
-                lowered.receiver = ir::Receiver{function.receiverClass,
-                                                !function.receiverConst,
-                                                function.constructor,
-                                                function.publicAccess};
+                lowered.receiver = ir::Receiver{
+                    function.receiverClass, !function.receiverConst, function.constructor, function.publicAccess};
             else if (borrowed) {
-                lowered.receiver = ir::Receiver{function.params.front().type.className,
-                                                !function.params.front().borrowConst,
-                                                false};
+                lowered.receiver =
+                    ir::Receiver{function.params.front().type.className, !function.params.front().borrowConst, false};
                 lowered.borrowedParameter = true;
             }
             result = function.result;

@@ -24,7 +24,11 @@ int slot(F &f, int &cursor, Type type) {
 std::vector<Type> parameters(int arity, int mask) {
     std::vector<Type> out;
     for (int i = 0; i < arity; ++i)
-        out.push_back(mask < 0 ? Type::I64 : mask & (1 << i) ? Type::ByteSpan : i % 3 == 0 ? Type("Box") : i % 3 == 1 ? Type::U8 : Type::I64);
+        out.push_back(mask < 0          ? Type::I64
+                      : mask & (1 << i) ? Type::ByteSpan
+                      : i % 3 == 0      ? Type("Box")
+                      : i % 3 == 1      ? Type::U8
+                                        : Type::I64);
     return out;
 }
 std::vector<int> bind(F &f, int &cursor) {
@@ -59,14 +63,6 @@ int main() {
             {Type::I64, 0, 1, false}, {Type::OwnedBytes, 1, 0, false}, {Type::I64, 1, 1, false}};
         m.classFields["Box"] = {{Type::I64, 0, 1, false}};
         m.classStorage = {{"Receiver", {{0, 40}, {0, 8, 40}, 48, 8, 48}}, {"Box", {{0}, {0}, 8, 8, 8}}};
-        F observer;
-        observer.name = "borrow_object_observe";
-        observer.result = Type::I64;
-        observer.parameters = {Type::ByteSpan};
-        observer.frameBytes = 64;
-        observer.spanSlots = {56};
-        observer.code = {BindSpanParameter{0, 56}, Constant{42, Type::I64}, EndSpan{56}, Return{}};
-        m.functions.push_back(observer);
         std::vector<std::pair<int, int>> shapes;
         for (int n = 1; n <= 5; ++n)
             for (int p = 0; p < n; ++p)
@@ -77,15 +73,14 @@ int main() {
             shapes.emplace_back(n, -1);
         for (auto [n, mask] : shapes)
             for (int mode = 0; mode < 2; ++mode) {
-                std::string suffix = std::to_string(n) + "_" + std::to_string(mask) + "_" + std::to_string(mode);
+                std::string suffix =
+                    std::to_string(n) + "_" + (mask < 0 ? "scalar" : std::to_string(mask)) + "_" + std::to_string(mode);
                 F target;
                 target.name = "borrow_object_target_" + suffix;
                 target.receiver = Receiver{"Receiver", mode == 1, false};
                 target.borrowedParameter = true;
                 target.parameters = parameters(n, mask);
-                target.result = mode == 0 ? Type::I64 : mode == 1 ? Type("Box") : Type::ByteSpan;
-                if (mode == 2)
-                    target.receiverSpanField = 1;
+                target.result = mode == 0 ? Type::I64 : Type("Box");
                 int cursor = 0;
                 auto bound = bind(target, cursor);
                 close(target, bound);
@@ -98,9 +93,6 @@ int main() {
                          Constant{123, Type::I64},
                          Store{result, Type::I64},
                          ReturnObject{result}});
-                } else {
-                    int result = slot(target, cursor, Type::ByteSpan);
-                    add(target, {BorrowOwnedSpan{0, 1, result}, ReturnSpan{result}});
                 }
                 m.functions.push_back(target);
                 for (int depth = 0; depth <= 2; ++depth)
@@ -142,13 +134,15 @@ int main() {
                         for (int i = 0; i < n; ++i)
                             if (!f.parameters[i].isSpan() && !f.parameters[i].isClass())
                                 add(f, {Load{bound[i], f.parameters[i]}, Push{}});
-                        f.code.push_back(BorrowedCall{target.name, 0, 1, mask < 0 ? std::vector<int>{} : objects,
-                                                       result, mask < 0 ? std::vector<int>{} : spans});
+                        f.code.push_back(BorrowedCall{target.name,
+                                                      0,
+                                                      1,
+                                                      mask < 0 ? std::vector<int>{} : objects,
+                                                      result,
+                                                      mask < 0 ? std::vector<int>{} : spans});
                         f.code.push_back(ReleaseObjectLoan{1});
                         if (mode == 1)
                             add(f, {Load{result, Type::I64}, EndObject{result}});
-                        if (mode == 2)
-                            add(f, {AggregateCall{"borrow_object_observe", {0}, 0, {result}}, EndSpan{result}});
                         for (int i = 0; i < depth; ++i)
                             f.code.push_back(BinaryValue{Binary::CheckedAdd});
                         for (auto i = children.rbegin(); i != children.rend(); ++i)

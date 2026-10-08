@@ -1,7 +1,9 @@
 # Synchronous borrowed owning-object parameters
 
-Status: implementation candidate, **unverified**. No acceptance, guest or safety
-qualification is claimed until independently reviewed fresh gates are recorded.
+Status: the fresh focused source/native, independent IR, handwritten ABI and
+regression gates passed. Exact identities and limits are recorded in the
+[results](../docs/borrowed-objects-results.md). This is not general reference
+support or a safety proof.
 
 ## Dependency and observable gate
 
@@ -68,9 +70,9 @@ committed accounting. Completed argument side effects are outside rollback.
 This does not establish atomicity for a future serializer that makes multiple
 appends; that needs its own sizing/reservation or partial-progress contract.
 
-Required fresh gates include source/native alias/evaluation/privacy/cleanup
+The focused gates cover source/native alias/evaluation/privacy/cleanup
 cases, independently constructed malformed IR, handwritten incoming/outgoing ABI
 checks, injected allocation failure, copied-result independence and affected
-method-span/owning/span/value/library regressions. Compare existing kernel graphs'
-assembly before determining guest regression scope. Nested owning layouts,
-complete native qualification, performance and a memory-safety proof are separate.
+method-span/owning/span/value/library regressions. All 29 existing kernel source
+graphs, including native client disposal, produce identical assembly with the accepted old and new compiler. No new guest run is
+claimed. Nested owning layouts, complete native qualification, performance and a memory-safety proof are separate.

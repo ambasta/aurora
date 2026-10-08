@@ -6,6 +6,10 @@ suite checks complete bytes, returned copied observations, allocation identities
 normal cleanup and clean output-preserving rejection. It is not a general borrow
 checker, fail-stop unwinder, kernel gate or proof of memory safety. All assertions
 use require(), including under Python -O. Failed artifacts are always retained.
+
+The default full profile runs every fixture. --smoke selects two real native
+programs and seven named safety rejections for developer feedback; its receipts
+explicitly mark partial coverage, and it cannot establish the full suite gate.
 """
 
 from __future__ import annotations
@@ -24,6 +28,19 @@ from unsigned_oracle import require
 
 SPAN = "builtin::span<const u8>"
 PRESERVED = b"previous verified assembly\x00\xff\n"
+SMOKE_PROGRAMS = (
+    "forwarding-and-independent-result",
+    "json-forwarded-borrow-copied-result",
+)
+SMOKE_REJECTIONS = (
+    "mutable-later-mutation",
+    "named-empty-self-span",
+    "shared-later-mutation",
+    "const-owner-escalation",
+    "formal-move-to-local",
+    "borrowed-span-result",
+    "json-writer-later-read-of-output",
+)
 HELPERS = f"""
 class Count {{
     i64 value;
@@ -75,12 +92,64 @@ auto consume(builtin::ByteRegion region, std::ByteBuffer input) -> i64 {{ return
 
 
 class BorrowSuite(BufferSuite):
-    def __init__(self, compiler, directory, compile_only):
+    def __init__(self, compiler, directory, compile_only, smoke=False):
         super().__init__(compiler, directory, compile_only)
+        self.profile = "smoke" if smoke else "full"
         self.cases = []
+        self.selected_programs = []
+        self.selected_rejections = []
+        self.omitted_programs = []
+        self.omitted_rejections = []
+        self.save_selection()
+
+    def select_program(self, name):
+        selected = self.profile == "full" or name in SMOKE_PROGRAMS
+        names = self.selected_programs if selected else self.omitted_programs
+        require(name not in names, f"duplicate program fixture: {name}")
+        names.append(name)
+        self.save_selection()
+        return selected
+
+    def compile(self, name, source, entry_name=None):
+        if not self.select_program(name):
+            return None
+        return super().compile(name, source, entry_name)
+
+    def save_selection(self):
+        (self.directory / "selection.json").write_text(
+            json.dumps(
+                {
+                    "profile": self.profile,
+                    "partial_coverage": self.profile == "smoke",
+                    "selected_programs": self.selected_programs,
+                    "selected_rejections": self.selected_rejections,
+                    "omitted_programs": self.omitted_programs,
+                    "omitted_rejections": self.omitted_rejections,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+
+    def check_selection(self):
+        require(self.programs == len(self.selected_programs), "selected program did not compile")
+        require(self.rejections == len(self.selected_rejections), "selected rejection did not complete")
+        require(len(self.cases) == self.native + self.skipped_native, "selected runtime accounting mismatch")
+        native_programs = set(self.selected_programs) - {"json-import-remains-allocation-free"}
+        require({case["program"] for case in self.cases} == native_programs, "selected program has no runtime case")
+        if self.profile == "smoke":
+            require(set(self.selected_programs) == set(SMOKE_PROGRAMS), "smoke program selection changed")
+            require(set(self.selected_rejections) == set(SMOKE_REJECTIONS), "smoke rejection selection changed")
+        else:
+            require(not self.omitted_programs and not self.omitted_rejections, "full profile omitted fixtures")
 
     def run(self, executable, quota, length, flag, expected, allocations, peak, fail_after=None, release_order=None):
+        if executable is None:
+            require(self.profile == "smoke", "full profile cannot omit a runtime case")
+            return
         case = {
+            "profile": self.profile,
+            "program": executable.parent.name,
             "executable": str(executable),
             "quota": quota,
             "length": length,
@@ -104,6 +173,14 @@ class BorrowSuite(BufferSuite):
         (self.directory / "cases.json").write_text(json.dumps(self.cases, indent=2) + "\n")
 
     def reject(self, name, source, diagnostic=None):
+        if self.profile == "smoke" and name not in SMOKE_REJECTIONS:
+            require(name not in self.omitted_rejections, f"duplicate rejection fixture: {name}")
+            self.omitted_rejections.append(name)
+            self.save_selection()
+            return
+        require(name not in self.selected_rejections, f"duplicate rejection fixture: {name}")
+        self.selected_rejections.append(name)
+        self.save_selection()
         folder = self.directory / ("reject-" + name)
         folder.mkdir()
         path, output = folder / "input.au", folder / "output.s"
@@ -124,7 +201,9 @@ class BorrowSuite(BufferSuite):
 
 
 def borrowing_cases(suite):
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         if (!forward_write(buffer, 17u8) || !append_one(buffer, 29u8)) { return 0; }
         if (forward_read(buffer) != 2 || inspect(buffer) != 2) { return 0; }
         const std::ByteReadResult saved = snapshot(buffer, 0);
@@ -134,24 +213,53 @@ def borrowing_cases(suite):
         const std::ByteBuffer frozen = move(moved);
         if (forward_read(frozen) != 1 || saved.value_or(256u64) != 17u64) { return 0; }
     """
+    )
     body += check_state([7], 4, "frozen") + "return 42;"
     exe = suite.compile("forwarding-and-independent-result", program(body, HELPERS))
     suite.run(exe, 4, 4, 0, 42, 1, 1, release_order=[1])
 
-    body = CREATE + f"""
-        if (!append_one(buffer, 7u8) || !append_one(buffer, 8u8)) {{ return 0; }}
-        const {SPAN} view = buffer.bytes();
-        const Count result = shared_window(buffer, view, inspect(buffer));
-        const Count temporary = shared_window(buffer, buffer.bytes().subspan(1, 1), forward_read(buffer));
-        if (result.get() != 6 || temporary.get() != 5 || shared_argument(buffer, inspect(buffer)) != 4) {{
-            return 0;
-        }}
-        return 42;
+    shadow_helpers = """
+    auto copied_shadow(std::ByteBuffer& input) -> u64 {
+        const std::ByteReadResult input = snapshot(input, 0);
+        return input.value_or(256u64);
+    }
+    auto scalar_shadow(std::ByteBuffer& input) -> i64 {
+        const i64 input = inspect(input);
+        return input;
+    }
+    auto method_shadow(std::ByteBuffer& input) -> i64 {
+        const i64 input = input.size();
+        return input;
+    }
+    auto forward_self_view(std::ByteBuffer& input) -> i64 {
+        const Count result = shared_window(input, input.bytes(), inspect(input));
+        if (!input.try_write_u8(0, 21u8)) { return -1; }
+        return result.get();
+    }
     """
-    exe = suite.compile("shared-root-allows-readonly-aliases", program(body, HELPERS))
+    body = (
+        CREATE
+        + f"""
+        if (!append_one(buffer, 7u8) || !append_one(buffer, 8u8)) {{ return 0; }}
+        {{
+            const {SPAN} view = buffer.bytes();
+            const Count result = shared_window(buffer, view, inspect(buffer));
+            const Count temporary = shared_window(buffer, buffer.bytes().subspan(1, 1), forward_read(buffer));
+            if (result.get() != 6 || temporary.get() != 5 || shared_argument(buffer, inspect(buffer)) != 4) {{
+                return 0;
+            }}
+        }}
+        if (copied_shadow(buffer) != 7u64 || scalar_shadow(buffer) != 2 || method_shadow(buffer) != 2 ||
+            forward_self_view(buffer) != 6) {{ return 0; }}
+    """
+    )
+    body += check_state([21, 8], 2) + "return 42;"
+    exe = suite.compile("shared-root-allows-readonly-aliases", program(body, HELPERS + shadow_helpers))
     suite.run(exe, 2, 2, 0, 42, 1, 1)
 
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         const builtin::array<u8, 3> bytes = {7u8, 128u8, 255u8};
         const builtin::span<const u8> view = borrow_bytes(bytes);
         const Count amount = Count(11);
@@ -159,11 +267,14 @@ def borrowing_cases(suite):
         if (result.get() != 21 || !buffer.clear()) { return 0; }
         if (result.get() != 21 || !append_one(buffer, 99u8)) { return 0; }
     """
+    )
     body += check_state([99], 3) + "return 42;"
     exe = suite.compile("mixed-span-copied-scalar-record", program(body, HELPERS))
     suite.run(exe, 3, 0, 0, 42, 2, 1, release_order=[1, 2])
 
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         if (!append_one(buffer, 7u8) || !append_one(buffer, 8u8)) { return 0; }
         builtin::OwnedBytes backing = region.try_allocate(0);
         std::ByteBuffer other = std::ByteBuffer(region, move(backing));
@@ -171,16 +282,20 @@ def borrowing_cases(suite):
         const Count result = append_window(other, 0, buffer.bytes().subspan(1, 1), amount, 0);
         if (result.get() != 1 || !append_one(buffer, 9u8)) { return 0; }
     """
+    )
     body += check_state([7, 8, 9], 4) + check_state([8], 1, "other") + "return 42;"
     exe = suite.compile("distinct-buffers-share-region", program(body, HELPERS))
     suite.run(exe, 5, 2, 0, 42, 4, 2, release_order=[2, 1, 3, 4])
 
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         if (!append_one(buffer, 42u8)) { return 0; }
         builtin::OwnedBytes backing = region.try_allocate(1);
         std::ByteBuffer other = std::ByteBuffer(region, move(backing));
         if (append_after(buffer, other.try_append(9u8))) { return 0; }
     """
+    )
     body += check_state([42], 1) + check_state([9], 1, "other") + "return 42;"
     exe = suite.compile("completed-later-argument-is-not-rolled-back", program(body, HELPERS))
     suite.run(exe, 2, 1, 0, 42, 2, 2, release_order=[2, 1])
@@ -197,10 +312,13 @@ def borrowing_cases(suite):
         return inspect(output);
     }
     """
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         if (early(buffer, 0) != 0 || early(buffer, 3) != 3) { return 0; }
         if (!buffer.clear() || early(buffer, 1) != 1) { return 0; }
     """
+    )
     body += check_state([0], 4) + "return 42;"
     exe = suite.compile("borrow-call-cleanup-loop-and-early-return", program(body, HELPERS + helper))
     suite.run(exe, 4, 4, 0, 42, 1, 1)
@@ -214,28 +332,41 @@ def borrowing_cases(suite):
         return append_one(output, 23u8);
     }}
     """
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         if (!append_one(buffer, 19u8) || !read_scope_then_write(buffer) || measure_view(buffer) != 2) { return 0; }
     """
+    )
     body += check_state([19, 23], 2) + "return 42;"
     exe = suite.compile("borrowed-formal-scoped-view-release", program(body, HELPERS + helper))
     suite.run(exe, 2, 2, 0, 42, 1, 1)
 
-    # Owning/resource ordinary functions do not yet return copied classes. Keep the
-    # independence proof inside a lexical scope instead of widening that boundary.
+    # Whole-class local reassignment is unsupported. Replace a direct copied field
+    # from a named snapshot to preserve it past the owner's lexical scope instead.
+    holder = """
+    class SnapshotHolder {
+    public:
+        std::ByteReadResult value;
+        SnapshotHolder(std::ByteReadResult initial) : value(initial) {}
+        auto get() const -> u64 { return value.value_or(256u64); }
+    };
+    """
     body = """
-        std::ByteReadResult saved = std::ByteReadResult(std::ByteReadStatus::out_of_range, 0u64);
+        const std::ByteReadResult empty = std::ByteReadResult(std::ByteReadStatus::out_of_range, 0u64);
+        SnapshotHolder saved = SnapshotHolder(empty);
         {
             builtin::OwnedBytes allocation = region.try_allocate(1);
             std::ByteBuffer local = std::ByteBuffer(region, move(allocation));
             if (!append_one(local, 61u8)) { return 0; }
-            saved = snapshot(local, 0);
+            const std::ByteReadResult observed = snapshot(local, 0);
+            saved.value = observed;
         }
         builtin::OwnedBytes replacement = region.try_allocate(1);
-        if (!replacement.ok() || !replacement.set(0, 99u8) || saved.value_or(256u64) != 61u64) { return 0; }
+        if (!replacement.ok() || !replacement.set(0, 99u8) || saved.get() != 61u64) { return 0; }
         return 42;
     """
-    exe = suite.compile("copied-result-outlives-borrowed-owner", program(body, HELPERS))
+    exe = suite.compile("copied-result-outlives-borrowed-owner", program(body, HELPERS + holder))
     suite.run(exe, 1, 0, 0, 42, 2, 1, release_order=[1, 2])
 
 
@@ -265,18 +396,19 @@ TWIN_CREATE = """
 
 
 def multiple_field_cases(suite):
-    body = TWIN_CREATE + """
+    body = (
+        TWIN_CREATE
+        + """
         if (!twin_write(twin, 17u8, 25u8) || twin_sum(twin) != 42) { return 0; }
         Twin moved = move(twin);
         if (twin_sum(moved) != 42 || !twin_write(moved, 99u8, 1u8) || twin_sum(moved) != 100) { return 0; }
         return 42;
     """
+    )
     exe = suite.compile("concrete-owner-with-two-resource-fields", program(body, TWIN))
     suite.run(exe, 2, 0, 0, 42, 2, 2, release_order=[2, 1])
     for name, body in {
-        "other-field-live-view": (
-            f"const {SPAN} first = twin.first_bytes(); twin_write(twin, 1u8, 2u8);"
-        ),
+        "other-field-live-view": (f"const {SPAN} first = twin.first_bytes(); twin_write(twin, 1u8, 2u8);"),
         "other-field-empty-view": (
             f"const {SPAN} first = twin.first_bytes().subspan(0, 0); twin_write(twin, 1u8, 2u8);"
         ),
@@ -284,7 +416,12 @@ def multiple_field_cases(suite):
         "later-other-field-write": "twin_after(twin, twin.write_second(2u8));",
     }.items():
         helper = "auto twin_after(Twin& input, bool value) -> bool { return value; }"
-        suite.reject(name, program(TWIN_CREATE + body + "return 0;", TWIN + helper))
+        diagnostic = (
+            "cannot mutate or move an owner while a readonly span is live"
+            if name.startswith("other-field-")
+            else "owning object is exclusively borrowed for a call"
+        )
+        suite.reject(name, program(TWIN_CREATE + body + "return 0;", TWIN + helper), diagnostic)
 
 
 def json_program(body, helpers=""):
@@ -298,8 +435,39 @@ def escaped_bytes(scalar):
 
 
 def json_cases(suite):
-    scalars = list(range(32)) + [34, 47, 65, 92, 0x7F, 0x80, 0x7FF, 0x800, 0xD7FF, 0xE000, 0xFFFF,
-                                0x10000, 0x1F600, 0x10FFFF]
+    body = """
+        const std::JsonAppendResult success = std::JsonAppendResult(std::JsonAppendStatus::success, n);
+        const std::JsonAppendResult invalid = std::JsonAppendResult(std::JsonAppendStatus::invalid_scalar, n);
+        const std::JsonAppendResult failed = std::JsonAppendResult(std::JsonAppendStatus::append_failed, n);
+        if (n >= 1 && n <= 6) {
+            if (success.status() != std::JsonAppendStatus::success || success.appended_bytes() != n) { return 0; }
+        } else {
+            if (success.status() != std::JsonAppendStatus::append_failed || success.appended_bytes() != 0) { return 0; }
+        }
+        if (invalid.status() != std::JsonAppendStatus::invalid_scalar || invalid.appended_bytes() != 0 ||
+            failed.status() != std::JsonAppendStatus::append_failed || failed.appended_bytes() != 0) { return 0; }
+        return 42;
+    """
+    exe = suite.compile("json-copied-report-constructor-bounds", json_program(body))
+    for count in (-(1 << 63), -1, 0, 1, 6, 7, (1 << 63) - 1):
+        suite.run(exe, 0, count, 0, 42, 0, 0)
+
+    scalars = list(range(32)) + [
+        34,
+        47,
+        65,
+        92,
+        0x7F,
+        0x80,
+        0x7FF,
+        0x800,
+        0xD7FF,
+        0xE000,
+        0xFFFF,
+        0x10000,
+        0x1F600,
+        0x10FFFF,
+    ]
     body = """
         builtin::OwnedBytes allocation = region.try_allocate(flag);
         std::ByteBuffer buffer = std::ByteBuffer(region, move(allocation));
@@ -318,11 +486,14 @@ def json_cases(suite):
     for scalar in scalars:
         suite.run(exe, 7, scalar, 7, 42, 1, 1, fail_after=1)
 
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         if (!buffer.try_append(33u8)) { return 0; }
         const std::JsonAppendResult result = std::append_json_scalar(buffer, 0u64);
         if (result.status() != std::JsonAppendStatus::success || result.appended_bytes() != 6) { return 0; }
     """
+    )
     body += check_state([33, 92, 117, 48, 48, 48, 48], "flag") + "return 42;"
     exe = suite.compile("json-single-geometric-growth", json_program(body))
     for initial, target in ((1, 7), (2, 7), (4, 8), (7, 7)):
@@ -344,11 +515,14 @@ def json_cases(suite):
     exe = suite.compile("json-invalid-scalar-no-mutation", json_program(body))
     suite.run(exe, 2, 2, 0, 42, 1, 1, fail_after=1)
 
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         if (!buffer.try_append(17u8) || !buffer.try_append(23u8)) { return 0; }
         const std::JsonAppendResult result = std::append_json_scalar(buffer, 0u64);
         if (result.status() != std::JsonAppendStatus::append_failed || result.appended_bytes() != 0) { return 0; }
     """
+    )
     body += check_state([17, 23], 2)
     body += """
         if (!buffer.try_truncate(1)) { return 0; }
@@ -361,18 +535,23 @@ def json_cases(suite):
     suite.run(exe, 2, 2, 0, 42, 1, 1)
     suite.run(exe, 99, 2, 0, 42, 1, 1, fail_after=1)
 
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         if (!buffer.try_append(17u8) || !buffer.try_append(23u8)) { return 0; }
         const std::JsonAppendResult failed = std::append_json_scalar(buffer, 0u64);
         if (failed.status() != std::JsonAppendStatus::append_failed) { return 0; }
         builtin::OwnedBytes remaining = region.try_allocate(3);
         if (!remaining.ok() || remaining.size() != 3) { return 0; }
     """
+    )
     body += check_state([17, 23], 2) + "return 42;"
     exe = suite.compile("json-failed-growth-preserves-committed-quota", json_program(body))
     suite.run(exe, 5, 2, 0, 42, 2, 2, release_order=[2, 1])
 
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         const std::JsonAppendResult invalid = std::append_json_scalar(buffer, 55296u64);
         const std::JsonAppendResult failed = std::append_json_scalar(buffer, 65u64);
         if (buffer.ok() || buffer.size() != 0 || buffer.capacity() != 0 ||
@@ -380,6 +559,7 @@ def json_cases(suite):
             failed.status() != std::JsonAppendStatus::append_failed || failed.appended_bytes() != 0) { return 0; }
         return 42;
     """
+    )
     exe = suite.compile("json-invalid-destination", json_program(body))
     suite.run(exe, 0, 1, 0, 42, 0, 0)
     suite.run(exe, 8, 0, 0, 42, 0, 0, fail_after=0)
@@ -390,10 +570,13 @@ def json_cases(suite):
         return result;
     }
     """
-    body = CREATE + """
+    body = (
+        CREATE
+        + """
         const std::JsonAppendResult result = write_forward(buffer, 128512u64);
         if (result.status() != std::JsonAppendStatus::success || result.appended_bytes() != 4) { return 0; }
     """
+    )
     body += check_state([240, 159, 152, 128], 4)
     body += "std::ByteBuffer moved = move(buffer); if (!moved.clear() || result.appended_bytes() != 4) { return 0; }"
     body += "return 42;"
@@ -427,8 +610,7 @@ def rejection_cases(suite):
         "wrong-concrete-class": "Count wrong = Count(1); inspect(wrong);",
         "scalar-is-not-object": "inspect(1);",
         "temporary-constructor": (
-            "builtin::OwnedBytes extra = region.try_allocate(0); "
-            "inspect(std::ByteBuffer(region, move(extra)));"
+            "builtin::OwnedBytes extra = region.try_allocate(0); inspect(std::ByteBuffer(region, move(extra)));"
         ),
         "temporary-owning-call": "inspect(bounce(region, move(buffer)));",
         "reference-local": "std::ByteBuffer& alias = buffer;",
@@ -438,28 +620,44 @@ def rejection_cases(suite):
         "rvalue-reference": "std::ByteBuffer&& alias = move(buffer);",
     }
     setup = (
-        CREATE + amount + "const builtin::array<u8, 1> bytes = {7u8};"
+        CREATE
+        + amount
+        + "const builtin::array<u8, 1> bytes = {7u8};"
         + f"const {SPAN} view = borrow_bytes(bytes);"
         + "buffer.try_append(1u8); buffer.try_append(2u8);"
     )
-    bounce = (
-        "auto bounce(builtin::ByteRegion region, std::ByteBuffer input) -> std::ByteBuffer { return move(input); }"
-    )
+    bounce = "auto bounce(builtin::ByteRegion region, std::ByteBuffer input) -> std::ByteBuffer { return move(input); }"
     diagnostics = {
         "mutable-later-size": "owning object is exclusively borrowed for a call",
         "mutable-later-read": "owning object is exclusively borrowed for a call",
         "mutable-later-mutation": "owning object is exclusively borrowed for a call",
         "mutable-later-consumption": "owning object is exclusively borrowed for a call",
+        "self-span": "owning object is exclusively borrowed for a call",
+        "self-empty-span": "owning object is exclusively borrowed for a call",
+        "named-self-span": "cannot mutate or move an owner while a readonly span is live",
+        "named-empty-self-span": "cannot mutate or move an owner while a readonly span is live",
+        "disjoint-self-spans": "cannot mutate or move an owner while a readonly span is live",
         "shared-later-mutation": "cannot mutate or move an owning object while borrowed",
         "shared-later-consumption": "cannot mutate or move an owning object while borrowed",
         "shared-later-mutable-borrow": "cannot mutate or move an owning object while borrowed",
         "const-owner-escalation": "mutable borrowed parameter requires a mutable owning object",
         "move-argument-is-not-borrow": "borrowed object argument requires a complete named owning object",
+        "consumed-owner-borrow": "use after move of 'buffer'",
+        "wrong-concrete-class": "expected std::ByteBuffer, got Count",
+        "scalar-is-not-object": "borrowed object argument requires a complete named owning object",
         "temporary-constructor": "borrowed object argument requires a complete named owning object",
         "temporary-owning-call": "borrowed object argument requires a complete named owning object",
+        "reference-local": "assignment requires a local or local field",
+        "reference-local-const": "expected identifier",
+        "address-of": "expected expression",
+        "pointer-local": "assignment requires a local or local field",
+        "rvalue-reference": "assignment requires a local or local field",
     }
     for name, call in calls.items():
-        suite.reject(name, program(setup + call + "return 0;", HELPERS + bounce), diagnostics.get(name))
+        # Copied-result functions require a typed initializer even on a path that
+        # must reject for an argument loan. Reach that intended semantic check.
+        call = call.replace("append_window(", "const Count result = append_window(")
+        suite.reject(name, program(setup + call + "return 0;", HELPERS + bounce), diagnostics[name])
 
     borrowed_bodies = {
         "formal-const-escalation": ("const ", "return append_one(input, 1u8);"),
@@ -472,32 +670,43 @@ def rejection_cases(suite):
         "formal-private-owner-extraction": ("", "builtin::OwnedBytes taken = move(input.payload); return true;"),
         "formal-private-owner-read": ("const ", "return input.payload.ok();"),
         "formal-later-self-access": ("", "return append_after(input, input.ok());"),
-        "formal-later-self-span": ("", "const Count amount = Count(0); append_window(input, 0, input.bytes(), "
-                                    "amount, 0); return true;"),
+        "formal-later-self-span": (
+            "",
+            "const Count amount = Count(0); append_window(input, 0, input.bytes(), amount, 0); return true;",
+        ),
         "formal-view-then-mutable-forward": ("", f"const {SPAN} view = input.bytes(); return append_one(input, 1u8);"),
     }
+    body_diagnostics = {
+        "formal-const-escalation": "mutable borrowed parameter requires a mutable owning object",
+        "formal-const-method-mutation": "mutable method requires a mutable receiver",
+        "formal-move-to-local": "borrowed object parameters cannot transfer ownership",
+        "formal-implicit-copy": "owning class cannot be copied; use move(named_local)",
+        "formal-whole-assignment": "assignment requires a mutable scalar local",
+        "formal-drop": "unknown function 'drop'",
+        "formal-private-field": "borrowed object parameters support public methods, not field assignment",
+        "formal-private-owner-extraction": "ownership operation requires a local name",
+        "formal-private-owner-read": "borrowed object parameters support public methods, not field projections",
+        "formal-later-self-access": "owning object is exclusively borrowed for a call",
+        "formal-later-self-span": "owning object is exclusively borrowed for a call",
+        "formal-view-then-mutable-forward": "cannot mutate or move an owner while a readonly span is live",
+    }
     for name, (const, body) in borrowed_bodies.items():
+        body = body.replace("append_window(", "const Count result = append_window(")
         helper = f"auto bad({const}std::ByteBuffer& input) -> bool {{ {body} }}"
-        diagnostic = None
-        if name == "formal-const-escalation":
-            diagnostic = "mutable borrowed parameter requires a mutable owning object"
-        if name == "formal-const-method-mutation":
-            diagnostic = "mutable method requires a mutable receiver"
-        if name == "formal-move-to-local":
-            diagnostic = "borrowed object parameters cannot transfer ownership"
-        suite.reject(name, program("return 0;", HELPERS + helper), diagnostic)
+        suite.reject(name, program("return 0;", HELPERS + helper), body_diagnostics[name])
 
     signatures = {
         "nonleading-borrow": "auto bad(i64 first, std::ByteBuffer& input) -> i64 { return first; }",
         "two-borrows": "auto bad(std::ByteBuffer& a, const std::ByteBuffer& b) -> i64 { return 0; }",
-        "borrow-after-region": (
-            "auto bad(builtin::ByteRegion region, std::ByteBuffer& input) -> i64 { return 0; }"
-        ),
+        "borrow-after-region": ("auto bad(builtin::ByteRegion region, std::ByteBuffer& input) -> i64 { return 0; }"),
         "borrow-and-owning-parameter": (
             "auto bad(std::ByteBuffer& input, std::ByteBuffer taken) -> i64 { return input.size(); }"
         ),
         "borrow-and-owned-bytes-parameter": (
             "auto bad(std::ByteBuffer& input, builtin::OwnedBytes taken) -> i64 { return input.size(); }"
+        ),
+        "borrow-and-region-parameter": (
+            "auto bad(std::ByteBuffer& input, builtin::ByteRegion region) -> i64 { return input.size(); }"
         ),
         "borrowed-owning-result": "auto bad(std::ByteBuffer& input) -> std::ByteBuffer { return move(input); }",
         "borrowed-reference-result": "auto bad(std::ByteBuffer& input) -> std::ByteBuffer& { return input; }",
@@ -525,8 +734,38 @@ def rejection_cases(suite):
         ),
         "pointer-parameter": "auto bad(std::ByteBuffer* input) -> i64 { return 0; }",
     }
+    declaration_diagnostic = "borrowed parameters require one leading concrete owning class on an ordinary function"
+    result_diagnostic = (
+        "borrowed functions require one leading concrete owning-class reference and a scalar or copied result"
+    )
+    later_diagnostic = "later borrowed-function parameters require scalar, copied class or readonly span values"
+    signature_diagnostics = {
+        "nonleading-borrow": declaration_diagnostic,
+        "two-borrows": declaration_diagnostic,
+        "borrow-after-region": declaration_diagnostic,
+        "borrow-and-owning-parameter": later_diagnostic,
+        "borrow-and-owned-bytes-parameter": later_diagnostic,
+        "borrow-and-region-parameter": later_diagnostic,
+        "borrowed-owning-result": result_diagnostic,
+        "borrowed-reference-result": "expected '{'",
+        "borrowed-span-result": "only scalar function results or scalar-field class values are supported",
+        "nonowning-class-reference": result_diagnostic,
+        "scalar-reference": declaration_diagnostic,
+        "builtin-owner-reference": declaration_diagnostic,
+        "const-builtin-owner-reference": declaration_diagnostic,
+        "rvalue-reference-parameter": "expected identifier",
+        "reference-field": "expected identifier",
+        "const-reference-field": "unsupported or reserved type spelling",
+        "constructor-reference": declaration_diagnostic,
+        "method-reference": declaration_diagnostic,
+        "function-template-reference": declaration_diagnostic,
+        "generic-reference": declaration_diagnostic,
+        "borrow-overload": "borrowed-object functions cannot be overloaded",
+        "const-borrow-overload": "borrowed-object functions cannot be overloaded",
+        "pointer-parameter": "expected identifier",
+    }
     for name, signature in signatures.items():
-        suite.reject(name, program("return 0;", HELPERS + signature))
+        suite.reject(name, program("return 0;", HELPERS + signature), signature_diagnostics[name])
 
     private_class = """
     class Vault {
@@ -540,6 +779,7 @@ def rejection_cases(suite):
     suite.reject(
         "borrowed-private-method",
         program("return 0;", private_class + "auto bad(const Vault& input) -> i64 { return input.hidden(); }"),
+        "private method is inaccessible",
     )
     suite.reject(
         "borrowed-private-field-view",
@@ -548,31 +788,45 @@ def rejection_cases(suite):
             private_class + f"auto bad(const Vault& input) -> i64 {{ const {SPAN} view = borrow_bytes(input.payload); "
             "return view.size(); }",
         ),
+        "borrowed object parameters support public methods, not field access",
     )
     suite.reject(
         "projection-cannot-be-borrow-actual",
         program(CREATE + "inspect(buffer.payload); return 0;", HELPERS),
+        "borrowed object argument requires a complete named owning object",
     )
     suite.reject(
         "json-writer-const-output",
-        json_program(CREATE + "const std::ByteBuffer frozen = move(buffer); std::append_json_scalar(frozen, 65u64); "
-                     "return 0;"),
+        json_program(
+            CREATE + "const std::ByteBuffer frozen = move(buffer); "
+            "const std::JsonAppendResult result = std::append_json_scalar(frozen, 65u64); return 0;"
+        ),
+        "mutable borrowed parameter requires a mutable owning object",
     )
     suite.reject(
         "json-writer-later-read-of-output",
-        json_program(CREATE + "std::append_json_scalar(buffer, u64(buffer.size())); return 0;"),
+        json_program(
+            CREATE + "const std::JsonAppendResult result = "
+            "std::append_json_scalar(buffer, u64(buffer.size())); return 0;"
+        ),
+        "owning object is exclusively borrowed for a call",
     )
 
 
 def independent_json_import(suite):
-    folder = suite.directory / "json-import-remains-allocation-free"
+    name = "json-import-remains-allocation-free"
+    if not suite.select_program(name):
+        return
+    folder = suite.directory / name
     folder.mkdir()
     path, output = folder / "input.au", folder / "output.s"
     path.write_text("""module pure_json_import;
 import std.json;
 auto plain_json() -> i64 {
-    const std::JsonEscapeResult escaped = std::escape_json_scalar(128512u64);
-    return escaped.size();
+    const builtin::array<u8, 4> bytes = {110u8, 117u8, 108u8, 108u8};
+    const std::JsonResult result = std::validate_json(borrow_bytes(bytes), 0, 4);
+    if (result.status() != std::JsonStatus::success || result.max_depth() != 0) { return 0; }
+    return result.token_count();
 }
 """)
     result = owned_bytes.command([suite.compiler, *suite.module_args, path, "-o", output])
@@ -585,6 +839,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
     parser.add_argument("--compile-only", action="store_true")
+    parser.add_argument(
+        "--smoke", action="store_true", help="partial developer profile: two native programs and seven rejections"
+    )
     parser.add_argument("--artifacts", type=Path, help="retain this run in a new directory")
     args = parser.parse_args()
     compiler = args.compiler.resolve(strict=True)
@@ -595,6 +852,15 @@ def main():
     else:
         directory.mkdir(parents=True, exist_ok=False)
     inputs = {path: path.read_bytes() for path in (ROOT / "library").rglob("*.au")}
+    for path in (
+        Path(__file__).resolve(),
+        ROOT / "tests/compiler/byte_buffer.py",
+        ROOT / "tests/compiler/owned_bytes.py",
+        ROOT / "tests/compiler/unsigned_oracle.py",
+        ROOT / "runtime/hosted_bytes.cpp",
+        ROOT / "runtime/hosted_bytes.hpp",
+    ):
+        inputs[path] = path.read_bytes()
     commands = []
     original_command = owned_bytes.command
 
@@ -611,21 +877,57 @@ def main():
     byte_buffer.command = recorded_command
     passed = False
     try:
-        suite = BorrowSuite(compiler, directory, args.compile_only)
-        (directory / "inputs.json").write_text(json.dumps({
-            "compiler_sha256": before,
-            "inputs": {str(path): hashlib.sha256(content).hexdigest() for path, content in inputs.items()},
-        }, indent=2) + "\n")
+        suite = BorrowSuite(compiler, directory, args.compile_only, args.smoke)
+        (directory / "inputs.json").write_text(
+            json.dumps(
+                {
+                    "compiler_sha256": before,
+                    "profile": suite.profile,
+                    "partial_coverage": args.smoke,
+                    "compile_only": args.compile_only,
+                    "requested_programs": list(SMOKE_PROGRAMS) if args.smoke else "all",
+                    "requested_rejections": list(SMOKE_REJECTIONS) if args.smoke else "all",
+                    "inputs": {str(path): hashlib.sha256(content).hexdigest() for path, content in inputs.items()},
+                },
+                indent=2,
+            )
+            + "\n"
+        )
         borrowing_cases(suite)
         multiple_field_cases(suite)
         json_cases(suite)
         rejection_cases(suite)
         independent_json_import(suite)
+        suite.check_selection()
         require(hashlib.sha256(compiler.read_bytes()).hexdigest() == before, "compiler changed during gate")
         for path, content in inputs.items():
-            require(path.read_bytes() == content, f"library input changed: {path}")
+            require(path.read_bytes() == content, f"bound input changed: {path}")
+        (directory / "summary.json").write_text(
+            json.dumps(
+                {
+                    "compiler_sha256": before,
+                    "profile": suite.profile,
+                    "partial_coverage": args.smoke,
+                    "full_borrowed_objects_gate": not args.smoke and not args.compile_only,
+                    "selected_programs": suite.selected_programs,
+                    "selected_rejections": suite.selected_rejections,
+                    "omitted_programs": suite.omitted_programs,
+                    "omitted_rejections": suite.omitted_rejections,
+                    "programs": suite.programs,
+                    "native_cases": suite.native,
+                    "rejection_fixtures": suite.rejections,
+                    "rejection_executions": 2 * suite.rejections,
+                    "skipped_native_cases": suite.skipped_native,
+                    "compile_only": args.compile_only,
+                    "passed": True,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
         print(
-            f"PASS borrowed objects: {suite.programs} programs, {suite.native} native cases, "
+            f"PASS borrowed objects [profile={suite.profile}, compile_only={args.compile_only}]: "
+            f"{suite.programs} programs, {suite.native} native cases, "
             f"{suite.rejections} rejections, {suite.skipped_native} native cases skipped"
         )
         print(f"compiler_sha256={before}")

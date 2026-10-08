@@ -1,8 +1,13 @@
 # BAR and console smoke entrypoints
 
 The public emulator entrypoints are separate from `make test`, which remains a
-native-only aggregate. Missing emulator prerequisites fail; they are never
-silently skipped or credited as a successful guest run.
+native-only aggregate. Missing or unreadable external prerequisites report
+`BLOCKED` with nonzero status; they are never silently skipped or credited as a
+successful guest run. Malformed configuration/evidence, mismatched qualification
+pins and actual build, emulator, validation or restoration errors report `FAIL`.
+Both outcomes return 2 from the runner; GNU Make also remains nonzero. Read the
+explicit outcome label rather than treating an unavailable fixture as a failing
+kernel test or a passing/skipped qualification.
 
 ## CPU-only NVMe preparation
 
@@ -66,7 +71,13 @@ per checkout. Unset inherited fault/console/native-supervisor controls before a
 standalone BAR run. Paths embedded in comma-separated QEMU options cannot contain
 commas or line breaks.
 
-Preflight failures create no receipt directory and never start restoration.
+Preflight blockers and failures create no receipt directory and never start
+restoration. Unset `AURORA_NVME_RECEIPTS` is also reported as `BLOCKED` by the
+public Make entrypoint before Python runs. Missing required selectors, QEMU,
+external firmware/data/control files and an explicitly selected absent compiler
+are blocked prerequisites. Wrong-kind paths, invalid output locations, malformed
+coverage and unreviewed hashes remain failures. Error classification uses a
+specific preflight exception, not message matching or subprocess exit codes.
 Once an image builder starts, both success and failure attempt one normal-image
 restoration. `build.log` and `restore.log` remain in the exact requested directory;
 serial, trace and provenance receipts remain mandatory. A restoration failure
@@ -194,3 +205,19 @@ This preserves exact-image evidence through the compiler-only join; it is not a
 new guest run or fresh compiler build. Compiler-free public routing and clock
 checks were repeated on the joined source. Independent review covers the scoped
 source, image-continuity and retained-guest composite.
+
+## Missing-prerequisite outcome correction — 2026-10-08
+
+Accepted PR85 still printed `FAIL: BAR runner: Missing dependency: ...` for a
+missing QEMU executable, and an unset receipt selector failed at shell expansion
+without a classification. Both public Make paths were reproduced without a
+builder, emulator, receipt or restoration attempt. The narrow correction adds a
+typed unavailable-prerequisite outcome and an explicit receipt-variable guard.
+The same paths now report `BLOCKED` and remain nonzero.
+
+Malformed configurations, changed pins, build failures, guest/validator failures
+and failed restorations must still report `FAIL`; they are not reclassified
+merely because they return status 2. Fixture validators, exact qualification
+pins, command assembly, device restrictions and restoration lifecycle are
+unchanged. Focused compiler-free regression evidence is recorded separately;
+this reporting repair adds no successful guest or physical-device qualification.

@@ -33,17 +33,30 @@ until the compiler can emit dependency files itself.
 
 ## Choose the checks for the change
 
-The default developer feedback set is `dev`, comprising `core`, `bytes` and the
-explicitly partial semantic `packages` suite. An unfiltered `meson test` runs the
-same 26 tests (11 core, 12 bytes and 3 packages). Use two workers initially to
-bound concurrent compiler/test memory. The warm `core` design target is under two minutes on the measured host;
-this is a feedback budget, not a portable timing guarantee. Cold bootstrap builds
-and broader qualification are separate costs. Each Python test has a 300-second
-timeout, while initialization-facts has a 120-second timeout.
+`dev` is the quick feedback set (40 tests). `slow` holds eleven longer exhaustive
+integration or ABI runners: block-io, sector-window, xfs-sector, xfs-file,
+method-spans-abi, json-profile, json-codecs, json-integers, json-lookup,
+borrowed-objects and borrowed-objects-abi.
+The borrowed-object smoke and malformed-IR gates remain in `dev`; the complete
+source/helper runner and handwritten ABI sweep remain in `slow`.
+The existing json-owned runner remains in `dev` for representative JSON and
+real owner-window coverage, alongside core/value/owner and partial package checks.
+No runner is sampled or weakened to meet a timing target.
+
+`full` and an unfiltered `meson test` both run all 51 registered tests when the
+optional LSP is disabled. `dev` and `slow` are a disjoint, complete partition.
+The existing `core`, `bytes`, `compiler` and `packages` memberships are preserved,
+so dependency-selected suites still include their longer checks. In particular,
+`dev` no longer means the union of `core`, `bytes` and `packages`.
+Use two workers initially to bound concurrent compiler/test memory. Cold builds
+are separate from warm timings; see [the measured repair qualification](developer-suite-repair-results.md).
+The optional LSP tests remain separately registered under `lsp` when enabled.
 
 ```sh
 meson test -C build/meson --suite core --num-processes 2 --print-errorlogs
 meson test -C build/meson --suite bytes --num-processes 2 --print-errorlogs
+meson test -C build/meson --suite slow --num-processes 2 --print-errorlogs
+meson test -C build/meson --suite full --num-processes 2 --print-errorlogs
 meson test -C build/meson modules source-depth --num-processes 2 --print-errorlogs
 ```
 
@@ -52,7 +65,9 @@ start with `core`; `std.bytes`, `std.binary` or `std.binary_buffer` changes star
 Run the affected component's additional tests for surfaces not registered here,
 including templates, overloads, readonly windows, short-circuit joins and text.
 Package changes can start with the partial `packages` suite described below. A focused pass does not imply those other surfaces were exercised.
-Run `dev` when multiple covered areas change or a wider quick pass is useful.
+Run `dev` for a quick cross-component pass. Run `slow` as well, or `full`,
+when qualifying all registered coverage; a `dev` pass alone does not cover the
+exhaustive JSON/storage/ABI sweeps. The Make full-native graph remains separate.
 For leaf documentation edits, review content, commands and links; do not rebuild
 the compiler or require the full native aggregate without a relevant reason.
 
