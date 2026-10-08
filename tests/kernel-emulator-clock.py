@@ -114,12 +114,28 @@ class ClockContractTests(unittest.TestCase):
             hashlib.sha256(("\n".join(sorted(selected)) + "\n").encode()).hexdigest(), SELECTED_NAMES_SHA256
         )
         build = (ROOT / "scripts/kernel-uefi-build.sh").read_text()
+        # Protected-console profiles share the budget machinery but run through
+        # the separate original-clock PTY route, not the fixed-clock smoke map.
+        protected_modes = {
+            "program-console", "program-request-fault", "program-service-fault",
+            "program-completion-fault", "program-request-budget", "program-service-budget",
+            "program-completion-budget", "program-pending", "program-owner",
+            "program-ordinal", "program-unknown", "program-transaction",
+        }
         admitted = []
+        protected = []
         for match in re.finditer(r"^ ([\w|_-]+)\)\n(.*?);;", build, re.MULTILINE | re.DOTALL):
             if "-DAURORA_UEFI_SERVICE_BUDGET" in match[2]:
-                admitted.extend(match[1].split("|"))
-        self.assertEqual(len(admitted), 53)
-        self.assertEqual(set(admitted), set(selected))
+                modes = match[1].split("|")
+                admitted.extend(modes)
+                if "-DAURORA_UEFI_PROGRAM_CONSOLE" in match[2]:
+                    protected.extend(modes)
+        self.assertEqual(len(admitted), len(set(admitted)))
+        self.assertEqual(len(protected), len(set(protected)))
+        self.assertEqual(set(protected), protected_modes)
+        self.assertTrue(protected_modes.isdisjoint(selected))
+        self.assertEqual(set(admitted) - set(protected), set(selected))
+        self.assertEqual(set(admitted), set(selected) | protected_modes)
         rows = CLOCK.mode_clock_rows()
         raw = json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(CLOCK.mode_clock_sha256(), hashlib.sha256(raw).hexdigest())
