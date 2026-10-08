@@ -476,4 +476,5 @@ See the [contract and qualification status](../docs/xfs-file-contract.md).
 `std.json` scans bounded JSON tokens and validates complete documents with copied
 reports. The [contract](../docs/json-profile.md) defines limits, strict scalar-valid
 Unicode, duplicate-key acceptance and spelling-only numbers. Reconstructed source
-requires fresh tests and review; no DOM or host JSON replacement is claimed.
+passed fresh focused tests and independent review; see the
+[results](../docs/json-profile-results.md). No DOM or host replacement is claimed.

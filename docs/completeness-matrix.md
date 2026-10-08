@@ -5,9 +5,11 @@
 A reconstructed Aurora scanner and iterative whole-document validator reuse
 existing readonly array spans and UTF-8 decoding. Explicit input/depth/token/
 number-spelling limits, scalar-valid escapes and copied diagnostics are specified
-in the [contract](json-profile.md). Fresh native qualification and independent
-review are pending; earlier unpublished artifacts were lost and their historical
-results do not qualify reconstructed bytes. No owner-view dependency, compiler
+in the [contract](json-profile.md). Fresh normal/optimized runs each passed 2,111
+cases, 10,768 full-width observations and 50 rejections, with independent source
+and retained-evidence review. The [results](json-profile-results.md) record fresh
+selected dependencies, public focused Make and the lost-history distinction.
+No owner-view dependency, compiler
 change, DOM, numeric conversion, host replacement or full-native claim follows.
 
 ## Hosted growable byte buffer — 2026-10-07

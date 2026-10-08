@@ -1,8 +1,8 @@
 # Bounded native JSON profile
 
-Status: reconstructed candidate, awaiting fresh native tests and independent
-review. The earlier unpublished source/evidence was lost during a workspace
-rollback. Historical results are not acceptance of this reconstruction.
+Status: the reconstructed array-input checkpoint passed fresh focused native
+qualification and independent review; see [results](json-profile-results.md).
+Earlier lost unpublished evidence supplies no acceptance credit.
 
 ## Dependency and acceptance gate
 
@@ -79,7 +79,7 @@ a representable value. Plus-prefixed, hexadecimal, NaN and Infinity forms reject
 Original spelling is preserved by byte coordinates, including negative zero.
 `std.decimal` is an unsigned accumulator, not a substitute for JSON grammar.
 
-String tokens include both quotes. Raw control bytes0..31 reject; raw non-ASCII
+String tokens include both quotes. Raw control bytes 0..31 reject; raw non-ASCII
 uses `decode_utf8` with final input, rejecting overlong/surrogate/out-of-range
 encodings, bad continuations and truncated sequences. Escapes are exactly quote,
 reverse solidus, slash, b/f/n/r/t and `u` plus four hexadecimal digits. A high
@@ -104,13 +104,13 @@ An unmatched surrogate points at its initiating escape backslash; an actually
 missing suffix is truncated, and an invalid hex digit keeps its own location.
 
 Incomplete number productions (`-`, `1.`, `1e+`) are invalid_number at the current
-delimiter or endpoint. A valid DFA transition at the129th number byte is
+delimiter or endpoint. A valid DFA transition at the 129th number byte is
 number_limit there; an invalid transition is invalid_number instead. This limit
 wins before any later missing-digit error. An invalid keyword suffix is
 invalid_literal at that suffix; other unsupported starts are invalid_byte.
 
 The document validator lexes before checking token budget, then checks syntax
-and the depth limit on a valid push. It excludes the over-budget1,025th token from
+and the depth limit on a valid push. It excludes the over-budget 1,025th token from
 token_count, includes successfully scanned syntax-invalid/depth-rejected tokens,
 and excludes lexical failures. max_depth counts admitted pushes only. Failure
 counts describe diagnostic prefix work, never a partially successful document.
@@ -122,7 +122,7 @@ windows and unfinished containers return truncated at the endpoint. Wrong/missin
 commas or colons, trailing commas, non-string keys, mismatched closers and extra
 root tokens return invalid_structure at the current token start.
 
-Eight states in a32-entry u8 array distinguish initial value/key-or-end,
+Eight states in a 32-entry u8 array distinguish initial value/key-or-end,
 required-after-comma value/key, colon, object value and comma-or-end positions.
 Parent state advances before a nested push. Iteration replaces recursion; no heap
 allocation is used. Progress and profile bounds give bounded linear work and
@@ -138,13 +138,13 @@ separate prerequisites before host nlohmann replacement.
 
 `JsonTokenResult(status, kind, start, count, used, error)` copies six fields.
 Token offsets/length/consumption/error must be nonnegative, length and consumption
-at most4096, and offset-plus-length must not overflow. Success/EOF require error0,
+at most 4096, and offset-plus-length must not overflow. Success/EOF require error 0,
 used>=length and used-minus-length<=offset. Success requires non-none/positive
 length; EOF requires none/zero length. Other token outcomes require zero token
 payload; document-only statuses reject. Explicit invalid_window masks every field.
 
-`JsonResult(status, error, tokens, depth)` permits nonnegative error,0..1024 tokens
-and0..32 depth; success requires error0 and at least one token. end_of_input is
+`JsonResult(status, error, tokens, depth)` permits nonnegative error, 0..1024 tokens
+and 0..32 depth; success requires error 0 and at least one token. end_of_input is
 not a document outcome. Invalid shapes normalize to invalid_window and zero/none
 accessors. Shape checks do not prove spelling, source validity or parser origin.
 
