@@ -1,5 +1,83 @@
 # Completeness and acceptance matrix
 
+## Current project state
+
+This is the canonical project-level status and contract index. Update this section
+in place; the checkpoint summaries below are historical, not an accumulating
+list of current limitations. Integration started from accepted PR91 / main
+`1024f40ebe87bfdbd6ca04820a9ec4651da9922c` (2026-10-08). The integrated source
+also contains terminal-event, structural-formatter and protected-console work
+with the bounded qualification noted below.
+None of the six destination goals is complete. A bounded feature or passing test
+suite does not establish production safety, whole-system readiness or physical
+hardware support.
+
+| Destination | Implemented foundation | Remaining acceptance gap |
+|---|---|---|
+| Modern safe kernel | BIOS/UEFI emulator boot, protected-domain fixtures, bounded scheduling and copied request/reply IPC; five Aurora policies, including client-disposal and terminal-event classification, within trusted C++/assembly adapters | General protected-program lifecycle, capability/file services, SMP, broader native implementation and assurance |
+| Safe C++-like language with TypeScript-like types | Checked values, modules, classes, bounded generics/overloads, readonly views, runtime-sized byte ownership, move-only classes and synchronous owning-object helpers | General ownership/borrowing, concurrency, key/mapped/conditional types, richer checked reflection, optimizer and self-hosting; no general safety/performance proof |
+| Ideal filesystem and XFS compatibility | Host crash model, runtime-capacity RAM sector device, offline XFS geometry/root/inline-extent readers | Real transport, mounted file services, persistence/recovery/GC and XFS read-write; no target filesystem is usable yet |
+| Framework Laptop 13 AMD system | Emulator boot/discovery, owned page/pin preparation and test-only AMD translation/event/completion references | Actual DMA conformance/isolation, active drivers, device power/recovery and complete-machine physical qualification; no supported physical tuple |
+| Native binutils/glibc/Mesa alternatives | Host-bootstrap compiler, Aurora core/byte/text/JSON modules and bounded package metadata tools | Native assembler/linker/toolchain, complete platform runtime and standard library, graphics stack and reproducible native rebuilds; no C/POSIX/ABI compatibility promise |
+| Useful apps, terminal and tiling desktop | BIOS/UEFI serial diagnostic prompts; scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
+
+### Current contract map
+
+Use these entrypoints for exact supported APIs; do not infer a current API from an
+old results paragraph or its “not implemented” list.
+
+- Language: [compiler reference](../compiler/README.md),
+  [copied returns](../compiler/VALUE-CALLS.md#source-contract),
+  [byte ownership/resize](../compiler/OWNED-BYTES.md),
+  [owning classes](../compiler/OWNING-CLASSES.md),
+  [readonly owner views](../compiler/READONLY-OWNED-SPANS.md),
+  [method spans](../compiler/METHOD-SPANS.md) and
+  [owning-object helpers](../compiler/BORROWED-OBJECTS.md).
+- Library: [API index](../library/README.md), [ByteBuffer](byte-buffer.md),
+  [JSON validation](json-profile.md), [scalar codecs](json-codecs.md),
+  [integer codecs](json-integers.md), [lookup](json-lookup.md) and
+  [transactional quoted UTF-8 append](json-string-write.md).
+- Kernel: [kernel reference](../kernel/README.md),
+  [IPC transitions](kernel-ipc-transition-contract.md),
+  [client-disposal policy](kernel-client-disposal-contract.md),
+  [CPU-only owned-byte resize](kernel-owned-resize.md) and
+  [serial console](kernel-console-contract.md),
+  [terminal-event policy](kernel-terminal-event-contract.md) and
+  [protected command console](program-console-contract.md).
+- Storage and hardware: [storage requirements](../storage/design/requirements.md),
+  [RAM sector I/O](block-io-contract.md), [offline XFS file reading](xfs-file-contract.md),
+  [Framework target](framework-13-7840u.md) and [AMD qualification](amd-support.md).
+
+### Critical path and verification boundary
+
+Follow the [dependency roadmap](roadmap.md): protected program/file services are
+the next system-level integration target. Actual DMA conformance remains blocked;
+CPU-only preparation and test-only oracles do not clear that gate. Display/input,
+terminal sessions and desktop work depend on usable native service boundaries.
+Terminal-event and the joined structural formatter retain their scoped evidence.
+Protected-console evidence includes the accepted original normal guest plus narrow
+corrected-oracle replay, six ordinal-1 fault/budget recovery guests, authenticated
+pending-IRQ draining, four authority fail-stop guests and a separate normal boot.
+Those bounded results do not establish a general process API or whole kernel.
+Byte-character-literal work is outside this source and is not counted complete.
+
+PR91's recorded final join passed 41 Meson developer and 12 slow tests, plus its
+focused return/IR checks. That is not a new full-root-native, sanitizer, all-mode
+emulator or physical-hardware qualification. For each capability, retain its
+source-specific evidence and exclusions in the [verification history](verification.md)
+and linked results. Run both `dev` and `slow` on every final integrated merge
+candidate, including documentation changes; this index itself records no new run.
+
+## Historical checkpoint summaries
+
+These original summaries retain their source-specific claims, failures and
+pending statuses verbatim. Terms such as “current”, “candidate” and “absent” below
+refer to the checkpoint where they were written, not the current project state.
+
+<details>
+<summary>Expand historical feature summaries and the earlier acceptance matrix</summary>
+
+
 ## Direct copied constructor returns — 2026-10-08
 
 Ordinary functions and methods can return a directly constructed copied class
@@ -24,6 +102,19 @@ Unsupported class-field types receive a type-located AU2003 diagnostic without
 expanding the accepted language. See the [repair scope and required gates](../compiler/FORMAT.md#parenthesized-operands-and-unsupported-fields--2026-10-08).
 
 
+## Protected command console — normal guest composite accepted
+
+An opt-in two-domain UEFI console now runs a compiled Aurora uppercase client
+and a separate copied-byte stream service. The original-clock guest completed
+six commands and 363 CPL3 runs, including empty/edit/64-byte input and rejection
+recovery, with staged exactly-once output and quiescent retirement. Independent
+review accepted the preserved original guest plus a narrow CRCRLF oracle replay;
+the original oracle failure remains recorded. Hosted models and fatal trusted
+C++ adapter sanitizers passed. Fault/budget/pending/hostile variants, final joined
+dev/slow and separate normal restoration boot remain pending. See the consolidated
+[contract and current status](program-console-contract.md). No broad kernel,
+release or hardware completion is claimed.
+
 ## Transactional quoted UTF-8 append — 2026-10-08
 
 `std.json_write` now composes a complete validation/measurement pass, one atomic
@@ -47,16 +138,14 @@ No general references, nested owning composition, full-native, sanitizer or new
 guest/hardware qualification is claimed.
 
 
-## Native copied terminal-event classification — 2026-10-08
+## Copied terminal-event policy — isolated candidate
 
-The live shared BIOS/UEFI classifier now requires the Aurora copied-fact policy;
-frame, image, domain/root authority and run-state commits remain C++. Independent
-finite/full-width, hostile-adapter and fatal hosted-sanitizer gates passed, as did
-all 41 dev and 12 slow tests on the final integrated source. Fresh exact linked
-stack/PIC/PE admission covered 48 images; all 46 selected guests and both final
-normal restoration boots passed. See the compact
-[contract and qualification](kernel-terminal-event-contract.md). This is not a
-full kernel rewrite, all-mode/full-native sweep or physical-hardware claim.
+The shared BIOS/UEFI classifier now consumes a genuine copied Aurora policy;
+frame, image, domain/root authority and run-state commits remain C++. Focused
+producer/decoder/hostile-adapter and fatal hosted-sanitizer gates passed.
+Exact linked stack admission and guests remain pending; no old stack margin
+is reused. See the compact [contract and qualification](kernel-terminal-event-contract.md).
+Final integrated dev + slow and independent acceptance are still required.
 
 ## Native client-disposal plan — focused gates passed
 
@@ -1429,3 +1518,5 @@ admission. The prior local implementation/evidence was lost in a rollback. This
 reconstruction has fresh build-only, host and actual-guest passes after independent
 pre-guest review; final evidence review/publication remain separate. No prior pass
 transfers. See [status](kernel-owned-views-results.md).
+
+</details>

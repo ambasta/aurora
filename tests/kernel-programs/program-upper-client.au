@@ -1,0 +1,12 @@
+module program_upper_client;
+auto aurora_user_main(i64 phase, i64 value, i64 ordinal) -> i64 {
+    if (phase == 6 || phase == 7) { i64 toggle = 0; while (true) { toggle = 1 - toggle; } }
+    if (phase == 8 || phase == 10) { const array<i64, 2> items = {1, 2}; return items[10]; }
+    if (ordinal < 0 || ordinal >= 64 || value < 32 || value > 126) { return -1; }
+    if (phase == 0) {
+        if (value >= 97 && value <= 122) { return value - 32; }
+        return value;
+    }
+    if (phase == 2) { return value; }
+    return -1;
+}

@@ -12,30 +12,12 @@ The goal is a self-hosting system with its own toolchain, libraries, services an
 desktop. Safety comes first, followed by clear design and measured performance.
 The project is currently an experimental compiler and emulator-based kernel.
 
-## What works today
+## Current state
 
-- **Compiler:** modules, private class state, copied values, checked integers,
-  fixed arrays, enums, bounded templates, overloads and readonly byte views.
-  Hosted runtime-sized byte owners and bounded move-only classes use explicit
-  region authority and normal-scope cleanup.
-  A C++23 bootstrap compiler checks source, validates typed IR and emits x86-64
-  assembly. See the [language reference](compiler/README.md).
-- **Library:** Aurora-authored numeric and fixed-value containers, binary readers,
-  UTF-8 decoding/encoding, byte-window and line operations, and a bounded ASCII
-  token scanner. See the [library](library/README.md) and [examples](examples/).
-- **Kernel:** BIOS and UEFI boot, protected user-domain fixtures, bounded
-  scheduling, copied request/reply IPC and service cancellation/restart in QEMU.
-  Four small Aurora policies participate in the UEFI dispatcher, including a
-  [focused recovery-plan port](docs/kernel-client-disposal-results.md). Trusted
-  C++/assembly owns memory, hardware and authority. See the [kernel](kernel/README.md) and [IPC checkpoint](docs/kernel-ipc-transition-integration-results.md).
-- **Storage experiments:** a host crash model and offline XFS header/root probes.
-  See the [storage project](storage/README.md).
-
-General heap ownership and borrowing, an optimizing or self-hosting compiler,
-SMP, a general process/runtime API, active device drivers, filesystem mounts and
-a usable desktop remain ahead. There is no production safety proof or
-end-to-end performance comparison with C. Physical AMD hardware is a
-[qualification target](docs/amd-support.md); current boot testing uses emulators.
+Start with the [current project state and contract index](docs/completeness-matrix.md#current-project-state)
+for the six goals, implemented foundations, remaining gaps and exact API references.
+The [roadmap](docs/roadmap.md) gives the dependency order and acceptance gates.
+Historical test receipts are kept in [verification history](docs/verification.md).
 
 ## Try it
 
@@ -81,6 +63,10 @@ For automated console acceptance, use `make smoke-console` (BIOS) or
 `make smoke-console-uefi`. Both are included in `make smoke-all`; `make test`
 remains native-only.
 
+A separately reviewed protected-command profile offers `upper`. Its
+[contract and current qualification](docs/program-console-contract.md) describe
+the exact build/review-pin gate, scoped guest evidence and final integration gates.
+
 See [local development](docs/local-development.md) for dependencies, compiler and
 firmware options, build-only commands and troubleshooting. `make help` lists the
 entrypoints. Host/toolchain qualification is recorded with each tested result.
@@ -103,7 +89,11 @@ and build machinery. Detailed contracts sit beside the component they describe.
 ## Contributing
 
 Start with a small running mechanism and a clear acceptance condition. Include
-positive, rejection and regression cases, and update the affected contract.
+positive, rejection and regression cases, and update the existing affected contract
+and current status in place. Do not create a contract/results document pair for
+every increment. Keep run-specific evidence in the existing verification/evidence
+locations; preserve historical receipts and their limits instead of copying their
+status paragraphs across README, roadmap and matrix.
 Host C++ and Python follow the [source style guide](docs/style.md), with pinned
 formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
@@ -119,8 +109,10 @@ make smoke-all                # complete emulator matrix; QEMU and firmware requ
 
 Configure the [Meson build](docs/meson-bootstrap.md) first, then choose `core`,
 `bytes` or individual tests according to the changed dependencies. Other components
-still use their focused checks. Leaf documentation edits need content/link review;
-full native qualification is an explicit broader gate, not a prerequisite for every edit.
+still use their focused checks. Before every merge, run both `dev` and `slow` on
+the final integrated source, including documentation changes and conflict resolution.
+Documentation also needs content/link review. Full root native and emulator
+qualification are separate release/affected-system gates, not implied by these suites.
 
 Make's compiler-consuming tests build the current compiler once per invocation;
 Meson reuses an unchanged build. No historical binary pin is needed for either

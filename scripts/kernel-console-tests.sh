@@ -12,7 +12,7 @@ fi
 "${CXX:-g++}" -std=c++23 -O1 -g -Wall -Wextra -Wpedantic -Werror -no-pie "${flags[@]}" \
     tests/kernel-console.cpp build/console-policy-test.s -o build/kernel-console-test
 ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" build/kernel-console-test
-for test in presentation uart; do
+for test in presentation uart snapshot; do
     "${CXX:-g++}" -std=c++23 -O1 -g -Wall -Wextra -Wpedantic -Werror -no-pie "${flags[@]}" \
         "tests/kernel-console-$test.cpp" build/console-policy-test.s -o "build/kernel-console-$test-test"
     ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" "build/kernel-console-$test-test"

@@ -5,16 +5,19 @@
 #include <optional>
 
 namespace aurora::uefi {
-// Kernel-selected launch authority for the bounded three-domain dispatcher.
+// Kernel-selected launch authority. Two domains admit one client and one service;
+// three domains retain the existing dispatcher relationship unchanged.
 // This owns values, not references to mutable launch words or domain metadata.
 // It does not establish mappings, inspect user memory, or allocate an epoch;
 // the adapter verifies its mapping tree and never reuses a run epoch.
-class RunAuthority final {
+template<std::size_t Domains>
+class BoundedRunAuthority final {
+    static_assert(Domains==2 || Domains==3);
 public:
     enum class Role { client, service };
     static constexpr unsigned maximum_budget=128;
 private:
-    using Layout=RuntimeLayoutProfile<3>;
+    using Layout=RuntimeLayoutProfile<Domains>;
     const user::DomainHandle owner_;
     const Role role_;
     const ipc::Phase phase_;
@@ -24,7 +27,7 @@ private:
     const std::uint64_t epoch_;
     const unsigned budget_;
 
-    constexpr RunAuthority(user::DomainHandle owner,Role role,ipc::Phase phase,
+    constexpr BoundedRunAuthority(user::DomainHandle owner,Role role,ipc::Phase phase,
         std::size_t client,std::uint64_t transaction,std::uint64_t source_phase,
         std::uint64_t arena,std::uint64_t root,const user::ProgramContract& contract,
         std::uint64_t epoch,unsigned budget)
@@ -74,16 +77,16 @@ public:
         user::DomainHandle owner,Role role,ipc::Phase phase,std::size_t client,
         std::uint64_t transaction,std::uint64_t source_phase,std::uint64_t owned_arena,
         std::uint64_t actual_root,const user::ProgramContract& contract,
-        std::uint64_t epoch,unsigned budget) -> std::optional<RunAuthority> {
+        std::uint64_t epoch,unsigned budget) -> std::optional<BoundedRunAuthority> {
         const auto domain=registry.index(owner);
-        if (!domain || !registry.active(owner) || client>=2 || epoch==0
+        if (!domain || !registry.active(owner) || client>=(Domains==2 ? 1U : 2U) || epoch==0
             || budget==0 || budget>maximum_budget || !valid_phase(role,phase,transaction)
             || *domain!=(role==Role::service ? 1 : client==0 ? 0 : 2)
             || !owned_contract(owned_arena,*domain,contract)
             || actual_root!=owned_arena+Layout::table_offset(*domain)) return std::nullopt;
         // source_phase is opaque kernel-selected launch data. Its value never
         // changes rights; Role and Phase alone select the checked relationship.
-        return RunAuthority{owner,role,phase,client,transaction,source_phase,owned_arena,
+        return BoundedRunAuthority{owner,role,phase,client,transaction,source_phase,owned_arena,
             actual_root,contract,epoch,budget};
     }
     // Use before accepting either a timer or a terminal user frame. Only after
@@ -118,4 +121,6 @@ public:
     [[nodiscard]] constexpr auto epoch() const -> std::uint64_t { return epoch_; }
     [[nodiscard]] constexpr auto budget() const -> unsigned { return budget_; }
 };
+using RunAuthority=BoundedRunAuthority<3>;
+using ProgramRunAuthority=BoundedRunAuthority<2>;
 }

@@ -15,6 +15,9 @@ case "${UEFI_MODE:-normal}" in
  normal) ;;
  owned-bytes) extra+=(-DAURORA_UEFI_OWNED_BYTES) ;;
  console) extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_CONSOLE) ;;
+ program-console|program-request-fault|program-service-fault|program-completion-fault|program-request-budget|program-service-budget|program-completion-budget|program-pending|program-owner|program-ordinal|program-unknown|program-transaction)
+   extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC -DAURORA_UEFI_SERVICE_BUDGET -DAURORA_UEFI_USER_BUDGET -DAURORA_UEFI_PROGRAM_CONSOLE)
+   if [[ "$UEFI_MODE" != program-console ]]; then flag="${UEFI_MODE#program-}"; flag="${flag//-/_}"; extra+=("-DAURORA_PROGRAM_${flag^^}"); fi ;;
  ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-pair|ivrs-alias|ivrs-reserved|ivrs-scope|ivrs-capability|ivrs-range|ivrs-missing)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2 -DAURORA_UEFI_IVRS)
    flag="${UEFI_MODE#ivrs-}"; extra+=("-DAURORA_IVRS_${flag^^}") ;;
@@ -67,11 +70,22 @@ case "${UEFI_MODE:-normal}" in
  nx) extra+=(-DAURORA_UEFI_NX) ;;
  *) echo 'Unknown UEFI build mode' >&2; exit 2 ;;
 esac
+if [[ "${UEFI_MODE:-normal}" == program-* ]]; then
+ provenance_flags=()
+ for flag in "${flags[@]}" "${extra[@]}"; do provenance_flags+=("--flag=$flag"); done
+ python3 -B scripts/kernel_program_console_admission.py begin-build --mode "$UEFI_MODE" \
+   --compiler "$compiler" --cxx "$cxx" "${provenance_flags[@]}"
+fi
 runtime_objects=()
-if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* || "${UEFI_MODE:-normal}" == dispatch* || "${UEFI_MODE:-normal}" == user-* ]]; then
+if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* || "${UEFI_MODE:-normal}" == dispatch* || "${UEFI_MODE:-normal}" == user-* || "${UEFI_MODE:-normal}" == program-* ]]; then
  mode="${UEFI_MODE#runtime-}"
  case "$mode" in span|code|stack|kernel|window|write|nx|return|unknown|syscall|sysenter) ;; *) mode=normal ;; esac
- if [[ "$UEFI_MODE" == user-* ]]; then
+ if [[ "$UEFI_MODE" == program-* ]]; then
+   program_image_mode=normal
+   case "$UEFI_MODE" in program-owner|program-ordinal|program-unknown|program-transaction) program_image_mode="${UEFI_MODE#program-}" ;; esac
+   python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$program_image_mode" --service-budget --user-budget --program-console
+   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+ elif [[ "$UEFI_MODE" == user-* ]]; then
    mode=normal
    if [[ "$UEFI_MODE" == user-unknown ]]; then mode=unknown; fi
    if [[ "$UEFI_MODE" == user-context ]]; then mode=context; fi
@@ -101,6 +115,7 @@ if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "$
 fi
 console_objects=()
 language_entry=examples/kernel.au
+if [[ "${UEFI_MODE:-normal}" == program-* ]]; then language_entry=examples/kernel-program-console.au; fi
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then language_entry=examples/kernel-owned-bytes.au; fi
 if [[ "${UEFI_MODE:-normal}" == console ]]; then
     language_entry=examples/kernel-console.au
@@ -160,6 +175,18 @@ if 'uefi_console_poll_begin' in symbols:
         dispatch=symbols['uefi_console_interrupt_dispatch'], polling_count=1250000, uart_irq=0), indent=2)+'\n')
 else:
     console_metadata.unlink(missing_ok=True)
+program_metadata = Path('build/uefi/program-poll-metadata.json')
+if 'uefi_program_poll_begin' in symbols:
+    begin, end = symbols['uefi_program_poll_begin'], symbols['uefi_program_poll_end']
+    if not 0 < begin < end < symbols['__payload_text_end'] or p.read_bytes()[begin:end] != bytes.fromhex('fbf4fa'):
+        raise SystemExit('Invalid exact program console wait site')
+    if 'uefi_runtime_enter' not in symbols or 'aurora_kernel_budget_tick' not in symbols:
+        raise SystemExit('Program console requires protected runtime and bounded timer policy')
+    program_metadata.write_text(json.dumps(dict(wait_begin=begin, wait_end=end,
+        text_end=symbols['__payload_text_end'], frame_bytes=176, polling_count=1250000,
+        uart_irq=0, domains=2), indent=2)+'\n')
+else:
+    program_metadata.unlink(missing_ok=True)
 Path('build/uefi/uefi-payload.hpp').write_text('namespace aurora::uefi {\n'+f'inline constexpr unsigned long long payload_size={p.stat().st_size};\n'+''.join(f'inline constexpr unsigned long long {name}={symbols["__"+name]};\n' for name in ['payload_text_end','payload_read_end','payload_memory_end'])+'}\n')
 bar_faults={}
 for mode,name,opcode in [('bar-write','uefi_bar_write_probe',bytes.fromhex('c70000000000')),('bar-revoked','uefi_bar_revoked_probe',bytes.fromhex('8b00'))]:
@@ -192,7 +219,7 @@ printf 'Built UEFI PE32+ loader and independent payload\n'
 
 image_policy=()
 case "${UEFI_MODE:-normal}" in
-    ipc*|budget*|dispatch*|user-*) image_policy+=(--ipc-policy) ;;
+    ipc*|budget*|dispatch*|user-*|program-*) image_policy+=(--ipc-policy) ;;
     owned-bytes) image_policy+=(--owned-bytes) ;;
 esac
 case "${UEFI_MODE:-normal}" in
@@ -204,4 +231,8 @@ if [[ "${UEFI_MODE:-normal}" == ivrs-* ]]; then python3 tests/kernel-uefi-ivrs-s
 
 if [[ "${UEFI_MODE:-normal}" == bar-prepare ]]; then
     python3 tests/kernel-uefi-nvme-stack.py build/uefi build/uefi/nvme-stack.json
+fi
+
+if [[ "${UEFI_MODE:-normal}" == program-* ]]; then
+    python3 -B scripts/kernel_program_console_admission.py end-build --mode "$UEFI_MODE"
 fi
