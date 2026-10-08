@@ -23,6 +23,8 @@ hardware support.
 
 ### Current contract map
 
+ASCII byte character literals provide a bounded compiler/JSON increment: single-quoted ASCII and explicit byte escapes have exact `u8` type, lossless spans and unchanged checked operations. Two JSON quote append sites use the syntax. See the [source contract](../compiler/BYTES.md#ascii-byte-character-literals). No Unicode character type, strings or new kernel/hardware qualification is implied.
+
 Use these entrypoints for exact supported APIs; do not infer a current API from an
 old results paragraph or its “not implemented” list.
 
@@ -59,7 +61,11 @@ Protected-console evidence includes the accepted original normal guest plus narr
 corrected-oracle replay, six ordinal-1 fault/budget recovery guests, authenticated
 pending-IRQ draining, four authority fail-stop guests and a separate normal boot.
 Those bounded results do not establish a general process API or whole kernel.
-Byte-character-literal work is outside this source and is not counted complete.
+The byte-character-literal increment passes its native, lexical, formatter and
+JSON spelling gates; 38 kernel-root assemblies remain byte-identical to the
+console predecessor. This preserves compiled behavior without claiming another
+guest run. Final integrated developer/slow gates and independent review are
+required before merge, as for every source change.
 
 PR91's recorded final join passed 41 Meson developer and 12 slow tests, plus its
 focused return/IR checks. That is not a new full-root-native, sanitizer, all-mode

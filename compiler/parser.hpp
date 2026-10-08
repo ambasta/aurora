@@ -345,6 +345,10 @@ public:
             attach(e, primary());
             return e;
         }
+        if (t.text[0] == '\'') {
+            e->op = "byte";
+            return e;
+        }
         if (std::isdigit(static_cast<unsigned char>(t.text[0]))) {
             e->op = "number";
             return e;

@@ -142,14 +142,14 @@ export namespace std {
         // Consequently these checked append calls cannot allocate or fail. Their
         // results are intentionally discarded, as ByteBuffer discards its proved
         // in-bounds set results. There is no recoverable return after mutation.
-        output.try_append(34u8);
+        output.try_append('"');
         consumed = 0;
         while (consumed < count) {
             const Utf8DecodeResult decoded = decode_utf8(input, offset + consumed, count - consumed, true);
             const JsonAppendResult appended = append_json_scalar(output, decoded.scalar_or(0u64));
             consumed = consumed + decoded.width();
         }
-        output.try_append(34u8);
+        output.try_append('"');
         return JsonStringAppendResult(JsonStringAppendStatus::success, required);
     }
 }

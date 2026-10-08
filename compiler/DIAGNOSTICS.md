@@ -48,6 +48,9 @@ prefixes in `message`. The LSP adapter continues converting source byte ranges t
 UTF-16 positions and adds its existing explicit unknown-location marker only
 when the diagnostic has no source span.
 
+Invalid [byte literal spellings](BYTES.md#ascii-byte-character-literals) use
+AU1002. This lexical family is distinct from AU1001 unsupported source characters.
+
 ## Coordinates and provenance
 
 Every lexical token owns a shared reference to an immutable `SourceText` snapshot
