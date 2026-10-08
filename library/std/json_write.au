@@ -43,8 +43,7 @@ export namespace std {
     auto append_json_scalar(ByteBuffer& output, u64 scalar) -> JsonAppendResult {
         const JsonEscapeResult escaped = escape_json_scalar(scalar);
         if (escaped.status() != JsonEscapeStatus::success) {
-            const JsonAppendResult result = JsonAppendResult(JsonAppendStatus::invalid_scalar, 0);
-            return result;
+            return JsonAppendResult(JsonAppendStatus::invalid_scalar, 0);
         }
         builtin::array<u8, 6> bytes = {
             0u8,
@@ -62,11 +61,9 @@ export namespace std {
         const builtin::span<const u8> all = borrow_bytes(bytes);
         const builtin::span<const u8> populated = all.subspan(0, escaped.size());
         if (!output.try_append_bytes(populated)) {
-            const JsonAppendResult result = JsonAppendResult(JsonAppendStatus::append_failed, 0);
-            return result;
+            return JsonAppendResult(JsonAppendStatus::append_failed, 0);
         }
-        const JsonAppendResult result = JsonAppendResult(JsonAppendStatus::success, escaped.size());
-        return result;
+        return JsonAppendResult(JsonAppendStatus::success, escaped.size());
     }
 }
 
@@ -111,40 +108,33 @@ export namespace std {
     auto append_json_string(ByteBuffer& output, builtin::span<const u8> input, i64 offset, i64 count) ->
         JsonStringAppendResult {
         if (offset < 0 || count < 0 || offset > input.size()) {
-            const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::out_of_range, 0);
-            return failure;
+            return JsonStringAppendResult(JsonStringAppendStatus::out_of_range, 0);
         }
         if (count > input.size() - offset) {
-            const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::out_of_range, 0);
-            return failure;
+            return JsonStringAppendResult(JsonStringAppendStatus::out_of_range, 0);
         }
         i64 consumed = 0;
         i64 required = 2;
         while (consumed < count) {
             const Utf8DecodeResult decoded = decode_utf8(input, offset + consumed, count - consumed, true);
             if (decoded.status() == Utf8Status::truncated) {
-                const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::truncated, 0);
-                return failure;
+                return JsonStringAppendResult(JsonStringAppendStatus::truncated, 0);
             }
             if (decoded.status() != Utf8Status::success) {
-                const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::invalid_utf8, 0);
-                return failure;
+                return JsonStringAppendResult(JsonStringAppendStatus::invalid_utf8, 0);
             }
             const JsonEscapeResult escaped = escape_json_scalar(decoded.scalar_or(0u64));
             if (escaped.size() > 9223372036854775807 - required) {
-                const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::overflow, 0);
-                return failure;
+                return JsonStringAppendResult(JsonStringAppendStatus::overflow, 0);
             }
             required = required + escaped.size();
             consumed = consumed + decoded.width();
         }
         if (required > 9223372036854775807 - output.size()) {
-            const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::overflow, 0);
-            return failure;
+            return JsonStringAppendResult(JsonStringAppendStatus::overflow, 0);
         }
         if (!output.try_reserve(output.size() + required)) {
-            const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::append_failed, 0);
-            return failure;
+            return JsonStringAppendResult(JsonStringAppendStatus::append_failed, 0);
         }
         // The immutable source and deterministic codecs reproduce exactly the
         // measured widths. Successful reserve establishes a valid owner and
@@ -160,7 +150,6 @@ export namespace std {
             consumed = consumed + decoded.width();
         }
         output.try_append(34u8);
-        const JsonStringAppendResult result = JsonStringAppendResult(JsonStringAppendStatus::success, required);
-        return result;
+        return JsonStringAppendResult(JsonStringAppendStatus::success, required);
     }
 }

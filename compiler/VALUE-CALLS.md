@@ -42,11 +42,24 @@ The intentionally small expression grammar requires:
 
 - A class argument is a complete local name.
 - A class-returning function call occurs in a typed local initializer.
-- A class return expression is a complete local name.
+- A copied class return expression is a complete local name or a direct constructor call.
 
-For example, `const Box result = make(); return result;` is accepted, whereas
-`return make();`, `consume(make());`, and `return Box(42);` remain unsupported.
-They need additional expression/lifetime lowering before being admitted.
+For example, `return Box(42);` is accepted in an ordinary function or method
+returning exactly `Box`. It constructs a fresh internal object using the same
+constructor visibility, argument checks and left-to-right snapshots as a typed
+local initializer, then copies its complete value through `ReturnObject`.
+Constructor and argument traps remain fail-stop; existing cleanup runs after
+successful construction and before return. Resource-function signatures still
+require scalar or owning results, so this does not enable allocated-owner locals
+in a copied-result function. Empty and composed copied
+classes follow the same completeness rules. No heap allocation, reference escape,
+new IR operation or copy-elision guarantee is introduced.
+
+`return make();`, `consume(make());`, temporary class arguments/receivers and
+`return Box{.value=42};` remain unsupported. Owning results still require an
+explicit `move(named_local)` return. This narrow convenience does not enable
+general class-valued expressions. `std.json_write` uses direct constructor
+returns for its copied append reports.
 
 Arguments evaluate left-to-right. Each class is copied at its position, before
 later argument side effects. In `f(object, object.add(1))`, the first argument

@@ -1393,6 +1393,41 @@ class SemanticAnalyzer {
         match(locals[original].type, member.type, value->token);
         emit(ir::AssignObjectField{receiverOffset, member.index, offset(original)});
     }
+    // Both local construction and direct copied-value returns use the same
+    // left-to-right argument snapshots and complete constructor initialization.
+    int initializeCopiedConstructor(ExpressionPtr expression,
+                                    const Type &type,
+                                    const Token &bindingToken,
+                                    const std::string &name = "",
+                                    bool mutableValue = false,
+                                    bool bind = false) {
+        match(expression->reflectedType, type, expression->token);
+        const auto &constructor = method(type, expression->token, true);
+        arity(expression, constructor.params.size());
+        std::vector<int> arguments(constructor.params.size(), 0), snapshots;
+        bool aggregate = false;
+        for (std::size_t index = 0; index < constructor.params.size(); ++index) {
+            const auto &type = constructor.params[index].type;
+            const auto &argument = expression->args[index];
+            if (type.isClass()) {
+                aggregate = true;
+                const int original = source(argument);
+                match(locals[original].type, type, argument->token);
+                const int snapshot = add("", type, false, argument->token, false);
+                copyClass(original, snapshot, argument->token);
+                arguments[index] = offset(snapshot);
+                snapshots.push_back(offset(snapshot));
+            } else {
+                match(this->expression(argument), type, expression->token);
+                push();
+            }
+        }
+        const int destination = add(name, type, mutableValue, bindingToken, bind);
+        emit(ir::MethodCall{constructor.name, offset(destination), aggregate ? arguments : std::vector<int>{}});
+        for (const int snapshot : snapshots)
+            emit(ir::EndObject{snapshot});
+        return destination;
+    }
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);
         const auto expression = statement->expr;
@@ -1448,35 +1483,14 @@ class SemanticAnalyzer {
             return;
         }
         if (expression->op == "constructor_call") {
-            match(expression->reflectedType, statement->type, expression->token);
-            const auto &constructor = method(statement->type, expression->token, true);
             if (owningClass(statement->type)) {
+                match(expression->reflectedType, statement->type, expression->token);
+                const auto &constructor = method(statement->type, expression->token, true);
                 callResource(expression, constructor, statement);
                 return;
             }
-            arity(expression, constructor.params.size());
-            std::vector<int> arguments(constructor.params.size(), 0), snapshots;
-            bool aggregate = false;
-            for (std::size_t index = 0; index < constructor.params.size(); ++index) {
-                const auto &type = constructor.params[index].type;
-                const auto &argument = expression->args[index];
-                if (type.isClass()) {
-                    aggregate = true;
-                    const int original = source(argument);
-                    match(locals[original].type, type, argument->token);
-                    const int snapshot = add("", type, false, argument->token, false);
-                    copyClass(original, snapshot, argument->token);
-                    arguments[index] = offset(snapshot);
-                    snapshots.push_back(offset(snapshot));
-                } else {
-                    match(this->expression(argument), type, expression->token);
-                    push();
-                }
-            }
-            const int destination = add(statement->name, statement->type, statement->mutableValue, statement->token);
-            emit(ir::MethodCall{constructor.name, offset(destination), aggregate ? arguments : std::vector<int>{}});
-            for (const int snapshot : snapshots)
-                emit(ir::EndObject{snapshot});
+            initializeCopiedConstructor(
+                expression, statement->type, statement->token, statement->name, statement->mutableValue, true);
             return;
         }
         if (std::any_of(definition.methods.begin(), definition.methods.end(), [](const Function &method) {
@@ -1573,9 +1587,11 @@ class SemanticAnalyzer {
                 endReturnBytes(local);
                 emit(ir::ReturnOwnedObject{offset(local)});
             } else if (result.isClass()) {
-                if (s->expr->op != "name")
-                    fail(s->token, "class return requires a complete local name");
-                const int local = source(s->expr);
+                if (s->expr->op != "name" && s->expr->op != "constructor_call")
+                    fail(s->token, "class return requires a complete local name or direct copied-class constructor");
+                const int local = s->expr->op == "constructor_call"
+                                      ? initializeCopiedConstructor(s->expr, result, s->token)
+                                      : source(s->expr);
                 match(locals[local].type, result, s->token);
                 endReturnBorrows();
                 endReturnBytes();
