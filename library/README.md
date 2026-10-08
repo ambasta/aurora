@@ -493,3 +493,7 @@ See the [contract](../docs/json-integers.md) for checked exact-spelling i64/u64
 conversion and generic decimal integer encoding. The example reserves complete
 output once using existing ByteBuffer. Bounded focused native qualification and
 independent source/evidence review passed; see the [results and limits](../docs/json-integers-results.md).
+
+Root-only decoded-name member and array-index lookup is an unverified candidate;
+see [its bounded contract](../docs/json-lookup.md) and
+[pending qualification](../docs/json-lookup-results.md).

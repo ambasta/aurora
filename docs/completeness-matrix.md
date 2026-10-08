@@ -1,5 +1,13 @@
 # Completeness and acceptance matrix
 
+## Bounded JSON lookup — unverified candidate 2026-10-08
+
+A shared iterative validator now observes root decoded-name members and array
+indices without retaining source borrows. Complete validation precedes visible
+selection and matching duplicate names yield ambiguity. The [contract](json-lookup.md)
+and [pending qualification](json-lookup-results.md) state limits and remaining
+gates. This checkpoint is not accepted or a host JSON replacement.
+
 ## Checked JSON integer codecs — 2026-10-08
 
 The [integer codec contract](json-integers.md) adds exact integer-spelling checked
