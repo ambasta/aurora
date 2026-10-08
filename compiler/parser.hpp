@@ -236,6 +236,12 @@ public:
                 need(">");
                 return Type::ByteSpan;
             }
+            if (eat("DisplaySession"))
+                return Type::DisplaySession;
+            if (eat("DisplayPutResult"))
+                return service::displayPutResultType();
+            if (eat("DisplayCompletion"))
+                return service::displayCompletionType();
             if (eat("ConsoleSession"))
                 return Type::ConsoleSession;
             if (eat("ConsoleSample"))

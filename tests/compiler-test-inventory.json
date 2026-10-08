@@ -83,6 +83,13 @@
     "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
     "root_make": true
   },
+  "display_service.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete sealed Display service source and private ABI runner; retains Console controls separately.",
+    "root_make": true
+  },
   "enum_composition.py": {
     "kind": "runner",
     "make": true,

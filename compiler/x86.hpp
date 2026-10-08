@@ -613,9 +613,22 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::ServiceOperation>) {
                     line("movq " + address(operation.offset) + ", %rdi");
                     line("movq " + address(operation.offset - 8) + ", %rsi");
-                    if (operation.operation == service::Operation::Put) {
+                    if (operation.operation == service::Operation::Pixel) {
+                        pop("%r10"); // blue is the seventh host argument
+                        pop("%r9");
+                        pop("%r8");
+                        pop("%rcx");
+                        pop("%rdx");
+                        const int outgoingBytes = stackDepth % 2 ? 8 : 16;
+                        line("subq $" + std::to_string(outgoingBytes) + ", %rsp");
+                        line("movq %r10, (%rsp)");
+                        line("call " + std::string(service::description(operation.operation).hostSymbol));
+                        line("addq $" + std::to_string(outgoingBytes) + ", %rsp");
+                        line("cmpq $1, %rax");
+                        line("ja .Laurora_bounds_trap");
+                    } else if (operation.operation == service::Operation::Put) {
                         line("movq %rax, %rdx");
-                        call(std::string(service::operations[1].hostSymbol));
+                        call(std::string(service::description(operation.operation).hostSymbol));
                         line("cmpq $1, %rax");
                         line("ja .Laurora_bounds_trap");
                     } else {
@@ -624,7 +637,7 @@ class X86Emitter {
                         // precedes publication as a copied bool/u8/bool object.
                         for (int byte = 0; byte < 24; byte += 8)
                             line("movq $0, " + address(operation.resultOffset - byte));
-                        call(std::string(service::operations[0].hostSymbol));
+                        call(std::string(service::description(operation.operation).hostSymbol));
                         line("cmpq $1, " + address(operation.resultOffset));
                         line("ja .Laurora_bounds_trap");
                         line("cmpq $255, " + address(operation.resultOffset - 8));

@@ -20,7 +20,7 @@ hardware support.
 | Destination | Implemented foundation | Remaining acceptance gap |
 |---|---|---|
 | Modern safe kernel | BIOS/UEFI emulator boot, protected-domain fixtures, bounded scheduling and copied request/reply IPC; five Aurora policies plus a persistent Aurora-owned simple-UEFI console, within trusted C++/assembly hardware adapters | General protected-program lifecycle, capability/file services, SMP, broader native implementation and assurance |
-| Safe C++-like language with TypeScript-like types | Checked values, modules, classes, bounded generics/overloads, readonly views, runtime-sized byte ownership, move-only classes, synchronous owning-object helpers and sealed exclusive ConsoleSession borrows | General ownership/borrowing, concurrency, key/mapped/conditional types, richer checked reflection, optimizer and self-hosting; no general safety/performance proof |
+| Safe C++-like language with TypeScript-like types | Checked values, modules, classes, bounded generics/overloads, readonly views, runtime-sized byte ownership, move-only classes, synchronous owning-object helpers and sealed exclusive ConsoleSession/DisplaySession borrows | General ownership/borrowing, concurrency, key/mapped/conditional types, richer checked reflection, optimizer and self-hosting; no general safety/performance proof |
 | Ideal filesystem and XFS compatibility | Host crash model, runtime-capacity RAM sector device, offline XFS geometry/root/inline-extent readers | Real transport, mounted file services, persistence/recovery/GC and XFS read-write; no target filesystem is usable yet |
 | Framework Laptop 13 AMD system | Emulator boot/discovery, owned page/pin preparation and test-only AMD translation/event/completion references | Actual DMA conformance/isolation, active drivers, device power/recovery and complete-machine physical qualification; no supported physical tuple |
 | Native binutils/glibc/Mesa alternatives | Host-bootstrap compiler, Aurora core/byte/text/JSON modules and bounded package metadata tools | Native assembler/linker/toolchain, complete platform runtime and standard library, graphics stack and reproducible native rebuilds; no C/POSIX/ABI compatibility promise |
@@ -33,6 +33,10 @@ presentation in one Aurora frame. The [sealed service contract](../compiler/SERV
 keeps copied reports separate from authority; the [kernel contract](native-console-service.md)
 records exact hosted, linked-stack/image, five-profile PTY and restoration scope.
 BIOS/protected editors, general services and physical hardware remain separate.
+A second compiler-sealed DisplaySession kind adds only bounded pixel output,
+exact-kind loans/helper verification and copied closed results. Its compiler
+contract is in [SERVICES.md](../compiler/SERVICES.md); native framebuffer/guest
+acceptance remains a separately gated integration.
 
 ASCII byte character literals provide a bounded compiler/JSON increment: single-quoted ASCII and explicit byte escapes have exact `u8` type, lossless spans and unchanged checked operations. Two JSON quote append sites use the syntax. See the [source contract](../compiler/BYTES.md#ascii-byte-character-literals). No Unicode character type, strings or new kernel/hardware qualification is implied.
 
@@ -40,6 +44,12 @@ The two JSON append reports normalize invalid success counts once at constructio
 and expose plain status reads while preserving failure-count masking and public
 constructor behavior. See the [invariant proof and bounded oracle](json-string-write.md#copied-append-report-invariants).
 This library-only pilot adds no compiler semantics or broad optimization claim.
+
+The output-only Aurora framebuffer status page joins the sealed service
+architecture. Its independently accepted pinned-guest screenshot/physical capture,
+no-write failure cases and remaining final integration gates are kept in the
+[framebuffer console contract](framebuffer-console.md). This is software pixel
+output on one QEMU/OVMF fixture, with no GPU-driver or physical-device claim.
 
 Use these entrypoints for exact supported APIs; do not infer a current API from an
 old results paragraph or its “not implemented” list.

@@ -186,7 +186,7 @@ class ModuleResolver {
     Function *activeFunction = nullptr;
     const ClassDefinition *activeClass = nullptr;
     bool initializingReceiver = false, classTypesResolved = false;
-    bool consoleTypesUsed = false;
+    bool serviceTypesUsed = false;
     class Declaration {
     public:
         Kind kind;
@@ -476,7 +476,7 @@ class ModuleResolver {
                              const std::string &scope,
                              std::vector<TemplateRequest> &requests) {
         if (type.isService() || service::copiedType(type)) {
-            consoleTypesUsed = true;
+            serviceTypesUsed = true;
             return;
         }
         if (type.kind == TypeKind::Parameter)
@@ -722,7 +722,7 @@ class ModuleResolver {
         if (type == Type("builtin::ConsoleSample"))
             type = service::sampleType();
         if (type.isService() || service::copiedType(type)) {
-            consoleTypesUsed = true;
+            serviceTypesUsed = true;
             return;
         }
         if (type.kind == TypeKind::Parameter)
@@ -1132,21 +1132,27 @@ class ModuleResolver {
 
         } else if (value->op == "name") {
             if (!value->token.text.starts_with("builtin::ConsolePutResult::") &&
-                !value->token.text.starts_with("builtin::ConsoleCompletion::"))
+                !value->token.text.starts_with("builtin::ConsoleCompletion::") &&
+                !value->token.text.starts_with("builtin::DisplayPutResult::") &&
+                !value->token.text.starts_with("builtin::DisplayCompletion::"))
                 sourceName(value->token.text);
             const auto separator = value->token.text.rfind("::");
             if (separator != std::string::npos) {
                 const auto enumName = value->token.text.substr(0, separator);
                 const auto caseName = value->token.text.substr(separator + 2);
-                if (enumName == "builtin::ConsolePutResult" || enumName == "builtin::ConsoleCompletion") {
-                    const bool put = enumName == "builtin::ConsolePutResult";
-                    const bool first = caseName == (put ? "success" : "requested_exit");
-                    const bool second = caseName == (put ? "timeout" : "output_failure");
+                if (enumName == "builtin::ConsolePutResult" || enumName == "builtin::ConsoleCompletion" ||
+                    enumName == "builtin::DisplayPutResult" || enumName == "builtin::DisplayCompletion") {
+                    const bool display = enumName.starts_with("builtin::Display");
+                    const bool put = enumName.ends_with("PutResult");
+                    const bool first = caseName == (put ? "success" : display ? "rendered" : "requested_exit");
+                    const bool second = caseName == (put ? (display ? "out_of_bounds" : "timeout") : "output_failure");
                     if (!first && !second)
                         throw Error("unknown sealed service enum case: " + value->token.text);
-                    consoleTypesUsed = true;
+                    serviceTypesUsed = true;
                     value->op = "enum_case";
-                    value->reflectedType = put ? service::putResultType() : service::completionType();
+                    value->reflectedType =
+                        display ? (put ? service::displayPutResultType() : service::displayCompletionType())
+                                : (put ? service::putResultType() : service::completionType());
                     value->resolvedName = value->reflectedType.className;
                     value->enumOrdinal = second ? 1 : 0;
                     return;
@@ -1250,7 +1256,7 @@ public:
         for (const auto &name : graph.order)
             for (auto &definition : graph.units.at(name)->program.enums)
                 result.enums.push_back(std::move(definition));
-        if (consoleTypesUsed) {
+        if (serviceTypesUsed) {
             ClassDefinition sample(Token(std::string(service::sampleName), 0));
             for (const auto &[name, type] : std::vector<std::pair<std::string, Type>>{
                      {"byte_present", Type::Bool}, {"byte", Type::U8}, {"damaged", Type::Bool}}) {
@@ -1265,13 +1271,21 @@ public:
             EnumDefinition completion(Token(std::string(service::completionName), 0));
             completion.cases = {Token("requested_exit", 0), Token("output_failure", 0)};
             result.enums.push_back(std::move(completion));
+            EnumDefinition displayPut(Token(std::string(service::displayPutResultName), 0));
+            displayPut.cases = {Token("success", 0), Token("out_of_bounds", 0)};
+            result.enums.push_back(std::move(displayPut));
+            EnumDefinition displayCompletion(Token(std::string(service::displayCompletionName), 0));
+            displayCompletion.cases = {Token("rendered", 0), Token("output_failure", 0)};
+            result.enums.push_back(std::move(displayCompletion));
             // Copied observations are ordinary globally visible builtin data.
-            // The ConsoleSession capability itself never receives a descriptor.
+            // Neither sealed service capability receives a descriptor.
             for (auto &[scope, visible] : result.reflectionAccess) {
                 (void)scope;
                 visible.insert(std::string(service::sampleName));
                 visible.insert(std::string(service::putResultName));
                 visible.insert(std::string(service::completionName));
+                visible.insert(std::string(service::displayPutResultName));
+                visible.insert(std::string(service::displayCompletionName));
             }
         }
         if (result.functions.empty())

@@ -2,6 +2,9 @@
 #include "tables.hpp"
 #include "acpi.hpp"
 #include "runtime.hpp"
+#ifdef AURORA_UEFI_FRAMEBUFFER_FIXTURE
+#include "framebuffer.hpp"
+#endif
 #ifdef AURORA_UEFI_CONSOLE
 #include "console.hpp"
 #endif
@@ -17,7 +20,9 @@ using U64 = std::uint64_t;
 auto payload_entry() -> void asm("uefi_payload_entry") __attribute__((visibility("hidden")));
 auto generic_fault() -> void asm("uefi_payload_fault") __attribute__((visibility("hidden")));
 auto page_fault() -> void asm("uefi_payload_page_fault") __attribute__((visibility("hidden")));
-#if defined(AURORA_UEFI_CONSOLE)
+#if defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE)
+auto language_value() -> long long asm("__au_runtime_display_value");
+#elif defined(AURORA_UEFI_CONSOLE)
 auto language_value() -> long long asm("__au_runtime_console_value");
 #elif !defined(AURORA_UEFI_OWNED_BYTES)
 auto language_value() -> long long asm("aurora_kernel_value");
@@ -122,6 +127,38 @@ auto payload_main(U64 arena, U64 size) -> void {
 #ifdef AURORA_UEFI_NX
     *reinterpret_cast<volatile std::uint8_t *>(arena + Handoff::pool_offset) = 0xc3;
     reinterpret_cast<void (*)()>(arena + Handoff::pool_offset)();
+#endif
+#ifdef AURORA_UEFI_FRAMEBUFFER_PROBE
+    std::uint32_t graphics_a, graphics_b, graphics_c, graphics_d;
+    asm volatile("cpuid"
+                 : "=a"(graphics_a), "=b"(graphics_b), "=c"(graphics_c), "=d"(graphics_d)
+                 : "a"(0x80000000U), "c"(0));
+    if (graphics_a < 0x80000008U)
+        fail("framebuffer physical width unavailable");
+    asm volatile("cpuid"
+                 : "=a"(graphics_a), "=b"(graphics_b), "=c"(graphics_c), "=d"(graphics_d)
+                 : "a"(0x80000008U), "c"(0));
+    const auto graphics = aurora::uefi::FramebufferRecord::parse(
+        span(arena + Handoff::framebuffer_record_offset, aurora::uefi::FramebufferRecord::bytes), graphics_a & 255);
+    if (!graphics || h.get(8, 4) != 5)
+        fail("framebuffer probe record");
+    Serial::text("AURORA_FRAMEBUFFER_PROBE_PRIVATE_PAGING: width=");
+    Serial::number(graphics->geometry().width());
+    Serial::text(" height=");
+    Serial::number(graphics->geometry().height());
+    Serial::text(" pitch=");
+    Serial::number(graphics->geometry().pitch());
+    Serial::text(" format=");
+    Serial::number(graphics->geometry().format());
+    Serial::text(" tables=");
+    Serial::number(h.get(96));
+    Serial::text("\r\n");
+    aurora::hardware::Io::write(0xf4, 0x10);
+    for (;;)
+        asm volatile("cli; hlt");
+#endif
+#ifdef AURORA_UEFI_FRAMEBUFFER_FIXTURE
+    aurora::uefi::run_framebuffer(arena);
 #endif
     if (!pool.initialize(arena + Handoff::pool_offset, 16))
         fail("owned pool initialization");

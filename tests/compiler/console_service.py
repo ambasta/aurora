@@ -261,8 +261,8 @@ def main():
         ),
     }
     expected_errors = {
-        "by-value": "AU3001: service functions require one leading exclusive ConsoleSession reference",
-        "const": "AU3001: service functions require one leading exclusive ConsoleSession reference",
+        "by-value": "AU3001: service functions require one leading exclusive sealed service reference",
+        "const": "AU3001: service functions require one leading exclusive sealed service reference",
         "field": "AU2003: unsupported class field type 'builtin::ConsoleSession'",
         "forged": "AU3001: service forwarding requires a named exclusive service parameter",
         "local": "AU3001: service capability cannot be stored in a local",
@@ -280,7 +280,7 @@ def main():
         "suspended": "AU3001: service operation requires an active named exclusive service parameter",
         "template": "AU2001: borrowed parameters require one leading concrete owning class",
         "two": "AU2001: borrowed parameters require one leading concrete owning class",
-        "unknown-op": "AU3001: unknown sealed ConsoleSession operation",
+        "unknown-op": "AU3001: unknown operation for sealed service kind",
         "value": "AU3001: service capability is not a value",
         "wrong-put": "AU3001: expected u8, got i64",
     }

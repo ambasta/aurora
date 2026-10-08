@@ -1,0 +1,363 @@
+module kernel_display_service;
+
+// Project-authored 5x7 bitmap glyphs, least-significant bit at the upper left.
+// This Aurora module owns all font, colors, clipping, layout and visible text.
+auto glyph_bits(u8 byte) -> u64 {
+    if (byte == 'A') {
+        return 18842895918u64;
+    }
+    if (byte == 'B') {
+        return 16694887983u64;
+    }
+    if (byte == 'C') {
+        return 32246891582u64;
+    }
+    if (byte == 'D') {
+        return 16694953519u64;
+    }
+    if (byte == 'E') {
+        return 33321092159u64;
+    }
+    if (byte == 'F') {
+        return 1108837439u64;
+    }
+    if (byte == 'G') {
+        return 32801457214u64;
+    }
+    if (byte == 'H') {
+        return 18842895921u64;
+    }
+    if (byte == 'I') {
+        return 33424543903u64;
+    }
+    if (byte == 'J') {
+        return 6754148636u64;
+    }
+    if (byte == 'K') {
+        return 18560947505u64;
+    }
+    if (byte == 'L') {
+        return 33320633377u64;
+    }
+    if (byte == 'M') {
+        return 18842572657u64;
+    }
+    if (byte == 'N') {
+        return 19119394417u64;
+    }
+    if (byte == 'O') {
+        return 15621211694u64;
+    }
+    if (byte == 'P') {
+        return 1108854319u64;
+    }
+    if (byte == 'Q') {
+        return 23946905134u64;
+    }
+    if (byte == 'R') {
+        return 18561353263u64;
+    }
+    if (byte == 'S') {
+        return 16660235326u64;
+    }
+    if (byte == 'T') {
+        return 4433514655u64;
+    }
+    if (byte == 'U') {
+        return 15621211697u64;
+    }
+    if (byte == 'V') {
+        return 4648912433u64;
+    }
+    if (byte == 'W') {
+        return 19182306865u64;
+    }
+    if (byte == 'X') {
+        return 18834663985u64;
+    }
+    if (byte == 'Y') {
+        return 4433521201u64;
+    }
+    if (byte == 'Z') {
+        return 33321787935u64;
+    }
+    if (byte == '0') {
+        return 15623448110u64;
+    }
+    if (byte == '1') {
+        return 15170932932u64;
+    }
+    if (byte == '2') {
+        return 33357578798u64;
+    }
+    if (byte == '3') {
+        return 16660251151u64;
+    }
+    if (byte == '4') {
+        return 8891181448u64;
+    }
+    if (byte == '5') {
+        return 16660268095u64;
+    }
+    if (byte == '6') {
+        return 15621129262u64;
+    }
+    if (byte == '7') {
+        return 2216829471u64;
+    }
+    if (byte == '8') {
+        return 15621113390u64;
+    }
+    if (byte == '9') {
+        return 15587034670u64;
+    }
+    if (byte == ' ') {
+        return 0u64;
+    }
+    if (byte == ':') {
+        return 138416256u64;
+    }
+    if (byte == '-') {
+        return 1015808u64;
+    }
+    return 33672954943u64;
+}
+
+// The first output page uses one shared glyph/text pipeline and six or fewer
+// formals, matching the existing bounded service-helper ABI.
+auto text_scale(u64 y) -> u64 {
+    if (y < 96u64) {
+        return 3u64;
+    }
+    return 2u64;
+}
+
+auto background(builtin::DisplaySession& session, u64 width, u64 height) -> bool {
+    u64 y = 0u64;
+    while (y < height) {
+        u64 x = 0u64;
+        while (x < width) {
+            u8 red = 13u8;
+            u8 green = 20u8;
+            u8 blue = 32u8;
+            if (y < 96u64) {
+                red = 18u8;
+                green = 30u8;
+                blue = 46u8;
+            }
+            if (x >= 32u64 && x < 768u64 && y >= 88u64 && y < 90u64) {
+                red = 52u8;
+                green = 188u8;
+                blue = 220u8;
+            }
+            if (x >= 16u64 && x < 22u64) {
+                if ((y >= 184u64 && y < 190u64) || (y >= 202u64 && y < 208u64) || (y >= 220u64 && y < 226u64)) {
+                    red = 103u8;
+                    green = 211u8;
+                    blue = 151u8;
+                }
+            }
+            if (session.pixel(x, y, red, green, blue) != builtin::DisplayPutResult::success) {
+                return false;
+            }
+            x = x + 1u64;
+        }
+        y = y + 1u64;
+    }
+    return true;
+}
+
+auto draw_glyph(builtin::DisplaySession& session, u64 width, u64 height, u64 x, u64 y, u8 byte) -> bool {
+    if (x >= width || y >= height) {
+        return true;
+    }
+    const u64 bits = glyph_bits(byte);
+    const u64 scale = text_scale(y);
+    u8 red = 204u8;
+    u8 green = 226u8;
+    u8 blue = 235u8;
+    if (y < 96u64) {
+        red = 222u8;
+        green = 237u8;
+        blue = 247u8;
+    }
+    if (y >= 520u64) {
+        red = 52u8;
+        green = 188u8;
+        blue = 220u8;
+    }
+    u64 row = 0u64;
+    while (row < 7u64) {
+        u64 column = 0u64;
+        while (column < 5u64) {
+            if (((bits >> i64(row * 5u64 + column)) & 1u64) != 0u64) {
+                u64 dy = 0u64;
+                while (dy < scale) {
+                    u64 dx = 0u64;
+                    while (dx < scale) {
+                        const u64 target_x = x + column * scale + dx;
+                        const u64 target_y = y + row * scale + dy;
+                        if (target_x < width && target_y < height) {
+                            if (session.pixel(target_x, target_y, red, green, blue)
+                                != builtin::DisplayPutResult::success) {
+                                return false;
+                            }
+                        }
+                        dx = dx + 1u64;
+                    }
+                    dy = dy + 1u64;
+                }
+            }
+            column = column + 1u64;
+        }
+        row = row + 1u64;
+    }
+    return true;
+}
+
+auto draw_text(builtin::DisplaySession& session, u64 width, u64 height, u64 y, builtin::span<const u8> text,
+    bool cursor) -> bool {
+    u64 x = 32u64;
+    u64 cursor_y = y;
+    i64 index = 0;
+    while (index < text.size()) {
+        const u8 byte = text.at(index);
+        if (byte == '\n') {
+            x = 32u64;
+            cursor_y = cursor_y + 9u64 * text_scale(cursor_y);
+        } else {
+            if (!draw_glyph(session, width, height, x, cursor_y, byte)) {
+                return false;
+            }
+            x = x + 6u64 * text_scale(cursor_y);
+        }
+        index = index + 1;
+    }
+    if (cursor) {
+        // Two-pixel underline cursor, clipped by the same copied geometry.
+        u64 dx = 0u64;
+        while (dx < 10u64) {
+            u64 dy = 0u64;
+            while (dy < 2u64) {
+                const u64 target_x = x + dx;
+                const u64 target_y = cursor_y + 14u64 + dy;
+                if (target_x < width && target_y < height) {
+                    if (session.pixel(target_x, target_y, 52u8, 188u8, 220u8) != builtin::DisplayPutResult::success) {
+                        return false;
+                    }
+                }
+                dy = dy + 1u64;
+            }
+            dx = dx + 1u64;
+        }
+    }
+    return true;
+}
+
+auto display_service(builtin::DisplaySession& session, u64 width, u64 height) -> builtin::DisplayCompletion {
+    if (width == 0u64 || width > 1024u64 || height == 0u64 || height > 768u64) {
+        return builtin::DisplayCompletion::output_failure;
+    }
+    if (!background(session, width, height)) {
+        return builtin::DisplayCompletion::output_failure;
+    }
+    array<u8, 6> title = {
+        'A',
+        'U',
+        'R',
+        'O',
+        'R',
+        'A'
+    };
+    if (!draw_text(session, width, height, 28u64, borrow_bytes(title), false)) {
+        return builtin::DisplayCompletion::output_failure;
+    }
+    array<u8, 11> status = {
+        'B',
+        'O',
+        'O',
+        'T',
+        ' ',
+        'S',
+        'T',
+        'A',
+        'T',
+        'U',
+        'S'
+    };
+    if (!draw_text(session, width, height, 128u64, borrow_bytes(status), false)) {
+        return builtin::DisplayCompletion::output_failure;
+    }
+    array<u8, 42> rows = {
+        'U',
+        'E',
+        'F',
+        'I',
+        ' ',
+        'E',
+        'X',
+        'I',
+        'T',
+        'E',
+        'D',
+        '\n',
+        'P',
+        'R',
+        'I',
+        'V',
+        'A',
+        'T',
+        'E',
+        ' ',
+        'P',
+        'A',
+        'G',
+        'I',
+        'N',
+        'G',
+        '\n',
+        'D',
+        'I',
+        'S',
+        'P',
+        'L',
+        'A',
+        'Y',
+        ' ',
+        'S',
+        'E',
+        'S',
+        'S',
+        'I',
+        'O',
+        'N'
+    };
+    if (!draw_text(session, width, height, 180u64, borrow_bytes(rows), false)) {
+        return builtin::DisplayCompletion::output_failure;
+    }
+    array<u8, 15> footer = {
+        'G',
+        'R',
+        'A',
+        'P',
+        'H',
+        'I',
+        'C',
+        'S',
+        ' ',
+        'O',
+        'U',
+        'T',
+        'P',
+        'U',
+        'T'
+    };
+    if (!draw_text(session, width, height, 540u64, borrow_bytes(footer), true)) {
+        return builtin::DisplayCompletion::output_failure;
+    }
+    return builtin::DisplayCompletion::rendered;
+}
+
+auto aurora_kernel_value() -> i64 {
+    return 42;
+}
