@@ -5,6 +5,7 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -129,7 +130,6 @@ __au_runtime_display_entry:
         "const": "auto f(const builtin::DisplaySession& s) -> i64 { return 0; }",
         "second": "auto f(i64 n, builtin::DisplaySession& s) -> i64 { return 0; }",
         "two": "auto f(builtin::DisplaySession& s, builtin::DisplaySession& t) -> i64 { return 0; }",
-        "mixed": "auto f(builtin::DisplaySession& s, builtin::ConsoleSession& t) -> i64 { return 0; }",
         "local": "auto f(builtin::DisplaySession& s) -> i64 { builtin::DisplaySession t = s; return 0; }",
         "cast": "auto f(builtin::DisplaySession& s) -> i64 { return i64(s); }",
         "reflect": "auto f() -> i64 { return size_of(builtin::DisplaySession); }",
@@ -178,6 +178,9 @@ __au_runtime_display_entry:
         source.write_text("module rejected; " + body)
         result = run([compiler, source, "-o", work / "rejected.s"])
         require(result.returncode != 0 and result.stderr, "invalid Display source accepted: " + name)
+    grouped = run([sys.executable, "-B", "-O", ROOT / "tests/compiler/service_group.py", compiler])
+    require(grouped.returncode == 0, grouped.stdout.decode() + grouped.stderr.decode())
+    print(grouped.stdout.decode(), end="")
     print(
         "PASS Display source: ABI, cross-module copied metadata, canonical result, "
         f"{len(negative)} negative cases; {work}"

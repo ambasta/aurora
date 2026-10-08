@@ -28,6 +28,13 @@ hardware support.
 
 ### Current contract map
 
+This isolated next-language checkpoint adds an unqualified explicit leading group
+of distinct ConsoleSession/DisplaySession borrows for the planned graphical line
+editor. Both formal orders and singleton/pair forwarding retain separate sealed
+authority. Focused release build, source/private-ABI and 146 cumulative hostile-IR
+checks passed; final integrated dev/slow/full Make acceptance remains pending. The [service contract](../compiler/SERVICES.md#distinct-group-checkpoint-status)
+records the compiler-only scope and remaining combined native admission boundary.
+
 The simple-UEFI console owns its complete Line64 editor, command parser and
 presentation in one Aurora frame. The [sealed service contract](../compiler/SERVICES.md)
 keeps copied reports separate from authority; the [kernel contract](native-console-service.md)

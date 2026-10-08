@@ -920,17 +920,25 @@ class SemanticAnalyzer {
             fail(value->token, "copied service report requires a typed local initializer");
         if (binding)
             match(callee.result, binding->type, value->token);
-        if (value->args[0]->op != "name")
-            fail(value->token, "service forwarding requires a named exclusive service parameter");
-        const int root = source(value->args[0]);
-        match(locals[root].type, callee.params.front().type, value->token);
-        if (locals[root].exclusive)
-            fail(value->token, "service authority is suspended during synchronous forwarding");
-        locals[root].exclusive = true;
-        const int loan = nextObjectLoan++;
-        emit(ir::AcquireServiceLoan{loan, offset(root), service::kind(locals[root].type)});
+        std::vector<int> roots, loans;
+        std::size_t serviceCount = 0;
+        while (serviceCount < callee.params.size() && callee.params[serviceCount].type.isService()) {
+            const auto &argument = value->args[serviceCount];
+            if (argument->op != "name")
+                fail(argument->token, "service forwarding requires a named exclusive service parameter");
+            const int root = source(argument);
+            match(locals[root].type, callee.params[serviceCount].type, argument->token);
+            if (locals[root].exclusive)
+                fail(argument->token, "service authority is suspended during synchronous forwarding");
+            locals[root].exclusive = true;
+            const int loan = nextObjectLoan++;
+            emit(ir::AcquireServiceLoan{loan, offset(root), service::kind(locals[root].type)});
+            roots.push_back(root);
+            loans.push_back(loan);
+            ++serviceCount;
+        }
         std::vector<int> spans(callee.params.size(), 0), borrowedSpans;
-        for (std::size_t index = 1; index < callee.params.size(); ++index) {
+        for (std::size_t index = serviceCount; index < callee.params.size(); ++index) {
             const auto &argument = value->args[index];
             const auto &type = callee.params[index].type;
             if (type.isSpan()) {
@@ -945,9 +953,15 @@ class SemanticAnalyzer {
         int destination = 0;
         if (binding)
             destination = offset(add(binding->name, binding->type, binding->mutableValue, binding->token));
-        emit(ir::ServiceCall{callee.name, loan, destination, spans, service::kind(locals[root].type)});
-        emit(ir::ReleaseServiceLoan{loan, service::kind(locals[root].type)});
-        locals[root].exclusive = false;
+        ir::ServiceCall call{callee.name, loans.front(), destination, spans, service::kind(locals[roots.front()].type)};
+        for (std::size_t index = 1; index < roots.size(); ++index)
+            call.additionalServices.push_back({loans[index], service::kind(locals[roots[index]].type)});
+        emit(std::move(call));
+        for (std::size_t reverse = roots.size(); reverse > 0; --reverse) {
+            const auto index = reverse - 1;
+            emit(ir::ReleaseServiceLoan{loans[index], service::kind(locals[roots[index]].type)});
+            locals[roots[index]].exclusive = false;
+        }
         for (auto it = borrowedSpans.rbegin(); it != borrowedSpans.rend(); ++it)
             releaseSpan(*it, true);
         return callee.result;
@@ -2007,14 +2021,25 @@ public:
             if (candidate.result.isService())
                 fail(candidate.token, "service capabilities cannot be returned");
             if (serviceFunction) {
-                if (borrowedCount != 1 || !candidate.params.front().borrowed || candidate.params.front().borrowConst ||
+                std::set<service::Kind> kinds;
+                std::size_t serviceCount = 0;
+                while (serviceCount < candidate.params.size() && candidate.params[serviceCount].type.isService()) {
+                    const auto &parameter = candidate.params[serviceCount];
+                    if (!parameter.borrowed || parameter.borrowConst)
+                        fail(candidate.token,
+                             "service functions require one leading exclusive sealed service reference and copied result");
+                    if (!kinds.insert(service::kind(parameter.type)).second)
+                        fail(candidate.token, "service group requires distinct leading exclusive sealed references");
+                    ++serviceCount;
+                }
+                if (serviceCount > 2 || static_cast<std::size_t>(borrowedCount) != serviceCount ||
                     !candidate.receiverClass.empty() || candidate.constructor || !candidate.templateArguments.empty() ||
                     !candidate.templateParameters.empty() ||
-                    (!scalarValue(candidate.result) && !(candidate.params.front().type == Type::ConsoleSession &&
+                    (!scalarValue(candidate.result) && !(kinds.contains(service::Kind::Console) &&
                                                          candidate.result == service::sampleType())))
                     fail(candidate.token,
-                         "service functions require one leading exclusive sealed service reference and copied result");
-                for (std::size_t index = 1; index < candidate.params.size(); ++index)
+                         "service functions require a leading exclusive sealed service group and copied result");
+                for (std::size_t index = serviceCount; index < candidate.params.size(); ++index)
                     if (!scalarValue(candidate.params[index].type) && !candidate.params[index].type.isSpan())
                         fail(candidate.token,
                              "service helper parameters require scalars, enums or readonly byte spans");

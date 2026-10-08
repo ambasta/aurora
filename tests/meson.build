@@ -277,10 +277,12 @@ test('console-service-admission-controls', python,
 
 # Second sealed kind reuses the service verifier and private bridge.
 display_service_ir = executable(
-    'display-service-ir', 'compiler/display_service_ir.cpp',
+    'display-service-ir', 'compiler/service_group_ir.cpp',
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
-test('display-service-ir', display_service_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
+test('display-service-ir', python,
+     args: ['-B', '-O', files('compiler/service_group_ir_abi.py'), display_service_ir],
+     depends: display_service_ir, suite: ['full', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 test('display-service-source-native', python,
      args: ['-B', '-O', files('compiler/display_service.py'), aurorac],
      depends: aurorac, suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,

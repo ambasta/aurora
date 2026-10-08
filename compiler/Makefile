@@ -416,8 +416,8 @@ test-display-service: $(OUT)
 	@set -eu; \
 	work="$$(mktemp -d "$(dir $(abspath $(OUT)))display-service.XXXXXXXX")"; \
 	python3 -B -O ../tests/compiler/display_service.py "$(abspath $(OUT))"; \
-	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/display_service_ir.cpp -o "$$work/ir-tests"; \
-	"$$work/ir-tests"; \
+	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/service_group_ir.cpp -o "$$work/ir-tests"; \
+	python3 -B -O ../tests/compiler/service_group_ir_abi.py "$$work/ir-tests"; \
 	printf 'PASS display service Make recipe: %s\n' "$$work"
 
 endif # controlled outer dispatcher / original inner graph

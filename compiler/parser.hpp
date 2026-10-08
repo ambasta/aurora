@@ -533,7 +533,12 @@ public:
                 if (peek().text == "&") {
                     parameter.borrowSpan = take().span;
                     parameter.borrowed = true;
-                    if (!allowBorrow || !function.params.empty() || !templateParameters.empty() ||
+                    const bool distinctServiceContinuation =
+                        parameter.type.isService() && function.params.size() == 1 &&
+                        function.params.front().borrowed && function.params.front().type.isService() &&
+                        function.params.front().type != parameter.type;
+                    if (!allowBorrow || (!function.params.empty() && !distinctServiceContinuation) ||
+                        !templateParameters.empty() ||
                         (!parameter.type.isClass() && !parameter.type.isService()) ||
                         !parameter.type.templateArguments.empty())
                         fail("borrowed parameters require one leading concrete owning class on an ordinary function");

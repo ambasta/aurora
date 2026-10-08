@@ -229,16 +229,25 @@ inline void verifyFunction(Function &function,
         function.receiver && function.receiver->constructor && owningClass(classFields, function.receiver->className);
     const bool resourceFunction = resourceSignature(function, classFields);
     const bool serviceFunction = serviceSignature(function);
+    std::size_t serviceParameterCount = 0;
     if (serviceFunction) {
         require(!function.receiver && !function.borrowedParameter && !resourceFunction &&
                     !function.parameters.empty() && function.parameters.front().isService(),
-                "service signature requires one leading sealed capability and no receiver or region");
-        for (std::size_t index = 1; index < function.parameters.size(); ++index)
+                "service signature requires a leading sealed group and no receiver or region");
+        std::set<service::Kind> kinds;
+        while (serviceParameterCount < function.parameters.size() &&
+               function.parameters[serviceParameterCount].isService()) {
+            require(kinds.insert(service::kind(function.parameters[serviceParameterCount])).second,
+                    "service signature requires distinct capability kinds");
+            ++serviceParameterCount;
+        }
+        require(serviceParameterCount <= 2, "unsupported service group");
+        for (std::size_t index = serviceParameterCount; index < function.parameters.size(); ++index)
             require(scalarValueType(function.parameters[index], enumCases) ||
                         function.parameters[index] == Type::ByteSpan,
                     "service signature requires later scalar, enum or readonly span arguments");
         require(scalarValueType(function.result, enumCases) ||
-                    (function.parameters.front() == Type::ConsoleSession && function.result == service::sampleType()),
+                    (kinds.contains(service::Kind::Console) && function.result == service::sampleType()),
                 "service signature has unsupported result");
     }
     require(serviceFunction || function.serviceSlots.empty(), "service spills without a service signature");
@@ -270,7 +279,7 @@ inline void verifyFunction(Function &function,
         if (scalarValueType(type, enumCases))
             return;
         if (type.isService()) {
-            require(parameter && serviceFunction && type == function.parameters.front(),
+            require(parameter && serviceFunction,
                     "service capability cannot cross an ordinary boundary or return");
             return;
         }
@@ -433,7 +442,7 @@ inline void verifyFunction(Function &function,
     std::set<int> spanParameterSlots;
     std::set<int> byteParameterSlots;
     std::optional<int> regionParameterSlot;
-    std::optional<int> serviceParameterSlot;
+    std::map<int, int> serviceParameterSlots; // source index -> distinct root spill
     std::map<int, int> spanParameterOrigins; // source position -> root spill
     for (std::size_t index = 0; index < function.code.size(); ++index) {
         const auto *serviceBinding = std::get_if<BindServiceParameter>(&function.code[index]);
@@ -446,9 +455,14 @@ inline void verifyFunction(Function &function,
         if (index < function.parameters.size()) {
             const auto &type = function.parameters[index];
             if (type.isService()) {
-                require(serviceBinding && serviceBinding->index == 0 && index == 0 && !serviceParameterSlot,
-                        "service binding must uniquely begin entry prefix");
-                serviceParameterSlot = serviceBinding->offset;
+                require(serviceBinding && serviceBinding->index == static_cast<int>(index) &&
+                            index < serviceParameterCount,
+                        "service bindings must form the leading entry group");
+                for (const auto &[position, root] : serviceParameterSlots) {
+                    (void)position;
+                    require(root != serviceBinding->offset, "service parameter bindings overlap");
+                }
+                serviceParameterSlots.emplace(static_cast<int>(index), serviceBinding->offset);
             } else if (type.isRegion()) {
                 require(regionBinding && regionBinding->index == 0 && index == 0,
                         "region parameter binding must begin the entry prefix");
@@ -483,7 +497,15 @@ inline void verifyFunction(Function &function,
                     "parameter binding outside entry prefix");
     }
     std::map<int, std::size_t> labels;
+    std::map<int, std::pair<int, service::Kind>> serviceLoanRoots;
     for (std::size_t index = 0; index < function.code.size(); ++index) {
+        if (const auto *loan = std::get_if<AcquireServiceLoan>(&function.code[index])) {
+            const auto root = std::pair{loan->offset, loan->kind};
+            require(loan->loanId > 0 &&
+                        (!serviceLoanRoots.contains(loan->loanId) || serviceLoanRoots.at(loan->loanId) == root),
+                    "service loan identity cannot change static root or kind");
+            serviceLoanRoots.emplace(loan->loanId, root);
+        }
         if (const auto *label = std::get_if<Label>(&function.code[index]))
             require(label->id >= 0 && labels.emplace(label->id, index).second, "duplicate or invalid label");
     }
@@ -1999,14 +2021,18 @@ inline void verifyFunction(Function &function,
                         require(state.stack.empty(), "unbalanced stack at owned byte return");
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, BindServiceParameter>) {
-                        require(serviceFunction && index == 0 && operation.index == 0 &&
-                                    operation.kind == service::kind(function.parameters.front()) &&
-                                    serviceParameterSlot == operation.offset &&
-                                    function.serviceSlots.contains(operation.offset) && state.activeServices.empty(),
+                        require(serviceFunction && index < serviceParameterCount &&
+                                    operation.index == static_cast<int>(index) &&
+                                    operation.kind == service::kind(function.parameters[index]) &&
+                                    serviceParameterSlots.at(operation.index) == operation.offset &&
+                                    function.serviceSlots.contains(operation.offset) &&
+                                    !state.activeServices.contains(operation.offset),
                                 "service binding requires exact authorized leading parameter");
                         state.activeServices.emplace(operation.offset, ServiceIdentity{index, operation.kind});
                     } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
-                        require(operation.loanId > 0 && state.serviceLoans.empty() &&
+                        require(operation.loanId > 0 && !state.serviceLoans.contains(operation.loanId) &&
+                                    std::none_of(state.serviceLoans.begin(), state.serviceLoans.end(),
+                                                 [&](const auto &loan) { return loan.second.offset == operation.offset; }) &&
                                     state.activeServices.contains(operation.offset) &&
                                     state.activeServices.at(operation.offset).kind == operation.kind,
                                 "service loan requires unsuspended parameter authority");
@@ -2020,7 +2046,9 @@ inline void verifyFunction(Function &function,
                                 "service release requires exactly one completed helper call");
                         state.serviceLoans.erase(operation.loanId);
                     } else if constexpr (std::is_same_v<Op, ServiceOperation>) {
-                        require(state.activeServices.contains(operation.offset) && state.serviceLoans.empty(),
+                        require(state.activeServices.contains(operation.offset) &&
+                                    std::none_of(state.serviceLoans.begin(), state.serviceLoans.end(),
+                                                 [&](const auto &loan) { return loan.second.offset == operation.offset; }),
                                 "service operation requires active unsuspended capability provenance");
                         require(state.activeServices.at(operation.offset).kind == operation.kind &&
                                     service::description(operation.operation).kind == operation.kind,
@@ -2055,19 +2083,35 @@ inline void verifyFunction(Function &function,
                     } else if constexpr (std::is_same_v<Op, ServiceCall>) {
                         require(functions.contains(operation.callee), "unknown service helper target");
                         const auto &target = *functions.at(operation.callee);
-                        require(serviceSignature(target) && !target.receiver &&
-                                    state.serviceLoans.contains(operation.loanId),
-                                "service helper requires service target and acquired loan");
-                        auto &loan = state.serviceLoans.at(operation.loanId);
-                        require(!loan.called && state.activeServices.contains(loan.offset) &&
-                                    state.activeServices.at(loan.offset) == loan.identity &&
-                                    loan.identity.kind == operation.kind &&
-                                    operation.kind == service::kind(target.parameters.front()),
-                                "service helper requires an unused loan with exact provenance");
-                        require(operation.spanArguments.size() == target.parameters.size() &&
-                                    operation.spanArguments[0] == 0,
+                        require(serviceSignature(target) && !target.receiver,
+                                "service helper requires service target and acquired loans");
+                        std::vector<ServiceArgument> arguments{{operation.loanId, operation.kind}};
+                        arguments.insert(arguments.end(), operation.additionalServices.begin(),
+                                         operation.additionalServices.end());
+                        const auto count = static_cast<std::size_t>(std::count_if(
+                            target.parameters.begin(), target.parameters.end(), [](const Type &type) {
+                                return type.isService();
+                            }));
+                        require(arguments.size() == count && count <= 2 &&
+                                    operation.spanArguments.size() == target.parameters.size(),
                                 "service helper argument vector mismatch");
-                        for (std::size_t reverse = target.parameters.size(); reverse > 1; --reverse) {
+                        std::set<int> usedLoans, usedRoots;
+                        for (std::size_t position = 0; position < count; ++position) {
+                            const auto &argument = arguments[position];
+                            require(state.serviceLoans.contains(argument.loanId) &&
+                                        usedLoans.insert(argument.loanId).second &&
+                                        operation.spanArguments[position] == 0 &&
+                                        target.parameters[position].isService(),
+                                    "service helper requires distinct acquired loans in leading positions");
+                            auto &loan = state.serviceLoans.at(argument.loanId);
+                            require(!loan.called && usedRoots.insert(loan.offset).second &&
+                                        state.activeServices.contains(loan.offset) &&
+                                        state.activeServices.at(loan.offset) == loan.identity &&
+                                        loan.identity.kind == argument.kind &&
+                                        argument.kind == service::kind(target.parameters[position]),
+                                    "service helper requires an unused loan with exact provenance");
+                        }
+                        for (std::size_t reverse = target.parameters.size(); reverse > count; --reverse) {
                             const auto position = reverse - 1;
                             const auto &type = target.parameters[position];
                             const int base = operation.spanArguments[position];
@@ -2095,7 +2139,8 @@ inline void verifyFunction(Function &function,
                                     "service scalar result mismatch");
                             state.current = Value{target.result, {}};
                         }
-                        loan.called = true;
+                        for (const auto &argument : arguments)
+                            state.serviceLoans.at(argument.loanId).called = true;
                     } else if constexpr (std::is_same_v<Op, BindRegionParameter>) {
                         require(resourceFunction && operation.index == 0 &&
                                     function.parameters.front() == Type::ByteRegion,
