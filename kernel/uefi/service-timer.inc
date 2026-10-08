@@ -85,10 +85,10 @@ auto timer_begin(unsigned index) -> void {
     require(index<L::domain_count && domains[index].handle && selected_client<2
         && !timer_armed && timer_epoch!=UINT64_MAX,"user timer run boundary");
     const auto budget=(launch[0]==5 || launch[0]==6 || launch[0]==7) ? 3U : 128U;
-    auto authorization=RunAuthority::authorize(registry,*domains[index].handle,selected_role,selected_phase,selected_client,transaction,
+    auto authorization=SelectedRunAuthority::authorize(registry,*domains[index].handle,selected_role,selected_phase,selected_client,transaction,
         launch[0],arena,root(),*domains[index].contract,timer_epoch+1,budget);
     require(authorization.has_value(),"user timer immutable authority"); run_authority.emplace(*authorization);
-    require(selected_role!=RunAuthority::Role::service || service_delivered(),"user service selection");
+    require(selected_role!=SelectedRunAuthority::Role::service || service_delivered(),"user service selection");
 #else
     require(index==1 && selected_phase==ipc::Phase::service && service_delivered()
         && registry.active(*domains[index].handle) && !timer_armed && timer_epoch!=UINT64_MAX,"timer run authority");
@@ -105,7 +105,7 @@ auto timer_begin(unsigned index) -> void {
     require(timer_arm(),"timer arm");
 #ifdef AURORA_UEFI_USER_BUDGET
     Serial::text("AURORA_UEFI_USER_RUN: epoch="); Serial::number(run_authority->epoch());
-    Serial::text(" role="); Serial::text(run_authority->role()==RunAuthority::Role::client ? "client" : "service");
+    Serial::text(" role="); Serial::text(run_authority->role()==SelectedRunAuthority::Role::client ? "client" : "service");
     Serial::text(" phase="); Serial::text(run_authority->phase()==ipc::Phase::request ? "request" : run_authority->phase()==ipc::Phase::service ? "service" : "completion");
     Serial::text(" client="); Serial::number(run_authority->client()); Serial::text(" transaction="); Serial::number(run_authority->transaction());
     Serial::text(" source="); Serial::number(run_authority->source_phase()); Serial::text(" root="); Serial::number(run_authority->root()); Serial::text("\r\n");
@@ -138,7 +138,7 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
         && run_authority->matches_active(registry,*domains[active].handle,selected_role,selected_phase,selected_client,transaction,
             launch[0],arena,root(),*domains[active].contract,timer_owner_epoch)
         && registry.active(*timer_owner) && timer_armed && timer_owner_epoch==timer_epoch && timer_remaining!=0
-        && (selected_role!=RunAuthority::Role::service || service_delivered())
+        && (selected_role!=SelectedRunAuthority::Role::service || service_delivered())
         && saved_rsp%8==0 && saved_rsp>=arena+Handoff::stack_bottom && saved_rsp<=arena+Handoff::stack_top-56
         && frame>=arena+L::rsp0_bottom && frame<=arena+L::rsp0_top-176 && frame%8==0,"user timer active authority");
     const auto& interrupted_contract=run_authority->contract();
@@ -155,8 +155,13 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
         && cs==context->words()[18] && timer_acknowledge(),"timer frame/ISR authority");
     bool context_sample=false;
 #ifdef AURORA_UEFI_USER_BUDGET
+    #ifdef AURORA_UEFI_PROGRAM_CONSOLE
+    const std::array<U64,2> compiled_begin{images::clean_compiled_begin,images::bounds_compiled_begin};
+    const std::array<U64,2> compiled_end{images::clean_compiled_end,images::bounds_compiled_end};
+#else
     const std::array<U64,3> compiled_begin{images::clean_compiled_begin,images::bounds_compiled_begin,images::peer_compiled_begin};
     const std::array<U64,3> compiled_end{images::clean_compiled_end,images::bounds_compiled_end,images::peer_compiled_end};
+#endif
     if (pc>=compiled_begin[active] && pc<compiled_end[active]) ++timer_compiled_hits;
 #else
     if (pc>=images::bounds_compiled_begin && pc<images::bounds_compiled_end) ++timer_compiled_hits;

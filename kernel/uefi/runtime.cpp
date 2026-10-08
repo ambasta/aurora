@@ -16,9 +16,9 @@
 #include "../ipc-policy.hpp"
 #ifdef AURORA_UEFI_DISPATCH
 #include "../dispatch-policy.hpp"
+#endif
 #ifdef AURORA_UEFI_USER_BUDGET
 #include "user-run-policy.hpp"
-#endif
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #include "acpi.hpp"
@@ -29,6 +29,12 @@
 #endif
 #include <array>
 #include <optional>
+#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+#include "console-context.hpp"
+#include "../console-presentation.hpp"
+#include "../console-uart.hpp"
+#include "../program-stream.hpp"
+#endif
 namespace aurora::uefi {
 extern std::uint64_t saved_rsp asm("uefi_runtime_saved_rsp") __attribute__((visibility("hidden")));
 #ifdef AURORA_UEFI_IPC
@@ -39,7 +45,13 @@ auto enter(std::uint64_t,std::uint64_t) -> std::uint64_t asm("uefi_runtime_enter
 auto handler(unsigned) -> std::uint64_t asm("uefi_runtime_handler") __attribute__((visibility("hidden")));
 namespace {
 using U64=std::uint64_t;
+#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+// Runtime diagnostics and input share the same sticky LSR error latch. A raw
+// hardware::Serial read during a protected command would otherwise erase OE.
+using Serial=console::Uart<hardware::Io,console::FifoTrigger::fourteen>;
+#else
 using hardware::Serial;
+#endif
 using user::ProgramEvent;
 using L=RuntimeLayout;
 class Domain final {
@@ -57,13 +69,20 @@ constinit user::ProgramRun program;
 #ifdef AURORA_UEFI_IPC
 #ifdef AURORA_UEFI_DISPATCH
 constinit std::optional<ipc::Dispatcher> dispatcher;
-unsigned selected_client=2;
-#ifdef AURORA_UEFI_USER_BUDGET
-std::optional<RunAuthority> run_authority;
-RunAuthority::Role selected_role=RunAuthority::Role::client;
-#endif
 #else
 constinit std::optional<ipc::Mailbox> mailbox;
+#endif
+#if defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_PROGRAM_CONSOLE)
+unsigned selected_client=2;
+#endif
+#ifdef AURORA_UEFI_USER_BUDGET
+#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+using SelectedRunAuthority=ProgramRunAuthority;
+#else
+using SelectedRunAuthority=RunAuthority;
+#endif
+std::optional<SelectedRunAuthority> run_authority;
+SelectedRunAuthority::Role selected_role=SelectedRunAuthority::Role::client;
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 std::array<U64,7> launch{};
@@ -266,6 +285,8 @@ auto execute(unsigned index,ProgramEvent wanted) -> void {
 #ifdef AURORA_UEFI_USER_BUDGET
 #include "user-lifecycle.inc"
 #endif
+#elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
+#include "program-console.inc"
 #else
 #include "ipc-runtime.inc"
 #endif
@@ -273,6 +294,9 @@ auto execute(unsigned index,ProgramEvent wanted) -> void {
 }
 auto dispatch(U64,U64,U64,U64,U64,U64) -> U64 asm("aurora_exception_dispatch") __attribute__((visibility("hidden")));
 auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
+#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+    if (program_console_interrupt(vector,error,pc,cs,frame)) return 0;
+#endif
     U64 cr2; asm volatile("mov %%cr2,%0":"=r"(cr2));
     Serial::text("AURORA_UEFI_DOMAIN_EVENT: vector="); Serial::number(vector); Serial::text(" error="); Serial::number(error);
     Serial::text(" pc="); Serial::number(pc); Serial::text(" cpl="); Serial::number(cs&3); Serial::text(" root="); Serial::number(root());
@@ -316,7 +340,7 @@ auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
 #endif
         const auto integer=ServiceContext::capture(std::span<const U64>{reinterpret_cast<const U64*>(frame),22},frame,*domains[active].contract);
         require(timer_armed && integer && integer->terminal_context(*domains[active].contract) && timer_stop(),"timer terminal context");
-#if defined(AURORA_BUDGET_PENDING) || defined(AURORA_DISPATCH_PENDING) || defined(AURORA_USER_PENDING)
+#if defined(AURORA_BUDGET_PENDING) || defined(AURORA_DISPATCH_PENDING) || defined(AURORA_USER_PENDING) || defined(AURORA_PROGRAM_PENDING)
         force_timer_pending();
 #endif
 #ifdef AURORA_USER_RETIRE_PENDING
@@ -328,7 +352,9 @@ auto dispatch(U64 vector,U64 error,U64 pc,U64 cs,U64 frame,U64 result) -> U64 {
     const user::ProgramContext context{vector,error,pc,cs,captured.get(168),captured.get(160),saved_flags,frame};
     require(program.accept(context,result),"exception site authority");
 #ifdef AURORA_UEFI_IPC
-#ifdef AURORA_UEFI_DISPATCH
+#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+    program_console_envelope(captured,result);
+#elif defined(AURORA_UEFI_DISPATCH)
     dispatch_envelope(captured,result);
 #else
     if (program.event()==ProgramEvent::returned) {
@@ -379,6 +405,8 @@ auto run_protected(U64 owned_arena,const Bytes& h) -> bool {
 #else
     run_dispatcher();
 #endif
+#elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
+    run_program_console();
 #else
     run_ipc();
 #endif

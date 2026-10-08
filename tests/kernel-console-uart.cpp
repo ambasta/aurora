@@ -96,6 +96,25 @@ struct Suite {
                 need(!Uart::poll(line)); need(Ports::input.empty() && Ports::rx_flushes == 2);
                 command(line, "\n", Event::rejected); command(line, "status\n", Event::status);
             }
+            {
+                // Runtime trace TX can observe and clear a receive error while
+                // a protected command owns the CPU. The next copied submission
+                // must still reject; input and diagnostics share one instance.
+                using RuntimeTrace = Uart;
+                using ProgramInput = Uart;
+                reset(); Line line; aurora::console::Snapshot snapshot;
+                prefix(line, "upper"); queue(" silently truncated");
+                Ports::inject_at = 3; Ports::error_after_write = error;
+                RuntimeTrace::text("AURORA_UEFI_DOMAIN_EVENT: vector="); RuntimeTrace::number(129);
+                RuntimeTrace::text("\r\nAURORA_UEFI_TIMER_QUIET: epoch=1\r\n");
+                need(Ports::error == 0 && Ports::input.empty() && Ports::rx_flushes == 2);
+                need(!ProgramInput::poll(line));
+                queue("\n"); const auto delimiter = ProgramInput::poll(line);
+                need(delimiter && line.consume(*delimiter, &snapshot) == Event::rejected);
+                need(!snapshot.submitted() && snapshot.length() == 0);
+                for (const auto byte : snapshot.bytes()) need(byte == 0);
+                command(line, "help\n", Event::help);
+            }
             for (const std::string delimiter : {"\n", "\r", "\r\n"}) {
                 reset(); Line line; prefix(line, "help"); queue(delimiter + "exit\n"); Ports::error_after_read = error;
                 const auto byte = Uart::poll(line);

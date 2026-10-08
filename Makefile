@@ -109,6 +109,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
     test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-client-disposal test-terminal-event test-native-cap-contracts \
     run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
+    program-console-uefi smoke-program-console-uefi test-program-stream \
     test-developer-commands: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
@@ -126,7 +127,7 @@ all: compiler kernel
 # Export these selectors so both environment and make NAME=value syntax work.
 export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
-.PHONY: help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands
+.PHONY: help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi test-program-stream
 help:
 	@printf '%s\n' \
 	  'make                  Build the compiler and BIOS kernel image' \
@@ -135,6 +136,8 @@ help:
 	  'make run-uefi         Build and verify one normal UEFI QEMU boot' \
 	  'make console          Open an opt-in BIOS serial console in QEMU' \
 	  'make console-uefi     Open an opt-in UEFI timer-polled serial console' \
+	  'make program-console-uefi  Open a separately reviewed protected command console' \
+	  'make test-program-stream  Run copied-stream and two-role authority host tests' \
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
 	  'make test-compiler    Run the compiler-only suite (fresh compiler)' \
@@ -157,6 +160,17 @@ console:
 
 console-uefi:
 	./scripts/kernel-uefi-console.sh
+
+program-console-uefi:
+	./scripts/kernel-program-console.sh
+
+smoke-program-console-uefi:
+	./scripts/kernel-program-console-smoke.sh
+
+test-program-stream:
+	./scripts/kernel-program-tests.sh
+
+test: test-program-stream
 
 smoke-console:
 	./scripts/kernel-console-smoke.sh bios

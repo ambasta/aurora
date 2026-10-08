@@ -134,6 +134,9 @@ skip_context_probe:
 .ifdef IPC_VERSION
     mov $2,%esi
 .endif
+.ifdef IPC_ORDINAL
+    inc %r9
+.endif
 .ifdef IPC_TRANSACTION
     inc %r8
 .endif
