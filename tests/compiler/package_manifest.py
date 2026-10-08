@@ -610,7 +610,7 @@ def negative_cases():
         (
             "span-cannot-be-field",
             PREFIX + "class Leak{builtin::span<const u8> value;};",
-            "class fields require scalar, class or private fixed-array storage (found ';')",
+            "class fields require scalar, class, private fixed-array or private owned-byte storage (found ';')",
         ),
         (
             "manifest-enum-no-conversion",
@@ -635,12 +635,12 @@ def negative_cases():
         (
             "manifest-no-span-forgery",
             wrap(m + "const builtin::span<const u8> v=borrow_bytes(m);"),
-            "borrow_bytes requires a named local byte array",
+            "borrow_bytes requires a named local byte array or owned bytes",
         ),
         (
             "dependency-no-span-forgery",
             wrap(d + "const builtin::span<const u8> v=borrow_bytes(d);"),
-            "borrow_bytes requires a named local byte array",
+            "borrow_bytes requires a named local byte array or owned bytes",
         ),
         (
             "manifest-unsigned-offset",

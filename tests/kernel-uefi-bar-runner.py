@@ -105,6 +105,152 @@ class BarRunner(unittest.TestCase):
             runner.run("bar-prepare", self.out)
         self.assert_no_work()
 
+    def main_result(self):
+        output, errors = io.StringIO(), io.StringIO()
+        argv = ["bar-runner", "bar-prepare", "--output", str(self.out)]
+        with patch.object(sys, "argv", argv), redirect_stdout(output), redirect_stderr(errors):
+            status = runner.main()
+        return SimpleNamespace(returncode=status, stdout=output.getvalue(), stderr=errors.getvalue())
+
+    def assert_outcome(self, result, outcome, diagnostic=""):
+        transcript = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0 if outcome == "PASS" else 2, transcript)
+        stream = result.stdout if outcome == "PASS" else result.stderr
+        self.assertTrue(any(line.startswith(outcome + ":") for line in stream.splitlines()), transcript)
+        self.assertIn(diagnostic, transcript)
+        for other in {"PASS", "FAIL", "BLOCKED"} - {outcome}:
+            self.assertFalse(any(line.startswith(other + ":") for line in transcript.splitlines()), transcript)
+
+    def test_main_missing_selectors_and_qemu_report_blocked_without_work(self):
+        for name in ("QEMU_DATA", "AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "LD_LIBRARY_PATH"):
+            for value in (None, ""):
+                with self.subTest(name=name, value=value), patch.dict(os.environ):
+                    if value is None:
+                        del os.environ[name]
+                    else:
+                        os.environ[name] = value
+                    self.assert_outcome(self.main_result(), "BLOCKED", "Set " + name)
+                    self.assert_no_work()
+        os.environ["QEMU"] = "missing-qemu"
+        self.assert_outcome(self.main_result(), "BLOCKED", "Missing dependency: missing-qemu")
+        self.assert_no_work()
+
+    def test_main_missing_external_paths_and_selected_compiler_are_blocked(self):
+        for name in ("QEMU_DATA", "AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "AURORAC"):
+            with self.subTest(name=name), patch.dict(os.environ, {name: str(self.home / "missing")}):
+                self.assert_outcome(self.main_result(), "BLOCKED", name)
+                self.assert_no_work()
+        for path in (self.code, self.variables, self.firmware_patch):
+            with self.subTest(path=path):
+                original = path.read_bytes()
+                path.unlink()
+                try:
+                    self.assert_outcome(self.main_result(), "BLOCKED", str(path))
+                    self.assert_no_work()
+                finally:
+                    path.write_bytes(original)
+
+    def test_main_unreadable_external_input_is_blocked(self):
+        real_access = os.access
+
+        def readable(path, mode):
+            return False if Path(path) == self.code else real_access(path, mode)
+
+        with patch.object(runner.os, "access", side_effect=readable):
+            self.assert_outcome(self.main_result(), "BLOCKED", str(self.code))
+        self.assert_no_work()
+        for operation, target in (
+            ("resolve", self.code),
+            ("exists", self.code),
+            ("is_file", self.code),
+            ("is_dir", self.data),
+        ):
+            original = getattr(Path, operation)
+
+            def probe(path, *args, **kwargs):
+                if path == target:
+                    raise PermissionError("unreadable external prerequisite " + str(target))
+                return original(path, *args, **kwargs)
+
+            with self.subTest(operation=operation), patch.object(Path, operation, probe):
+                self.assert_outcome(self.main_result(), "BLOCKED", str(target))
+                self.assert_no_work()
+
+    def test_main_missing_coverage_artifacts_are_blocked_but_invalid_coverage_fails(self):
+        for error in (FileNotFoundError("missing retained trace"), PermissionError("unreadable retained trace")):
+            with self.subTest(error=error), patch.object(self.trace, "load_coverage", side_effect=error):
+                self.assert_outcome(self.main_result(), "BLOCKED", str(error))
+                self.assert_no_work()
+        with patch.dict(self.coverage, {"msix_control": str(self.home / "missing-msix-control")}):
+            self.assert_outcome(self.main_result(), "BLOCKED", "MSI-X")
+            self.assert_no_work()
+        for error in (KeyError("events"), TypeError("wrong coverage type"), ValueError("invalid trace inventory")):
+            with self.subTest(error=error), patch.object(self.trace, "load_coverage", side_effect=error):
+                self.assert_outcome(self.main_result(), "FAIL", "Invalid AURORA_BAR_COVERAGE")
+                self.assert_no_work()
+        self.trace.validate_coverage = REAL_TRACE.validate_coverage
+        self.assert_outcome(self.main_result(), "FAIL", "Unpinned trace binary")
+        self.assert_no_work()
+
+    def test_main_invalid_selectors_controls_and_pins_still_fail(self):
+        cases = (
+            ("QEMU", str(self.data)),
+            ("QEMU", str(self.code)),
+            ("QEMU", "invalid,qemu"),
+            ("QEMU_DATA", str(self.code)),
+            ("AURORA_BAR_COVERAGE", str(self.data)),
+            ("AURORA_BAR_FIRMWARE", str(self.code)),
+            ("AURORAC", str(self.data)),
+            ("KERNEL_TEST_FUTURE", "active"),
+        )
+        for name, value in cases:
+            with self.subTest(name=name), patch.dict(os.environ, {name: value}):
+                self.assert_outcome(self.main_result(), "FAIL", name)
+                self.assert_no_work()
+        comma_directory = self.home / "invalid,data"
+        comma_directory.mkdir()
+        with patch.dict(os.environ, {"QEMU_DATA": str(comma_directory)}):
+            self.assert_outcome(self.main_result(), "FAIL", "commas or line breaks")
+            self.assert_no_work()
+        self.code.write_bytes(self.code.read_bytes() + b"unreviewed")
+        self.assert_outcome(self.main_result(), "FAIL", "Unreviewed clean firmware CODE")
+        self.assert_no_work()
+
+    def test_main_build_validator_and_restoration_failures_never_report_blocked(self):
+        cases = (
+            ({"BUILD_STATUS": "79"}, None, "79"),
+            ({}, ValueError("serial rejected"), "serial rejected"),
+            ({}, OSError("missing generated trace"), "missing generated trace"),
+            ({}, subprocess.TimeoutExpired("synthetic qemu", 60), "timed out"),
+            ({"RESTORE_STATUS": "81"}, None, "81"),
+            ({"RESTORE_STATUS": "81"}, ValueError("trace rejected"), "trace rejected"),
+        )
+        for env, error, diagnostic in cases:
+            with self.subTest(env=env, error=error), patch.dict(os.environ, env):
+                with patch.object(runner, "execute", side_effect=error):
+                    self.assert_outcome(self.main_result(), "FAIL", diagnostic)
+                self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare", "normal"])
+                shutil.rmtree(self.out)
+                self.calls.unlink()
+
+    def test_main_existing_output_and_output_creation_error_still_fail(self):
+        self.out.mkdir()
+        marker = self.out / "keep"
+        marker.write_text("retained")
+        self.assert_outcome(self.main_result(), "FAIL", "fresh and absent")
+        self.assertEqual(marker.read_text(), "retained")
+        self.assertFalse(self.calls.exists())
+        marker.unlink()
+        self.out.rmdir()
+        with patch.object(Path, "mkdir", side_effect=PermissionError("output unavailable")):
+            self.assert_outcome(self.main_result(), "FAIL", "output unavailable")
+        self.assert_no_work()
+
+    def test_main_success_reports_pass_only_after_normal_restoration(self):
+        with patch.object(runner, "execute"):
+            self.assert_outcome(self.main_result(), "PASS", "normal image restored")
+        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare", "normal"])
+
     def test_each_missing_required_selector_rejects_without_artifacts_or_restore(self):
         for name in ("QEMU_DATA", "AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "LD_LIBRARY_PATH"):
             with self.subTest(name=name), patch.dict(os.environ, {name: ""}):
@@ -465,6 +611,187 @@ class BarRunner(unittest.TestCase):
                 self.trace.validate_trace.reset_mock()
                 self.provenance.validate.reset_mock()
                 shutil.rmtree(self.out)
+
+    def prepare_public_runner(self):
+        """Run real Make/main/lifecycle with synthetic validators, images and QEMU."""
+        shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
+        shutil.copy2(ROOT / "scripts/kernel-uefi-bar-run.py", self.repo / "scripts/kernel-uefi-bar-run.py")
+        self.python_calls = self.home / "python-calls"
+        self.main_status = self.home / "main-status"
+        self.public_bin = self.home / "bin"
+        self.public_bin.mkdir()
+        python = self.public_bin / "python3"
+        python.write_text(
+            "#!"
+            + sys.executable
+            + " -B\n"
+            + r"""import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import sys
+from types import SimpleNamespace
+
+Path(os.environ["PYTHON_CALLS"]).write_text("runner invoked\n")
+sys.argv = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("public_bar_runner", sys.argv[0])
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+
+def validate(label):
+    if os.environ.get("VALIDATOR_FAILURE") == label:
+        raise ValueError(label + " rejected")
+
+def smoke(status, serial, mode, metadata):
+    if status != 33:
+        raise ValueError("Wrong emulator exit status: " + str(status))
+    if serial != "synthetic serial\n":
+        raise ValueError("Wrong synthetic serial")
+    validate("serial")
+
+def trace_result(*args):
+    validate("trace")
+    return {"synthetic_validation": True}
+
+modules = {
+    "bar-trace": SimpleNamespace(
+        load_coverage=lambda path: {"synthetic_control": True},
+        validate_coverage=lambda coverage: None,
+        validate_trace=trace_result,
+    ),
+    "bar-provenance": SimpleNamespace(
+        PINS=SYNTHETIC_PINS,
+        REVISION="synthetic firmware revision",
+        validate=lambda path: validate("provenance"),
+    ),
+    "bar-smoke": SimpleNamespace(validate=smoke),
+}
+runner.module = modules.__getitem__
+real_run = subprocess.run
+
+def synthetic_qemu(argv, **kwargs):
+    if str(argv[0]) != os.environ["QEMU"]:
+        return real_run(argv, **kwargs)
+    out = Path(kwargs["stdout"].name).parent
+    kwargs["stdout"].write("synthetic serial\n")
+    (out / "trace.log").write_text("synthetic trace\n")
+    (out / "firmware.log").write_text("synthetic firmware\n")
+    if os.environ.get("GUEST_TIMEOUT"):
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+    return SimpleNamespace(returncode=int(os.environ.get("GUEST_STATUS", "33")))
+
+runner.subprocess.run = synthetic_qemu
+status = runner.main()
+Path(os.environ["MAIN_STATUS"]).write_text(str(status) + "\n")
+sys.exit(status)
+""".replace("SYNTHETIC_PINS", repr(self.provenance.PINS))
+        )
+        python.chmod(0o755)
+        self.builder.write_text(
+            "#!"
+            + sys.executable
+            + " -B\n"
+            + r"""import os
+from pathlib import Path
+import sys
+
+mode = os.environ["UEFI_MODE"]
+with Path(os.environ["CALLS"]).open("a") as calls:
+    calls.write(mode + "\n")
+if mode == "normal":
+    sys.exit(int(os.environ.get("RESTORE_STATUS", "0")))
+status = int(os.environ.get("BUILD_STATUS", "0"))
+if status:
+    sys.exit(status)
+build = Path("build/uefi")
+(build / "esp/EFI/BOOT").mkdir(parents=True)
+(build / "esp/EFI/BOOT/BOOTX64.EFI").write_text("synthetic loader")
+Path("build/aurorac").write_text("synthetic compiler identity")
+for name in ("payload.bin", "payload.elf"):
+    (build / name).write_text("synthetic payload")
+(build / "bar-metadata.json").write_text("{}")
+"""
+        )
+
+    def public_make_result(self, env=None, receipt=True):
+        environment = dict(
+            self.env,
+            PATH=str(self.public_bin) + os.pathsep + str(self.home),
+            PYTHON_CALLS=str(self.python_calls),
+            MAIN_STATUS=str(self.main_status),
+            PYTHONOPTIMIZE=str(sys.flags.optimize),
+        )
+        if receipt:
+            environment["AURORA_NVME_RECEIPTS"] = str(self.out)
+        environment.update(env or {})
+        return subprocess.run(
+            [shutil.which("make", path=os.defpath), "--no-print-directory", "smoke-nvme-prepare"],
+            cwd=self.repo,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    def test_public_make_missing_or_empty_receipt_is_blocked_before_python(self):
+        self.prepare_public_runner()
+        for env in ({}, {"AURORA_NVME_RECEIPTS": ""}):
+            with self.subTest(env=env):
+                self.assert_outcome(self.public_make_result(env, receipt=False), "BLOCKED", "AURORA_NVME_RECEIPTS")
+                self.assertFalse(self.python_calls.exists())
+                self.assertFalse(self.main_status.exists())
+                self.assert_no_work()
+
+    def test_public_make_real_runner_prerequisites_block_and_invalid_inputs_fail(self):
+        self.prepare_public_runner()
+        cases = (
+            ({"QEMU": "missing-qemu"}, "BLOCKED", "Missing dependency: missing-qemu"),
+            ({"QEMU": str(self.data)}, "FAIL", "QEMU"),
+            ({"QEMU": str(self.code)}, "FAIL", "QEMU"),
+            ({"QEMU_DATA": ""}, "BLOCKED", "Set QEMU_DATA"),
+            ({"AURORA_BAR_FIRMWARE": ""}, "BLOCKED", "Set AURORA_BAR_FIRMWARE"),
+            ({"AURORA_BAR_COVERAGE": str(self.home / "missing")}, "BLOCKED", "AURORA_BAR_COVERAGE"),
+            ({"QEMU_DATA": str(self.code)}, "FAIL", "QEMU_DATA"),
+        )
+        for env, outcome, diagnostic in cases:
+            with self.subTest(env=env):
+                self.assert_outcome(self.public_make_result(env), outcome, diagnostic)
+                self.assertTrue(self.python_calls.is_file())
+                self.assertEqual(self.main_status.read_text(), "2\n")
+                self.assert_no_work()
+        self.code.write_bytes(self.code.read_bytes() + b"unreviewed")
+        self.assert_outcome(self.public_make_result(), "FAIL", "Unreviewed clean firmware CODE")
+        self.assert_no_work()
+
+    def test_public_make_real_runner_build_guest_validator_restore_and_success_outcomes(self):
+        self.prepare_public_runner()
+        cases = (
+            ({"BUILD_STATUS": "79"}, "FAIL", "79"),
+            ({"GUEST_STATUS": "7"}, "FAIL", "Wrong emulator exit status: 7"),
+            ({"GUEST_TIMEOUT": "1"}, "FAIL", "Wrong emulator exit status: 124"),
+            ({"VALIDATOR_FAILURE": "serial"}, "FAIL", "serial rejected"),
+            ({"VALIDATOR_FAILURE": "trace"}, "FAIL", "trace rejected"),
+            ({"VALIDATOR_FAILURE": "provenance"}, "FAIL", "provenance rejected"),
+            ({"RESTORE_STATUS": "81"}, "FAIL", "81"),
+            ({"VALIDATOR_FAILURE": "trace", "RESTORE_STATUS": "81"}, "FAIL", "restoration also failed"),
+            ({}, "PASS", "normal image restored"),
+        )
+        for env, outcome, diagnostic in cases:
+            with self.subTest(env=env):
+                result = self.public_make_result(env)
+                self.assert_outcome(result, outcome, diagnostic)
+                self.assertEqual(self.main_status.read_text(), "0\n" if outcome == "PASS" else "2\n")
+                self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare", "normal"])
+                self.assertTrue((self.out / "build.log").is_file())
+                self.assertTrue((self.out / "restore.log").is_file())
+                if outcome == "PASS":
+                    receipt = json.loads((self.out / "receipt.json").read_text())
+                    self.assertEqual(receipt["mode"], "bar-prepare")
+                    self.assertEqual(receipt["status"], 33)
+                    self.assertTrue((self.out / "trace-result.json").is_file())
+                shutil.rmtree(self.out)
+                shutil.rmtree(self.repo / "build", ignore_errors=True)
+                self.calls.unlink()
 
     def test_public_make_exports_receipt_and_fixture_selectors(self):
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
