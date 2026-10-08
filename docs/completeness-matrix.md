@@ -1,5 +1,14 @@
 # Completeness and acceptance matrix
 
+## Checked JSON integer codecs — candidate 2026-10-08
+
+The [integer codec contract](json-integers.md) adds exact integer-spelling checked
+i64/u64 conversion, explicit unsupported fraction/exponent forms, and generic
+mathematically bounded decimal integer encoding. Existing DFA/accumulator and
+ByteBuffer composition are reused. Source admission passed; independent native
+oracles, regressions and review remain pending. No floats, owned strings, DOM,
+native LSP or full-native qualification is claimed.
+
 ## JSON scalar codecs — 2026-10-08
 
 A shared scalar-valid string reader and canonical escaped-scalar copied result

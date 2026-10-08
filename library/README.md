@@ -486,3 +486,9 @@ input or introduces a string container. The [scalar contract](../docs/json-codec
 and [focused results](../docs/json-codecs-results.md) cover real ByteBuffer
 composition, allocation failure and larger owner-backed windows. Whole-document
 serialization, numeric conversion and native LSP integration remain separate.
+
+## Checked JSON integer codecs (candidate)
+
+See the [contract](../docs/json-integers.md) for checked exact-spelling i64/u64
+conversion and generic decimal integer encoding. The example reserves complete
+output once using existing ByteBuffer. Native qualification/review are pending.
