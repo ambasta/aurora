@@ -350,6 +350,28 @@ public:
     int receiverFieldIndex = -1;           // -1 selects the root; otherwise one logical owned class field
     std::vector<int> spanArguments = {};   // zero except readonly capability positions
 };
+// Invocation-only object authority. Loan IDs are verifier identities, never
+// stack offsets or source-visible addresses. Acquisition precedes later arguments.
+class AcquireObjectLoan {
+public:
+    int loanId;
+    int root;
+    bool mutableValue;
+};
+class ReleaseObjectLoan {
+public:
+    int loanId;
+};
+class BorrowedCall {
+public:
+    std::string callee;
+    int receiverOffset;
+    int loanId;
+    std::vector<int> objectArguments = {};
+    int resultOffset = 0;
+    std::vector<int> spanArguments = {};
+    static constexpr int receiverFieldIndex = -1;
+};
 class MetadataQuery {
 public:
     Query query;
@@ -454,7 +476,10 @@ using Instruction = std::variant<Constant,
                                  InitializeBytesField,
                                  MoveObject,
                                  BindOwnedObjectParameter,
-                                 ReturnOwnedObject>;
+                                 ReturnOwnedObject,
+                                 AcquireObjectLoan,
+                                 ReleaseObjectLoan,
+                                 BorrowedCall>;
 class ObjectSlot {
 public:
     std::string className;
@@ -465,6 +490,7 @@ public:
     std::string className;
     bool mutableValue;
     bool constructor;
+    bool publicAccess = true;
 };
 class Function {
 public:
@@ -484,6 +510,8 @@ public:
     std::set<int> regionSlots;     // private eight-byte authority spills
     std::map<int, bool> byteSlots; // private 32-byte owner spills, mutable binding
     std::optional<Receiver> receiver;
+    // Named free-function formal shares receiver storage, never lexical privileges.
+    bool borrowedParameter = false;
     std::optional<int> receiverSpanField;
     int frameBytes = 0;
     std::vector<Instruction> code;

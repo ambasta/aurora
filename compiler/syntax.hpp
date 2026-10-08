@@ -40,6 +40,8 @@ class Param {
   public:
     std::string name;
     Type type;
+    bool borrowed = false, borrowConst = false;
+    SourceSpan borrowSpan;
 };
 class Function {
   public:

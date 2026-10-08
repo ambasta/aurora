@@ -1,5 +1,11 @@
 # Completeness and acceptance matrix
 
+## Borrowed owning-object helpers — unverified candidate
+
+A bounded leading `T&`/`const T&` free-function parameter and resource-dependent
+JSON append helper are being implemented. See the [candidate contract](../compiler/BORROWED-OBJECTS.md).
+No new verification or compiler/kernel qualification is claimed yet.
+
 ## Raw kernel owner resize — 2026-10-08
 
 The [bounded replacement contract](kernel-owned-resize.md) extends the existing

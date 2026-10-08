@@ -92,6 +92,15 @@ public:
     std::map<int, ByteBinding> fields;
     bool operator==(const OwnedObjectBinding &) const = default;
 };
+class ObjectLoan {
+public:
+    int root;
+    std::size_t rootSite;
+    std::string className;
+    bool mutableValue;
+    bool called = false;
+    bool operator==(const ObjectLoan &) const = default;
+};
 class State {
 public:
     std::optional<Value> current;
@@ -108,6 +117,7 @@ public:
     std::map<int, SpanCapability> activeSpans;
     std::map<int, RegionIdentity> activeRegions;
     std::map<int, ByteBinding> activeBytes;
+    std::map<int, ObjectLoan> objectLoans;
     std::map<int, OwnedObjectBinding> ownedObjects; // root zero is the bound receiver
     // Logical completion is independent of leaf initialization: empty embedded
     // values also require one complete, nominally checked initialization.
@@ -198,6 +208,14 @@ inline void verifyFunction(Function &function,
     const bool owningConstructor =
         function.receiver && function.receiver->constructor && owningClass(classFields, function.receiver->className);
     const bool resourceFunction = resourceSignature(function, classFields);
+    if (function.borrowedParameter) {
+        require(function.receiver && !function.receiver->constructor &&
+                    owningClass(classFields, function.receiver->className),
+                "borrowed formal requires nonconstructor owning receiver shape");
+        require(!resourceFunction && !function.result.isSpan() && !function.receiverSpanField,
+                "borrowed formal cannot have resource or borrowed result");
+        require(function.parameters.size() <= 5, "borrowed formal counts toward six parameters");
+    }
     if (resourceFunction) {
         require(!function.receiver || owningConstructor,
                 "resource signature only supports an owning constructor receiver");
@@ -491,7 +509,7 @@ inline void verifyFunction(Function &function,
                state.maybeConstructedObjects.size() + state.activeObjects.size() +
                state.objectClassesInitialized.size() + state.receiverClassesInitialized.size() +
                state.receiverClassesMaybeInitialized.size() + state.activeArrays.size() + state.activeSpans.size() +
-               state.activeRegions.size() + state.activeBytes.size() + state.ownedObjects.size();
+               state.activeRegions.size() + state.activeBytes.size() + state.ownedObjects.size() + state.objectLoans.size();
     };
     retainedValueFacts = facts(*states[0]);
     auto initializationPayload = [](const State &state) {
@@ -541,6 +559,8 @@ inline void verifyFunction(Function &function,
                 "incompatible owned byte lifetimes or ownership at control-flow join");
         require(existing.ownedObjects == state.ownedObjects,
                 "incompatible owning object lifetimes or field ownership at control-flow join");
+        require(existing.objectLoans == state.objectLoans,
+                "incompatible object loans at control-flow join");
         require(existing.stack == state.stack, "incompatible value/guard stacks at control-flow join");
         State merged = existing;
         if (merged.current != state.current)
@@ -584,11 +604,22 @@ inline void verifyFunction(Function &function,
                 state.stack.pop_back();
                 return value;
             };
+            // Only the one validated BorrowedCall may exercise its prepared loan.
+            const auto *borrowedCall = std::get_if<BorrowedCall>(&function.code[index]);
+            auto loanAccess = [&](int root, bool writing) {
+                for (const auto &[id, loan] : state.objectLoans) {
+                    if (loan.root != root || (borrowedCall && id == borrowedCall->loanId))
+                        continue;
+                    require(!writing && !loan.mutableValue,
+                            "object access conflicts with active synchronous loan");
+                }
+            };
             auto activeObjectField = [&](int offset) {
                 require(!objectBases.contains(offset) || state.activeObjects.contains(objectBases.at(offset)),
                         "object field access outside active lifetime");
                 if (objectBases.contains(offset)) {
                     const int root = objectBases.at(offset);
+                    loanAccess(root, false);
                     require(!state.ownedObjects.contains(root) ||
                                 state.ownedObjects.at(root).disposition != ByteDisposition::Consumed,
                             "field access through consumed owning object");
@@ -613,6 +644,7 @@ inline void verifyFunction(Function &function,
                 require(state.activeSpans.contains(base), "span capability is not active");
                 const auto &capability = state.activeSpans.at(base);
                 if (capability.ownedToken) {
+                    loanAccess(capability.origin, false);
                     require(!capability.parameterOrigin, "owned span cannot have parameter origin");
                     const ByteBinding *owner = nullptr;
                     if (capability.ownedField == -1) {
@@ -669,6 +701,7 @@ inline void verifyFunction(Function &function,
                 require(!state.activeSpans.contains(base), "span spill is already active");
             };
             auto ownerWritable = [&](int root, std::optional<int> field = {}) {
+                loanAccess(root, true);
                 for (const auto &[unused, capability] : state.activeSpans) {
                     (void)unused;
                     require(!capability.ownedToken || capability.origin != root ||
@@ -738,6 +771,8 @@ inline void verifyFunction(Function &function,
             auto store = [&](int offset, const Type &type) {
                 slot(offset, type);
                 activeObjectField(offset);
+                if (objectBases.contains(offset))
+                    loanAccess(objectBases.at(offset), true);
                 activeArrayElement(offset);
                 arrayWritable(offset);
                 require(!nestedObjectLeaves.contains(offset), "scalar store cannot write nested class field");
@@ -750,7 +785,10 @@ inline void verifyFunction(Function &function,
                 state.initialized.insert(offset);
                 state.maybeInitialized.insert(offset);
             };
-            auto receiverShape = [&](int fieldIndex) -> const ClassField & {
+            auto receiverShape = [&](int fieldIndex, bool verifiedMethodView = false) -> const ClassField & {
+                require(!function.borrowedParameter || verifiedMethodView,
+                        "borrowed free formal grants no direct receiver field authority");
+                loanAccess(0, false);
                 require(receiverFields != nullptr, "receiver access without bound receiver");
                 require(fieldIndex >= 0 && static_cast<std::size_t>(fieldIndex) < receiverFields->size(),
                         "receiver field type/layout mismatch");
@@ -834,6 +872,7 @@ inline void verifyFunction(Function &function,
                             state.objectClassesInitialized.insert({base, static_cast<int>(field)});
             };
             auto completeObject = [&](int base) -> const ObjectSlot & {
+                loanAccess(base, false);
                 require(function.objectSlots.contains(base), "copy requires exact object slot");
                 require(state.activeObjects.contains(base), "copy object outside active lifetime");
                 const auto &object = function.objectSlots.at(base);
@@ -845,6 +884,7 @@ inline void verifyFunction(Function &function,
                 return object;
             };
             auto completeClassField = [&](int base, int index, bool mutableAccess) -> const ClassField & {
+                loanAccess(base, mutableAccess);
                 require(base >= 0, "invalid owned field root offset");
                 const ClassField *field = nullptr;
                 if (base == 0) {
@@ -936,13 +976,15 @@ inline void verifyFunction(Function &function,
                 require(origin.has_value(), "owning object has no resource fields");
                 return *origin;
             };
-            auto accessBytes = [&](int base, int ordinal, bool mutableAccess) -> const ByteBinding & {
+            auto accessBytes = [&](int base, int ordinal, bool mutableAccess,
+                                   bool verifiedMethodView = false) -> const ByteBinding & {
+                loanAccess(base, mutableAccess);
                 require(ordinal >= -1, "invalid owned byte field selector");
                 if (ordinal == -1)
                     return bytes(base, mutableAccess);
                 require(base >= 0, "invalid owned byte object root");
                 if (base == 0) {
-                    const auto &field = receiverShape(ordinal);
+                    const auto &field = receiverShape(ordinal, verifiedMethodView);
                     require(field.elementType == Type::OwnedBytes && !field.array,
                             "owned byte access requires direct resource field");
                     require(!function.receiver->constructor,
@@ -973,14 +1015,15 @@ inline void verifyFunction(Function &function,
                     ownerWritable(base, ordinal);
                 return field;
             };
-            auto borrowOwned = [&](int root, int ordinal, int result) {
-                const auto &binding = accessBytes(root, ordinal, false);
+            auto borrowOwned = [&](int root, int ordinal, int result, bool verifiedMethodView = false) {
+                const auto &binding = accessBytes(root, ordinal, false, verifiedMethodView);
                 spanTarget(result);
                 const auto rootSite = ordinal == -1 ? binding.site : state.ownedObjects.at(root).site;
                 state.activeSpans.emplace(result,
                                           SpanCapability{false, root, rootSite, 0, 0, index, binding.token, ordinal});
             };
             auto closedOwnedObjects = [&]() {
+                require(state.objectLoans.empty(), "return with active synchronous object loan");
                 for (const auto &[base, unused] : state.ownedObjects) {
                     (void)unused;
                     require(base == 0 && function.receiver.has_value(), "return with active owning object lifetime");
@@ -1121,6 +1164,8 @@ inline void verifyFunction(Function &function,
                         for (int element = 0; element < operation.length; ++element) {
                             const int offset = operation.offset - element * storageWidth(operation.elementType);
                             arrayWritable(offset);
+                            if (objectBases.contains(offset))
+                                loanAccess(objectBases.at(offset), true);
                             require(!nestedObjectLeaves.contains(offset),
                                     "indexed store cannot write nested class field");
                             require(!scalarParameterSlots.contains(offset),
@@ -1238,6 +1283,10 @@ inline void verifyFunction(Function &function,
                         require(resourceSignature(target, classFields) && (!target.receiver || constructor) &&
                                     !target.parameters.empty() && target.parameters.front() == Type::ByteRegion,
                                 "resource call requires ordinary resource signature or owning constructor");
+                        require(!constructor || target.receiver->publicAccess ||
+                                    (function.receiver && !function.borrowedParameter &&
+                                     function.receiver->className == target.receiver->className),
+                                "private constructor requires lexical class authority");
                         require(constructor ? operation.receiverOffset > 0 : operation.receiverOffset == 0,
                                 "resource call receiver offset does not match target");
                         const auto origin = region(operation.regionOffset);
@@ -1585,10 +1634,63 @@ inline void verifyFunction(Function &function,
                         require(function.receiver->mutableValue, "write through const receiver");
                         current(field.elementType);
                         receiverGuard(pop(), operation.fieldIndex, field);
-                    } else if constexpr (std::is_same_v<Op, MethodCall>) {
+                    } else if constexpr (std::is_same_v<Op, AcquireObjectLoan>) {
+                        require(operation.loanId > 0 && !state.objectLoans.contains(operation.loanId),
+                                "invalid or duplicate object loan identity");
+                        require(operation.root >= 0, "invalid borrowed object root");
+                        loanAccess(operation.root, operation.mutableValue);
+                        std::string name;
+                        if (operation.root == 0) {
+                            require(function.borrowedParameter && function.receiver,
+                                    "root zero loan requires named borrowed formal");
+                            require(!operation.mutableValue || function.receiver->mutableValue,
+                                    "shared formal cannot supply mutable object loan");
+                            name = function.receiver->className;
+                        } else {
+                            const auto &object = completeObject(operation.root);
+                            require(!operation.mutableValue || object.mutableValue,
+                                    "const object cannot supply mutable object loan");
+                            name = object.className;
+                        }
+                        require(owningClass(classFields, name) && state.ownedObjects.contains(operation.root),
+                                "object loan requires exact owning root");
+                        const auto &object = state.ownedObjects.at(operation.root);
+                        require(object.disposition == ByteDisposition::Live,
+                                "object loan requires complete live root");
+                        if (operation.mutableValue)
+                            ownerWritable(operation.root);
+                        state.objectLoans.emplace(operation.loanId,
+                            ObjectLoan{operation.root, object.site, name, operation.mutableValue, false});
+                    } else if constexpr (std::is_same_v<Op, ReleaseObjectLoan>) {
+                        require(state.objectLoans.contains(operation.loanId), "release requires active object loan");
+                        require(state.objectLoans.at(operation.loanId).called,
+                                "object loan release requires completed borrowed call");
+                        state.objectLoans.erase(operation.loanId);
+                    } else if constexpr (std::is_same_v<Op, MethodCall> || std::is_same_v<Op, BorrowedCall>) {
                         require(functions.contains(operation.callee), "unknown method call target");
                         const auto &target = *functions.at(operation.callee);
                         require(target.receiver.has_value(), "method call requires receiver target");
+                        if constexpr (std::is_same_v<Op, BorrowedCall>) {
+                            require(target.borrowedParameter, "borrowed call requires borrowed formal target");
+                            require(state.objectLoans.contains(operation.loanId), "borrowed call requires active loan");
+                            auto &loan = state.objectLoans.at(operation.loanId);
+                            require(!loan.called, "object loan already used by a call");
+                            require(loan.root == operation.receiverOffset &&
+                                        loan.className == target.receiver->className &&
+                                        loan.mutableValue == target.receiver->mutableValue &&
+                                        state.ownedObjects.contains(loan.root) &&
+                                        state.ownedObjects.at(loan.root).site == loan.rootSite &&
+                                        state.ownedObjects.at(loan.root).disposition == ByteDisposition::Live,
+                                    "borrowed call root, lifetime, nominal type or authority mismatch");
+                            loan.called = true;
+                        } else {
+                            require(!target.borrowedParameter, "method call cannot target borrowed free function");
+                            loanAccess(operation.receiverOffset, target.receiver->mutableValue);
+                            require(target.receiver->publicAccess ||
+                                        (function.receiver && !function.borrowedParameter &&
+                                         function.receiver->className == target.receiver->className),
+                                    "private method requires lexical class authority");
+                        }
                         require(!resourceSignature(target, classFields),
                                 "method call cannot target resource signature or owning constructor");
                         require((scalarValueType(target.result, enumCases) ||
@@ -1700,7 +1802,7 @@ inline void verifyFunction(Function &function,
                             require(operation.receiverFieldIndex == -1,
                                     "span result requires direct owning receiver root");
                             require(target.receiverSpanField.has_value(), "span result lacks receiver field summary");
-                            borrowOwned(operation.receiverOffset, *target.receiverSpanField, operation.resultOffset);
+                            borrowOwned(operation.receiverOffset, *target.receiverSpanField, operation.resultOffset, true);
                             state.current.reset();
                         } else if (target.result.isClass()) {
                             const int base = operation.resultOffset;
@@ -2117,6 +2219,8 @@ inline ValidatedModule validate(Module module) {
             if (const auto *call = std::get_if<Call>(&instruction))
                 target = &call->callee;
             if (const auto *call = std::get_if<MethodCall>(&instruction))
+                target = &call->callee;
+            if (const auto *call = std::get_if<BorrowedCall>(&instruction))
                 target = &call->callee;
             if (const auto *call = std::get_if<AggregateCall>(&instruction))
                 target = &call->callee;
