@@ -1,5 +1,15 @@
 # Completeness and acceptance matrix
 
+## Transactional quoted UTF-8 append — 2026-10-08
+
+`std.json_write` now composes a complete validation/measurement pass, one atomic
+reservation and allocation-free emission to append a quoted JSON string from raw
+UTF-8. Both focused native modes, quota/fault retry and owner-alias controls,
+externally pinned focused Make and all 41 Meson developer tests passed. Independent
+source and raw-evidence review confirms the transaction proof and results. See the
+[contract](json-string-write.md) and [exact limits](json-string-write-results.md).
+No new compiler, root full-native, sanitizer, kernel or hardware claim is made.
+
 ## Synchronous borrowed owning-object helpers — 2026-10-08
 
 One leading `T&`/`const T&` free-function formal supports reusable public-method

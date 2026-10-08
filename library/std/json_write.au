@@ -3,6 +3,7 @@ import std.json;
 import std.array;
 import std.binary;
 import std.byte_buffer;
+import std.utf8;
 
 export namespace std {
     enum class JsonAppendStatus {
@@ -21,7 +22,7 @@ export namespace std {
         }
 
         auto status() const -> JsonAppendStatus {
-            if (outcome == JsonAppendStatus::success && (count < 1 || count > 6)) {
+            if (outcome == JsonAppendStatus::success &&(count < 1 || count > 6)) {
                 return JsonAppendStatus::append_failed;
             }
             return outcome;
@@ -45,7 +46,14 @@ export namespace std {
             const JsonAppendResult result = JsonAppendResult(JsonAppendStatus::invalid_scalar, 0);
             return result;
         }
-        builtin::array<u8, 6> bytes = {0u8, 0u8, 0u8, 0u8, 0u8, 0u8};
+        builtin::array<u8, 6> bytes = {
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8
+        };
         i64 index = 0;
         while (index < escaped.size()) {
             bytes[index] = escaped.byte_or(index, 0u8);
@@ -58,6 +66,101 @@ export namespace std {
             return result;
         }
         const JsonAppendResult result = JsonAppendResult(JsonAppendStatus::success, escaped.size());
+        return result;
+    }
+}
+
+export namespace std {
+    enum class JsonStringAppendStatus {
+        success,
+        out_of_range,
+        invalid_utf8,
+        truncated,
+        overflow,
+        append_failed
+    };
+
+    // A copied observation, not evidence that a particular output was changed.
+    class JsonStringAppendResult {
+        JsonStringAppendStatus outcome;
+        i64 count;
+    public:
+        JsonStringAppendResult(JsonStringAppendStatus status, i64 appended) : outcome(status), count(appended) {
+        }
+
+        auto status() const -> JsonStringAppendStatus {
+            if (outcome == JsonStringAppendStatus::success && count < 2) {
+                return JsonStringAppendStatus::append_failed;
+            }
+            return outcome;
+        }
+
+        auto appended_bytes() const -> i64 {
+            if (status() != JsonStringAppendStatus::success) {
+                return 0;
+            }
+            return count;
+        }
+    };
+
+    // Append one complete quoted JSON string from a final raw UTF-8 window.
+    // All recoverable failures precede reservation or result from its atomic
+    // failure. They preserve bytes, length, capacity and committed accounting.
+    // Completed argument side effects are outside this transaction; fail-stop
+    // faults do not unwind. Input and output must have distinct storage owners.
+    auto append_json_string(ByteBuffer& output, builtin::span<const u8> input, i64 offset, i64 count) ->
+        JsonStringAppendResult {
+        if (offset < 0 || count < 0 || offset > input.size()) {
+            const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::out_of_range, 0);
+            return failure;
+        }
+        if (count > input.size() - offset) {
+            const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::out_of_range, 0);
+            return failure;
+        }
+        i64 consumed = 0;
+        i64 required = 2;
+        while (consumed < count) {
+            const Utf8DecodeResult decoded = decode_utf8(input, offset + consumed, count - consumed, true);
+            if (decoded.status() == Utf8Status::truncated) {
+                const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::truncated, 0);
+                return failure;
+            }
+            if (decoded.status() != Utf8Status::success) {
+                const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::invalid_utf8, 0);
+                return failure;
+            }
+            const JsonEscapeResult escaped = escape_json_scalar(decoded.scalar_or(0u64));
+            if (escaped.size() > 9223372036854775807 - required) {
+                const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::overflow, 0);
+                return failure;
+            }
+            required = required + escaped.size();
+            consumed = consumed + decoded.width();
+        }
+        if (required > 9223372036854775807 - output.size()) {
+            const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::overflow, 0);
+            return failure;
+        }
+        if (!output.try_reserve(output.size() + required)) {
+            const JsonStringAppendResult failure = JsonStringAppendResult(JsonStringAppendStatus::append_failed, 0);
+            return failure;
+        }
+        // The immutable source and deterministic codecs reproduce exactly the
+        // measured widths. Successful reserve establishes a valid owner and
+        // enough capacity for both quotes plus every scalar, with no i64 overflow.
+        // Consequently these checked append calls cannot allocate or fail. Their
+        // results are intentionally discarded, as ByteBuffer discards its proved
+        // in-bounds set results. There is no recoverable return after mutation.
+        output.try_append(34u8);
+        consumed = 0;
+        while (consumed < count) {
+            const Utf8DecodeResult decoded = decode_utf8(input, offset + consumed, count - consumed, true);
+            const JsonAppendResult appended = append_json_scalar(output, decoded.scalar_or(0u64));
+            consumed = consumed + decoded.width();
+        }
+        output.try_append(34u8);
+        const JsonStringAppendResult result = JsonStringAppendResult(JsonStringAppendStatus::success, required);
         return result;
     }
 }

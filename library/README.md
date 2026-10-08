@@ -508,6 +508,15 @@ Unicode scalar without surrounding quotes and returns a copied `JsonAppendResult
 Invalid scalars leave output unchanged. Recoverable bulk-append allocation failure
 preserves size, capacity, bytes and committed accounting; completed argument side
 effects are outside rollback and fail-stop faults do not unwind. This adds no
-allocation dependency to importing `std.json` alone, complete string serializer,
-DOM or second buffer abstraction. See the [borrowed-object contract](../compiler/BORROWED-OBJECTS.md)
+allocation dependency to importing `std.json` alone, DOM or second buffer
+abstraction. See the [borrowed-object contract](../compiler/BORROWED-OBJECTS.md)
 for qualification and limitations.
+
+`append_json_string(output, input, offset, count)` appends a complete quoted
+string from a final raw UTF-8 window. It validates and measures before one exact
+reservation, then emits without allocation; recoverable failures preserve all
+output state and committed accounting. Its separate copied result distinguishes
+invalid windows, invalid/truncated UTF-8, size overflow and append failure.
+See the [contract](../docs/json-string-write.md),
+[example](examples/json_string_write.au) and
+[qualification](../docs/json-string-write-results.md).

@@ -1,0 +1,49 @@
+module json_string_write_example;
+import std.json_write;
+import std.byte_buffer;
+import std.binary;
+import std.json;
+
+// Compose distinct runtime-sized owners sharing one region. Build ["..."] and
+// validate the small complete JSON document after the output borrow has ended.
+auto json_string_write_example(builtin::ByteRegion region, i64 initial_capacity, i64 observation) -> i64 {
+    builtin::OwnedBytes source = region.try_allocate(9);
+    if (!source.ok()) {
+        return -1;
+    }
+    source.set(0, 65u8);
+    source.set(1, 0u8);
+    source.set(2, 10u8);
+    source.set(3, 34u8);
+    source.set(4, 92u8);
+    source.set(5, 240u8);
+    source.set(6, 159u8);
+    source.set(7, 152u8);
+    source.set(8, 128u8);
+    builtin::OwnedBytes allocation = region.try_allocate(initial_capacity);
+    std::ByteBuffer output = std::ByteBuffer(region, move(allocation));
+    if (!output.try_append(91u8)) {
+        return -2;
+    }
+    const builtin::span<const u8> input = borrow_bytes(source);
+    const std::JsonStringAppendResult appended = std::append_json_string(output, input, 0, 9);
+    if (appended.status() != std::JsonStringAppendStatus::success) {
+        return -3;
+    }
+    if (!output.try_append(93u8)) {
+        return -4;
+    }
+    const builtin::span<const u8> document = output.bytes();
+    const std::JsonResult validated = std::validate_json(document, 0, document.size());
+    if (validated.status() != std::JsonStatus::success) {
+        return -5;
+    }
+    if (observation == -1) {
+        return appended.appended_bytes();
+    }
+    if (observation == -2) {
+        return document.size();
+    }
+    const std::ByteReadResult byte = output.read_u8(observation);
+    return i64(byte.value_or(256u64));
+}
