@@ -42,7 +42,7 @@ json_assembly = custom_target(
     input: 'json.au',
     output: 'json.s',
     command: [aurorac, '--module-root', meson.project_source_root() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
-    depend_files: files('../std/json.au', '../std/utf8.au', '../std/array.au'),
+    depend_files: files('../std/json.au', '../std/utf8.au', '../std/array.au', '../std/decimal.au'),
     build_by_default: true,
     install: false,
 )
@@ -53,8 +53,21 @@ json_codecs_assembly = custom_target(
     output: 'json_codecs.s',
     command: [aurorac, '--module-root', meson.project_source_root() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
     depend_files: files(
-        '../std/json.au', '../std/utf8.au', '../std/array.au',
+        '../std/json.au', '../std/utf8.au', '../std/array.au', '../std/decimal.au',
         '../std/byte_buffer.au', '../std/binary.au', '../std/bytes.au',
+    ),
+    build_by_default: true,
+    install: false,
+)
+
+json_integers_assembly = custom_target(
+    'json-integers-example',
+    input: 'json_integers.au',
+    output: 'json_integers.s',
+    command: [aurorac, '--module-root', meson.project_source_root() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+    depend_files: files(
+        '../std/json.au', '../std/decimal.au', '../std/utf8.au', '../std/array.au',
+        '../std/byte_buffer.au', '../std/binary.au',
     ),
     build_by_default: true,
     install: false,
