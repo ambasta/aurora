@@ -113,6 +113,110 @@ export namespace std {
             return error;
         }
     };
+    enum class JsonLookupStatus {
+        success,
+        invalid_window,
+        input_limit,
+        invalid_byte,
+        invalid_string,
+        invalid_number,
+        invalid_literal,
+        truncated,
+        number_limit,
+        token_limit,
+        depth_limit,
+        invalid_structure,
+        invalid_key_window,
+        key_limit,
+        invalid_key,
+        invalid_index,
+        wrong_root,
+        not_found,
+        ambiguous
+    };
+    enum class JsonValueKind {
+        none,
+        object,
+        array_value,
+        string,
+        number,
+        true_value,
+        false_value,
+        null_value
+    };
+    class JsonLookupResult {
+        JsonLookupStatus outcome;
+        JsonValueKind category;
+        i64 offset;
+        i64 length;
+        i64 error;
+    public:
+        JsonLookupResult(JsonLookupStatus status, JsonValueKind kind, i64 start, i64 count, i64 position) : outcome(
+            status), category(kind), offset(start), length(count), error(position) {
+        }
+        auto status() const -> JsonLookupStatus {
+            if (outcome == JsonLookupStatus::invalid_window) {
+                return outcome;
+            }
+            if (offset < 0 || length < 0 || length > 4096 || error < 0) {
+                return JsonLookupStatus::invalid_window;
+            }
+            if (length > 9223372036854775807 - offset) {
+                return JsonLookupStatus::invalid_window;
+            }
+            if (outcome == JsonLookupStatus::success) {
+                if (error != 0 || length == 0 || category == JsonValueKind::none) {
+                    return JsonLookupStatus::invalid_window;
+                }
+                if ((category == JsonValueKind::object || category == JsonValueKind::array_value || category ==
+                    JsonValueKind::string) && length < 2) {
+                    return JsonLookupStatus::invalid_window;
+                }
+                if (category == JsonValueKind::number && length > 128) {
+                    return JsonLookupStatus::invalid_window;
+                }
+                if ((category == JsonValueKind::true_value || category == JsonValueKind::null_value) && length != 4) {
+                    return JsonLookupStatus::invalid_window;
+                }
+                if (category == JsonValueKind::false_value && length != 5) {
+                    return JsonLookupStatus::invalid_window;
+                }
+                return outcome;
+            }
+            if (category != JsonValueKind::none || offset != 0 || length != 0) {
+                return JsonLookupStatus::invalid_window;
+            }
+            if ((outcome == JsonLookupStatus::invalid_key_window || outcome == JsonLookupStatus::invalid_index ||
+                outcome == JsonLookupStatus::wrong_root || outcome == JsonLookupStatus::not_found) && error != 0) {
+                return JsonLookupStatus::invalid_window;
+            }
+            return outcome;
+        }
+        auto kind() const -> JsonValueKind {
+            if (status() != JsonLookupStatus::success) {
+                return JsonValueKind::none;
+            }
+            return category;
+        }
+        auto byte_offset() const -> i64 {
+            if (status() != JsonLookupStatus::success) {
+                return 0;
+            }
+            return offset;
+        }
+        auto byte_count() const -> i64 {
+            if (status() != JsonLookupStatus::success) {
+                return 0;
+            }
+            return length;
+        }
+        auto error_offset() const -> i64 {
+            if (status() == JsonLookupStatus::invalid_window) {
+                return 0;
+            }
+            return error;
+        }
+    };
     class JsonScalarResult {
         JsonStatus outcome;
         u64 scalar;
@@ -871,17 +975,200 @@ export namespace std {
         const JsonTokenResult result = json_failure(JsonStatus::invalid_byte, index);
         return result;
     }
-    auto validate_json(builtin::span<const u8> bytes, i64 offset, i64 count) -> JsonResult {
+}
+namespace std {
+    class JsonWalkRequest {
+        i64 begin;
+        i64 length;
+        i64 key_begin;
+        i64 key_length;
+        i64 element;
+        u8 operation;
+    public:
+        JsonWalkRequest(i64 offset, i64 count, i64 key_offset, i64 key_count, i64 index, u8 mode) : begin(offset),
+            length(count), key_begin(key_offset), key_length(key_count), element(index), operation(mode) {
+        }
+        auto offset() const -> i64 {
+            return begin;
+        }
+        auto count() const -> i64 {
+            return length;
+        }
+        auto key_offset() const -> i64 {
+            return key_begin;
+        }
+        auto key_count() const -> i64 {
+            return key_length;
+        }
+        auto index() const -> i64 {
+            return element;
+        }
+        auto mode() const -> u8 {
+            return operation;
+        }
+    };
+    // Copied internal observations only. Neither report carries source authority.
+    class JsonWalkResult {
+        JsonResult validated;
+        JsonLookupResult selected;
+    public:
+        JsonWalkResult(JsonResult document, JsonLookupResult lookup) : validated(document), selected(lookup) {
+        }
+        auto document() const -> JsonResult {
+            const JsonResult result = validated;
+            return result;
+        }
+        auto lookup() const -> JsonLookupResult {
+            const JsonLookupResult result = selected;
+            return result;
+        }
+    };
+    auto json_lookup_failure(JsonLookupStatus status, i64 error) -> JsonLookupResult {
+        const JsonLookupResult result = JsonLookupResult(status, JsonValueKind::none, 0, 0, error);
+        return result;
+    }
+    auto json_lookup_status(JsonStatus status) -> JsonLookupStatus {
+        if (status == JsonStatus::success) {
+            return JsonLookupStatus::success;
+        }
+        if (status == JsonStatus::input_limit) {
+            return JsonLookupStatus::input_limit;
+        }
+        if (status == JsonStatus::invalid_byte) {
+            return JsonLookupStatus::invalid_byte;
+        }
+        if (status == JsonStatus::invalid_string) {
+            return JsonLookupStatus::invalid_string;
+        }
+        if (status == JsonStatus::invalid_number) {
+            return JsonLookupStatus::invalid_number;
+        }
+        if (status == JsonStatus::invalid_literal) {
+            return JsonLookupStatus::invalid_literal;
+        }
+        if (status == JsonStatus::truncated) {
+            return JsonLookupStatus::truncated;
+        }
+        if (status == JsonStatus::number_limit) {
+            return JsonLookupStatus::number_limit;
+        }
+        if (status == JsonStatus::token_limit) {
+            return JsonLookupStatus::token_limit;
+        }
+        if (status == JsonStatus::depth_limit) {
+            return JsonLookupStatus::depth_limit;
+        }
+        if (status == JsonStatus::invalid_structure) {
+            return JsonLookupStatus::invalid_structure;
+        }
+        return JsonLookupStatus::invalid_window;
+    }
+    auto json_walk_failure(JsonStatus status, i64 error, i64 tokens, i64 peak) -> JsonWalkResult {
+        const JsonResult document = JsonResult(status, error, tokens, peak);
+        const JsonLookupResult lookup = json_lookup_failure(json_lookup_status(status), error);
+        const JsonWalkResult result = JsonWalkResult(document, lookup);
+        return result;
+    }
+    auto json_query_failure(JsonLookupStatus status, i64 error) -> JsonWalkResult {
+        const JsonResult document = JsonResult(JsonStatus::invalid_window, 0, 0, 0);
+        const JsonLookupResult lookup = json_lookup_failure(status, error);
+        const JsonWalkResult result = JsonWalkResult(document, lookup);
+        return result;
+    }
+    auto json_value_kind(JsonTokenKind kind) -> JsonValueKind {
+        if (kind == JsonTokenKind::left_brace) {
+            return JsonValueKind::object;
+        }
+        if (kind == JsonTokenKind::left_bracket) {
+            return JsonValueKind::array_value;
+        }
+        if (kind == JsonTokenKind::string) {
+            return JsonValueKind::string;
+        }
+        if (kind == JsonTokenKind::number) {
+            return JsonValueKind::number;
+        }
+        if (kind == JsonTokenKind::true_value) {
+            return JsonValueKind::true_value;
+        }
+        if (kind == JsonTokenKind::false_value) {
+            return JsonValueKind::false_value;
+        }
+        if (kind == JsonTokenKind::null_value) {
+            return JsonValueKind::null_value;
+        }
+        return JsonValueKind::none;
+    }
+    // Both windows have already been validated. Each cursor advances monotonically.
+    auto json_key_equal(builtin::span<const u8> bytes, i64 offset, i64 count, builtin::span<const u8> key, i64
+        key_offset, i64 key_count) -> bool {
+        i64 left = offset;
+        i64 right = key_offset;
+        const i64 end = offset + count;
+        const i64 key_end = key_offset + key_count;
+        while (left < end && right < key_end) {
+            const JsonScalarResult a = json_scalar(bytes, left, end);
+            const Utf8DecodeResult b = decode_utf8(key, right, key_end - right, true);
+            if (a.status() != JsonStatus::success || b.status() != Utf8Status::success || a.scalar_or(0u64) != b.
+                scalar_or(0u64)) {
+                return false;
+            }
+            left = left + a.consumed_bytes();
+            right = right + b.width();
+        }
+        return left == end && right == key_end;
+    }
+    auto json_walk(builtin::span<const u8> bytes, builtin::span<const u8> key, JsonWalkRequest request) ->
+        JsonWalkResult {
+        const i64 offset = request.offset();
+        const i64 count = request.count();
+        const i64 key_offset = request.key_offset();
+        const i64 key_count = request.key_count();
+        const i64 wanted = request.index();
+        const u8 mode = request.mode();
         if (offset < 0 || count < 0 || offset > bytes.size()) {
-            const JsonResult result = JsonResult(JsonStatus::invalid_window, 0, 0, 0);
+            const JsonWalkResult result = json_walk_failure(JsonStatus::invalid_window, 0, 0, 0);
             return result;
         }
         if (count > bytes.size() - offset) {
-            const JsonResult result = JsonResult(JsonStatus::invalid_window, 0, 0, 0);
+            const JsonWalkResult result = json_walk_failure(JsonStatus::invalid_window, 0, 0, 0);
             return result;
         }
         if (count > 4096) {
-            const JsonResult result = JsonResult(JsonStatus::input_limit, offset, 0, 0);
+            const JsonWalkResult result = json_walk_failure(JsonStatus::input_limit, offset, 0, 0);
+            return result;
+        }
+        // Document bounds and cap precede selector checks; no bytes read yet.
+        if (mode == 1u8) {
+            if (key_offset < 0 || key_count < 0 || key_offset > key.size()) {
+                const JsonWalkResult result = json_query_failure(JsonLookupStatus::invalid_key_window, 0);
+                return result;
+            }
+            if (key_count > key.size() - key_offset) {
+                const JsonWalkResult result = json_query_failure(JsonLookupStatus::invalid_key_window, 0);
+                return result;
+            }
+            if (key_count > 4096) {
+                const JsonWalkResult result = json_query_failure(JsonLookupStatus::key_limit, key_offset);
+                return result;
+            }
+            i64 query_index = key_offset;
+            const i64 query_end = key_offset + key_count;
+            while (query_index < query_end) {
+                const Utf8DecodeResult scalar = decode_utf8(key, query_index, query_end - query_index, true);
+                if (scalar.status() != Utf8Status::success) {
+                    i64 error = query_index;
+                    if (scalar.status() == Utf8Status::truncated) {
+                        error = query_end;
+                    }
+                    const JsonWalkResult result = json_query_failure(JsonLookupStatus::invalid_key, error);
+                    return result;
+                }
+                query_index = query_index + scalar.width();
+            }
+        }
+        if (mode == 2u8 && wanted < 0) {
+            const JsonWalkResult result = json_query_failure(JsonLookupStatus::invalid_index, 0);
             return result;
         }
         // Array: 1 initial value/end, 2 required value, 3 comma/end.
@@ -892,29 +1179,85 @@ export namespace std {
         i64 tokens = 0;
         i64 index = offset;
         const i64 end = offset + count;
+        JsonValueKind root_kind = JsonValueKind::none;
+        JsonValueKind selected_kind = JsonValueKind::none;
+        i64 selected_start = 0;
+        i64 selected_count = 0;
+        i64 matching_keys = 0;
+        i64 duplicate_offset = 0;
+        i64 element_index = 0;
+        bool member_matches = false;
+        bool selected_open = false;
         bool root_complete = false;
         bool scanning = true;
         while (scanning) {
             const JsonTokenResult token = next_json_token(bytes, index, end - index);
             if (token.status() == JsonStatus::end_of_input) {
                 if (depth != 0 || !root_complete) {
-                    const JsonResult result = JsonResult(JsonStatus::truncated, end, tokens, peak);
+                    const JsonWalkResult result = json_walk_failure(JsonStatus::truncated, end, tokens, peak);
                     return result;
                 }
-                const JsonResult result = JsonResult(JsonStatus::success, 0, tokens, peak);
+                const JsonResult document = JsonResult(JsonStatus::success, 0, tokens, peak);
+                JsonLookupStatus outcome = JsonLookupStatus::success;
+                i64 error = 0;
+                if ((mode == 1u8 && root_kind != JsonValueKind::object) ||(mode == 2u8 && root_kind != JsonValueKind::
+                    array_value)) {
+                    outcome = JsonLookupStatus::wrong_root;
+                } else {
+                    if (mode == 1u8 && matching_keys == 2) {
+                        outcome = JsonLookupStatus::ambiguous;
+                        error = duplicate_offset;
+                    } else {
+                        if (selected_kind == JsonValueKind::none) {
+                            outcome = JsonLookupStatus::not_found;
+                        }
+                    }
+                }
+                if (outcome != JsonLookupStatus::success) {
+                    const JsonLookupResult lookup = json_lookup_failure(outcome, error);
+                    const JsonWalkResult result = JsonWalkResult(document, lookup);
+                    return result;
+                }
+                const JsonLookupResult found = JsonLookupResult(outcome, selected_kind, selected_start, selected_count,
+                    0);
+                const JsonWalkResult result = JsonWalkResult(document, found);
                 return result;
             }
             if (token.status() != JsonStatus::success) {
-                const JsonResult result = JsonResult(token.status(), token.error_offset(), tokens, peak);
+                const JsonWalkResult result = json_walk_failure(token.status(), token.error_offset(), tokens, peak);
                 return result;
             }
             if (tokens == 1024) {
-                const JsonResult result = JsonResult(JsonStatus::token_limit, token.byte_offset(), tokens, peak);
+                const JsonWalkResult result = json_walk_failure(JsonStatus::token_limit, token.byte_offset(), tokens,
+                    peak);
                 return result;
             }
             tokens = tokens + 1;
             index = index + token.consumed_bytes();
             const JsonTokenKind kind = token.kind();
+            // Selection observes the old grammar state, before parent advancement.
+            const i64 before_depth = depth;
+            u8 before_state = 0u8;
+            if (depth > 0) {
+                before_state = states.at(depth - 1);
+            }
+            if (depth == 0 && !root_complete) {
+                root_kind = json_value_kind(kind);
+            }
+            if (mode == 1u8 && depth == 1 &&(before_state == 4u8 || before_state == 5u8) && kind == JsonTokenKind::
+                string) {
+                member_matches = false;
+                if (matching_keys < 2) {
+                    member_matches = json_key_equal(bytes, token.byte_offset() + 1, token.byte_count() - 2, key,
+                        key_offset, key_count);
+                    if (member_matches) {
+                        matching_keys = matching_keys + 1;
+                        if (matching_keys == 2) {
+                            duplicate_offset = token.byte_offset();
+                        }
+                    }
+                }
+            }
             bool value = false;
             bool valid = true;
             if (depth == 0) {
@@ -982,8 +1325,8 @@ export namespace std {
             if (value) {
                 if (kind == JsonTokenKind::left_brace || kind == JsonTokenKind::left_bracket) {
                     if (depth == 32) {
-                        const JsonResult result = JsonResult(JsonStatus::depth_limit, token.byte_offset(), tokens, peak)
-                            ;
+                        const JsonWalkResult result = json_walk_failure(JsonStatus::depth_limit, token.byte_offset(),
+                            tokens, peak);
                         return result;
                     }
                     u8 state = 1u8;
@@ -1003,12 +1346,56 @@ export namespace std {
                 }
             }
             if (!valid) {
-                const JsonResult result = JsonResult(JsonStatus::invalid_structure, token.byte_offset(), tokens, peak);
+                const JsonWalkResult result = json_walk_failure(JsonStatus::invalid_structure, token.byte_offset(),
+                    tokens, peak);
                 return result;
+            }
+            if (selected_open && before_depth == 2 && depth == 1) {
+                selected_count = index - selected_start;
+                selected_open = false;
+            }
+            if (value && before_depth == 1) {
+                bool select = false;
+                if (mode == 1u8 && before_state == 7u8 && member_matches && matching_keys == 1) {
+                    select = true;
+                }
+                if (mode == 2u8 &&(before_state == 1u8 || before_state == 2u8)) {
+                    if (element_index == wanted) {
+                        select = true;
+                    }
+                    element_index = element_index + 1;
+                }
+                if (select) {
+                    selected_kind = json_value_kind(kind);
+                    selected_start = token.byte_offset();
+                    selected_count = token.byte_count();
+                    selected_open = kind == JsonTokenKind::left_brace || kind == JsonTokenKind::left_bracket;
+                }
             }
         }
         // The language conservatively treats every while as possibly zero-trip.
-        const JsonResult result = JsonResult(JsonStatus::truncated, end, tokens, peak);
+        const JsonWalkResult result = json_walk_failure(JsonStatus::truncated, end, tokens, peak);
+        return result;
+    }
+}
+export namespace std {
+    auto validate_json(builtin::span<const u8> bytes, i64 offset, i64 count) -> JsonResult {
+        const JsonWalkRequest request = JsonWalkRequest(offset, count, 0, 0, 0, 0u8);
+        const JsonWalkResult walked = json_walk(bytes, bytes, request);
+        const JsonResult result = walked.document();
+        return result;
+    }
+    auto lookup_json_member(builtin::span<const u8> bytes, i64 offset, i64 count, builtin::span<const u8> key, i64
+        key_offset, i64 key_count) -> JsonLookupResult {
+        const JsonWalkRequest request = JsonWalkRequest(offset, count, key_offset, key_count, 0, 1u8);
+        const JsonWalkResult walked = json_walk(bytes, key, request);
+        const JsonLookupResult result = walked.lookup();
+        return result;
+    }
+    auto lookup_json_element(builtin::span<const u8> bytes, i64 offset, i64 count, i64 index) -> JsonLookupResult {
+        const JsonWalkRequest request = JsonWalkRequest(offset, count, 0, 0, index, 2u8);
+        const JsonWalkResult walked = json_walk(bytes, bytes, request);
+        const JsonLookupResult result = walked.lookup();
         return result;
     }
 }
