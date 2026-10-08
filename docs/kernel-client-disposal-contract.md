@@ -1,4 +1,4 @@
-# Copied client-disposal recovery plan — unverified candidate
+# Copied client-disposal recovery plan
 
 ## Dependency and observable gate
 
@@ -81,5 +81,6 @@ Record exact source/compiler/tool/image identities and retain failed attempts.
 Focused success does not imply a fresh complete root native/emulator aggregate,
 physical hardware, DMA, self-hosting, production safety or performance parity.
 
-Status: source implementation in progress. No changed guest admission or final
-independent acceptance has occurred. See the results document as evidence grows.
+Status: focused native, exact linked admission and actual guest gates passed.
+Independent final source/evidence acceptance also passed; publication is separate. See
+[focused results](kernel-client-disposal-results.md).

@@ -9,7 +9,8 @@ oracle_env.set('PYTHONDONTWRITEBYTECODE', '1')
 oracle_env.set('CXX', oracle_cxx)
 
 # Keep complete existing runners: no first-N sampling or weaker result/trap oracle.
-# dev is the default feedback set; core and bytes select independent sub-suites.
+# dev is quick feedback; slow contains exhaustive integration/ABI sweeps.
+# full and unfiltered tests preserve all runners; core/bytes retain their coverage.
 foreach entry : [
     ['frontend', 'compiler/run.py', 'core'],
     ['classes', 'compiler/classes.py', 'core'],
@@ -36,12 +37,16 @@ foreach entry : [
     ['sector-values', 'compiler/sector_values.py', 'bytes'],
     ['storage-binary', 'compiler/storage_binary.py', 'bytes'],
 ]
+    feedback = 'dev'
+    if entry[0] in ['block-io', 'sector-window', 'xfs-sector', 'xfs-file']
+        feedback = 'slow'
+    endif
     test(
         entry[0],
         python,
         args: ['-B', '-O', files(entry[1]), aurorac],
         depends: aurorac,
-        suite: ['dev', entry[2]],
+        suite: ['full', feedback, entry[2]],
         env: oracle_env,
         workdir: meson.current_build_dir(),
         timeout: 300,
@@ -59,7 +64,7 @@ initialization_facts = executable(
 test(
     'initialization-facts',
     initialization_facts,
-    suite: ['dev', 'core', 'compiler'],
+    suite: ['full', 'dev', 'core', 'compiler'],
     timeout: 120,
 )
 
@@ -70,13 +75,13 @@ owned_mutation_ir = executable(
     native: true,
     install: false,
 )
-test('owned-mutation-ir', owned_mutation_ir, suite: ['dev', 'core', 'compiler'], timeout: 120)
+test('owned-mutation-ir', owned_mutation_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 test(
     'owned-mutation-abi',
     python,
     args: ['-B', '-O', files('compiler/owned_mutation_abi.py'), owned_mutation_ir],
     depends: owned_mutation_ir,
-    suite: ['dev', 'core', 'compiler'],
+    suite: ['full', 'dev', 'core', 'compiler'],
     env: oracle_env,
     workdir: meson.current_build_dir(),
     timeout: 180,
@@ -89,13 +94,13 @@ sector_values_ir = executable(
     native: true,
     install: false,
 )
-test('sector-values-ir', sector_values_ir, suite: ['dev', 'bytes', 'compiler'], timeout: 120)
+test('sector-values-ir', sector_values_ir, suite: ['full', 'dev', 'bytes', 'compiler'], timeout: 120)
 test(
     'sector-values-abi',
     python,
     args: ['-B', '-O', files('compiler/sector_values_abi.py'), sector_values_ir],
     depends: sector_values_ir,
-    suite: ['dev', 'bytes', 'compiler'],
+    suite: ['full', 'dev', 'bytes', 'compiler'],
     env: oracle_env,
     workdir: meson.current_build_dir(),
     timeout: 180,
@@ -111,7 +116,7 @@ foreach family : ['identity', 'manifest', 'graph']
         args: ['-B', '-O', files('compiler/package_' + family + '.py'), aurorac,
                '--profile', 'dev', '--developer-selected-compiler'],
         depends: aurorac,
-        suite: ['dev', 'packages'],
+        suite: ['full', 'dev', 'packages'],
         env: oracle_env,
         workdir: meson.current_build_dir(),
         timeout: 300,
@@ -124,23 +129,23 @@ owned_bytes_ir = executable(
     'owned-bytes-ir', 'compiler/owned_bytes_ir.cpp',
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
-test('owned-bytes-ir', owned_bytes_ir, suite: ['dev', 'core', 'compiler'], timeout: 120)
+test('owned-bytes-ir', owned_bytes_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 owned_bytes_host = executable(
     'owned-bytes-host', ['compiler/owned_bytes_host.cpp', '../runtime/hosted_bytes.cpp'],
     cpp_args: ['-DAURORA_HOSTED_BYTES_TESTING'], native: true, install: false,
 )
-test('owned-bytes-host', owned_bytes_host, suite: ['dev', 'core', 'compiler'], timeout: 120)
+test('owned-bytes-host', owned_bytes_host, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 
 # Direct owning classes reuse the hosted byte adapter and private value ABI.
 owning_classes_ir = executable(
     'owning-classes-ir', 'compiler/owning_classes_ir.cpp',
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
-test('owning-classes-ir', owning_classes_ir, suite: ['dev', 'core', 'compiler'], timeout: 120)
+test('owning-classes-ir', owning_classes_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 test(
     'owning-classes-abi', python,
     args: ['-B', '-O', files('compiler/owning_classes_abi.py'), owning_classes_ir],
-    depends: owning_classes_ir, suite: ['dev', 'core', 'compiler'],
+    depends: owning_classes_ir, suite: ['full', 'dev', 'core', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
 )
 
@@ -149,10 +154,10 @@ owned_spans_ir = executable(
     'owned-spans-ir', 'compiler/owned_spans_ir.cpp',
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
-test('owned-spans-ir', owned_spans_ir, suite: ['dev', 'core', 'bytes', 'compiler'], timeout: 120)
+test('owned-spans-ir', owned_spans_ir, suite: ['full', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
 test('owned-spans-source', python,
      args: ['-B', '-O', files('compiler/owned_spans_source.py'), aurorac],
-     depends: aurorac, suite: ['dev', 'core', 'bytes'], env: oracle_env,
+     depends: aurorac, suite: ['full', 'dev', 'core', 'bytes'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)
 foreach mode : ['standalone', 'receiver']
     span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac]
@@ -160,14 +165,14 @@ foreach mode : ['standalone', 'receiver']
         span_kernel_args += ['--receiver-bound']
     endif
     test('owned-spans-kernel-' + mode, python,
-         args: span_kernel_args, depends: aurorac, suite: ['dev', 'bytes'],
+         args: span_kernel_args, depends: aurorac, suite: ['full', 'dev', 'bytes'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 endforeach
 # Meson owns compiler dependencies; this records observed artifact stability only.
 test(
     'json-profile', python,
     args: ['-B', '-O', files('compiler/json_profile.py'), aurorac, '--developer-selected-compiler'],
-    depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
+    depends: aurorac, suite: ['full', 'slow', 'bytes'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
 )
 
@@ -177,7 +182,7 @@ logical_spans_abi = executable(
 )
 test('logical-spans-abi', python,
      args: ['-B', '-O', files('compiler/logical_spans_abi.py'), logical_spans_abi],
-     depends: logical_spans_abi, suite: ['dev', 'core', 'bytes', 'compiler'],
+     depends: logical_spans_abi, suite: ['full', 'dev', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
 # Synchronous method capabilities retain independent IR and literal-layout ABI gates.
@@ -185,20 +190,20 @@ method_spans_ir = executable(
     'method-spans-ir', 'compiler/method_spans_ir.cpp',
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
-test('method-spans-ir', method_spans_ir, suite: ['dev', 'core', 'bytes', 'compiler'], timeout: 120)
+test('method-spans-ir', method_spans_ir, suite: ['full', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
 method_spans_abi = executable(
     'method-spans-abi', 'compiler/method_spans_abi.cpp',
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('method-spans-abi', python,
      args: ['-B', '-O', files('compiler/method_spans_abi.py'), method_spans_abi],
-     depends: method_spans_abi, suite: ['dev', 'core', 'bytes', 'compiler'],
+     depends: method_spans_abi, suite: ['full', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 # Single-scalar codecs retain their own independent oracle and hosted composition.
 test(
     'json-codecs', python,
     args: ['-B', '-O', files('compiler/json_codecs.py'), aurorac, '--developer-selected-compiler'],
-    depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
+    depends: aurorac, suite: ['full', 'slow', 'bytes'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
 )
 
@@ -206,7 +211,7 @@ test(
 test(
     'json-integers', python,
     args: ['-B', '-O', files('compiler/json_integers.py'), aurorac, '--developer-selected-compiler'],
-    depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
+    depends: aurorac, suite: ['full', 'slow', 'bytes'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
 )
 
@@ -214,6 +219,6 @@ test(
 test(
     'json-lookup', python,
     args: ['-B', '-O', files('compiler/json_lookup.py'), aurorac, '--developer-selected-compiler'],
-    depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
+    depends: aurorac, suite: ['full', 'slow', 'bytes'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 600, is_parallel: true,
 )

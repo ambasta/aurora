@@ -30,9 +30,9 @@ from package_profiles import (
 
 MODULES = (identity, manifest, graph)
 FULL = (
-    (5503, 20, "e68fa4dde18e7e4f14e77e722ca1444bad402f8aa0c23690b5d88bbb740d7350"),
-    (20022, 29, "889b0f1ec33ec35302936016c2b3ee90d61cbd65999beaf78d9795072d2a2948"),
-    (5548, 30, "64534ed0e78c098cc06b6a53fec6770224aed63e9acf813aa80b4be794a178de"),
+    (5503, 20, "96c5f134b951ca1a8e120f655e4cd778bbd4f2c16284f888a196e5f52b8adaea"),
+    (20022, 29, "5f46d52299bc0a842f63b3dba956841fc846997d7acb176923cc6785fe80855a"),
+    (5548, 30, "8c78779d2b53490c470c181282e50ea92d2af3838dbda00aa7b2e000706ffb6e"),
 )
 DEV = ((183, 6048), (157, 13098), (187, 15029))
 
@@ -63,7 +63,8 @@ def arguments(*values):
 
 class Profiles(unittest.TestCase):
     def test_full_corpus_unchanged(self):
-        # Captured from the reviewed PR44 source before introducing profiles.
+        # Captured from reviewed PR44; only owned-byte diagnostic wording was
+        # refreshed after verifying the old digest with those strings restored.
         # Includes full-width expectations, source bodies/helpers/arguments,
         # every rejection diagnostic/source, and the complete shared observer.
         for module, (count, rejects, expected_hash) in zip(MODULES, FULL):

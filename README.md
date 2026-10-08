@@ -25,8 +25,8 @@ The project is currently an experimental compiler and emulator-based kernel.
   token scanner. See the [library](library/README.md) and [examples](examples/).
 - **Kernel:** BIOS and UEFI boot, protected user-domain fixtures, bounded
   scheduling, copied request/reply IPC and service cancellation/restart in QEMU.
-  Three verified small Aurora policies participate in the UEFI dispatcher; an
-  [unverified recovery-plan candidate](docs/kernel-client-disposal-contract.md) adds a fourth. Trusted
+  Four small Aurora policies participate in the UEFI dispatcher, including a
+  [focused recovery-plan port](docs/kernel-client-disposal-results.md). Trusted
   C++/assembly owns memory, hardware and authority. See the [kernel](kernel/README.md) and [IPC checkpoint](docs/kernel-ipc-transition-integration-results.md).
 - **Storage experiments:** a host crash model and offline XFS header/root probes.
   See the [storage project](storage/README.md).
@@ -109,7 +109,9 @@ formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
 
 ```sh
-meson test -C build/meson --suite dev --num-processes 2  # focused incremental feedback
+meson test -C build/meson --suite dev --num-processes 2  # quick incremental feedback
+meson test -C build/meson --suite slow --num-processes 2 # longer integration/ABI sweeps
+meson test -C build/meson --suite full --num-processes 2 # all registered tests
 ./scripts/compiler-test.sh    # complete compiler-only suite
 make test                     # complete native aggregate; no QEMU
 make smoke-all                # complete emulator matrix; QEMU and firmware required

@@ -60,6 +60,12 @@ between adjacent tokens/comments is inspected; comment contents cannot create
 separators, and automatic wrapping never adds a blank line. Line boundaries follow
 the shared lexer's LF contract, including CRLF input.
 
+Adjacent qualified-name tokens such as `std::ByteWriteStatus` and
+`outer::inner::value` form one soft-wrap unit: wrapping occurs before the complete
+name, never immediately before or after `::`. Explicitly anchored line comments
+remain hard boundaries. A qualified name wider than the target stays intact and
+retains the existing long-line finding.
+
 Layout is deliberately simple: it does not optimize line breaking, invent blank
 separators, sort declarations or imports, reflow comments, or normalize the token
 stream. For example, lexical
@@ -82,7 +88,7 @@ A host write failure can still produce a partial stdout stream after validation;
 there is no transactional stdout API.
 
 Line comments retain all bytes, including a CR, tabs or trailing spaces. Outside
-comments whitespace becomes LF and spaces. Indivisible tokens/comments and deep
+comments whitespace becomes LF and spaces. Indivisible tokens/comments, qualified names and deep
 indentation may exceed 120 bytes. They are preserved and reported; this increment
 does not promise a strict 120-column result. The limit counts bytes, not Unicode
 display cells, codepoints or UTF-16 units.

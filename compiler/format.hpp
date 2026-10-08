@@ -261,9 +261,22 @@ inline std::string layout(const LexedSource &source, const Program &program) {
             space = false;
         if (column != 0 && !space && !joinsWithoutChangingTokens(previous, text))
             space = true;
-        if (column != 0 && column + (space ? 1 : 0) + text.size() > columnLimit) {
+        // A qualified name is one soft-wrap unit. Measure its adjacent token
+        // group only at the start, so even long scope chains take linear work.
+        // Comments remain hard boundaries and are never moved across a token.
+        const auto qualifiedContinuation = [&](std::size_t at) {
+            return at > 0 && !pieces[at - 1].comment && !pieces[at].comment &&
+                   (pieces[at - 1].text == "::" || pieces[at].text == "::");
+        };
+        const bool continuesQualified = qualifiedContinuation(index);
+        std::size_t wrapWidth = text.size();
+        if (!continuesQualified)
+            for (std::size_t next = index + 1; next < pieces.size() && qualifiedContinuation(next); ++next)
+                wrapWidth += pieces[next].text.size();
+        if (!continuesQualified && column != 0 && column + (space ? 1 : 0) + wrapWidth > columnLimit) {
             newline();
-            // A wrapped token receives one continuation level beyond its block.
+            // A wrapped token/group receives one continuation level beyond its block.
+            // An oversized indivisible name retains the existing long-line finding.
             ++depth;
         }
         if (column != 0 && space)

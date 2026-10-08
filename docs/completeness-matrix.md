@@ -1,14 +1,28 @@
 # Completeness and acceptance matrix
 
-## Native client-disposal plan — unverified candidate
+## Native client-disposal plan — focused gates passed
 
-A small copied Aurora decision now selects the existing dispatcher recovery
-plan after trusted owner/quiescence checks. Receipt handling, mailbox effects,
-revocation and domain authority remain in the bootstrap adapter. Independent
-native/hostile tests, exact stack/image review and actual guest qualification
-remain pending. See [contract](kernel-client-disposal-contract.md) and
-[status](kernel-client-disposal-results.md). This is not a full dispatcher port.
+A copied Aurora decision selects the real dispatcher recovery plan after trusted
+owner/quiescence checks. Receipt handling, mailbox effects, revocation and domain
+authority remain in the bootstrap adapter. Independent native/hostile/copy gates,
+fatal host sanitizers, current linked stack/image admission and 37 actual focused
+guest/restoration executions and final independent source/evidence review passed.
+See [contract](kernel-client-disposal-contract.md) and
+[results](kernel-client-disposal-results.md). This is not a full dispatcher port
+or fresh full-native/all-mode qualification. The PR88 repaired-main join preserves
+all 21 repair paths and freshly passes dev plus affected controls. Existing guest
+and stack evidence applies through independently checked unchanged execution
+inputs and byte-identical representative rebuilds; see the results for exact scope.
 
+
+## Developer-suite and tooling repairs — 2026-10-08
+
+Current package diagnostics and the single compiler-owned GNU-stack note restore
+all 47 registered tests under genuine GNU assembler 2.47. Quick `dev` coverage is
+38 tests; nine longer sweeps remain in `slow`, and `full`/unfiltered Meson retain
+all 47. Joined formatter and NVMe-preflight controls plus focused public Make
+gates pass. See [the measured qualification and limits](developer-suite-repair-results.md).
+This is not a new root full-native, full-package or hardware acceptance claim.
 
 ## Raw kernel owner resize — 2026-10-08
 
