@@ -1,9 +1,10 @@
 # Bounded raw kernel owner replacement resize
 
-Candidate, not yet qualified. No new guest result is claimed.
+Fresh focused host, independently reviewed linked admission and bounded guests
+passed; see [results and limits](kernel-owned-resize-results.md).
 
-The next dependency is the real CPU-only kernel adapter's existing OwnedBytes
-resize helper. The observable gate is failure-atomic replacement with independent
+The increment implements the real CPU-only kernel adapter's existing OwnedBytes
+resize helper. Its acceptance gate is failure-atomic replacement with independent
 host adversaries, exact six-helper graph/link admission and independently reviewed
 linked stack/image evidence before any guest. Complete ByteBuffer graphs are not
 admitted by this change.
@@ -60,8 +61,8 @@ and resize. Graph definitions remain closed. Actual ELF-link controls must show
 real resize resolution and reject unrelated runtime imports/mixed graphs. The
 linked stack proof includes generated expression/cleanup pushes, resource/span
 records, exact C++ frames and direct call edges, and the four-level page verifier.
-The unchanged gate is normal peak +512 fault reserve <=15,360 of16,384 bytes;
-the decoded fault path itself must fit512. Historical bounds are not current proof.
+The unchanged gate is normal peak +512 fault reserve <=15,360 of 16,384 bytes;
+the decoded fault path itself must fit 512. Historical bounds are not current proof.
 
 Independent source and exact admission/stack review precedes the narrowly extended
 owned-bytes guest. Only bounded owned-bytes, runtime-span and normal regressions

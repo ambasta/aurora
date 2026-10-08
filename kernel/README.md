@@ -13,8 +13,8 @@ allocations from the existing physical page pool, with four fixed owner records,
 whole-page scrubbing and explicit cleanup. See the
 [bounded contract](../docs/kernel-owned-bytes.md) and
 [focused results](../docs/kernel-owned-bytes-results.md) for current gates and limits.
-Raw kernel resize is a [candidate extension](../docs/kernel-owned-resize.md),
-not yet qualified. User allocation and device activation remain outside this profile.
+Raw kernel resize is a [bounded extension](../docs/kernel-owned-resize.md) with
+[fresh focused qualification](../docs/kernel-owned-resize-results.md). User allocation and device activation remain outside this profile.
 A reconstructed [readonly-view increment](../docs/kernel-owned-views-results.md)
 has fresh local build/host/guest gates; final acceptance is recorded separately.
 

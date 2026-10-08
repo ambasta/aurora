@@ -1,11 +1,26 @@
 # Completeness and acceptance matrix
 
-## Raw kernel owner resize — candidate 2026-10-08
+## Raw kernel owner resize — 2026-10-08
 
 The [bounded replacement contract](kernel-owned-resize.md) extends the existing
-CPU-only adapter using the same four records and sixteen pages. Implementation
-and adversarial tests are in progress; no current host, linked-stack or guest
-qualification is claimed yet. Complete ByteBuffer graphs remain separate.
+CPU-only adapter using the same four records and sixteen pages. Fresh ordinary
+and fatal host sanitizer checks, independent source/linked-stack admission and
+actual owned-bytes/runtime-span/normal guests pass, including exact restoration.
+See [focused results and retained corrections](kernel-owned-resize-results.md).
+Complete ByteBuffer graphs remain separate.
+
+
+## Bounded JSON lookup — 2026-10-08
+
+Root decoded-name member and array-index lookup share the iterative validator;
+complete validation precedes copied selection and matching duplicate names yield
+ambiguity. Each fresh Python mode passed 4,996 cases, 25,020 full-width fields,
+67 rejections and 211 hosted owner/example checks. Original profile/scalar/integer
+and real owner regressions passed in both modes, and the controlled focused Make
+gate passed with the unchanged selected compiler. Independent source/raw-evidence
+review and Meson routing inspection are recorded in the [results](json-lookup-results.md).
+No DOM, stored source borrow, compiler semantics, host JSON replacement or new
+full-native/sanitizer/hardware qualification is claimed.
 
 ## Checked JSON integer codecs — 2026-10-08
 

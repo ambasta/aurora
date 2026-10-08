@@ -209,3 +209,11 @@ test(
     depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
 )
+
+# Full-document validation precedes copied root member/index observations.
+test(
+    'json-lookup', python,
+    args: ['-B', '-O', files('compiler/json_lookup.py'), aurorac, '--developer-selected-compiler'],
+    depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
+    workdir: meson.current_build_dir(), timeout: 600, is_parallel: true,
+)

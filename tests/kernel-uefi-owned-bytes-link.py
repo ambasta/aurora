@@ -107,9 +107,7 @@ def main():
         result.update(
             status="passed", positive_profiles=1, resize_links=1, unsupported_import_rejections=1, negative_links=2
         )
-        print(
-            "PASS: actual profile admission, real resize link and unsupported import rejection and two negative ELF links"
-        )
+        print("PASS: six-helper admission, real resize ELF and unknown-import/mixed-graph rejection")
     except BaseException as error:
         result.update(status="failed", error=str(error))
         raise

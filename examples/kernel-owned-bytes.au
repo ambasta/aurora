@@ -40,45 +40,68 @@ auto consume_bytes(builtin::span<const u8> input) -> i64 {
 // use actual page leases. No byte array, raw address or host result is substituted.
 auto kernel_owned_bytes_entry(builtin::ByteRegion region, i64 length, i64 selector) -> i64 {
     // A separate scalar selector exercises only the existing raw owner ABI.
-    if (selector >= 1 && selector <= 3 && length == 4097) {
+    if (0 < selector && selector < 4 && length == 4097) {
         builtin::OwnedBytes resized = region.try_allocate(length);
-        if (!resized.ok() || resized.size() != length) { return -20; }
+        if (!resized.ok() || resized.size() != length) {
+            return -20;
+        }
         i64 cursor = 0;
         while (cursor < length) {
-            if (!resized.set(cursor, 71u8)) { return -21; }
+            if (!resized.set(cursor, 71u8)) {
+                return -21;
+            }
             cursor = cursor + 1;
         }
-        if (!resized.try_resize(length) || resized.try_resize(-1)) { return -22; }
+        if (!resized.try_resize(length) || resized.try_resize(-1)) {
+            return -22;
+        }
         if (selector == 2 || selector == 3) {
             i64 requested = length + 1;
-            if (selector == 3) { requested = 8193; }
-            if (resized.try_resize(requested) || resized.size() != length) { return -23; }
+            if (selector == 3) {
+                requested = 8193;
+            }
+            if (resized.try_resize(requested) || resized.size() != length) {
+                return -23;
+            }
             cursor = 0;
             while (cursor < length) {
-                if (resized.at(cursor) != 71u8) { return -24; }
+                if (resized.at(cursor) != 71u8) {
+                    return -24;
+                }
                 cursor = cursor + 1;
             }
             return 42;
         }
-        if (!resized.try_resize(length + 1) || resized.size() != length + 1) { return -25; }
+        if (!resized.try_resize(length + 1) || resized.size() != length + 1) {
+            return -25;
+        }
         cursor = 0;
         while (cursor < length) {
-            if (resized.at(cursor) != 71u8) { return -26; }
-            cursor = cursor + 1;
-        }
-        if (resized.at(length) != 0u8 || !resized.try_resize(length - 1) ||
-            !resized.try_resize(length + 1)) { return -27; }
-        cursor = 0;
-        while (cursor < length + 1) {
-            if (cursor < length - 1) {
-                if (resized.at(cursor) != 71u8) { return -28; }
-            } else {
-                if (resized.at(cursor) != 0u8) { return -29; }
+            if (resized.at(cursor) != 71u8) {
+                return -26;
             }
             cursor = cursor + 1;
         }
-        if (!resized.try_resize(0) || !resized.ok() || resized.size() != 0 ||
-            !resized.try_resize(1) || resized.at(0) != 0u8) { return -30; }
+        if (resized.at(length) != 0u8 || !resized.try_resize(length - 1) || !resized.try_resize(length + 1)) {
+            return -27;
+        }
+        cursor = 0;
+        while (cursor < length + 1) {
+            if (cursor < length - 1) {
+                if (resized.at(cursor) != 71u8) {
+                    return -28;
+                }
+            } else {
+                if (resized.at(cursor) != 0u8) {
+                    return -29;
+                }
+            }
+            cursor = cursor + 1;
+        }
+        if (!resized.try_resize(0) || !resized.ok() || resized.size() != 0 || !resized.try_resize(1) || resized.at(0) !=
+            0u8) {
+            return -30;
+        }
         return 42;
     }
     if (selector == 0 && length == 0) {

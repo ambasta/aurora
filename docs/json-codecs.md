@@ -85,9 +85,11 @@ bytes through copied reads for the hosted oracle. Reserving the two distinct
 buffers is not a joint transaction; a later failure does not roll back a successful
 reservation of the other buffer. No such cross-buffer guarantee is claimed.
 
-Current signatures do not support a free helper taking a span plus mutable borrowed
-ByteBuffer, span method parameters or a writer owning a nested ByteBuffer. Callers
-compose the scalar codecs locally. No duplicate JsonBuffer or new borrowed-resource
+Synchronous readonly span method parameters are supported by the accepted
+[method-span contract](../compiler/METHOD-SPANS.md), including bulk ByteBuffer
+append. General mutable-object references and a writer owning a nested ByteBuffer
+remain unsupported; a free helper taking a span plus a mutable borrowed ByteBuffer
+is not admitted. Callers compose the scalar codecs locally. No duplicate JsonBuffer or new borrowed-resource
 signature is introduced to evade these boundaries. Native transport, decoded-key
 lookup/duplicate policy, numeric conversion/formatting, value representation and
 larger LSP budgets remain distinct dependencies before host JSON replacement.

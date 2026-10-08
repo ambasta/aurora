@@ -15,7 +15,7 @@ mixed independently generated scalar/resource graphs remain unsupported.
 The source entry stays local, and only a scalar status crosses the private bridge.
 No descriptor, pointer, span or physical address crosses the private grant bridge.
 
-The next acceptance gate is focused native ownership/failure coverage, explicit
+The acceptance gate is focused native ownership/failure coverage, explicit
 unsupported-import rejection, complete linked stack/authority/image admission,
 independent review, and an actual bounded QEMU boot followed by normal restoration.
 See [the results](kernel-owned-bytes-results.md) for the accepted evidence scope.
@@ -73,9 +73,10 @@ The shared `runtime/bytes_abi.hpp` is the unchanged 32-byte compiler-private own
 layout and helper declarations, including hosted resize. The hosted allocator
 implementation and its resize semantics remain separate. The kernel profile
 supports allocation, copied read/write, validated readonly logical borrowing and
-normal drop. `try_resize` now has a candidate real replacement implementation described in
-[the resize contract](kernel-owned-resize.md). Its six-helper admission and new
-guest qualification remain pending; historical five-helper evidence is not reused. Mutable/general escaping borrowing,
+normal drop and failure-safe replacement resize. The
+[resize contract](kernel-owned-resize.md) and [focused results](kernel-owned-resize-results.md)
+cover fresh six-helper admission and bounded guest qualification; historical
+five-helper evidence is not reused. Mutable/general escaping borrowing,
 DMA/BAR/IOMMU activation, concurrency, exception unwinding and mixed graphs remain
 out of scope.
 
@@ -112,7 +113,8 @@ adapter passes establish a real guest result or physical-hardware support.
 
 ## Reconstructed readonly-owner consumer
 
-The candidate extends this same exclusive profile to exactly five imports:
+The earlier reconstructed readonly-owner checkpoint extended this same exclusive
+profile to exactly five imports:
 allocate, at, set, drop and borrow_length. A real Aurora consumer copies and
 narrows the existing 56-byte logical span, reads every byte and checks logical
 4,095/4,096 across a physical page boundary. Its return value is the observed
