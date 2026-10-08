@@ -617,7 +617,7 @@ def hosted_compile(suite, name, source, entry_name):
     ]
     require(len(matching) == 1, "one hosted example entry")
     require(f".local {matching[0]}\n" in text, "hosted resource entry remains private")
-    (directory / "bridged.s").write_text(text + owned_bytes.BRIDGE.replace("ENTRY", matching[0]))
+    (directory / "bridged.s").write_text(owned_bytes.bridged_assembly(text, matching[0]))
     (directory / "driver.cpp").write_text(owned_bytes.DRIVER)
     cxx = shlex.split(os.environ.get("CXX", "g++"))
     flags = selected_flag_vectors(os.environ)["CXXFLAGS"]

@@ -114,6 +114,7 @@ int main(int argc, char **argv) {
 }
 """
 
+# Appended to compiler output, which already owns the non-executable-stack note.
 BRIDGE = r"""
 .text
 .globl __au_runtime_bytes_test_entry
@@ -133,8 +134,31 @@ __au_runtime_bytes_test_entry:
 .size __au_runtime_bytes_test_entry, .-__au_runtime_bytes_test_entry
 .globl __au_runtime_bytes_test_bounds
 .set __au_runtime_bytes_test_bounds, .Laurora_bounds_trap
-.section .note.GNU-stack,"",@progbits
 """
+
+
+def bridged_assembly(text, entry):
+    assembly = text + BRIDGE.replace("ENTRY", entry)
+    notes = [line.strip() for line in assembly.splitlines() if ".note.GNU-stack" in line]
+    require(notes == ['.section .note.GNU-stack,"",@progbits'], "bridge requires one non-executable-stack note")
+    return assembly
+
+
+def bridge_self_test():
+    note = '.section .note.GNU-stack,"",@progbits\n'
+    bridged_assembly(".text\n" + note, "entry")
+    for text in (
+        ".text\n",
+        note + note,
+        note.replace('"",', '"x",'),
+        note + '.section .note.GNU-stack,"x",@progbits\n',
+    ):
+        try:
+            bridged_assembly(text, "entry")
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError("bridge accepted a missing, duplicate or executable stack note")
 
 
 def program(body, helpers=""):
@@ -185,7 +209,7 @@ class Suite:
             require(len(selected) == 1, f"{name}: expected one entry named {selected_name}, found {selected}")
             entry = selected[0]
         require(f".local {entry}\n" in text, f"{name}: resource entry must stay private")
-        assembly.write_text(text + BRIDGE.replace("ENTRY", entry))
+        assembly.write_text(bridged_assembly(text, entry))
         executable = folder / "native"
         result = command(
             [
@@ -751,6 +775,7 @@ class Suite:
 
 
 def main():
+    bridge_self_test()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
     parser.add_argument("--artifact-dir", type=Path)

@@ -108,7 +108,9 @@ formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
 
 ```sh
-meson test -C build/meson --suite dev --num-processes 2  # focused incremental feedback
+meson test -C build/meson --suite dev --num-processes 2  # quick incremental feedback
+meson test -C build/meson --suite slow --num-processes 2 # longer integration/ABI sweeps
+meson test -C build/meson --suite full --num-processes 2 # all registered tests
 ./scripts/compiler-test.sh    # complete compiler-only suite
 make test                     # complete native aggregate; no QEMU
 make smoke-all                # complete emulator matrix; QEMU and firmware required

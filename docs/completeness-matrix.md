@@ -1,5 +1,14 @@
 # Completeness and acceptance matrix
 
+## Developer-suite and tooling repairs — 2026-10-08
+
+Current package diagnostics and the single compiler-owned GNU-stack note restore
+all 47 registered tests under genuine GNU assembler 2.47. Quick `dev` coverage is
+38 tests; nine longer sweeps remain in `slow`, and `full`/unfiltered Meson retain
+all 47. Joined formatter and NVMe-preflight controls plus focused public Make
+gates pass. See [the measured qualification and limits](developer-suite-repair-results.md).
+This is not a new root full-native, full-package or hardware acceptance claim.
+
 ## Raw kernel owner resize — 2026-10-08
 
 The [bounded replacement contract](kernel-owned-resize.md) extends the existing

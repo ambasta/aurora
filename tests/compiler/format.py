@@ -81,6 +81,21 @@ def main():
         separated.write_bytes(separated_expected.replace(b" \t\r\n", b"\n"))
         record = json.loads(run(["--check", "--diagnostics=json", separated], 0).stderr)
         require(record["success"] and not record["changed"], "clean canonical blank lines fail --check")
+        qualified = root / "qualified.au"
+        qualified.write_text(
+            "module x;auto " + "f" * 100 + "()->std::ByteWriteStatus{return std::ByteWriteStatus::success;}"
+        )
+        qualified_before = qualified.read_bytes()
+        qualified_expected = (
+            "module x;\nauto " + "f" * 100 + "() ->\n    std::ByteWriteStatus {\n"
+            "    return std::ByteWriteStatus::success;\n}\n"
+        ).encode()
+        require(run([qualified], 0).stdout == qualified_expected, "CLI split a qualified name at the soft limit")
+        require(qualified.read_bytes() == qualified_before, "qualified-name formatting changed input")
+        qualified.write_bytes(qualified_expected)
+        require(run([qualified], 0).stdout == qualified_expected, "qualified-name CLI output is not idempotent")
+        record = json.loads(run(["--check", "--diagnostics=json", qualified], 0).stderr)
+        require(record["success"] and not record["changed"], "canonical qualified-name layout fails --check")
         bad = root / "bad.au"
         for text, code in [
             ("module x;auto f()->i64{return @;}", "AU1001"),

@@ -323,8 +323,10 @@ test-nvme-queues:
 	./scripts/kernel-nvme-queue-tests.sh
 
 smoke-nvme-prepare:
+	@if [ -z "$${AURORA_NVME_RECEIPTS:-}" ]; then \
+	    printf '%s\n' 'BLOCKED: Set AURORA_NVME_RECEIPTS to a fresh preparation receipt directory' >&2; exit 2; fi
 	python3 scripts/kernel-uefi-bar-run.py bar-prepare \
-	    --output "$${AURORA_NVME_RECEIPTS:?Set a fresh preparation receipt directory}"
+	    --output "$${AURORA_NVME_RECEIPTS}"
 
 test-uefi-bar:
 	./scripts/kernel-uefi-bar-tests.sh
