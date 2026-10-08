@@ -7,39 +7,177 @@ import std.byte_buffer;
 
 // Materialize transport bytes once. All extraction reads the same live owner.
 auto json_lookup_example(builtin::ByteRegion region, i64 capacity, i64 observation) -> i64 {
-    const builtin::array<u8, 81> wire = {32u8, 123u8, 34u8, 92u8, 117u8, 48u8, 48u8, 55u8, 48u8, 97u8, 121u8, 108u8, 111u8, 97u8, 100u8, 34u8, 58u8, 123u8, 34u8, 105u8, 116u8, 101u8, 109u8, 115u8, 34u8, 58u8, 91u8, 110u8, 117u8, 108u8, 108u8, 44u8, 123u8, 34u8, 110u8, 97u8, 109u8, 101u8, 34u8, 58u8, 34u8, 65u8, 92u8, 117u8, 48u8, 48u8, 48u8, 48u8, 92u8, 117u8, 68u8, 56u8, 51u8, 68u8, 92u8, 117u8, 68u8, 69u8, 48u8, 48u8, 34u8, 125u8, 93u8, 125u8, 44u8, 34u8, 105u8, 103u8, 110u8, 111u8, 114u8, 101u8, 100u8, 34u8, 58u8, 116u8, 114u8, 117u8, 101u8, 125u8, 32u8};
-    const builtin::array<u8, 7> payload_key = {112u8, 97u8, 121u8, 108u8, 111u8, 97u8, 100u8};
-    const builtin::array<u8, 5> items_key = {105u8, 116u8, 101u8, 109u8, 115u8};
-    const builtin::array<u8, 4> name_key = {110u8, 97u8, 109u8, 101u8};
+    const builtin::array<u8, 81> wire = {
+        32u8,
+        123u8,
+        34u8,
+        92u8,
+        117u8,
+        48u8,
+        48u8,
+        55u8,
+        48u8,
+        97u8,
+        121u8,
+        108u8,
+        111u8,
+        97u8,
+        100u8,
+        34u8,
+        58u8,
+        123u8,
+        34u8,
+        105u8,
+        116u8,
+        101u8,
+        109u8,
+        115u8,
+        34u8,
+        58u8,
+        91u8,
+        110u8,
+        117u8,
+        108u8,
+        108u8,
+        44u8,
+        123u8,
+        34u8,
+        110u8,
+        97u8,
+        109u8,
+        101u8,
+        34u8,
+        58u8,
+        34u8,
+        65u8,
+        92u8,
+        117u8,
+        48u8,
+        48u8,
+        48u8,
+        48u8,
+        92u8,
+        117u8,
+        68u8,
+        56u8,
+        51u8,
+        68u8,
+        92u8,
+        117u8,
+        68u8,
+        69u8,
+        48u8,
+        48u8,
+        34u8,
+        125u8,
+        93u8,
+        125u8,
+        44u8,
+        34u8,
+        105u8,
+        103u8,
+        110u8,
+        111u8,
+        114u8,
+        101u8,
+        100u8,
+        34u8,
+        58u8,
+        116u8,
+        114u8,
+        117u8,
+        101u8,
+        125u8,
+        32u8
+    };
+    const builtin::array<u8, 7> payload_key = {
+        112u8,
+        97u8,
+        121u8,
+        108u8,
+        111u8,
+        97u8,
+        100u8
+    };
+    const builtin::array<u8, 5> items_key = {
+        105u8,
+        116u8,
+        101u8,
+        109u8,
+        115u8
+    };
+    const builtin::array<u8, 4> name_key = {
+        110u8,
+        97u8,
+        109u8,
+        101u8
+    };
     builtin::OwnedBytes allocation = region.try_allocate(capacity);
     std::ByteBuffer input = std::ByteBuffer(region, move(allocation));
-    if (!input.ok()) { return -1; }
-    if (!input.try_append_bytes(borrow_bytes(wire))) { return -2; }
+    if (!input.ok()) {
+        return -1;
+    }
+    if (!input.try_append_bytes(borrow_bytes(wire))) {
+        return -2;
+    }
     const builtin::span<const u8> bytes = input.bytes();
-    const std::JsonLookupResult payload = std::lookup_json_member(bytes, 0, bytes.size(), borrow_bytes(payload_key), 0, 7);
-    if (payload.status() != std::JsonLookupStatus::success || payload.kind() != std::JsonValueKind::object) { return -3; }
-    const std::JsonLookupResult items = std::lookup_json_member(bytes, payload.byte_offset(), payload.byte_count(), borrow_bytes(items_key), 0, 5);
-    if (items.status() != std::JsonLookupStatus::success || items.kind() != std::JsonValueKind::array_value) { return -4; }
+    const std::JsonLookupResult payload = std::lookup_json_member(bytes, 0, bytes.size(), borrow_bytes(payload_key), 0,
+        7);
+    if (payload.status() != std::JsonLookupStatus::success || payload.kind() != std::JsonValueKind::object) {
+        return -3;
+    }
+    const std::JsonLookupResult items = std::lookup_json_member(bytes, payload.byte_offset(), payload.byte_count(),
+        borrow_bytes(items_key), 0, 5);
+    if (items.status() != std::JsonLookupStatus::success || items.kind() != std::JsonValueKind::array_value) {
+        return -4;
+    }
     const std::JsonLookupResult element = std::lookup_json_element(bytes, items.byte_offset(), items.byte_count(), 1);
-    if (element.status() != std::JsonLookupStatus::success || element.kind() != std::JsonValueKind::object) { return -5; }
-    const std::JsonLookupResult name = std::lookup_json_member(bytes, element.byte_offset(), element.byte_count(), borrow_bytes(name_key), 0, 4);
-    if (name.status() != std::JsonLookupStatus::success || name.kind() != std::JsonValueKind::string) { return -6; }
-    if (observation == -1) { return payload.byte_offset(); }
-    if (observation == -2) { return payload.byte_count(); }
-    if (observation == -3) { return items.byte_offset(); }
-    if (observation == -4) { return items.byte_count(); }
-    if (observation == -5) { return element.byte_offset(); }
-    if (observation == -6) { return element.byte_count(); }
-    if (observation == -7) { return name.byte_offset(); }
-    if (observation == -8) { return name.byte_count(); }
-    if (observation == -9) { return input.size(); }
+    if (element.status() != std::JsonLookupStatus::success || element.kind() != std::JsonValueKind::object) {
+        return -5;
+    }
+    const std::JsonLookupResult name = std::lookup_json_member(bytes, element.byte_offset(), element.byte_count(),
+        borrow_bytes(name_key), 0, 4);
+    if (name.status() != std::JsonLookupStatus::success || name.kind() != std::JsonValueKind::string) {
+        return -6;
+    }
+    if (observation == -1) {
+        return payload.byte_offset();
+    }
+    if (observation == -2) {
+        return payload.byte_count();
+    }
+    if (observation == -3) {
+        return items.byte_offset();
+    }
+    if (observation == -4) {
+        return items.byte_count();
+    }
+    if (observation == -5) {
+        return element.byte_offset();
+    }
+    if (observation == -6) {
+        return element.byte_count();
+    }
+    if (observation == -7) {
+        return name.byte_offset();
+    }
+    if (observation == -8) {
+        return name.byte_count();
+    }
+    if (observation == -9) {
+        return input.size();
+    }
     i64 index = name.byte_offset() + 1;
     const i64 end = name.byte_offset() + name.byte_count() - 1;
     i64 scalar_index = 0;
     while (index < end) {
         const std::JsonScalarResult scalar = std::decode_json_string_scalar(bytes, index, end - index);
-        if (scalar.status() != std::JsonStatus::success) { return -7; }
-        if (scalar_index == observation) { return i64(scalar.scalar_or(0u64)); }
+        if (scalar.status() != std::JsonStatus::success) {
+            return -7;
+        }
+        if (scalar_index == observation) {
+            return i64(scalar.scalar_or(0u64));
+        }
         index = index + scalar.consumed_bytes();
         scalar_index = scalar_index + 1;
     }

@@ -1,12 +1,16 @@
 # Completeness and acceptance matrix
 
-## Bounded JSON lookup — unverified candidate 2026-10-08
+## Bounded JSON lookup — 2026-10-08
 
-A shared iterative validator now observes root decoded-name members and array
-indices without retaining source borrows. Complete validation precedes visible
-selection and matching duplicate names yield ambiguity. The [contract](json-lookup.md)
-and [pending qualification](json-lookup-results.md) state limits and remaining
-gates. This checkpoint is not accepted or a host JSON replacement.
+Root decoded-name member and array-index lookup share the iterative validator;
+complete validation precedes copied selection and matching duplicate names yield
+ambiguity. Each fresh Python mode passed 4,996 cases, 25,020 full-width fields,
+67 rejections and 211 hosted owner/example checks. Original profile/scalar/integer
+and real owner regressions passed in both modes, and the controlled focused Make
+gate passed with the unchanged selected compiler. Independent source/raw-evidence
+review and Meson routing inspection are recorded in the [results](json-lookup-results.md).
+No DOM, stored source borrow, compiler semantics, host JSON replacement or new
+full-native/sanitizer/hardware qualification is claimed.
 
 ## Checked JSON integer codecs — 2026-10-08
 

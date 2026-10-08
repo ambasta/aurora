@@ -1,7 +1,7 @@
 # Bounded decoded-key and array-index JSON lookup
 
-Status: implementation candidate, not independently qualified. See the
-[qualification record](json-lookup-results.md). No DOM, stored source view,
+Status: focused native gates and independent source/evidence review passed. See
+the [qualification record](json-lookup-results.md). No DOM, stored source view,
 compiler semantics, new buffer, or host JSON replacement is introduced.
 
 ## Dependency and observable gate
@@ -131,3 +131,13 @@ content (41,19) yields U+0041, U+0000, U+1F600. These are same-span coordinates;
 a caller choosing subspans must intentionally rebase coordinates. Each lookup
 validates its entire chosen window. No source copies or extracted value buffers
 are used, and every extent/scalar is exposed for a hosted oracle.
+
+## Focused test routing
+
+`make -C compiler test-json-lookup` enters the controlled compiler workflow.
+The optimized Python runner is also in Meson bytes/dev with explicit example
+module dependencies. Direct independent-pinned runs use
+`python3 -B tests/compiler/json_lookup.py COMPILER --compiler-sha256 DIGEST
+--artifacts FRESH_DIRECTORY`, repeated with `-O`. `--self-test-only` checks only
+the independent oracles. Developer-selected mode records observed compiler
+stability, not independent provenance, and is refused in aggregate contexts.

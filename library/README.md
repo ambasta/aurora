@@ -494,6 +494,8 @@ conversion and generic decimal integer encoding. The example reserves complete
 output once using existing ByteBuffer. Bounded focused native qualification and
 independent source/evidence review passed; see the [results and limits](../docs/json-integers-results.md).
 
-Root-only decoded-name member and array-index lookup is an unverified candidate;
-see [its bounded contract](../docs/json-lookup.md) and
-[pending qualification](../docs/json-lookup-results.md).
+Root-only decoded-name member and array-index lookup returns copied extents only
+after complete validation; matching duplicate names report ambiguity. The
+[bounded contract](../docs/json-lookup.md) and
+[focused qualification](../docs/json-lookup-results.md) cover independent Unicode,
+ordered-duplicate/range, owner-lifetime and real ByteBuffer extraction checks.
