@@ -2554,10 +2554,10 @@ Module spanBaseline() {
     aurora::ir::Function function;
     function.name = "span_local";
     function.result = Type::U8;
-    function.frameBytes = 48;
+    function.frameBytes = 640;
     function.slots = {{8, Type::U8}, {7, Type::U8}, {6, Type::U8}};
     function.arraySlots = {{8, 3}};
-    function.spanSlots = {24, 40};
+    function.spanSlots = {256, 320};
     function.code = {BeginArray{8},
                      Constant{11, Type::U8},
                      Store{8, Type::U8},
@@ -2565,12 +2565,12 @@ Module spanBaseline() {
                      Store{7, Type::U8},
                      Constant{255, Type::U8},
                      Store{6, Type::U8},
-                     BorrowSpan{8, 24},
-                     ReborrowSpan{24, 40},
+                     BorrowSpan{8, 256},
+                     ReborrowSpan{256, 320},
                      Constant{1, Type::I64},
-                     SpanLoad{40},
-                     EndSpan{40},
-                     EndSpan{24},
+                     SpanLoad{320},
+                     EndSpan{320},
+                     EndSpan{256},
                      EndArray{8},
                      Return{}};
     module.functions.push_back(function);
@@ -2581,7 +2581,7 @@ Module spanCallModule() {
     auto local = module.functions.front();
     local.name = "span_length";
     local.result = Type::I64;
-    local.code[9] = SpanLength{24};
+    local.code[9] = SpanLength{256};
     local.code.erase(local.code.begin() + 10);
     module.functions.push_back(local);
     local = module.functions.front();
@@ -2593,33 +2593,33 @@ Module spanCallModule() {
     read.name = "span_read";
     read.result = Type::U8;
     read.parameters = {Type::ByteSpan, Type::I64};
-    read.frameBytes = 32;
+    read.frameBytes = 640;
     read.slots = {{8, Type::I64}};
-    read.spanSlots = {24};
-    read.code = {BindSpanParameter{0, 24},
+    read.spanSlots = {256};
+    read.code = {BindSpanParameter{0, 256},
                  BindParameter{1, 8, Type::I64},
                  Load{8, Type::I64},
-                 SpanLoad{24},
-                 EndSpan{24},
+                 SpanLoad{256},
+                 EndSpan{256},
                  Return{}};
     module.functions.push_back(read);
     auto relay = read;
     relay.name = "span_forward";
-    relay.frameBytes = 48;
-    relay.spanSlots.insert(40);
-    relay.code = {BindSpanParameter{0, 24},
+    relay.frameBytes = 640;
+    relay.spanSlots.insert(320);
+    relay.code = {BindSpanParameter{0, 256},
                   BindParameter{1, 8, Type::I64},
-                  ReborrowSpan{24, 40},
+                  ReborrowSpan{256, 320},
                   Load{8, Type::I64},
                   Push{},
-                  AggregateCall{"span_read", {0, 0}, 0, {40, 0}},
-                  EndSpan{40},
-                  EndSpan{24},
+                  AggregateCall{"span_read", {0, 0}, 0, {320, 0}},
+                  EndSpan{320},
+                  EndSpan{256},
                   Return{}};
     module.functions.push_back(relay);
     auto dynamic = module.functions.front();
     dynamic.name = "span_dynamic";
-    dynamic.frameBytes = 64;
+    dynamic.frameBytes = 640;
     dynamic.parameters = {Type::I64};
     dynamic.slots[56] = Type::I64;
     dynamic.code = {BindParameter{0, 56, Type::I64},
@@ -2630,11 +2630,11 @@ Module spanCallModule() {
                     Store{7, Type::U8},
                     Constant{255, Type::U8},
                     Store{6, Type::U8},
-                    BorrowSpan{8, 24},
+                    BorrowSpan{8, 256},
                     Load{56, Type::I64},
                     Push{},
-                    AggregateCall{"span_forward", {0, 0}, 0, {24, 0}},
-                    EndSpan{24},
+                    AggregateCall{"span_forward", {0, 0}, 0, {256, 0}},
+                    EndSpan{256},
                     EndArray{8},
                     Return{}};
     module.functions.push_back(dynamic);
@@ -2645,23 +2645,23 @@ Module spanCallModule() {
     mixed.result = Type("SpanPacket");
     mixed.parameters = {Type::U8,  Type::ByteSpan, Type("SpanPacket"),
                         Type::I64, Type::ByteSpan, Type::Bool};
-    mixed.frameBytes = 160;
+    mixed.frameBytes = 640;
     mixed.slots = {{1, Type::U8},   {56, Type::U8},   {48, Type::I64}, {40, Type::U8},
                    {64, Type::I64}, {96, Type::Bool}, {128, Type::U8}, {120, Type::I64},
                    {112, Type::U8}, {136, Type::I64}};
     mixed.objectSlots = {{56, ObjectSlot{"SpanPacket", false}},
                          {128, ObjectSlot{"SpanPacket", false}}};
-    mixed.spanSlots = {24, 88};
+    mixed.spanSlots = {256, 384};
     mixed.code = {BindParameter{0, 1, Type::U8},
-                  BindSpanParameter{1, 24},
+                  BindSpanParameter{1, 256},
                   BindObjectParameter{2, 56, "SpanPacket"},
                   BindParameter{3, 64, Type::I64},
-                  BindSpanParameter{4, 88},
+                  BindSpanParameter{4, 384},
                   BindParameter{5, 96, Type::Bool},
                   BeginObject{128},
                   Constant{0, Type::I64},
                   Push{},
-                  AggregateCall{"span_forward", {0, 0}, 0, {24, 0}},
+                  AggregateCall{"span_forward", {0, 0}, 0, {256, 0}},
                   Convert{Type::U8, Type::I64},
                   Push{},
                   Load{48, Type::I64},
@@ -2672,7 +2672,7 @@ Module spanCallModule() {
                   Push{},
                   Constant{2, Type::I64},
                   Push{},
-                  AggregateCall{"span_forward", {0, 0}, 0, {88, 0}},
+                  AggregateCall{"span_forward", {0, 0}, 0, {384, 0}},
                   Convert{Type::U8, Type::I64},
                   BinaryValue{Binary::CheckedAdd},
                   Store{136, Type::I64},
@@ -2690,31 +2690,31 @@ Module spanCallModule() {
                   Store{128, Type::U8},
                   Load{40, Type::U8},
                   Store{112, Type::U8},
-                  EndSpan{88},
-                  EndSpan{24},
+                  EndSpan{384},
+                  EndSpan{256},
                   ReturnObject{128}};
     module.functions.push_back(mixed);
     auto forwarding = mixed;
     forwarding.name = "span_mixed_forward";
-    forwarding.frameBytes = 192;
-    forwarding.spanSlots.insert({160, 176});
+    forwarding.frameBytes = 640;
+    forwarding.spanSlots.insert({448, 512});
     forwarding.code.resize(6);
     for (const auto &op : std::vector<Instruction>{
-             BeginObject{128}, ReborrowSpan{24, 160}, ReborrowSpan{88, 176}, Load{1, Type::U8},
+             BeginObject{128}, ReborrowSpan{256, 448}, ReborrowSpan{384, 512}, Load{1, Type::U8},
              Push{}, Load{64, Type::I64}, Push{}, Load{96, Type::Bool}, Push{},
-             AggregateCall{"span_mixed_callee", {0, 0, 56, 0, 0, 0}, 128, {0, 160, 0, 0, 176, 0}},
-             EndSpan{176}, EndSpan{160}, EndSpan{88}, EndSpan{24}, ReturnObject{128}})
+             AggregateCall{"span_mixed_callee", {0, 0, 56, 0, 0, 0}, 128, {0, 448, 0, 0, 512, 0}},
+             EndSpan{512}, EndSpan{448}, EndSpan{384}, EndSpan{256}, ReturnObject{128}})
         forwarding.code.push_back(op);
     module.functions.push_back(forwarding);
     aurora::ir::Function caller;
     caller.name = "span_mixed_sum";
     caller.result = Type::I64;
-    caller.frameBytes = 128;
+    caller.frameBytes = 640;
     caller.slots = {{8, Type::U8},  {7, Type::U8},   {6, Type::U8},    {32, Type::U8},
                     {31, Type::U8}, {30, Type::U8},  {56, Type::U8},   {48, Type::I64},
                     {40, Type::U8}, {112, Type::U8}, {104, Type::I64}, {96, Type::U8}};
     caller.arraySlots = {{8, 3}, {32, 3}};
-    caller.spanSlots = {24, 80};
+    caller.spanSlots = {256, 576};
     caller.objectSlots = {{56, ObjectSlot{"SpanPacket", false}},
                           {112, ObjectSlot{"SpanPacket", false}}};
     caller.code = {
@@ -2739,8 +2739,8 @@ Module spanCallModule() {
         Store{48, Type::I64},
         Constant{77, Type::U8},
         Store{40, Type::U8},
-        BorrowSpan{8, 24},
-        BorrowSpan{32, 80},
+        BorrowSpan{8, 256},
+        BorrowSpan{32, 576},
         BeginObject{112},
         Constant{31, Type::U8},
         Push{},
@@ -2748,9 +2748,9 @@ Module spanCallModule() {
         Push{},
         Constant{1, Type::Bool},
         Push{},
-        AggregateCall{"span_mixed_forward", {0, 0, 56, 0, 0, 0}, 112, {0, 24, 0, 0, 80, 0}},
-        EndSpan{80},
-        EndSpan{24},
+        AggregateCall{"span_mixed_forward", {0, 0, 56, 0, 0, 0}, 112, {0, 256, 0, 0, 576, 0}},
+        EndSpan{576},
+        EndSpan{256},
         EndArray{32},
         EndArray{8},
         Load{104, Type::I64},
@@ -2784,19 +2784,19 @@ void spanTests() {
             "invalid span spill " + std::to_string(base),
             [=](auto &f) { f.spanSlots.insert(base); }, "span spill");
     rejectSpan(
-        "overlapping span spills", [](auto &f) { f.spanSlots.insert(32); },
+        "overlapping span spills", [](auto &f) { f.spanSlots.insert(264); },
         "overlapping span spills");
     rejectSpan(
-        "span overlaps byte scalar", [](auto &f) { f.slots[20] = Type::U8; },
+        "span overlaps byte scalar", [](auto &f) { f.slots[212] = Type::U8; },
         "span spill overlaps");
     rejectSpan(
-        "span overlaps wide scalar interior", [](auto &f) { f.slots[16] = Type::I64; },
+        "span overlaps wide scalar interior", [](auto &f) { f.slots[208] = Type::I64; },
         "span spill overlaps");
     for (int length : {-1, 0, 9, 4097})
         rejectSpan(
             "invalid byte origin extent " + std::to_string(length),
             [=](auto &f) { f.arraySlots[8] = length; }, "byte array origin extent");
-    rejectSpan("origin past frame", [](auto &f) { f.arraySlots[56] = 1; }, "origin extent");
+    rejectSpan("origin past frame", [](auto &f) { f.arraySlots[648] = 1; }, "origin extent");
     rejectSpan(
         "overlapping byte origins", [](auto &f) { f.arraySlots[7] = 2; },
         "overlapping byte array origins");
@@ -2812,10 +2812,10 @@ void spanTests() {
         "missing byte origin declaration", [](auto &f) { f.arraySlots.clear(); },
         "exact byte array origin");
     rejectSpan(
-        "borrow scalar origin", [](auto &f) { f.code[7] = BorrowSpan{7, 24}; },
+        "borrow scalar origin", [](auto &f) { f.code[7] = BorrowSpan{7, 256}; },
         "exact local byte array origin");
     rejectSpan(
-        "borrow origin outside frame", [](auto &f) { f.code[7] = BorrowSpan{64, 24}; },
+        "borrow origin outside frame", [](auto &f) { f.code[7] = BorrowSpan{64, 256}; },
         "exact local byte array origin");
     rejectSpan(
         "borrow requires typed spill", [](auto &f) { f.code[7] = BorrowSpan{8, 32}; },
@@ -2852,32 +2852,32 @@ void spanTests() {
         [](auto &f) { f.code.insert(f.code.begin() + 7, {EndArray{8}, BeginArray{8}}); },
         "array element not initialized");
     rejectSpan(
-        "overwrite live span", [](auto &f) { f.code[8] = BorrowSpan{8, 24}; },
+        "overwrite live span", [](auto &f) { f.code[8] = BorrowSpan{8, 256}; },
         "span spill is already active");
     rejectSpan(
-        "reborrow self", [](auto &f) { f.code[8] = ReborrowSpan{24, 24}; },
+        "reborrow self", [](auto &f) { f.code[8] = ReborrowSpan{256, 256}; },
         "span spill is already active");
     rejectSpan(
-        "reborrow unknown spill", [](auto &f) { f.code[8] = ReborrowSpan{32, 40}; },
+        "reborrow unknown spill", [](auto &f) { f.code[8] = ReborrowSpan{32, 320}; },
         "exact typed spill");
     rejectSpan(
-        "reborrow inactive spill", [](auto &f) { f.code[8] = ReborrowSpan{40, 24}; },
+        "reborrow inactive spill", [](auto &f) { f.code[8] = ReborrowSpan{320, 256}; },
         "span capability is not active");
     rejectSpan(
-        "end parent before child", [](auto &f) { f.code[11] = EndSpan{24}; },
+        "end parent before child", [](auto &f) { f.code[11] = EndSpan{256}; },
         "live child reborrow");
     rejectSpan(
-        "end span twice", [](auto &f) { f.code[12] = EndSpan{40}; },
+        "end span twice", [](auto &f) { f.code[12] = EndSpan{320}; },
         "span capability is not active");
     rejectSpan("end unknown spill", [](auto &f) { f.code[11] = EndSpan{32}; }, "exact typed spill");
     rejectSpan(
-        "load inactive span", [](auto &f) { f.code[7] = SpanLoad{24}; },
+        "load inactive span", [](auto &f) { f.code[7] = SpanLoad{256}; },
         "span capability is not active");
     rejectSpan(
-        "length inactive span", [](auto &f) { f.code[7] = SpanLength{24}; },
+        "length inactive span", [](auto &f) { f.code[7] = SpanLength{256}; },
         "span capability is not active");
     rejectSpan(
-        "load after end span", [](auto &f) { f.code[13] = SpanLoad{40}; },
+        "load after end span", [](auto &f) { f.code[13] = SpanLoad{320}; },
         "span capability is not active");
     rejectSpan(
         "load span with unsigned index", [](auto &f) { f.code[9] = Constant{1, Type::U64}; },
@@ -2942,28 +2942,28 @@ void spanTests() {
         "non-scalar comparison");
     rejectSpan(
         "span cannot be function result", [](auto &f) { f.result = Type::ByteSpan; },
-        "only an ordinary function parameter");
+        "readonly span boundary");
     rejectSpan(
-        "bind span outside entry", [](auto &f) { f.code[7] = BindSpanParameter{0, 24}; },
+        "bind span outside entry", [](auto &f) { f.code[7] = BindSpanParameter{0, 256}; },
         "parameter binding outside entry prefix");
     rejectSpan(
         "span branch lifetime mismatch",
         [](auto &f) {
             f.code.insert(f.code.begin() + 9,
-                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40}, Label{7}});
+                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320}, Label{7}});
         },
         "incompatible active span capabilities");
     rejectSpan(
         "span branch origin mismatch",
         [](auto &f) {
-            f.code.insert(f.code.begin() + 9, {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40},
-                                               BorrowSpan{8, 40}, Label{7}});
+            f.code.insert(f.code.begin() + 9, {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320},
+                                               BorrowSpan{8, 320}, Label{7}});
         },
         "incompatible active span capabilities");
     rejectSpan(
         "span backedge lifetime mismatch",
         [](auto &f) {
-            f.code.insert(f.code.begin() + 8, {Label{7}, ReborrowSpan{24, 40}, Jump{7}});
+            f.code.insert(f.code.begin() + 8, {Label{7}, ReborrowSpan{256, 320}, Jump{7}});
         },
         "incompatible active span capabilities");
     rejectSpan(
@@ -2989,12 +2989,12 @@ void spanTests() {
         "span call argument vector size mismatch");
     rejectCall(
         "short positional span arguments",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments = {24}; },
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments = {256}; },
         "span call argument vector size mismatch");
     rejectCall(
         "long positional span arguments",
         [](Module &m) {
-            std::get<AggregateCall>(m.functions[5].code[11]).spanArguments = {24, 0, 0};
+            std::get<AggregateCall>(m.functions[5].code[11]).spanArguments = {256, 0, 0};
         },
         "span call argument vector size mismatch");
     rejectCall(
@@ -3007,11 +3007,11 @@ void spanTests() {
         "exact typed spill");
     rejectCall(
         "span argument cannot use inactive spill",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[0] = 40; },
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[0] = 320; },
         "span capability is not active");
     rejectCall(
         "scalar argument cannot also name capability",
-        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[1] = 24; },
+        [](Module &m) { std::get<AggregateCall>(m.functions[5].code[11]).spanArguments[1] = 256; },
         "non-span argument cannot name span storage");
     rejectCall(
         "span argument cannot also name object",
@@ -3020,7 +3020,7 @@ void spanTests() {
     rejectCall(
         "ended capability cannot cross call",
         [](Module &m) {
-            m.functions[5].code.insert(m.functions[5].code.begin() + 11, EndSpan{24});
+            m.functions[5].code.insert(m.functions[5].code.begin() + 11, EndSpan{256});
         },
         "span capability is not active");
     rejectCall(
@@ -3035,7 +3035,7 @@ void spanTests() {
         "span parameter bindings must form the entry prefix");
     rejectCall(
         "span parameter wrong source position",
-        [](Module &m) { m.functions[3].code[0] = BindSpanParameter{1, 24}; },
+        [](Module &m) { m.functions[3].code[0] = BindSpanParameter{1, 256}; },
         "span parameter bindings must form the entry prefix");
     rejectCall(
         "span parameter cannot use scalar binding",
@@ -3043,7 +3043,7 @@ void spanTests() {
         "span parameter bindings must form the entry prefix");
     rejectCall(
         "scalar parameter cannot use span binding",
-        [](Module &m) { m.functions[3].code[1] = BindSpanParameter{1, 24}; },
+        [](Module &m) { m.functions[3].code[1] = BindSpanParameter{1, 256}; },
         "parameter bindings must form the entry prefix");
     rejectCall(
         "span parameter cannot bind scalar storage",
@@ -3051,19 +3051,19 @@ void spanTests() {
         "span parameter requires exact typed spill");
     rejectCall(
         "span parameter cannot be rebound",
-        [](Module &m) { m.functions[4].code.insert(m.functions[4].code.begin() + 6, EndSpan{24}); },
+        [](Module &m) { m.functions[4].code.insert(m.functions[4].code.begin() + 6, EndSpan{256}); },
         "live child reborrow");
     rejectCall(
         "span parameter rebinding after end",
         [](Module &m) {
             auto &f = m.functions[6];
-            f.code.insert(f.code.begin() + 6, {EndSpan{24}, ReborrowSpan{88, 24}});
+            f.code.insert(f.code.begin() + 6, {EndSpan{256}, ReborrowSpan{384, 256}});
         },
         "span parameter cannot be rebound");
     rejectCall(
         "receiver span parameter prohibited",
         [](Module &m) { m.functions[3].receiver = Receiver{"SpanPacket", false, false}; },
-        "only an ordinary function parameter");
+        "readonly span boundary");
     rejectCall(
         "constructor span parameter prohibited",
         [](Module &m) {
@@ -3071,7 +3071,7 @@ void spanTests() {
             f.result = Type::I64;
             f.receiver = Receiver{"SpanPacket", true, true};
         },
-        "only an ordinary function parameter");
+        "readonly span boundary");
     rejectCall(
         "class field cannot contain span",
         [](Module &m) { m.classLayouts["Bad"] = {Type::ByteSpan}; },
@@ -3081,15 +3081,15 @@ void spanTests() {
         [](Module &m) {
             m.classLayouts["Tiny"] = {Type::U8};
             auto &f = m.functions[0];
-            f.objectSlots[32] = ObjectSlot{"Tiny", false};
-            f.slots[32] = Type::U8;
+            f.objectSlots[216] = ObjectSlot{"Tiny", false};
+            f.slots[216] = Type::U8;
         },
         "span spill overlaps");
     rejectCall(
         "object leaf cannot mint local byte origin",
         [](Module &m) {
             auto &f = m.functions[8];
-            f.arraySlots[56] = 1;
+            f.arraySlots[648] = 1;
         },
         "byte array origin overlaps object storage");
     rejectCall(
@@ -3108,7 +3108,7 @@ void spanTests() {
         "return with active span or byte array lifetime");
     rejectCall(
         "two span parameters cannot bind same spill",
-        [](Module &m) { m.functions[6].code[4] = BindSpanParameter{4, 24}; },
+        [](Module &m) { m.functions[6].code[4] = BindSpanParameter{4, 256}; },
         "span parameter bindings overlap");
 
     auto writes = spanBaseline();
@@ -3120,7 +3120,7 @@ void spanTests() {
     accept("owner read with live readonly span", reads);
     auto reuse = spanBaseline();
     reuse.functions[0].code.insert(reuse.functions[0].code.begin() + 13,
-                                   {BorrowSpan{8, 24}, EndSpan{24}});
+                                   {BorrowSpan{8, 256}, EndSpan{256}});
     accept("ended local span spill can begin a later lifetime", reuse);
     auto loop = spanBaseline();
     loop.functions[0].code.insert(
@@ -3129,7 +3129,7 @@ void spanTests() {
     accept("unchanged readonly span capabilities across loop", loop);
     auto freshLoop = spanBaseline();
     freshLoop.functions[0].code.insert(freshLoop.functions[0].code.begin() + 7,
-                                       {Label{7}, BorrowSpan{8, 24}, EndSpan{24},
+                                       {Label{7}, BorrowSpan{8, 256}, EndSpan{256},
                                         Constant{0, Type::Bool}, BranchFalse{8}, Jump{7},
                                         Label{8}});
     accept("span reborrow lifetime closes on backedge", freshLoop);
@@ -3140,25 +3140,25 @@ void spanTests() {
         "restarted array and span lifetimes cannot join previous lifetimes",
         [](auto &f) {
             f.code.insert(f.code.begin() + 9,
-                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40}, EndSpan{24},
+                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320}, EndSpan{256},
                            EndArray{8}, BeginArray{8}, Constant{43, Type::U8}, Store{8, Type::U8},
-                           Store{7, Type::U8}, Store{6, Type::U8}, BorrowSpan{8, 24},
-                           ReborrowSpan{24, 40}, Label{7}});
+                           Store{7, Type::U8}, Store{6, Type::U8}, BorrowSpan{8, 256},
+                           ReborrowSpan{256, 320}, Label{7}});
         },
         "incompatible active array lifetimes");
     rejectSpan(
         "restarted child span cannot join previous lifetime in same spill",
         [](auto &f) {
-            f.code.insert(f.code.begin() + 9, {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40},
-                                               ReborrowSpan{24, 40}, Label{7}});
+            f.code.insert(f.code.begin() + 9, {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320},
+                                               ReborrowSpan{256, 320}, Label{7}});
         },
         "incompatible active span capabilities");
     rejectSpan(
         "restarted parent authority cannot join previous reborrow tree",
         [](auto &f) {
             f.code.insert(f.code.begin() + 9,
-                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{40}, EndSpan{24},
-                           BorrowSpan{8, 24}, ReborrowSpan{24, 40}, Label{7}});
+                          {Constant{1, Type::Bool}, BranchFalse{7}, EndSpan{320}, EndSpan{256},
+                           BorrowSpan{8, 256}, ReborrowSpan{256, 320}, Label{7}});
         },
         "incompatible active span capabilities");
     auto closedLoop = spanBaseline();
@@ -3169,10 +3169,10 @@ void spanTests() {
                    Store{8, Type::U8},
                    Store{7, Type::U8},
                    Store{6, Type::U8},
-                   BorrowSpan{8, 24},
-                   ReborrowSpan{24, 40},
-                   EndSpan{40},
-                   EndSpan{24},
+                   BorrowSpan{8, 256},
+                   ReborrowSpan{256, 320},
+                   EndSpan{320},
+                   EndSpan{256},
                    EndArray{8},
                    Constant{0, Type::Bool},
                    BranchFalse{8},
@@ -3183,7 +3183,7 @@ void spanTests() {
     accept("fully ended array and span sites can be reused on loop backedge", closedLoop);
     auto childLoop = spanBaseline();
     childLoop.functions[0].code.insert(childLoop.functions[0].code.begin() + 8,
-                                       {Label{7}, ReborrowSpan{24, 40}, EndSpan{40},
+                                       {Label{7}, ReborrowSpan{256, 320}, EndSpan{320},
                                         Constant{0, Type::Bool}, BranchFalse{8}, Jump{7},
                                         Label{8}});
     accept("fully ended child reborrow site can be reused with live parent", childLoop);
@@ -3195,9 +3195,9 @@ void spanTests() {
             throw Error("span signatures must have local linkage");
     ++passed;
     std::cout << "PASS IR span signatures use private compiler linkage\n";
-    const auto compare = assembly.find("cmpq -32(%rbp), %rax");
+    const auto compare = assembly.find("cmpq -272(%rbp), %rax");
     const auto bounds = assembly.find("jae .Laurora_bounds_trap", compare);
-    const auto pointer = assembly.find("movq -40(%rbp), %rcx", compare);
+    const auto pointer = assembly.find("movq -312(%rbp), %rcx", compare);
     const auto payload = assembly.find("movzbq (%rcx,%rax,1), %rax", compare);
     if (compare == std::string::npos ||
         !(compare < bounds && bounds < pointer && pointer < payload))

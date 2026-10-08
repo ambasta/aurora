@@ -668,8 +668,9 @@ public:
                             method.receiverConst = eat("const");
                             need("->");
                             method.result = type();
-                            if (!scalarOrParameter(method.result) && !method.result.isClass())
-                                fail("only scalar, enum or class method results are supported");
+                            if (!scalarOrParameter(method.result) && !method.result.isClass() &&
+                                !method.result.isSpan())
+                                fail("only scalar, enum, class or readonly span method results are supported");
                             method.body = block();
                         }
                         definition.methods.push_back(std::move(method));

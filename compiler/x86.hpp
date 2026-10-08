@@ -15,6 +15,7 @@ class X86Emitter {
     int receiverSaveOffset = 0;
     int callRecordSaveOffset = 0;
     int resultSaveOffset = 0;
+    bool ownedSpanRuntime = false;
     const ir::Function *currentFunction = nullptr;
     const std::map<std::string, std::vector<Type>> *classLayouts = nullptr;
     const std::map<std::string, std::vector<ir::ClassField>> *classFields = nullptr;
@@ -124,7 +125,7 @@ class X86Emitter {
         return scope == 0 ? "aurora_reflect_" + name : "__au_reflect_s" + std::to_string(scope) + "_" + name;
     }
     bool aggregateSignature(const ir::Function &function) const {
-        if (function.result.isClass() || function.result.isBytes())
+        if (function.result.isClass() || function.result.isBytes() || function.result.isSpan())
             return true;
         for (const auto &type : function.parameters)
             if (type.isClass() || type.isSpan() || type.isResource())
@@ -139,7 +140,7 @@ class X86Emitter {
     int argumentBytes(const Type &type) const {
         return type.isBytes()   ? 32
                : type.isClass() ? classStorage->at(type.className).reservedBytes
-               : type.isSpan()  ? 16
+               : type.isSpan()  ? ir::spanBytes
                                 : 8;
     }
     int recordOffset(const ir::Function &function, std::size_t parameter) const {
@@ -181,10 +182,10 @@ class X86Emitter {
             const auto &type = target.parameters[index];
             const int offset = recordOffset(target, index);
             if (type.isSpan()) {
-                line("movq " + address(spans[index]) + ", %rax");
-                line("movq %rax, " + std::to_string(offset) + "(%rsp)");
-                line("movq " + address(spans[index] - 8) + ", %rax");
-                line("movq %rax, " + std::to_string(offset + 8) + "(%rsp)");
+                for (int byte = 0; byte < ir::spanBytes; byte += 8) {
+                    line("movq " + address(spans[index] - byte) + ", %rax");
+                    line("movq %rax, " + std::to_string(offset + byte) + "(%rsp)");
+                }
             } else if (!type.isClass())
                 storeArgument(type, index, std::to_string(offset) + "(%rsp)");
             else {
@@ -588,40 +589,82 @@ class X86Emitter {
                                      std::is_same_v<Op, ir::EndSpan>) {
                     // Static lifetime changes preserve the scalar current value.
                 } else if constexpr (std::is_same_v<Op, ir::BorrowSpan>) {
+                    line("movq $0, " + address(operation.resultOffset));
                     line("leaq " + address(operation.arrayOffset) + ", %rcx");
-                    line("movq %rcx, " + address(operation.resultOffset));
-                    line("movq $" + std::to_string(currentFunction->arraySlots.at(operation.arrayOffset)) + ", " +
-                         address(operation.resultOffset - 8));
-                } else if constexpr (std::is_same_v<Op, ir::ReborrowSpan>) {
-                    line("movq " + address(operation.sourceOffset) + ", %rcx");
-                    line("movq %rcx, " + address(operation.resultOffset));
-                    line("movq " + address(operation.sourceOffset - 8) + ", %rcx");
                     line("movq %rcx, " + address(operation.resultOffset - 8));
+                    for (int byte = 16; byte <= 40; byte += 8)
+                        line("movq $0, " + address(operation.resultOffset - byte));
+                    line("movq $" + std::to_string(currentFunction->arraySlots.at(operation.arrayOffset)) + ", " +
+                         address(operation.resultOffset - 48));
+                } else if constexpr (std::is_same_v<Op, ir::BorrowOwnedSpan>) {
+                    // Runtime validation distinguishes failed and valid-empty owners.
+                    // Borrow acquisition must preserve an unrelated current scalar and
+                    // every saved operand, including the call-alignment parity.
+                    push();
+                    const auto owner = bytesOwnerAddress(operation.offset, operation.fieldIndex);
+                    line("leaq " + owner + ", %rdi");
+                    call("__au_runtime_bytes_borrow_length");
+                    line("movq %rax, " + address(operation.resultOffset - 48));
+                    line("movq $1, " + address(operation.resultOffset));
+                    for (int byte = 0; byte < 32; byte += 8) {
+                        const auto word = bytesOwnerAddress(operation.offset, operation.fieldIndex, byte);
+                        line("movq " + word + ", %rcx");
+                        line("movq %rcx, " + address(operation.resultOffset - 8 - byte));
+                    }
+                    line("movq $0, " + address(operation.resultOffset - 40));
+                    pop("%rax");
+                } else if constexpr (std::is_same_v<Op, ir::ReborrowSpan>) {
+                    for (int byte = 0; byte < ir::spanBytes; byte += 8) {
+                        line("movq " + address(operation.sourceOffset - byte) + ", %rcx");
+                        line("movq %rcx, " + address(operation.resultOffset - byte));
+                    }
                 } else if constexpr (std::is_same_v<Op, ir::Subspan>) {
-                    pop("%rcx"); // offset; current %rax is count
-                    // Lengths originate only in validated local byte-array borrows
-                    // and checked child windows. Unsigned comparisons reject both
-                    // negative i64 operands and values above the bounded extent.
-                    line("movq " + address(operation.sourceOffset - 8) + ", %rdx");
+                    pop("%rcx"); // checked offset; current %rax is count
+                    line("movq " + address(operation.sourceOffset - 48) + ", %rdx");
                     line("cmpq %rdx, %rcx");
                     line("ja .Laurora_bounds_trap");
                     line("subq %rcx, %rdx");
                     line("cmpq %rdx, %rax");
                     line("ja .Laurora_bounds_trap");
-                    // Even an empty endpoint view stays tied to its parent; no
-                    // byte is loaded here, and SpanLoad rejects every empty index.
-                    line("addq " + address(operation.sourceOffset) + ", %rcx");
-                    line("movq %rcx, " + address(operation.resultOffset));
-                    line("movq %rax, " + address(operation.resultOffset - 8));
+                    for (int byte = 0; byte < ir::spanBytes; byte += 8) {
+                        line("movq " + address(operation.sourceOffset - byte) + ", %rdx");
+                        line("movq %rdx, " + address(operation.resultOffset - byte));
+                    }
+                    line("addq " + address(operation.sourceOffset - 40) + ", %rcx");
+                    line("movq %rcx, " + address(operation.resultOffset - 40));
+                    line("movq %rax, " + address(operation.resultOffset - 48));
                 } else if constexpr (std::is_same_v<Op, ir::SpanLength>) {
-                    line("movq " + address(operation.offset - 8) + ", %rax");
+                    line("movq " + address(operation.offset - 48) + ", %rax");
                 } else if constexpr (std::is_same_v<Op, ir::SpanLoad>) {
-                    // Unsigned comparison rejects negative signed indices before
-                    // loading the base pointer or addressing any payload byte.
-                    line("cmpq " + address(operation.offset - 8) + ", %rax");
+                    line("cmpq " + address(operation.offset - 48) + ", %rax");
                     line("jae .Laurora_bounds_trap");
-                    line("movq " + address(operation.offset) + ", %rcx");
+                    line("addq " + address(operation.offset - 40) + ", %rax");
+                    const std::string suffix = std::to_string(functionIndex) + "_" + std::to_string(divisionIndex++);
+                    const std::string array = ".Lspan_array_" + suffix;
+                    const std::string done = ".Lspan_done_" + suffix;
+                    if (ownedSpanRuntime) {
+                        line("cmpq $0, " + address(operation.offset));
+                        line("je " + array);
+                        line("cmpq $1, " + address(operation.offset));
+                        line("jne .Laurora_bounds_trap");
+                        line("movq %rax, %rsi");
+                        line("leaq " + address(operation.offset - 8) + ", %rdi");
+                        call("__au_runtime_bytes_at");
+                        line("jmp " + done);
+                        output << array << ":\n";
+                    }
+                    line("movq " + address(operation.offset - 8) + ", %rcx");
                     line("movzbq (%rcx,%rax,1), %rax");
+                    if (ownedSpanRuntime)
+                        output << done << ":\n";
+                } else if constexpr (std::is_same_v<Op, ir::ReturnSpan>) {
+                    line("movq " + address(resultSaveOffset) + ", %r10");
+                    for (int byte = 0; byte < ir::spanBytes; byte += 8) {
+                        line("movq " + address(operation.offset - byte) + ", %rcx");
+                        line("movq %rcx, " + std::to_string(byte) + "(%r10)");
+                    }
+                    line("xorq %rax, %rax");
+                    line("jmp " + returnLabel());
                 } else if constexpr (std::is_same_v<Op, ir::BeginObject>) {
                     clearObject(operation.offset, currentFunction->objectSlots.at(operation.offset).className);
                 } else if constexpr (std::is_same_v<Op, ir::EndObject>) {
@@ -748,7 +791,7 @@ class X86Emitter {
                         if (fieldOffset != 0)
                             line("addq $" + std::to_string(fieldOffset) + ", %r10");
                     }
-                    if (target.result.isClass())
+                    if (target.result.isClass() || target.result.isSpan())
                         line("leaq " + address(operation.resultOffset) + (aggregate ? ", %rax" : ", %r11"));
                     call(operation.callee);
                     if (recordBytes)
@@ -800,10 +843,10 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::BindSpanParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     const int offset = recordOffset(*currentFunction, operation.index);
-                    line("movq " + std::to_string(offset) + "(%r11), %rax");
-                    line("movq %rax, " + address(operation.offset));
-                    line("movq " + std::to_string(offset + 8) + "(%r11), %rax");
-                    line("movq %rax, " + address(operation.offset - 8));
+                    for (int byte = 0; byte < ir::spanBytes; byte += 8) {
+                        line("movq " + std::to_string(offset + byte) + "(%r11), %rax");
+                        line("movq %rax, " + address(operation.offset - byte));
+                    }
                 } else if constexpr (std::is_same_v<Op, ir::BindObjectParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     const auto &layout = classLayouts->at(operation.className);
@@ -877,6 +920,7 @@ public:
                                   std::holds_alternative<ir::ReturnOwnedObject>(op);
                        });
             });
+        ownedSpanRuntime = resourceGraph;
         output << "# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n";
         for (const auto &function : module.functions) {
             stackDepth = 0;
@@ -899,9 +943,10 @@ public:
             const bool resourceParameters = !function.parameters.empty() && function.parameters.front().isRegion();
             const bool packedArguments =
                 function.receiver ? classParameters(function) || resourceParameters : aggregate;
-            const bool combinedMethod = function.receiver && packedArguments && function.result.isClass();
+            const bool combinedMethod =
+                function.receiver && packedArguments && (function.result.isClass() || function.result.isSpan());
             callRecordSaveOffset = packedArguments ? function.frameBytes + (function.receiver ? 16 : 8) : 0;
-            resultSaveOffset = (function.result.isClass() || function.result.isBytes())
+            resultSaveOffset = (function.result.isClass() || function.result.isBytes() || function.result.isSpan())
                                    ? function.frameBytes + (combinedMethod ? 24 : 16)
                                    : 0;
             // Hidden capabilities never occupy source-addressable slots. The
@@ -915,7 +960,7 @@ public:
                 line("movq %r10, " + address(receiverSaveOffset));
             if (packedArguments)
                 line("movq %r11, " + address(callRecordSaveOffset));
-            if (function.result.isClass() || function.result.isBytes())
+            if (function.result.isClass() || function.result.isBytes() || function.result.isSpan())
                 line(std::string("movq ") +
                      (combinedMethod      ? "%rax"
                       : function.receiver ? "%r11"

@@ -100,11 +100,11 @@ void addProbeSignatures(Module &m) {
     span.name = "sc_probe_span";
     span.result = Type::Bool;
     span.parameters = {Type::ByteSpan, Type::Bool};
-    span.frameBytes = 32;
-    span.spanSlots = {16};
+    span.frameBytes = 128;
+    span.spanSlots = {120};
     span.slots = {{24, Type::Bool}};
-    span.code = {BindSpanParameter{0, 16}, BindParameter{1, 24, Type::Bool},
-                 Load{24, Type::Bool}, EndSpan{16}, Return{}};
+    span.code = {BindSpanParameter{0, 120}, BindParameter{1, 24, Type::Bool},
+                 Load{24, Type::Bool}, EndSpan{120}, Return{}};
     m.functions.push_back(span);
     m.descriptors = {{17, {1, 0}}, {18, {0, 0}}};
     m.descriptorViews[0] = {17, 18};
@@ -119,7 +119,7 @@ void probe(IRFunction &f, const std::string &kind, int booleanSlot, int &label) 
         return;
     }
     if (kind == "subspan")
-        append(f, {Constant{1, Type::I64}, Push{}, Constant{1, Type::I64}, Subspan{80, 96}});
+        append(f, {Constant{1, Type::I64}, Push{}, Constant{1, Type::I64}, Subspan{176, 232}});
     append(f, {Load{booleanSlot, Type::Bool}, Push{}});
     if (kind == "scalar") f.code.push_back(Call{"sc_probe_scalar"});
     else if (kind == "aggregate")
@@ -136,8 +136,8 @@ void probe(IRFunction &f, const std::string &kind, int booleanSlot, int &label) 
                    Compare{Comparison::NotEqual, Type::I64}, EndObject{112}});
     } else if (kind == "span" || kind == "subspan") {
         f.code.push_back(AggregateCall{"sc_probe_span", {0, 0}, 0,
-                                      {kind == "span" ? 80 : 96, 0}});
-        if (kind == "subspan") f.code.push_back(EndSpan{96});
+                                      {kind == "span" ? 176 : 232, 0}});
+        if (kind == "subspan") f.code.push_back(EndSpan{232});
     } else throw Error("unknown native probe kind");
 }
 void logical(IRFunction &f, const std::string &kind, const std::string &shape, int &label) {
@@ -168,7 +168,7 @@ IRFunction nativeFunction(const std::string &kind, const std::string &shape, int
     f.name = "sc_" + kind + "_" + shape + "_" + std::to_string(depth);
     f.result = Type::I64;
     f.parameters = {Type::Bool, Type::Bool, Type::Bool};
-    f.frameBytes = 112;
+    f.frameBytes = 240;
     f.slots = {{8, Type::Bool}, {16, Type::Bool}, {24, Type::Bool},
                {40, Type::I64}, {32, Type::I64}, {56, Type::I64}, {48, Type::I64},
                {112, Type::I64}, {104, Type::I64}};
@@ -182,16 +182,16 @@ IRFunction nativeFunction(const std::string &kind, const std::string &shape, int
               Constant{29, Type::I64}, Store{48, Type::I64}};
     if (kind == "span" || kind == "subspan") {
         f.arraySlots = {{64, 3}};
-        f.spanSlots = {80, 96};
+        f.spanSlots = {176, 232};
         f.slots.insert({{64, Type::U8}, {63, Type::U8}, {62, Type::U8}});
         append(f, {BeginArray{64}, Constant{11, Type::U8}, Store{64, Type::U8},
                    Constant{22, Type::U8}, Store{63, Type::U8},
-                   Constant{33, Type::U8}, Store{62, Type::U8}, BorrowSpan{64, 80}});
+                   Constant{33, Type::U8}, Store{62, Type::U8}, BorrowSpan{64, 176}});
     }
     for (int n = 0; n < depth; ++n) append(f, {Constant{prefixValue + n, Type::I64}, Push{}});
     int label = 1;
     logical(f, kind, shape, label);
-    if (kind == "span" || kind == "subspan") append(f, {EndSpan{80}, EndArray{64}});
+    if (kind == "span" || kind == "subspan") append(f, {EndSpan{176}, EndArray{64}});
     boolToInteger(f, label);
     if (isMethod(kind)) {
         // Native probes mutate a real authorized receiver field. Its observed
@@ -236,12 +236,12 @@ Module nativeModule() {
                    BindParameter{2, 24, Type::Bool}, BeginArray{64},
                    Constant{11, Type::U8}, Store{64, Type::U8},
                    Constant{22, Type::U8}, Store{63, Type::U8},
-                   Constant{33, Type::U8}, Store{62, Type::U8}, BorrowSpan{64, 80},
+                   Constant{33, Type::U8}, Store{62, Type::U8}, BorrowSpan{64, 176},
                    Constant{1, Type::I64}, Push{}};
     label = 1;
     logical(window, "scalar", "nested", label);
     boolToInteger(window, label);
-    append(window, {Subspan{80, 96}, SpanLength{96}, EndSpan{96}, EndSpan{80},
+    append(window, {Subspan{176, 232}, SpanLength{232}, EndSpan{232}, EndSpan{176},
                     EndArray{64}, Return{}});
     m.functions.push_back(window);
     m.classLayouts["ProbeBits"] = {Type::Bool, Type::Bool};
@@ -336,11 +336,11 @@ Module lifetimeBase() {
     auto m = moduleWith({Constant{1, Type::I64}, Return{}});
     m.classLayouts["Box"] = {Type::I64};
     auto &f = m.functions[0];
-    f.frameBytes = 80;
+    f.frameBytes = 192;
     f.slots = {{8, Type::U8}, {16, Type::U8}, {24, Type::I64}};
     f.arraySlots = {{8, 1}, {16, 1}};
     f.objectSlots = {{24, {"Box", false}}};
-    f.spanSlots = {48, 64, 80};
+    f.spanSlots = {80, 136, 192};
     return m;
 }
 void directTests() {
@@ -401,13 +401,13 @@ void directTests() {
         auto &f = m.functions[0];
         if (lifetime == "object") f.code = {BeginObject{24}};
         else f.code = {BeginArray{8}, Constant{11, Type::U8}, Store{8, Type::U8}};
-        if (lifetime == "span") f.code.push_back(BorrowSpan{8, 48});
+        if (lifetime == "span") f.code.push_back(BorrowSpan{8, 80});
         append(f, {Constant{7, Type::I64}, Push{}, Constant{1, Type::Bool}, BranchFalse{1}});
         if (lifetime == "object") f.code.push_back(EndObject{24});
         else if (lifetime == "array") f.code.push_back(EndArray{8});
-        else f.code.push_back(EndSpan{48});
+        else f.code.push_back(EndSpan{80});
         append(f, {Label{1}, Pop{}});
-        if (lifetime == "span") f.code.push_back(EndSpan{48});
+        if (lifetime == "span") f.code.push_back(EndSpan{80});
         if (lifetime != "object") f.code.push_back(EndArray{8});
         f.code.push_back(Return{});
         reject("conditional " + lifetime + " lifetime end", m,
@@ -425,16 +425,16 @@ void directTests() {
         f.code = {BeginArray{8}, Constant{11, Type::U8}, Store{8, Type::U8},
             BeginArray{16}, Constant{22, Type::U8}, Store{16, Type::U8},
             Constant{7, Type::I64}, Push{}, Constant{1, Type::Bool}, BranchFalse{1},
-            BorrowSpan{8, 48}, Jump{2}, Label{1}, BorrowSpan{differentOrigin ? 16 : 8, 48},
-            Label{2}, Pop{}, EndSpan{48}, EndArray{16}, EndArray{8}, Return{}};
+            BorrowSpan{8, 80}, Jump{2}, Label{1}, BorrowSpan{differentOrigin ? 16 : 8, 80},
+            Label{2}, Pop{}, EndSpan{80}, EndArray{16}, EndArray{8}, Return{}};
         reject(differentOrigin ? "different span root origins" : "different span creation sites", m,
                "incompatible active span capabilities");
     }
     auto parent = lifetimeBase();
     parent.functions[0].code = {BeginArray{8}, Constant{11, Type::U8}, Store{8, Type::U8},
-        BorrowSpan{8, 48}, ReborrowSpan{48, 64}, Constant{7, Type::I64}, Push{},
-        Constant{1, Type::Bool}, BranchFalse{1}, EndSpan{48}, Label{1}, Pop{},
-        EndSpan{64}, EndSpan{48}, EndArray{8}, Return{}};
+        BorrowSpan{8, 80}, ReborrowSpan{80, 136}, Constant{7, Type::I64}, Push{},
+        Constant{1, Type::Bool}, BranchFalse{1}, EndSpan{80}, Label{1}, Pop{},
+        EndSpan{136}, EndSpan{80}, EndArray{8}, Return{}};
     reject("conditional stale parent cannot escape", parent, "live child reborrow");
     reject("scalar return with saved operands", moduleWith({Constant{1, Type::I64},
         Push{}, Constant{1, Type::Bool}, BranchFalse{1}, Label{1},

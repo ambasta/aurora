@@ -21,6 +21,12 @@ export namespace std {
             return payload.size();
         }
 
+        auto bytes() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(payload);
+            const builtin::span<const u8> visible = all.subspan(0, length);
+            return visible;
+        }
+
         auto read_u8(i64 offset) const -> ByteReadResult {
             if (!payload.ok() || offset < 0 || offset >= length) {
                 const ByteReadResult failure = ByteReadResult(ByteReadStatus::out_of_range, 0u64);

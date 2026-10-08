@@ -11,16 +11,16 @@ int accepted=0,rejected=0;
 void require(bool v,const std::string &m){if(!v) throw Error(m);}
 Module base(bool size=false) {
     F f;f.name=size?"window_size":"window_dynamic";f.result=Type::I64;
-    f.parameters={Type::I64,Type::I64,Type::I64};f.frameBytes=80;
+    f.parameters={Type::I64,Type::I64,Type::I64};f.frameBytes=256;
     f.slots={{8,Type::U8},{7,Type::U8},{6,Type::U8},{56,Type::I64},{64,Type::I64},{72,Type::I64}};
-    f.arraySlots={{8,3}};f.spanSlots={24,40};
+    f.arraySlots={{8,3}};f.spanSlots={128,184};
     f.code={BindParameter{0,56,Type::I64},BindParameter{1,64,Type::I64},BindParameter{2,72,Type::I64},
             BeginArray{8},Constant{11,Type::U8},Store{8,Type::U8},Constant{128,Type::U8},Store{7,Type::U8},
-            Constant{255,Type::U8},Store{6,Type::U8},BorrowSpan{8,24},Load{56,Type::I64},Push{},
-            Load{64,Type::I64},Subspan{24,40}};
-    if(size) f.code.push_back(SpanLength{40});
-    else {f.code.push_back(Load{72,Type::I64});f.code.push_back(SpanLoad{40});f.code.push_back(Convert{Type::U8,Type::I64});}
-    f.code.insert(f.code.end(),{EndSpan{40},EndSpan{24},EndArray{8},Return{}});
+            Constant{255,Type::U8},Store{6,Type::U8},BorrowSpan{8,128},Load{56,Type::I64},Push{},
+            Load{64,Type::I64},Subspan{128,184}};
+    if(size) f.code.push_back(SpanLength{184});
+    else {f.code.push_back(Load{72,Type::I64});f.code.push_back(SpanLoad{184});f.code.push_back(Convert{Type::U8,Type::I64});}
+    f.code.insert(f.code.end(),{EndSpan{184},EndSpan{128},EndArray{8},Return{}});
     Module m;m.functions={f};return m;
 }
 void accept(const std::string&n,Module m){require(!X86Emitter{}.emit(validate(std::move(m))).empty(),"empty assembly");++accepted;std::cout<<"PASS window IR "<<n<<'\n';}
@@ -35,42 +35,42 @@ void tests(){
         reject("wrong offset "+typeName(t),[=](F&f){f.code[11]=Constant{0,t};},"subspan offset requires i64");
         reject("wrong count "+typeName(t),[=](F&f){f.code[13]=Constant{0,t};},"missing or mistyped current value");
     }
-    reject("inactive parent",[](F&f){f.code[14]=Subspan{40,24};},"span capability is not active");
-    reject("unknown parent",[](F&f){f.code[14]=Subspan{32,40};},"span requires exact typed spill");
-    reject("parent interior",[](F&f){f.code[14]=Subspan{23,40};},"span requires exact typed spill");
-    reject("array cannot be parent",[](F&f){f.code[14]=Subspan{8,40};},"span requires exact typed spill");
-    reject("unknown destination",[](F&f){f.code[14]=Subspan{24,48};},"exact typed spill");
-    reject("destination interior",[](F&f){f.code[14]=Subspan{24,39};},"exact typed spill");
-    reject("overwrite parent",[](F&f){f.code[14]=Subspan{24,24};},"span spill is already active");
-    reject("scalar overlaps destination",[](F&f){f.slots[32]=Type::I64;},"span spill overlaps");
-    reject("ended parent",[](F&f){f.code.insert(f.code.begin()+14,EndSpan{24});},"span capability is not active");
+    reject("inactive parent",[](F&f){f.code[14]=Subspan{184,128};},"span capability is not active");
+    reject("unknown parent",[](F&f){f.code[14]=Subspan{112,184};},"span requires exact typed spill");
+    reject("parent interior",[](F&f){f.code[14]=Subspan{23,184};},"span requires exact typed spill");
+    reject("array cannot be parent",[](F&f){f.code[14]=Subspan{8,184};},"span requires exact typed spill");
+    reject("unknown destination",[](F&f){f.code[14]=Subspan{128,168};},"exact typed spill");
+    reject("destination interior",[](F&f){f.code[14]=Subspan{128,39};},"exact typed spill");
+    reject("overwrite parent",[](F&f){f.code[14]=Subspan{128,128};},"span spill is already active");
+    reject("scalar overlaps destination",[](F&f){f.slots[136]=Type::I64;},"span spill overlaps");
+    reject("ended parent",[](F&f){f.code.insert(f.code.begin()+14,EndSpan{128});},"span capability is not active");
     reject("incomplete owner",[](F&f){f.code.erase(f.code.begin()+9);},"array element not initialized");
-    reject("end parent with window",[](F&f){f.code.insert(f.code.begin()+15,EndSpan{24});},"live child reborrow");
+    reject("end parent with window",[](F&f){f.code.insert(f.code.begin()+15,EndSpan{128});},"live child reborrow");
     reject("end owner with window",[](F&f){f.code.insert(f.code.begin()+15,EndArray{8});},"live readonly span");
     reject("write root with window",[](F&f){f.code.insert(f.code.begin()+15,{Constant{9,Type::U8},Store{7,Type::U8}});},"write to byte array with live readonly span");
     reject("return leaks window",[](F&f){f.code.erase(f.code.end()-4);},"live child reborrow");
-    reject("load ended window",[](F&f){f.code.insert(f.code.begin()+15,EndSpan{40});},"span capability is not active");
+    reject("load ended window",[](F&f){f.code.insert(f.code.begin()+15,EndSpan{184});},"span capability is not active");
     reject("forks create different child sites",[](F&f){
         f.code.erase(f.code.begin()+11,f.code.begin()+15);
-        f.code.insert(f.code.begin()+11,{Constant{0,Type::Bool},BranchFalse{1},Constant{0,Type::I64},Push{},Constant{1,Type::I64},Subspan{24,40},Jump{2},Label{1},Constant{1,Type::I64},Push{},Constant{1,Type::I64},Subspan{24,40},Label{2}});
+        f.code.insert(f.code.begin()+11,{Constant{0,Type::Bool},BranchFalse{1},Constant{0,Type::I64},Push{},Constant{1,Type::I64},Subspan{128,184},Jump{2},Label{1},Constant{1,Type::I64},Push{},Constant{1,Type::I64},Subspan{128,184},Label{2}});
     },"incompatible active span capabilities");
     reject("window restarts on only one branch",[](F&f){
-        f.code.insert(f.code.begin()+15,{Constant{0,Type::Bool},BranchFalse{1},EndSpan{40},Constant{0,Type::I64},Push{},Constant{1,Type::I64},Subspan{24,40},Jump{2},Label{1},Label{2}});
+        f.code.insert(f.code.begin()+15,{Constant{0,Type::Bool},BranchFalse{1},EndSpan{184},Constant{0,Type::I64},Push{},Constant{1,Type::I64},Subspan{128,184},Jump{2},Label{1},Label{2}});
     },"incompatible active span capabilities");
-    auto nested=base();auto&f=nested.functions[0];f.frameBytes=96;f.spanSlots.insert(88);
-    f.code.insert(f.code.begin()+15,{Constant{0,Type::I64},Push{},Constant{0,Type::I64},Subspan{40,88},SpanLength{88},EndSpan{88}});
+    auto nested=base();auto&f=nested.functions[0];f.frameBytes=256;f.spanSlots.insert(240);
+    f.code.insert(f.code.begin()+15,{Constant{0,Type::I64},Push{},Constant{0,Type::I64},Subspan{184,240},SpanLength{240},EndSpan{240}});
     accept("nested child root and parent provenance",nested);
     auto empty=base();empty.functions[0].code[11]=Constant{3,Type::I64};empty.functions[0].code[13]=Constant{0,Type::I64};
     accept("empty endpoint capability remains typed",empty);
-    auto loop=base();loop.functions[0].code.insert(loop.functions[0].code.begin()+11,{Label{1},Constant{0,Type::I64},Push{},Constant{0,Type::I64},Subspan{24,40},EndSpan{40},Constant{0,Type::Bool},BranchFalse{2},Jump{1},Label{2}});
+    auto loop=base();loop.functions[0].code.insert(loop.functions[0].code.begin()+11,{Label{1},Constant{0,Type::I64},Push{},Constant{0,Type::I64},Subspan{128,184},EndSpan{184},Constant{0,Type::Bool},BranchFalse{2},Jump{1},Label{2}});
     accept("fully closed child lifetime reused in loop",loop);
     auto rewrite=base();rewrite.functions[0].code.insert(rewrite.functions[0].code.end()-2,{Constant{42,Type::U8},Store{8,Type::U8},Convert{Type::U8,Type::I64}});
     accept("write owner only after every child and parent release",rewrite);
     // A parameter root must remain live, and its reserved entry spill cannot be rebound.
-    F p;p.name="window_parameter";p.result=Type::I64;p.parameters={Type::ByteSpan};p.frameBytes=48;p.spanSlots={16,32,48};
-    p.code={BindSpanParameter{0,16},Constant{0,Type::I64},Push{},Constant{0,Type::I64},Subspan{16,32},Constant{0,Type::I64},Push{},Constant{0,Type::I64},Subspan{32,48},SpanLength{48},EndSpan{48},EndSpan{32},EndSpan{16},Return{}};
+    F p;p.name="window_parameter";p.result=Type::I64;p.parameters={Type::ByteSpan};p.frameBytes=256;p.spanSlots={56,112,168};
+    p.code={BindSpanParameter{0,56},Constant{0,Type::I64},Push{},Constant{0,Type::I64},Subspan{56,112},Constant{0,Type::I64},Push{},Constant{0,Type::I64},Subspan{112,168},SpanLength{168},EndSpan{168},EndSpan{112},EndSpan{56},Return{}};
     Module pm;pm.functions={p};accept("parameter provenance through nested empty windows",pm);
-    auto bad=pm;bad.functions[0].code.insert(bad.functions[0].code.begin()+10,EndSpan{32});
+    auto bad=pm;bad.functions[0].code.insert(bad.functions[0].code.begin()+10,EndSpan{112});
     try{(void)validate(bad);throw Error("early parameter child end accepted");}catch(const Error&e){require(std::string(e.what()).find("live child reborrow")!=std::string::npos,"wrong parameter rejection");++rejected;}
     std::cout<<"PASS readonly window IR: "<<accepted<<" accepted and "<<rejected<<" rejected\n";
 }

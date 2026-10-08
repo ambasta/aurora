@@ -138,6 +138,15 @@ public:
         *output = NativeOwner{id, record->id, length, 1};
     }
 
+    static std::int64_t borrow_length(const NativeOwner *owner) noexcept {
+        Region *target = nullptr;
+        const auto *record = allocation(owner, target);
+        if (record == nullptr) {
+            bounds_trap();
+        }
+        return record->length;
+    }
+
     static std::uint64_t at(const NativeOwner *owner, std::int64_t index) noexcept {
         Region *target = nullptr;
         const auto *record = allocation(owner, target);
@@ -302,6 +311,10 @@ bool Region::close() noexcept {
 
 extern "C" void __au_runtime_bytes_allocate(std::uint64_t region, std::int64_t length, NativeOwner *output) noexcept {
     RuntimeAccess::allocate(region, length, output);
+}
+
+extern "C" std::int64_t __au_runtime_bytes_borrow_length(const NativeOwner *owner) noexcept {
+    return RuntimeAccess::borrow_length(owner);
 }
 
 extern "C" std::uint64_t __au_runtime_bytes_at(const NativeOwner *owner, std::int64_t index) noexcept {
