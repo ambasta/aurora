@@ -1,5 +1,17 @@
 # Completeness and acceptance matrix
 
+## Checked JSON integer codecs — 2026-10-08
+
+The [integer codec contract](json-integers.md) adds exact integer-spelling checked
+i64/u64 conversion, explicit unsupported fraction/exponent forms, and generic
+mathematically bounded decimal integer encoding. Existing DFA/accumulator and
+ByteBuffer composition are reused. Fresh ordinary and public Make optimized gates
+on the accepted method-span base each passed 4,687 cases, 91,079 full-width
+observations, 81 rejections and 407 hosted checks, with independent source/evidence
+review. See the [focused results](json-integers-results.md) for historical
+regressions and preserved failures. No floats, owned strings, DOM,
+native LSP or full-native qualification is claimed.
+
 ## Synchronous method spans and bulk append — 2026-10-08
 
 Readonly nonconstructor method parameters support failure-atomic bulk ByteBuffer

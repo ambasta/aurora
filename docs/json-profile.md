@@ -167,3 +167,10 @@ The [scalar codecs](json-codecs.md) share string escape reading with this scanne
 Fresh ordinary/optimized regressions and focused public Make passed; see
 [results](json-codecs-results.md). Token/document limits are unchanged. Scalar
 reading alone neither validates a whole string nor replaces host JSON support.
+
+## Integer-spelling follow-on
+
+The [integer codec contract](json-integers.md) adds exact-spelling checked i64/u64
+conversion without narrowing the JSON lexer grammar. Fractions and exponents
+remain valid JSON syntax and receive a distinct unsupported conversion status.
+See [qualification status](json-integers-results.md).

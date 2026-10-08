@@ -1,6 +1,7 @@
 export module std.json;
 import std.utf8;
 import std.array;
+import std.decimal;
 
 export namespace std {
     enum class JsonStatus {
@@ -31,6 +32,86 @@ export namespace std {
         true_value,
         false_value,
         null_value
+    };
+    enum class JsonIntegerStatus {
+        success,
+        invalid_window,
+        invalid_number,
+        number_limit,
+        unsupported_number_form,
+        out_of_range
+    };
+    class JsonI64Result {
+        JsonIntegerStatus outcome;
+        i64 number;
+        i64 error;
+    public:
+        JsonI64Result(JsonIntegerStatus status, i64 value, i64 position) : outcome(status), number(value), error(
+            position) {
+        }
+        auto status() const -> JsonIntegerStatus {
+            if (outcome == JsonIntegerStatus::invalid_window || error < 0) {
+                return JsonIntegerStatus::invalid_window;
+            }
+            if (outcome == JsonIntegerStatus::success) {
+                if (error != 0) {
+                    return JsonIntegerStatus::invalid_window;
+                }
+                return outcome;
+            }
+            if (number != 0) {
+                return JsonIntegerStatus::invalid_window;
+            }
+            return outcome;
+        }
+        auto value_or(i64 fallback) const -> i64 {
+            if (status() != JsonIntegerStatus::success) {
+                return fallback;
+            }
+            return number;
+        }
+        auto error_offset() const -> i64 {
+            if (status() == JsonIntegerStatus::invalid_window) {
+                return 0;
+            }
+            return error;
+        }
+    };
+    class JsonU64Result {
+        JsonIntegerStatus outcome;
+        u64 number;
+        i64 error;
+    public:
+        JsonU64Result(JsonIntegerStatus status, u64 value, i64 position) : outcome(status), number(value), error(
+            position) {
+        }
+        auto status() const -> JsonIntegerStatus {
+            if (outcome == JsonIntegerStatus::invalid_window || error < 0) {
+                return JsonIntegerStatus::invalid_window;
+            }
+            if (outcome == JsonIntegerStatus::success) {
+                if (error != 0) {
+                    return JsonIntegerStatus::invalid_window;
+                }
+                return outcome;
+            }
+            if (number != 0u64) {
+                return JsonIntegerStatus::invalid_window;
+            }
+            return outcome;
+        }
+        auto value_or(u64 fallback) const -> u64 {
+            if (status() != JsonIntegerStatus::success) {
+                return fallback;
+            }
+            return number;
+        }
+        auto error_offset() const -> i64 {
+            if (status() == JsonIntegerStatus::invalid_window) {
+                return 0;
+            }
+            return error;
+        }
     };
     class JsonScalarResult {
         JsonStatus outcome;
@@ -482,6 +563,58 @@ namespace std {
         const JsonTokenResult result = json_success(JsonTokenKind::number, start, index - start, index - request);
         return result;
     }
+    // Validate the actual exact spelling before inspecting form or range. Copied
+    // token coordinates never certify these source bytes or bypass revalidation.
+    auto json_integer_magnitude(builtin::span<const u8> bytes, i64 offset, i64 count) -> JsonU64Result {
+        if (offset < 0 || count < 0 || offset > bytes.size()) {
+            const JsonU64Result result = JsonU64Result(JsonIntegerStatus::invalid_window, 0u64, 0);
+            return result;
+        }
+        if (count > bytes.size() - offset) {
+            const JsonU64Result result = JsonU64Result(JsonIntegerStatus::invalid_window, 0u64, 0);
+            return result;
+        }
+        const i64 end = offset + count;
+        const JsonTokenResult token = json_number(bytes, offset, end, offset);
+        if (token.status() != JsonStatus::success) {
+            JsonIntegerStatus status = JsonIntegerStatus::invalid_number;
+            if (token.status() == JsonStatus::number_limit) {
+                status = JsonIntegerStatus::number_limit;
+            }
+            const JsonU64Result result = JsonU64Result(status, 0u64, token.error_offset());
+            return result;
+        }
+        if (token.byte_count() != count) {
+            const JsonU64Result result = JsonU64Result(JsonIntegerStatus::invalid_number, 0u64, offset + token.
+                byte_count());
+            return result;
+        }
+        i64 index = offset;
+        while (index < end) {
+            const u8 byte = bytes.at(index);
+            if (byte == 46u8 || byte == 101u8 || byte == 69u8) {
+                const JsonU64Result result = JsonU64Result(JsonIntegerStatus::unsupported_number_form, 0u64, offset);
+                return result;
+            }
+            index = index + 1;
+        }
+        DecimalAccumulator accumulator = DecimalAccumulator();
+        index = offset;
+        if (bytes.at(index) == 45u8) {
+            index = index + 1;
+        }
+        while (index < end) {
+            const DecimalStatus pushed = accumulator.push_digit(u64(bytes.at(index)) - 48u64);
+            if (pushed != DecimalStatus::success) {
+                const JsonU64Result result = JsonU64Result(JsonIntegerStatus::out_of_range, 0u64, offset);
+                return result;
+            }
+            index = index + 1;
+        }
+        const DecimalResult magnitude = accumulator.finish();
+        const JsonU64Result result = JsonU64Result(JsonIntegerStatus::success, magnitude.value_or(0u64), 0);
+        return result;
+    }
     auto json_literal(builtin::span<const u8> bytes, i64 start, i64 end, i64 request, JsonTokenKind kind) ->
         JsonTokenResult {
         i64 width = 4;
@@ -552,6 +685,45 @@ namespace std {
     }
 }
 export namespace std {
+    auto parse_json_u64(builtin::span<const u8> bytes, i64 offset, i64 count) -> JsonU64Result {
+        const JsonU64Result magnitude = json_integer_magnitude(bytes, offset, count);
+        if (magnitude.status() != JsonIntegerStatus::success) {
+            return magnitude;
+        }
+        if (bytes.at(offset) == 45u8 && magnitude.value_or(0u64) != 0u64) {
+            const JsonU64Result result = JsonU64Result(JsonIntegerStatus::out_of_range, 0u64, offset);
+            return result;
+        }
+        return magnitude;
+    }
+    auto parse_json_i64(builtin::span<const u8> bytes, i64 offset, i64 count) -> JsonI64Result {
+        const JsonU64Result magnitude = json_integer_magnitude(bytes, offset, count);
+        if (magnitude.status() != JsonIntegerStatus::success) {
+            const JsonI64Result result = JsonI64Result(magnitude.status(), 0, magnitude.error_offset());
+            return result;
+        }
+        const u64 value = magnitude.value_or(0u64);
+        const bool negative = bytes.at(offset) == 45u8;
+        u64 limit = 9223372036854775807u64;
+        if (negative) {
+            limit = 9223372036854775808u64;
+        }
+        if (value > limit) {
+            const JsonI64Result result = JsonI64Result(JsonIntegerStatus::out_of_range, 0, offset);
+            return result;
+        }
+        if (negative && value == 9223372036854775808u64) {
+            const JsonI64Result result = JsonI64Result(JsonIntegerStatus::success, -9223372036854775808, 0);
+            return result;
+        }
+        i64 number = i64(value);
+        if (negative) {
+            number = -number;
+        }
+        const JsonI64Result result = JsonI64Result(JsonIntegerStatus::success, number, 0);
+        return result;
+    }
+
     auto decode_json_string_scalar(builtin::span<const u8> bytes, i64 offset, i64 count) -> JsonScalarResult {
         if (offset < 0 || count < 0 || offset > bytes.size()) {
             const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_window, 0);

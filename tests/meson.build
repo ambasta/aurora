@@ -201,3 +201,11 @@ test(
     depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
 )
+
+# Exact integer spelling conversion and mathematically bounded decimal output.
+test(
+    'json-integers', python,
+    args: ['-B', '-O', files('compiler/json_integers.py'), aurorac, '--developer-selected-compiler'],
+    depends: aurorac, suite: ['dev', 'bytes'], env: oracle_env,
+    workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
+)

@@ -1,0 +1,108 @@
+module json_integers_example;
+import std.json;
+import std.decimal;
+import std.array;
+import std.binary;
+import std.byte_buffer;
+
+// Reserve the complete JSON array once, then append copied integer encodings.
+auto json_integers_example(builtin::ByteRegion region, i64 initial_capacity, i64 observation) -> i64 {
+    const std::DecimalEncodingResult signed_value = std::format_decimal_i64(-9223372036854775808);
+    const std::DecimalEncodingResult unsigned_value = std::format_decimal_u64(18446744073709551615u64);
+    const builtin::array<u8, 2> negative_zero = {
+        45u8,
+        48u8
+    };
+    const builtin::span<const u8> source = borrow_bytes(negative_zero);
+    const std::JsonI64Result parsed_zero = std::parse_json_i64(source, 0, 2);
+    if (parsed_zero.status() != std::JsonIntegerStatus::success) {
+        return -1;
+    }
+    const std::DecimalEncodingResult zero = std::format_decimal_i64(parsed_zero.value_or(1));
+    if (signed_value.status() != std::DecimalEncodingStatus::success || unsigned_value.status() != std::
+        DecimalEncodingStatus::success || zero.status() != std::DecimalEncodingStatus::success) {
+        return -2;
+    }
+    // Three fixed-width encodings and four punctuation bytes have a proved <=64
+    // total, but retain checked accumulation as the reusable composition pattern.
+    i64 total = 4;
+    if (signed_value.size() > 9223372036854775807 - total) {
+        return -3;
+    }
+    total = total + signed_value.size();
+    if (unsigned_value.size() > 9223372036854775807 - total) {
+        return -3;
+    }
+    total = total + unsigned_value.size();
+    if (zero.size() > 9223372036854775807 - total) {
+        return -3;
+    }
+    total = total + zero.size();
+    builtin::OwnedBytes owner = region.try_allocate(initial_capacity);
+    std::ByteBuffer output = std::ByteBuffer(region, move(owner));
+    if (!output.ok()) {
+        return -4;
+    }
+    if (total > 9223372036854775807 - output.size()) {
+        return -3;
+    }
+    if (!output.try_reserve(output.size() + total)) {
+        return -5;
+    }
+    if (!output.try_append(91u8)) {
+        return -6;
+    }
+    i64 index = 0;
+    while (index < signed_value.size()) {
+        if (!output.try_append(signed_value.byte_or(index, 0u8))) {
+            return -6;
+        }
+        index = index + 1;
+    }
+    if (!output.try_append(44u8)) {
+        return -6;
+    }
+    index = 0;
+    while (index < unsigned_value.size()) {
+        if (!output.try_append(unsigned_value.byte_or(index, 0u8))) {
+            return -6;
+        }
+        index = index + 1;
+    }
+    if (!output.try_append(44u8)) {
+        return -6;
+    }
+    index = 0;
+    while (index < zero.size()) {
+        if (!output.try_append(zero.byte_or(index, 0u8))) {
+            return -6;
+        }
+        index = index + 1;
+    }
+    if (!output.try_append(93u8)) {
+        return -6;
+    }
+    {
+        const builtin::span<const u8> wire = output.bytes();
+        const std::JsonResult valid = std::validate_json(wire, 0, wire.size());
+        if (valid.status() != std::JsonStatus::success) {
+            return -7;
+        }
+        const std::JsonI64Result signed_read = std::parse_json_i64(wire, 1, signed_value.size());
+        const std::JsonU64Result unsigned_read = std::parse_json_u64(wire, 2 + signed_value.size(), unsigned_value.size(
+            ));
+        if (signed_read.status() != std::JsonIntegerStatus::success || signed_read.value_or(0) != -9223372036854775808
+            || unsigned_read.status() != std::JsonIntegerStatus::success || unsigned_read.value_or(0u64) !=
+            18446744073709551615u64) {
+            return -8;
+        }
+    }
+    if (observation == -1) {
+        return output.size();
+    }
+    if (observation == -2) {
+        return output.capacity();
+    }
+    const std::ByteReadResult byte = output.read_u8(observation);
+    return i64(byte.value_or(256u64));
+}
