@@ -223,7 +223,7 @@ inline void verifyFunction(Function &function,
             return;
         }
         if (type.isSpan()) {
-            require(type == Type::ByteSpan && ((parameter && !function.receiver) ||
+            require(type == Type::ByteSpan && ((parameter && (!function.receiver || !function.receiver->constructor)) ||
                                                (!parameter && function.receiver && !function.receiver->mutableValue &&
                                                 !function.receiver->constructor && function.receiverSpanField &&
                                                 owningClass(classFields, function.receiver->className))),
@@ -1599,21 +1599,38 @@ inline void verifyFunction(Function &function,
                                     std::all_of(target.parameters.begin(),
                                                 target.parameters.end(),
                                                 [&](const Type &type) {
-                                                    return scalarValueType(type, enumCases) || type.isClass();
+                                                    return scalarValueType(type, enumCases) || type.isClass() ||
+                                                           (!target.receiver->constructor && type == Type::ByteSpan);
                                                 }),
                                 "receiver signature requires scalar, enum or class values");
                         const auto &receiver = *target.receiver;
                         const bool aggregate =
                             std::any_of(target.parameters.begin(), target.parameters.end(), [](const Type &type) {
-                                return type.isClass();
+                                return type.isClass() || type.isSpan();
                             });
                         require(aggregate ? operation.objectArguments.size() == target.parameters.size()
                                           : operation.objectArguments.empty(),
                                 (receiver.constructor ? "constructor object argument vector size mismatch"
                                                       : "receiver object argument vector size mismatch"));
+                        const bool spanParameters =
+                            std::any_of(target.parameters.begin(), target.parameters.end(), [](const Type &type) {
+                                return type.isSpan();
+                            });
+                        require((!spanParameters && operation.spanArguments.empty()) ||
+                                    operation.spanArguments.size() == target.parameters.size(),
+                                "method span argument vector size mismatch");
                         std::set<int> argumentStorage;
                         for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
                             const auto &type = target.parameters[arg - 1];
+                            const int capability =
+                                operation.spanArguments.empty() ? 0 : operation.spanArguments[arg - 1];
+                            if (type.isSpan()) {
+                                require(operation.objectArguments[arg - 1] == 0,
+                                        "span method argument cannot name object storage");
+                                span(capability);
+                                continue;
+                            }
+                            require(capability == 0, "non-span method argument cannot name span storage");
                             if (scalarValueType(type, enumCases)) {
                                 require(!aggregate || operation.objectArguments[arg - 1] == 0,
                                         (receiver.constructor ? "scalar constructor argument cannot name object storage"
@@ -1850,7 +1867,8 @@ inline void verifyFunction(Function &function,
                         require(operation.index >= 0 &&
                                     static_cast<std::size_t>(operation.index) < function.parameters.size(),
                                 "invalid span parameter index");
-                        require(function.parameters[operation.index] == Type::ByteSpan && !function.receiver,
+                        require(function.parameters[operation.index] == Type::ByteSpan &&
+                                    (!function.receiver || !function.receiver->constructor),
                                 "span parameter type mismatch");
                         require(function.spanSlots.contains(operation.offset),
                                 "span parameter requires exact typed spill");

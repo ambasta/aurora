@@ -43,7 +43,7 @@ containing a method or constructor is still rejected.
 The [direct owned-field extension](OWNED-FIELD-MUTATION.md) separately permits
 one owned class field as receiver and complete direct field replacement.
 No temporary/deeper-chained receiver or class argument, direct returned call expression,
-reference, resource/span method parameter, generic method, overload or new
+reference, resource method parameter, generic method, overload or new
 template-body grammar is added. Use a named local for an
 intermediate projection/result. This is bounded value transport, not a general
 heap/lifetime or optional/expected implementation.
@@ -123,3 +123,5 @@ or equivalent-C performance is claimed. Parent aggregate and all 166 existing
 emulator modes passed as a separate integration gate, with independent retained
 validator replay and normal-image restoration. No physical AMD qualification or
 new kernel functionality follows from that regression result.
+
+Readonly method span parameters are specified separately in [METHOD-SPANS.md](METHOD-SPANS.md).

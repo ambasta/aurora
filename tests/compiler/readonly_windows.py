@@ -127,7 +127,7 @@ def lifetimes(suite):
                      f'const {SPAN} part=view.subspan({args});return 0u64;')
     suite.reject_program('span result still forbidden',f'module bad;auto escape({SPAN} a)->{SPAN}{{return a.subspan(0,0);}}')
     suite.reject_program('span class field still forbidden',f'module bad;class Box{{public:{SPAN} a;}};auto test()->i64{{return 0;}}')
-    suite.reject_program('span method argument still forbidden',f'module bad;class Box{{public:auto take({SPAN} a)->i64{{return a.size();}}}};auto test()->i64{{return 0;}}')
+    suite.reject_program('method span parameter cannot be rebound',f'module bad;class Box{{public:auto take({SPAN} a)->i64{{a=a;return a.size();}}}};auto test()->i64{{return 0;}}')
     suite.reject('span reflection still forbidden',array('bytes',[1])+view()+window(start=0,count=1)+
                  f'return u64(size_of({SPAN}));',diagnostic='span capabilities are unavailable to reflection')
 

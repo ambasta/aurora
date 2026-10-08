@@ -134,7 +134,7 @@ class X86Emitter {
     }
     bool classParameters(const ir::Function &function) const {
         return std::any_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
-            return type.isClass();
+            return type.isClass() || type.isSpan();
         });
     }
     int argumentBytes(const Type &type) const {
@@ -775,7 +775,8 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::MethodCall>) {
                     const auto &target = *functions.at(operation.callee);
                     const bool aggregate = classParameters(target);
-                    const int recordBytes = aggregate ? packArguments(target, operation.objectArguments) : 0;
+                    const int recordBytes =
+                        aggregate ? packArguments(target, operation.objectArguments, operation.spanArguments) : 0;
                     if (!aggregate)
                         for (std::size_t index = argumentCounts.at(operation.callee); index > 0; --index)
                             pop(argumentRegisters[index - 1]);

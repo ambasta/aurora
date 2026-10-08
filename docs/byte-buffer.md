@@ -51,6 +51,7 @@ and [fresh reconstructed results](readonly-owned-spans-results.md).
 | `try_write_u8(i64 offset, u8 value) -> bool` | Writes only inside the logical size. Invalid owner or offset returns false unchanged. |
 | `try_reserve(i64 minimum_capacity) -> bool` | Invalid owner or negative minimum returns false. A minimum at/below capacity succeeds without allocation. Larger requests allocate exactly the requested capacity, preserving logical size and all prior bytes. |
 | `try_append(u8 value) -> bool` | Appends one byte, growing when full. Successful writes precede the logical length increment. |
+| `try_append_bytes(builtin::span<const u8> input) -> bool` | Appends disjoint readonly input with one growth attempt; rejects self-views at compile time, including empty views. See the [method-span contract](../compiler/METHOD-SPANS.md). |
 | `try_truncate(i64 new_size) -> bool` | Accepts only `0 <= new_size <= size()`, retaining allocation and capacity. A larger or negative size returns false. |
 | `clear() -> bool` | Equivalent to truncating to zero; retains allocation and capacity. |
 
@@ -147,3 +148,14 @@ rejected the module; the existing owning-class-capable formatter passed both
 files with idempotent canonical layout. Ruff 0.16.7 passed the Python runner.
 Neither tool was rebuilt, and no native failure was suppressed. This change does
 not modify compiler, hosted-runtime or kernel implementation.
+
+## Bulk append
+
+`try_append_bytes` checks overflow before computing its required size. Growth
+requests the larger of that required size and saturated doubled capacity (one
+for zero capacity), with no retry at a smaller target. It reserves before copying
+and commits logical length only after every byte is written. Invalid buffers
+return false even for empty input; valid empty input succeeds allocation-free.
+All recoverable failures preserve size, capacity, logical bytes and committed
+allocation accounting. Fresh [method-span results](method-spans-results.md) qualify this operation
+separately; no previous ByteBuffer receipt is evidence for the new operation.

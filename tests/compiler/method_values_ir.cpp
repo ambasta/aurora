@@ -119,7 +119,7 @@ void directTests() {
     check("bound object cannot be assigned",[](Module&m){m.functions[1].code.insert(m.functions[1].code.begin()+3,{Constant{1,Type::I64},Store{8,Type::I64}});},"write to initialized const object field");
     for(const auto&t:{Type::Own,Type::Ref,Type::MutRef,Type::array(TypeKind::U8,2)})
         check("invalid method parameter "+typeName(t),[t](Module&m){m.functions[1].parameters[0]=t;},"receiver signature requires scalar, enum or class values");
-    check("span method parameter",[](Module&m){m.functions[1].parameters[0]=Type::ByteSpan;},"receiver signature requires scalar, enum or class values");
+    check("span method argument lacks capability vector",[](Module&m){m.functions[1].parameters[0]=Type::ByteSpan;},"method span argument vector size mismatch");
     check("const receiver cannot mutate",[](Module&m){m.functions[1].code.insert(m.functions[1].code.begin()+3,{Constant{1,Type::I64},ReceiverStore{0,Type::I64}});},"write through const receiver");
     check("const local cannot supply mutable receiver",[](Module&m){m.functions[0].objectSlots[8].mutableValue=false;m.functions[1].receiver->mutableValue=true;},"const object cannot supply mutable receiver");
     check("forward without receiver",[](Module&m){method(m.functions[0],"take").receiverOffset=0;},"forwarding without bound receiver");

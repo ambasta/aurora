@@ -1,5 +1,15 @@
 # Completeness and acceptance matrix
 
+## Synchronous method spans and bulk append — 2026-10-08
+
+Readonly nonconstructor method parameters support failure-atomic bulk ByteBuffer
+append while preserving receiver-root exclusion, including empty self-views.
+Fresh source/native, independent IR/ABI and source review, selected core/bytes
+and joined JSON regression evidence is recorded in the
+[focused results](method-spans-results.md), including the original Meson receipt
+path failure and corrected replay. All 28 existing kernel assemblies are unchanged;
+no new guest feature, full-native or general object-reference support is claimed.
+
 ## JSON scalar codecs — 2026-10-08
 
 A shared scalar-valid string reader and canonical escaped-scalar copied result

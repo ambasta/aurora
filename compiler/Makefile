@@ -163,6 +163,7 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 ../tests/compiler/byte_codec.py $(abspath $(OUT))
 	python3 -B ../tests/compiler/binary_buffer.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/byte_buffer.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/method_spans.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/owned_spans.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/owned_spans_source.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/owned_spans_kernel.py $(abspath $(OUT))
@@ -199,6 +200,10 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	$(dir $(OUT))owned-bytes-ir-tests
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_spans_ir.cpp -o $(dir $(OUT))owned-spans-ir-tests
 	$(dir $(OUT))owned-spans-ir-tests
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_spans_ir.cpp -o $(dir $(OUT))method-spans-ir-tests
+	$(dir $(OUT))method-spans-ir-tests
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_spans_abi.cpp -o $(dir $(OUT))method-spans-abi-tests
+	python3 -B -O ../tests/compiler/method_spans_abi.py $(abspath $(dir $(OUT))method-spans-abi-tests)
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/logical_spans_abi.cpp -o $(dir $(OUT))logical-spans-abi-tests
 	python3 -B -O ../tests/compiler/logical_spans_abi.py $(abspath $(dir $(OUT))logical-spans-abi-tests)
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owning_classes_ir.cpp -o $(dir $(OUT))owning-classes-ir-tests
