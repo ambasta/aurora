@@ -26,8 +26,8 @@ make kernel-uefi             # separate UEFI loader/payload, without QEMU
 make run                     # normal BIOS build and verified QEMU boot
 make run-uefi                # discovers installed non-Secure-Boot firmware
 make capture-framebuffer     # build/check and save an emulator-only PNG preview
-./scripts/compiler-test.sh   # fresh compiler, complete compiler-only tests
-make test                    # fresh compiler, complete native aggregate
+./scripts/compiler-test.sh   # configure/build incrementally, compiler-only suite
+CXX=g++ make test            # configure/build incrementally, complete native suite
 ```
 
 The executable scripts also work when invoked from another directory:
@@ -63,6 +63,7 @@ GNU C++ with C++23 support, GNU Make, GNU binutils (`as`, `ld`, `objcopy`,
 uses GNU coreutils and ripgrep. QEMU boots additionally need GNU `timeout`,
 QEMU system x86-64 and its matching PC firmware/data files. UEFI needs a
 readable x86-64 OVMF firmware: a combined ROM or a matching CODE/VARS pair.
+The canonical native tests require Meson 1.12.1+ and Ninja as well.
 
 The scripts do not download or install tools. Missing dependencies fail with a
 nonzero status. The run wrapper checks QEMU, timeout and requested firmware
@@ -176,9 +177,9 @@ UEFI success, and neither establishes physical AMD/Framework support.
 ## Choosing tests
 
 - `./scripts/compiler-test.sh` or `make -C compiler test`: complete compiler-only
-  suite, through the existing fresh-build shared-compiler contract.
-- `make test-compiler`: existing root compiler-test target; compiler scope only.
-- `make test`: full native aggregate. This does not run QEMU.
+  Meson suite with dependency-tracked compiler and fixture builds.
+- `make test-compiler`: the same compiler-only Meson selection.
+- `make test`: complete Meson `full` suite. This does not run QEMU.
 - `make run` and `make run-uefi`: one normal emulator gate each.
 - `make smoke-console` and `make smoke-console-uefi`: automated BIOS/UEFI
   console acceptance through the existing private-PTY test. Both also run in
@@ -189,13 +190,20 @@ UEFI success, and neither establishes physical AMD/Framework support.
 - `SANITIZE=1 ./scripts/kernel-tests.sh`: inherited hosted allocator sanitizer
   checks, not the complete native or emulator suite.
 
-Ordinary developer tests do not require a historical compiler checksum. They
-build current compiler source once and retain receipts beneath
-`build/test-contract-*`. Follow the [developer-test contract](developer-test-contract.md)
-for supported `CXXFLAGS`/`IR_TEST_CXXFLAGS`, externally reviewed acceptance pins,
-and interpreting a newly completed matching `run.json`. Exit zero or a printed
-command alone is not aggregate acceptance. These shortcuts do not add new
-language, kernel, hardware or broad-host qualification claims.
+Ordinary developer tests do not require a historical compiler checksum or a prior
+Meson setup. The Make/compiler shortcuts configure a fresh directory automatically,
+then reuse dependency-tracked builds. With no `MESON_BUILD_DIR`, they choose a
+stable directory keyed by toolchain and `CXXFLAGS`. An explicit directory may be
+fresh or already configured for the same compiler and flags; mismatches fail before
+building. Keep matching `gcc`/`g++` on PATH. Setup, compile and test failures stop
+the command and return nonzero. Meson test logs stay under that build directory's
+`meson-logs/`; these are not fresh-build qualification receipts.
+
+See [the Meson guide](meson-bootstrap.md) for focused suites, flags and worker
+controls, and the [developer-test contract](developer-test-contract.md) for the
+separate pinned `make test-acceptance` workflow and historical `run.json` receipts.
+These shortcuts do not add language, kernel, hardware or broad-host qualification
+claims.
 
 ## Testing these shortcuts
 

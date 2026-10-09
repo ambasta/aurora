@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import json
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -415,6 +416,173 @@ def host_tool_checks(out):
     return serial
 
 
+def package_time_checks(out):
+    """Check watchdog policy and termination without host-speed assertions."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import package_native_runner as transport
+
+    directory = out / "package-time-controls"
+    directory.mkdir()
+    compiler = Path(sys.executable).resolve()
+    runner = transport.PackageRunner(
+        compiler,
+        directory,
+        256 << 20,
+        root=ROOT,
+        prefix="",
+        shared=lambda: "",
+        validate=mock.Mock(side_effect=lambda output, expected, code: expected),
+        function_prefix="control",
+        sentinel=b"preserve",
+    )
+    # Storage and hash boundaries have separate real-filesystem controls above.
+    runner.budget = mock.Mock(return_value=0)
+    runner.pins = {path: transport.sha(path) for path in runner.host_tools}
+
+    def receipt(name, root=directory):
+        return json.loads((root / (name + ".command.json")).read_text())
+
+    # Exercise the actual preexec callback against controlled resource boundaries.
+    def complete(args, **kwargs):
+        kwargs["preexec_fn"]()
+        kwargs["stdout"].write(b"complete")
+        return SimpleNamespace(returncode=0)
+
+    for count, cpu, wall in ((1, 10, 30), (2, 20, 60), (96, 120, 360), (128, 120, 360)):
+        with (
+            mock.patch.object(transport.resource, "setrlimit") as limits,
+            mock.patch.object(transport.subprocess, "run", side_effect=complete) as execute,
+        ):
+            name = "count-" + str(count)
+            code, output, diagnostic = runner.command([compiler], directory, name, case_count=count)
+            require((code, output, diagnostic) == (0, b"complete", b""), "ordinary command result changed")
+            require(execute.call_args.kwargs["timeout"] == wall, "wall watchdog does not follow batch policy")
+            limits.assert_any_call(transport.resource.RLIMIT_CPU, (cpu, cpu + 1))
+            limits.assert_any_call(transport.resource.RLIMIT_CORE, (0, 0))
+            limits.assert_any_call(transport.resource.RLIMIT_FSIZE, (8 << 20, 8 << 20))
+            limits.assert_any_call(transport.resource.RLIMIT_AS, (128 << 20,) * 2)
+            record = receipt(name)
+            require(record["case_count"] == count and record["wall_seconds"] == wall, "wrong workload receipt")
+            require(record["cpu_soft_hard_seconds"] == [cpu, cpu + 1], "wrong CPU receipt")
+            require(record["termination"] == "exit" and record["returncode"] == 0, "normal exit misclassified")
+    for count in (0, -1, 129, 1.5, True):
+        with mock.patch.object(transport.subprocess, "run") as execute:
+            rejected(lambda: runner.command([compiler], directory, "invalid", case_count=count), "case count")
+            require(not execute.called and not (directory / "invalid.stdout").exists(), "invalid count executed")
+
+    # A signal is never an accepted compiler rejection. Real self-signals test
+    # subprocess return codes without consuming a CPU budget or racing a timer.
+    for signum, kind, diagnostic in (
+        (signal.SIGXCPU, "CPU", "CPU resource limit"),
+        (signal.SIGXFSZ, "file-size", "file-size resource limit"),
+        (signal.SIGTERM, None, "terminated by SIGTERM"),
+        (signal.SIGKILL, None, "terminated by SIGKILL"),
+    ):
+        name = "signal-" + str(signum)
+        source = (
+            "import os, signal; print('retained partial output', flush=True); "
+            f"signal.signal({int(signum)}, signal.SIG_DFL); os.kill(os.getpid(), {int(signum)})"
+            if signum != signal.SIGKILL
+            else "import os; print('retained partial output', flush=True); os.kill(os.getpid(), 9)"
+        )
+        rejected(lambda: runner.command([compiler, "-c", source], directory, name, allow_rejection=True), diagnostic)
+        record = receipt(name)
+        require(record["termination"] == "signal" and record["returncode"] == -signum, "signal misclassified")
+        require(record["signal_number"] == signum and record.get("resource_limit") == kind, "wrong signal cause")
+        require((directory / (name + ".stdout")).read_bytes() == b"retained partial output\n", "signal output lost")
+
+    def expire(args, **kwargs):
+        kwargs["stdout"].write(b"incomplete")
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    with mock.patch.object(transport.subprocess, "run", side_effect=expire):
+        rejected(
+            lambda: runner.command([compiler], directory, "timeout", case_count=96, allow_rejection=True),
+            "wall-clock resource limit",
+        )
+    record = receipt("timeout")
+    require(record["termination"] == "wall-timeout" and record["timeout"], "timeout misclassified")
+    require(record["resource_limit"] == "wall-clock" and "returncode" not in record, "timeout fabricated an exit")
+    require((directory / "timeout.stdout").read_bytes() == b"incomplete", "timeout output lost")
+    for allow in (False, True):
+        name = "rejection-" + str(allow)
+        with mock.patch.object(transport.subprocess, "run", return_value=SimpleNamespace(returncode=1)):
+            if allow:
+                require(runner.command([compiler], directory, name, allow_rejection=True)[0] == 1, "rejection lost")
+            else:
+                rejected(lambda: runner.command([compiler], directory, name), "exit 1")
+        require(receipt(name)["termination"] == "exit", "normal rejection classified as a resource failure")
+
+    # Complete transport of a small batch, including repeated bodies. The budget
+    # follows cases rather than deduplicated functions; every observation survives.
+    cases = [
+        SimpleNamespace(label=str(i), arguments=(i, 0), helpers="", body=f"return {i % 2};", expected=(i, i + 1))
+        for i in range(3)
+    ]
+    expected = tuple(value for case in cases for value in case.expected)
+
+    def batch_command(args, root, name, **kwargs):
+        if name == "compiler":
+            (root / "compiled.s").write_text("generated control assembly\n")
+        if name == "link":
+            (root / "program").write_bytes(b"control executable")
+        output = b"" if name != "native" else b"".join(value.to_bytes(8, "little") for value in expected)
+        if name == "native":
+            (root / "native.stdout").write_bytes(output)
+        return 0, output, b""
+
+    with (
+        mock.patch.object(runner, "command", side_effect=batch_command) as execute,
+        mock.patch.object(runner, "compact"),
+    ):
+        runner.batch(0, cases)
+        commands = {call.args[2]: call for call in execute.call_args_list}
+        for name in ("compiler", "native"):
+            require(commands[name].kwargs["case_count"] == len(cases), "batch did not forward actual case count")
+        require(
+            all(
+                "case_count" not in call.kwargs for name, call in commands.items() if name not in ("compiler", "native")
+            ),
+            "host-tool allowance unexpectedly changed",
+        )
+    record = json.loads((directory / "batch-000" / "receipt.json").read_text())
+    require(record["status"] == "passed" and record["cases"] == 3, "ordinary batch failed")
+    require(record["distinct_functions"] == 2 and record["complete_u64_observations"] == 6, "batch coverage changed")
+    require(
+        tuple(value for row in record["observations"] for value in row["observed"]) == expected, "observations lost"
+    )
+    runner.validate.assert_called_once_with(b"".join(value.to_bytes(8, "little") for value in expected), expected, 0)
+    for invalid in ([], cases * 43):
+        rejected(lambda: runner.batch(1, invalid), "batch case count")
+        require(not (directory / "batch-001").exists(), "invalid batch created outputs")
+    runner.validate.reset_mock()
+    for number, stage in enumerate(("compiler", "native"), start=1):
+
+        def exhausted(args, root, name, **kwargs):
+            if name == stage:
+                raise AssertionError("controlled CPU resource limit; no semantic result")
+            return batch_command(args, root, name, **kwargs)
+
+        with (
+            mock.patch.object(runner, "command", side_effect=exhausted),
+            mock.patch.object(runner, "compact") as compact,
+        ):
+            rejected(lambda: runner.batch(number, cases), "CPU resource limit")
+            require(not compact.called and not runner.validate.called, "incomplete batch treated as a semantic pass")
+        record = json.loads((directory / f"batch-{number:03d}" / "receipt.json").read_text())
+        require(record["status"] == "failed" and "resource limit" in record["error"], "batch resource failure lost")
+        require("observations" not in record, "failed batch invented observations")
+    return dict(
+        policy_cases=4,
+        rejected_counts=5,
+        signals=4,
+        wall_timeout=1,
+        ordinary_rejections=2,
+        batch_cases=3,
+        failed_batches=2,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts", type=Path)
@@ -431,6 +599,7 @@ def main():
     out.mkdir(parents=True)
     owned_scope_consumers = owned_output_checks(out)
     host_scope_controls = host_tool_checks(out)
+    package_time_controls = package_time_checks(out)
     rows = []
     for index, (name, minimum, native) in enumerate(CONSUMERS):
         spec = importlib.util.spec_from_file_location("cap_subject_" + str(index), ROOT / name)
@@ -518,6 +687,7 @@ def main():
         native_executed=False,
         cli_cases=len(rows),
         host_scope_controls=host_scope_controls,
+        package_time_controls=package_time_controls,
         consumers=len(CONSUMERS),
         optimization_modes=[0, 1],
         owned_scope_consumers=owned_scope_consumers,

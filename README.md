@@ -22,7 +22,8 @@ Historical test receipts are kept in [verification history](docs/verification.md
 ## Try it
 
 Use an x86-64 Linux host with a C++23-capable GNU C++ compiler, GNU Make and
-binutils, Python 3 and Bash. The native tests also use coreutils and ripgrep.
+binutils, Python 3 and Bash. The native tests also use Meson 1.12.1+, Ninja,
+coreutils and ripgrep.
 Run commands from the repository root, in a path without whitespace, one build
 or test command at a time.
 
@@ -112,12 +113,14 @@ meson compile -C build/gcc14 -j 3
 meson test -C build/gcc14 --suite dev --no-rebuild --num-processes 4
 meson test -C build/gcc14 --suite full --no-rebuild --num-processes 4
 ./scripts/compiler-test.sh    # compiler-only Meson selection
-make test                    # same complete Meson graph; no QEMU
+CXX=g++ make test            # configure/build, then complete Meson graph; no QEMU
 make smoke-all               # separate emulator matrix; QEMU and firmware required
 ```
 
-Configure a separate [Meson build](docs/meson-bootstrap.md) for each toolchain,
-with matching `gcc`/`g++` on PATH. `dev` is quick feedback; `full` includes all
+For direct Meson commands, configure a separate [build](docs/meson-bootstrap.md)
+for each toolchain, with matching `gcc`/`g++` on PATH. `make test` and the
+compiler-only shortcuts configure a fresh build directory automatically and reuse
+it incrementally. `dev` is quick feedback; `full` includes all
 native compiler, full-package and kernel/boot-image gates. Named `slow`,
 `integration`, `boot`, `core` and `bytes` suites support focused work. A merge
 requires the final-source gates in [AGENTS.md](AGENTS.md), including both GCC 14
@@ -126,7 +129,9 @@ and GCC 16 for compiler/kernel changes and separate affected emulator profiles.
 Normal development reuses dependency-tracked compiler and C++ fixture builds.
 Changing source reruns affected build commands; changing toolchain/configuration
 requires another directory. Make is a convenience entrypoint to the same graph,
-with `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` controls. Explicit
+with `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` controls. Omit
+`MESON_BUILD_DIR` for a stable toolchain/flags-keyed directory, or set it to a
+fresh or matching configured directory. Explicit
 pinned legacy compatibility remains in the [developer-test contract](docs/developer-test-contract.md).
 Selected artifact identity, a focused pass or registration alone does not establish
 full native, sanitizer, emulator or hardware qualification.
