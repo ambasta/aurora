@@ -35,6 +35,7 @@ enum class DiagnosticCode {
     Unclassified,
     UnsupportedCharacter,
     InvalidByteLiteral,
+    InvalidByteStringLiteral,
     UnexpectedToken,
     NestingLimit,
     UnsupportedFieldType,
@@ -52,6 +53,8 @@ inline std::string_view diagnosticCode(DiagnosticCode code) {
         return "AU1001";
     case DiagnosticCode::InvalidByteLiteral:
         return "AU1002";
+    case DiagnosticCode::InvalidByteStringLiteral:
+        return "AU1003";
     case DiagnosticCode::UnexpectedToken:
         return "AU2001";
     case DiagnosticCode::NestingLimit:

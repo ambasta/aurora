@@ -211,6 +211,30 @@ void byteLiterals() {
         }
     }
 }
+void byteStrings() {
+    const std::string prefix = "// header\r\n\t";
+    for (const std::string spelling : {R"("")", R"("IOMMU ")", R"("é😀")", R"("// {} \" \\ \0\xff")"}) {
+        verify(prefix + spelling + "// trailing \"\r\n", "byte-string.au");
+        const auto tokens = aurora::lexSource(prefix + spelling).tokens;
+        require(tokens.size() == 2 && tokens[0].text == spelling && tokens[0].span.begin.offset == prefix.size() &&
+                    tokens[0].span.end.offset == prefix.size() + spelling.size(),
+                "byte string is not one lossless token");
+    }
+    const auto decoded = aurora::decodeByteStringLiteral(R"("é😀\0\xff")");
+    require(decoded == std::vector<unsigned char>({0xc3, 0xa9, 0xf0, 0x9f, 0x98, 0x80, 0, 255}),
+            "byte strings must preserve UTF-8 encoding and arbitrary escaped bytes");
+    for (const std::string spelling : {R"("\q")", R"("\x0")", R"("\u0041")", R"("a"u8)", "\"unclosed"}) {
+        try {
+            aurora::lexSource(prefix + spelling, "invalid-byte-string.au");
+            throw std::runtime_error("invalid byte string accepted");
+        } catch (const aurora::Error &error) {
+            require(error.diagnostic.code == aurora::DiagnosticCode::InvalidByteStringLiteral &&
+                        error.diagnostic.span.begin.offset == prefix.size() &&
+                        error.diagnostic.span.end.offset == prefix.size() + spelling.size(),
+                    "invalid byte string must retain its complete attempted spelling span");
+        }
+    }
+}
 void cases() {
     for (const std::string source : {"",
                                      "//",
@@ -262,6 +286,7 @@ int main(int argc, char **argv) {
         for (const auto *locale : {"C", "C.utf8", "en_US", "en_US.utf8", "tr_TR", "tr_TR.utf8"}) {
             if (std::setlocale(LC_CTYPE, locale)) {
                 byteLiterals();
+                byteStrings();
                 std::cout << "PASS byte literal locale " << locale << '\n';
             } else {
                 std::cout << "SKIP unavailable byte literal locale " << locale << '\n';

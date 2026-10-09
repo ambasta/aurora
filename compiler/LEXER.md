@@ -16,6 +16,9 @@ and structured; a failed scan is never presented as a complete lossless result.
 Single-quoted [byte literals](BYTES.md#ascii-byte-character-literals) are one
 lossless token, including escapes and delimiters. Malformed spellings use AU1002
 with the attempted literal span; quote-like bytes inside comments stay trivia.
+Double-quoted [byte-string initializers](BYTES.md#bounded-byte-string-array-initializers)
+also remain one exact token, including raw UTF-8 and escapes. Their malformed
+spellings use AU1003; literal punctuation never becomes comments or separators.
 
 Binary integer spellings retain their `0b`/`0B` prefix, C++ apostrophe separators
 and exact suffix as one token. Malformed binary digit/separator/suffix attempts

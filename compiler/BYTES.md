@@ -45,7 +45,7 @@ any byte from `0x00` through `0xff`. Double quote is written directly as `'"'`;
 Empty or multibyte bodies, suffixes, raw control bytes, raw non-ASCII text,
 unterminated literals, malformed escapes and extra hexadecimal digits reject
 with lexical diagnostic AU1002. Octal escapes, Unicode escapes, code points,
-grapheme literals and strings are not introduced. `\xFF` is byte value 255,
+grapheme literals and string values are not introduced. `\xFF` is byte value 255,
 not a Unicode character or a UTF-8 encoder.
 
 The shared lexer retains the exact source spelling and half-open byte span;
@@ -74,6 +74,50 @@ Unicode type or ownership operation is introduced. The feature is registered
 in the complete Meson developer/byte/full suites and compiler Make test graph.
 The [canonical final-source merge gates](../AGENTS.md#workflow) and independent
 review remain mandatory; focused results never substitute for those gates.
+
+## Bounded byte-string array initializers
+
+Double-quoted text initializes an explicitly typed, named local `array<u8, N>`:
+
+```cpp
+const array<u8, 6> prefix = "IOMMU ";
+const builtin::span<const u8> text = borrow_bytes(prefix);
+```
+
+The decoded byte count must equal `N` exactly. The existing capacity range is
+1–4096; there is no inferred length, padding or hidden NUL terminator. Mutable
+arrays, same-type array copies, indexing and lexical readonly borrows retain
+their existing rules. A string spelling cannot itself be borrowed, returned,
+passed as a value, assigned to an existing array or used to initialize a scalar,
+non-`u8` array, class field or span. It creates no temporary backing object,
+heap string type, pointer conversion or new lifetime rule.
+
+Raw printable ASCII is copied exactly, except that double quote and backslash
+need escapes. Raw non-ASCII text must be valid UTF-8 and contributes its original
+encoded bytes, without normalization: `"é"` requires two bytes and `"😀"` four.
+This is byte-array storage, not a Unicode character type or a guarantee that the
+resulting bytes form UTF-8. Escapes support the existing byte-character set
+(`\'`, `\\`, `\0`, `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, `\xHH`)
+plus `\"` for the delimiter. Each escape contributes one byte; `\xHH` consumes
+exactly two hex digits, so `"\x4142"` stores `A42`. `"\01"` stores zero then
+`1`, not an octal escape. Escaped `\xFF` and embedded `\0` are ordinary bytes.
+Single-quoted character literals remain ASCII-only with their existing escapes.
+
+Raw ASCII controls/DEL, malformed UTF-8, unknown/Unicode/octal escapes, suffixes,
+unterminated text and literals longer than 4096 decoded bytes fail lexically with
+AU1003. CR/LF, including after a backslash, terminate a malformed spelling rather
+than introducing multiline text. Adjacent strings are not concatenated. The
+empty spelling is lexically valid but cannot initialize a positive-length array.
+
+The shared lexer preserves one exact spelling/span for the formatter and LSP.
+Lowering emits the same typed-byte constants and array stores as an explicit
+brace initializer; IR, backend, storage layout and authority are unchanged.
+Event reporting and the native serial console use these initializers immediately.
+The existing byte-literal, lossless lexer, formatter and LSP-position tests cover
+this extension, including decoded lengths, UTF-8/escapes, rejected escapes and
+local borrow escape/mutation. Exact assembly comparisons cover explicit arrays.
+Final-source full/image/guest qualification remains required by AGENTS.md; old
+source-bound receipts cannot admit the migrated sources.
 
 ## Physical representation gate
 
