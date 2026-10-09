@@ -1,7 +1,70 @@
-// Opt-in default-model admission. All firmware data is copied; no firmware
-// pointer survives ExitBootServices. This adapter performs only reads until the
-// final sealed EventAdmission reaches the separately bounded producer. Case 4
-// is observation-only: no producer is linked and no admission can be minted.
+// Exact model-only firmware handoff. Copied firmware facts remain immutable.
+// Case 4 is read-only and cannot link transition or Event producer authority.
+class EventRegisterWindow final {
+    const EventResources &resources_;
+    const PageTables &tables_;
+    const Bytes &handoff_;
+    EcamWindow &ecam_;
+    U64 arena_;
+    volatile U64 *slot_;
+    static constexpr U64 window = PageTables::window_address + 4096;
+    [[nodiscard]] auto begin(U64 base, bool writable = false) -> bool {
+        if (!slot_ || *slot_ || !ecam_.closed() || !tables_.verify(arena_, handoff_))
+            return false;
+        *slot_ = base | 1 | 8 | 16 | PageTables::nx | (writable ? 2 : 0);
+        asm volatile("invlpg (%0)" ::"r"(window) : "memory");
+        return true;
+    }
+    [[nodiscard]] auto end() -> bool {
+        *slot_ = 0;
+        asm volatile("invlpg (%0)" ::"r"(window) : "memory");
+        return tables_.verify(arena_, handoff_);
+    }
+
+public:
+    EventRegisterWindow(
+        const EventResources &resources, const PageTables &tables, const Bytes &handoff, EcamWindow &ecam, U64 arena)
+        : resources_(resources), tables_(tables), handoff_(handoff), ecam_(ecam), arena_(arena),
+          slot_(tables.window_slot() ? tables.window_slot() + 1 : nullptr) {
+    }
+    [[gnu::noinline, nodiscard]] auto ahci() -> std::optional<EventAhciFacts> {
+        if (!begin(resources_.ahci_base()))
+            return std::nullopt;
+        const auto facts = EventAhciFacts::sample<true>(resources_.ahci_base(), [](unsigned offset) {
+            return *reinterpret_cast<volatile const std::uint32_t *>(window + offset);
+        });
+        if (!end())
+            return std::nullopt;
+        return facts;
+    }
+    [[gnu::noinline, nodiscard]] auto edu() -> std::optional<EventEduObservation> {
+        if (!begin(resources_.edu_base()))
+            return std::nullopt;
+        const auto facts = EventEduObservation::sample([](unsigned offset, unsigned width) -> U64 {
+            if (width == 4)
+                return *reinterpret_cast<volatile const std::uint32_t *>(window + offset);
+            return *reinterpret_cast<volatile const U64 *>(window + offset);
+        });
+        if (!end())
+            return std::nullopt;
+        return facts;
+    }
+#if AURORA_IOMMU_EVENT_CASE != 4
+    [[nodiscard]] auto clear_fre(unsigned port, unsigned command) -> bool {
+        if (port >= 6 || command != 0x4004 || !begin(resources_.ahci_base(), true))
+            return false;
+        auto *reg = reinterpret_cast<volatile std::uint32_t *>(window + 0x100 + port * 0x80 + 0x18);
+        const bool unchanged = *reg == 0x4014;
+        if (unchanged)
+            *reg = command;
+        const bool closed = end();
+        return unchanged && closed;
+    }
+#endif
+};
+#if AURORA_IOMMU_EVENT_CASE != 4
+constinit bool event_handoff_attempted{};
+#endif
 #if AURORA_IOMMU_EVENT_CASE == 4
 [[gnu::noipa]] auto inspect_event(U64, const Bytes &, const Q35Ecam &, EcamWindow &, const PciInventory &, unsigned)
     -> bool asm("uefi_event_observation");
@@ -12,6 +75,10 @@
                                      EcamWindow &ecam,
                                      const PciInventory &inventory,
                                      unsigned bits) -> bool {
+#if AURORA_IOMMU_EVENT_CASE != 4
+    if (event_handoff_attempted)
+        return false;
+#endif
     if (handoff.get(8, 4) != 4 || handoff.get(120) != arena + Handoff::bar_record_offset ||
         inventory.count() != EventResources::maximum_functions)
         return false;
@@ -88,10 +155,11 @@
                                                               map,
                                                               handoff.get(40),
                                                               arena,
-                                                              0xfee00000
+                                                              0xfee00000,
 #if AURORA_IOMMU_EVENT_CASE == 4
-                                                              ,
                                                               EventResources::Purpose::read_only_observation
+#else
+                                                              EventResources::Purpose::firmware_handoff
 #endif
     );
     if (!resources) {
@@ -99,38 +167,15 @@
         return false;
     }
     const PageTables tables{handoff.get(88), static_cast<std::size_t>(handoff.get(96))};
-    auto *slot = tables.window_slot();
-    if (!slot || !ecam.closed() || !tables.verify(arena, handoff))
+    EventRegisterWindow registers{*resources, tables, handoff, ecam, arena};
+    const auto first_sample = registers.ahci(), second_sample = registers.ahci();
+    const auto edu_sample = registers.edu();
+    if (!first_sample || !second_sample || !edu_sample)
         return false;
-    ++slot;
-    if (*slot)
-        return false;
-    constexpr U64 window = PageTables::window_address + 4096;
-    constexpr U64 flags = 1 | 8 | 16 | PageTables::nx;
-    *slot = resources->ahci_base() | flags;
-    asm volatile("invlpg (%0)" ::"r"(window) : "memory");
-    const auto read = [&](unsigned offset) {
-        return *reinterpret_cast<volatile const std::uint32_t *>(window + offset);
-    };
-    constexpr bool detailed = AURORA_IOMMU_EVENT_CASE == 4;
-    const auto ahci = EventAhciFacts::sample<detailed>(resources->ahci_base(), read);
-    const auto second = EventAhciFacts::sample<detailed>(resources->ahci_base(), read);
-    // Every read is performed, even after a mismatch. Revoke before reporting.
+    const auto &ahci = *first_sample, &second = *second_sample;
+    const auto &edu = *edu_sample;
     const bool stable = ahci == second;
-    *slot = 0;
-    asm volatile("invlpg (%0)" ::"r"(window) : "memory");
 #if AURORA_IOMMU_EVENT_CASE == 4
-    if (*slot || !tables.verify(arena, handoff))
-        return false;
-    *slot = resources->edu_base() | flags;
-    asm volatile("invlpg (%0)" ::"r"(window) : "memory");
-    const auto edu = EventEduObservation::sample([&](unsigned offset, unsigned width) -> U64 {
-        if (width == 4)
-            return *reinterpret_cast<volatile const std::uint32_t *>(window + offset);
-        return *reinterpret_cast<volatile const U64 *>(window + offset);
-    });
-    *slot = 0;
-    asm volatile("invlpg (%0)" ::"r"(window) : "memory");
     for (unsigned sample = 0; sample < edu.samples.size(); ++sample) {
         Serial::text("AURORA_EVENT_EDU: sample=");
         Serial::number(sample);
@@ -223,12 +268,38 @@
     Serial::text("AURORA_EVENT_OBSERVATION_OK: pci-unchanged=1 windows-closed=1 producer-linked=0\r\n");
     return true;
 #else
-    const auto admission = EventAdmission::admit(*resources, ahci);
+    auto attempt = EventHandoff::prepare(*resources, current, ahci, second, edu, map, handoff.get(40), arena);
+    const auto admission = attempt ? attempt->complete(
+                                         event_handoff_attempted,
+                                         [&] {
+                                             return registers.ahci();
+                                         },
+                                         [&](unsigned port, unsigned command) {
+                                             return registers.clear_fre(port, command);
+                                         },
+                                         [&] {
+                                             return registers.edu();
+                                         },
+                                         [&](const EventPciFact &fact, unsigned command) {
+                                             return ecam.reduce_event_command(fact, command);
+                                         })
+                                   : std::nullopt;
     if (!admission) {
-        Serial::text("AURORA_EVENT_REJECTED: reason=firmware-master-active\r\n");
+        Serial::text("AURORA_EVENT_REJECTED: reason=firmware-handoff\r\n");
         return false;
     }
-    Serial::text("AURORA_EVENT_ADMISSION_OK: default-ivrs=1 masters-quiescent=1\r\n");
+    for (const auto &fact : current) {
+        const auto page = aperture.address(fact.segment, fact.bus, fact.device, fact.function);
+        const auto after = page ? ecam.read(*page) : std::nullopt;
+        auto expected = fact.header;
+        put(expected, 4, fact.requester() == 8 ? 7 : fact.requester() == 0x20 ? 2 : 3, 2);
+        if (!after || *after != expected)
+            return false;
+    }
+    const auto final_caps = ecam.iommu_capability(*address);
+    if (!final_caps || *final_caps != *caps || !ecam.closed() || !tables.verify(arena, handoff))
+        return false;
+    Serial::text("AURORA_EVENT_ADMISSION_OK: default-ivrs=1 handoff-complete=1\r\n");
     run_event_intake(arena, handoff, *admission);
 #endif
 }

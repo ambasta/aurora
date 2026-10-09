@@ -147,7 +147,7 @@ public:
     std::uint64_t base{};
     std::uint32_t capability{}, global_control{}, implemented_ports{};
     std::array<EventAhciPortFact, 6> ports{};
-    [[nodiscard]] auto operator==(const EventAhciFacts &) const -> bool = default;
+    [[gnu::noinline, nodiscard]] auto operator==(const EventAhciFacts &) const -> bool = default;
     template <bool detailed, class Reader>
     [[nodiscard]] static auto sample(std::uint64_t base, Reader &&read) -> EventAhciFacts {
         EventAhciFacts result;
@@ -240,10 +240,19 @@ public:
 // bounded platform/resource evidence; EventAdmission additionally needs idle
 // boot-controller facts before the fixture may be considered for activation.
 class EventResources final {
+public:
+    enum class Purpose {
+        admission,
+        read_only_observation,
+        firmware_handoff
+    };
+
+private:
     friend class EventAdmission;
+    friend class EventHandoff;
     std::uint64_t edu_base_{}, ahci_base_{};
     unsigned physical_bits_{}, iommu_requester_{}, edu_command_{};
-    bool observation_only_{};
+    Purpose purpose_{};
     EventResources() = default;
     [[nodiscard]] static auto overlaps(std::uint64_t a, std::uint64_t n, std::uint64_t b, std::uint64_t m) -> bool {
         return !n || !m || n > ~std::uint64_t{0} - a || m > ~std::uint64_t{0} - b || (a < b + m && b < a + n);
@@ -284,10 +293,6 @@ class EventResources final {
 
 public:
     // Observation may describe inherited BME but cannot mint EventAdmission.
-    enum class Purpose {
-        admission,
-        read_only_observation
-    };
     static constexpr std::size_t maximum_functions = 6, maximum_bars = 8;
     [[nodiscard]] auto edu_base() const -> std::uint64_t {
         return edu_base_;
@@ -335,7 +340,7 @@ public:
             apic >= limit || 4096 > limit - apic)
             return std::nullopt;
         EventResources result;
-        result.observation_only_ = purpose == Purpose::read_only_observation;
+        result.purpose_ = purpose;
         result.physical_bits_ = ivrs.physical_bits();
         result.iommu_requester_ = ivrs.unit().device_id();
         std::array<bool, maximum_bars> seen{};
@@ -343,7 +348,7 @@ public:
         unsigned consumed = 0;
         for (std::size_t i = 0; i < current.size(); ++i) {
             const auto &now = current[i];
-            if (!identity(now, result.iommu_requester_, result.observation_only_) ||
+            if (!identity(now, result.iommu_requester_, result.purpose_ != Purpose::admission) ||
                 !ivrs.covers(now.segment, now.bus, now.device, now.function))
                 return std::nullopt;
             for (std::size_t j = 0; j < i; ++j)
@@ -455,7 +460,7 @@ class EventAdmission final {
 public:
     [[nodiscard]] static auto admit(const EventResources &resources, const EventAhciFacts &ahci)
         -> std::optional<EventAdmission> {
-        if (resources.observation_only_ || !ahci.quiescent(resources.ahci_base()))
+        if (resources.purpose_ != EventResources::Purpose::admission || !ahci.quiescent(resources.ahci_base()))
             return std::nullopt;
         return EventAdmission{resources};
     }

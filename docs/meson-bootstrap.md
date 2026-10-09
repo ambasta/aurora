@@ -40,9 +40,12 @@ introspection and logs; no new qualification supervisor is introduced.
 
 `make test` invokes the same `full` graph. `make test-compiler`, `make -C compiler
 test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
-fresh or matching configured directory, or omit it for a stable compiler/configuration-
-keyed directory. The shortcuts run Meson setup automatically when needed, stop on
-setup/build/test failure, and reject mismatched existing compiler/flag selections.
+fresh or matching configured directory, or omit it for a compiler-bytes/flags-keyed
+directory. Backend/binutils/runtime changes are checked immediately before compile;
+if they changed in place, set `MESON_BUILD_DIR` to a fresh directory. The wrapper
+takes one full snapshot; Meson setup and direct builds retain their own guards.
+The shortcuts run Meson setup automatically when needed, stop on setup/build/test
+failure, and reject mismatched existing compiler/flag selections.
 `AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
 `SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
 convenience route; use explicit configured sanitizer builds/separate focused gates.

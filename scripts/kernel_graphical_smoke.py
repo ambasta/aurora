@@ -392,12 +392,21 @@ def window(args):
             (args.evidence / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
             print(record["status"] + ": " + name, flush=True)
 
+    primary = None
     try:
         run("production", lambda directory, record: production_case(args, directory, record))
         for case in CASES:
             run(case[0], lambda directory, record: capture_case(args, case, directory, record))
+    except (Exception, KeyboardInterrupt) as error:
+        primary = error
+        raise
     finally:
-        run("normal-restoration", lambda directory, record: restoration(args, directory, record))
+        try:
+            run("normal-restoration", lambda directory, record: restoration(args, directory, record))
+        except (Exception, KeyboardInterrupt):
+            if primary is None:
+                raise
+            print("FAIL: normal restoration also failed; see summary.json", file=sys.stderr)
 
 
 def stage(mode, destination):

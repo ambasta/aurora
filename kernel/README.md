@@ -80,8 +80,13 @@ standalone stack reports record current source hashes but are not compilation
 provenance. Missing `.ci` files require rebuilding, not a display-name fallback.
 Console admission profiles share one scalar instruction configuration, including
 GCC's byte `orb` form; stack-pointer writes, frame balance and unknown instructions
-still pass through the same operand/control-flow guards. A PE/ELF layout check
-alone does not establish those stack guarantees.
+still pass through the same operand/control-flow guards. Shared qword `testq`
+reads preserve register/carrier facts and invalidate tracked flags, with plain
+64-bit registers or base/displacement memory operands; other forms fail closed.
+Register-only qword `bts` invalidates destination/flag facts; memory bit-set forms
+remain unsupported. This models stack effects, not memory authority or copied-field
+provenance.
+A PE/ELF layout check alone does not establish those stack guarantees.
 The recursion proof tracks the actual callee-saved level register and its
 entry-relative spill lifetime across the CFG, including untouched early returns.
 Its sole nonlocal byte-marker store depends explicitly on the reviewed C++

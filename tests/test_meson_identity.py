@@ -287,39 +287,98 @@ class MesonEntrypointTests(unittest.TestCase):
 
     def test_other_lock_errors_are_not_reported_as_contention(self):
         with patch.object(meson_test.fcntl, "flock", side_effect=PermissionError("permission fixture")):
-            with self.assertRaisesRegex(PermissionError, "permission fixture"):
+            with self.assertRaisesRegex(contract.ContractError, "Cannot lock.*permission fixture.*permissions"):
                 meson_test.execute(self.root, "full")
         self.assertEqual(self.calls, [])
 
-    def test_changed_toolchain_selects_fresh_default_and_rejects_explicit_reuse(self):
+    def test_changed_backend_rejects_default_and_explicit_reuse(self):
         meson_test.execute(self.root, "full")
         original = self.calls[0][2]
-        self.identity["files"]["/synthetic/g++"] = "replacement"
-        self.calls.clear()
+        self.identity["files"]["/synthetic/ld"] = "replacement"
+        for supplied in (None, original):
+            with self.subTest(directory=supplied):
+                if supplied:
+                    os.environ["MESON_BUILD_DIR"] = supplied
+                self.calls.clear()
+                with self.assertRaisesRegex(contract.ContractError, "Host toolchain changed.*MESON_BUILD_DIR"):
+                    meson_test.execute(self.root, "full")
+                self.assertEqual(self.calls, [])
+
+    def test_changed_compiler_selects_fresh_default(self):
         meson_test.execute(self.root, "full")
+        original = self.calls[0][2]
+        self.calls.clear()
+        with patch.object(contract, "tool_record", side_effect=lambda name: dict(resolved=name, sha256="new")):
+            meson_test.execute(self.root, "full")
         self.assertEqual(self.calls[0][1], "setup")
         self.assertNotEqual(self.calls[0][2], original)
-        os.environ["MESON_BUILD_DIR"] = original
-        self.calls.clear()
-        with self.assertRaisesRegex(ValueError, "Host toolchain changed"):
-            meson_test.execute(self.root, "full")
-        self.assertEqual(self.calls, [])
 
-    def test_replacement_after_directory_selection_rejected_before_compile(self):
+    def test_single_snapshot_after_setup_and_introspection_before_compile(self):
+        for fresh in (True, False):
+            with self.subTest(fresh=fresh):
+                self.calls.clear()
+                inspected = []
+
+                def introspect(command, **kwargs):
+                    inspected.append(command[-1])
+                    return self.introspect(command, **kwargs)
+
+                def snapshot(command):
+                    self.assertEqual(inspected, ["--compilers", "--buildoptions"])
+                    self.assertEqual([call[1] for call in self.calls], ["setup"] if fresh else [])
+                    self.assertEqual(command, [self.configured_compiler])
+                    return self.identity
+
+                with (
+                    patch.object(meson_toolchain, "snapshot", side_effect=snapshot) as observe,
+                    patch.object(meson_test.subprocess, "check_output", side_effect=introspect),
+                ):
+                    meson_test.execute(self.root, "full")
+                observe.assert_called_once_with([self.configured_compiler])
+                self.assertEqual([call[1] for call in self.calls][-2:], ["compile", "test"])
+
+    def test_post_setup_toolchain_change_rejected_before_compile(self):
         changed = dict(files={"/synthetic/g++": "replacement"}, version="14")
-        with patch.object(meson_toolchain, "snapshot", side_effect=[self.identity, changed]) as snapshot:
-            with self.assertRaisesRegex(ValueError, "Host toolchain changed"):
+        with patch.object(meson_toolchain, "snapshot", return_value=changed) as observe:
+            with self.assertRaisesRegex(contract.ContractError, "Host toolchain changed.*MESON_BUILD_DIR"):
                 meson_test.execute(self.root, "full")
-        self.assertEqual(snapshot.call_count, 2)
+        observe.assert_called_once_with([self.configured_compiler])
         self.assertEqual([command[1] for command in self.calls], ["setup"])
+
+    def test_build_preparation_failure_names_operation_path_and_recovery(self):
+        blocked = self.root / "not-a-build-directory"
+        blocked.write_text("keep this file")
+        os.environ["MESON_BUILD_DIR"] = str(blocked)
+        with self.assertRaises(contract.ContractError) as caught:
+            meson_test.execute(self.root, "full")
+        message = str(caught.exception)
+        self.assertIn("Cannot prepare build directory/lock", message)
+        self.assertIn(str(blocked), message)
+        self.assertIn("writable MESON_BUILD_DIR", message)
+        self.assertEqual(blocked.read_text(), "keep this file")
+        self.assertEqual(self.calls, [])
 
     def test_existing_unbound_build_rejected_before_compile(self):
         build = self.root / "unbound"
         build.mkdir()
         (build / "build.ninja").touch()
         os.environ["MESON_BUILD_DIR"] = str(build)
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(contract.ContractError) as caught:
             meson_test.execute(self.root, "full")
+        self.assertIn("Cannot read configured toolchain identity", str(caught.exception))
+        self.assertIn(str(build / "aurora-toolchain.json"), str(caught.exception))
+        self.assertIn("fresh MESON_BUILD_DIR", str(caught.exception))
+        self.assertEqual(self.calls, [])
+
+    def test_cli_remaining_oserror_names_path_and_recovery(self):
+        missing = self.root / "missing-source"
+        with patch.object(sys, "argv", ["meson_test.py", "--repo-root", str(missing)]):
+            with self.assertRaises(SystemExit) as caught:
+                meson_test.main()
+        message = str(caught.exception)
+        self.assertIn("Meson setup/build/test", message)
+        self.assertIn(str(missing), message)
+        self.assertIn("path/tool availability and permissions", message)
         self.assertEqual(self.calls, [])
 
 

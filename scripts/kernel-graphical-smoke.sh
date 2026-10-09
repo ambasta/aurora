@@ -20,15 +20,47 @@ source scripts/uefi-firmware.sh
 uefi_firmware_select
 source scripts/uefi-linker.sh
 uefi_linker_select
+[[ ! -L build && ! -L build/uefi && ! -L build/graphical-smoke ]] || {
+    echo 'FAIL: symlink in shared graphical build paths' >&2; exit 2;
+}
 mkdir -p build/graphical-smoke
 window=$(mktemp -d "$PWD/build/graphical-smoke/run-XXXXXX")
 echo "Graphical smoke files: $window"
+restore_shared_image() {
+    local status=$? restored
+    trap - EXIT INT TERM
+    set +e
+    {
+        if [[ -L build || -L build/uefi ]]; then
+            echo 'FAIL: symlink in shared UEFI restoration path' >&2; false
+        else
+            if [[ -e build/uefi ]]; then mv -- build/uefi "$window/last-build"; fi &&
+                UEFI_MODE=normal ./scripts/kernel-uefi-build.sh
+        fi
+    } >"$window/build-normal-restoration.log" 2>&1
+    restored=$?
+    if (( restored != 0 )); then
+        echo "FAIL: shared normal UEFI image restoration exited $restored; see $window/build-normal-restoration.log" >&2
+        if (( status == 0 )); then status=$restored; fi
+    else
+        echo "PASS: shared normal UEFI image restored; see $window/build-normal-restoration.log"
+    fi
+    exit "$status"
+}
+# Only started builds need restoration. Keep children synchronous so a handled
+# interruption cannot rebuild over a still-running builder or abandon a guest.
+trap restore_shared_image EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# Admission inventories the whole object directory: retain old/partial outputs
+# outside it rather than mixing stale graphical objects into a normal rebuild.
+if [[ -e build/uefi ]]; then mv -- build/uefi "$window/previous-build"; fi
 for mode in normal graphical-console graphical-console-capture; do
-    UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh >"$window/build-$mode.log" 2>&1 || {
-        echo "FAIL: $mode build/admission; see $window/build-$mode.log" >&2; exit 1;
-    }
+    if UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh >"$window/build-$mode.log" 2>&1; then :; else
+        status=$?; echo "FAIL: $mode build/admission exited $status; see $window/build-$mode.log" >&2; exit "$status"
+    fi
     python3 -B scripts/kernel_graphical_smoke.py --stage "$mode" --images "$window/images"
 done
 [[ ${1:-} != --build-only ]] || exit 0
-exec python3 -B scripts/kernel_graphical_smoke.py --images "$window/images" --evidence "$window/guests" \
+python3 -B scripts/kernel_graphical_smoke.py --images "$window/images" --evidence "$window/guests" \
     "$qemu" "$UEFI_FIRMWARE_COMBINED" "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}"

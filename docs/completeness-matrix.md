@@ -11,7 +11,8 @@ canonical Meson graph. Every merge or release requires final integrated GCC 16
 GCC 14 is optional targeted compatibility evidence, not a routine gate.
 Make is a convenience entrypoint to the same incremental graph; a second full
 Make aggregate is not required. Fresh explicit build directories configure
-automatically, and existing directories must match their toolchain and flags.
+automatically; compiler/flag changes select separate defaults, while changed
+backend/runtime identities reject reuse and require a fresh directory.
 Package Manifest/Graph command receipts distinguish actual compiler and native
 CPU/wall cost under fixed watchdogs; see the [test contract](developer-test-contract.md).
 Public protected-console commands build and check local artifacts; separately
@@ -20,6 +21,10 @@ Kernel host portability pins freestanding CET/string-operation policy and binds
 stack metadata through complete source locations and exact object symbols; see
 the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
 This mechanism does not transfer qualification between compiler or distro builds.
+Shared read-only `testq` and register-only `bts` stack effects replace Event-specific
+mask/offset/register guards; memory bit-set forms remain unsupported, and
+operand, flag and carrier controls do not establish field provenance or fresh
+image/guest qualification.
 The shared native harness retains complete per-command artifact accounting with
 a `scandir` traversal preserving stable-tree totals and failing closed on scan
 errors; compiler-free controls cover its accounting and error boundaries. This is no new native qualification or whole-suite speed claim;
@@ -45,7 +50,11 @@ The separate Event-intake draft adds a compiler-sealed Event session, a bounded
 Aurora poll/decode/report/acknowledge loop and an opt-in UEFI transport. Its
 [published checkpoint](iommu-dma-conformance.md) documents earlier focused hosted
 and denial-image results. This integration has no fresh final-source GCC 16, image
-or guest qualification; firmware ownership handoff remains unresolved. A separate
+or guest qualification. A narrow one-shot handoff implementation now retains
+validated firmware backing, rejects active command engines, clears only live FIS
+enables and applies exact command-only PCI reductions with readback. Its first
+production sizing attempts remain blocked by the unchanged payload cap; shared
+BSS packing and repeated-body factoring do not transfer old qualification. A separate
 `iommu-event-observe` build adds read-only firmware/AHCI snapshots with no linked
 Event producer, preserving production BME denial. A separately reviewed fresh
 stock/default-split-OVMF run reached equal AHCI samples with five FIS engines
@@ -54,8 +63,10 @@ samples and copied firmware-backing descriptors; its source and hosted controls
 do not establish fresh guest results or permission to stop controllers.
 
 The current-source `make smoke-graphical-console` runner now retains fresh
-production/capture pixel evidence and an actual final normal restoration. Its
-compiler-free controls are registered in ordinary/optimized Meson `dev`/`full`;
+production/capture pixel evidence and an actual final normal restoration. The
+shell also restores the shared `build/uefi` normal image after build-only,
+success, failure and handled interruption, preserving failure status and logs.
+Its compiler-free controls are registered in ordinary/optimized Meson `dev`/`full`;
 implementation and registration alone do not establish fresh guest or aggregate passes.
 
 The [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)

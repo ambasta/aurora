@@ -1,4 +1,4 @@
-#include "../kernel/uefi/event-profile-policy.hpp"
+#include "../kernel/uefi/event-handoff-policy.hpp"
 #include "../kernel/uefi/ivrs-policy.hpp"
 #include <algorithm>
 #include <cstdlib>
@@ -558,7 +558,187 @@ auto precondition_observation_controls() -> void {
     check(described && described->type == 11 && described->attributes == 1);
 }
 
+auto handoff_controls() -> void {
+    static_assert(!std::is_copy_constructible_v<EventHandoff>);
+    const auto ivrs = EventIvrs::parse_qemu_default(table(), 40);
+    auto facts = inventory();
+    for (auto &fact : facts)
+        put(fact.header, 4, 7, 2);
+    const auto original = facts;
+    const auto caps = capabilities();
+    const std::array<EventBarFact, 2> bars{bar(0x20, 0, 0xc0000000, 0x100000), bar(0xfa, 5, 0xc1000000, 0x1000)};
+    const auto root = PciResources::parse_edk2_root(root_bytes(), 40);
+    auto map = memory();
+    const auto retained = memory(4, 0x800000, 2, 15);
+    map.insert(map.end(), retained.begin(), retained.end());
+    const auto resources = EventResources::admit_qemu_default(*ivrs,
+                                                              facts,
+                                                              facts,
+                                                              caps,
+                                                              caps,
+                                                              bars,
+                                                              *root,
+                                                              0,
+                                                              map,
+                                                              40,
+                                                              0x400000,
+                                                              0xfee00000,
+                                                              EventResources::Purpose::firmware_handoff);
+    const auto observation = EventResources::admit_qemu_default(*ivrs,
+                                                                facts,
+                                                                facts,
+                                                                caps,
+                                                                caps,
+                                                                bars,
+                                                                *root,
+                                                                0,
+                                                                map,
+                                                                40,
+                                                                0x400000,
+                                                                0xfee00000,
+                                                                EventResources::Purpose::read_only_observation);
+    check(resources && observation);
+    auto initial = ahci();
+    for (unsigned port = 0; port < 6; ++port) {
+        initial.ports[port].command = port == 0 ? 6 : 0x4014;
+        initial.ports[port].task_file = 0x50;
+        initial.ports[port].command_list = 0x800000;
+        initial.ports[port].received_fis = 0x801000 + port * 256;
+    }
+    const EventEduObservation idle{};
+    const auto prepare = [&](const EventAhciFacts &first,
+                             const EventAhciFacts &second,
+                             const EventEduObservation &edu,
+                             const Buffer &memory) {
+        return EventHandoff::prepare(*resources, facts, first, second, edu, memory, 40, 0x400000);
+    };
+    check(prepare(initial, initial, idle, map).has_value());
+    check(!EventHandoff::prepare(*observation, facts, initial, initial, idle, map, 40, 0x400000));
+    check(!EventAdmission::admit(*resources, ahci()));
+    for (unsigned port = 0; port < 6; ++port) {
+        for (unsigned field = 0; field < 6; ++field) {
+            auto changed = initial;
+            auto &p = changed.ports[port];
+            if (field == 0)
+                p.command |= 1; // ST, even with CI zero, denies.
+            if (field == 1)
+                p.command |= 0x8000; // CR activity denies.
+            if (field == 2)
+                p.command_issue = 1;
+            if (field == 3)
+                p.sata_active = 1;
+            if (field == 4)
+                p.task_file |= 0x80;
+            if (field == 5)
+                p.received_fis += 256;
+            check(!prepare(changed, changed, idle, map));
+            check(!prepare(initial, changed, idle, map));
+        }
+    }
+    for (unsigned field = 0; field < 3; ++field) {
+        auto changed = idle;
+        if (field == 0)
+            changed.samples[0].command = 1;
+        if (field == 1)
+            changed.samples[0].status = 1;
+        if (field == 2)
+            changed.samples[0].irq = 1;
+        check(!prepare(initial, initial, changed, map));
+    }
+    for (unsigned type : {0U, 1U, 2U, 3U, 6U, 7U, 9U, 10U, 11U}) {
+        auto changed = map;
+        put(changed, 40, type, 4);
+        check(!prepare(initial, initial, idle, changed));
+    }
+    for (auto attributes : {0ULL, 8ULL, 0x800fULL, 0x800000000000000fULL}) {
+        auto changed = map;
+        put(changed, 72, attributes);
+        check(!prepare(initial, initial, idle, changed));
+    }
+    // Synthetic model below is not raw hardware evidence. Every injected I/O
+    // failure is followed by same-object and fresh-object retry attempts.
+    const auto run = [&](unsigned fail_at, bool timeout, unsigned corrupt) {
+        auto model = initial;
+        auto pci_model = facts;
+        auto attempt = prepare(initial, initial, idle, map);
+        check(attempt.has_value());
+        bool latch = false;
+        unsigned operations = 0, ahci_writes = 0, pci_writes = 0;
+        const auto fail = [&] {
+            return ++operations == fail_at;
+        };
+        const auto read = [&]() -> std::optional<EventAhciFacts> {
+            if (fail())
+                return std::nullopt;
+            auto copy = model;
+            if (corrupt == 1 && ahci_writes)
+                copy.ports[0].task_file ^= 1;
+            if (corrupt == 2 && ahci_writes)
+                copy.ports[0].command_list += 1024;
+            if (corrupt == 3 && ahci_writes)
+                copy.global_control ^= 2;
+            return copy;
+        };
+        const auto write = [&](unsigned port, unsigned command) {
+            if (fail())
+                return false;
+            check(port != 0 && command == 0x4004 && model.ports[port].command == 0x4014);
+            check(pci_writes == 0);
+            ++ahci_writes;
+            model.ports[port].command = timeout ? command : command & ~0x4000U;
+            return true;
+        };
+        const auto edu_read = [&]() -> std::optional<EventEduObservation> {
+            if (fail())
+                return std::nullopt;
+            auto value = idle;
+            if (corrupt == 4 && pci_writes)
+                value.samples[0].irq = 1;
+            return value;
+        };
+        const auto reduce = [&](const EventPciFact &fact,
+                                unsigned command) -> std::optional<std::array<std::byte, 64>> {
+            if (fail())
+                return std::nullopt;
+            check(ahci_writes == 5 && model.quiescent(model.base));
+            for (auto &now : pci_model) {
+                if (now.requester() != fact.requester())
+                    continue;
+                check(now.same(fact));
+                check(command == (fact.requester() == 8 ? 7U : fact.requester() == 0x20 ? 2U : 3U));
+                if (command != 7)
+                    ++pci_writes;
+                put(now.header, 4, command, 2);
+                if (corrupt == 5)
+                    now.header[6] ^= std::byte{1}; // Any status change denies.
+                return now.header;
+            }
+            return std::nullopt;
+        };
+        const auto result = attempt->complete(latch, read, write, edu_read, reduce);
+        check(result.has_value() == (fail_at == 0 && !timeout && corrupt == 0));
+        check(latch);
+        const auto before_retry = operations;
+        check(!attempt->complete(latch, read, write, edu_read, reduce));
+        auto fresh = prepare(initial, initial, idle, map);
+        check(fresh && !fresh->complete(latch, read, write, edu_read, reduce));
+        check(operations == before_retry);
+        for (unsigned i = 0; i < facts.size(); ++i)
+            check(facts[i].same(original[i]));
+        if (timeout || (corrupt >= 1 && corrupt <= 3))
+            check(pci_writes == 0);
+        return operations;
+    };
+    const auto operations = run(0, false, 0);
+    for (unsigned failure = 1; failure <= operations; ++failure)
+        run(failure, false, 0);
+    run(0, true, 0);
+    for (unsigned corrupt = 1; corrupt <= 5; ++corrupt)
+        run(0, false, corrupt);
+}
+
 auto main() -> int {
+    handoff_controls();
     precondition_observation_controls();
     observation_controls();
     parser_controls();

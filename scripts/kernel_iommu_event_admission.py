@@ -242,20 +242,9 @@ def verify_stack_budgets(normal, consumer, fault):
     return reserve
 
 
-def verify_scalar_instruction(row, payload):
+def verify_scalar_instruction(row):
     if row.op in ("lfence", "mfence", "pause"):
         need(not row.args, "Unexpected Event fence operands")
-    if row.op == "bts":
-        need(
-            row.args == "$0x3b,%rax" and payload[row.address : row.next] == bytes.fromhex("480fbae83b"),
-            "Unreviewed Event bit-set operand or encoding",
-        )
-    if row.op == "testq":
-        need(
-            row.args == "$0xfffffffffffffffd,0x8(%rsp)"
-            and payload[row.address : row.next] == bytes.fromhex("48f7442408fdffffff"),
-            "Unreviewed Event qword read-only test",
-        )
 
 
 def backing_evidence(linked, directory):
@@ -324,11 +313,10 @@ def stack_evidence(directory, mode):
     # dataflow checks. Fences and PAUSE have no operands or implicit stack effect.
     decoder.NEUTRAL |= frozenset(
         (
-            "sar movswl movzwl movw sal setg setge cmovb cmovg cmovge testb testl testw "
-            "cmovs bswap lfence mfence pause bts testq"
+            "sar movswl movzwl movw sal setg setge cmovb cmovg cmovge testb testl testw cmovs bswap lfence mfence pause"
         ).split()
     )
-    decoder.READ_ONLY |= frozenset(("testb", "testl", "testw", "testq"))
+    decoder.READ_ONLY |= frozenset(("testb", "testl", "testw"))
     decoder.PRESERVE_FLAGS |= frozenset(("lfence", "mfence", "pause"))
     linked = decoder.Elf(directory / "payload.elf")
     need(linked.type == 2, "Expected linked Event executable")
@@ -337,13 +325,12 @@ def stack_evidence(directory, mode):
         "Unresolved Event payload",
     )
     code, disassembly = decoder.disassemble(directory / "payload.elf")
-    payload = (directory / "payload.bin").read_bytes()
     for row in code.values():
         need(
             row.op not in ("sti", "iret", "iretq", "syscall", "sysenter", "sysexit", "sysret", "int", "int3"),
             "Event image enables IRQs or crosses a user/interrupt boundary",
         )
-        verify_scalar_instruction(row, payload)
+        verify_scalar_instruction(row)
     frames, associations = decoder.cpp_frames(directory, linked)
     language, memory = (decoder.Elf(directory / (name + ".o")) for name in ("language", "memory"))
     for obj in (language, memory):

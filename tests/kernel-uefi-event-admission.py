@@ -319,22 +319,11 @@ class EventAdmission(unittest.TestCase):
             with self.assertRaises(ValueError):
                 admission.backing_evidence(original, Path("unused"))
 
-    def test_exact_extra_scalar_opcodes(self):
-        for op, operand, raw in (
-            ("bts", "$0x3b,%rax", "480fbae83b"),
-            ("testq", "$0xfffffffffffffffd,0x8(%rsp)", "48f7442408fdffffff"),
-        ):
-            encoded = bytes.fromhex(raw)
-            row = decoder.Instruction(0, len(encoded), op, operand)
-            admission.verify_scalar_instruction(row, encoded)
-            for changed in (
-                decoder.Instruction(0, len(encoded), op, operand.replace("%rax", "%rsp").replace("0x8", "0x10")),
-                decoder.Instruction(0, len(encoded) - 1, op, operand),
-            ):
-                with self.assertRaises(ValueError):
-                    admission.verify_scalar_instruction(changed, encoded)
+    def test_fence_operands(self):
+        for op in ("lfence", "mfence", "pause"):
+            admission.verify_scalar_instruction(decoder.Instruction(0, 1, op, ""))
             with self.assertRaises(ValueError):
-                admission.verify_scalar_instruction(row, b"\0" * len(encoded))
+                admission.verify_scalar_instruction(decoder.Instruction(0, 1, op, "%rax"))
 
     def test_review_is_external_and_json_is_unambiguous(self):
         with tempfile.TemporaryDirectory(prefix="event-admission-") as directory:

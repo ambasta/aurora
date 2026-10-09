@@ -34,7 +34,8 @@ DTE, mode-1 table, command, data and event pages for the whole boot; verifies ac
 writable NX mappings; and opens operation-local MMIO windows. It requires exact
 default-model IVRS/IOAPIC bytes, complete pre/post-firmware PCI facts, EDU BAR
 ownership, other endpoint bus mastering disabled, and AHCI engines idle. It does
-not stop or reset an unsuitable firmware controller to force admission.
+not reset an unsuitable controller to force admission. The newly implemented
+firmware handoff below is a separate one-shot boundary before Event admission.
 
 The denial image passes independent linked-image and stack review: 11,776 bytes
 including its exception reserve fit the 15,360-byte admission cap within the
@@ -101,6 +102,46 @@ Any future stop must first establish equal idle CI/SACT/TFD samples, ordinary-RA
 firmware backing that remains retained, and an exact reviewed command reduction
 with readback. An attempt limit would not establish the specification's timed
 wait or physical drain. That transition is not implemented by this checkpoint.
+
+### Narrow firmware handoff source checkpoint
+
+The handoff now accepts only the freshly observed six-function Q35 tuple with
+all initial command words 7. It requires equal full AHCI samples, ST/CR already
+zero, CI/SACT zero and TFD exactly 0x50; active command engines remain denied.
+Two equal EDU DMA-command/status/IRQ samples must be zero. The shared command
+list and six adjacent FIS extents must occupy two distinct, complete pages in
+copied BootServicesData descriptors with exactly cache-capability attributes
+0x0f. Both pages remain outside the arena and every admitted MMIO aperture.
+Aurora's fixed allocator only uses arena pages, so these firmware pages are
+never mapped as CPU data, overwritten, enrolled for allocation or reclaimed,
+including on partial failure. Descriptor checks do not establish DMA drain.
+
+Only FRE is cleared, preserving every other writable CMD bit; each bounded FR
+poll compares all other AHCI fields with the prevalidated snapshot. Any timeout,
+changed field or access failure denies further transition. There is no ST-stop,
+reset, fallback or rollback. The 1,024-poll limit counts attempts, not a timed
+specification wait. A boot-lifetime latch is consumed before transition I/O;
+neither the same nor a fresh local policy object can retry after failure.
+
+After all FIS engines stop, command-only 16-bit PCI writes reduce host, LPC,
+AHCI and SMBus from 7 to 3, and EDU from 7 to 2. The IOMMU command remains 7.
+This preserves IO/MEM decode except unused EDU IO decode. The
+[model's generic PCI command handling](https://github.com/qemu/qemu/blob/98f88efe8f07067667b8d9b1a5ce9551d34036c1/hw/pci/pci.c)
+gates each function's bus-master address space; it does not cancel or drain
+operations, and LPC BME does not gate legacy ISA DMA. Every complete header
+must read back with only its authorized command-word change. Original firmware
+copies stay immutable, EDU zero state is checked around its reduction, and all
+headers/caps and AHCI fields are rechecked before the one-shot post-state
+admission is used.
+
+Focused hosted controls exercise successful ordering, each read/write failure,
+FR timeout, unexpected AHCI/PCI changes, unsuitable backing and retry refusal.
+The first production builds exceed the unchanged 128 KiB bound; their failures
+remain preserved while repeated bodies are factored. A separate shared UEFI
+BSS alignment sort removes only padding and retains every section and alignment.
+Neither this source checkpoint nor stock observation results qualify a new
+patched-QEMU tuple, transition image or guest. Fresh image/stack and independent
+bounded-method review remain required before any transition execution.
 
 ## Mechanism and trust boundary
 

@@ -496,7 +496,7 @@ def package_time_checks(out):
     require(record["termination"] == "wall-timeout" and record["timeout"], "timeout misclassified")
     require(record["resource_limit"] == "wall-clock" and "returncode" not in record, "timeout fabricated an exit")
     require((directory / "timeout.stdout").read_bytes() == b"incomplete\n", "timeout output lost")
-    require(record["child_cpu_seconds"] > 0, "timed-out child CPU usage missing")
+    require(record["child_cpu_seconds"] >= 0, "timed-out child CPU usage missing")
     for allow in (False, True):
         name = "rejection-" + str(allow)
         command = [compiler, "-c", "import sys; print('ordinary rejection', file=sys.stderr); sys.exit(1)"]

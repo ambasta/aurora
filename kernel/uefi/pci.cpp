@@ -9,6 +9,9 @@
 #include "pci-policy.hpp"
 #ifdef AURORA_UEFI_IOMMU_EVENT
 #include "event-profile-policy.hpp"
+#if AURORA_IOMMU_EVENT_CASE != 4
+#include "event-handoff-policy.hpp"
+#endif
 #include "event-intake.hpp"
 #endif
 #ifdef AURORA_UEFI_IVRS
@@ -34,14 +37,14 @@ class EcamWindow final {
     WindowAuthority authority_;
     unsigned reads_{};
     unsigned revoked_{};
-    [[nodiscard]] auto begin(U64 page) -> std::optional<WindowTicket> {
+    [[nodiscard]] auto begin(U64 page, bool writable = false) -> std::optional<WindowTicket> {
         if (!slot_ || *slot_ != 0 || !aperture_.admits_page(page))
             return std::nullopt;
         auto ticket = authority_.acquire();
         if (!ticket)
             return std::nullopt;
         // PAT3 (PWT|PCD) was verified UC; supervisor, read-only, NX, nonglobal.
-        *slot_ = page | 1 | 8 | 16 | PageTables::nx;
+        *slot_ = page | 1 | 8 | 16 | PageTables::nx | (writable ? 2 : 0);
         asm volatile("invlpg (%0)" : : "r"(PageTables::window_address) : "memory");
         ++reads_;
         return ticket;
@@ -54,7 +57,7 @@ class EcamWindow final {
         ++revoked_;
         return *slot_ == 0 && authority_.revoke(ticket);
     }
-    [[nodiscard]] static auto snapshot() -> std::array<std::byte, 64> {
+    [[gnu::noinline, nodiscard]] static auto snapshot() -> std::array<std::byte, 64> {
         std::array<std::byte, 64> result{};
         // Naturally aligned configuration DWORD loads, restricted to standard header.
         for (unsigned offset = 0; offset < 64; offset += 4) {
@@ -101,6 +104,35 @@ public:
         if (!end(*ticket) || first != second)
             return std::nullopt;
         return first;
+    }
+#endif
+#if defined(AURORA_UEFI_IOMMU_EVENT) && AURORA_IOMMU_EVENT_CASE != 4
+    [[gnu::noinline, nodiscard]] auto reduce_event_command(const EventPciFact &before, unsigned command)
+        -> std::optional<std::array<std::byte, 64>> {
+        const auto rid = before.requester();
+        const auto page = aperture_.address(before.segment, before.bus, before.device, before.function);
+        if (!page || Bytes{before.header}.get(4, 2) != 7)
+            return std::nullopt;
+        if (rid == 8 && command == 7)
+            return read(*page); // Never write the IOMMU command.
+        if (!((rid == 0x20 && command == 2) ||
+              ((rid == 0 || rid == 0xf8 || rid == 0xfa || rid == 0xfb) && command == 3)))
+            return std::nullopt;
+        auto ticket = begin(*page, true);
+        if (!ticket)
+            return std::nullopt;
+        const auto first = snapshot(), second = snapshot();
+        if (first != before.header || second != before.header) {
+            (void)end(*ticket);
+            return std::nullopt;
+        }
+        // Command only. A DWORD store would also touch W1C PCI status.
+        *reinterpret_cast<volatile std::uint16_t *>(PageTables::window_address + 4) =
+            static_cast<std::uint16_t>(command);
+        const auto after = snapshot(), again = snapshot();
+        if (!end(*ticket) || after != again)
+            return std::nullopt;
+        return after;
     }
 #endif
     [[nodiscard]] auto probe_write() -> bool {
