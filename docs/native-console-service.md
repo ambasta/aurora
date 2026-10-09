@@ -4,9 +4,24 @@ The simple-UEFI console profile migrates the complete 64-byte editor,
 command parsing and human-facing presentation into one persistent Aurora entry
 frame. `examples/kernel-console-service.au` owns `Line64` for the entire session:
 private bytes, length, sticky rejection and CRLF state. It implements exact
-`help`, `status` and `exit`, echo, erase, empty/unknown/rejected lines and prompts.
+`help`, `status` and `exit`, one session-local RAM note, echo, erase,
+empty/unknown/rejected lines and prompts.
 The [sealed language service contract](../compiler/SERVICES.md) supplies only
 copied input observations and checked single-byte output.
+
+## Session-local RAM note
+
+Only simple UEFI supports `write note <text>` and `cat note`. The exact prefix
+`write note ` leaves at most 53 printable ASCII content bytes in a 64-byte line;
+its trailing space alone writes an empty note. `cat note` reports missing or
+prints the content and a newline. Accepted writes replace and clear the old
+suffix; malformed, overlong or UART-damaged input preserves the previous note.
+
+One invocation-local `BinaryBuffer64` owns the RAM-only note across idle waits
+and other commands. Exit or output failure ends its lifetime; a new invocation
+starts missing. This adds no disk access, persistence, heap or runtime authority,
+and claims no secure RAM erasure. Graphical commands stay unchanged. Fresh
+final-source qualification is required; historical results below do not cover it.
 
 ## Trusted boundary
 

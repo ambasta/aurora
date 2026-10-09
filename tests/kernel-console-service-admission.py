@@ -3,11 +3,13 @@
 
 from pathlib import Path
 import importlib.util
+from copy import deepcopy
 import json
 import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +25,45 @@ def body(operations):
 
 
 class Admission(unittest.TestCase):
+    def test_reflection_image_ownership_and_body_wiring(self):
+        names = ("aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s4_size")
+        symbols = [decoder.Symbol(name, index, 1, 1, 2) for index, name in enumerate(names)]
+        original = SimpleNamespace(functions={row.name: row for row in symbols}, symbols=symbols, relocations=[])
+        code = {row.address: decoder.Instruction(row.address, 1, "ret", "") for row in symbols}
+        with tempfile.TemporaryDirectory(prefix="reflection-image-") as directory:
+            root = Path(directory)
+            (root / "payload.bin").write_bytes(b"\xc3" * len(symbols))
+            objects = {"language.o": deepcopy(original), "payload.elf": deepcopy(original)}
+            fake = SimpleNamespace(Elf=lambda path: objects[path.name], disassemble=lambda path: (code, ""))
+            with (
+                patch.object(service.common, "load", return_value=fake),
+                patch.object(fake, "associate_object", create=True) as associate,
+                patch.object(service.common, "verify_reflection_body", return_value={}) as body_check,
+            ):
+                self.assertEqual(len(service.common.verify_reflection_image(root)), len(names))
+                self.assertEqual(associate.call_count, len(names))
+                self.assertEqual({call.args[1].name for call in body_check.call_args_list}, set(names))
+                for mutation in ("untyped", "missing", "foreign", "relocation"):
+                    objects = {"language.o": deepcopy(original), "payload.elf": deepcopy(original)}
+                    if mutation == "untyped":
+                        objects["language.o"].symbols.append(decoder.Symbol("__au_reflect_s5_size", 4, 1, 1, 0))
+                    elif mutation == "missing":
+                        objects["payload.elf"].symbols.pop()
+                    elif mutation == "foreign":
+                        objects["payload.elf"].symbols.append(decoder.Symbol("__au_reflect_s5_size", 4, 1, 1, 2))
+                    else:
+                        objects["language.o"].relocations = [(1, 0, 2, "foreign", 0)]
+                    with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                        service.common.verify_reflection_image(root)
+                objects = {"language.o": deepcopy(original), "payload.elf": deepcopy(original)}
+                associate.side_effect = ValueError("Object/link instruction mismatch")
+                with self.assertRaisesRegex(ValueError, "Object/link instruction mismatch"):
+                    service.common.verify_reflection_image(root)
+                associate.side_effect = None
+                body_check.side_effect = ValueError("Reflection operand is not an immediate scalar")
+                with self.assertRaisesRegex(ValueError, "Reflection operand"):
+                    service.common.verify_reflection_image(root)
+
     def test_unchanged_whole_stack_and_separate_irq_reserve(self):
         service.verify_stack_budgets(6912, 720, 639, 159)
         service.verify_stack_budgets(15201, 720, 639, 159)

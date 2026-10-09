@@ -363,6 +363,16 @@ class ImagePolicy(unittest.TestCase):
         with self.assertRaises(ValueError):
             policy.profile_selection(fixture["symbols"], {"console", "language"}, True)
 
+    def test_serial_reflection_names_remain_closed(self):
+        for name, accepted in (("__au_reflect_s3_size", True), ("__au_reflect_s3_put", False)):
+            fixture = serial()
+            fixture["language_symbols"] += defined(name)
+            if accepted:
+                policy.console_service_policy(**fixture)
+            else:
+                with self.assertRaises(ValueError):
+                    policy.console_service_policy(**fixture)
+
     def test_framebuffer_baseline_and_wrong_flag(self):
         symbols = defined("__au_runtime_display_entry") + defined("__au_runtime_display_value") + defined(PIXEL)
         objects = {"payload", "language", "framebuffer"}

@@ -1,4 +1,6 @@
 module kernel_console_service;
+import std.binary_buffer;
+import std.binary;
 
 // The editor, command policy and presentation live for one Aurora invocation.
 // Only the leading sealed borrow can perform console transport operations.
@@ -19,6 +21,7 @@ class Line64 {
     i64 length;
     bool rejected;
     bool after_cr;
+    bool submitted;
 
     auto finish() -> ConsoleEvent {
         ConsoleEvent event = ConsoleEvent::unknown;
@@ -46,24 +49,48 @@ class Line64 {
                 }
             }
         }
-        i64 index = 0;
-        while (index < 64) {
-            bytes[index] = '\0';
-            index = index + 1;
-        }
-        length = 0;
-        rejected = false;
+        submitted = true;
         return event;
     }
+
+    auto clear_submission() -> bool {
+        if (submitted) {
+            i64 index = 0;
+            while (index < 64) {
+                bytes[index] = '\0';
+                index = index + 1;
+            }
+            length = 0;
+            rejected = false;
+            submitted = false;
+        }
+        return true;
+    }
 public:
-    Line64() : bytes{}, length(0), rejected(false), after_cr(false) {
+    Line64() : bytes{}, length(0), rejected(false), after_cr(false), submitted(false) {
     }
 
+    // A completed line is readable only until the next byte or damage sample.
+    // Copies own their bytes; no view of the editor's fields can escape.
+    auto submission_size() const -> i64 {
+        if (!submitted || rejected) {
+            return -1;
+        }
+        return length;
+    }
+    auto submission_byte(i64 index) const -> u8 {
+        if (!submitted || rejected || index < 0 || index >= length) {
+            return '\0';
+        }
+        return bytes[index];
+    }
     auto reject() -> bool {
+        clear_submission();
         rejected = true;
         return true;
     }
     auto consume(u8 byte) -> ConsoleEvent {
+        clear_submission();
         const bool suppressed_lf = after_cr && byte == '\n';
         after_cr = byte == '\r';
         if (suppressed_lf) {
@@ -90,6 +117,59 @@ public:
         bytes[length] = byte;
         length = length + 1;
         return ConsoleEvent::echo;
+    }
+};
+
+// One file, owned by this invocation only. No device, disk or allocator access.
+enum class NoteEvent { unknown, written, read, missing };
+
+class SessionNote {
+    std::BinaryBuffer64 bytes;
+    i64 length;
+public:
+    SessionNote(std::BinaryBuffer64 empty) : bytes(empty), length(-1) {
+    }
+
+    auto size() const -> i64 {
+        return length;
+    }
+    auto at(i64 index) const -> u8 {
+        return bytes.at(index);
+    }
+    auto submit(std::BinaryBuffer64 command, i64 count) -> NoteEvent {
+        if (count == 8) {
+            if (command.at(0) == 'c' && command.at(1) == 'a' && command.at(2) == 't'
+                && command.at(3) == ' ' && command.at(4) == 'n' && command.at(5) == 'o'
+                && command.at(6) == 't' && command.at(7) == 'e') {
+                if (length < 0) {
+                    return NoteEvent::missing;
+                }
+                return NoteEvent::read;
+            }
+        }
+        if (count < 11 || count > 64) {
+            return NoteEvent::unknown;
+        }
+        if (command.at(0) != 'w' || command.at(1) != 'r' || command.at(2) != 'i'
+            || command.at(3) != 't' || command.at(4) != 'e' || command.at(5) != ' '
+            || command.at(6) != 'n' || command.at(7) != 'o' || command.at(8) != 't'
+            || command.at(9) != 'e' || command.at(10) != ' ') {
+            return NoteEvent::unknown;
+        }
+        // Rejected input never reaches here. Replace all bytes, including the
+        // unused suffix, only after the complete command has been accepted.
+        const i64 content_size = count - 11;
+        i64 index = 0;
+        while (index < 64) {
+            u8 byte = '\0';
+            if (index < content_size) {
+                byte = command.at(index + 11);
+            }
+            bytes.write_u8(index, byte);
+            index = index + 1;
+        }
+        length = content_size;
+        return NoteEvent::written;
     }
 };
 
@@ -125,7 +205,7 @@ auto show_erased(builtin::ConsoleSession& session) -> bool {
 }
 
 auto show_help(builtin::ConsoleSession& session) -> bool {
-    array<u8, 81> text = "help    Show commands\r\nstatus  Show boot state\r\nexit    Close this QEMU session\r\n";
+    array<u8, 190> text = "help    Show commands\r\nstatus  Show boot state\r\nwrite note <text>  Replace RAM-only note (max 53 bytes)\r\ncat note          Read RAM-only note\r\nexit    Close this QEMU session; note is lost\r\n";
     return emit_text(session, borrow_bytes(text));
 }
 
@@ -144,6 +224,16 @@ auto show_rejected(builtin::ConsoleSession& session) -> bool {
     return emit_text(session, borrow_bytes(text));
 }
 
+auto show_note_written(builtin::ConsoleSession& session) -> bool {
+    array<u8, 42> text = "note: RAM-only; lost when session exits.\r\n";
+    return emit_text(session, borrow_bytes(text));
+}
+
+auto show_note_missing(builtin::ConsoleSession& session) -> bool {
+    array<u8, 29> text = "note: not found (RAM-only).\r\n";
+    return emit_text(session, borrow_bytes(text));
+}
+
 auto show_exit(builtin::ConsoleSession& session) -> bool {
     array<u8, 21> text = "AURORA_CONSOLE_EXIT\r\n";
     return emit_text(session, borrow_bytes(text));
@@ -151,6 +241,8 @@ auto show_exit(builtin::ConsoleSession& session) -> bool {
 
 auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
     Line64 line = Line64();
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    SessionNote note = SessionNote(empty);
     if (!show_ready(session)) {
         return builtin::ConsoleCompletion::output_failure;
     }
@@ -178,7 +270,35 @@ auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleComple
                                     okay = show_status(session);
                                 } else {
                                     if (event == ConsoleEvent::unknown) {
-                                        okay = show_unknown(session);
+                                        std::BinaryBuffer64 command = std::BinaryBuffer64();
+                                        const i64 count = line.submission_size();
+                                        i64 copied = 0;
+                                        while (copied < count) {
+                                            command.write_u8(copied, line.submission_byte(copied));
+                                            copied = copied + 1;
+                                        }
+                                        const NoteEvent action = note.submit(command, count);
+                                        if (action == NoteEvent::written) {
+                                            okay = show_note_written(session);
+                                        } else {
+                                            if (action == NoteEvent::missing) {
+                                                okay = show_note_missing(session);
+                                            } else {
+                                                if (action == NoteEvent::read) {
+                                                    i64 index = 0;
+                                                    while (okay && index < note.size()) {
+                                                        const u8 byte = note.at(index);
+                                                        okay = session.put(byte) == builtin::ConsolePutResult::success;
+                                                        index = index + 1;
+                                                    }
+                                                    if (okay) {
+                                                        okay = show_newline(session);
+                                                    }
+                                                } else {
+                                                    okay = show_unknown(session);
+                                                }
+                                            }
+                                        }
                                     } else {
                                         if (event == ConsoleEvent::rejected) {
                                             okay = show_rejected(session);

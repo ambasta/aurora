@@ -27,7 +27,9 @@ def main():
     (ROOT / "build").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="console-service-", dir=ROOT / "build"))
     assembly = work / "console.s"
-    result = run([compiler, ROOT / "examples/kernel-console-service.au", "-o", assembly])
+    result = run(
+        [compiler, "--module-root", ROOT / "library", ROOT / "examples/kernel-console-service.au", "-o", assembly]
+    )
     require(result.returncode == 0, result.stderr.decode())
     text = assembly.read_text()
     require("__au_runtime_bytes_" not in text, "service graph unexpectedly requires owning-byte runtime")
@@ -54,9 +56,9 @@ def main():
     ready = b"AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\r\naurora> "
     exit_output = b"exit\r\nAURORA_CONSOLE_EXIT\r\n"
 
-    def execute(samples, limit=2**64 - 1, malformed=0):
+    def execute(samples, limit=2**64 - 1, malformed=0, sessions=1):
         data = "".join(f"{present} {byte} {damage}\n" for present, byte, damage in samples).encode()
-        return run([binary, limit, malformed], input=data)
+        return run([binary, limit, malformed, sessions], input=data)
 
     def samples(value):
         return [(1, byte, 0) for byte in value]
@@ -85,6 +87,66 @@ def main():
         require(result.returncode == 0 and result.stdout.count(b"Line rejected:") == 2, "damage delimiter propagation")
     result = execute([(0, 0, 1)] + samples(b"exit\nexit\n"))
     require(result.returncode == 0 and result.stdout.count(b"Line rejected:") == 1, "absent damage ignored")
+    # The real generated service owns one bounded RAM-only note per invocation.
+    written = b"note: RAM-only; lost when session exits.\r\n"
+    missing = b"note: not found (RAM-only).\r\n"
+
+    def readback(content):
+        return b"cat note\r\n" + content + b"\r\naurora> "
+
+    result = execute(samples(b"cat note\nexit\n"))
+    require(result.returncode == 0 and missing in result.stdout, "fresh note should be missing")
+    script = samples(b"write note first value\r\n") + [(0, 0, 0)] * 20
+    script += samples(b"status\nhelp\nunknown\n\ncat note\ncat note\nexit\n")
+    result = execute(script)
+    require(result.returncode == 0 and result.stdout.count(written) == 1, "write replayed after CRLF/idle/commands")
+    require(result.stdout.count(readback(b"first value")) == 2, "note did not survive idle/other commands")
+    for content in (b"", b"x", b" " * 53, b"!" * 53, b"a b "):
+        script = samples(b"write note longer old suffix\nwrite note " + content + b"\ncat note\nexit\n")
+        result = execute(script)
+        require(result.returncode == 0 and readback(content) in result.stdout, f"exact replacement {content!r}")
+        require(result.stdout.count(written) == 2, "accepted write count changed")
+    malformed_writes = (
+        b"write note",
+        b"write notes new",
+        b"write noteX new",
+        b"write  note new",
+        b"Write note new",
+        b"write note " + b"x" * 54,
+        b"write note " + b"x" * 54 + b"\b",
+        b"write note new\x00",
+        b"write note new\xff",
+        b"write note new\x1b",
+    )
+    for value in malformed_writes:
+        result = execute(samples(b"write note saved\n" + value + b"\ncat note\nexit\n"))
+        require(result.returncode == 0 and readback(b"saved") in result.stdout, f"bad write mutated note: {value!r}")
+        require(result.stdout.count(written) == 1, "bad write was acknowledged")
+    for damage in ([(0, 0, 1)], [(1, ord("x"), 1)], [(1, 10, 1)], [(1, 13, 1)]):
+        script = samples(b"write note saved\nwrite note replacement") + damage
+        script += samples(b"\ncat note\nexit\n")
+        result = execute(script)
+        require(result.returncode == 0 and readback(b"saved") in result.stdout, "UART damage mutated note")
+        require(result.stdout.count(written) == 1, "damaged write was acknowledged")
+    script = samples(b"write note saved\r") + [(1, 10, 1)]
+    script += samples(b"write note replacement\n\ncat note\nexit\n")
+    result = execute(script)
+    require(result.returncode == 0 and readback(b"saved") in result.stdout, "damaged suppressed LF lost rejection")
+    require(result.stdout.count(written) == 1, "damage or empty line replayed a write")
+    result = execute(samples(b"write notf\be edited\ncat note\nexit\n"))
+    require(result.returncode == 0 and readback(b"edited") in result.stdout, "edited write failed")
+    result = execute(samples(b"write note secret\nexit\ncat note\nexit\n"), sessions=2)
+    require(result.returncode == 0 and result.stdout.count(ready) == 2, "second invocation did not run")
+    require(result.stdout.count(missing) == 1, "note survived session exit in the same process")
+    note_script = samples(b"cat note\nwrite note abc\ncat note\nwrite note \ncat note\nexit\n")
+    note_normal = execute(note_script)
+    require(note_normal.returncode == 0, "note output baseline failed")
+    for position in range(len(note_normal.stdout)):
+        result = execute(note_script, position)
+        require(
+            result.returncode == 1 and result.stdout == note_normal.stdout[:position],
+            f"note output timeout retried or changed prefix at {position}",
+        )
     for position in range(len(normal.stdout)):
         result = execute(samples(b"help\r\nstatus\nexit\n"), position)
         require(
@@ -297,6 +359,7 @@ def main():
         require(output.read_bytes() == b"previous output\x00\xff", f"{name}: damaged prior output")
     print(
         f"PASS console service: generated editor, exhaustive rejected bytes, {len(normal.stdout)} timeout prefixes, "
+        f"RAM-note lifetime/replacement/rejection and {len(note_normal.stdout)} note timeout prefixes, "
         f"canonical host reports and {len(negative)} source rejections; evidence {work}"
     )
 

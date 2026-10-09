@@ -52,6 +52,138 @@ def load(name, path):
     return module
 
 
+def is_reflection_helper(name):
+    return re.fullmatch(r"(?:aurora_reflect_|__au_reflect_s[1-9][0-9]*_)(?:size|field_count)", name) is not None
+
+
+def verify_reflection_body(decoder, symbol, rows, payload):
+    """Closed constant lookup: exact bytes, complete coverage, no authority/memory."""
+    need(
+        is_reflection_helper(symbol.name) and rows and symbol.address >= 0 and symbol.size > 0,
+        "Unknown or empty reflection helper",
+    )
+    cursor = symbol.address
+    for row in rows:
+        need(row.address == cursor and row.size > 0, "Reflection instruction coverage gap/overlap")
+        cursor += row.size
+    need(cursor == symbol.address + symbol.size <= len(payload), "Reflection extent/coverage mismatch")
+
+    def raw(row):
+        return payload[row.address : row.address + row.size]
+
+    def immediate(row, op, register):
+        match = re.fullmatch(r"\$(0x[0-9a-f]+|[0-9]+),%" + register, row.args)
+        need(row.op == op and match, "Reflection operand is not an immediate scalar")
+        value = int(match[1], 0)
+        need(0 <= value <= 0x7FFFFFFF, "Reflection scalar exceeds closed imm32 range")
+        if op == "cmp":
+            expected = [bytes.fromhex("4883ff") + bytes([value])] if value <= 127 else []
+            expected += [bytes.fromhex("4881ff") + value.to_bytes(4, "little")]
+        else:
+            expected = [bytes.fromhex("48c7c0") + value.to_bytes(4, "little")]
+        need(raw(row) in expected, "Reflection immediate opcode/bytes mismatch")
+        return value
+
+    index, keys, targets = 0, [], []
+    while index < len(rows) and rows[index].op == "cmp":
+        value = immediate(rows[index], "cmp", "rdi")
+        need(value not in keys and index + 1 < len(rows), "Duplicate/truncated reflection comparison")
+        branch = rows[index + 1]
+        need(branch.op == "je", "Reflection comparison must have an equality branch")
+        target = decoder.target_of(branch)
+        branch_bytes = raw(branch)
+        if branch.size == 6 and branch_bytes[:2] == bytes.fromhex("0f84"):
+            displacement = int.from_bytes(branch_bytes[2:], "little", signed=True)
+        elif branch.size == 2 and branch_bytes[:1] == b"\x74":
+            displacement = int.from_bytes(branch_bytes[1:], "little", signed=True)
+        else:
+            raise ValueError("Reflection equality-branch opcode/bytes mismatch")
+        need(
+            type(target) is int
+            and target == branch.address + branch.size + displacement
+            and target > branch.address
+            and target not in targets,
+            "Reflection external/backward/duplicate or misdecoded branch",
+        )
+        keys.append(value)
+        targets.append(target)
+        index += 2
+    need(keys, "Reflection helper lacks a closed lookup ladder")
+    arms = []
+    while index < len(rows):
+        row = rows[index]
+        arms.append(row.address)
+        if row.op == "ud2":
+            need(not row.args and raw(row) == bytes.fromhex("0f0b"), "Reflection trap bytes/operands mismatch")
+            index += 1
+            continue
+        if row.op == "xor":
+            need(
+                row.args == "%rax,%rax" and raw(row) == bytes.fromhex("4831c0"),
+                "Reflection zero return must be exact register self-zeroing",
+            )
+        else:
+            immediate(row, "mov", "rax")
+        need(
+            index + 1 < len(rows)
+            and rows[index + 1].op == "ret"
+            and not rows[index + 1].args
+            and raw(rows[index + 1]) == b"\xc3",
+            "Reflection return arm must terminate exactly",
+        )
+        index += 2
+    need(
+        len(arms) == len(targets) + 1 and targets == arms[1:],
+        "Reflection branches must cover only complete internal return arms",
+    )
+    return dict(
+        symbol=symbol.name,
+        address=symbol.address,
+        bytes=symbol.size,
+        cases=len(keys),
+        arms=len(arms),
+        calls=0,
+        data_accesses=0,
+    )
+
+
+def verify_reflection_image(directory):
+    """Reuse closed lookup validation for imported modules, never a name-only allowance."""
+    decoder = load("reflection_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+    language, linked = (decoder.Elf(directory / name) for name in ("language.o", "payload.elf"))
+    names = {name for name in language.functions if name.startswith(("aurora_reflect_", "__au_reflect_"))}
+    need({"aurora_reflect_size", "aurora_reflect_field_count"} <= names, "Missing root reflection helpers")
+    for obj in (language, linked):
+        helpers = [row for row in obj.symbols if row.name.startswith(("aurora_reflect_", "__au_reflect_"))]
+        need(
+            len(helpers) == len(names)
+            and {row.name for row in helpers} == names
+            and all(row.section and row.kind == 2 for row in helpers),
+            "Reflection helper escaped generated function ownership",
+        )
+    code, _ = decoder.disassemble(directory / "payload.elf")
+    payload = (directory / "payload.bin").read_bytes()
+    results = []
+    for name in sorted(names):
+        original = language.functions[name]
+        need(
+            not any(
+                section == original.section
+                and address < original.address + original.size
+                and address + 4 > original.address
+                for section, address, *_ in language.relocations
+            ),
+            "Reflection helper acquired a relocation",
+        )
+        decoder.associate_object(linked, language, original)
+        symbol = linked.functions[name]
+        rows = [
+            row for address, row in sorted(code.items()) if symbol.address <= address < symbol.address + symbol.size
+        ]
+        results.append(verify_reflection_body(decoder, symbol, rows, payload))
+    return results
+
+
 def symbols(path):
     return {
         row[2]: int(row[0], 16)

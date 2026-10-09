@@ -3001,7 +3001,7 @@ class Admission(unittest.TestCase):
         return symbol, rows, bytes(payload)
 
     def test_reflection_lookup_exact_leaf_bytes_and_closure(self):
-        for name in REFLECTION:
+        for name in (*REFLECTION, "__au_reflect_s3_size", "__au_reflect_s19_field_count"):
             symbol, rows, payload = self.reflection_fixture(name)
             result = graphical.verify_reflection_body(decoder, symbol, rows, payload)
             self.assertEqual((result["cases"], result["calls"], result["data_accesses"]), (2, 0, 0))
@@ -3066,9 +3066,10 @@ class Admission(unittest.TestCase):
         for rows in (baseline[:-1], baseline[1:], baseline + [baseline[-1]]):
             with self.assertRaises(ValueError):
                 graphical.verify_reflection_body(decoder, symbol, rows, payload)
-        foreign = decoder.Symbol("aurora_reflect_extra", symbol.address, symbol.size, 1, 2)
-        with self.assertRaises(ValueError):
-            graphical.verify_reflection_body(decoder, foreign, baseline, payload)
+        for name in ("aurora_reflect_extra", "__au_reflect_s0_size", "__au_reflect_s01_size", "__au_reflect_s3_put"):
+            foreign = decoder.Symbol(name, symbol.address, symbol.size, 1, 2)
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                graphical.verify_reflection_body(decoder, foreign, baseline, payload)
 
     def test_reflection_helper_exact_inventory_and_binding(self):
         self.assertEqual(graphical.REFLECTION_HELPERS, frozenset(REFLECTION))
