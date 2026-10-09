@@ -46,9 +46,12 @@ def safe_receipt(path, record):
 
 
 class PackageRunner:
-    def __init__(self, compiler, artifacts, cap, *, root, prefix, shared, validate, function_prefix, sentinel):
+    def __init__(
+        self, compiler, artifacts, cap, *, root, prefix, shared, validate, function_prefix, sentinel, blocks=None
+    ):
         self.root, self.prefix, self.shared, self.validate = root, prefix, shared, validate
         self.function_prefix, self.sentinel = function_prefix, sentinel
+        self.blocks = blocks
         self.compiler, self.artifacts, self.cap = compiler, artifacts, cap
         self.peak, self.process_count = 0, 0
         self.tools = {}
@@ -193,10 +196,18 @@ class PackageRunner:
         directory = self.artifacts / f"batch-{number:03d}"
         directory.mkdir()
         source = self.prefix + self.shared() + "".join(dict.fromkeys(case.helpers for case in cases))
-        bodies = list(dict.fromkeys(case.body for case in cases))
+        layouts = [self.blocks(case) if self.blocks else (1, (1,) * len(case.expected)) for case in cases]
+        for case, (capacity, widths) in zip(cases, layouts):
+            require(len(case.arguments) == 2, "package fixture requires two explicit arguments")
+            require(type(capacity) is int and 1 <= capacity <= 64, "block result exceeds value boundary")
+            require(widths and all(type(w) is int and 1 <= w <= capacity for w in widths), "invalid block width")
+            require(sum(widths) == len(case.expected), "block widths must cover every observation")
+        bodies = list(dict.fromkeys((case.body, capacity) for case, (capacity, _) in zip(cases, layouts)))
         source += "".join(
-            f"auto {self.function_prefix}_{i}(i64 slot,i64 argument1,i64 argument2)->u64{{{body}}}\n"
-            for i, body in enumerate(bodies)
+            f"auto {self.function_prefix}_{i}(i64 slot,i64 argument1,i64 argument2)->"
+            + ("u64" if capacity == 1 else f"std::array<u64,{capacity}>")
+            + f"{{{body}}}\n"
+            for i, (body, capacity) in enumerate(bodies)
         )
         require(len(source.encode()) <= SOURCE_CAP, "64 KiB batch source bound")
         (directory / "input.au").write_text(source)
@@ -207,6 +218,8 @@ class PackageRunner:
             cases=len(cases),
             distinct_functions=len(bodies),
         )
+        if self.blocks:
+            receipt["fixture_calls"] = sum(len(widths) for _, widths in layouts)
         try:
             self.command(
                 [
@@ -222,20 +235,68 @@ class PackageRunner:
                 compiler=True,
                 batch=True,
             )
+            compiled = (directory / "compiled.s").read_text()
+            symbols = []
+            for function, (_, capacity) in enumerate(bodies):
+                name = f"{self.function_prefix}_{function}"
+                if capacity > 1:
+                    # Source aggregate functions have length-prefixed native
+                    # names. Resolve one actual local definition, fail closed
+                    # on ambiguity, and leave compiler assembly unchanged.
+                    matches = re.findall(rf"^\.local (__au_v_\w+_d{len(name)}{re.escape(name)})$", compiled, re.M)
+                    require(len(matches) == 1, "expected one local aggregate fixture: " + name)
+                    name = matches[0]
+                symbols.append(name)
             expected = tuple(value for case in cases for value in case.expected)
+            capacity = max(capacity for capacity, _ in layouts)
+            block_bytes = capacity * 8
+            # Private aggregate ABI: independent caller-owned result in r10,
+            # three scalar slots in a 32-byte packed record in r11. Reserve
+            # canaries around the complete result, not just its observed prefix.
+            record_offset = (block_bytes + 16 + 15) & ~15
+            frame_bytes = record_offset + 32
             asm = [".text", ".globl _start", "_start:"]
+            if capacity > 1:
+                asm += ["cld", f"subq ${frame_bytes},%rsp"]
             position = 0
-            for case in cases:
-                function = bodies.index(case.body)
-                for slot in range(len(case.expected)):
-                    asm += [
-                        f"movq ${slot},%rdi",
-                        f"movq ${case.arguments[0]},%rsi",
-                        f"movq ${case.arguments[1]},%rdx",
-                        f"call {self.function_prefix}_{function}",
-                        f"movq %rax,observations+{position}(%rip)",
-                    ]
-                    position += 8
+            for case, (result_words, widths) in zip(cases, layouts):
+                function = bodies.index((case.body, result_words))
+                slot = 0
+                for width in widths:
+                    if result_words == 1:
+                        asm += [
+                            f"movq ${slot},%rdi",
+                            f"movq ${case.arguments[0]},%rsi",
+                            f"movq ${case.arguments[1]},%rdx",
+                            f"call {symbols[function]}",
+                            f"movq %rax,observations+{position}(%rip)",
+                        ]
+                    else:
+                        asm += [
+                            "movq $0x13579bdf,0(%rsp)",
+                            f"movq $0x2468ace,{8 + result_words * 8}(%rsp)",
+                            "leaq 8(%rsp),%rdi",
+                            f"movq ${result_words},%rcx",
+                            "movabsq $0xa5a5a5a5a5a5a5a5,%rax",
+                            "rep stosq",
+                        ]
+                        for index, value in enumerate((slot, *case.arguments, 0)):
+                            asm += [f"movabsq ${value},%rax", f"movq %rax,{record_offset + index * 8}(%rsp)"]
+                        asm += [
+                            "leaq 8(%rsp),%r10",
+                            f"leaq {record_offset}(%rsp),%r11",
+                            f"call {symbols[function]}",
+                            "cmpq $0x13579bdf,0(%rsp)",
+                            "jne .Lblock_failed",
+                            f"cmpq $0x2468ace,{8 + result_words * 8}(%rsp)",
+                            "jne .Lblock_failed",
+                            "leaq 8(%rsp),%rsi",
+                            f"leaq observations+{position}(%rip),%rdi",
+                            f"movq ${width},%rcx",
+                            "rep movsq",
+                        ]
+                    position += width * 8
+                    slot += width
             asm += [
                 "movq $1,%rax",
                 "movq $1,%rdi",
@@ -251,17 +312,31 @@ class PackageRunner:
                 "movq $60,%rax",
                 "movq $91,%rdi",
                 "syscall",
+            ]
+            if capacity > 1:
+                asm += [".Lblock_failed:", "movq $60,%rax", "movq $92,%rdi", "syscall"]
+            asm += [
                 ".bss",
                 ".align 8",
                 f"observations: .zero {position}",
-                '.section .note.GNU-stack,"",@progbits',
             ]
+            if capacity == 1:
+                asm += ['.section .note.GNU-stack,"",@progbits']
             (directory / "entry.s").write_text("\n".join(asm) + "\n")
-            self.command(["as", "--64", directory / "compiled.s", "-o", directory / "program.o"], directory, "assemble")
-            self.command(["as", "--64", directory / "entry.s", "-o", directory / "entry.o"], directory, "entry")
-            self.command(
-                ["ld", "-o", directory / "program", directory / "entry.o", directory / "program.o"], directory, "link"
-            )
+            if capacity > 1:
+                # Aggregate entrypoints are local; do not export or rewrite them.
+                (directory / "program.s").write_text(compiled + "\n" + "\n".join(asm) + "\n")
+                self.command(
+                    ["as", "--64", directory / "program.s", "-o", directory / "program.o"], directory, "assemble"
+                )
+                objects = [directory / "program.o"]
+            else:
+                self.command(
+                    ["as", "--64", directory / "compiled.s", "-o", directory / "program.o"], directory, "assemble"
+                )
+                self.command(["as", "--64", directory / "entry.s", "-o", directory / "entry.o"], directory, "entry")
+                objects = [directory / "entry.o", directory / "program.o"]
+            self.command(["ld", "-o", directory / "program", *objects], directory, "link")
             _, undefined, _ = self.command(["nm", "-u", directory / "program"], directory, "undefined-symbols")
             require(not undefined.strip(), "freestanding binary must have no unresolved symbols")
             _, elf, _ = self.command(["readelf", "-l", "-d", directory / "program"], directory, "elf-linkage")

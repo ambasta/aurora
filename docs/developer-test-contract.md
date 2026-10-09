@@ -370,6 +370,29 @@ cloud x86-64 Linux, Graph batch 052 used 0.149009 compiler CPU seconds and
 9.905246 native CPU seconds for 10 cases / 2,780 scalar observations. These are
 recorded costs for that batch, not a Gentoo result or per-case performance target.
 
+### Bounded Graph report transport
+
+Graph catalog fixtures evaluate each public order report and each existing ranked
+entry call once, then copy the result and poison the input bytes and selection
+arrays before observing its fields. The existing by-value scalar observers fill
+an initialized `std::array<u64,33>`; the host emits its 14-word order prefix or
+all 33 entry words. Python still compares every word against the independent
+expected vector. Constructor and deliberate multi-call ownership fixtures retain
+their scalar path. No rank, catalog/dependency variant, rejection, output word or
+host-oracle comparison is removed.
+
+This is an opt-in bootstrap transport in `package_native_runner.py`. Its private
+aggregate ABI uses a 32-byte argument record through `%r11` and independent
+264-byte caller-owned result storage through `%r10`, with immediate result
+canaries and poisoned storage before every call. The adapter resolves the actual
+local native-mangled fixture symbol and assembles alongside unchanged compiler
+assembly. It does not add a language pointer API, global result cache, target
+expected/golden comparison, or a larger value/resource limit. Other package
+runners keep their scalar transport. Source-derived work reduction is fewer
+repeated fixture/API executions, not an optimizer improvement or a universal
+performance claim. Focused before/after command receipts and exact stream
+comparisons are required; complete final-source qualification remains separate.
+
 ### Focused correction verification — 2026-10-07
 
 The 618-file formatted candidate based on `f458620b325c4f17c32b32c3c4a09b2771a472b8`
@@ -702,8 +725,10 @@ not summed into acceptance of corrected source or a complete native workflow.
 
 ### Serial package transport identity checks
 
-Manifest and Graph share one serial native transport; their original cases, batch
-boundaries, seven child commands, rejection checks and resource limits are unchanged.
+Manifest and Graph share one serial native transport, preserving their cases,
+rejection checks and resource limits. Scalar batches retain seven child commands;
+Graph report-block batches assemble their private entrypoints together and use six.
+Generated source size still determines batch boundaries under the same cap.
 Compiler, library, oracle and transport inputs retain full-content checks around
 successful or expected-rejection commands. Generated executables and archives
 retain their command/output hashes. No mtime cache is used.
