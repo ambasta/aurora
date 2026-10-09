@@ -15,18 +15,20 @@ auto receive(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
 
 ## Source and lifetime
 
-`ConsoleSession` and `DisplaySession` are distinct compiler-owned sealed service
-kinds. An explicit contiguous leading group of one or two exclusive service
-reference free-function formals is accepted. A pair must contain distinct kinds;
-both Console-then-Display and Display-then-Console are supported. There is no
+`ConsoleSession`, `DisplaySession` and `IommuEventSession` are distinct
+compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
+reference free-function formals is accepted. The explicit group allowlist is Console, Display or Event alone, Console+Display
+in either order, and Event+Console in either order. Event+Display, duplicate kinds
+and all triples are rejected. There is no
 by-value or const variant. It cannot be constructed, copied, moved, assigned, stored in a
 local/field/array, returned, reflected or converted. A reference is a parameter
 mode, never an ordinary reference value. Service methods, constructors, templates,
 overloads, mixed regions/owners and recursion in the reachable service graph are
 rejected. Later parameters are copied scalars/enums or readonly byte spans, with
-the existing source-root lifetime and loan checks. A group containing Console additionally permits its approved copied sample
-result, regardless of formal order. Display has no host input or copied class-report
-operation. Duplicate kinds, non-leading capabilities, and forwarding one kind into
+the existing source-root lifetime and loan checks. A group containing Console additionally permits its approved copied ConsoleSample
+result; a group containing Event additionally permits IommuEventSample. Both
+permissions follow membership regardless of formal order. Display has no host
+input or copied class-report operation. Duplicate kinds, non-leading capabilities, and forwarding one kind into
 a formal of the other kind are rejected. No owner/region mixture is added.
 
 Named forwarding acquires one independent synchronous child loan for each
@@ -58,6 +60,33 @@ The closed compiler operation table in `services.hpp` owns host linkage:
   Invalid/stale/reentrant grants or malformed raw channels fail before any store;
   valid out-of-range coordinates return 1 with zero writes. Native transport owns
   completion ordering. This compiler contract does not qualify a display driver.
+
+## Bounded IOMMU event observation
+
+`IommuEventSession.poll()` is a nonblocking, argument-free operation returning
+`builtin::IommuEventSample`. Its public fields, in exact order, are
+`result: builtin::EventPollResult`, `word0: u64`, `word1: u64`, and
+`status_low: u64`. The closed poll results are `empty` (0), `record` (1),
+`overflow` (2), and `transport_failure` (3). The copied report occupies exactly
+four qwords. Host-produced non-record reports require both record words to be
+zero; `status_low` is limited to `0x1f`. The trusted transport separately validates
+its full raw hardware status before masking. A copied report can be constructed,
+copied, stored, returned through ordinary helpers, and reflected as data. Those
+operations never construct authority or redirect acknowledgement.
+
+`IommuEventSession.acknowledge()` takes no source arguments and returns the closed
+`builtin::EventAckResult`: `committed` (0), `overflow` (1), or
+`transport_failure` (2). It carries no caller-selected address, sequence, record
+or offset. The trusted adapter must require its one internally pending copied
+record, permit at most one head-write attempt, and retain an absorbing failure
+state after uncertainty. The compiler capability itself does not enforce printing
+before acknowledgement; that is an audited property of the bounded consumer.
+
+The copied `builtin::EventIntakeCompletion` cases are `drained` (0),
+`budget_exhausted` (1), `loss_detected` (2), `unsupported_event` (3),
+`command_error` (4), `transport_failure` (5), and `output_failure` (6). No result
+carries completion, reclamation, publication or restart authority. Ordinary
+methods consume copied observations; no mixed object/service borrowing is added.
 
 ## Typed IR and private native boundary
 
@@ -93,6 +122,23 @@ RDI grant, RSI generation, RDX x, RCX y, R8 red, R9 green, and blue at 8(RSP) on
 host entry. The emitter reserves outgoing stack storage with correct alignment
 for both even and odd surrounding evaluation depth, then validates RAX <= 1.
 No general foreign-call syntax or new authority representation is introduced.
+
+The Event host symbols are closed compiler choices:
+`__au_runtime_iommu_event_poll` receives RDI grant, RSI generation, and RDX a
+private 32-byte output address. Generated code clears all four output qwords,
+then validates the full-width result and status plus absent-record zero words
+before exposing the object. `__au_runtime_iommu_event_acknowledge` receives RDI
+grant and RSI generation and returns RAX in 0..2. Every operation dispatch is
+explicit; unknown operations cannot fall through to Console `next`.
+
+An `(Event&, Console&, u64 poll_budget, u64 record_budget)` private R11 record has
+Event grant/generation at +0/+8, Console at +16/+24, and budgets at +32/+40.
+Reversed helpers forward both complete pairs in target order. Copied helper
+results use the existing hidden R10 destination, independently of formal order.
+The trusted entry bridge must atomically admit both exact grants, validate budgets
+(0..256 polls and 0..255 records), and validate the closed completion result in
+0..6. The compiler preserves opaque authority; it does not perform native grant
+admission, interpret hardware status, or qualify an IOMMU device.
 
 Service graphs require private source-symbol linkage. That requirement is
 separate from owned-byte runtime linkage, so a console graph does not acquire an
@@ -136,3 +182,17 @@ kinds/grants/generations before running a graphical consumer, including stale,
 crossed and partially valid no-write entry controls. No mixed timer/framebuffer
 mapping, atomic combined grant admission, native stack budget or guest behavior is
 qualified by this compiler-only increment.
+
+
+## Event capability checkpoint status
+
+The Event extension is an unqualified source checkpoint. Its independent
+`iommu_event_service_ir.cpp` cases, source fixture, common hosted consumer/ABI
+fixture and handwritten assembly envelope cover the new kind and copied report,
+both supported formal orders, six-formal forwarding, source/runtime rejection,
+full-width malformed channels and report-before-ack output failures. Existing
+Console/Display/distinct-group gates remain required. Focused results must be
+recorded against the final source; they do not establish final GCC 14/GCC 16 full
+qualification, actual-model event intake, concurrent transport coherence or
+physical hardware support. Runtime admission, boot-lifetime backing ownership,
+actual produced-event consumption and guest release remain separate gates.

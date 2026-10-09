@@ -386,6 +386,7 @@ def source_files():
 
 def build_files():
     names = [
+        "payload.ld",
         "payload.elf",
         "payload.bin",
         "esp/EFI/BOOT/BOOTX64.EFI",

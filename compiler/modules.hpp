@@ -721,6 +721,8 @@ class ModuleResolver {
         // typed declarations already carry the canonical compiler identity.
         if (type == Type("builtin::ConsoleSample"))
             type = service::sampleType();
+        if (type == Type("builtin::IommuEventSample"))
+            type = service::eventSampleType();
         if (type.isService() || service::copiedType(type)) {
             serviceTypesUsed = true;
             return;
@@ -1134,7 +1136,10 @@ class ModuleResolver {
             if (!value->token.text.starts_with("builtin::ConsolePutResult::") &&
                 !value->token.text.starts_with("builtin::ConsoleCompletion::") &&
                 !value->token.text.starts_with("builtin::DisplayPutResult::") &&
-                !value->token.text.starts_with("builtin::DisplayCompletion::"))
+                !value->token.text.starts_with("builtin::DisplayCompletion::") &&
+                !value->token.text.starts_with("builtin::EventPollResult::") &&
+                !value->token.text.starts_with("builtin::EventAckResult::") &&
+                !value->token.text.starts_with("builtin::EventIntakeCompletion::"))
                 sourceName(value->token.text);
             const auto separator = value->token.text.rfind("::");
             if (separator != std::string::npos) {
@@ -1155,6 +1160,33 @@ class ModuleResolver {
                                 : (put ? service::putResultType() : service::completionType());
                     value->resolvedName = value->reflectedType.className;
                     value->enumOrdinal = second ? 1 : 0;
+                    return;
+                }
+                if (enumName == "builtin::EventPollResult" || enumName == "builtin::EventAckResult" ||
+                    enumName == "builtin::EventIntakeCompletion") {
+                    const auto cases =
+                        enumName == "builtin::EventPollResult"
+                            ? std::vector<std::string>{"empty", "record", "overflow", "transport_failure"}
+                        : enumName == "builtin::EventAckResult"
+                            ? std::vector<std::string>{"committed", "overflow", "transport_failure"}
+                            : std::vector<std::string>{"drained",
+                                                       "budget_exhausted",
+                                                       "loss_detected",
+                                                       "unsupported_event",
+                                                       "command_error",
+                                                       "transport_failure",
+                                                       "output_failure"};
+                    const auto found = std::find(cases.begin(), cases.end(), caseName);
+                    if (found == cases.end())
+                        throw Error("unknown sealed service enum case: " + value->token.text);
+                    serviceTypesUsed = true;
+                    value->op = "enum_case";
+                    value->reflectedType = enumName == "builtin::EventPollResult" ? service::eventPollResultType()
+                                           : enumName == "builtin::EventAckResult"
+                                               ? service::eventAckResultType()
+                                               : service::eventIntakeCompletionType();
+                    value->resolvedName = value->reflectedType.className;
+                    value->enumOrdinal = static_cast<int>(found - cases.begin());
                     return;
                 }
                 const auto *declaration = lookup(unit, scope, enumName, Kind::Enum);
@@ -1277,8 +1309,35 @@ public:
             EnumDefinition displayCompletion(Token(std::string(service::displayCompletionName), 0));
             displayCompletion.cases = {Token("rendered", 0), Token("output_failure", 0)};
             result.enums.push_back(std::move(displayCompletion));
+            ClassDefinition eventSample(Token(std::string(service::eventSampleName), 0));
+            for (const auto &[name, type] :
+                 std::vector<std::pair<std::string, Type>>{{"result", service::eventPollResultType()},
+                                                           {"word0", Type::U64},
+                                                           {"word1", Type::U64},
+                                                           {"status_low", Type::U64}}) {
+                Field field(Token(name, 0), type);
+                field.publicAccess = true;
+                eventSample.fields.push_back(std::move(field));
+            }
+            result.classes.push_back(std::move(eventSample));
+            EnumDefinition eventPoll(Token(std::string(service::eventPollResultName), 0));
+            eventPoll.cases = {
+                Token("empty", 0), Token("record", 0), Token("overflow", 0), Token("transport_failure", 0)};
+            result.enums.push_back(std::move(eventPoll));
+            EnumDefinition eventAck(Token(std::string(service::eventAckResultName), 0));
+            eventAck.cases = {Token("committed", 0), Token("overflow", 0), Token("transport_failure", 0)};
+            result.enums.push_back(std::move(eventAck));
+            EnumDefinition eventCompletion(Token(std::string(service::eventIntakeCompletionName), 0));
+            eventCompletion.cases = {Token("drained", 0),
+                                     Token("budget_exhausted", 0),
+                                     Token("loss_detected", 0),
+                                     Token("unsupported_event", 0),
+                                     Token("command_error", 0),
+                                     Token("transport_failure", 0),
+                                     Token("output_failure", 0)};
+            result.enums.push_back(std::move(eventCompletion));
             // Copied observations are ordinary globally visible builtin data.
-            // Neither sealed service capability receives a descriptor.
+            // Sealed service capabilities never receive descriptors.
             for (auto &[scope, visible] : result.reflectionAccess) {
                 (void)scope;
                 visible.insert(std::string(service::sampleName));
@@ -1286,6 +1345,10 @@ public:
                 visible.insert(std::string(service::completionName));
                 visible.insert(std::string(service::displayPutResultName));
                 visible.insert(std::string(service::displayCompletionName));
+                visible.insert(std::string(service::eventSampleName));
+                visible.insert(std::string(service::eventPollResultName));
+                visible.insert(std::string(service::eventAckResultName));
+                visible.insert(std::string(service::eventIntakeCompletionName));
             }
         }
         if (result.functions.empty())

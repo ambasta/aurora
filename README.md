@@ -19,6 +19,13 @@ for the six goals, implemented foundations, remaining gaps and exact API referen
 The [roadmap](docs/roadmap.md) gives the dependency order and acceptance gates.
 Historical test receipts are kept in [verification history](docs/verification.md).
 
+The merged canonical Meson graph and Aurora graphical console passed all 249
+tests on each recorded GCC 14 and GCC 16 toolchain, six image admissions, and
+28 graphical emulator cases with ordinary restorations. The two final-source
+normal BIOS smokes were completed after the PR100 merge on 2026-10-09. These
+results cover the recorded toolchains and emulator profiles; physical hardware
+and general terminal/window services remain unqualified.
+
 ## Try it
 
 Use an x86-64 Linux host with GCC 16 (C++23), GNU Make and

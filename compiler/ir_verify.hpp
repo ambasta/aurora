@@ -241,13 +241,22 @@ inline void verifyFunction(Function &function,
                     "service signature requires distinct capability kinds");
             ++serviceParameterCount;
         }
-        require(serviceParameterCount <= 2, "unsupported service group");
+        // Deliberately independent closed allowlist: adding a recognized kind
+        // does not grant arbitrary pair or triple forwarding authority.
+        require(serviceParameterCount <= 2 &&
+                    (kinds == std::set<service::Kind>{service::Kind::Console} ||
+                     kinds == std::set<service::Kind>{service::Kind::Display} ||
+                     kinds == std::set<service::Kind>{service::Kind::IommuEvent} ||
+                     kinds == std::set<service::Kind>{service::Kind::Console, service::Kind::Display} ||
+                     kinds == std::set<service::Kind>{service::Kind::Console, service::Kind::IommuEvent}),
+                "unsupported service group");
         for (std::size_t index = serviceParameterCount; index < function.parameters.size(); ++index)
             require(scalarValueType(function.parameters[index], enumCases) ||
                         function.parameters[index] == Type::ByteSpan,
                     "service signature requires later scalar, enum or readonly span arguments");
         require(scalarValueType(function.result, enumCases) ||
-                    (kinds.contains(service::Kind::Console) && function.result == service::sampleType()),
+                    (kinds.contains(service::Kind::Console) && function.result == service::sampleType()) ||
+                    (kinds.contains(service::Kind::IommuEvent) && function.result == service::eventSampleType()),
                 "service signature has unsupported result");
     }
     require(serviceFunction || function.serviceSlots.empty(), "service spills without a service signature");
@@ -2072,18 +2081,28 @@ inline void verifyFunction(Function &function,
                                         enumCases.contains(std::string(service::putResultName)),
                                     "put requires closed enum result and no object storage");
                             state.current = Value{service::putResultType(), {}};
-                        } else {
+                        } else if (operation.operation == service::Operation::IommuAcknowledge) {
+                            require(operation.resultOffset == 0 &&
+                                        enumCases.contains(std::string(service::eventAckResultName)),
+                                    "acknowledge requires closed enum result and no object storage");
+                            state.current = Value{service::eventAckResultType(), {}};
+                        } else if (operation.operation == service::Operation::Next ||
+                                   operation.operation == service::Operation::IommuPoll) {
+                            const bool event = operation.operation == service::Operation::IommuPoll;
+                            const auto reportName = event ? service::eventSampleName : service::sampleName;
                             const int base = operation.resultOffset;
                             require(function.objectSlots.contains(base) &&
-                                        function.objectSlots.at(base).className == service::sampleName &&
+                                        function.objectSlots.at(base).className == reportName &&
                                         state.activeObjects.contains(base) &&
                                         !state.maybeConstructedObjects.contains(base),
-                                    "next requires exact pristine active copied sample object");
-                            for (std::size_t field = 0; field < 3; ++field)
+                                    "service observation requires exact pristine active copied sample object");
+                            for (std::size_t field = 0; field < (event ? 4u : 3u); ++field)
                                 require(!state.maybeInitialized.contains(objectLeaf(base, field)),
-                                        "next cannot overwrite initialized sample storage");
+                                        "service observation cannot overwrite initialized sample storage");
                             markObject(base);
                             state.current.reset();
+                        } else {
+                            require(false, "unknown sealed service operation");
                         }
                     } else if constexpr (std::is_same_v<Op, ServiceCall>) {
                         require(functions.contains(operation.callee), "unknown service helper target");
@@ -2129,12 +2148,14 @@ inline void verifyFunction(Function &function,
                         }
                         if (target.result.isClass()) {
                             const int base = operation.resultOffset;
-                            require(function.objectSlots.contains(base) && target.result == service::sampleType() &&
-                                        function.objectSlots.at(base).className == service::sampleName &&
+                            const bool event = target.result == service::eventSampleType();
+                            require(function.objectSlots.contains(base) &&
+                                        (event || target.result == service::sampleType()) &&
+                                        function.objectSlots.at(base).className == target.result.className &&
                                         state.activeObjects.contains(base) &&
                                         !state.maybeConstructedObjects.contains(base),
                                     "service helper requires pristine copied sample destination");
-                            for (std::size_t field = 0; field < 3; ++field)
+                            for (std::size_t field = 0; field < (event ? 4u : 3u); ++field)
                                 require(!state.maybeInitialized.contains(objectLeaf(base, field)),
                                         "service helper destination already initialized");
                             markObject(base);
@@ -2400,6 +2421,24 @@ inline ValidatedModule validate(Module module) {
                                           module.classLayouts.at(std::string(service::sampleName))[index],
                                   "noncanonical sealed ConsoleSample field shape");
     }
+    if (module.classLayouts.contains(std::string(service::eventSampleName))) {
+        const auto name = std::string(service::eventSampleName);
+        const std::vector<Type> layout{service::eventPollResultType(), Type::U64, Type::U64, Type::U64};
+        verification::require(module.classLayouts.at(name) == layout, "noncanonical sealed IommuEventSample layout");
+        const auto &fields = module.classFields.at(name);
+        verification::require(fields.size() == 4, "noncanonical sealed IommuEventSample fields");
+        for (std::size_t index = 0; index < fields.size(); ++index)
+            verification::require(!fields[index].array && fields[index].firstLeaf == static_cast<int>(index) &&
+                                      fields[index].length == 1 && fields[index].elementType == layout[index],
+                                  "noncanonical sealed IommuEventSample field shape");
+    }
+    for (const auto &[name, count] :
+         std::vector<std::pair<std::string_view, int>>{{service::eventPollResultName, 4},
+                                                       {service::eventAckResultName, 3},
+                                                       {service::eventIntakeCompletionName, 7}})
+        if (module.enumCases.contains(std::string(name)))
+            verification::require(module.enumCases.at(std::string(name)) == count,
+                                  "noncanonical sealed event service enum");
     for (const auto name : {service::putResultName,
                             service::completionName,
                             service::displayPutResultName,

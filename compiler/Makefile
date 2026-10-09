@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write test-console-service test-display-service,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write test-console-service test-display-service test-iommu-event-service,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -105,7 +105,7 @@ export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_G
 .PHONY: aurora-test-context
 all test test-modules test-storage test-initialization-facts test-utf8 test-utf8-encoding \
     test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads \
-    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write test-console-service test-display-service: aurora-test-context
+    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write test-console-service test-display-service test-iommu-event-service: aurora-test-context
 aurora-test-context:
 	python3 -B ../scripts/compiler_contract.py check --repo-root "$(abspath ..)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -425,5 +425,15 @@ test-display-service: $(OUT)
 	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/service_group_ir.cpp -o "$$work/ir-tests"; \
 	python3 -B -O ../tests/compiler/service_group_ir_abi.py "$$work/ir-tests"; \
 	printf 'PASS display service Make recipe: %s\n' "$$work"
+
+.PHONY: test-iommu-event-service
+test: test-iommu-event-service
+test-iommu-event-service: $(OUT)
+	@set -eu; \
+	work="$$(mktemp -d "$(dir $(abspath $(OUT)))iommu-event-service.XXXXXXXX")"; \
+	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/iommu_event_service_ir.cpp -o "$$work/ir-tests"; \
+	python3 -B -O ../tests/compiler/iommu_event_service.py "$(abspath $(OUT))" "$$work/ir-tests"; \
+	$(CXX) $(CXXFLAGS) ../tests/kernel-iommu-event-session.cpp -o "$$work/session-tests"; \
+	"$$work/session-tests"
 
 endif # controlled outer dispatcher / original inner graph

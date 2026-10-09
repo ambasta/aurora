@@ -5,11 +5,165 @@ implement Aurora production DMA, grant device authority, activate a physical
 requester or replace the project's default QEMU runtime. Full IOMMU conformance,
 physical isolation/drain/reclamation and AMD hardware support remain unqualified.
 
-The integration is based on Aurora main after PR99,
-`9a8c2805cad581cad92b79b042b13aad07d6b530`. New source/static/mock integration checks
-must be distinguished from the independently reviewed historical emulator runs.
-The model diagnostics below do not qualify Aurora's final integrated source.
-Final-source Meson dev/slow and any required root native/kernel gates remain pending.
+The diagnostic integration landed in PR101 after its exact source passed the
+then-required 61 dev and 30 slow tests. The unchanged historical emulator results
+below retain their original model/fixture scope. New compiler and kernel changes
+require current-source canonical Meson `full` with GCC 16 and applicable
+image/emulator gates; GCC 14 is optional targeted compatibility evidence.
+Earlier receipts do not transfer qualification.
+
+## Aurora-owned event intake
+
+The next implementation adds a real Aurora bounded polling loop through distinct
+sealed `IommuEventSession` and `ConsoleSession` borrows. Aurora decodes ordinary
+code-2 fault records, emits at most 96 bytes per record, and acknowledges only
+after its output succeeds. Code5 and unsupported records remain pending. Closed
+poll/ack results, zero budgets, exhaustion and output failure are explicit. This
+is source-program ordering; Event authority alone does not certify telemetry.
+
+The bootstrap adapter authenticates both grants before live transport admission,
+retains one copied pending record, and makes at most one head-write attempt per
+acknowledgement. Overflow and uncertainty are absorbing. A failed acknowledgement
+may have advanced the head; it conveys no retry or rollback guarantee. Entry
+return revokes both grants. Event backing has a boot-lifetime owner and cannot
+enter the existing CPU-only pin cancellation/reclamation paths.
+
+The hosted implementation passes generated-source, real wrapper/session composition,
+closed-result and hostile-IR controls. The opt-in UEFI adapter now retains its
+DTE, mode-1 table, command, data and event pages for the whole boot; verifies actual
+writable NX mappings; and opens operation-local MMIO windows. It requires exact
+default-model IVRS/IOAPIC bytes, complete pre/post-firmware PCI facts, EDU BAR
+ownership, other endpoint bus mastering disabled, and AHCI engines idle. It does
+not reset an unsuitable controller to force admission. The newly implemented
+firmware handoff below is a separate one-shot boundary before Event admission.
+
+The earlier denial-image checkpoint passed linked-image and stack review: 11,776 bytes
+including its exception reserve fit the 15,360-byte admission cap within the
+unchanged 16 KiB stack. The first rejected stack attempt remains retained; the
+Event-only build uses fixed outgoing argument slots. The image invokes the real
+Aurora loop after a finite producer batch and preserves all raw ring slots and
+protected data before and after intake. Command-only diagnostics leave EDU bus
+mastering disabled. Overflow at initial admission remains a pre-entry refusal.
+Hosted and image checks alone do not establish live transport behavior, firmware
+quiescence, physical isolation or completion.
+
+Build-only modes are `iommu-event-denial`, `iommu-event-success`,
+`iommu-event-overflow` and `iommu-event-command-error`, selected through
+`UEFI_MODE` for `scripts/kernel-uefi-build.sh`. Each mode requires independent
+linked-image qualification. Execution requires the exact reviewed model, verified
+split firmware, an admitted raw ESP and a separately reviewed supervised plan.
+The FAT helper uses pinned mtools, reconstructs a second identical image and
+checks every allocation and loader byte; each guest receives a fresh writable
+copy. Serial/QMP evidence and verified process cleanup are required. No mapping
+API, invalidation completion, page release, concurrent producer or physical-device
+support follows. Historical NVMe/IVRS policies and guest results stay separate.
+
+On 2026-10-09, implementation tree
+`9cc4ef76649faca206f8e70407acaa95c9f75b32` passed all 259 full-suite tests with
+Debian GCC 16.2.0-3 and binutils 2.47. All four active Event modes passed independent
+image/stack and actual guest review on the fresh custom QEMU 10.0.13/default
+split-OVMF tuple. Denial execution from tree `4d44dd72` applies through re-admitted,
+byte-identical execution images; success, overflow and command-error ran freshly
+on `9cc4ef76`.
+
+### Read-only firmware observation checkpoint
+
+The fresh `iommu-event-observe` build is the next dependency for the blocked
+handoff. It copies two complete six-port AHCI samples (CAP/GHC/PI and each
+CMD/CI/SACT/TFD/CLB/FB) through a read-only UC/NX page, revokes that page before
+serial reporting, and checks PCI/capability equality afterward. Matching samples
+are observations only, not an idle, drain, ownership or transition guarantee.
+Resource observations may retain inherited BME; their explicit read-only purpose
+cannot become `EventAdmission`. EDU command 7 is describable only in this
+read-only mode after the first stock-tuple observation found all six commands
+were 7 and refused before AHCI. The second reviewed stock/default-split-OVMF
+observation reached equal AHCI samples: ST/CR and CI/SACT were zero, while five
+ports retained FRE/FR. Those facts are scoped to that fresh tuple.
+
+The next read-only revision adds two EDU snapshots: 64-bit DMA command at 0x98,
+32-bit status at 0x20 and IRQ status at 0x24. The reviewed
+[QEMU EDU model](https://github.com/qemu/qemu/blob/98f88efe8f07067667b8d9b1a5ce9551d34036c1/hw/misc/edu.c)
+returns these fields without scheduling the DMA timer or acknowledging IRQs.
+The admitted EDU BAR receives one temporary read-only UC/NX page, revoked before
+reporting. Twelve bounded metadata lookups report the copied UEFI descriptors
+covering each page-rounded CLB/FB extent. Firmware buffers themselves are neither
+mapped nor read; descriptor type/attributes are observations, not RAM ownership
+or retention authority. Shared CLB/FB pages are reported without an alias claim.
+Changed EDU samples or missing/invalid descriptors fail closed after reporting.
+Production Event admission retains exact EDU command 2 and its BME denial.
+The observation image links the ordinary
+scalar language fixture and no Event producer, session, retained DMA backing or
+service bridge. It returns through the existing normal diagnostic exit.
+
+Acceptance is focused hosted positive/negative controls, a fresh GCC 16 image and
+existing linked-image/stack admission under the unchanged 128 KiB payload and
+16 KiB stack bounds, followed by an independently reviewed, separately authorized
+read-only emulator plan. No transition writes, new DMA, reset/fallback, physical
+access or recovered lost-run evidence is claimed. Raw observations must precede
+any exact PCI command-reduction policy.
+
+For the later handoff, [AHCI 1.3.1 sections 10.1.2 and 10.3](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/serial-ata-ahci-spec-rev1-3-1.pdf)
+require ST clear and CR=0 before FRE clear and FR=0. The pinned
+[QEMU 10.0.13 implementation](https://github.com/qemu/qemu/blob/v10.0.13/hw/ide/ahci.c)
+clears CI/SACT when ST is cleared, so post-stop zeroes cannot prove prior idleness.
+Any future stop must first establish equal idle CI/SACT/TFD samples, ordinary-RAM
+firmware backing that remains retained, and an exact reviewed command reduction
+with readback. An attempt limit would not establish the specification's timed
+wait or physical drain. That preceding observation checkpoint implements no transition; the separate
+source handoff below retains its own acceptance gates.
+
+### Narrow firmware handoff source checkpoint
+
+The handoff now accepts only the freshly observed six-function Q35 tuple with
+all initial command words 7. It requires equal full AHCI samples, ST/CR already
+zero, CI/SACT zero and TFD exactly 0x50; active command engines remain denied.
+Two equal EDU DMA-command/status/IRQ samples must be zero. The shared command
+list and six adjacent FIS extents must occupy two distinct, complete pages in
+copied BootServicesData descriptors with exactly cache-capability attributes
+0x0f. Both pages remain outside the arena and every admitted MMIO aperture.
+Aurora's fixed allocator only uses arena pages, so these firmware pages are
+never mapped as CPU data, overwritten, enrolled for allocation or reclaimed,
+including on partial failure. Descriptor checks do not establish DMA drain.
+
+Only FRE is cleared, preserving every other writable CMD bit; each bounded FR
+poll compares all other AHCI fields with the prevalidated snapshot. Any timeout,
+changed field or access failure denies further transition. There is no ST-stop,
+reset, fallback or rollback. The 1,024-poll limit counts attempts, not a timed
+specification wait. A boot-lifetime latch is consumed before transition I/O;
+neither the same nor a fresh local policy object can retry after failure.
+
+After all FIS engines stop, command-only 16-bit PCI writes reduce host, LPC,
+AHCI and SMBus from 7 to 3, and EDU from 7 to 2. The IOMMU command remains 7.
+This preserves IO/MEM decode except unused EDU IO decode. The
+[model's generic PCI command handling](https://github.com/qemu/qemu/blob/98f88efe8f07067667b8d9b1a5ce9551d34036c1/hw/pci/pci.c)
+gates each function's bus-master address space; it does not cancel or drain
+operations, and LPC BME does not gate legacy ISA DMA. Every complete header
+must read back with only its authorized command-word change. Original firmware
+copies stay immutable, EDU zero state is checked around its reduction, and all
+headers/caps and AHCI fields are rechecked before the one-shot post-state
+admission is used.
+
+Focused hosted controls exercise successful ordering, each read/write failure,
+FR timeout, unexpected AHCI/PCI changes, unsuitable backing and retry refusal.
+The first production builds exceeded the unchanged 128 KiB bound; their failures
+remain preserved. Event-only ECAM/verifier outlining and BSS alignment packing
+fit that bound without removing checks, snapshots, sections or alignments.
+Other UEFI profiles retain their original outlining and BSS input order; the
+shared linker source selects the policy from the existing Event build flag.
+Event-specific firmware capture clauses also stay inside that build family;
+ordinary BAR capture keeps its original entrypoint and compiled body. The
+generated linker input is retained in the existing image build receipts. PE/PIC
+checks pass. Extracting the complete bounded FR wait into its own policy helper
+removes the counter spill; no SUBL decoder permission was added. Sharing the
+unchanged page-table verifier body refreshes only its independently reviewed
+source digest, retaining the exact lambda location and every association check.
+The fresh denial image now passes automated image/stack checks: normal plus
+exception reserve is 11,688 bytes, consumer plus reserve 2,312, within the
+unchanged 15,360-byte admission cap. Other profiles, final integrated full tests
+and transition execution retain their separate gates.
+Neither this source checkpoint nor stock observation results qualify a new
+patched-QEMU tuple, transition image or guest. Fresh image/stack and independent
+bounded-method review remain required before any transition execution.
 
 ## Mechanism and trust boundary
 

@@ -1,0 +1,113 @@
+module kernel_iommu_event_service;
+
+// One finite producer-ready batch. This state belongs to the Aurora invocation;
+// the sealed transport owns backing memory and never conveys reclamation rights.
+class IntakeState {
+    u64 polls;
+    u64 records;
+public:
+    IntakeState(u64 poll_budget, u64 record_budget) : polls(poll_budget), records(record_budget) {}
+    auto next_poll() -> bool {
+        if (polls == 0u64 || records == 0u64) { return false; }
+        polls = polls - 1u64;
+        return true;
+    }
+    auto committed() -> bool {
+        if (records == 0u64) { return false; }
+        records = records - 1u64;
+        return true;
+    }
+};
+
+// Raw fields only: a record cannot establish the cause/priority of a walk fault,
+// fabric completion, or whether permission flag meanings apply to that fault.
+auto event_kind(u64 word0, u64 word1) -> u64 {
+    const u64 code = word0 >> 60;
+    if (code == 2u64 && (word0 & ~2373678474306060287u64) == 0u64) { return 2u64; }
+    if (word0 == 5764607523034234880u64 && (word1 & 15u64) == 0u64) { return 5u64; }
+    return 0u64;
+}
+
+auto event_text(builtin::ConsoleSession& console, builtin::span<const u8> text) -> bool {
+    i64 index = 0;
+    while (index < text.size()) {
+        if (console.put(text.at(index)) != builtin::ConsolePutResult::success) { return false; }
+        index = index + 1;
+    }
+    return true;
+}
+
+auto event_hex(builtin::ConsoleSession& console, u64 word, i64 digits) -> bool {
+    const array<u8, 16> hex = {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
+    i64 index = digits;
+    while (index > 0) {
+        index = index - 1;
+        const u64 nibble = (word >> (index * 4)) & 15u64;
+        if (console.put(hex[i64(nibble)]) != builtin::ConsolePutResult::success) { return false; }
+    }
+    return true;
+}
+
+auto event_report(builtin::ConsoleSession& console, u64 kind, u64 word0, u64 word1, u64 status) -> bool {
+    const array<u8, 6> prefix = {'I','O','M','M','U',' '};
+    const array<u8, 5> raw = {' ','r','a','w','='};
+    const array<u8, 5> rid = {' ','r','i','d','='};
+    const array<u8, 5> dom = {' ','d','o','m','='};
+    const array<u8, 5> dva = {' ','d','v','a','='};
+    const array<u8, 8> stat = {' ','s','t','a','t','u','s','='};
+    const array<u8, 2> newline = {'\r','\n'};
+    if (!event_text(console, borrow_bytes(prefix))) { return false; }
+    u8 tag = 'U';
+    if (kind == 2u64) { tag = 'F'; }
+    if (kind == 5u64) { tag = 'C'; }
+    if (console.put(tag) != builtin::ConsolePutResult::success) { return false; }
+    if (!event_text(console, borrow_bytes(raw)) || !event_hex(console, word0, 16)) { return false; }
+    if (console.put('/') != builtin::ConsolePutResult::success || !event_hex(console, word1, 16)) { return false; }
+    if (kind == 2u64) {
+        if (!event_text(console, borrow_bytes(rid)) || !event_hex(console, word0 & 65535u64, 4)) { return false; }
+        if (!event_text(console, borrow_bytes(dom)) || !event_hex(console, (word0 >> 32) & 65535u64, 4)) { return false; }
+        if (!event_text(console, borrow_bytes(dva)) || !event_hex(console, word1, 16)) { return false; }
+    }
+    if (!event_text(console, borrow_bytes(stat)) || !event_hex(console, status, 2)) { return false; }
+    return event_text(console, borrow_bytes(newline));
+}
+
+auto iommu_event_intake(builtin::IommuEventSession& events, builtin::ConsoleSession& console,
+                       u64 poll_budget, u64 record_budget) -> builtin::EventIntakeCompletion {
+    // Host admission independently checks the complete incoming ABI values.
+    if (poll_budget > 256u64 || record_budget > 255u64) {
+        return builtin::EventIntakeCompletion::transport_failure;
+    }
+    IntakeState state = IntakeState(poll_budget, record_budget);
+    while (state.next_poll()) {
+        const builtin::IommuEventSample sample = events.poll();
+        if (sample.result == builtin::EventPollResult::overflow) {
+            return builtin::EventIntakeCompletion::loss_detected;
+        }
+        if (sample.result == builtin::EventPollResult::transport_failure) {
+            return builtin::EventIntakeCompletion::transport_failure;
+        }
+        if (sample.result == builtin::EventPollResult::empty) {
+            return builtin::EventIntakeCompletion::drained;
+        }
+        const u64 kind = event_kind(sample.word0, sample.word1);
+        // Reporting precedes acknowledgement in this program. The capability
+        // itself does not certify logging for arbitrary holders of authority.
+        if (!event_report(console, kind, sample.word0, sample.word1, sample.status_low)) {
+            return builtin::EventIntakeCompletion::output_failure;
+        }
+        if (kind == 0u64) { return builtin::EventIntakeCompletion::unsupported_event; }
+        if (kind == 5u64) { return builtin::EventIntakeCompletion::command_error; }
+        const builtin::EventAckResult acknowledged = events.acknowledge();
+        if (acknowledged == builtin::EventAckResult::overflow) {
+            return builtin::EventIntakeCompletion::loss_detected;
+        }
+        if (acknowledged == builtin::EventAckResult::transport_failure || !state.committed()) {
+            return builtin::EventIntakeCompletion::transport_failure;
+        }
+    }
+    return builtin::EventIntakeCompletion::budget_exhausted;
+}
+
+// Copied bootstrap result used before the sealed native intake entry.
+auto aurora_kernel_value() -> i64 { return 42; }

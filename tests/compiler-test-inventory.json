@@ -492,6 +492,30 @@
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
   },
+  "iommu_event_service.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "iommu-event-source-native": {
+        "arguments": [
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/iommu_event_service.py",
+          "@BUILD@/aurorac",
+          "@BUILD@/tests/iommu-event-service-ir"
+        ],
+        "suites": [
+          "compiler",
+          "core",
+          "full",
+          "slow"
+        ]
+      }
+    },
+    "reason": "Complete hosted Aurora Event consumer, source/IR/ABI and malformed report gate; no guest execution.",
+    "root_make": true
+  },
   "ir_exhaustive.py": {
     "kind": "runner",
     "make": true,

@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -55,7 +56,22 @@ def main():
         # rejected at BOTH closed object admission and the actual freestanding link.
         if "__au_runtime_bytes_resize" not in positive:
             raise ValueError("Resize is not exercised by the admitted graph")
-        linker = ["ld", "-nostdlib", "-T", str(ROOT / "kernel/uefi/payload.ld"), "-z", "max-page-size=0x1000"]
+        layout = out / "payload.ld"
+        run(
+            [
+                os.environ.get("CXX", "g++"),
+                "-E",
+                "-P",
+                "-x",
+                "c",
+                str(ROOT / "kernel/uefi/payload.ld"),
+                "-o",
+                str(layout),
+            ],
+            out / "layout.log",
+        )
+        result["layout_sha256"] = hashlib.sha256(layout.read_bytes()).hexdigest()
+        linker = ["ld", "-nostdlib", "-T", str(layout), "-z", "max-page-size=0x1000"]
         run(
             linker + list(map(str, objects)) + [str(build / "language.o"), "-o", str(out / "accepted-resize.elf")],
             out / "resize-link.log",

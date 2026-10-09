@@ -3,6 +3,12 @@
 #include "service-budget-policy.hpp"
 #include "framebuffer-policy.hpp"
 #include <array>
+// Share large helpers only inside the existing Event build family.
+#ifdef AURORA_UEFI_IOMMU_EVENT
+#define AURORA_UEFI_EVENT_OUTLINE [[gnu::noinline]]
+#else
+#define AURORA_UEFI_EVENT_OUTLINE
+#endif
 namespace aurora::uefi {
 inline auto expected_flags(std::uint64_t offset, const Bytes &h) -> std::uint64_t;
 class PageTables final {
@@ -153,10 +159,10 @@ public:
         }
         return true;
     }
-    // Preserve the legacy verifier entry/lambda identity. Only the explicit
+    // Keep one verifier body in every profile. Only the explicit
     // four-argument overload below creates an authorized framebuffer view.
-    [[nodiscard]] auto verify(std::uint64_t arena, const Bytes &h, const LocalApicAdmission *apic = nullptr) const
-        -> bool {
+    AURORA_UEFI_EVENT_OUTLINE [[nodiscard]] auto
+    verify(std::uint64_t arena, const Bytes &h, const LocalApicAdmission *apic = nullptr) const -> bool {
         const auto *framebuffer = framebuffer_;
         if (used_ == 0 || used_ > Handoff::table_pages || base_ != arena + Handoff::tables_offset ||
             (apic && apic->owned_arena() != arena) ||

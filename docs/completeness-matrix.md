@@ -21,6 +21,10 @@ Kernel host portability pins freestanding CET/string-operation policy and binds
 stack metadata through complete source locations and exact object symbols; see
 the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
 This mechanism does not transfer qualification between compiler or distro builds.
+Shared read-only `testq` and register-only `bts` stack effects replace Event-specific
+mask/offset/register guards; memory bit-set forms remain unsupported, and
+operand, flag and carrier controls do not establish field provenance or fresh
+image/guest qualification.
 The shared native harness retains complete per-command artifact accounting with
 a `scandir` traversal preserving stable-tree totals and failing closed on scan
 errors; compiler-free controls cover its accounting and error boundaries. This is no new native qualification or whole-suite speed claim;
@@ -41,6 +45,15 @@ hardware support.
 | Useful apps, terminal and tiling desktop | Aurora-owned simple-UEFI serial editor/presentation and bounded serial-input graphical console; BIOS diagnostic prompt and scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
 
 ### Current contract map
+
+The Event-intake draft combines sealed Event/Console borrows with a bounded
+Aurora poll/decode/report/acknowledge loop. Its one-shot firmware handoff retains
+validated backing, rejects active command engines, clears only FIS enables and
+applies exact PCI command reductions with readback before Event admission.
+The implementation passed GCC 16 full tests and independent image/guest review
+for all four active emulator profiles; the [contract](iommu-dma-conformance.md)
+records source, toolchain and runtime scope. Read-only observation cannot grant
+admission; physical isolation, drain and reclamation remain unqualified.
 
 The current-source `make smoke-graphical-console` runner now retains fresh
 production/capture pixel evidence and an actual final normal restoration. The
@@ -84,7 +97,7 @@ The [source contract](../compiler/UNSIGNED.md#source-contract) keeps capacities
 decimal-only. Both display consumers now import the shared base 5x7 font;
 readable five-bit groups preserve every glyph and fallback. The graphical view
 uses direct unit-scale drawing, while the status page retains its scale selection.
-This source cleanup needs final integrated image/stack and guest qualification;
+These consumers retain separate image/stack and actual guest acceptance gates;
 historical guest evidence is not a new run.
 
 The two JSON append reports normalize invalid success counts once at construction
