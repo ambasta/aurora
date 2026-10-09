@@ -327,7 +327,8 @@ geometry fault, retry, rollback or synchronous fault is claimed.
 The new candidate requires focused generated-consumer verification, exact
 production/capture reconstruction and independent image admission, separate
 guest denial/pixel-failure windows and positive regression, actual normal
-restoration, then final integrated dev/slow/root Make and independent review.
+restoration, then the final integrated full Meson graph on GCC 14 and GCC 16
+and independent review.
 Original 988-file image receipts and preserved-image guest results do not qualify
 the new joined source. Partial/null-pair denials and deterministic synchronous faults
 remain separate from the seven selectors; no new keyboard, desktop or physical

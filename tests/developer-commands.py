@@ -485,19 +485,10 @@ class DeveloperCommands(unittest.TestCase):
             self.record.unlink()
 
     def test_make_build_and_test_aliases_are_only_printed(self):
-        for argv, expected in (
-            (["-n", "kernel-uefi", "-o", "compiler"], "./scripts/kernel-uefi-build.sh"),
-            (["-n", "test-compiler"], '--entry root --goal "test-compiler"'),
-        ):
-            result = subprocess.run(
-                [MAKE, *argv],
-                cwd=self.repo,
-                env=self.env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                timeout=5,
-            )
+        for argv, expected in ((["-n", "kernel-uefi", "-o", "compiler"], "./scripts/kernel-uefi-build.sh"),
+                               (["-n", "test-compiler"], 'scripts/meson_test.py --repo-root')):
+            result = subprocess.run([MAKE, *argv], cwd=self.repo, env=self.env,
+                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assertIn(expected, result.stdout)
         self.assert_no_work()

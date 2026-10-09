@@ -26,6 +26,18 @@ oracle_cxx = run_command(
   check: true,
 ).stdout().strip()
 
+# Fail on in-place toolchain replacement instead of silently keeping old objects.
+# This small configuration fingerprint is not a test/qualification receipt.
+toolchain_guard = files('scripts/meson_toolchain.py')
+toolchain_args = ['-B', toolchain_guard, '--cxx', oracle_cxx,
+                  '--record', meson.project_build_root() / 'aurora-toolchain.json']
+run_command(python, toolchain_args + ['--configure'], check: true)
+custom_target('toolchain-identity-check', output: 'toolchain-identity.stamp',
+              command: [python] + toolchain_args + ['--stamp', '@OUTPUT@'],
+              build_by_default: true, build_always_stale: true)
+test('toolchain-identity', python, args: toolchain_args,
+     suite: ['full', 'dev', 'compiler'], timeout: 30)
+
 # The JSON dependency belongs only to the explicitly enabled language server.
 if get_option('lsp')
   lsp_json = dependency('nlohmann_json', version: '>=3.11.3', native: true, required: true)

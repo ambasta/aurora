@@ -4,14 +4,17 @@
 
 This is the canonical project-level status and contract index. Update this section
 in place; the checkpoint summaries below are historical, not an accumulating
-list of current limitations. This source is integrated with accepted PR97 / main
-`916fd18f18995241c1da367db6a04e7eb3cfce63` (2026-10-08), preserving terminal-event,
-structural-formatter, protected-console, byte-literal and JSON-report work.
-The persistent simple-UEFI Aurora console service has the bounded qualification
-noted below.
+list of current limitations. This candidate joins the bounded graphical console,
+distinct service borrows, host-toolchain portability, readable glyph literals and
+the canonical Meson graph. Final joined-source native and guest qualification is
+pending; earlier snapshot results retain their original scope. The persistent
+simple-UEFI Aurora console service has the bounded qualification noted below.
 Compiler- and kernel-affecting merges require final integrated GCC 14 and GCC 16
-`dev`, `slow`, complete root `make test`, and relevant image/smoke gates; the checked runner inventory explicitly records remaining Meson
-gaps. Public protected-console commands build and check local artifacts; separately
+`full` Meson and relevant image/smoke gates. The source-only graph-completion
+candidate maps the former root Make graph into Meson, with Make as a convenience
+entrypoint; it remains unqualified until both new toolchain runs pass. The checked
+inventory preserves full package profiles, fixtures, negative controls and
+explicit non-root style/supplemental exclusions. Public protected-console commands build and check local artifacts; separately
 pinned first-image qualification remains an explicit opt-in gate.
 Kernel host portability pins freestanding CET/string-operation policy and binds
 stack metadata through complete source locations and exact object symbols; see

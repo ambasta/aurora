@@ -44,7 +44,7 @@ class ArtifactBudget(unittest.TestCase):
         )
         return root, [shlex.split(line) for line in result.stdout.splitlines() if line.strip()]
 
-    def test_full_make_enters_supervisor_without_precontract_budget_execution(self):
+    def test_full_make_enters_canonical_graph_without_duplicate_budget_execution(self):
         root, plan = self.make_plan("test")
         self.assertEqual(
             plan,
@@ -52,14 +52,11 @@ class ArtifactBudget(unittest.TestCase):
                 [
                     "python3",
                     "-B",
-                    "scripts/compiler_contract.py",
-                    "run",
+                    "scripts/meson_test.py",
                     "--repo-root",
                     str(root),
-                    "--entry",
-                    "root",
-                    "--goal",
-                    "test",
+                    "--suite",
+                    "full",
                 ]
             ],
         )

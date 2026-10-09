@@ -168,6 +168,15 @@ def check_context_prerequisite_controls():
     print(f"PASS guarded Make membership: {len(valid)} positive and {len(invalid)} negative controls")
 
 
+def check_runtime_fixture_routes(source):
+    # Only frozen IOMMU runtime fixtures are forbidden here. XFS native corpus
+    # registrations are ordinary required tests, despite sharing the word fixtures.
+    forbidden = ('iommu/fixtures/', 'frozen-import.py', 'transport-import-v1.py',
+                 'command-stop-diagnostic.py')
+    require(not any(name in source for name in forbidden), 'An IOMMU runtime fixture entered default test routing')
+
+
+
 def check_integrity():
     manifest = json.loads((ROOT / "tools/qemu-amdvi/artifacts.json").read_text())["sha256"]
     expected_paths = {
@@ -200,7 +209,16 @@ def check_integrity():
     require("test: test-iommu-diagnostics\n" in make, "Root aggregate lost static diagnostics")
     check_context_prerequisites(make)
     require("files('iommu-diagnostics.py')" in meson, "Meson lost static diagnostics")
-    require("fixtures/" not in make + meson, "A runtime fixture entered default test routing")
+    check_runtime_fixture_routes(make + meson)
+    check_runtime_fixture_routes("fixtures/xfs-root ../fixtures/xfs-offline/verify_native.py")
+    for forbidden in ("tests/iommu/fixtures/unknown.py", "frozen-import.py",
+                      "transport-import-v1.py", "command-stop-diagnostic.py"):
+        try:
+            check_runtime_fixture_routes(forbidden)
+        except ValueError:
+            pass
+        else:
+            raise ValueError("IOMMU runtime fixture routing rejection failed")
     require(not (frozen.parent / "TARGET-BINARY.json").exists(), "Runtime target must remain outside repository")
     print("PASS 6 exact artifacts and compiler-free routing; frozen 17-case expectations unchanged")
 
