@@ -1,0 +1,2 @@
+# Unified-diff context represents an empty source line as one mandatory space.
+/tools/qemu-amdvi/patches/*.patch whitespace=-blank-at-eol

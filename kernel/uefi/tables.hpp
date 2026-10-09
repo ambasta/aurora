@@ -233,6 +233,16 @@ public:
                               const FramebufferAdmission *framebuffer) const -> bool {
         return PageTables{base_, used_, framebuffer}.verify(arena, h, apic);
     }
+    // Integer-only storage check for the paired verifier. Checked half-open
+    // endpoints reject wrapping intervals; exactly adjacent objects are disjoint.
+    // Keep the complete paired guard and its compiler stack record together.
+    // Admission still checks actual output; attributes are not frame evidence.
+    [[nodiscard, gnu::noinline, gnu::noclone, gnu::noipa]] static constexpr auto
+    paired_graphical_storage_disjoint(std::uint64_t a, std::uint64_t size_a, std::uint64_t b, std::uint64_t size_b)
+        -> bool {
+        return size_a <= ~std::uint64_t{0} - a && size_b <= ~std::uint64_t{0} - b &&
+               (a + size_a <= b || b + size_b <= a);
+    }
     // An explicitly paired boundary, never an extension of legacy verify's
     // device authority. Empty v6 staging still uses verify(arena, h); the caller
     // must additionally establish that base_ is the live CR3 before using this
@@ -246,15 +256,19 @@ public:
                                         const Bytes &h,
                                         const LocalApicAdmission *apic,
                                         const FramebufferAdmission *framebuffer) const -> bool {
-        if (!apic || !framebuffer || framebuffer_ || !RuntimeLayout::valid(arena) || used_ == 0 ||
-            used_ > Handoff::table_pages || base_ != arena + Handoff::tables_offset || h.get(0) != Handoff::magic ||
-            h.get(8, 4) != 6 || h.get(12, 4) != Handoff::header || h.get(16) != Handoff::arena_bytes ||
-            h.get(24) != arena || !h.get(32) || h.get(32) > MemoryMap::max_bytes || h.get(40) < 40 || h.get(40) > 256 ||
-            h.get(48, 4) != 1 || h.get(52, 4) < 1 || h.get(52, 4) > 3 || !h.get(56) ||
-            h.get(56) > Handoff::payload_limit || h.get(56) > h.get(80) || !h.get(64) || h.get(64) % 4096 ||
-            h.get(72) % 4096 || h.get(80) % 4096 || h.get(64) > h.get(72) || h.get(72) > h.get(80) ||
-            h.get(80) > Handoff::payload_limit || h.get(88) != base_ || h.get(96) != used_ ||
-            h.get(104) != arena + Handoff::payload_offset || !h.get(112) ||
+        // Capture every descriptor field before any snapshot construction write.
+        // The linked-image proof must establish that load/store ordering; source
+        // spelling alone does not qualify it. All later fields use snapshot.
+        const PageTables snapshot{base_, used_, framebuffer_};
+        if (!apic || !framebuffer || snapshot.framebuffer_ || !RuntimeLayout::valid(arena) || snapshot.used_ == 0 ||
+            snapshot.used_ > Handoff::table_pages || snapshot.base_ != arena + Handoff::tables_offset ||
+            h.get(0) != Handoff::magic || h.get(8, 4) != 6 || h.get(12, 4) != Handoff::header ||
+            h.get(16) != Handoff::arena_bytes || h.get(24) != arena || !h.get(32) || h.get(32) > MemoryMap::max_bytes ||
+            h.get(40) < 40 || h.get(40) > 256 || h.get(48, 4) != 1 || h.get(52, 4) < 1 || h.get(52, 4) > 3 ||
+            !h.get(56) || h.get(56) > Handoff::payload_limit || h.get(56) > h.get(80) || !h.get(64) ||
+            h.get(64) % 4096 || h.get(72) % 4096 || h.get(80) % 4096 || h.get(64) > h.get(72) ||
+            h.get(72) > h.get(80) || h.get(80) > Handoff::payload_limit || h.get(88) != snapshot.base_ ||
+            h.get(96) != snapshot.used_ || h.get(104) != arena + Handoff::payload_offset || !h.get(112) ||
             h.get(120) != arena + Handoff::framebuffer_record_offset || apic->owned_arena() != arena ||
             framebuffer->owned_arena() != arena)
             return false;
@@ -308,17 +322,19 @@ public:
                     return true;
             return false;
         };
-        std::array<bool, Handoff::table_pages> visited{};
+        // Do not initialize the bitmap until its actual storage has been checked.
+        std::array<bool, Handoff::table_pages> visited;
         const auto walk = [&](auto &&self, std::uint64_t table_address, unsigned level, std::uint64_t prefix)
                               __attribute__((noinline, noclone)) -> bool {
-            if (table_address < base_ || table_address >= base_ + used_ * 4096 || table_address % 4096)
+            if (table_address < snapshot.base_ || table_address >= snapshot.base_ + snapshot.used_ * 4096 ||
+                table_address % 4096)
                 return false;
-            const auto slot = (table_address - base_) / 4096;
+            const auto slot = (table_address - snapshot.base_) / 4096;
             if (visited[slot])
                 return false;
             visited[slot] = true;
             for (std::uint64_t i = 0; i < 512; ++i) {
-                const auto raw = table(table_address)[i];
+                const auto raw = snapshot.table(table_address)[i];
                 // Only present entries may have hardware A/D normalization.
                 // A non-present slot, including a guard, must be exactly zero.
                 if (!raw)
@@ -346,28 +362,43 @@ public:
             }
             return true;
         };
-        if (!walk(walk, base_, 3, 0))
+        // Construct the closure without invoking it, then check the real object
+        // extents. The original descriptor is now used only as an integer range.
+        // No bitmap initialization or traversal write may precede this guard.
+        const auto descriptor_begin = reinterpret_cast<std::uint64_t>(this);
+        const auto snapshot_begin = reinterpret_cast<std::uint64_t>(&snapshot);
+        const auto bitmap_begin = reinterpret_cast<std::uint64_t>(&visited);
+        const auto closure_begin = reinterpret_cast<std::uint64_t>(&walk);
+        if (!paired_graphical_storage_disjoint(descriptor_begin, sizeof(*this), bitmap_begin, sizeof(visited)) ||
+            !paired_graphical_storage_disjoint(descriptor_begin, sizeof(*this), snapshot_begin, sizeof(snapshot)) ||
+            !paired_graphical_storage_disjoint(descriptor_begin, sizeof(*this), closure_begin, sizeof(walk)) ||
+            !paired_graphical_storage_disjoint(snapshot_begin, sizeof(snapshot), bitmap_begin, sizeof(visited)) ||
+            !paired_graphical_storage_disjoint(snapshot_begin, sizeof(snapshot), closure_begin, sizeof(walk)) ||
+            !paired_graphical_storage_disjoint(bitmap_begin, sizeof(visited), closure_begin, sizeof(walk)))
             return false;
-        for (std::size_t index = 0; index < used_; ++index)
+        visited.fill(false);
+        if (!walk(walk, snapshot.base_, 3, 0))
+            return false;
+        for (std::size_t index = 0; index < snapshot.used_; ++index)
             if (!visited[index])
                 return false;
         for (std::uint64_t offset = 0; offset < Handoff::arena_bytes; offset += 4096) {
             const auto flags = expected_flags(offset, h);
             const auto expected = flags ? (arena + offset) | flags : 0;
-            const auto actual = entry(arena + offset);
+            const auto actual = snapshot.entry(arena + offset);
             if ((flags ? actual & ~0x60ULL : actual) != expected)
                 return false;
         }
-        if (!window_slot() || entry(window_address) ||
-            (entry(LocalApicAdmission::virtual_address) & ~0x60ULL) !=
+        if (!snapshot.window_slot() || snapshot.entry(window_address) ||
+            (snapshot.entry(LocalApicAdmission::virtual_address) & ~0x60ULL) !=
                 apic->mapping(LocalApicAdmission::virtual_address))
             return false;
         for (std::uint64_t offset = 0; offset < bytes; offset += 4096) {
             const auto page = FramebufferAdmission::virtual_address + offset;
-            if ((entry(page) & ~0x60ULL) != framebuffer->mapping(page))
+            if ((snapshot.entry(page) & ~0x60ULL) != framebuffer->mapping(page))
                 return false;
         }
-        return !entry(graphics_guard) && !entry(FramebufferAdmission::virtual_address + bytes);
+        return !snapshot.entry(graphics_guard) && !snapshot.entry(FramebufferAdmission::virtual_address + bytes);
     }
     // Keep one exact object/link identity for the trusted lookup. Local IPA
     // clones with identical names in separate translation units are not admitted

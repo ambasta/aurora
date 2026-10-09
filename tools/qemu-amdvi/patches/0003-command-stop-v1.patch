@@ -1,0 +1,64 @@
+--- a/hw/i386/amd_iommu.c
++++ b/hw/i386/amd_iommu.c
+@@ -557,8 +557,11 @@
+     trace_amdvi_iotlb_inval();
+ }
+ 
+-/* not honouring reserved bits is regarded as an illegal command */
+-static void amdvi_cmdbuf_exec(AMDVIState *s)
++/*
++ * Return false to stop on an unrecognized opcode. Recognized-command field
++ * checks and command-read errors retain their existing behavior in this slice.
++ */
++static bool amdvi_cmdbuf_exec(AMDVIState *s)
+ {
+     uint64_t cmd[2];
+ 
+@@ -566,7 +569,7 @@
+                         cmd, AMDVI_COMMAND_SIZE, MEMTXATTRS_UNSPECIFIED)) {
+         trace_amdvi_command_read_fail(s->cmdbuf, s->cmdbuf_head);
+         amdvi_log_command_error(s, s->cmdbuf + s->cmdbuf_head);
+-        return;
++        return true;
+     }
+ 
+     switch (extract64(cmd[0], 60, 4)) {
+@@ -595,16 +598,18 @@
+         amdvi_inval_all(s, cmd);
+         break;
+     default:
+-        trace_amdvi_unhandled_command(extract64(cmd[1], 60, 4));
+-        /* log illegal command */
+-        amdvi_log_illegalcom_error(s, extract64(cmd[1], 60, 4),
+-                                   s->cmdbuf + s->cmdbuf_head);
+-    }
++        trace_amdvi_unhandled_command(extract64(cmd[0], 60, 4));
++        /* Table 61 has no opcode field; keep reserved info bits zero. */
++        amdvi_log_illegalcom_error(s, 0, s->cmdbuf + s->cmdbuf_head);
++        return false;
++    }
++    return true;
+ }
+ 
+ static void amdvi_cmdbuf_run(AMDVIState *s)
+ {
+-    if (!s->cmdbuf_enabled) {
++    if (!s->cmdbuf_enabled || !amdvi_test_mask(s, AMDVI_MMIO_STATUS,
++                                             AMDVI_MMIO_STATUS_CMDBUF_RUN)) {
+         trace_amdvi_command_error(amdvi_readq(s, AMDVI_MMIO_CONTROL));
+         return;
+     }
+@@ -612,7 +617,12 @@
+     /* check if there is work to do. */
+     while (s->cmdbuf_head != s->cmdbuf_tail) {
+         trace_amdvi_command_exec(s->cmdbuf_head, s->cmdbuf_tail, s->cmdbuf);
+-        amdvi_cmdbuf_exec(s);
++        if (!amdvi_cmdbuf_exec(s)) {
++            /* Stop even if logging discarded the error. Do not retire it. */
++            amdvi_assign_andq(s, AMDVI_MMIO_STATUS,
++                              ~AMDVI_MMIO_STATUS_CMDBUF_RUN);
++            return;
++        }
+         s->cmdbuf_head += AMDVI_COMMAND_SIZE;
+ 
+         /* wrap head pointer */

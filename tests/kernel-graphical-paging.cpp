@@ -21,6 +21,58 @@ auto need(bool value, std::string_view why) -> void {
         std::abort();
     }
 }
+auto paired_storage_cases() -> void {
+    // These are integer intervals only. Never forge an overlapping PageTables,
+    // bitmap or closure object, and never dereference a hostile test address.
+    const auto check = [](U64 a, U64 size_a, U64 b, U64 size_b, bool expected, std::string_view why) {
+        need(PageTables::paired_graphical_storage_disjoint(a, size_a, b, size_b) == expected, why);
+        need(PageTables::paired_graphical_storage_disjoint(b, size_b, a, size_a) == expected, why);
+    };
+    constexpr U64 begin = 0x1000, maximum = ~U64{0};
+    constexpr U64 descriptor_bytes = sizeof(PageTables);
+    constexpr U64 bitmap_bytes = sizeof(std::array<bool, Handoff::table_pages>);
+    check(begin, descriptor_bytes, begin, descriptor_bytes, false, "identical descriptor ranges overlap");
+    check(begin, descriptor_bytes, begin, bitmap_bytes, false, "bitmap shares descriptor start");
+    check(begin, descriptor_bytes, begin + 1, bitmap_bytes, false, "bitmap is contained in descriptor");
+    check(begin, descriptor_bytes, begin - 1, descriptor_bytes + 2, false, "descriptor is strictly contained");
+    check(begin,
+          descriptor_bytes,
+          begin + descriptor_bytes - 1,
+          bitmap_bytes,
+          false,
+          "one-byte overlap at descriptor end");
+    check(
+        begin, descriptor_bytes, begin - bitmap_bytes + 1, bitmap_bytes, false, "one-byte overlap at descriptor start");
+    check(begin, descriptor_bytes, begin + descriptor_bytes, bitmap_bytes, true, "bitmap follows adjacently");
+    check(begin, descriptor_bytes, begin - bitmap_bytes, bitmap_bytes, true, "bitmap precedes adjacently");
+    check(begin, descriptor_bytes, begin + descriptor_bytes + 1, bitmap_bytes, true, "one-byte gap after descriptor");
+    check(begin, descriptor_bytes, begin - bitmap_bytes - 1, bitmap_bytes, true, "one-byte gap before descriptor");
+    check(maximum - descriptor_bytes - bitmap_bytes,
+          descriptor_bytes,
+          maximum - bitmap_bytes,
+          bitmap_bytes,
+          true,
+          "adjacent ranges may end exactly at the maximum endpoint");
+    check(maximum - descriptor_bytes + 1,
+          descriptor_bytes,
+          begin,
+          bitmap_bytes,
+          false,
+          "descriptor endpoint overflow fails closed");
+    check(begin,
+          descriptor_bytes,
+          maximum - bitmap_bytes + 1,
+          bitmap_bytes,
+          false,
+          "bitmap endpoint overflow fails closed");
+    check(maximum - descriptor_bytes + 1,
+          descriptor_bytes,
+          maximum - bitmap_bytes + 1,
+          bitmap_bytes,
+          false,
+          "both endpoints overflowing fail closed");
+    check(maximum, 1, 0, bitmap_bytes, false, "single-byte interval cannot wrap through zero");
+}
 auto descriptor(Buffer &map, U64 begin, U64 pages, unsigned type) -> void {
     const auto at = map.size();
     map.resize(at + 40);
@@ -81,6 +133,7 @@ auto slot(U64 root, U64 address, unsigned level = 0) -> U64 & {
 int main() {
     static_assert(!std::is_default_constructible_v<LocalApicAdmission>);
     static_assert(!std::is_default_constructible_v<FramebufferAdmission>);
+    paired_storage_cases();
     const auto arena = reinterpret_cast<U64>(storage.data());
     need(RuntimeLayout::valid(arena), "model requires below-4-GiB non-PIE arena");
     auto h = std::span{storage}.first(Handoff::header);
@@ -141,6 +194,9 @@ int main() {
     }
     need(!PageTables{root, 0}.verify_graphical(arena, Bytes{h}, &*apic, &*graphics), "zero table inventory");
     need(!PageTables{root, 17}.verify_graphical(arena, Bytes{h}, &*apic, &*graphics), "excess table inventory");
+    for (U64 bad_root : {U64{0}, root - 1, root + 4096, ~U64{0}})
+        need(!PageTables{bad_root, tables.used()}.verify_graphical(arena, Bytes{h}, &*apic, &*graphics),
+             "captured base must match the bounded owned table arena before dereference");
     need(!tables.verify_graphical(arena + 4096, Bytes{h}, &*apic, &*graphics), "wrong caller arena");
     constexpr U64 first = 0xffffa00000001000ULL, end = first + 0x300000;
     for (U64 address : {U64{0xffff900000000000ULL}, first, first + 511 * 4096, end - 4096, arena + 0x22000}) {
