@@ -390,7 +390,7 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
         require(type(authorized_pushes) is dict and authorized_pushes,
                 "Empty or malformed memory-push site inventory")
         for address, displacement in authorized_pushes.items():
-            require(type(address) is int and type(displacement) is int and displacement in (8, 24)
+            require(type(address) is int and type(displacement) is int and displacement in (8, 24, 40)
                     and begin <= address < end and address in instructions,
                     "Unproved memory-push address or displacement")
             row = instructions[address]

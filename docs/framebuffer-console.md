@@ -349,10 +349,20 @@ the validation predicates are unchanged. Other profiles do not enable these
 emission attributes. This boundary changes paired generated inputs, so fresh
 image/stack and capture-contract review is required before qualification reuse.
 
-The graphical stack adapter may authorize only the two reviewed GCC16 normal
-RSP-relative qword argument pushes, bound to their owner, offsets, opcodes and
+The graphical stack adapter may authorize only the separate exact GCC16 normal
+and capture pairs of RSP-relative qword argument pushes, bound to their owner, offsets, opcodes and
 operands. The shared decoder otherwise rejects memory pushes. For an authorized
 site it bounds the complete eight-byte source against the old live frame before
 adding eight bytes of stack consumption; stale or unused sites and unbalanced
 paths reject. This proves bounded stack effects, not copied-value initialization
 or authority. Existing save/return checks and whole-image budgets remain in force.
+
+Capture qualification retains complete toolchain-specific file, instruction and
+private-state tuples. The separate-validator GCC14 path composes real validator
+calls with selector, crossed/stale grant, fixed pixel-failure and diagnostic
+proofs. The GCC16 variant also proves its emitted inline UART/text/decimal loops
+and separately binds its seven-file tuple including callgraph metadata. Both
+variants reject fixed error cases before the MMIO effect; GCC14 increments the
+successful-store counter before that effect, while GCC16 increments it after. Mixed tuples and unknown emitted forms reject. An analysis of retained
+failed bytes leaves the failed attempt intact and does not constitute a new
+build receipt, guest result or completed integrated qualification.

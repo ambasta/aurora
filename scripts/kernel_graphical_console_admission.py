@@ -59,6 +59,7 @@ def load(name, path):
 
 common = load("graphical_common", ROOT / "scripts/kernel_program_console_admission.py")
 console = load("graphical_console_controls", ROOT / "scripts/kernel_console_service_admission.py")
+capture_gcc16 = load("graphical_capture_gcc16", ROOT / "scripts/kernel_graphical_capture_gcc16.py")
 digest = common.digest
 verify_irq_body = console.verify_irq_body
 verify_irq_reachability = console.verify_irq_reachability
@@ -326,11 +327,15 @@ def require_capture_linked_proof(mode, evidence=None, build=None):
         in {
             "c060811e6e5afabe3527685dfc87905d56ef319ef0caaade1f93063cb1565af2",
             "3d6ae7af3fc62adf5c78861ce0d5d28ed6feb87f4ea7744b097fa534cfc106c2",
+            *CAPTURE_SEPARATE_PROOF_SHA256.values(),
         },
         "Capture fixture linked proof pending: missing or changed complete reviewed proof",
     )
     if evidence["files"] == CAPTURE_LIBCALL_FILE_CONTRACTS:
         verify_capture_libcall_applicability(build)
+    for version, files in CAPTURE_SEPARATE_FILE_CONTRACTS.items():
+        if evidence["files"] == files:
+            verify_capture_separate_applicability(build, version)
 
 
 def unreviewed_linked_function(symbol, original_code, payload, error):
@@ -495,7 +500,7 @@ CAPTURE_LIBCALL_SOURCE_SHA256 = "0bc17d08d9eb2eb3267ad6f1613c5e5eaa933254db53777
 
 def capture_file_contract(files):
     need(type(files) is dict, "Changed exact capture object/relocation/frame/language/image bytes")
-    for contract in (CAPTURE_FILE_CONTRACTS, CAPTURE_LIBCALL_FILE_CONTRACTS):
+    for contract in (CAPTURE_FILE_CONTRACTS, CAPTURE_LIBCALL_FILE_CONTRACTS, *CAPTURE_SEPARATE_FILE_CONTRACTS.values()):
         if files == contract:
             return contract
     raise ValueError("Changed exact capture object/relocation/frame/language/image bytes")
@@ -1140,6 +1145,9 @@ def capture_diagnostic_proof(decoder, linked, code, payload):
 
 def capture_linked_evidence(decoder, linked, code, payload, file_hashes):
     contract = capture_file_contract(file_hashes)
+    for version, current in CAPTURE_SEPARATE_FILE_CONTRACTS.items():
+        if contract == current:
+            return capture_separate_linked_evidence(decoder, linked, code, payload, file_hashes, version)
     need(
         hashlib.sha256(payload).hexdigest() == contract["payload.bin"],
         "Changed exact capture payload bytes",
@@ -1220,23 +1228,28 @@ def normalize_instruction(decoder, row, payload):
 
 STACK_MEMORY_PUSH_OWNER = "_ZN6aurora4uefi21run_graphical_consoleEmRKNS0_5BytesE"
 STACK_MEMORY_PUSH_SITES = ((0x79C, 8, bytes.fromhex("ff742408")), (0x7A6, 24, bytes.fromhex("ff742418")))
+STACK_MEMORY_PUSH_LAYOUTS = {
+    5437: STACK_MEMORY_PUSH_SITES,
+    8448: ((0xC86, 24, bytes.fromhex("ff742418")), (0xC90, 40, bytes.fromhex("ff742428"))),
+}
 
 
 def stack_memory_push_evidence(symbols, code, payload):
-    """Authorize only the retained GCC16 normal argument-copy instruction sites.
+    """Authorize only the separate retained GCC16 normal/capture argument-copy sites.
 
     This binds original encoding and ownership, not copied values or authority.
     The core still proves the eight-byte read against each pre-push live depth.
     """
     memory_rows = [row for row in code.values() if row.op.startswith("push") and "(" in row.args]
     owner = symbols.get(STACK_MEMORY_PUSH_OWNER)
-    if not memory_rows and (owner is None or owner.size != 5437):
+    if not memory_rows and (owner is None or owner.size not in STACK_MEMORY_PUSH_LAYOUTS):
         return {}, []
-    need(owner is not None and owner.size == 5437, "Unreviewed memory-push owner or emitted extent")
-    expected = {owner.address + offset for offset, _, _ in STACK_MEMORY_PUSH_SITES}
+    need(owner is not None and owner.size in STACK_MEMORY_PUSH_LAYOUTS, "Unreviewed memory-push owner or emitted extent")
+    layout = STACK_MEMORY_PUSH_LAYOUTS[owner.size]
+    expected = {owner.address + offset for offset, _, _ in layout}
     need({row.address for row in memory_rows} == expected, "Unknown, missing or foreign memory-push site")
     sites, receipts = {}, []
-    for offset, displacement, raw in STACK_MEMORY_PUSH_SITES:
+    for offset, displacement, raw in layout:
         address = owner.address + offset
         row = code[address]
         need(row.op == "push" and row.args == hex(displacement) + "(%rsp)" and row.size == 4
@@ -3882,6 +3895,16 @@ def graphical_cpp_frames(decoder, directory, linked, paired_walk=PAIRED_WALK):
     return associated, receipts, alias_objects
 
 
+def capture_files_for_symbols(names):
+    legacy="_ZN6aurora4uefi12_GLOBAL__N_116capture_scenarioE"
+    gcc16="_ZN6aurora4uefi12_GLOBAL__N_1L16capture_scenarioE"
+    markers=set(names)&{legacy,gcc16}
+    need(len(markers)<=1, "Ambiguous capture state owner")
+    if gcc16 in markers:return capture_gcc16.FILES
+    if legacy in markers:return CAPTURE_FILE_CONTRACTS
+    return None
+
+
 def stack_evidence(directory):
     decoder = load("graphical_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     decoder.CPP_OBJECTS = CPP_OBJECTS
@@ -4014,13 +4037,14 @@ def stack_evidence(directory):
     waiting["peak_with_interrupt"] = waiting["peak"] + irq_peak
     waiting["peak_with_interrupt_and_fault"] = waiting["peak"] + irq_peak + fault
     capture_fixture = None
-    if "_ZN6aurora4uefi12_GLOBAL__N_116capture_scenarioE" in named:
+    capture_files = capture_files_for_symbols(named)
+    if capture_files is not None:
         capture_fixture = capture_linked_evidence(
             decoder,
             linked,
             original_code,
             payload,
-            {name: digest(directory / name) for name in CAPTURE_FILE_CONTRACTS},
+            {name: digest(directory / name) for name in capture_files},
         )
     return dict(
         stack_bytes=16384,
@@ -4300,8 +4324,700 @@ def main():
         print("Verified current combined receipt identity; independent qualification not claimed.")
 
 
+# Separate-validator GCC14 capture control flow; all addresses refer to original bytes.
+def capture_selector_proof_gcc14(decoder, linked, code, payload):
+    capture_expect(
+        code,
+        {
+            0x50b3: ("mov", "$0x989680,%ecx"),
+            0x50b8: ("mov", "$0x3fd,%edx"),
+            0x50c0: ("pause", ""),
+            0x50c2: ("sub", "$0x1,%ecx"),
+            0x50cb: ("in", "(%dx),%al"),
+            0x50cc: ("test", "$0x1e,%al"),
+            0x50d4: ("test", "$0x1,%al"),
+            0x50d8: ("mov", "$0x3f8,%edx"),
+            0x50dd: ("in", "(%dx),%al"),
+            0x50de: ("sub", "$0x43,%eax"),
+            0x50e1: ("cmp", "$0x21,%al"),
+            0x50f6: ("movzbl", "%al,%eax"),
+            0x5100: ("movzbl", "(%rdx,%rax,1),%ebx"),
+            0x5104: ("test", "%bl,%bl"),
+            0x511f: ("movzbl", "%bl,%edi"),
+        },
+    )
+    for address, operation, target in (
+        (0x50c5, "je", 0x515c),
+        (0x50ce, "jne", 0x54eb),
+        (0x50d6, "je", 0x50c0),
+        (0x50e3, "jbe", 0x50f6),
+        (0x5106, "je", 0x50e5),
+    ):
+        need(
+            code[address].op == operation and decoder.target_of(code[address]) == target,
+            "Changed closed capture selector rejection edge",
+        )
+    need(
+        code[0x50f9].op == "lea"
+        and code[0x50f9].args.endswith(",%rdx")
+        and capture_rip_target(code[0x50f9], payload) == 0xd8a0,
+        "Changed capture byte table address",
+    )
+    capture_readonly(linked, 0xd8a0, 34)
+    table = payload[0xd8a0:0xd8c2]
+    expected = {ord("G"): 1, ord("C"): 2, ord("D"): 3, ord("c"): 4, ord("d"): 5, ord("F"): 6, ord("I"): 7}
+    decoded = {}
+    for byte in range(256):
+        index = (byte - 0x43) & 255
+        selected = table[index] if index <= 33 else 0
+        need(selected == expected.get(byte, 0), "Capture selector table admits a wrong byte/code")
+        if selected:
+            decoded[chr(byte)] = selected
+    need(
+        capture_direct_writers(decoder, code, payload, 0xf1c8, 1) == [0x5114],
+        "Capture scenario has a missing, late or additional writer",
+    )
+    need(
+        code[0x5114].op == "mov"
+        and code[0x5114].args.startswith("%bl,")
+        and capture_rip_target(code[0x5114], payload) == 0xf1c8,
+        "Capture scenario is not the validated byte result",
+    )
+    capture_call(decoder, code, 0x511a, 0x7790)
+    capture_call(decoder, code, 0x5122, 0x7800)
+    capture_expect(
+        code,
+        {
+            0x7799: ("push", "%rbx"),
+            0x77a8: ("mov", "$0x3f8,%ebx"),
+            0x77f5: ("pop", "%rbx"),
+            0x77f6: ("ret", ""),
+            0x77f7: ("ret", ""),
+        },
+    )
+    text_symbol = next(symbol for symbol in linked.functions.values() if symbol.address == 0x7790)
+    _, text_dominators = capture_cfg(decoder, text_symbol, code)
+    need(
+        {0x7799, 0x77f5} <= text_dominators[0x77f6] and 0x7799 in text_dominators[0x77a8],
+        "Capture diagnostic callee does not restore full RBX",
+    )
+    for row in paired_rows(text_symbol, code):
+        arguments = decoder.arguments(row.args)
+        need(row.op != "call", "Capture release text helper acquired an unproved callee")
+        if arguments and paired_register(arguments[-1]) == "rbx" and row.op not in decoder.READ_ONLY | {"push"}:
+            need(row.address in (0x77a8, 0x77f5), "Capture diagnostic callee acquired an RBX clobber")
+    # The complete text helper contract below saves/restores RBX on the nonempty
+    # path and leaves it unchanged on the empty path. The only later release
+    # value is zero-extended BL, whose producing write zero-extended all EBX.
+    _, dominators = capture_cfg(decoder, linked.functions[CAPTURE_RUN], code)
+    required = {
+        0x5044,
+        0x504d,
+        0x50cb,
+        0x50cc,
+        0x50d4,
+        0x50dd,
+        0x50de,
+        0x50e1,
+        0x50f6,
+        0x50f9,
+        0x5100,
+        0x5104,
+        0x5114,
+        0x511a,
+        0x511f,
+    }
+    need(required <= dominators[0x5122], "Capture numeric release bypasses validated selector/state lineage")
+    need({0x5114, 0x5122, 0x5133} <= dominators[0x57ac], "Capture grants precede release completion")
+    return dict(selectors=decoded, invalid_bytes=249, table=[0xd8a0, 34], writer=0x5114, numeric_release=0x5122)
+
+
+
+def capture_authority_proof_gcc14(decoder, linked, code, payload):
+    symbol = linked.functions[CAPTURE_RUN]
+    edges, dominators = capture_cfg(decoder, symbol, code)
+    reaches_entry = {0x5919}
+    while True:
+        larger = reaches_entry | {address for address, targets in edges.items() if targets & reaches_entry}
+        if larger == reaches_entry:
+            break
+        reaches_entry = larger
+    for address, target in (
+        (0x57ac, 0x3A10),
+        (0x57bb, 0x3B00),
+        (0x5865, 0x39B0),
+        (0x5890, 0x3A80),
+        (0x5bb9, 0x39B0),
+        (0x5bd0, 0x39B0),
+        (0x5bde, 0x3A10),
+        (0x5bfb, 0x3A80),
+        (0x5c2e, 0x3A80),
+        (0x5c40, 0x3B00),
+        (0x5919, 0xcd17),
+    ):
+        capture_call(decoder, code, address, target)
+    capture_expect(
+        code,
+        {
+            0x4d46: ("lea", "0xf0(%rsp),%rcx"),
+            0x4da5: ("mov", "%rcx,0x8(%rsp)"),
+            0x5914: ("mov", "0x8(%rsp),%rdi"),
+            0x5853: ("mov", "0xf8(%rsp),%rsi"),
+            0x585b: ("mov", "0xf0(%rsp),%rdi"),
+            0x5863: ("xor", "%edx,%edx"),
+            0x5872: ("mov", "0x108(%rsp),%rsi"),
+            0x587a: ("xor", "%edx,%edx"),
+            0x587c: ("mov", "0x100(%rsp),%rdi"),
+            0x594d: ("mov", "%r13,0xf0(%rsp)"),
+            0x5ba4: ("mov", "%rbx,0x100(%rsp)"),
+            0x5be3: ("mov", "%rax,%rbx"),
+            0x5be6: ("mov", "%rdx,%rbp"),
+            0x3A18: ("cmp", "$0xffffffffffffffff,%rbx"),
+            0x3A43: ("lea", "0x1(%rbx),%rdx"),
+            0x3B0D: ("cmp", "$0xffffffffffffffff,%rax"),
+            0x3B1E: ("lea", "0x1(%rax),%rbp"),
+            0x5826: ("cmp", "$0x2,%al"),
+            0x582e: ("cmp", "$0x3,%al"),
+            0x5836: ("cmp", "$0x4,%al"),
+            0x583e: ("cmp", "$0x5,%al"),
+            0x5bb7: ("xor", "%edx,%edx"),
+            0x5bc4: ("mov", "$0x1,%edx"),
+            0x5bf3: ("xor", "%edx,%edx"),
+            0x5c26: ("mov", "$0x1,%edx"),
+        },
+    )
+    for row in paired_rows(symbol, code):
+        if 0x4d46 < row.address < 0x4da5:
+            arguments = decoder.arguments(row.args)
+            need(
+                row.op != "call"
+                and row.op not in decoder.BRANCHES
+                and not (arguments and paired_register(arguments[-1]) == "rcx" and row.op not in decoder.READ_ONLY),
+                "Capture local record pointer register is clobbered before its save",
+            )
+    expected_record_writes = {
+        0x57d0: (0xF0, "%rbx"),
+        0x57e8: (0xF8, "%rbp"),
+        0x57f5: (0x108, "%rax"),
+        0x580e: (0x100, "%r13"),
+        0x5816: (0x110, "%rcx"),
+        0x581e: (0x118, "%rdi"),
+        0x594d: (0xF0, "%r13"),
+        0x5ba4: (0x100, "%rbx"),
+    }
+    observed = {}
+    pointer_writes = []
+    for row in paired_rows(symbol, code):
+        if row.address not in reaches_entry:
+            continue
+        args = decoder.arguments(row.args)
+        if row.op in decoder.READ_ONLY | {"lea", "nop", "nopl", "nopw", "cs", "data16"} or len(args) != 2:
+            continue
+        slot = paired_slot(args[-1])
+        if slot is None:
+            continue
+        if not (
+            (row.address >= 0x57ac and slot < 0x120 and 0xF0 < slot + 8)
+            or (row.address >= 0x4da5 and slot < 16 and 8 < slot + 8)
+        ):
+            continue
+        width = paired_width(row, args)
+        if row.address >= 0x57ac and slot < 0x120 and 0xF0 < slot + width:
+            need(width == 8, "Capture record gained a partial/overlapping write")
+            observed[row.address] = (slot, args[0])
+        if row.address >= 0x4da5 and slot < 16 and 8 < slot + width:
+            pointer_writes.append(row.address)
+    need(observed == expected_record_writes, "Capture record/geometry/generation writer inventory changed")
+    need(pointer_writes == [0x4da5], "Capture local record pointer slot is overwritten before entry")
+    for branch, opcode, destination in (
+        (0x5828, "je", 0x594d),
+        (0x5830, "je", 0x5ba4),
+        (0x5838, "je", 0x5bb1),
+        (0x5840, "je", 0x5bee),
+    ):
+        need(
+            code[branch].op == opcode and decoder.target_of(code[branch]) == destination,
+            "Changed fixed cross/stale scenario branch",
+        )
+    for clear, target, reopen, preflights in (
+        (0x5bd5, 0xf150, 0x5bde, {0x5bb9, 0x5bc9, 0x5bd0}),
+        (0x5c37, 0xf128, 0x5c40, {0x5bfb, 0x5c0c, 0x5c05, 0x5c1a, 0x5c2e}),
+    ):
+        need(
+            code[clear].op == "movw"
+            and code[clear].args.startswith("$0x0,")
+            and capture_rip_target(code[clear], payload) == target,
+            "Capture stale fixture lacks real Session close",
+        )
+        need(preflights | {clear} <= dominators[reopen], "Capture reopen bypasses real close validation")
+    for address, target in ((0x5bc9, 0xf151), (0x5c0c, 0xf129)):
+        need(
+            code[address].op == "movb"
+            and code[address].args.startswith("$0x1,")
+            and capture_rip_target(code[address], payload) == target,
+            "Capture stale fixture skips Session enter",
+        )
+    for target, writer in ((0xf130, 0x3A65), (0xf0e8, 0x3BA2), (0xf148, 0x3A6C), (0xf108, 0x3BA9)):
+        need(
+            capture_direct_writers(decoder, code, payload, target, 8) == [writer],
+            "Capture Session generation has an additional/reset writer",
+        )
+    for name, comparison, dereference, overflow, advance, generation_store in (
+        (CAPTURE_CONSOLE, 0x39BB, 0x39CA, 0x3A18, 0x3A43, 0x3A65),
+        (CAPTURE_DISPLAY, 0x3A88, 0x3A9A, 0x3B0D, 0x3B1E, 0x3BA2),
+    ):
+        _, validation = capture_cfg(decoder, linked.functions[name + "8validateEPKvmb"], code)
+        need(comparison in validation[dereference], "Session grant is dereferenced before exact address equality")
+        _, opening = capture_cfg(decoder, linked.functions[name + "4openEv"], code)
+        need({overflow, advance} <= opening[generation_store], "Session reopen can reset/wrap/bypass generation")
+    required = {
+        0x4d46,
+        0x4da5,
+        0x5114,
+        0x5122,
+        0x57ac,
+        0x57bb,
+        0x5865,
+        0x5890,
+        0x5899,
+        0x58a6,
+        0x58c1,
+        0x58db,
+        0x58e7,
+        0x58f4,
+        0x5909,
+        0x5914,
+    }
+    need(required <= dominators[0x5919], "Compiled entry bypasses local record identity or paired preflight")
+    need(capture_direct_writers(decoder, code, payload, 0xf1e8, 8) == [0x5909], "Consumer entry counter writer drift")
+    return dict(
+        record_bytes=48,
+        record_stack_offset=0xF0,
+        record_pointer=[0x4d46, 0x4da5, 0x5914],
+        cross_writes=[0x594d, 0x5ba4],
+        real_reopens=[0x5bde, 0x5c40],
+        preflights=[0x5865, 0x5890],
+        compiled_entry=0x5919,
+        stale_record_generations_preserved=[0xF8, 0x108],
+    )
+
+
+
+def capture_serial_sequence_gcc14(decoder, linked, code, payload, begin, end, seeds):
+    registers, result, address = dict(seeds), [], begin
+    while address < end:
+        row = code[address]
+        args = decoder.arguments(row.args)
+        if row.address == 0x5aa6:
+            need(
+                row.op == "movb" and row.args.startswith("$0x0,") and capture_rip_target(row, payload) == 0xf179,
+                "Capture completion does not clear ready state",
+            )
+        elif row.op == "call":
+            target = decoder.target_of(row)
+            if target == 0x7790:
+                length, data = registers.get("rdi"), registers.get("rsi")
+                if (length, data) == ("reason_length", "reason_data"):
+                    result.append(["text", "<reason>"])
+                else:
+                    need(
+                        type(length) is int and type(data) is int and 0 < length < 128,
+                        "Unproved capture text arguments",
+                    )
+                    capture_readonly(linked, data, length + 1)
+                    need(payload[data + length] == 0, "Capture diagnostic string extent changed")
+                    result.append(["text", payload[data : data + length].decode("ascii")])
+            else:
+                need(target == 0x7800 and "rdi" in registers, "Unproved capture diagnostic callee/value")
+                result.append(["number", registers["rdi"]])
+            for register in PAIRED_CALLER_SAVED:
+                registers.pop(register, None)
+        elif row.op in ("mov", "movzbl", "lea") and len(args) == 2:
+            destination = paired_register(args[-1])
+            need(destination is not None, "Capture diagnostic unexpectedly writes memory")
+            source = args[0]
+            if source.startswith("$"):
+                value = int(source[1:], 0)
+            elif "%rip" in source:
+                target = capture_rip_target(row, payload)
+                value = target if row.op == "lea" else ["counter", target]
+            else:
+                value = registers.get(paired_register(source))
+                need(value is not None, "Unproved capture diagnostic register lineage")
+            registers[destination] = value
+        elif row.op not in ("nop", "nopl", "nopw", "cs", "data16"):
+            raise ValueError("Unreviewed capture diagnostic instruction: " + hex(address))
+        address = row.next
+    need(address == end, "Capture diagnostic boundary is not an instruction boundary")
+    return result
+
+
+
+def capture_diagnostic_proof_gcc14(decoder, linked, code, payload):
+    fail = capture_serial_sequence_gcc14(
+        decoder, linked, code, payload, 0x3884, 0x397C, {"rbp": "reason_length", "rbx": "reason_data"}
+    )
+    expected = [["text", "AURORA_GRAPHICAL_CONSOLE_FAIL: "], ["text", "<reason>"]]
+    fields = (
+        (" entries=", 0xf1e8),
+        (" samples=", 0xf1e0),
+        (" output_attempts=", 0xf1d8),
+        (" stores=", 0xf1f8),
+        (" completed=", 0xf1d0),
+        (" wakes=", 0xf210),
+        (" pixel_attempts=", 0xf1c0),
+    )
+    for label, counter in fields:
+        expected += [["text", label], ["number", ["counter", counter]]]
+    expected += [["text", "\r\n"]]
+    need(fail == expected, "Capture failure diagnostic counter order/source changed")
+    completion = capture_serial_sequence_gcc14(decoder, linked, code, payload, 0x5a9a, 0x5b96, {"r12": "completion"})
+    complete_expected = [["text", "AURORA_GRAPHICAL_CONSOLE_COMPLETE: completion="], ["number", "completion"]]
+    for label, counter in (fields[5], fields[3], fields[0], fields[1], fields[2], fields[4], fields[6]):
+        complete_expected += [["text", label], ["number", ["counter", counter]]]
+    complete_expected += [["text", "\r\n"]]
+    need(completion == complete_expected, "Capture completion diagnostic counter order/source changed")
+    release = capture_serial_sequence_gcc14(decoder, linked, code, payload, 0x511f, 0x5138, {"rbx": "selected_code"})
+    need(release == [["number", "selected_code"], ["text", "\r\n"]], "Capture release numeric value changed")
+    capture_expect(code, {0x3980: ("cli", ""), 0x3981: ("hlt", ""), 0x5ba0: ("cli", ""), 0x5ba1: ("hlt", "")})
+    return dict(failure=fail, completion=completion, release=release, terminal="capture cli/hlt loops")
+
+
+
+
+def capture_pixel_proof_gcc14(decoder, linked, code, payload):
+    """Original separate-validator pixel path; no normalized instruction view."""
+    symbol = linked.functions["__au_runtime_display_pixel"]
+    edges, dominators = capture_cfg(decoder, symbol, code)
+    capture_expect(code, {
+        0x3c10: ("mov", "%rdi,%rbx"), 0x3c13: ("mov", "%rsi,%rbp"),
+        0x3c16: ("mov", "%rdx,%r12"), 0x3c19: ("mov", "%rcx,%r15"),
+        0x3c1c: ("mov", "%r8,%r14"), 0x3c1f: ("mov", "%r9,%r13"),
+        0x3df8: ("mov", "$0x1,%edx"), 0x3dfd: ("mov", "%rbp,%rsi"),
+        0x3e00: ("mov", "%rbx,%rdi"), 0x3e03: ("mov", "$0x1,%r12d"),
+        0x3c2b: ("xor", "%edx,%edx"), 0x3c2d: ("mov", "%rbp,%rsi"),
+        0x3c30: ("mov", "%rbx,%rdi"), 0x3c57: ("cmp", "$0xff,%rax"),
+        0x3d85: ("cmp", "$0xf423f,%rdx"), 0x3d99: ("cmp", "$0xffffffffffffffff,%rax"),
+        0x3da3: ("add", "$0x1,%rax"), 0x3db5: ("cmp", "$0x6,%al"),
+        0x3db9: ("test", "%rdx,%rdx"), 0x3e38: ("cmp", "$0x7,%al"),
+        0x3e3c: ("cmp", "$0x37,%rdx"), 0x3dbe: ("mov", "$0x1,%r12d"),
+        0x3dc4: ("mov", "$0x1,%edx"), 0x3dc9: ("mov", "%rbp,%rsi"),
+        0x3dcc: ("mov", "%rbx,%rdi"), 0x3e95: ("add", "$0x1,%rdx"),
+        0x3e99: ("xor", "%r12d,%r12d"), 0x3eb0: ("mov", "%r13d,(%rcx)"),
+        0x3e15: ("mov", "%r12,%rax"),
+        0x3c42: ("mov", "0x90(%rsp),%rax"), 0x3c51: ("or", "%r13,%rax"),
+        0x3c54: ("or", "%r14,%rax"), 0x3c9f: ("cmp", "%rcx,%r12"),
+        0x3caa: ("cmp", "%rdx,%r15"), 0x3cb5: ("imul", "%r15,%rax"),
+        0x3cb9: ("add", "%r12,%rax"), 0x3cbc: ("shl", "$0x2,%rax"),
+        0x3cc0: ("mov", "%rax,(%rsp)"), 0x3cd1: ("mov", "(%rsp),%r8"),
+        0x3cd5: ("lea", "0x38(%rsp),%rdi"),
+        0x3cdf: ("movabs", "$0xffffa00000001000,%rdx"),
+        0x3cf9: ("and", "$0xfffffffffffff000,%r8"), 0x3d00: ("add", "%r8,%rdx"),
+        0x3d03: ("mov", "%rax,0x38(%rsp)"), 0x3d0f: ("mov", "%rdx,%rsi"),
+        0x3d1b: ("mov", "%rax,0x40(%rsp)"),
+        0x3d38: ("and", "$0xffffffffffffff9f,%rax"), 0x3d3c: ("mov", "%rax,%rsi"),
+        0x3d41: ("cmp", "%rdx,%rdi"), 0x3d65: ("add", "%rdx,%rax"),
+        0x3d68: ("movabs", "$0x800000000000001b,%rdx"), 0x3d72: ("or", "%rdx,%rax"),
+        0x3d75: ("cmp", "%rax,%rsi"), 0x3e48: ("cmp", "%rcx,%r12"),
+        0x3e65: ("sub", "$0x4,%rax"), 0x3e69: ("cmp", "%rcx,%rax"),
+        0x3e9c: ("movabs", "$0xffffa00000001000,%rax"),0x3ead: ("add", "%rax,%rcx"),
+        0x3ec6: ("cmp", "%rcx,%r15"),0x3ed1: ("imul", "%r15,%rax"),
+        0x3ed5: ("add", "%r12,%rax"),0x3ed8: ("shl", "$0x2,%rax"),
+        0x3edc: ("mov", "%rax,0x18(%rsp)"),
+
+    })
+    for at,op,target in ((0x3ca2,"jae",0x3cc9),(0x3cad,"jae",0x3cc9),
+                         (0x3e4b,"jb",0x3ec0),(0x3ec9,"jae",0x3e4d),
+                         (0x3d44,"jae",0x3d75),(0x3d52,"jae",0x3d75),
+                         (0x3bf8,"je",0x3c10),(0x3c29,"je",0x3bfa),
+                         (0x3c5d,"ja",0x3efe),(0x3c6a,"jae",0x3df8),
+                         (0x3c77,"jae",0x3df8),(0x3c84,"je",0x3de0),
+                         (0x3c91,"jne",0x3de0),(0x3ccb,"je",0x3f36),
+                         (0x3d78,"jne",0x3f25),(0x3d8c,"ja",0x3f14),
+                         (0x3e53,"je",0x3dbe),(0x3e6c,"jb",0x3dbe),
+                         (0x3d9d,"je",0x3f03),(0x3db7,"jne",0x3e38),
+                         (0x3dbc,"jne",0x3e38),(0x3e3a,"jne",0x3e46),
+                         (0x3e40,"je",0x3dbe)):
+        need(code[at].op == op and decoder.target_of(code[at]) == target,
+             "Changed separate-validator pixel failure branch")
+    for at,target in ((0x3c63,0xf118),(0x3c70,0xf120),(0x3c8a,0xf1f0),
+                      (0x3c97,0xf1a0),(0x3ca4,0xf1a4),(0x3caf,0xf1a8),
+                      (0x3cf2,0xf220),(0x3d08,0xf200),(0x3d4b,0xf198),(0x3d5e,0xf180),
+                      (0x3e59,0xf198),(0x3e72,0xf1ac),(0x3ec0,0xf1a4),(0x3ecb,0xf1a8),
+                      (0x3d7e,0xf1f8),(0x3d92,0xf1c0),(0x3da7,0xf1c0),
+                      (0x3dae,0xf1c8),(0x3ea6,0xf1f8)):
+        need(capture_rip_target(code[at],payload)==target, "Changed pixel counter source or writer")
+    for at,op,prefix,suffix in ((0x3d7e,"mov","",",%rdx"),(0x3d92,"mov","",",%rax"),
+                               (0x3da7,"mov","%rax,","(%rip)"),(0x3dae,"movzbl","",",%eax"),
+                               (0x3ea6,"mov","%rdx,","(%rip)")):
+        need(code[at].op==op and code[at].args.startswith(prefix) and code[at].args.endswith(suffix),
+             "Changed pixel counter/selector register lineage")
+    need(capture_direct_writers(decoder,code,payload,0xf1c0,8)==[0x3da7], "Pixel attempt writer drift")
+    need(capture_direct_writers(decoder,code,payload,0xf1f8,8)==[0x3ea6], "Pixel store writer drift")
+    for at,name in ((0x3c22,"_ZN6aurora4uefi12_GLOBAL__N_15quietEv"),
+                    (0x3c7d,"_ZN6aurora4uefi12_GLOBAL__N_15quietEv"),
+                    (0x3d20,"_ZNK6aurora4uefi10PageTables5entryEm")):
+        capture_call(decoder,code,at,linked.functions[name].address)
+    for at,op,prefix,target in ((0x3c33,"movl","$0x2,",0xf1f0),
+                                (0x3c4a,"movb","$0x1,",0xf129),
+                                (0x3e0e,"movb","$0x0,",0xf129),
+                                (0x3e18,"movl","$0x0,",0xf1f0)):
+        need(code[at].op==op and code[at].args.startswith(prefix)
+             and capture_rip_target(code[at],payload)==target, "Changed pixel enter/leave state")
+    validate=linked.functions[CAPTURE_DISPLAY+"8validateEPKvmb"].address
+    for at in (0x3c3d,0x3dcf,0x3e09):capture_call(decoder,code,at,validate)
+    # Identity/generation validation is a real callee before granting entry;
+    # its original closed body and pre-dereference dominance are checked by
+    # capture_authority_proof_gcc14, not inferred from a function name.
+    required={0x3bf5,0x3c22,0x3c27,0x3c2b,0x3c2d,0x3c30,0x3c33,0x3c3d,
+              0x3c4a,0x3c57,0x3c63,0x3c70,0x3c7d,0x3c82,0x3c8a,0x3cc9,
+              0x3d20,0x3d75,0x3d85,0x3d99,0x3da3,0x3da7,0x3dae,0x3db5,
+              0x3e51,0x3e69,0x3e95,0x3ea6}
+    need(required <= dominators[0x3eb0], "Pixel write bypasses authority, mapping, bounds or budget")
+    reached,pending=set(),[0x3dbe]
+    while pending:
+        at=pending.pop()
+        if at not in reached:reached.add(at);pending.extend(edges[at])
+    need(not {0x3e95,0x3ea6,0x3eb0}&reached, "Injected pixel failure reaches a store")
+    writes=[]
+    for row in paired_rows(symbol,code):
+        args=decoder.arguments(row.args)
+        if row.op in decoder.READ_ONLY|{"lea","nop","nopl","nopw","cs","data16"} or not args:continue
+        dst=args[-1]
+        if "(" in dst and "%rip" not in dst and "%rsp" not in dst:writes.append(row.address)
+    need(writes==[0x3eb0], "Additional indirect pixel store")
+    return dict(validator_calls=[0x3c3d,0x3dcf,0x3e09],attempt_writer=0x3da7,
+                failure_successful_store_ordinals=[0,55],error_join=0x3dbe,
+                successful_store_counter=0x3ea6,mmio_store=0x3eb0,
+                success_order="validate, attempt, fixture predicates, successful counter, MMIO store",returned_error=1)
+
+
+def capture_import_proof_gcc14(decoder, linked, code, payload):
+    """Compose actual separated validator calls with the three import effects."""
+    validator=linked.functions[CAPTURE_CONSOLE+"8validateEPKvmb"].address
+    facts={}
+    layouts=(
+        ("__au_runtime_console_put", (0x4204,0x428b), 0x4204,
+         (0x4242,0x426d,0x427d), (0x428b,), (0x42a8,),
+         {0x41e0:("mov","%rdi,%rbp"),0x41e3:("mov","%rsi,%r12"),0x41e6:("mov","%rdx,%rbx"),
+          0x41f2:("xor","%edx,%edx"),0x41f4:("mov","%r12,%rsi"),0x41f7:("mov","%rbp,%rdi"),
+          0x4280:("mov","%r12,%rsi"),0x4283:("mov","%rbp,%rdi"),0x4286:("mov","$0x1,%edx")}),
+        ("__au_runtime_console_next", (0x4313,0x433e,0x43d8,0x4450), 0x4313,
+         (0x43c8,0x43f5,0x436e,0x4377,0x43fc,0x4463,0x4467,0x446c), (0x4450,), (0x449e,),
+         {0x42f9:("mov","%rdi,%rbx"),0x42fc:("mov","%rsi,%rbp"),0x42ff:("mov","%rdx,%r12"),
+          0x430b:("xor","%edx,%edx"),0x430d:("mov","%rbp,%rsi"),0x4310:("mov","%rbx,%rdi"),
+          0x4326:("xor","%edx,%edx"),0x4328:("mov","%rbp,%rsi"),0x432b:("mov","%rbx,%rdi"),
+          0x43cd:("mov","$0x1,%edx"),0x43d2:("mov","%rbp,%rsi"),0x43d5:("mov","%rbx,%rdi"),
+          0x4445:("mov","$0x1,%edx"),0x444a:("mov","%rbp,%rsi"),0x444d:("mov","%rbx,%rdi")}),
+    )
+    for name,calls,preflight,effects,leaves,returns,expected in layouts:
+        symbol=linked.functions[name];rows=paired_rows(symbol,code);edges,dom=capture_cfg(decoder,symbol,code)
+        capture_expect(code,expected)
+        actual=[r.address for r in rows if r.op=="call" and decoder.target_of(r)==validator]
+        need(actual==list(calls), "Changed Console import validator call inventory")
+        need(all(preflight in dom[at] for at in effects), "Console effect bypasses validator")
+        need([r.address for r in rows if r.op=="ret"]==list(returns), "Changed Console import return inventory")
+        need(all(set(leaves)<=dom[at] for at in returns), "Console return bypasses leave validation")
+        facts[name]=dict(validator_calls=list(calls),effects=list(effects),return_validation=list(leaves))
+    quiet=linked.functions["_ZN6aurora4uefi12_GLOBAL__N_15quietEv"].address
+    for at in (0x41e9,0x4302):capture_call(decoder,code,at,quiet)
+    for at,op,prefix,target in ((0x41fa,"movl","$0x1,",0xf1f0),
+                              (0x4209,"movb","$0x1,",0xf151),
+                              (0x4293,"movb","$0x0,",0xf151),
+                              (0x429b,"movl","$0x0,",0xf1f0),
+                              (0x4334,"movl","$0x1,",0xf1f0),
+                              (0x4343,"movb","$0x1,",0xf151),
+                              (0x445c,"movb","$0x0,",0xf151),
+                              (0x447b,"movl","$0x0,",0xf1f0)):
+        need(code[at].op==op and code[at].args.startswith(prefix)
+             and capture_rip_target(code[at],payload)==target, "Changed Console import enter/leave state")
+    _,next_dom=capture_cfg(decoder,linked.functions["__au_runtime_console_next"],code)
+    need(all({0x433e,0x43d8}<=next_dom[at] for at in (0x43dd,0x43f5,0x43fc,0x436e,0x4377)),
+         "Console sample bypasses current active-operation validation")
+    for at,op,target in ((0x434a,"jmp",0x43cd),(0x41cc,"je",0x41e0),(0x41f0,"je",0x41ce),
+                         (0x4217,"ja",0x42c8),(0x4228,"je",0x42b7),
+                         (0x42e6,"je",0x42f9),(0x4309,"je",0x42e8),
+                         (0x43e8,"je",0x47cb),(0x4475,"je",0x47dc)):
+        need(code[at].op==op and decoder.target_of(code[at])==target,
+             "Changed Console import admission or overflow branch")
+    return facts
+
+
+
+
+# Current GCC14 separated-validator capture; complete tuples remain disjoint.
+CAPTURE_SEPARATE_FILE_CONTRACTS = {'14': {'graphical-console.o': '6e088df939675f5832d45e6a2cfd4d209ee6faa12386893f56cec5bed7348ac9',
+        'graphical-console.su': '5207a9349bb0857e4214f87657423fa1e5b733a3376104429bc874081df657f7',
+        'language.o': 'b079cf859050110b5a6a891be36433819cdf0bd93886968bc4f0a0bf08e63bd8',
+        'language.s': 'e554e294ee0d9c91542b70c79c2907974ae69ee27f4076f562e7b3bbfb279c5d',
+        'payload.bin': '56c2adb48e63329b93eafeedd31c815405de0b09dd9fa754f63b8fb242b37c1c',
+        'payload.elf': 'bc82826b6f8d4d3e86cd722f77d3d6474112f50a16dd1776eb7994f1b63bc6e8'}}
+CAPTURE_SEPARATE_TOOL_SHA256 = {'14': {'as': '07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9',
+        'c++filt': '7d54ea6797a5e8c69255f711b79577efd9934c3502c6edee4bc25b7dc7d97bd2',
+        'compiler': 'b741da52f8b77ad8b1b14710c1595ad1bf86f8d9efe2a63bb00d849be02f3dcc',
+        'cxx': '6b3696e4dcb85e1c949c732a02befa50e3983ecf94ce7e8e58d9d503b954b79d',
+        'ld': 'd2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b',
+        'nm': 'ddb55c0685721bf494aa2d090056b8b32a40614ad4464b305896f527d882c3c1',
+        'objcopy': '403f90bbd5d26c8ab9a2ad51f56255b812e8858a83aa8740ee71791071ddb580',
+        'objdump': '96afb8521834982d0e711b5d6e9785252bf82129fb0106b93a6bd54d83fae11f',
+        'pe_linker': 'd2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b',
+        'python3': 'fa67443527ed9647f760d807e2a38f26340757123e643c4639cf273ed15d5ea7',
+        'readelf': '4a387d80a70e6e97ef940a666fab59d5c38e7cf19ff907192fa983cb8505a7de'}}
+CAPTURE_SEPARATE_MACHINE_CONTRACTS = {'14': {'_ZN6aurora4uefi12_GLOBAL__N_113timer_mappingEv': (14080,
+                                                           159,
+                                                           37,
+                                                           '6205ed375e3c9715860eff99f1b411dd21f579b0f78af249ee8a8cb0a036679f'),
+        '_ZN6aurora4uefi12_GLOBAL__N_115ServicePlatform4failEv': (14736,
+                                                                  21,
+                                                                  4,
+                                                                  'ea8bbb057608cf3819f1a4f9efeae585c01b0ae551ca2df23919bd88a53d2d1e'),
+        '_ZN6aurora4uefi12_GLOBAL__N_14failESt17basic_string_viewIcSt11char_traitsIcEE': (14432,
+                                                                                          302,
+                                                                                          61,
+                                                                                          'e6c0c2351b627833f1e6d7dbbc64354f933355aad4ef7c8ed559ce72a8d4816e'),
+        '_ZN6aurora4uefi12_GLOBAL__N_15quietEv': (14240,
+                                                  181,
+                                                  54,
+                                                  '254f7c5d6887e673a844f6d66849649795e90f36ebda8eb6b81f14b30839a5e7'),
+        '_ZN6aurora4uefi21run_graphical_consoleEmRKNS0_5BytesE': (19232,
+                                                                  4599,
+                                                                  934,
+                                                                  'd2604d8f89ac58ffabff34e1f133d8113f426fedbb52419e25366b0a34ba4fcf'),
+        '_ZN6aurora7console4UartINS_8hardware2IoELNS0_11FifoTriggerE192EE4textESt17basic_string_viewIcSt11char_traitsIcEE': (30608,
+                                                                                                                             104,
+                                                                                                                             36,
+                                                                                                                             '781121bd9f338377d8a37b0c35a4cb33f105fdaffdca2c6d6fef1f471a9da816'),
+        '_ZN6aurora7console4UartINS_8hardware2IoELNS0_11FifoTriggerE192EE6numberEm': (30720,
+                                                                                      219,
+                                                                                      57,
+                                                                                      'a993150ece369e5e3c7d4b90173008d2cdc163eea92cfa86a5d093ecc955627c'),
+        '_ZN6aurora7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS3_15ServicePlatformEE4openEv': (14864,
+                                                                                                               105,
+                                                                                                               23,
+                                                                                                               'c291243fff6728ad6aab62ed94cb1a81c0421cf0edccb3d41b84a7bf88ee8c6a'),
+        '_ZN6aurora7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS3_15ServicePlatformEE8validateEPKvmb': (14768,
+                                                                                                                       81,
+                                                                                                                       23,
+                                                                                                                       '02c61dcf70c949d3a0c9690b3c5cac05170a5dc25d7d0245aed37261dc620702'),
+        '_ZN6aurora7display7SessionINS_4uefi12_GLOBAL__N_116DisplayTransportENS3_15ServicePlatformEE4openEv': (15104,
+                                                                                                               215,
+                                                                                                               47,
+                                                                                                               'c1759b3c0d61c5e8760a28060836b9349b45502de02bb089fda6cf0582d084b7'),
+        '_ZN6aurora7display7SessionINS_4uefi12_GLOBAL__N_116DisplayTransportENS3_15ServicePlatformEE8validateEPKvmb': (14976,
+                                                                                                                       126,
+                                                                                                                       35,
+                                                                                                                       '2a89d46cffedc8727b804128077b998b271ee219642fbbe3af9dab955a6b47f3'),
+        '__au_runtime_console_next': (17104,
+                                      1309,
+                                      330,
+                                      'a3ab6a84094cfca86ce89e124fd1b8d1efdb5ad4f534f433f5fa5504a43ac50e'),
+        '__au_runtime_console_put': (16832,
+                                     269,
+                                     70,
+                                     'fcc22aa81bb30c454fe4d113a93135578a689b29a16907a0efd6b737314a3c01'),
+        '__au_runtime_display_pixel': (15328,
+                                       871,
+                                       191,
+                                       '4d061d7bd7ea5633cf350dd6ead16cd873f316218317c951c3f6c32722b0bf06')}}
+CAPTURE_SEPARATE_STATE_CONTRACTS = {'14': {'_ZN6aurora4uefi12_GLOBAL__N_112sample_callsE': (61920, 8, 3, 1),
+        '_ZN6aurora4uefi12_GLOBAL__N_114pixel_attemptsE': (61888, 8, 3, 1),
+        '_ZN6aurora4uefi12_GLOBAL__N_115output_attemptsE': (61912, 8, 3, 1),
+        '_ZN6aurora4uefi12_GLOBAL__N_116active_operationE': (61936, 4, 3, 1),
+        '_ZN6aurora4uefi12_GLOBAL__N_116capture_scenarioE': (61896, 1, 3, 1),
+        '_ZN6aurora4uefi12_GLOBAL__N_116consumer_entriesE': (61928, 8, 3, 1),
+        '_ZN6aurora4uefi12_GLOBAL__N_117completed_samplesE': (61904, 8, 3, 1),
+        '_ZN6aurora4uefi12_GLOBAL__N_15wakesE': (61968, 8, 3, 1),
+        '_ZN6aurora4uefi12_GLOBAL__N_16storesE': (61944, 8, 3, 1),
+        '_ZN6aurora7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS3_15ServicePlatformEE11generation_E': (61744,
+                                                                                                                      8,
+                                                                                                                      3,
+                                                                                                                      1),
+        '_ZN6aurora7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS3_15ServicePlatformEE6grant_E': (61760,
+                                                                                                                24,
+                                                                                                                3,
+                                                                                                                1),
+        '_ZN6aurora7display7SessionINS_4uefi12_GLOBAL__N_116DisplayTransportENS3_15ServicePlatformEE11generation_E': (61672,
+                                                                                                                      8,
+                                                                                                                      3,
+                                                                                                                      1),
+        '_ZN6aurora7display7SessionINS_4uefi12_GLOBAL__N_116DisplayTransportENS3_15ServicePlatformEE6grant_E': (61696,
+                                                                                                                48,
+                                                                                                                3,
+                                                                                                                1),
+        '_ZN6aurora9graphical5EntryINS_7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS5_15ServicePlatformEEENS_7display7SessionINS5_16DisplayTransportES7_EES7_E7active_E': (61664,
+                                                                                                                                                                                          1,
+                                                                                                                                                                                          3,
+                                                                                                                                                                                          1)}}
+CAPTURE_SEPARATE_PROOF_SHA256 = {'14': '8efaf96b69d1f5b21f7ba1a74a5f221d33aab9acc1c7237968b96750a531dc1a'}
+CAPTURE_SEPARATE_SOURCE_SHA256 = "215aea74759a326b663023460e4d0e5a87332a6178e35cf2dc44afe0d2529004"
+
+
+def verify_capture_separate_applicability(build, version):
+    need(type(build) is dict and version in CAPTURE_SEPARATE_TOOL_SHA256,
+         "Missing separate-validator capture applicability")
+    need(build.get("mode")==MODES[1] and build.get("flags")==expected_flags(MODES[1]),
+         "Changed separate-validator capture mode/flags")
+    need(type(build.get("tools")) is dict, "Missing separate-validator capture tools")
+    for name,expected in CAPTURE_SEPARATE_TOOL_SHA256[version].items():
+        row=build.get(name) if name in ("compiler","cxx","pe_linker") else build["tools"].get(name)
+        need(type(row) is dict and row.get("sha256")==expected, "Changed separate-validator capture tool: "+name)
+    sources=build.get("source_sha256")
+    need(type(sources) is dict and all(type(n) is str for n in sources), "Missing separate-validator source closure")
+    compiled={n:v for n,v in sources.items() if n.startswith(("compiler/","kernel/","library/","examples/"))
+              and Path(n).suffix in (".cpp",".hpp",".S",".au",".ld",".lds")}
+    need(hashlib.sha256(canonical(compiled).encode()).hexdigest()==CAPTURE_SEPARATE_SOURCE_SHA256,
+         "Changed separate-validator compiled-source closure")
+
+
+def capture_separate_linked_evidence(decoder, linked, code, payload, files, version):
+    need(files==CAPTURE_SEPARATE_FILE_CONTRACTS[version], "Mixed separate-validator capture files")
+    need(hashlib.sha256(payload).hexdigest()==files["payload.bin"], "Changed separate-validator payload")
+    if version == "16":
+        return capture_gcc16.capture_linked_evidence(sys.modules[__name__], decoder, linked, code, payload, files)
+    for row in code.values():
+        if row.op=="call" or row.op in decoder.BRANCHES:decoder.target_of(row)
+    named={r.name:r for r in linked.symbols if r.section}
+    for name,identity in CAPTURE_SEPARATE_STATE_CONTRACTS[version].items():
+        need(name in named, "Missing capture state: "+name);symbol=named[name]
+        need((symbol.address,symbol.size,symbol.section,symbol.kind)==identity
+             and linked.sections[symbol.section][1]==8, "Changed separate-validator capture state: "+name)
+    bodies={}
+    for name,(address,size,count,digest) in CAPTURE_SEPARATE_MACHINE_CONTRACTS[version].items():
+        need(name in linked.functions, "Missing separate-validator capture function: "+name)
+        sym=linked.functions[name];need((sym.address,sym.size)==(address,size),"Changed capture function extent: "+name)
+        rows=paired_rows(sym,code);inventory=[[r.address,r.size,r.op,r.args,payload[r.address:r.next].hex()] for r in rows]
+        need(len(rows)==count and hashlib.sha256(canonical(inventory).encode()).hexdigest()==digest,
+             "Changed original separate-validator capture instruction: "+name)
+        bodies[name]=dict(address=address,bytes=size,instructions=count,sha256=digest)
+    need(version=="14", "Unreviewed separate-validator semantic variant")
+    return dict(schema="aurora-graphical-capture-linked-v2",variant="gcc14-separate-validators",
+                status="checked-contract-requires-independent-review",files=dict(files),original_bodies=bodies,
+                selector=capture_selector_proof_gcc14(decoder,linked,code,payload),
+                authority=capture_authority_proof_gcc14(decoder,linked,code,payload),
+                pixel=capture_pixel_proof_gcc14(decoder,linked,code,payload),
+                imports=capture_import_proof_gcc14(decoder,linked,code,payload),
+                diagnostics=capture_diagnostic_proof_gcc14(decoder,linked,code,payload))
+
+
+
+CAPTURE_SEPARATE_FILE_CONTRACTS["16"] = dict(capture_gcc16.FILES)
+CAPTURE_SEPARATE_TOOL_SHA256["16"] = {'as': 'a176c8080b4feac6218f13550981af5739f80f8f4da6d3f555ab8d50150ea1ab',
+ 'c++filt': '8128e0ba3c41af5a9342ce770bd4c3c405650c064523045404c14d1c1ed7a3fb',
+ 'compiler': 'b1fe9740a467406194fe8fb53233622e5b5faa469406e21e1bd74abf381ae593',
+ 'cxx': '27f3310b14d96e530ebf450023ab4e0576c0e135ec5973c275b7aba900ed513d',
+ 'ld': '1a553ec9485dcd5ac1cbf7d1b630c97c005f89308453b61947875d88a866cb0e',
+ 'nm': 'cff9052c14dd5337082c4110892de0b06c0dbb0048fb549416b17cfbbde08431',
+ 'objcopy': '59284cc658b053e4f156fdb93c937059ac75c97201bd14f637931e0cdff33423',
+ 'objdump': '72012362487bb9531b74aa85363764b7a8e96796cb62ae0787b5444f05f8e83d',
+ 'pe_linker': '1a553ec9485dcd5ac1cbf7d1b630c97c005f89308453b61947875d88a866cb0e',
+ 'python3': 'fa67443527ed9647f760d807e2a38f26340757123e643c4639cf273ed15d5ea7',
+ 'readelf': '0aa1c34fc413bb2e70f8272a167d83c6c3afaf80089c9846db3013cf52c2d17d'}
+CAPTURE_SEPARATE_PROOF_SHA256["16"] = '2e0f3bdcd4f78b0f6c764c374c3beadc8de471c25b5dc3fd3c0c0a7c53308b3d'
+
 if __name__ == "__main__":
     try:
         main()
     except (ValueError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         raise SystemExit("FAIL: graphical Console admission: " + str(error)) from error
+
+

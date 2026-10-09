@@ -1613,5 +1613,5 @@ the validation predicates are unchanged. Other profiles do not enable these
 emission attributes. This boundary changes paired generated inputs, so fresh
 image/stack and capture-contract review is required before qualification reuse.
 
-The paired GCC16 stack path also checks two exact memory-push sites against
+The paired GCC16 stack path also checks distinct normal and capture memory-push pairs against
 pre-push frame bounds; this adds no general memory-operand or authority allowance.
