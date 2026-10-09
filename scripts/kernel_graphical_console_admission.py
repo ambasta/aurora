@@ -305,7 +305,7 @@ def capture_artifact_evidence(mode, artifacts):
     )
 
 
-def require_capture_linked_proof(mode, evidence=None):
+def require_capture_linked_proof(mode, evidence=None, build=None):
     need(mode in MODES, "Unknown graphical profile")
     if mode == MODES[0]:
         need(evidence is None, "Production cannot carry capture linked proof")
@@ -318,9 +318,14 @@ def require_capture_linked_proof(mode, evidence=None):
     need(
         type(evidence) is dict
         and hashlib.sha256(canonical(evidence).encode()).hexdigest()
-        == "c060811e6e5afabe3527685dfc87905d56ef319ef0caaade1f93063cb1565af2",
-        "Capture fixture linked proof pending: missing or changed complete current numeric002 proof",
+        in {
+            "c060811e6e5afabe3527685dfc87905d56ef319ef0caaade1f93063cb1565af2",
+            "3d6ae7af3fc62adf5c78861ce0d5d28ed6feb87f4ea7744b097fa534cfc106c2",
+        },
+        "Capture fixture linked proof pending: missing or changed complete reviewed proof",
     )
+    if evidence["files"] == CAPTURE_LIBCALL_FILE_CONTRACTS:
+        verify_capture_libcall_applicability(build)
 
 
 def unreviewed_linked_function(symbol, original_code, payload, error):
@@ -455,6 +460,61 @@ CAPTURE_FILE_CONTRACTS = {
     "language.o": "b079cf859050110b5a6a891be36433819cdf0bd93886968bc4f0a0bf08e63bd8",
     "language.s": "e554e294ee0d9c91542b70c79c2907974ae69ee27f4076f562e7b3bbfb279c5d",
 }
+# Reviewed checkpoint007 GCC14 libcall emission. This second complete tuple
+# preserves the original numeric002 tuple; no per-file mix-and-match is allowed.
+# The14 capture bodies/state/data are unchanged. Four outer object bodies change;
+# their fresh complete stack/IRQ/wait admission remains mandatory before emit.
+CAPTURE_LIBCALL_FILE_CONTRACTS = {
+    "graphical-console.o": "b40c5548dc03ba52680f850a003253f0acf080704d65a656c75a68c27f38e8f5",
+    "graphical-console.su": "67dcdd6fbc51d1f72c32346764fadd7dccb1852c70ec2a9f8292793a9f1abd7e",
+    "language.o": "b079cf859050110b5a6a891be36433819cdf0bd93886968bc4f0a0bf08e63bd8",
+    "language.s": "e554e294ee0d9c91542b70c79c2907974ae69ee27f4076f562e7b3bbfb279c5d",
+    "payload.bin": "d266113c87fb779e2876705c3734dd18c3d24ba1ebd4d97527ef276a898aec10",
+    "payload.elf": "ee5cb6084521a84cc00c7d513cf23f3b2443ce55e698edfa1ccd1b1314ddf8d1"
+}
+CAPTURE_LIBCALL_TOOL_SHA256 = {
+    "as": "07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9",
+    "c++filt": "7d54ea6797a5e8c69255f711b79577efd9934c3502c6edee4bc25b7dc7d97bd2",
+    "compiler": "b741da52f8b77ad8b1b14710c1595ad1bf86f8d9efe2a63bb00d849be02f3dcc",
+    "cxx": "6b3696e4dcb85e1c949c732a02befa50e3983ecf94ce7e8e58d9d503b954b79d",
+    "ld": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+    "nm": "ddb55c0685721bf494aa2d090056b8b32a40614ad4464b305896f527d882c3c1",
+    "objcopy": "403f90bbd5d26c8ab9a2ad51f56255b812e8858a83aa8740ee71791071ddb580",
+    "objdump": "96afb8521834982d0e711b5d6e9785252bf82129fb0106b93a6bd54d83fae11f",
+    "pe_linker": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+    "python3": "fa67443527ed9647f760d807e2a38f26340757123e643c4639cf273ed15d5ea7",
+    "readelf": "4a387d80a70e6e97ef940a666fab59d5c38e7cf19ff907192fa983cb8505a7de"
+}
+CAPTURE_LIBCALL_SOURCE_SHA256 = "0bc17d08d9eb2eb3267ad6f1613c5e5eaa933254db5377737548b4f6984e16b8"
+
+
+def capture_file_contract(files):
+    need(type(files) is dict, "Changed exact capture object/relocation/frame/language/image bytes")
+    for contract in (CAPTURE_FILE_CONTRACTS, CAPTURE_LIBCALL_FILE_CONTRACTS):
+        if files == contract:
+            return contract
+    raise ValueError("Changed exact capture object/relocation/frame/language/image bytes")
+
+
+def verify_capture_libcall_applicability(build):
+    need(type(build) is dict, "Missing exact capture libcall build applicability")
+    need(build.get("mode") == MODES[1] and build.get("flags") == expected_flags(MODES[1]),
+         "Changed capture libcall mode/flags")
+    need(type(build.get("tools")) is dict, "Missing capture libcall tool identities")
+    for name, expected in CAPTURE_LIBCALL_TOOL_SHA256.items():
+        item = build.get(name) if name in ("compiler", "cxx", "pe_linker") else build["tools"].get(name)
+        need(type(item) is dict and item.get("sha256") == expected, "Changed capture libcall tool: " + name)
+    source = build.get("source_sha256")
+    need(type(source) is dict and all(type(name) is str for name in source), "Missing capture libcall source identity")
+    compiled = {
+        name: value for name, value in source.items()
+        if name.startswith(("compiler/", "kernel/", "library/", "examples/"))
+        and Path(name).suffix in (".cpp", ".hpp", ".S", ".au", ".ld", ".lds")
+    }
+    need(hashlib.sha256(canonical(compiled).encode()).hexdigest() == CAPTURE_LIBCALL_SOURCE_SHA256,
+         "Changed capture libcall compiled-source closure")
+
+
 CAPTURE_STATE_CONTRACTS = {
     "_ZN6aurora4uefi12_GLOBAL__N_116consumer_entriesE": (0x101E8, 8, 3, 1),
     "_ZN6aurora4uefi12_GLOBAL__N_112sample_callsE": (0x101E0, 8, 3, 1),
@@ -1074,9 +1134,9 @@ def capture_diagnostic_proof(decoder, linked, code, payload):
 
 
 def capture_linked_evidence(decoder, linked, code, payload, file_hashes):
-    need(file_hashes == CAPTURE_FILE_CONTRACTS, "Changed exact capture object/relocation/frame/language/image bytes")
+    contract = capture_file_contract(file_hashes)
     need(
-        hashlib.sha256(payload).hexdigest() == CAPTURE_FILE_CONTRACTS["payload.bin"],
+        hashlib.sha256(payload).hexdigest() == contract["payload.bin"],
         "Changed exact capture payload bytes",
     )
     for row in code.values():
@@ -3171,7 +3231,7 @@ def emit(mode):
         image=image_evidence(BUILD, mode),
         stack=stack_evidence(BUILD),
     )
-    require_capture_linked_proof(mode, result["stack"].get("capture_fixture"))
+    require_capture_linked_proof(mode, result["stack"].get("capture_fixture"), record)
     need(record == provenance(mode), "Build changed during admission")
     result["sha256"] = common.hashes(source_files() + build_files() + [BUILD / "graphical-console-build.json"])
     RECEIPT.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
@@ -3204,7 +3264,7 @@ def checked(mode):
         and canonical(receipt["stack"]) == canonical(current_stack),
         "Receipt image/stack evidence differs from fresh combined proof",
     )
-    require_capture_linked_proof(mode, current_stack.get("capture_fixture"))
+    require_capture_linked_proof(mode, current_stack.get("capture_fixture"), receipt["build"])
     return receipt
 
 

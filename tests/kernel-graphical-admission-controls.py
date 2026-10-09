@@ -4620,6 +4620,73 @@ class CaptureLinkedControls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Production cannot carry capture"):
             graphical.require_capture_linked_proof("graphical-console", result)
 
+    def test_closed_libcall_capture_tuple_and_build_applicability(self):
+        old = graphical.capture_linked_evidence(decoder, self.linked, self.code, self.payload, self.files)
+        new_files = dict(self.files)
+        new_files.update({
+            "payload.bin": "d266113c87fb779e2876705c3734dd18c3d24ba1ebd4d97527ef276a898aec10",
+            "payload.elf": "ee5cb6084521a84cc00c7d513cf23f3b2443ce55e698edfa1ccd1b1314ddf8d1",
+            "graphical-console.o": "b40c5548dc03ba52680f850a003253f0acf080704d65a656c75a68c27f38e8f5",
+        })
+        self.assertEqual(graphical.capture_file_contract(self.files), self.files)
+        self.assertEqual(graphical.capture_file_contract(new_files), new_files)
+        changed_names = ["payload.bin", "payload.elf", "graphical-console.o"]
+        for mask in range(1, 7):
+            mixed = dict(self.files)
+            for bit, name in enumerate(changed_names):
+                if mask & (1 << bit):
+                    mixed[name] = new_files[name]
+            with self.subTest(mask=mask), self.assertRaises(ValueError):
+                graphical.capture_file_contract(mixed)
+        for original in (self.files, new_files):
+            for name in original:
+                for mutate in (lambda value: value.pop(name), lambda value: value.update({name: "0" * 64})):
+                    changed = dict(original)
+                    mutate(changed)
+                    with self.assertRaises(ValueError):
+                        graphical.capture_file_contract(changed)
+            with self.assertRaises(ValueError):
+                graphical.capture_file_contract(dict(original, extra="0" * 64))
+        # This synthetic projection is not a newly executed image proof. The
+        # real emit/checked path must recompute every stack and capture check.
+        projected = deepcopy(old)
+        projected["files"] = new_files
+        build = {
+            "mode": "graphical-console-capture",
+            "flags": graphical.expected_flags("graphical-console-capture"),
+            "source_sha256": graphical.common.hashes(graphical.source_files()),
+            "tools": {},
+        }
+        for name, digest in graphical.CAPTURE_LIBCALL_TOOL_SHA256.items():
+            target = build if name in ("compiler", "cxx", "pe_linker") else build["tools"]
+            target[name] = {"path": "/synthetic/" + name, "sha256": digest}
+        graphical.require_capture_linked_proof("graphical-console-capture", old)
+        graphical.require_capture_linked_proof("graphical-console-capture", projected, build)
+        with self.assertRaises(ValueError):
+            graphical.require_capture_linked_proof("graphical-console-capture", projected)
+        for name in graphical.CAPTURE_LIBCALL_TOOL_SHA256:
+            changed = deepcopy(build)
+            target = changed if name in ("compiler", "cxx", "pe_linker") else changed["tools"]
+            target[name]["sha256"] = "0" * 64
+            with self.subTest(tool=name), self.assertRaises(ValueError):
+                graphical.require_capture_linked_proof("graphical-console-capture", projected, changed)
+        for mutate in (
+            lambda value: value.update(mode="graphical-console"),
+            lambda value: value["flags"].remove("-mstringop-strategy=libcall"),
+            lambda value: value["source_sha256"].update({"kernel/uefi/graphical-console.cpp": "0" * 64}),
+            lambda value: value["source_sha256"].pop("compiler/main.cpp"),
+            lambda value: value["source_sha256"].update({"kernel/unreviewed.cpp": "0" * 64}),
+        ):
+            changed = deepcopy(build)
+            mutate(changed)
+            with self.assertRaises(ValueError):
+                graphical.require_capture_linked_proof("graphical-console-capture", projected, changed)
+        # A known new file tuple cannot bless forged capture behavior.
+        changed = deepcopy(projected)
+        changed["pixel"]["failure_successful_store_ordinals"] = [0, 54]
+        with self.assertRaises(ValueError):
+            graphical.require_capture_linked_proof("graphical-console-capture", changed, build)
+
     def test_exact_original_object_relocations_frames_language_and_payload(self):
         for name in self.files:
             changed = dict(self.files)

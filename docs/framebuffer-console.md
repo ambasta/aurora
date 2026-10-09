@@ -14,7 +14,12 @@ legacy verifier's local visited-array invariant has a separately reviewed source
 applicability check for the joined headers. This is source integration only:
 changed-output image admission, failure-fixture guests and both toolchains'
 final integrated gates remain pending. Historical exact-image contracts continue
-to reject changed images until their own admission is reviewed.
+to reject changed images until their own admission is reviewed. A second closed
+GCC 14 capture file tuple records the reviewed libcall-emission delta and exact
+compiler/tool/compiled-source applicability; mixed tuples reject. Its unchanged
+14-function capture semantics do not replace fresh complete image/stack admission,
+including added memory calls in interrupt and wait closure. No new capture guest
+or whole-image acceptance is implied by that source update.
 Firmware `SetMode` can clear its display before the controlled capture boundary.
 No GPU driver, desktop, physical Framework display support, DMA or IOMMU claim
 follows from this work.
