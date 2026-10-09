@@ -239,7 +239,10 @@ class ProfileMetadata(unittest.TestCase):
         }
         self.assertEqual(set(runner.source_inputs()), expected)
         self.assertEqual(len(list(runner.cases())), 13)
-        self.assertNotRegex((ROOT / "examples/kernel-graphical-console.au").read_text(), r"(?m)^\s*import\b")
+        consumer = (ROOT / "examples/kernel-graphical-console.au").read_text()
+        self.assertEqual(re.findall(r"(?m)^\s*import\s+([^;]+);", consumer), ["graphics.font5x7"])
+        self.assertIn("library/graphics/font5x7.au", runner.SOURCE_INPUTS)
+        self.assertNotRegex((ROOT / "library/graphics/font5x7.au").read_text(), r"(?m)^\s*import\b")
         with patch.dict(os.environ, {}, clear=True):
             self.assertTrue(
                 runner.arguments(["--run", "compiler", "--developer-selected-compiler"]).developer_selected_compiler
@@ -326,11 +329,14 @@ class ProfileMetadata(unittest.TestCase):
 
             with (
                 patch.object(runner, "command", side_effect=command),
+                patch.object(runner, "check_font") as check_font,
                 patch.object(runner.subprocess, "run", side_effect=AssertionError("No subprocess permitted")),
             ):
                 for _ in range(2):
                     with self.assertRaisesRegex(RuntimeError, "stopped before native execution"):
                         runner.execute_cases(work / "compiler", work, [])
+            self.assertEqual(check_font.call_count, 2)
+            check_font.assert_called_with(work / "compiler", work)
             self.assertEqual([name for _, _, name in calls], ["compile", "assemble", "link"] * 2)
             for argv, directory, name in calls:
                 self.assertEqual(directory, work)

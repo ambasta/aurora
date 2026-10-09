@@ -70,9 +70,11 @@ ASCII byte character literals provide a bounded compiler/JSON increment: single-
 Binary integer expression literals now have `0b`/`0B` prefixes and C++ apostrophe
 separators between digits, retaining exact i64/u64/u8 types and checked ranges.
 The [source contract](../compiler/UNSIGNED.md#source-contract) keeps capacities
-decimal-only. Readable five-bit font groups preserve packed values and dispatch;
-no table storage or stack change is introduced. Compiler-wide final integrated
-qualification remains required; historical guest evidence is not a new run.
+decimal-only. Both display consumers now import the shared base 5x7 font;
+readable five-bit groups preserve every glyph and fallback. The graphical view
+uses direct unit-scale drawing, while the status page retains its scale selection.
+This source cleanup needs final integrated image/stack and guest qualification;
+historical guest evidence is not a new run.
 
 The two JSON append reports normalize invalid success counts once at construction
 and expose plain status reads while preserving failure-count masking and public

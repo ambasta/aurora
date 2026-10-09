@@ -44,7 +44,12 @@ OBJECTS = (
 )
 ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
 BRIDGE, VALUE = "__au_runtime_graphical_entry", "__au_runtime_graphical_value"
-REFLECTION = ("aurora_reflect_size", "aurora_reflect_field_count")
+REFLECTION = (
+    "aurora_reflect_size",
+    "aurora_reflect_field_count",
+    "__au_reflect_s1_size",
+    "__au_reflect_s1_field_count",
+)
 NEXT, PUT, PIXEL = "__au_runtime_console_next", "__au_runtime_console_put", "__au_runtime_display_pixel"
 
 
@@ -292,7 +297,13 @@ class ImagePolicy(unittest.TestCase):
                 f["object_symbols"]["runtime"] += defined(n)
 
             self.reject(cross)
-        for extra in ("aurora_reflect_address", "aurora_reflect_size_extra", "unrelated_global"):
+        for extra in (
+            "aurora_reflect_address",
+            "aurora_reflect_size_extra",
+            "__au_reflect_s2_size",
+            "__au_reflect_s1_address",
+            "unrelated_global",
+        ):
             self.reject(
                 lambda f, n=extra: f["object_symbols"].update(language=f["object_symbols"]["language"] + defined(n))
             )

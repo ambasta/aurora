@@ -177,7 +177,7 @@ if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == g
     "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/graphical-console.cpp -o build/uefi/graphical-console.o
     console_objects+=(build/uefi/console-entry.o build/uefi/graphical-console.o)
 fi
-"$compiler" --module-root kernel/policies "$language_entry" -o build/uefi/language.s
+"$compiler" --module-root kernel/policies --module-root library "$language_entry" -o build/uefi/language.s
 if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
     as --64 build/uefi/language.s kernel/uefi/graphical-console-entry.S -o build/uefi/language.o
 elif (( ${#framebuffer_objects[@]} )); then

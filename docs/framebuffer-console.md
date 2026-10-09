@@ -58,12 +58,15 @@ The trusted host boundary only authenticates, bounds-checks, packs pixels and
 performs ordered volatile stores. No raw pointer, mutable framebuffer span or
 `OwnedBytes` video-memory surrogate is introduced.
 
-Font constants use seven five-bit binary groups with the existing packed-bit
-orientation documented beside `glyph_bits`. Character dispatch, fallback, bit
-positions and drawing code are unchanged; no table storage or stack layout is
-added. Decimal-equivalent assembly and all 256 input-byte mappings are the
-spelling-change gates. Historical guest captures below retain their original
-source/compiler scope; new compiler syntax requires fresh integrated gates.
+The shared `graphics.font5x7` library module supplies the base A-Z, 0-9, space,
+colon and hyphen glyphs and the original unsupported-byte fallback. Constants
+retain seven readable five-bit binary groups and their documented packed-bit
+orientation. The graphical consumer adds its lowercase/punctuation glyphs and
+draws at unit scale directly; the status page retains its 3x/2x scale selection.
+The hosted gate checks all 256 base-font byte mappings against independent visual
+rows and both consumers against their existing pixel oracles. Historical guest
+captures retain their original source/compiler scope; extraction and simplified
+unit-scale drawing require fresh integrated image/stack and guest gates.
 
 ## Provisional transport and authority
 

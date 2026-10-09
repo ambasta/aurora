@@ -27,6 +27,13 @@ spec.loader.exec_module(graphical)
 decoder = graphical.load("graphical_controls_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
 
 
+REFLECTION = (
+    "aurora_reflect_size",
+    "aurora_reflect_field_count",
+    "__au_reflect_s1_size",
+    "__au_reflect_s1_field_count",
+)
+
 # Independent frozen image006 fixtures: original bytes and objdump operands.
 # Numeric code/data addresses are relocated by the fixture loader, separately
 # from the checker. No compiler, disassembler, external file or subprocess runs.
@@ -2933,7 +2940,7 @@ class Admission(unittest.TestCase):
                 "GLOBAL HIDDEN"
                 if name in {graphical.BRIDGE, graphical.VALUE_BRIDGE}
                 else "GLOBAL DEFAULT"
-                if name in {"aurora_reflect_size", "aurora_reflect_field_count"}
+                if name in REFLECTION
                 else "LOCAL DEFAULT"
             } 1 {name}"""
             for name in sorted(names)
@@ -2994,7 +3001,7 @@ class Admission(unittest.TestCase):
         return symbol, rows, bytes(payload)
 
     def test_reflection_lookup_exact_leaf_bytes_and_closure(self):
-        for name in ("aurora_reflect_size", "aurora_reflect_field_count"):
+        for name in REFLECTION:
             symbol, rows, payload = self.reflection_fixture(name)
             result = graphical.verify_reflection_body(decoder, symbol, rows, payload)
             self.assertEqual((result["cases"], result["calls"], result["data_accesses"]), (2, 0, 0))
@@ -3064,7 +3071,7 @@ class Admission(unittest.TestCase):
             graphical.verify_reflection_body(decoder, foreign, baseline, payload)
 
     def test_reflection_helper_exact_inventory_and_binding(self):
-        self.assertEqual(graphical.REFLECTION_HELPERS, frozenset(("aurora_reflect_size", "aurora_reflect_field_count")))
+        self.assertEqual(graphical.REFLECTION_HELPERS, frozenset(REFLECTION))
         names = graphical.expected_language_functions()
         imports = [
             decoder.Symbol(name, 0, 0, 0, 0) for name in ("__au_runtime_console_next", "__au_runtime_display_pixel")
@@ -3074,11 +3081,7 @@ class Admission(unittest.TestCase):
             return (
                 "GLOBAL HIDDEN"
                 if name in (graphical.BRIDGE, graphical.VALUE_BRIDGE)
-                else (
-                    "GLOBAL DEFAULT"
-                    if name in ("aurora_reflect_size", "aurora_reflect_field_count")
-                    else "LOCAL DEFAULT"
-                )
+                else ("GLOBAL DEFAULT" if name in REFLECTION else "LOCAL DEFAULT")
             )
 
         table = "\n".join(f"""1: 000000 1 FUNC {binding(name)} 1 {name}""" for name in sorted(names))
@@ -3090,7 +3093,7 @@ class Admission(unittest.TestCase):
                 )
 
         verify()
-        for name in ("aurora_reflect_size", "aurora_reflect_field_count"):
+        for name in REFLECTION:
             for changed in ("GLOBAL HIDDEN", "LOCAL DEFAULT", "WEAK DEFAULT"):
                 mutant = table.replace(f"GLOBAL DEFAULT 1 {name}", f"{changed} 1 {name}")
                 with self.assertRaises(ValueError):
@@ -3099,8 +3102,9 @@ class Admission(unittest.TestCase):
                 verify(symbols=imports + [decoder.Symbol(name, 0, 0, 0, 0)])
             with self.assertRaises(ValueError):
                 verify(functions=names - {name})
-        with self.assertRaises(ValueError):
-            verify(functions=names | {"aurora_reflect_address"})
+        for extra in ("aurora_reflect_address", "__au_reflect_s2_size", "__au_reflect_s1_address"):
+            with self.assertRaises(ValueError):
+                verify(functions=names | {extra})
 
     def test_provisional_six_qword_pixel_and_value_bridge_machine_contract(self):
         # Entry stack touch follows retained consumer.s; linked disassembly and
@@ -3721,8 +3725,7 @@ class Admission(unittest.TestCase):
             graphical.BRIDGE,
             graphical.VALUE_BRIDGE,
             "generated_helper",
-            "aurora_reflect_size",
-            "aurora_reflect_field_count",
+            *REFLECTION,
         }
         frames = {"trusted_cpp", "__au_runtime_console_next", "__au_runtime_console_put", "__au_runtime_display_pixel"}
         memory = {"memcpy", "memset"}
@@ -3741,7 +3744,7 @@ class Admission(unittest.TestCase):
         ]:
             with self.subTest(extra=extra), self.assertRaises(ValueError):
                 graphical.verify_inventory(linked | {extra}, frames | {extra}, language, memory)
-        for name in [graphical.ENTRY, graphical.BRIDGE, "aurora_reflect_size", "aurora_reflect_field_count"]:
+        for name in [graphical.ENTRY, graphical.BRIDGE, *REFLECTION]:
             with self.assertRaises(ValueError):
                 graphical.verify_inventory(linked, frames | {name}, language - {name}, memory)
         self.assertEqual(graphical.CPP_OBJECTS, ("payload", "acpi", "pci", "runtime", "graphical-console"))

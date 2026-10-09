@@ -22,7 +22,9 @@ BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "graphical-console-admission.json"
 MODES = ("graphical-console", "graphical-console-capture")
 ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
-REFLECTION_HELPERS = frozenset(("aurora_reflect_size", "aurora_reflect_field_count"))
+REFLECTION_HELPERS = frozenset(
+    ("aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s1_field_count")
+)
 BRIDGE = "__au_runtime_graphical_entry"
 VALUE_BRIDGE = "__au_runtime_graphical_value"
 VALUE_ENTRY = "aurora_kernel_value"
@@ -564,7 +566,8 @@ def verify_inventory(linked_names, frames, language_names, memory_names):
     need({ENTRY, BRIDGE} <= set(language_names), "Missing exact paired language entry/bridge")
     need(
         REFLECTION_HELPERS <= set(language_names)
-        and {name for name in linked_names if name.startswith("aurora_reflect_")} == REFLECTION_HELPERS
+        and {name for name in linked_names if name.startswith(("aurora_reflect_", "__au_reflect_"))}
+        == REFLECTION_HELPERS
         and not REFLECTION_HELPERS.intersection(set(frames) | set(memory_names)),
         "Reflection helpers must belong only to generated language",
     )
@@ -2815,9 +2818,8 @@ def expected_language_functions():
         BRIDGE,
         VALUE_BRIDGE,
         "aurora_kernel_value",
-        "glyph_bits",
+        "__au_f_m2_8graphics7font5x7_n1_8graphics_d10glyph_bits",
         "graphical_glyph_bits",
-        "text_scale",
     } | REFLECTION_HELPERS
     names.update(mangle("v", "", name) for name in ("graphical_console", "draw_glyph", "draw_cell"))
     methods = {
