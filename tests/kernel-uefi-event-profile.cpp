@@ -258,7 +258,7 @@ auto resource_controls() -> void {
                                                                     0x400000,
                                                                     0xfee00000,
                                                                     EventResources::Purpose::read_only_observation);
-        check(observation.has_value() == (i != 2)); // EDU must remain cold.
+        check(observation.has_value() == (i != 2)); // EDU command 6 is not an observed supported value.
         if (observation)
             check(!EventAdmission::admit(*observation, ahci()));
     }
@@ -316,7 +316,41 @@ auto resource_controls() -> void {
         auto changed = facts;
         put(changed[2].header, 4, command, 2);
         check(!admit(changed, changed, bars, memory(), caps, caps));
+        const auto observation = EventResources::admit_qemu_default(*ivrs,
+                                                                    changed,
+                                                                    changed,
+                                                                    caps,
+                                                                    caps,
+                                                                    bars,
+                                                                    *root,
+                                                                    0,
+                                                                    memory(),
+                                                                    40,
+                                                                    0x400000,
+                                                                    0xfee00000,
+                                                                    EventResources::Purpose::read_only_observation);
+        check(observation.has_value() == (command == 7));
+        if (observation)
+            check(!EventAdmission::admit(*observation, ahci()));
     }
+    auto inherited = facts;
+    for (auto &fact : inherited)
+        put(fact.header, 4, 7, 2);
+    const auto all_inherited = EventResources::admit_qemu_default(*ivrs,
+                                                                  inherited,
+                                                                  inherited,
+                                                                  caps,
+                                                                  caps,
+                                                                  bars,
+                                                                  *root,
+                                                                  0,
+                                                                  memory(),
+                                                                  40,
+                                                                  0x400000,
+                                                                  0xfee00000,
+                                                                  EventResources::Purpose::read_only_observation);
+    check(all_inherited && !EventAdmission::admit(*all_inherited, ahci()));
+    check(!admit(inherited, inherited, bars, memory(), caps, caps));
     for (unsigned unit : {16U, 24U, 40U}) {
         const auto dynamic = EventIvrs::parse_qemu_default(table(unit), 40);
         const auto dynamic_facts = inventory(unit);

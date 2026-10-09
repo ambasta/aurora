@@ -221,8 +221,9 @@ class EventResources final {
         if (requester == 0)
             return h.get(0, 4) == 0x29c08086 && h.get(8, 4) == 0x06000000;
         if (requester == 0x20)
-            return h.get(0, 4) == 0x11e81234 && h.get(8, 4) == 0x00ff0010 && h.get(14, 1) == 0 && h.get(4, 2) == 2 &&
-                   (h.get(16, 4) & 15) == 0 && h.get(16, 4) != 0;
+            return h.get(0, 4) == 0x11e81234 && h.get(8, 4) == 0x00ff0010 && h.get(14, 1) == 0 &&
+                   (h.get(4, 2) == 2 || (observation_only && h.get(4, 2) == 7)) && (h.get(16, 4) & 15) == 0 &&
+                   h.get(16, 4) != 0;
         if (requester == 0xf8)
             return h.get(0, 4) == 0x29188086 && h.get(8, 4) == 0x06010002;
         if (requester == 0xfa)

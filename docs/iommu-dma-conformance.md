@@ -8,8 +8,9 @@ physical isolation/drain/reclamation and AMD hardware support remain unqualified
 The diagnostic integration landed in PR101 after its exact source passed the
 then-required 61 dev and 30 slow tests. The unchanged historical emulator results
 below retain their original model/fixture scope. New compiler and kernel changes
-require current-source canonical Meson `full` on both recorded toolchains and
-applicable image/emulator gates; earlier receipts do not transfer qualification.
+require current-source canonical Meson `full` with GCC 16 and applicable
+image/emulator gates; GCC 14 is optional targeted compatibility evidence.
+Earlier receipts do not transfer qualification.
 
 ## Aurora-owned event intake
 
@@ -64,8 +65,10 @@ CMD/CI/SACT/TFD/CLB/FB) through a read-only UC/NX page, revokes that page before
 serial reporting, and checks PCI/capability equality afterward. Matching samples
 are observations only, not an idle, drain, ownership or transition guarantee.
 Resource observations may retain inherited BME; their explicit read-only purpose
-cannot become `EventAdmission`, and EDU must still have command 2. Production
-Event admission retains its BME denial. The observation image links the ordinary
+cannot become `EventAdmission`. EDU command 7 is describable only in this
+read-only mode after the first stock-tuple observation found all six commands
+were 7 and refused before AHCI. EDU registers are never mapped or accessed here;
+production Event admission retains exact EDU command 2 and its BME denial. The observation image links the ordinary
 scalar language fixture and no Event producer, session, retained DMA backing or
 service bridge. It returns through the existing normal diagnostic exit.
 
