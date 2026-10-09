@@ -11,6 +11,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import compiler_contract as contract
 import meson_toolchain
+import meson_test
 
 
 class MesonIdentityTests(unittest.TestCase):
@@ -53,6 +54,61 @@ class MesonIdentityTests(unittest.TestCase):
         meson_toolchain.verify(first, first.copy())
         with self.assertRaises(ValueError):
             meson_toolchain.verify(first, dict(files={'/compiler': 'new'}, version='14'))
+
+    def test_implicit_search_variables_rejected_before_tool_queries(self):
+        for name in meson_toolchain.IMPLICIT_SEARCH_ENV:
+            for value in ('', '/one:/two'):
+                with self.subTest(name=name, value=value), \
+                        patch.dict(os.environ, {name: value}, clear=True), \
+                        patch.object(meson_toolchain.subprocess, 'check_output') as query:
+                    with self.assertRaisesRegex(ValueError, 'Unset ' + name):
+                        meson_toolchain.snapshot(['never-executed'])
+                    query.assert_not_called()
+
+    def test_absent_search_variables_bind_policy_and_reject_legacy_record(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True):
+            tool = Path(tmp) / 'synthetic-tool'
+            tool.write_text('compiler-free fingerprint fixture')
+            def query(command, **kwargs):
+                return {'-dumpfullversion': '14.2.0', '-dumpmachine': 'x86_64-linux-gnu'}.get(
+                    command[-1], str(tool))
+            with patch.object(meson_toolchain.shutil, 'which', return_value=str(tool)), \
+                    patch.object(meson_toolchain.subprocess, 'check_output', side_effect=query):
+                observed = meson_toolchain.snapshot([str(tool)])
+            self.assertEqual(observed['search_policy'], 'explicit-meson-flags-v1')
+            meson_toolchain.verify(observed, observed.copy())
+            legacy = {key: value for key, value in observed.items() if key != 'search_policy'}
+            with self.assertRaises(ValueError):
+                meson_toolchain.verify(legacy, observed)
+
+    def test_direct_meson_guard_rejects_before_creating_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record = Path(tmp) / 'aurora-toolchain.json'
+            argv = ['meson_toolchain.py', '--configure', '--cxx', 'never-executed',
+                    '--record', str(record)]
+            for name in meson_toolchain.IMPLICIT_SEARCH_ENV:
+                with self.subTest(name=name), patch.dict(os.environ, {name: ''}, clear=True), \
+                        patch.object(sys, 'argv', argv), \
+                        patch.object(meson_toolchain.subprocess, 'check_output') as query:
+                    with self.assertRaisesRegex(ValueError, 'Unset ' + name):
+                        meson_toolchain.main()
+                    query.assert_not_called()
+                    self.assertFalse(record.exists())
+
+    def test_make_convenience_rejects_before_meson_or_build_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in meson_toolchain.IMPLICIT_SEARCH_ENV:
+                with self.subTest(name=name), \
+                        patch.dict(os.environ, {name: '/one:/two'}, clear=True), \
+                        patch.object(contract, 'tool_record', return_value={
+                            'resolved': '/synthetic/compiler', 'sha256': '0' * 64}), \
+                        patch.object(contract, 'query', return_value='14.2.0'), \
+                        patch.object(meson_test.subprocess, 'run') as launch:
+                    with self.assertRaisesRegex(ValueError, 'Unset ' + name):
+                        meson_test.execute(root, 'full')
+                    launch.assert_not_called()
+                    self.assertFalse((root / 'build').exists())
 
     def test_cli_modes_are_exclusive(self):
         parser = argparse.ArgumentParser()

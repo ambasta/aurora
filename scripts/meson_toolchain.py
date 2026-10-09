@@ -3,13 +3,20 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shlex
 import shutil
 import subprocess
 
 
+IMPLICIT_SEARCH_ENV = ('CPATH', 'CPLUS_INCLUDE_PATH', 'C_INCLUDE_PATH', 'LIBRARY_PATH')
+
+
 def snapshot(cxx):
+    for name in IMPLICIT_SEARCH_ENV:
+        if name in os.environ:
+            raise ValueError('Unset ' + name + '; use explicit Meson include/link flags in a fresh build directory')
     def query(*args):
         return subprocess.check_output([*cxx, *args], text=True).strip()
     if not cxx:
@@ -27,7 +34,8 @@ def snapshot(cxx):
             raise ValueError('Cannot identify configured host input: ' + tool)
         path = Path(found).resolve(strict=True)
         files[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return dict(cxx=cxx, version=query('-dumpfullversion'), target=query('-dumpmachine'), files=files)
+    return dict(search_policy='explicit-meson-flags-v1', cxx=cxx,
+                version=query('-dumpfullversion'), target=query('-dumpmachine'), files=files)
 
 
 def verify(expected, observed):

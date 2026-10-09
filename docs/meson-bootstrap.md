@@ -29,7 +29,10 @@ Ninja tracks C++ headers and Aurora fixture imports. Unchanged compiler/fixture
 builds are reused, but test outcomes are not cached. A different toolchain or flag
 configuration needs a separate directory. A setup-time compiler/backend/binutils/
 runtime fingerprint rejects in-place toolchain replacement, including direct
-Meson builds/tests. Use a clean directory for bootstrap
+Meson builds/tests. Unset `CPATH`, `CPLUS_INCLUDE_PATH`, `C_INCLUDE_PATH` and
+`LIBRARY_PATH`, including empty definitions; use explicit Meson include/link flags
+instead. Pre-policy fingerprints need a fresh directory because their implicit
+search environment was not recorded. Use a clean directory for bootstrap
 compatibility or uncertain dependency identity. Do not modify inputs while
 qualifying. Record final source/tool identities and Meson's standard commands,
 introspection and logs; no new qualification supervisor is introduced.
