@@ -131,6 +131,10 @@ retained evidence. Reuse existing runners; this adds no separate matrix harness.
 
 ## Ordinary developer tests
 
+Compiler-free IOMMU routing checks inspect guarded literal Make target membership,
+so adding or reordering grouped targets does not change their prerequisite check.
+Comments, recipes, assignments and define bodies cannot supply that membership.
+
 From the repository root:
 
 ```sh

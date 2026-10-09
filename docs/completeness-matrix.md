@@ -21,6 +21,8 @@ The shared native harness retains complete per-command artifact accounting with
 a `scandir` traversal preserving stable-tree totals and failing closed on scan
 errors; compiler-free controls cover its accounting and error boundaries. This is no new native qualification or whole-suite speed claim;
 see the [test contract](developer-test-contract.md#complete-native-artifact-accounting).
+Compiler-free IOMMU routing controls check guarded Make target membership rather
+than target-list spelling, including negative controls for non-rule decoys.
 None of the six destination goals is complete. A bounded feature or passing test
 suite does not establish production safety, whole-system readiness or physical
 hardware support.
