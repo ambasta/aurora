@@ -634,7 +634,32 @@ class X86Emitter {
                         call(std::string(service::description(operation.operation).hostSymbol));
                         line("cmpq $1, %rax");
                         line("ja .Laurora_bounds_trap");
-                    } else {
+                    } else if (operation.operation == service::Operation::IommuAcknowledge) {
+                        call(std::string(service::description(operation.operation).hostSymbol));
+                        line("cmpq $2, %rax");
+                        line("ja .Laurora_bounds_trap");
+                    } else if (operation.operation == service::Operation::IommuPoll) {
+                        line("leaq " + address(operation.resultOffset) + ", %rdx");
+                        // Private raw output is four complete qwords. None is
+                        // published as source data until all channels validate.
+                        for (int byte = 0; byte < 32; byte += 8)
+                            line("movq $0, " + address(operation.resultOffset - byte));
+                        call(std::string(service::description(operation.operation).hostSymbol));
+                        line("cmpq $3, " + address(operation.resultOffset));
+                        line("ja .Laurora_bounds_trap");
+                        line("cmpq $31, " + address(operation.resultOffset - 24));
+                        line("ja .Laurora_bounds_trap");
+                        // Form an all-zero mask only for the record case. The
+                        // full payload must be zero for every other result.
+                        line("xorq %rax, %rax");
+                        line("cmpq $1, " + address(operation.resultOffset));
+                        line("setne %al");
+                        line("negq %rax");
+                        line("movq " + address(operation.resultOffset - 8) + ", %rcx");
+                        line("orq " + address(operation.resultOffset - 16) + ", %rcx");
+                        line("andq %rcx, %rax");
+                        line("jne .Laurora_bounds_trap");
+                    } else if (operation.operation == service::Operation::Next) {
                         line("leaq " + address(operation.resultOffset) + ", %rdx");
                         // Raw host report is three complete words; validation
                         // precedes publication as a copied bool/u8/bool object.
@@ -652,6 +677,8 @@ class X86Emitter {
                         line("notq %rax");
                         line("andq " + address(operation.resultOffset - 8) + ", %rax");
                         line("jne .Laurora_bounds_trap");
+                    } else {
+                        throw Error("unknown sealed service operation");
                     }
                 } else if constexpr (std::is_same_v<Op, ir::BindRegionParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");

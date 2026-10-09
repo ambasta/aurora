@@ -5,11 +5,42 @@ implement Aurora production DMA, grant device authority, activate a physical
 requester or replace the project's default QEMU runtime. Full IOMMU conformance,
 physical isolation/drain/reclamation and AMD hardware support remain unqualified.
 
-The integration is based on Aurora main after PR99,
-`9a8c2805cad581cad92b79b042b13aad07d6b530`. New source/static/mock integration checks
-must be distinguished from the independently reviewed historical emulator runs.
-The model diagnostics below do not qualify Aurora's final integrated source.
-Final-source Meson dev/slow and any required root native/kernel gates remain pending.
+The diagnostic integration landed in PR101 after its exact source passed the
+then-required 61 dev and 30 slow tests. The unchanged historical emulator results
+below retain their original model/fixture scope. New compiler and kernel changes
+require current-source canonical Meson `full` on both recorded toolchains and
+applicable image/emulator gates; earlier receipts do not transfer qualification.
+
+## Aurora-owned event intake
+
+The next implementation adds a real Aurora bounded polling loop through distinct
+sealed `IommuEventSession` and `ConsoleSession` borrows. Aurora decodes ordinary
+code-2 fault records, emits at most 96 bytes per record, and acknowledges only
+after its output succeeds. Code5 and unsupported records remain pending. Closed
+poll/ack results, zero budgets, exhaustion and output failure are explicit. This
+is source-program ordering; Event authority alone does not certify telemetry.
+
+The bootstrap adapter authenticates both grants before live transport admission,
+retains one copied pending record, and makes at most one head-write attempt per
+acknowledgement. Overflow and uncertainty are absorbing. A failed acknowledgement
+may have advanced the head; it conveys no retry or rollback guarantee. Entry
+return revokes both grants. Event backing has a boot-lifetime owner and cannot
+enter the existing CPU-only pin cancellation/reclamation paths.
+
+The current implementation is exercised through hosted transports and generated
+Aurora code. A live Aurora guest is not yet qualified. Concrete MMIO ordering,
+physical-base-to-backing proof, producer quiescence and boot-lifetime ownership of
+DTEs, translation/data/sink/guard/command memory remain obligations of that future
+fixture. The hosted transport's identity and quiet-state observations are trusted
+inputs, not independent hardware evidence. No mapping API, invalidation completion,
+page release, concurrent producer or physical-device support follows.
+
+The planned first guest retains the exact qualified diagnostic QEMU model and a
+finite producer-ready batch. It needs separately admitted firmware, actual
+EDU/IOMMU topology (including the default IOAPIC IVRS special entry), a disposable
+writable raw ESP copy with immutable master, and serial/QMP result and cleanup
+checks. Existing NVMe/read-only IVRS admission and `fat:ro` launchers cannot be
+silently reused. No new guest execution is part of the hosted source gate.
 
 ## Mechanism and trust boundary
 

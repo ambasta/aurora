@@ -256,7 +256,7 @@ class ServiceOperation {
 public:
     int offset;
     service::Operation operation;
-    int resultOffset; // exact pristine ConsoleSample for next, zero for scalar operations
+    int resultOffset; // exact pristine copied report for next/poll, zero for scalar operations
     service::Kind kind = service::Kind::Console;
 };
 class ServiceArgument {

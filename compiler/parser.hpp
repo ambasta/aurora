@@ -236,6 +236,16 @@ public:
                 need(">");
                 return Type::ByteSpan;
             }
+            if (eat("IommuEventSession"))
+                return Type::IommuEventSession;
+            if (eat("IommuEventSample"))
+                return service::eventSampleType();
+            if (eat("EventPollResult"))
+                return service::eventPollResultType();
+            if (eat("EventAckResult"))
+                return service::eventAckResultType();
+            if (eat("EventIntakeCompletion"))
+                return service::eventIntakeCompletionType();
             if (eat("DisplaySession"))
                 return Type::DisplaySession;
             if (eat("DisplayPutResult"))
@@ -534,12 +544,12 @@ public:
                     parameter.borrowSpan = take().span;
                     parameter.borrowed = true;
                     const bool distinctServiceContinuation =
-                        parameter.type.isService() && function.params.size() == 1 &&
-                        function.params.front().borrowed && function.params.front().type.isService() &&
-                        function.params.front().type != parameter.type;
+                        parameter.type.isService() && function.params.size() == 1 && function.params.front().borrowed &&
+                        function.params.front().type.isService() && function.params.front().type != parameter.type &&
+                        service::supportedGroup(
+                            {service::kind(function.params.front().type), service::kind(parameter.type)});
                     if (!allowBorrow || (!function.params.empty() && !distinctServiceContinuation) ||
-                        !templateParameters.empty() ||
-                        (!parameter.type.isClass() && !parameter.type.isService()) ||
+                        !templateParameters.empty() || (!parameter.type.isClass() && !parameter.type.isService()) ||
                         !parameter.type.templateArguments.empty())
                         fail("borrowed parameters require one leading concrete owning class on an ordinary function");
                 } else if (parameter.borrowConst)

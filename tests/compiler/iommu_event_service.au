@@ -1,0 +1,67 @@
+module event_service_abi;
+
+class SavedEvent {
+    builtin::IommuEventSample sample;
+public:
+    SavedEvent(builtin::IommuEventSample input) : sample(input) {}
+    auto get() const -> builtin::IommuEventSample {
+        const builtin::IommuEventSample copy = sample;
+        return copy;
+    }
+};
+
+auto valid_sample(builtin::IommuEventSample sample) -> bool {
+    return sample.result == builtin::EventPollResult::record &&
+           sample.word0 == 81985529216486895u64 && sample.word1 == 18364758544493064720u64 &&
+           sample.status_low == 31u64;
+}
+auto event_first(builtin::IommuEventSession& events, builtin::ConsoleSession& console,
+                 u64 word0, u64 word1, builtin::EventPollResult expected, u8 byte)
+    -> builtin::IommuEventSample {
+    if (word0 != 81985529216486895u64 || word1 != 18364758544493064720u64 ||
+        expected != builtin::EventPollResult::record) {
+        const builtin::IommuEventSample bad = builtin::IommuEventSample{
+            .result = builtin::EventPollResult::empty, .word0 = 0u64, .word1 = 0u64, .status_low = 0u64};
+        return bad;
+    }
+    console.put(byte);
+    const builtin::IommuEventSample result = events.poll();
+    return result;
+}
+auto console_first(builtin::ConsoleSession& console, builtin::IommuEventSession& events,
+                   u64 word0, u64 word1, builtin::EventPollResult expected, u8 byte)
+    -> builtin::IommuEventSample {
+    const builtin::IommuEventSample result = event_first(events, console, word0, word1, expected, byte);
+    return result;
+}
+auto event_only(builtin::IommuEventSession& events) -> builtin::IommuEventSample {
+    const builtin::IommuEventSample result = events.poll();
+    return result;
+}
+auto odd_ack(builtin::IommuEventSession& events) -> bool {
+    return true == (events.acknowledge() == builtin::EventAckResult::committed);
+}
+auto event_service(builtin::IommuEventSession& events, builtin::ConsoleSession& console,
+                   u64 first, u64 second) -> u64 {
+    if (first != 19u64 || second != 23u64) { return 1u64; }
+    const builtin::IommuEventSample left = event_first(events, console, 81985529216486895u64,
+        18364758544493064720u64, builtin::EventPollResult::record, 'Q');
+    const builtin::IommuEventSample right = console_first(console, events, 81985529216486895u64,
+        18364758544493064720u64, builtin::EventPollResult::record, 'Q');
+    const builtin::IommuEventSample last = event_only(events);
+    const SavedEvent saved = SavedEvent(left);
+    const builtin::IommuEventSample copy = saved.get();
+    const builtin::IommuEventSample synthetic = builtin::IommuEventSample{
+        .result = builtin::EventPollResult::record, .word0 = 81985529216486895u64,
+        .word1 = 18364758544493064720u64, .status_low = 31u64};
+    if (!valid_sample(left) || !valid_sample(right) || !valid_sample(last) ||
+        !valid_sample(copy) || !valid_sample(synthetic) ||
+        size_of(builtin::IommuEventSample) != 32 || field_count(builtin::IommuEventSample) != 4 ||
+        reflect_size(type_id(builtin::IommuEventSample)) != 32 ||
+        reflect_field_count(type_id(builtin::IommuEventSample)) != 4 ||
+        reflect_size(type_id(builtin::EventPollResult)) != 8 ||
+        reflect_size(type_id(builtin::EventAckResult)) != 8 ||
+        reflect_size(type_id(builtin::EventIntakeCompletion)) != 8) { return 2u64; }
+    if (!odd_ack(events) || events.acknowledge() != builtin::EventAckResult::committed) { return 3u64; }
+    return 42u64;
+}

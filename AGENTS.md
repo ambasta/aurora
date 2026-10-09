@@ -42,8 +42,8 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    including after conflict resolution. Compiler- or kernel-affecting merges and
    releases require separate GCC 14 and GCC 16 full runs. `make test` selects the
    same Meson graph; do not run a second duplicate Make aggregate for credit.
-   The current Meson-completion migration remains unqualified until both new
-   graphs pass independent source/coverage review and execution.
+   The canonical Meson graph is qualified on the recorded GCC 14 and GCC 16
+   toolchains; new changes still require their own final-source runs.
    Use stable, separate build directories per toolchain/configuration. Ninja
    tracks source/header dependencies; never share a build across changed
    toolchain identities. Use a fresh directory for clean/bootstrap checks and

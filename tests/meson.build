@@ -289,6 +289,19 @@ test('display-service-source-native', python,
      depends: aurorac, suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
+# Event intake retains the existing service loan graph and executes the real
+# Aurora consumer against bounded hosted observations; no guest is run here.
+iommu_event_ir = executable(
+    'iommu-event-service-ir', 'compiler/iommu_event_service_ir.cpp',
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('iommu-event-source-native', python,
+     args: ['-B', '-O', files('compiler/iommu_event_service.py'), aurorac, iommu_event_ir.full_path()],
+     depends: [aurorac, iommu_event_ir], suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 300)
+iommu_event_session = executable('iommu-event-session', 'kernel-iommu-event-session.cpp', native: true, install: false)
+test('iommu-event-session', iommu_event_session, suite: ['full', 'dev'], timeout: 120)
+
 # Output-only framebuffer boundary and its actual Aurora software renderer.
 foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'framebuffer-pixels']
     framebuffer_model = executable(

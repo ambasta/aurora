@@ -4,15 +4,16 @@
 
 This is the canonical project-level status and contract index. Update this section
 in place; the checkpoint summaries below are historical, not an accumulating
-list of current limitations. This candidate joins the bounded graphical console,
-distinct service borrows, host-toolchain portability, readable glyph literals and
-the canonical Meson graph. Final joined-source native and guest qualification is
-pending; earlier snapshot results retain their original scope. The persistent
-simple-UEFI Aurora console service has the bounded qualification noted below.
+list of current limitations. Merged PR100/102/103 integrate distinct service
+borrows, the bounded Aurora graphical console, canonical Meson routing and native
+artifact-accounting improvements. The final PR100 tree passed 249/249 canonical
+Meson tests on each recorded GCC 14 and GCC 16 toolchain, six image admissions and
+28 graphical emulator cases with ordinary restorations. Its two final-source
+normal BIOS smokes passed after the merge on 2026-10-09; they were not pre-merge
+evidence. Earlier snapshot receipts retain their original scope.
 Compiler- and kernel-affecting merges require final integrated GCC 14 and GCC 16
-`full` Meson and relevant image/smoke gates. The source-only graph-completion
-candidate maps the former root Make graph into Meson, with Make as a convenience
-entrypoint; it remains unqualified until both new toolchain runs pass. The checked
+`full` Meson and relevant image/smoke gates. Make selects the same canonical graph;
+a duplicate full Make run adds no qualification. The checked
 inventory preserves full package profiles, fixtures, negative controls and
 explicit non-root style/supplemental exclusions. Public protected-console commands build and check local artifacts; separately
 pinned first-image qualification remains an explicit opt-in gate.

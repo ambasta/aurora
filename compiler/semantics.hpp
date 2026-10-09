@@ -750,6 +750,28 @@ class SemanticAnalyzer {
                 emit(ir::ServiceOperation{receiverOffset, service::Operation::Next, offset(destination)});
                 return service::sampleType();
             }
+            if (type == Type::IommuEventSession && value->token.text == "poll") {
+                arity(value, 1);
+                if (!resultBinding)
+                    fail(value->token, "poll requires a typed IommuEventSample initializer");
+                match(resultBinding->type, service::eventSampleType(), value->token);
+                const int destination = add(resultBinding->name,
+                                            resultBinding->type,
+                                            resultBinding->mutableValue,
+                                            resultBinding->token,
+                                            bindResult);
+                emit(ir::ServiceOperation{
+                    receiverOffset, service::Operation::IommuPoll, offset(destination), service::Kind::IommuEvent});
+                return service::eventSampleType();
+            }
+            if (type == Type::IommuEventSession && value->token.text == "acknowledge") {
+                arity(value, 1);
+                if (resultBinding)
+                    fail(value->token, "acknowledge returns a scalar enum, not a copied report");
+                emit(ir::ServiceOperation{
+                    receiverOffset, service::Operation::IommuAcknowledge, 0, service::Kind::IommuEvent});
+                return service::eventAckResultType();
+            }
             if (type == Type::ConsoleSession && value->token.text == "put") {
                 arity(value, 2);
                 if (resultBinding)
@@ -2030,16 +2052,19 @@ public:
                     const auto &parameter = candidate.params[serviceCount];
                     if (!parameter.borrowed || parameter.borrowConst)
                         fail(candidate.token,
-                             "service functions require one leading exclusive sealed service reference and copied result");
+                             "service functions require one leading exclusive sealed service reference and copied "
+                             "result");
                     if (!kinds.insert(service::kind(parameter.type)).second)
                         fail(candidate.token, "service group requires distinct leading exclusive sealed references");
                     ++serviceCount;
                 }
-                if (serviceCount > 2 || static_cast<std::size_t>(borrowedCount) != serviceCount ||
-                    !candidate.receiverClass.empty() || candidate.constructor || !candidate.templateArguments.empty() ||
+                if (serviceCount > 2 || !service::supportedGroup(kinds) ||
+                    static_cast<std::size_t>(borrowedCount) != serviceCount || !candidate.receiverClass.empty() ||
+                    candidate.constructor || !candidate.templateArguments.empty() ||
                     !candidate.templateParameters.empty() ||
-                    (!scalarValue(candidate.result) && !(kinds.contains(service::Kind::Console) &&
-                                                         candidate.result == service::sampleType())))
+                    (!scalarValue(candidate.result) &&
+                     !(kinds.contains(service::Kind::Console) && candidate.result == service::sampleType()) &&
+                     !(kinds.contains(service::Kind::IommuEvent) && candidate.result == service::eventSampleType())))
                     fail(candidate.token,
                          "service functions require a leading exclusive sealed service group and copied result");
                 for (std::size_t index = serviceCount; index < candidate.params.size(); ++index)
