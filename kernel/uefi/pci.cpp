@@ -37,19 +37,20 @@ class EcamWindow final {
     WindowAuthority authority_;
     unsigned reads_{};
     unsigned revoked_{};
-    [[nodiscard]] auto begin(U64 page, bool writable = false) -> std::optional<WindowTicket> {
+    [[gnu::noinline, nodiscard]] auto begin(U64 page, bool writable = false) -> std::optional<WindowTicket> {
         if (!slot_ || *slot_ != 0 || !aperture_.admits_page(page))
             return std::nullopt;
         auto ticket = authority_.acquire();
         if (!ticket)
             return std::nullopt;
-        // PAT3 (PWT|PCD) was verified UC; supervisor, read-only, NX, nonglobal.
+        // PAT3 (PWT|PCD) was verified UC; supervisor, NX, nonglobal. Only
+        // the exact command-reduction method requests a writable mapping.
         *slot_ = page | 1 | 8 | 16 | PageTables::nx | (writable ? 2 : 0);
         asm volatile("invlpg (%0)" : : "r"(PageTables::window_address) : "memory");
         ++reads_;
         return ticket;
     }
-    [[nodiscard]] auto end(WindowTicket ticket) -> bool {
+    [[gnu::noinline, nodiscard]] auto end(WindowTicket ticket) -> bool {
         if (!authority_.accepts(ticket))
             return false;
         *slot_ = 0;
@@ -72,7 +73,7 @@ class EcamWindow final {
 public:
     EcamWindow(const Q35Ecam &aperture, volatile U64 *slot) : aperture_(aperture), slot_(slot) {
     }
-    [[nodiscard]] auto read(U64 page) -> std::optional<std::array<std::byte, 64>> {
+    [[gnu::noinline, nodiscard]] auto read(U64 page) -> std::optional<std::array<std::byte, 64>> {
         auto ticket = begin(page);
         if (!ticket)
             return std::nullopt;

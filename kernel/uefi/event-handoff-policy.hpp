@@ -49,6 +49,29 @@ class EventHandoff final {
         return edu.samples[0] == EventEduFact{} && edu.samples[1] == EventEduFact{};
     }
 
+    // One bounded policy operation, separate from PCI reduction state. Every
+    // poll observes the full controller; only the selected read-only FR bit may
+    // change, and timeout leaves the whole boot attempt consumed.
+    template <class AhciRead>
+    [[gnu::noinline, nodiscard]] auto wait_fis_stopped(unsigned port, unsigned command, AhciRead &&read) -> bool {
+        for (unsigned poll = 0; poll < attempts; ++poll) {
+            auto now = read();
+            if (!now)
+                return false;
+            const auto observed = now->ports[port].command;
+            if (observed != command && observed != (command & ~0x4000U))
+                return false;
+            now->ports[port].command = command;
+            if (*now != expected_)
+                return false;
+            if (!(observed & 0x4000)) {
+                expected_.ports[port].command = observed;
+                return true;
+            }
+        }
+        return false;
+    }
+
 public:
     static constexpr unsigned attempts = 1024; // Poll attempts, not elapsed time.
     EventHandoff(const EventHandoff &) = delete;
@@ -115,24 +138,7 @@ public:
             if (!ahci_write(port, command))
                 return std::nullopt;
             expected_.ports[port].command = command;
-            bool stopped = false;
-            for (unsigned poll = 0; poll < attempts; ++poll) {
-                auto now = ahci_read();
-                if (!now)
-                    return std::nullopt;
-                const auto observed = now->ports[port].command;
-                if (observed != command && observed != (command & ~0x4000U))
-                    return std::nullopt;
-                now->ports[port].command = command;
-                if (*now != expected_)
-                    return std::nullopt;
-                if (!(observed & 0x4000)) {
-                    expected_.ports[port].command = observed;
-                    stopped = true;
-                    break;
-                }
-            }
-            if (!stopped)
+            if (!wait_fis_stopped(port, command, ahci_read))
                 return std::nullopt;
         }
         if (!backing())

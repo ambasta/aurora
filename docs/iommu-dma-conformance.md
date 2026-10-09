@@ -44,7 +44,7 @@ Event-only build uses fixed outgoing argument slots. The image invokes the real
 Aurora loop after a finite producer batch and preserves all raw ring slots and
 protected data before and after intake. Command-only diagnostics leave EDU bus
 mastering disabled. Overflow at initial admission remains a pre-entry refusal.
-No new Aurora guest has run yet; hosted and image checks do not establish live
+No Event-intake guest has run yet; hosted and image checks do not establish live
 transport behavior, firmware quiescence, physical isolation or completion.
 
 Build-only modes are `iommu-event-denial`, `iommu-event-success`,
@@ -101,7 +101,8 @@ clears CI/SACT when ST is cleared, so post-stop zeroes cannot prove prior idlene
 Any future stop must first establish equal idle CI/SACT/TFD samples, ordinary-RAM
 firmware backing that remains retained, and an exact reviewed command reduction
 with readback. An attempt limit would not establish the specification's timed
-wait or physical drain. That transition is not implemented by this checkpoint.
+wait or physical drain. That preceding observation checkpoint implements no transition; the separate
+source handoff below retains its own acceptance gates.
 
 ### Narrow firmware handoff source checkpoint
 
@@ -136,9 +137,17 @@ admission is used.
 
 Focused hosted controls exercise successful ordering, each read/write failure,
 FR timeout, unexpected AHCI/PCI changes, unsuitable backing and retry refusal.
-The first production builds exceed the unchanged 128 KiB bound; their failures
-remain preserved while repeated bodies are factored. A separate shared UEFI
-BSS alignment sort removes only padding and retains every section and alignment.
+The first production builds exceeded the unchanged 128 KiB bound; their failures
+remain preserved. Shared ECAM/window bodies and BSS alignment packing now fit
+that bound without removing checks, snapshots, sections or alignments. PE/PIC
+checks pass. Extracting the complete bounded FR wait into its own policy helper
+removes the counter spill; no SUBL decoder permission was added. Sharing the
+unchanged page-table verifier body refreshes only its independently reviewed
+source digest, retaining the exact lambda location and every association check.
+The fresh denial image now passes automated image/stack checks: normal plus
+exception reserve is 11,688 bytes, consumer plus reserve 2,312, within the
+unchanged 15,360-byte admission cap. Other profiles, final integrated full tests
+and transition execution retain their separate gates.
 Neither this source checkpoint nor stock observation results qualify a new
 patched-QEMU tuple, transition image or guest. Fresh image/stack and independent
 bounded-method review remain required before any transition execution.

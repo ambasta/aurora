@@ -49,12 +49,14 @@ hardware support.
 The separate Event-intake draft adds a compiler-sealed Event session, a bounded
 Aurora poll/decode/report/acknowledge loop and an opt-in UEFI transport. Its
 [published checkpoint](iommu-dma-conformance.md) documents earlier focused hosted
-and denial-image results. This integration has no fresh final-source GCC 16, image
-or guest qualification. A narrow one-shot handoff implementation now retains
+and denial-image results. This integration has no final-source GCC 16 full or transition-guest qualification. A narrow one-shot handoff implementation now retains
 validated firmware backing, rejects active command engines, clears only live FIS
 enables and applies exact command-only PCI reductions with readback. Its first
-production sizing attempts remain blocked by the unchanged payload cap; shared
-BSS packing and repeated-body factoring do not transfer old qualification. A separate
+production sizing failures remain preserved. Shared BSS packing and repeated-body
+factoring now fit the unchanged cap. A separate bounded FR-poll helper removes
+the stack-counter spill without extending decoder permissions; the fresh denial
+image passes strict image/stack checks, while other profiles and guest/full
+qualification remain separate. A separate
 `iommu-event-observe` build adds read-only firmware/AHCI snapshots with no linked
 Event producer, preserving production BME denial. A separately reviewed fresh
 stock/default-split-OVMF run reached equal AHCI samples with five FIS engines

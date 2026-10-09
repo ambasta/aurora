@@ -8,14 +8,14 @@ class EventRegisterWindow final {
     U64 arena_;
     volatile U64 *slot_;
     static constexpr U64 window = PageTables::window_address + 4096;
-    [[nodiscard]] auto begin(U64 base, bool writable = false) -> bool {
+    [[gnu::noinline, nodiscard]] auto begin(U64 base, bool writable = false) -> bool {
         if (!slot_ || *slot_ || !ecam_.closed() || !tables_.verify(arena_, handoff_))
             return false;
         *slot_ = base | 1 | 8 | 16 | PageTables::nx | (writable ? 2 : 0);
         asm volatile("invlpg (%0)" ::"r"(window) : "memory");
         return true;
     }
-    [[nodiscard]] auto end() -> bool {
+    [[gnu::noinline, nodiscard]] auto end() -> bool {
         *slot_ = 0;
         asm volatile("invlpg (%0)" ::"r"(window) : "memory");
         return tables_.verify(arena_, handoff_);
@@ -25,7 +25,9 @@ public:
     EventRegisterWindow(
         const EventResources &resources, const PageTables &tables, const Bytes &handoff, EcamWindow &ecam, U64 arena)
         : resources_(resources), tables_(tables), handoff_(handoff), ecam_(ecam), arena_(arena),
-          slot_(tables.window_slot() ? tables.window_slot() + 1 : nullptr) {
+          slot_(tables.window_slot()) {
+        if (slot_)
+            ++slot_;
     }
     [[gnu::noinline, nodiscard]] auto ahci() -> std::optional<EventAhciFacts> {
         if (!begin(resources_.ahci_base()))

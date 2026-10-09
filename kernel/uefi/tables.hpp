@@ -155,8 +155,8 @@ public:
     }
     // Preserve the legacy verifier entry/lambda identity. Only the explicit
     // four-argument overload below creates an authorized framebuffer view.
-    [[nodiscard]] auto verify(std::uint64_t arena, const Bytes &h, const LocalApicAdmission *apic = nullptr) const
-        -> bool {
+    [[gnu::noinline, nodiscard]] auto
+    verify(std::uint64_t arena, const Bytes &h, const LocalApicAdmission *apic = nullptr) const -> bool {
         const auto *framebuffer = framebuffer_;
         if (used_ == 0 || used_ > Handoff::table_pages || base_ != arena + Handoff::tables_offset ||
             (apic && apic->owned_arena() != arena) ||

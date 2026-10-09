@@ -838,7 +838,7 @@ def prove_carrier_preserved(symbol, instructions, starts, carrier, trusted_marke
 
 
 VERIFIER_SOURCE_PINS = {
-    "kernel/uefi/tables.hpp": "414dfd306bbbd0bcfc409981be3a998c81b7b9f94b201c8ddee3d3dde0688f23",
+    "kernel/uefi/tables.hpp": "abca3b73d20845896f09457b7f544f264b021a2b436d3bf1b974ed1717ab7c8b",
     "kernel/uefi/handoff.hpp": "b5a753a311a1408e5b8368acebb8bdd5b55d2681b186b9bffa63a350815e0f33",
 }
 # Full compiler display signatures remain unmodified receipt data. cpp_frames
