@@ -47,8 +47,11 @@ Aurora poll/decode/report/acknowledge loop and an opt-in UEFI transport. Its
 and denial-image results. This integration has no fresh final-source GCC 16, image
 or guest qualification; firmware ownership handoff remains unresolved. A separate
 `iommu-event-observe` build adds read-only firmware/AHCI snapshots with no linked
-Event producer, preserving production BME denial. Its source and hosted controls
-are not guest observations or permission to stop firmware controllers.
+Event producer, preserving production BME denial. A separately reviewed fresh
+stock/default-split-OVMF run reached equal AHCI samples with five FIS engines
+still enabled. The next diagnostic revision adds read-only EDU command/status/IRQ
+samples and copied firmware-backing descriptors; its source and hosted controls
+do not establish fresh guest results or permission to stop controllers.
 
 The current-source `make smoke-graphical-console` runner now retains fresh
 production/capture pixel evidence and an actual final normal restoration. Its

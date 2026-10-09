@@ -506,7 +506,60 @@ auto observation_controls() -> void {
     check(first != basic);
 }
 
+auto precondition_observation_controls() -> void {
+    static_assert(!std::is_convertible_v<EventEduObservation, EventAdmission>);
+    static_assert(!std::is_convertible_v<EventBackingObservation, EventAdmission>);
+    std::vector<std::pair<unsigned, unsigned>> accesses;
+    unsigned calls = 0;
+    const auto edu = EventEduObservation::sample([&](unsigned offset, unsigned width) -> std::uint64_t {
+        accesses.emplace_back(offset, width);
+        return ++calls;
+    });
+    const std::vector<std::pair<unsigned, unsigned>> expected{
+        {0x98, 8}, {0x20, 4}, {0x24, 4}, {0x98, 8}, {0x20, 4}, {0x24, 4}};
+    check(accesses == expected);
+    check(edu.samples[0].command == 1 && edu.samples[0].status == 2 && edu.samples[0].irq == 3);
+    check(edu.samples[1].command == 4 && edu.samples[1].status == 5 && edu.samples[1].irq == 6);
+    check(edu.samples[0] != edu.samples[1]);
+    for (std::uint64_t value : std::array<std::uint64_t, 4>{0, 1, 1ULL << 63, UINT64_MAX}) {
+        const auto equal = EventEduObservation::sample([&](unsigned, unsigned) {
+            return value;
+        });
+        check(equal.samples[0] == equal.samples[1] && equal.samples[0].command == value);
+        // Describing an active/unknown value confers no authority or admission.
+    }
+    const auto map = memory(4, 0x800000, 2, 8);
+    const auto capture = [&](std::uint64_t address, unsigned alignment = 256) {
+        return EventBackingObservation::capture(map, 40, address, alignment, 0x400000, 40);
+    };
+    for (auto address : {0x800000ULL, 0x800400ULL, 0x801c00ULL}) {
+        const auto fact = capture(address, 1024);
+        check(fact && fact->page == address - address % 4096 && fact->type == 4 && fact->begin == 0x800000 &&
+              fact->pages == 2 && fact->attributes == 8);
+    }
+    // Shared command lists and adjacent FIS buffers are observed independently;
+    // the descriptor records neither imply ownership nor prove RAM suitability.
+    check(capture(0x800000) && capture(0x800100) && capture(0x800f00));
+    for (auto address : std::array<std::uint64_t, 6>{0, 0x7fff00, 0x800001, 0x802000, 1ULL << 40, UINT64_MAX})
+        check(!capture(address));
+    for (unsigned alignment : {0U, 1U, 512U, 4096U})
+        check(!capture(0x800000, alignment));
+    check(!capture(0x800100, 1024));
+    check(!EventBackingObservation::capture(map, 40, 0x800000, 256, 0x800000, 40));
+    for (unsigned bits : {0U, 31U, 53U, 64U})
+        check(!EventBackingObservation::capture(map, 40, 0x800000, 256, 0x400000, bits));
+    check(!EventBackingObservation::capture({}, 40, 0x800000, 256, 0x400000, 40));
+    check(!EventBackingObservation::capture(map, 0, 0x800000, 256, 0x400000, 40));
+    auto overlap = map;
+    overlap.insert(overlap.end(), map.begin(), map.end());
+    check(!EventBackingObservation::capture(overlap, 40, 0x800000, 256, 0x400000, 40));
+    const auto mmio = memory(11, 0x800000, 1, 1);
+    const auto described = EventBackingObservation::capture(mmio, 40, 0x800000, 256, 0x400000, 40);
+    check(described && described->type == 11 && described->attributes == 1);
+}
+
 auto main() -> int {
+    precondition_observation_controls();
     observation_controls();
     parser_controls();
     resource_controls();

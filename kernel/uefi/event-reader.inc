@@ -25,8 +25,7 @@
     const auto ivrs_bytes =
         std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + 0x60000), EventIvrs::maximum_table};
     const auto length = Bytes{ivrs_bytes}.get(4, 4);
-    const auto ivrs =
-        length <= ivrs_bytes.size() ? read_event_ivrs(ivrs_bytes.first(length), bits) : std::nullopt;
+    const auto ivrs = length <= ivrs_bytes.size() ? read_event_ivrs(ivrs_bytes.first(length), bits) : std::nullopt;
     if (!ivrs || saved.get(112) != ivrs->unit().device_id())
         return false;
     std::array<EventPciFact, 6> copied{}, current{};
@@ -121,6 +120,57 @@
     *slot = 0;
     asm volatile("invlpg (%0)" ::"r"(window) : "memory");
 #if AURORA_IOMMU_EVENT_CASE == 4
+    if (*slot || !tables.verify(arena, handoff))
+        return false;
+    *slot = resources->edu_base() | flags;
+    asm volatile("invlpg (%0)" ::"r"(window) : "memory");
+    const auto edu = EventEduObservation::sample([&](unsigned offset, unsigned width) -> U64 {
+        if (width == 4)
+            return *reinterpret_cast<volatile const std::uint32_t *>(window + offset);
+        return *reinterpret_cast<volatile const U64 *>(window + offset);
+    });
+    *slot = 0;
+    asm volatile("invlpg (%0)" ::"r"(window) : "memory");
+    for (unsigned sample = 0; sample < edu.samples.size(); ++sample) {
+        Serial::text("AURORA_EVENT_EDU: sample=");
+        Serial::number(sample);
+        Serial::text(" command=");
+        Serial::number(edu.samples[sample].command);
+        Serial::text(" status=");
+        Serial::number(edu.samples[sample].status);
+        Serial::text(" irq=");
+        Serial::number(edu.samples[sample].irq);
+        Serial::text("\r\n");
+    }
+    bool backing_complete = true;
+    for (unsigned port = 0; port < ahci.ports.size(); ++port) {
+        for (unsigned kind = 0; kind < 2; ++kind) {
+            const auto address = kind == 0 ? ahci.ports[port].command_list : ahci.ports[port].received_fis;
+            const auto fact =
+                EventBackingObservation::capture(map, handoff.get(40), address, kind == 0 ? 1024 : 256, arena, bits);
+            Serial::text("AURORA_EVENT_AHCI_BACKING: port=");
+            Serial::number(port);
+            Serial::text(" kind=");
+            Serial::number(kind);
+            Serial::text(" valid=");
+            Serial::number(fact.has_value());
+            if (fact) {
+                Serial::text(" page=");
+                Serial::number(fact->page);
+                Serial::text(" type=");
+                Serial::number(fact->type);
+                Serial::text(" begin=");
+                Serial::number(fact->begin);
+                Serial::text(" pages=");
+                Serial::number(fact->pages);
+                Serial::text(" attributes=");
+                Serial::number(fact->attributes);
+            } else {
+                backing_complete = false;
+            }
+            Serial::text("\r\n");
+        }
+    }
     for (const auto *snapshot : {&ahci, &second}) {
         Serial::text("AURORA_EVENT_AHCI: sample=");
         Serial::number(snapshot == &ahci ? 0 : 1);
@@ -155,6 +205,8 @@
     Serial::text("AURORA_EVENT_OBSERVATION: stable=");
     Serial::number(stable);
     Serial::text("\r\n");
+    if (!backing_complete || edu.samples[0] != edu.samples[1])
+        return false;
 #endif
     if (!stable || !tables.verify(arena, handoff))
         return false;

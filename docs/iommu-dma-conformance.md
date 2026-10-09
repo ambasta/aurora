@@ -67,8 +67,22 @@ are observations only, not an idle, drain, ownership or transition guarantee.
 Resource observations may retain inherited BME; their explicit read-only purpose
 cannot become `EventAdmission`. EDU command 7 is describable only in this
 read-only mode after the first stock-tuple observation found all six commands
-were 7 and refused before AHCI. EDU registers are never mapped or accessed here;
-production Event admission retains exact EDU command 2 and its BME denial. The observation image links the ordinary
+were 7 and refused before AHCI. The second reviewed stock/default-split-OVMF
+observation reached equal AHCI samples: ST/CR and CI/SACT were zero, while five
+ports retained FRE/FR. Those facts are scoped to that fresh tuple.
+
+The next read-only revision adds two EDU snapshots: 64-bit DMA command at 0x98,
+32-bit status at 0x20 and IRQ status at 0x24. The reviewed
+[QEMU EDU model](https://github.com/qemu/qemu/blob/98f88efe8f07067667b8d9b1a5ce9551d34036c1/hw/misc/edu.c)
+returns these fields without scheduling the DMA timer or acknowledging IRQs.
+The admitted EDU BAR receives one temporary read-only UC/NX page, revoked before
+reporting. Twelve bounded metadata lookups report the copied UEFI descriptors
+covering each page-rounded CLB/FB extent. Firmware buffers themselves are neither
+mapped nor read; descriptor type/attributes are observations, not RAM ownership
+or retention authority. Shared CLB/FB pages are reported without an alias claim.
+Changed EDU samples or missing/invalid descriptors fail closed after reporting.
+Production Event admission retains exact EDU command 2 and its BME denial.
+The observation image links the ordinary
 scalar language fixture and no Event producer, session, retained DMA backing or
 service bridge. It returns through the existing normal diagnostic exit.
 

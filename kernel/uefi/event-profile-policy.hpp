@@ -185,6 +185,57 @@ public:
     }
 };
 
+// Observation-only copied facts. Neither type can mint EventAdmission or
+// authorize writes. QEMU edu.c accepts aligned 64-bit reads at DMA command 0x98;
+// dma_rw(write=false, timer=false) only copies the command value.
+class EventEduFact final {
+public:
+    std::uint64_t command{};
+    std::uint32_t status{}, irq{};
+    [[nodiscard]] auto operator==(const EventEduFact &) const -> bool = default;
+};
+class EventEduObservation final {
+public:
+    std::array<EventEduFact, 2> samples{};
+    template <class Reader> [[nodiscard]] static auto sample(Reader &&read) -> EventEduObservation {
+        EventEduObservation result;
+        for (auto &fact : result.samples) {
+            fact.command = read(0x98, 8);
+            fact.status = static_cast<std::uint32_t>(read(0x20, 4));
+            fact.irq = static_cast<std::uint32_t>(read(0x24, 4));
+        }
+        return result;
+    }
+};
+
+class EventBackingObservation final {
+public:
+    std::uint64_t page{}, type{}, begin{}, pages{}, attributes{};
+    [[nodiscard]] static auto capture(std::span<const std::byte> map,
+                                      std::size_t stride,
+                                      std::uint64_t address,
+                                      unsigned alignment,
+                                      std::uint64_t arena,
+                                      unsigned bits) -> std::optional<EventBackingObservation> {
+        // CLB is 1 KiB-aligned/1 KiB long, FB is 256-byte-aligned/256 bytes long;
+        // each fits one complete page. Inspect only copied descriptor metadata.
+        if ((alignment != 1024 && alignment != 256) || !address || address % alignment || bits < 32 || bits > 52 ||
+            address >= (std::uint64_t{1} << bits) || !MemoryMap{map, stride, 1}.valid())
+            return std::nullopt;
+        const auto page = address - address % 4096;
+        if (!arena || arena > UINT64_MAX - Handoff::arena_bytes ||
+            (page < arena + Handoff::arena_bytes && arena < page + 4096))
+            return std::nullopt;
+        for (std::size_t at = 0; at < map.size(); at += stride) {
+            const Bytes entry{map.subspan(at, stride)};
+            const auto begin = entry.get(8), pages = entry.get(24);
+            if (page >= begin && page - begin < pages * 4096)
+                return EventBackingObservation{page, entry.get(0, 4), begin, pages, entry.get(32)};
+        }
+        return std::nullopt;
+    }
+};
+
 // Resource admission precedes AHCI register reads. A successful object is only
 // bounded platform/resource evidence; EventAdmission additionally needs idle
 // boot-controller facts before the fixture may be considered for activation.
