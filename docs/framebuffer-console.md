@@ -348,3 +348,11 @@ symbols, source ownership and frame sizes must agree with object/linked evidence
 the validation predicates are unchanged. Other profiles do not enable these
 emission attributes. This boundary changes paired generated inputs, so fresh
 image/stack and capture-contract review is required before qualification reuse.
+
+The graphical stack adapter may authorize only the two reviewed GCC16 normal
+RSP-relative qword argument pushes, bound to their owner, offsets, opcodes and
+operands. The shared decoder otherwise rejects memory pushes. For an authorized
+site it bounds the complete eight-byte source against the old live frame before
+adding eight bytes of stack consumption; stale or unused sites and unbalanced
+paths reject. This proves bounded stack effects, not copied-value initialization
+or authority. Existing save/return checks and whole-image budgets remain in force.

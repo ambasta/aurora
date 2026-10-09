@@ -373,7 +373,7 @@ def arguments(text):
     return re.split(r",(?![^()]*\))", text)
 
 
-def analyze_function(symbol, instructions, starts, seed=None, fault=False, carrier="%r14"):
+def analyze_function(symbol, instructions, starts, seed=None, fault=False, carrier="%r14", memory_pushes=None):
     """CFG fixed point. Different stack depths at a join reject growing loops.
 
     Tiny constant propagation is deliberately restricted to the verifier level
@@ -381,6 +381,22 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
     kills a fact. Calls kill %ecx. No data-dependent loop trip count is assumed.
     """
     begin, end = symbol.address, symbol.address + symbol.size
+    authorized_pushes = {}
+    if memory_pushes is not None:
+        require(type(memory_pushes) is dict and set(memory_pushes) == {"owner", "sites"}
+                and memory_pushes["owner"] == symbol.name,
+                "Foreign or malformed memory-push authorization")
+        authorized_pushes = memory_pushes["sites"]
+        require(type(authorized_pushes) is dict and authorized_pushes,
+                "Empty or malformed memory-push site inventory")
+        for address, displacement in authorized_pushes.items():
+            require(type(address) is int and type(displacement) is int and displacement in (8, 24)
+                    and begin <= address < end and address in instructions,
+                    "Unproved memory-push address or displacement")
+            row = instructions[address]
+            require(row.op == "push" and row.size == 4 and row.args == hex(displacement) + "(%rsp)" and row.next <= end,
+                    "Memory-push authorization does not match the original instruction")
+    observed_pushes = {}
     wide_level_registers = ("%rcx", "%ecx", *CALLEE_SAVED_REGISTERS[carrier][:2])
     # State: consumed bytes, saved frame-pointer depth, ecx, r14, known ZF.
     states = {begin: (0, None, seed, None, None)}
@@ -474,10 +490,20 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
             if register is not None and args[0] in wide_level_registers and old[register] is not None:
                 next_zf = old[register] == 0
         if op in ("push", "pushf"):
-            require(
-                op == "pushf" or re.fullmatch(r"%r(?:ax|bx|cx|dx|si|di|bp|[89]|1[0-5])", insn.args),
-                "Unsupported push operand width or stack pointer",
-            )
+            if address in authorized_pushes:
+                displacement = authorized_pushes[address]
+                # x86 PUSH reads its source using the old RSP. Check the entire
+                # qword before decrementing RSP; caller return bytes are excluded.
+                require(op == "push" and insn.args == hex(displacement) + "(%rsp)"
+                        and displacement + 8 <= depth,
+                        "Memory push reads outside the pre-push live frame")
+                observed_pushes[address] = dict(address=address, source_old_rsp=displacement,
+                                                source_bytes=8, depth_before=depth, depth_after=depth + 8)
+            else:
+                require(
+                    op == "pushf" or re.fullmatch(r"%r(?:ax|bx|cx|dx|si|di|bp|[89]|1[0-5])", insn.args),
+                    "Unsupported push operand width or stack pointer",
+                )
             depth += 8
             push_peak = max(push_peak, 8 + depth)
         elif op == "pop":
@@ -560,13 +586,17 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
             calls[address] = dict(address=address, target="fault_common", kind="tail", live_bytes=0, level=None)
         else:
             schedule(insn.next, state)
-    return dict(
+    require(set(observed_pushes) == set(authorized_pushes), "Unused memory-push authorization")
+    result = dict(
         local_peak=peaks,
         calls=sorted(calls.values(), key=lambda row: row["address"]),
         instructions=len(visited),
         returns=returns,
         push_peak=push_peak,
     )
+    if authorized_pushes:
+        result["stack_memory_pushes"] = sorted(observed_pushes.values(), key=lambda row: row["address"])
+    return result
 
 
 def prove_carrier_preserved(symbol, instructions, starts, carrier, trusted_marker_stores=()):

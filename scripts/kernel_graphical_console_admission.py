@@ -1218,6 +1218,39 @@ def normalize_instruction(decoder, row, payload):
     return row, None
 
 
+STACK_MEMORY_PUSH_OWNER = "_ZN6aurora4uefi21run_graphical_consoleEmRKNS0_5BytesE"
+STACK_MEMORY_PUSH_SITES = ((0x79C, 8, bytes.fromhex("ff742408")), (0x7A6, 24, bytes.fromhex("ff742418")))
+
+
+def stack_memory_push_evidence(symbols, code, payload):
+    """Authorize only the retained GCC16 normal argument-copy instruction sites.
+
+    This binds original encoding and ownership, not copied values or authority.
+    The core still proves the eight-byte read against each pre-push live depth.
+    """
+    memory_rows = [row for row in code.values() if row.op.startswith("push") and "(" in row.args]
+    owner = symbols.get(STACK_MEMORY_PUSH_OWNER)
+    if not memory_rows and (owner is None or owner.size != 5437):
+        return {}, []
+    need(owner is not None and owner.size == 5437, "Unreviewed memory-push owner or emitted extent")
+    expected = {owner.address + offset for offset, _, _ in STACK_MEMORY_PUSH_SITES}
+    need({row.address for row in memory_rows} == expected, "Unknown, missing or foreign memory-push site")
+    sites, receipts = {}, []
+    for offset, displacement, raw in STACK_MEMORY_PUSH_SITES:
+        address = owner.address + offset
+        row = code[address]
+        need(row.op == "push" and row.args == hex(displacement) + "(%rsp)" and row.size == 4
+             and payload[address:row.next] == raw and row.next <= owner.address + owner.size,
+             "Changed exact memory-push opcode, addressing or operand")
+        need([name for name, symbol in symbols.items()
+              if symbol.address <= address < symbol.address + symbol.size] == [STACK_MEMORY_PUSH_OWNER],
+             "Ambiguous memory-push function ownership")
+        sites[address] = displacement
+        receipts.append(dict(owner=owner.name, address=address, offset=offset, bytes=raw.hex(),
+                             operand=row.args, source_old_rsp=displacement, source_bytes=8))
+    return {owner.name: dict(owner=owner.name, sites=sites)}, receipts
+
+
 def verify_inventory(linked_names, frames, language_names, memory_names):
     fixed = {
         "uefi_payload_entry",
@@ -3944,12 +3977,14 @@ def stack_evidence(directory):
         or "21run_graphical_consoleE" in name
         or "23graphical_console_faultE" in name
     )
+    memory_pushes, memory_push_receipts = stack_memory_push_evidence(linked.functions, original_code, payload)
     functions = {}
     for name, symbol in linked.functions.items():
         if name == irq.name:
             continue
         try:
-            functions[name] = decoder.analyze_function(symbol, code, starts, fault=name == "fault_common")
+            functions[name] = decoder.analyze_function(symbol, code, starts, fault=name == "fault_common",
+                                                      memory_pushes=memory_pushes.get(name))
         except ValueError as error:
             raise ValueError(unreviewed_linked_function(symbol, original_code, payload, error)) from error
     console.verify_noreturn(functions, decoder.NORETURN)
@@ -4012,6 +4047,7 @@ def stack_evidence(directory):
         assembly_objects=assembly,
         original_dynamic_bounded_rows=bounded,
         normalized_stack_immediates=normalized,
+        authorized_stack_memory_pushes=memory_push_receipts,
         paired_walker_identity=dict(linked=paired_linked, objects=alias_objects),
         page_verifiers=proofs,
         disassembly_sha256=hashlib.sha256(disassembly.encode()).hexdigest(),
