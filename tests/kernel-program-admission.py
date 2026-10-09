@@ -36,24 +36,9 @@ def main():
 
     instruction = namedtuple("Instruction", "address size op args")
 
-    class Decoder:
-        Instruction = instruction
-
-    row = instruction(0x9380, 9, "andq", "$0xfffffffffffffdff,0x50(%rsp)")
-    need(
-        admission.normalize_copied_flag_clear(Decoder, row) == instruction(0x9380, 9, "and", row.args),
-        "Exact copied-IF memory clear normalization",
-    )
-    for args in (
-        "$0xfffffffffffffdff,%rsp",
-        "$0xfffffffffffffdff,0x58(%rsp)",
-        "$0xfffffffffffffbff,0x50(%rsp)",
-        "$0xfffffffffffffdff,0x50(%rbp)",
-    ):
-        reject(
-            lambda: admission.normalize_copied_flag_clear(Decoder, row._replace(args=args)),
-            "unreviewed qword destination or mask",
-        )
+    # Scalar AND semantics and hostile destinations are covered by the shared
+    # decoder's self-test, not a program-only compiler-layout normalization.
+    decoder = admission.load("program_switch_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     for base in ("%rsi", "%rdx"):
         switch = [
             instruction(0, 4, "cmp", "$0x5,%rax"),
@@ -78,6 +63,47 @@ def main():
             changed = list(switch)
             changed[index] = changed[index]._replace(op=op, args=operands)
             reject(lambda changed=changed: admission.switch_envelope(changed), "changed bounded switch envelope")
+        for insertion in range(1, 6):
+            for operands in ("0x8(%rsp),%r8", "0x38(%rsp),%r10", "%r11,%r9"):
+                scheduled = list(switch)
+                scheduled.insert(insertion, instruction(0, 4, "mov", operands))
+                scheduled = [row._replace(address=index * 8) for index, row in enumerate(scheduled)]
+                envelope = admission.switch_window(scheduled, decoder)
+                table_load = next(row for row in scheduled if row.op == "lea")
+                need(envelope["table"] == table_load.address + table_load.size + 256, "Scheduled switch table")
+                need(len(envelope["independent"]) == 1, "Scheduled move omitted from evidence")
+                admission.switch_no_bypass(scheduled, envelope["guard"], envelope["jump"], [0, 96], decoder)
+        for op, operands in (
+            ("mov", "$0x1,%r8"),
+            ("mov", "%r8,%rax"),
+            ("mov", "%r8," + base),
+            ("mov", "%r8,%rsp"),
+            ("mov", "%r8d,%eax"),
+            ("mov", "%r8b,%spl"),
+            ("mov", "%r8,0x8(%rsp)"),
+            ("mov", "-0x8(%rsp),%r8"),
+            ("mov", "%rsp,%r8"),
+            ("mov", "(%rdi),%r8"),
+            ("xor", "%r8,%r8"),
+            ("call", "100 <helper>"),
+            ("jmp", "100 <other>"),
+        ):
+            changed = list(switch)
+            changed.insert(3, instruction(0, 4, op, operands))
+            changed = [row._replace(address=index * 8) for index, row in enumerate(changed)]
+            reject(lambda changed=changed: admission.switch_window(changed, decoder), "unsafe switch interleaving")
+        envelope = admission.switch_window(scheduled, decoder)
+        guard, jump = envelope["guard"], envelope["jump"]
+        for target in (scheduled[1].address, envelope["independent"][0].address, jump.address):
+            reject(
+                lambda target=target: admission.switch_no_bypass(scheduled, guard, jump, [target], decoder),
+                "jump table enters switch after bound",
+            )
+            entry = instruction(100, 4, "jmp", f"{target:x} <interior>")
+            reject(
+                lambda entry=entry: admission.switch_no_bypass([entry, *scheduled], guard, jump, [96], decoder),
+                "direct edge enters switch after bound",
+            )
     graph = {
         "root": body(24, ("worker", 24)),
         "worker": body(32, ("leaf", 32)),

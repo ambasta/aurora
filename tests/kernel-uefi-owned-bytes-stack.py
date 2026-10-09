@@ -333,8 +333,8 @@ BRANCHES = frozenset("ja jae jb jbe je jne jge jg jl jle jns js jo jno jp jnp jz
 # instruction semantics, implicit stack operations, calls and returns fail shut.
 NEUTRAL = frozenset(
     (
-        "add addl addq and bt cld cli cmova cmovae cmovbe cmove cmovne cmovns cmp cmpb cmpl cmpq cmpw cpuid cs data16 "
-        "dec div hlt imul in inc invlpg lea mov movabs movb movl movq movslq movzbl movzbq movzwl "
+        "add addl addq and andq bt cld cli cmova cmovae cmovbe cmove cmovne cmovns cmp cmpb cmpl cmpq cmpw cpuid "
+        "cs data16 dec div hlt imul in inc invlpg lea mov movabs movb movl movq movslq movzbl movzbq movzwl "
         "mul neg nop nopl nopw "
         "not or orb orq out rdmsr rep sbb seta setae setb setbe sete setl setle setne "
         "shl shr sub subq test ud2 xchg xor"
@@ -1240,6 +1240,64 @@ def self_test():
     repeated, *_ = fixture({"root": [("rep", "movsl %ds:(%rsi),%es:(%rdi)"), ("ret", "")]})
     require(calculate(repeated, {}, {}, "root")["peak"] == 8, "Repeated dword copy changed stack")
     positives += 1
+    # Qword AND shares scalar AND's stack effect, regardless of a compiler's
+    # choice of local slot. This does not prove the stored value's provenance
+    # or memory authority; the operand, flag and carrier checks still apply.
+    for offset in (0x18, 0x40, 0x58):
+        qword_and, *_ = fixture(
+            {
+                "root": [
+                    ("sub", "$0x60,%rsp"),
+                    ("andq", f"$0xfffffffffffffdff,{hex(offset)}(%rsp)"),
+                    ("add", "$0x60,%rsp"),
+                    ("ret", ""),
+                ]
+            }
+        )
+        require(qword_and["root"]["local_peak"] == 104, "Qword AND changed stack depth")
+        positives += 1
+    for operand in ("%rsp", "%esp", "%sp", "%spl", "-0x8(%rsp)"):
+        rejects(
+            "qword AND stack-pointer write or below-stack destination",
+            lambda operand=operand: fixture({"root": [("andq", "$0xfffffffffffffdff," + operand), ("ret", "")]}),
+        )
+    rejects(
+        "qword AND invalidates frame-pointer restoration",
+        lambda: fixture(
+            {
+                "root": [
+                    ("push", "%rbp"),
+                    ("mov", "%rsp,%rbp"),
+                    ("andq", "$0xfffffffffffffdff,%rbp"),
+                    ("leave", ""),
+                    ("ret", ""),
+                ]
+            }
+        ),
+    )
+    for operand in ("%rcx", "%r14"):
+        rows = [("mov", "$0x2,%ecx"), ("mov", "%ecx,%r14d"), ("andq", "$0xfffffffffffffdff," + operand)]
+        if operand == "%r14":
+            rows.append(("mov", "%r14d,%ecx"))
+        rows += [("call", "@leaf"), ("ret", "")]
+        changed, *_ = fixture({"root": rows, "leaf": leaf})
+        require(changed["root"]["calls"][0]["level"] is None, "Qword AND retained level fact")
+        positives += 1
+    flags, *_ = fixture(
+        {
+            "root": [
+                ("mov", "$0x0,%ecx"),
+                ("test", "%ecx,%ecx"),
+                ("andq", "$0xff,%rax"),
+                ("je", "@root+5"),
+                ("call", "@leaf"),
+                ("ret", ""),
+            ],
+            "leaf": leaf,
+        }
+    )
+    require(len(flags["root"]["calls"]) == 1, "Qword AND retained stale zero-flag proof")
+    positives += 1
     # GCC16 emits a byte OR into the PCI discovery result. It changes flags and
     # memory, but not the stack depth. Its register form must invalidate facts.
     byte_or, *_ = fixture({"root": [("orb", "$0x1,(%rax)"), ("ret", "")]})
@@ -1420,6 +1478,13 @@ def self_test():
     disjoint[5] = ("movb", "$0x0,0xf(%rsp)")
     require(check_spill(disjoint)["peak"] == 136, "Disjoint byte store changed saved carrier")
     positives += 1
+    for operand in ("0x10(%rsp)", "%r15", "(%rdi)"):
+        changed = list(spill_walk)
+        changed[5] = ("andq", "$0xfffffffffffffdff," + operand)
+        rejects(
+            "qword AND cannot authorize a carrier spill, carrier write or nonlocal store",
+            lambda changed=changed: check_spill(changed),
+        )
     relocated = list(spill_walk)
     relocated[2] = ("je", "@" + WALK + "+14")
     relocated[10:13] = [

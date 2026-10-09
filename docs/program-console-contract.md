@@ -135,6 +135,11 @@ walker bodies are retained for independent review. The PageTables walker also
 retains its machine-level decreasing-level proof. Unknown indirect branches are
 rejected; the terminal classifier's one six-entry PIC switch has a checked bound,
 read-only table, in-function instruction targets and all target paths decoded.
+Independent full-width register moves and nonnegative RSP-relative loads may be
+scheduled between its ordered proof operations only when they preserve the index,
+table base, stack pointer and flags. Every such instruction remains in ordinary
+stack analysis; recognizing a load does not prove its memory authority. Direct
+and jump-table edges may not bypass the bound by entering the envelope afterward.
 
 Ordinary developer commands need no historical or assistant-issued digest:
 
@@ -146,8 +151,13 @@ make smoke-program-console-uefi
 
 They preflight tools, firmware and inherited controls, build the selected local
 profile and verify the complete current-source/output receipt before execution.
-The stack decoder remains fail closed, including its narrowly reviewed copied-IF
-instruction normalization. There is no generic unsupported-instruction exemption.
+The shared operand-aware stack decoder models qword `andq` as scalar AND without
+pinning a compiler-selected local offset. Stack-pointer writes still reject, and
+flag or recursion-carrier writes invalidate tracked facts. The separate carrier
+preservation proof still rejects unproved stores. This models stack effects; it
+does not establish copied-RFLAGS provenance or memory authority. The unchanged
+source-level pending-flag behavior and actual pending-IRQ guest remain separate
+requirements. Unknown instruction semantics still reject.
 Smoke uses the same original-clock PTY and hostile transcript oracles as before,
 rechecks image/source identity afterward and rebuilds the normal image on success,
 failure or handled interruption. That restoration is a build, not a normal boot.
