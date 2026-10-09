@@ -538,8 +538,6 @@ test: test-inventory test-developer-commands
 test-inventory:
 	python3 -B tests/test-inventory.py
 
-endif # controlled outer dispatcher / original inner graph
-
 # Compiler-free controls; retain complete scans before and after native commands.
 .PHONY: test-artifact-budget
 test-artifact-budget:
@@ -547,3 +545,5 @@ test-artifact-budget:
 	python3 -B -O tests/test_artifact_budget.py
 
 test: test-artifact-budget
+
+endif # controlled outer dispatcher / original inner graph

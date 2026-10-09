@@ -4,6 +4,8 @@
 from contextlib import contextmanager
 import errno
 import os
+import shlex
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -27,6 +29,50 @@ class ArtifactBudget(unittest.TestCase):
         self.home = Path(self.temp.name)
         self.root = self.home / "artifacts"
         self.root.mkdir()
+
+    def make_plan(self, goal):
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(
+            [shutil.which("make"), "--no-print-directory", "-n", goal],
+            cwd=root,
+            env={"PATH": os.environ["PATH"], "HOME": str(self.home), "LC_ALL": "C"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            timeout=10,
+        )
+        return root, [shlex.split(line) for line in result.stdout.splitlines() if line.strip()]
+
+    def test_full_make_enters_supervisor_without_precontract_budget_execution(self):
+        root, plan = self.make_plan("test")
+        self.assertEqual(
+            plan,
+            [
+                [
+                    "python3",
+                    "-B",
+                    "scripts/compiler_contract.py",
+                    "run",
+                    "--repo-root",
+                    str(root),
+                    "--entry",
+                    "root",
+                    "--goal",
+                    "test",
+                ]
+            ],
+        )
+
+    def test_standalone_budget_keeps_both_python_modes(self):
+        _, plan = self.make_plan("test-artifact-budget")
+        self.assertCountEqual(
+            plan,
+            [
+                ["python3", "-B", "tests/test_artifact_budget.py"],
+                ["python3", "-B", "-O", "tests/test_artifact_budget.py"],
+            ],
+        )
 
     def suite(self):
         suite = harness.Suite.__new__(harness.Suite)
