@@ -377,6 +377,48 @@ class DeveloperCommands(unittest.TestCase):
             ]
             self.assertCountEqual(rows, expected)
 
+    def test_uefi_profile_switch_retires_only_owned_objects(self):
+        # Run the ordinary shell builder; synthetic tools create its actual named
+        # outputs. Image/stack admission and native compilation are separate gates.
+        (self.bin / "rm").symlink_to(shutil.which("rm"))
+        output_tool = (
+            'if [[ "${1-}" == -V ]]; then printf " i386pep\\n"; exit; fi\n'
+            "while (( $# )); do\n"
+            '  if [[ "$1" == -o ]]; then printf "%s\\n" "$UEFI_MODE" > "$2"; break; fi\n'
+            "  shift\n"
+            "done\n"
+        )
+        for name in ("g++", "as", "ld", "aurorac"):
+            self.tool(name, output_tool)
+        self.tool("objcopy", 'printf "%s\\n" "$UEFI_MODE" > "${@: -1}"\n')
+        self.tool("python3", "exit 0\n")
+        build = self.repo / "build/uefi"
+        build.mkdir(parents=True)
+        preserved = [build / name for name in ("normal.log", "unrelated.o", "captures/console.o")]
+        preserved.append(self.repo / "build/compiler/cache.o")
+        for path in preserved:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("retain\n")
+        stamps = [path.stat().st_mtime_ns for path in preserved]
+        common = set("payload-entry memory payload acpi pci runtime language embed transition loader".split())
+        common.update(name + "-pe" for name in ("loader", "embed", "transition", "memory"))
+        for mode, extra in (
+            ("console", {"console", "console-entry"}),
+            ("iommu-event-denial", {"event-intake"}),
+            ("iommu-event-observe", set()),
+            ("normal", set()),
+        ):
+            with self.subTest(mode=mode):
+                self.run_script("kernel-uefi-build.sh", env={"UEFI_MODE": mode, "AURORAC": str(self.bin / "aurorac")})
+                self.assertEqual({path.stem for path in build.glob("*.o")}, common | extra | {"unrelated"})
+                self.assertEqual([path.read_text() for path in preserved], ["retain\n"] * len(preserved))
+                self.assertEqual([path.stat().st_mtime_ns for path in preserved], stamps)
+                self.assertFalse((build / "console.su").exists())
+                self.assertFalse((build / "console.ci").exists())
+                if mode == "console":
+                    for suffix in ("su", "ci"):
+                        (build / ("console." + suffix)).write_text("old compiler metadata\n")
+
     def test_make_help_and_run_selectors(self):
         self.assertIsNotNone(MAKE)
         result = subprocess.run(
@@ -486,10 +528,19 @@ class DeveloperCommands(unittest.TestCase):
             self.record.unlink()
 
     def test_make_build_and_test_aliases_are_only_printed(self):
-        for argv, expected in ((["-n", "kernel-uefi", "-o", "compiler"], "./scripts/kernel-uefi-build.sh"),
-                               (["-n", "test-compiler"], 'scripts/meson_test.py --repo-root')):
-            result = subprocess.run([MAKE, *argv], cwd=self.repo, env=self.env,
-                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
+        for argv, expected in (
+            (["-n", "kernel-uefi", "-o", "compiler"], "./scripts/kernel-uefi-build.sh"),
+            (["-n", "test-compiler"], "scripts/meson_test.py --repo-root"),
+        ):
+            result = subprocess.run(
+                [MAKE, *argv],
+                cwd=self.repo,
+                env=self.env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=5,
+            )
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assertIn(expected, result.stdout)
         self.assert_no_work()

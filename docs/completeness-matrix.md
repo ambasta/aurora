@@ -17,10 +17,15 @@ Package Manifest/Graph command receipts distinguish actual compiler and native
 CPU/wall cost under fixed watchdogs; see the [test contract](developer-test-contract.md).
 Public protected-console commands build and check local artifacts; separately
 pinned first-image qualification remains an explicit opt-in workflow.
+Ordinary UEFI profile switches retire named profile-only objects and compiler
+sidecars while preserving caches and unrelated evidence; exact image admission
+remains unchanged. See the [build behavior](local-development.md#what-the-run-commands-do).
 Kernel host portability pins freestanding CET/string-operation policy and binds
 stack metadata through complete source locations and exact object symbols; see
 the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
 This mechanism does not transfer qualification between compiler or distro builds.
+BAR preparation now accounts for compiler-absorbed queue helpers using the
+[bounded metadata contract](../kernel/README.md#host-toolchain-boot-layout).
 Shared read-only `testq` and register-only `bts` stack effects replace Event-specific
 mask/offset/register guards; memory bit-set forms remain unsupported, and
 operand, flag and carrier controls do not establish field provenance or fresh

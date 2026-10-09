@@ -87,6 +87,15 @@ Register-only qword `bts` invalidates destination/flag facts; memory bit-set for
 remain unsupported. This models stack effects, not memory authority or copied-field
 provenance.
 A PE/ELF layout check alone does not establish those stack guarantees.
+
+BAR preparation retains its reviewed outer paths and reserves. Its queue-helper
+bound sums a finite acyclic GCC `.ci`/`.su` closure with exact object/link joins
+and matching linked direct edges. Unknown/indirect callees, cycles and missing
+frames reject; absorbed bodies are charged to their callers. Existing machinery
+checks assembly leaves. This trusts compiler-local switches, unlike the console
+CFG proof; standalone reports are not fresh-build receipts. The native queue
+runner checks fresh PCI emission and representative corruptions.
+
 The recursion proof tracks the actual callee-saved level register and its
 entry-relative spill lifetime across the CFG, including untouched early returns.
 Its sole nonlocal byte-marker store depends explicitly on the reviewed C++

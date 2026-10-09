@@ -158,6 +158,12 @@ or image-validation check is disabled.
 
 ## What the run commands do
 
+The ordinary UEFI builder reuses `build/uefi`. Before each profile build it removes
+only named profile-specific objects and their compiler stack/callgraph sidecars,
+so console, graphical, runtime and Event transitions do not inherit stale object
+inventory. Compiler caches, common outputs, logs and unrelated files are retained;
+unknown objects still fail profiles that require exact inventory admission.
+
 BIOS uses `pc`/TCG, `qemu64`, one CPU, 32 MiB RAM and the generated
 `build/aurora.img`. UEFI uses `q35`/TCG, `qemu64`, one CPU, 128 MiB RAM and a
 read-only generated FAT directory with a disposable snapshot overlay. Both run

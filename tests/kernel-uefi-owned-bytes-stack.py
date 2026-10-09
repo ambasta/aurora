@@ -221,11 +221,12 @@ def stack_rows(text, allow_bounded=None):
     return rows
 
 
-def callgraph_frames(text, rows, symbols, source):
+def callgraph_frames(text, rows, symbols, source, edges=None):
     """Join .su to exact assembler names from GCC's per-object .ci nodes.
 
-    VCG edges are not used for stack arithmetic: the linked instruction decoder
-    still establishes every actual edge. Unknown node formats or many-to-one
+    This profile does not use VCG edges for stack arithmetic: its linked
+    instruction decoder still establishes every actual edge. An optional output
+    set exposes validated compiler edges to metadata-based profiles. Unknown node formats or many-to-one
     clone/location associations fail closed rather than guessing a display name.
     """
     quoted = r'"(?:[^"\\]|\\["\\n])*"'
@@ -233,23 +234,26 @@ def callgraph_frames(text, rows, symbols, source):
     require(len(lines) >= 2 and lines[-1] == "}", "Malformed compiler callgraph")
     header = re.fullmatch(r"graph: \{ title: (" + quoted + r")", lines[0])
     require(header and json.loads(header[1]) == source, "Compiler callgraph source mismatch")
-    associated, used, titles = {}, set(), set()
+    associated, used, titles, calls = {}, set(), set(), set()
+
+    def assembler_name(title):
+        return title.removeprefix(source + ":").removeprefix("*")
+
     for line in lines[1:-1]:
         if line.startswith("edge:"):
-            require(
-                re.fullmatch(
-                    r"edge: \{ sourcename: " + quoted + r" targetname: " + quoted + r"(?: label: " + quoted + r")? \}",
-                    line,
-                ),
-                "Malformed compiler callgraph edge",
+            edge = re.fullmatch(
+                r"edge: \{ sourcename: (" + quoted + r") targetname: (" + quoted + r")(?: label: " + quoted + r")? \}",
+                line,
             )
+            require(edge, "Malformed compiler callgraph edge")
+            calls.add(tuple(json.loads(value) for value in edge.groups()))
             continue
         node = re.fullmatch(r"node: \{ title: (" + quoted + r") label: (" + quoted + r")( shape : ellipse)? \}", line)
         require(node, "Malformed compiler callgraph node")
         title, label = json.loads(node[1]), json.loads(node[2])
         require(title not in titles, "Duplicate compiler callgraph symbol")
         titles.add(title)
-        name = title.removeprefix(source + ":").removeprefix("*")
+        name = assembler_name(title)
         require(re.fullmatch(r"[A-Za-z_.$][\w.$]*", name), "Unrecognized compiler assembler name")
         if node[3]:
             require(name not in symbols, "Object definition marked external in compiler callgraph")
@@ -269,16 +273,22 @@ def callgraph_frames(text, rows, symbols, source):
         used.add(row.identity)
     require(set(associated) == set(symbols), "Object definitions lack exact compiler frames")
     require(used == set(rows), "Stack records lack exact object definitions")
+    if edges is not None:
+        require(
+            all(a in titles and b in titles and assembler_name(a) in associated for a, b in calls),
+            "Compiler edge lacks a defined caller or declared target",
+        )
+        edges.update((assembler_name(a), assembler_name(b)) for a, b in calls)
     return associated
 
 
-def object_stack_rows(directory, name, symbols):
+def object_stack_rows(directory, name, symbols, edges=None):
     source = {
         "owned-bytes-runtime": "kernel/owned-bytes.cpp",
         "owned-bytes-profile": "kernel/uefi/owned-bytes.cpp",
     }.get(name, "kernel/uefi/" + name + ".cpp")
     rows = stack_rows((directory / (name + ".su")).read_text())
-    return callgraph_frames((directory / (name + ".ci")).read_text(), rows, symbols, source)
+    return callgraph_frames((directory / (name + ".ci")).read_text(), rows, symbols, source, edges)
 
 
 def source_frame_symbol(associations, object_name, source, signature):
@@ -293,14 +303,14 @@ def source_frame_symbol(associations, object_name, source, signature):
     return candidates[0]
 
 
-def cpp_frames(directory, linked):
+def cpp_frames(directory, linked, objects=None, edges=None):
     associated = {}
     receipts = {}
     root = Path(__file__).resolve().parents[1]
-    for name in CPP_OBJECTS:
+    for name in CPP_OBJECTS if objects is None else objects:
         obj = Elf(directory / (name + ".o"))
         require(obj.type == 1, "Expected relocatable C++ object")
-        rows = object_stack_rows(directory, name, obj.functions)
+        rows = object_stack_rows(directory, name, obj.functions, edges)
         for symbol_name, row in rows.items():
             require(symbol_name in linked.functions, "Object function omitted from linked profile")
             associate_object(linked, obj, obj.functions[symbol_name])
