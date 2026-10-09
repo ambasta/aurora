@@ -274,6 +274,7 @@ class Case:
     expected: tuple
     helpers: str = ""
     arguments: tuple = (0, 0)
+    block_result: bool = False
 
 
 def array(name, data):
@@ -290,7 +291,7 @@ def index_arrays(offsets, lengths):
 
 
 def finish_body(count, ranks=None):
-    # On every scalar observation the report and arrays are copied, and both
+    # For each complete report the result is copied, and both
     # original owner bytes and caller-owned selection arrays are then poisoned.
     mutate = (
         "i64 p=0;while(p<len(owner)){owner[p]=255u8;p=p+1;}"
@@ -299,7 +300,9 @@ def finish_body(count, ranks=None):
     src = (
         f"if(slot<{ORDER_WIDTH}){{const package::GraphOrderResult original="
         f"package::order_manifests(borrow_bytes(owner),offsets,lengths,{signed(count)});"
-        f"const package::GraphOrderResult r=original;" + mutate + "return observe_order(r,slot);}"
+        f"const package::GraphOrderResult r=original;"
+        + mutate
+        + f"const std::array<u64,{ENTRY_WIDTH}> words=observe_order_block(r);return words;}}"
     )
     if ranks is None:
         src += f"const i64 rank=(slot-{ORDER_WIDTH})/{ENTRY_WIDTH};"
@@ -315,7 +318,7 @@ def finish_body(count, ranks=None):
         f"package::ordered_manifest(borrow_bytes(owner),offsets,lengths,{signed(count)},rank);"
         f"const package::GraphEntryResult r=original;"
         + mutate
-        + f"return observe_entry(r,(slot-{ORDER_WIDTH})%{ENTRY_WIDTH});"
+        + f"const std::array<u64,{ENTRY_WIDTH}> words=observe_entry_block(r);return words;"
     )
 
 
@@ -326,7 +329,7 @@ def catalog_case(label, manifests=None, *, data=None, offsets=None, lengths=None
     if ranks is None:
         ranks = tuple(range(count)) if 0 < count <= 8 else (0,)
     body = array("owner", data) + index_arrays(offsets, lengths) + finish_body(count, ranks)
-    return Case(label, body, expected_graph(data, offsets, lengths, count, ranks))
+    return Case(label, body, expected_graph(data, offsets, lengths, count, ranks), block_result=True)
 
 
 def shared():
@@ -358,9 +361,17 @@ def shared():
         (("package_count_or", COUNT_FALLBACK), ("rank_or", RANK_FALLBACK), ("catalog_index_or", INDEX_FALLBACK)), 1
     ):
         s += f"if(slot=={n}){{return bits(r.{method}({signed(fb)}));}}"
-    return (
-        s + "const package::IdentityResult identity=r.identity_or_error();return observe_identity(identity,slot-4);}\n"
-    )
+    s += "const package::IdentityResult identity=r.identity_or_error();return observe_identity(identity,slot-4);}\n"
+    # Keep the existing per-word observers, including their by-value copies.
+    # A common bounded result type avoids duplicating large catalog initializers.
+    for kind, width, result in (("order", ORDER_WIDTH, "GraphOrderResult"), ("entry", ENTRY_WIDTH, "GraphEntryResult")):
+        s += (
+            f"auto observe_{kind}_block(package::{result} r)->std::array<u64,{ENTRY_WIDTH}>{{"
+            f"static_assert(size_of(std::array<u64,{ENTRY_WIDTH}>)=={ENTRY_WIDTH * 8});"
+            f"std::array<u64,{ENTRY_WIDTH}> words=std::array<u64,{ENTRY_WIDTH}>();"
+            f"i64 slot=0;while(slot<{width}){{words.set(slot,observe_{kind}(r,slot));slot=slot+1;}}return words;}}\n"
+        )
+    return s
 
 
 def generated_graph_body(n):
@@ -415,7 +426,13 @@ def exhaustive_cases():
                 expected = expected_graph(data, offsets, lengths, n, ranks)
                 encoding = sum(vertex * n**slot for slot, vertex in enumerate(perm))
                 cases.append(
-                    Case(f"exhaustive/{n}/{mask}/{''.join(map(str, perm))}", body, expected, arguments=(mask, encoding))
+                    Case(
+                        f"exhaustive/{n}/{mask}/{''.join(map(str, perm))}",
+                        body,
+                        expected,
+                        arguments=(mask, encoding),
+                        block_result=True,
+                    )
                 )
     return cases
 
@@ -566,6 +583,7 @@ def adversarial_cases(*, exhaustive=True):
                         body,
                         expected_graph(mutated, offs, lens, 2, (0,)),
                         arguments=(position, byte),
+                        block_result=True,
                     )
                 )
     maxroot = b"z" * 24
@@ -787,7 +805,7 @@ def binding_cases():
         ("missing", [make_manifest(b"a", deps=((b"b", (0, 0, 0)),))]),
     ):
         c = catalog_case("defining-module-binding/" + name, ms)
-        cases.append(Case(c.label, c.body, c.expected, helper))
+        cases.append(Case(c.label, c.body, c.expected, helper, block_result=True))
     return cases
 
 
@@ -950,6 +968,14 @@ def negative_cases():
     return cases
 
 
+def observation_blocks(case):
+    if not case.block_result:
+        return 1, (1,) * len(case.expected)
+    entries, remainder = divmod(len(case.expected) - ORDER_WIDTH, ENTRY_WIDTH)
+    require(entries >= 1 and remainder == 0, "graph report observation widths")
+    return ENTRY_WIDTH, (ORDER_WIDTH,) + (ENTRY_WIDTH,) * entries
+
+
 class Runner(PackageRunner):
     def __init__(self, compiler, artifacts, cap=CAP):
         super().__init__(
@@ -962,6 +988,7 @@ class Runner(PackageRunner):
             validate=validate,
             function_prefix="graph_case",
             sentinel=b"keep existing graph output\n\x00\xff",
+            blocks=observation_blocks,
         )
 
 
@@ -1001,6 +1028,17 @@ def all_cases():
 
 def self_test():
     cap_self_test()
+    require(observation_blocks(Case("scalar", "", (1, 2))) == (1, (1, 1)), "scalar transport default")
+    require(
+        observation_blocks(Case("blocks", "", (0,) * 80, block_result=True)) == (33, (14, 33, 33)),
+        "complete order and ranked entry blocks",
+    )
+    for length in (0, 14, 46, 48):
+        try:
+            observation_blocks(Case("invalid", "", (0,) * length, block_result=True))
+        except AssertionError:
+            continue
+        raise AssertionError("invalid block observation count accepted")
     require(len(make_manifest()) == 37, "minimal manifest bytes")
     require(manifest(make_manifest()) == (Identity(b"a", (0, 0, 0)), ()), "minimum parser")
     for bad in (

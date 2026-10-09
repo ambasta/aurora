@@ -15,6 +15,9 @@ automatically; compiler/flag changes select separate defaults, while changed
 backend/runtime identities reject reuse and require a fresh directory.
 Package Manifest/Graph command receipts distinguish actual compiler and native
 CPU/wall cost under fixed watchdogs; see the [test contract](developer-test-contract.md).
+Graph catalog fixtures now observe complete bounded report blocks while retaining
+every independent expected word and scalar ownership control; this reduces test
+repetition, without changing package APIs, compiler semantics or qualification.
 Public protected-console commands build and check local artifacts; separately
 pinned first-image qualification remains an explicit opt-in workflow.
 Ordinary UEFI profile switches retire named profile-only objects and compiler
