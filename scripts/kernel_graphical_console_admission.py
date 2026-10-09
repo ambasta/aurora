@@ -3799,7 +3799,6 @@ def main():
         print("Verified current combined receipt identity; independent qualification not claimed.")
 
 
-# Separate-validator GCC14 capture control flow; all addresses refer to original bytes.
 if __name__ == "__main__":
     try:
         main()

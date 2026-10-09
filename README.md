@@ -76,6 +76,11 @@ For the output-only graphical status page, `make capture-framebuffer` builds and
 saves a PNG under `build/`. This [developer preview](docs/framebuffer-console.md#developer-preview)
 needs no independent review receipts and does not establish qualification.
 
+For the bounded serial-input graphical console, `make smoke-graphical-console`
+builds fresh images, exercises production and capture profiles, saves physical/PPM
+evidence and boots ordinary normal UEFI afterward. See the
+[graphical smoke scope](docs/framebuffer-console.md#current-source-graphical-smoke).
+
 See [local development](docs/local-development.md) for dependencies, compiler and
 firmware options, build-only commands and troubleshooting. `make help` lists the
 entrypoints. Host/toolchain qualification is recorded with each tested result.

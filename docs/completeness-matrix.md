@@ -39,6 +39,11 @@ hardware support.
 
 ### Current contract map
 
+The current-source `make smoke-graphical-console` runner now retains fresh
+production/capture pixel evidence and an actual final normal restoration. Its
+compiler-free controls are registered in ordinary/optimized Meson `dev`/`full`;
+implementation and registration alone do not establish fresh guest or aggregate passes.
+
 The [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)
 combines Aurora-owned Line64 editing and dirty cells under distinct Console/Display
 borrows. Image admission checks current build provenance, ELF/PE layout, the private

@@ -45,6 +45,54 @@ restoration boot. The stricter prebuilt qualification path remains
 manifest, four independent approval roles, all four cases and an actual normal
 restoration boot. A preview never creates those approvals.
 
+## Current-source graphical smoke
+
+`make smoke-graphical-console` builds and checks normal UEFI, production graphical
+and capture graphical images sequentially, then runs fourteen fresh graphical
+cases and one actual normal restoration. It reuses the existing v3 admission;
+that receipt stays structure-only and never grants behavioral qualification.
+No external approval receipts or historical compiler/address allowlists are needed
+for this developer command. Independent review and final GCC 16 `full` remain
+separate merge gates. This command creates new observations, not recovered evidence.
+
+For review before execution, use `scripts/kernel-graphical-smoke.sh --build-only`.
+It prints a fresh directory containing ordinary image copies and build logs.
+Then run `python3 -B scripts/kernel_graphical_smoke.py --images DIR/images
+--evidence DIR/guests QEMU OVMF CODE VARS DATA`, using either a combined OVMF path
+or the CODE/VARS pair and empty strings for unused inputs. The shell uses the
+shared firmware selector; usual QEMU/firmware/compiler overrides apply.
+
+Coverage includes production help/status/edit/exit; capture BS/DEL/CRLF,
+rejection/recovery/exit and a sent but unconsumed sentinel; exact capacity 64,
+overflow 65 locking/recovery, event 80 and native idle 4096; an explicit fixture-G
+regression; invalid selector, all four C/D/c/d no-effect authority denials and F/I
+pixel failures. The 96-copy guard remains hosted-only. Idle has no input or pause
+from release through its terminal marker. Production uses observed viewport
+boundaries because it has no PRE_SAMPLE markers. Capture sends only the selector
+before PRE_SAMPLE 0, then synchronizes every byte on completed-sample markers.
+
+Every saved physical/PPM pair checks scanout, the model viewport, every outside
+byte and the 1,024-byte tail against a real baseline. Captures retain selected
+editing/control/capacity milestones and final state; this is sampled evidence,
+not continuous memory observation. F/I overlays exactly 0/55 successful model
+stores on that baseline and checks 1/56 attempts, without hosted A5-fill bytes.
+The production baseline is its already-painted initial state; it cannot establish
+pre-initial-paint outside-byte preservation. Production's actual exit 33 is
+separate from the capture guests' QMP quit 0.
+
+Guests use original-clock q35/TCG, one CPU and disposable snapshot media, with
+no network or physical-device access. Each graphical guest has a 90-second wall
+limit (production also has at most 80 small 56,032-byte state probes per chunk,
+with full pairs only at matches); restoration has
+30 seconds. Serial is limited to 1 MiB, cumulative QMP and each child output file
+to 4 MiB. Per-case raw pairs, input, serial, QMP, stderr and summary are preserved
+on first failure; remaining cases stop, owned QEMU is reaped, and the retained
+normal image is actually booted in `finally`. Normal restoration does not change
+the last capture build left in `build/uefi`; normal developer commands rebuild
+that shared output themselves. This isolated window leaves no persistent guest
+state, so one final restoration suffices. Ordinary/optimized compiler-free runner
+controls belong to Meson `dev`/`full` and `make test-graphical-controls`.
+
 ## Dependency and outcome
 
 The output-only checkpoint is a native Aurora-rendered graphical status page after
