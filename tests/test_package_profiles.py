@@ -21,6 +21,7 @@ import package_graph as graph
 from compiler_contract import ContractError
 from package_profiles import (
     SelectedCompiler,
+    developer_artifacts,
     finalize_selected_identity,
     add_identity_arguments,
     profile_record,
@@ -142,6 +143,22 @@ class Profiles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             manifest.self_test(temporary_parent=Path(directory))
             self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_meson_full_uses_safe_build_local_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            selected = arguments('--profile', 'full', '--meson-selected-compiler')
+            validate_identity_selection(selected)
+            selected.artifact_root = Path(directory) / 'output'
+            self.assertEqual(developer_artifacts(selected, 'identity'), selected.artifact_root)
+            self.assertFalse(profile_record(selected, [], [])['qualification_eligible'])
+            selected.artifact_root = Path(directory) / '..' / 'escaped'
+            with self.assertRaises(ContractError):
+                developer_artifacts(selected, 'identity')
+            link = Path(directory) / 'link'
+            link.symlink_to(directory, target_is_directory=True)
+            selected.artifact_root = link / 'output'
+            with self.assertRaises(ContractError):
+                developer_artifacts(selected, 'identity')
 
     def test_explicit_authority_separation(self):
         self.assertEqual(arguments().profile, "full")

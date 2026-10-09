@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Keep compiler tests on the existing fresh-build, shared-compiler contract.
+# Convenience entrypoint to the canonical dependency-tracked compiler graph.
 set -euo pipefail
 if [[ $# == 1 && ( "$1" == --help || "$1" == -h ) ]]; then
     cat <<'HELP'
 Usage: scripts/compiler-test.sh
 
-Run the complete compiler-only suite with a fresh current-source compiler.
+Run the complete compiler-only Meson suite with an incremental current-source build.
 Equivalent to make -C compiler test. No historical compiler hash is required.
 Use environment overrides, for example CXX=g++-16 ./scripts/compiler-test.sh.
 The existing developer-test contract validates compiler and flag selections.

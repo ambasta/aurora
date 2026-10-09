@@ -127,6 +127,53 @@ class Guards(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     graphics.inputs(record, "framebuffer-stale")
 
+    def test_developer_checked_admission_binds_exact_current_inventory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            build = Path(temporary)
+            record = {"output_sha256": {"output": "hash"}}
+            receipt = dict(
+                schema="aurora-framebuffer-admission-v1",
+                status="requires-independent-review",
+                mode="framebuffer",
+                clock="tcg-original-clock",
+                build=record,
+                sha256={"complete": "hash"},
+            )
+            (build / "framebuffer-build.json").write_text(json.dumps(record))
+            path = build / "framebuffer-admission.json"
+            with (
+                patch.object(graphics, "BUILD", build),
+                patch.object(graphics, "inputs") as inputs,
+                patch.object(graphics, "build_files", return_value=[build / "output"]),
+                patch.object(graphics.common, "source_files", return_value=[]),
+                patch.object(graphics.common, "hashes") as hashes,
+            ):
+
+                def check(value):
+                    path.write_text(json.dumps(value))
+                    hashes.side_effect = [{"output": "hash"}, {"complete": "hash"}]
+                    return graphics.checked("framebuffer")
+
+                self.assertEqual(check(receipt), receipt)
+                inputs.assert_called_with(record, "framebuffer")
+                for key, bad in [
+                    ("mode", "framebuffer-stale"),
+                    ("clock", "icount"),
+                    ("status", "approved"),
+                    ("schema", "changed"),
+                    ("build", {}),
+                    ("sha256", {}),
+                ]:
+                    with self.subTest(key=key), self.assertRaises(ValueError):
+                        check(receipt | {key: bad})
+                path.write_text(json.dumps(receipt))
+                hashes.side_effect = [{"changed": "hash"}]
+                with self.assertRaises(ValueError):
+                    graphics.checked("framebuffer")
+                path.unlink()
+                with self.assertRaises(FileNotFoundError):
+                    graphics.checked("framebuffer")
+
 
 if __name__ == "__main__":
     unittest.main()

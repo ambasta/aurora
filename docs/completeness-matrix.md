@@ -9,10 +9,23 @@ list of current limitations. This source is integrated with accepted PR97 / main
 structural-formatter, protected-console, byte-literal and JSON-report work.
 The persistent simple-UEFI Aurora console service has the bounded qualification
 noted below.
-Compiler-affecting merges require final integrated `dev`, `slow`, and complete
-root `make test`; the checked runner inventory explicitly records remaining Meson
-gaps. Public protected-console commands build and check local artifacts; separately
+Compiler- and kernel-affecting merges require final integrated GCC 14 and GCC 16
+`full` Meson and relevant image/smoke gates. The source-only graph-completion
+candidate maps the former root Make graph into Meson, with Make as a convenience
+entrypoint; it remains unqualified until both new toolchain runs pass. The checked
+inventory preserves full package profiles, fixtures, negative controls and
+explicit non-root style/supplemental exclusions. Public protected-console commands build and check local artifacts; separately
 pinned first-image qualification remains an explicit opt-in gate.
+Kernel host portability pins freestanding CET/string-operation policy and binds
+stack metadata through complete source locations and exact object symbols; see
+the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
+This mechanism does not transfer qualification between compiler or distro builds.
+The shared native harness retains complete per-command artifact accounting with
+a `scandir` traversal preserving stable-tree totals and failing closed on scan
+errors; compiler-free controls cover its accounting and error boundaries. This is no new native qualification or whole-suite speed claim;
+see the [test contract](developer-test-contract.md#complete-native-artifact-accounting).
+Compiler-free IOMMU routing controls check guarded Make target membership rather
+than target-list spelling, including negative controls for non-rule decoys.
 None of the six destination goals is complete. A bounded feature or passing test
 suite does not establish production safety, whole-system readiness or physical
 hardware support.
@@ -48,7 +61,9 @@ This library-only pilot adds no compiler semantics or broad optimization claim.
 The output-only Aurora framebuffer status page joins the sealed service
 architecture. Its independently accepted pinned-guest screenshot/physical capture,
 no-write failure cases and remaining final integration gates are kept in the
-[framebuffer console contract](framebuffer-console.md). This is software pixel
+[framebuffer console contract](framebuffer-console.md). `make capture-framebuffer`
+provides a locally built PNG preview without external review receipts; its
+unqualified result does not replace the stricter evidence path. This is software pixel
 output on one QEMU/OVMF fixture, with no GPU-driver or physical-device claim.
 
 Use these entrypoints for exact supported APIs; do not infer a current API from an

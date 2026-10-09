@@ -36,19 +36,30 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 2. Implement running mechanisms, not unused scaffolding presented as functionality.
 3. Add positive, negative, regression and adversarial tests. Check metadata against
    actual generated layout/behavior. Fail closed for unsupported syntax/semantics.
-4. Run dependency-selected focused checks while developing. Before every merge,
-   complete both Meson `dev` and `slow` suites on the final integrated source,
-   including after conflict resolution or another source change. Focused checks
-   supplement these gates; they never replace them. Keep `dev` fast and retain
-   exhaustive integration/ABI coverage in `slow`, without sampling away tests.
-   Before every compiler-affecting merge and every release, also run the complete
-   root `make test` native graph. Meson does not yet cover every Make runner. Run it
-   under the shared build-once compiler contract, plus actual emulator gates for
-   kernel-affecting qualification. For independently pinned native acceptance,
-   use `make test-acceptance` with an externally reviewed
-   `ACCEPTANCE_COMPILER_SHA256`. Full native qualification requires a newly
-   completed matching `run.json`; Make exit zero alone is not evidence. Fault
-   gates must fail as intended and restore a normal image afterward.
+4. Run dependency-selected focused checks while developing. Keep `dev` fast;
+   complete `slow`, `integration` and native `boot` coverage belongs to `full`.
+   Before every merge, run complete `full` on the final integrated source,
+   including after conflict resolution. Compiler- or kernel-affecting merges and
+   releases require separate GCC 14 and GCC 16 full runs. `make test` selects the
+   same Meson graph; do not run a second duplicate Make aggregate for credit.
+   The current Meson-completion migration remains unqualified until both new
+   graphs pass independent source/coverage review and execution.
+   Use stable, separate build directories per toolchain/configuration. Ninja
+   tracks source/header dependencies; never share a build across changed
+   toolchain identities. Use a fresh directory for clean/bootstrap checks and
+   whenever toolchain identity or dependency tracking is in doubt. Select matching
+   real `gcc`/`g++` tools on PATH as well as `CXX`. Record final source identity,
+   compiler/binutils/runtime identities, actual commands and Meson test logs.
+   A selected-compiler digest is artifact stability, not a fresh-build receipt.
+   For both toolchains, also build and smoke normal BIOS and UEFI images. Run
+   existing image/admission and emulator gates for each affected kernel profile,
+   including applicable fault/recovery cases and a normal restoration boot.
+   The native `boot` suite does not run QEMU. Missing tools, skipped gates and
+   prior-source results leave that toolchain unqualified.
+   Separately pinned bootstrap compatibility remains available through
+   `make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>` and its
+   existing matching `run.json` contract. It is not an additional mandatory
+   duplicate native graph unless that distinct workflow is the change under test.
 5. Review changes independently before considering a milestone verified. Record
    reproduced defects and fixes, commands, source revision, tool versions and limits.
 6. Update implementation docs and the completeness matrix in the same change.
@@ -63,11 +74,12 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - meson test -C build/meson --suite core --num-processes 2: focused frontend,
   class/value, integer, module/depth and initialization checks, incrementally built
 - meson test -C build/meson --suite bytes --num-processes 2: complete byte/storage runners
-- meson test -C build/meson --suite packages --num-processes 2: partial semantic package feedback
+- meson test -C build/meson --suite packages --num-processes 4: partial and full package profiles
 - meson test -C build/meson --suite dev --num-processes 2: quick cross-component feedback
 - meson test -C build/meson --suite slow --num-processes 2: longer integration/ABI sweeps
 - meson test -C build/meson --suite full --num-processes 2: all registered non-LSP tests (see Meson introspection)
-- make test: fresh current-source compiler once, then the complete root native graph
+- make test: incremental compile then the complete Meson `full` suite;
+  `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` are configurable
 - make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>: explicitly
   pinned root native graph; optional ACCEPTANCE_COMPILER selects a reviewed prebuilt
 - make -C compiler test: complete compiler-only scope, not the root full aggregate

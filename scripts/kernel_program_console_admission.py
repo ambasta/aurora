@@ -125,6 +125,29 @@ def normalize_copied_flag_clear(decoder, row):
     return decoder.Instruction(row.address, row.size, "and", row.args)
 
 
+def switch_envelope(rows):
+    """Resolve one bounded six-entry PIC switch without fixing its base register."""
+    need(len(rows) == 6, "Missing switch guard")
+    guard, reject, table_load, offset_load, addition, jump = rows
+    displacement = re.fullmatch(r"(0x[0-9a-f]+)\(%rip\),(%[a-z0-9]+)", table_load.args)
+    need(displacement, "Unknown PIC switch table")
+    base = displacement[2]
+    need(
+        base in {"%" + name for name in "rbx rcx rdx rsi rdi r8 r9 r10 r11 r12 r13 r14 r15".split()},
+        "Switch base aliases index or stack register",
+    )
+    need(
+        (guard.op, guard.args) == ("cmp", "$0x5,%rax")
+        and reject.op == "ja"
+        and table_load.op == "lea"
+        and (offset_load.op, offset_load.args) == ("movslq", f"({base},%rax,4),%rax")
+        and (addition.op, addition.args) == ("add", f"{base},%rax")
+        and (jump.op, jump.args) == ("jmp", "*%rax"),
+        "Unknown indirect switch envelope",
+    )
+    return table_load.address + table_load.size + int(displacement[1], 16)
+
+
 def stack_evidence(directory):
     decoder = load("program_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     decoder.CPP_OBJECTS = ("payload", "acpi", "pci", "runtime")
@@ -154,23 +177,10 @@ def stack_evidence(directory):
     )
     decoder.READ_ONLY |= frozenset(("testb", "testl", "testw"))
     decoder.PRESERVE_FLAGS |= frozenset(("sti", "wrmsr"))
-    original_identity = decoder.frame_identity
-
-    def identity(signature):
-        if "RuntimeTables::inspect<" in signature:
-            return "runtime_walk_verify" if "RuntimeTables::verify<" in signature else "runtime_walk_map"
-        if signature.startswith("constprop("):
-            return "aurora::uefi::{anonymous}::ReadWindow::table"
-        if signature.startswith("0("):
-            return "aurora::uefi::{anonymous}::create"
-        name = original_identity(signature)
-        return {"aurora::uefi::dispatch": "aurora_exception_dispatch"}.get(name, name)
-
-    decoder.frame_identity = identity
     original_rows = decoder.stack_rows
     # The CFG decoder independently accounts for every stack adjustment below.
     # GCC dynamic,bounded here denotes call arguments, not an unbounded VLA.
-    decoder.stack_rows = lambda text: original_rows(text.replace("\tdynamic,bounded", "\tstatic"))
+    decoder.stack_rows = lambda text: original_rows(text, allow_bounded=lambda _: True)
     linked = decoder.Elf(directory / "payload.elf")
     code, disassembly = decoder.disassemble(directory / "payload.elf")
     normalized_stack_immediates = []
@@ -248,19 +258,7 @@ def stack_evidence(directory):
         index = indirect[0]
         need(index >= 5, "Missing switch guard")
         guard, reject, table_load, offset_load, addition, jump = body[index - 5 : index + 1]
-        need(
-            (guard.op, guard.args) == ("cmp", "$0x5,%rax")
-            and reject.op == "ja"
-            and table_load.op == "lea"
-            and offset_load.op == "movslq"
-            and offset_load.args == "(%rsi,%rax,4),%rax"
-            and (addition.op, addition.args) == ("add", "%rsi,%rax")
-            and (jump.op, jump.args) == ("jmp", "*%rax"),
-            "Unknown indirect switch envelope",
-        )
-        displacement = re.fullmatch(r"(0x[0-9a-f]+)\(%rip\),%rsi", table_load.args)
-        need(displacement, "Unknown PIC switch table")
-        table = table_load.next + int(displacement[1], 16)
+        table = switch_envelope(body[index - 5 : index + 1])
         raw = (directory / "payload.bin").read_bytes()
         need(
             named["__payload_text_end"].address <= table and table + 24 <= named["__payload_read_end"].address,
@@ -313,7 +311,7 @@ def stack_evidence(directory):
     # RuntimeTables walkers use the pinned C++ contract: entry 3, recurse only at
     # nonzero level with level-1, hence no more than four live frames. Their exact
     # emitted bodies/call sites are retained for mandatory independent review.
-    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts)
+    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts, associations)
     recursive = {name for name in functions if name == decoder.WALK or ("RuntimeTables7inspect" in name)}
     need(len(recursive) == 3, "Unexpected bounded walker inventory")
     for name in functions:
@@ -404,7 +402,7 @@ def build_files():
         "payload-entry.o",
     ]
     names += [name + ".o" for name in ("payload", "acpi", "pci", "runtime", "loader", "memory", "embed", "transition")]
-    names += [name + ".su" for name in ("payload", "acpi", "pci", "runtime", "loader")]
+    names += [name + suffix for name in ("payload", "acpi", "pci", "runtime", "loader") for suffix in (".su", ".ci")]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
     names += [
         "user-" + name + suffix for name in ("clean", "bounds") for suffix in (".s", ".o", ".elf", ".bin", "-entry.o")

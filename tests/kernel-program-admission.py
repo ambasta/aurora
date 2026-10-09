@@ -54,6 +54,30 @@ def main():
             lambda: admission.normalize_copied_flag_clear(Decoder, row._replace(args=args)),
             "unreviewed qword destination or mask",
         )
+    for base in ("%rsi", "%rdx"):
+        switch = [
+            instruction(0, 4, "cmp", "$0x5,%rax"),
+            instruction(4, 2, "ja", "100 <reject>"),
+            instruction(6, 7, "lea", "0x100(%rip)," + base),
+            instruction(13, 4, "movslq", f"({base},%rax,4),%rax"),
+            instruction(17, 3, "add", base + ",%rax"),
+            instruction(20, 2, "jmp", "*%rax"),
+        ]
+        need(admission.switch_envelope(switch) == 269, "Register-independent bounded switch table")
+        for index, op, operands in (
+            (0, "cmp", "$0x6,%rax"),
+            (0, "cmp", "$0x5,%eax"),
+            (1, "jg", "100 <reject>"),
+            (2, "lea", "0x100(%rip),%rax"),
+            (2, "lea", "0x100(%rip),%rsp"),
+            (3, "movslq", f"({base},%rax,8),%rax"),
+            (3, "mov", f"({base},%rax,4),%rax"),
+            (4, "add", "%rsp,%rax"),
+            (5, "jmp", "*%rdx"),
+        ):
+            changed = list(switch)
+            changed[index] = changed[index]._replace(op=op, args=operands)
+            reject(lambda changed=changed: admission.switch_envelope(changed), "changed bounded switch envelope")
     graph = {
         "root": body(24, ("worker", 24)),
         "worker": body(32, ("leaf", 32)),
@@ -68,6 +92,19 @@ def main():
     reject(lambda: admission.graph_peak(recursive, {}, "root", set()), "unbounded cycle")
     need(admission.graph_peak(recursive, {}, "root", {"walk"})["peak"] == 72, "Four-frame reviewed recursion contract")
 
+    # Compiler-to-symbol metadata is mandatory in every hosted UEFI admission
+    # inventory, including the loader whose output enters the same boot image.
+    for module in (
+        admission,
+        admission.load("console_inventory", ROOT / "scripts/kernel_console_service_admission.py"),
+        admission.load("framebuffer_inventory", ROOT / "scripts/kernel_framebuffer_admission.py"),
+    ):
+        names = {path.name for path in module.build_files()}
+        need(any(name.endswith(".su") for name in names), "Missing stack inventory")
+        for name in names:
+            if name.endswith(".su"):
+                need(name.removesuffix(".su") + ".ci" in names, "Missing mandatory compiler-symbol inventory")
+
     prior_pin = os.environ.pop("PROGRAM_CONSOLE_REVIEW_SHA256", None)
     with tempfile.TemporaryDirectory(prefix="aurora-program-admission-") as directory:
         root = Path(directory)
@@ -75,13 +112,17 @@ def main():
         source.write_text("original source\n")
         output = root / "image.bin"
         output.write_bytes(b"original linked bytes")
+        callgraph = root / "runtime.ci"
+        callgraph.write_text("original compiler-symbol metadata\n")
+        stack = root / "runtime.su"
+        stack.write_text("original compiler stack metadata\n")
         executable = root / "compiler"
         executable.write_bytes(b"fixture compiler bytes, never executed")
         admission.ROOT = root
         admission.BUILD = root
         admission.RECEIPT = root / "program-console-admission.json"
         admission.source_files = lambda: [source]
-        admission.build_files = lambda: [output]
+        admission.build_files = lambda: [output, callgraph, stack]
         flags = [
             "-DAURORA_UEFI_" + name
             for name in ("ACPI", "PCI", "RUNTIME", "IPC", "SERVICE_BUDGET", "USER_BUDGET", "PROGRAM_CONSOLE")
@@ -98,7 +139,7 @@ def main():
             build=manifest,
             status="requires-independent-review",
             clock="tcg-original-clock",
-            sha256=admission.hashes([source, output, root / "program-build.json"]),
+            sha256=admission.hashes([source, output, callgraph, stack, root / "program-build.json"]),
         )
         admission.RECEIPT.write_text(json.dumps(receipt, sort_keys=True))
         pin = admission.digest(admission.RECEIPT)
@@ -127,6 +168,14 @@ def main():
         reject(lambda: admission.reviewed("program-console"), "image mutated after review")
         reject(lambda: admission.checked("program-console"), "image mutated after automatic admission")
         output.write_bytes(b"original linked bytes")
+        callgraph.unlink()
+        reject(lambda: admission.checked("program-console"), "missing mandatory compiler-symbol metadata")
+        callgraph.write_text("replacement compiler-symbol metadata\n")
+        reject(lambda: admission.checked("program-console"), "replaced compiler-symbol metadata")
+        stack.write_text("coherently replaced compiler stack metadata\n")
+        reject(lambda: admission.checked("program-console"), "coherently replaced metadata pair")
+        callgraph.write_text("original compiler-symbol metadata\n")
+        stack.write_text("original compiler stack metadata\n")
         executable.write_bytes(b"changed compiler")
         reject(lambda: admission.reviewed("program-console"), "compiler changed after build")
         reject(lambda: admission.checked("program-console"), "compiler changed after automatic admission")

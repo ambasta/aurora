@@ -71,11 +71,16 @@ A separately reviewed protected-command profile offers `upper`. Its
 automatic local build/image/stack checks for public commands, the separate
 review-pinned first-image qualification, scoped guest evidence and final integration gates.
 
+For the output-only graphical status page, `make capture-framebuffer` builds and
+saves a PNG under `build/`. This [developer preview](docs/framebuffer-console.md#developer-preview)
+needs no independent review receipts and does not establish qualification.
+
 See [local development](docs/local-development.md) for dependencies, compiler and
 firmware options, build-only commands and troubleshooting. `make help` lists the
 entrypoints. Host/toolchain qualification is recorded with each tested result.
-For incremental compiler builds and focused parallel core/byte/storage tests, use the
-optional [Meson/Ninja bootstrap](docs/meson-bootstrap.md).
+Use the [canonical Meson/Ninja graph](docs/meson-bootstrap.md) for incremental
+compiler/fixture builds and complete parallel native tests. The graph-completion
+change is a source-only candidate until fresh GCC 14 and GCC 16 runs pass.
 
 ## Explore the project
 
@@ -103,26 +108,25 @@ formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
 
 ```sh
-meson test -C build/meson --suite dev --num-processes 2  # quick incremental feedback
-meson test -C build/meson --suite slow --num-processes 2 # longer integration/ABI sweeps
-meson test -C build/meson --suite full --num-processes 2 # all registered tests
-./scripts/compiler-test.sh    # complete compiler-only suite
-make test                     # complete native aggregate; no QEMU
-make smoke-all                # complete emulator matrix; QEMU and firmware required
+meson compile -C build/gcc14 -j 3
+meson test -C build/gcc14 --suite dev --no-rebuild --num-processes 4
+meson test -C build/gcc14 --suite full --no-rebuild --num-processes 4
+./scripts/compiler-test.sh    # compiler-only Meson selection
+make test                    # same complete Meson graph; no QEMU
+make smoke-all               # separate emulator matrix; QEMU and firmware required
 ```
 
-Configure the [Meson build](docs/meson-bootstrap.md) first, then choose `core`,
-`bytes` or individual tests according to the changed dependencies. Other components
-still use their focused checks. Before every merge, run both `dev` and `slow` on
-the final integrated source, including documentation changes and conflict resolution.
-Documentation also needs content/link review. Full root native and emulator
-qualification are separate release/affected-system gates, not implied by these suites.
+Configure a separate [Meson build](docs/meson-bootstrap.md) for each toolchain,
+with matching `gcc`/`g++` on PATH. `dev` is quick feedback; `full` includes all
+native compiler, full-package and kernel/boot-image gates. Named `slow`,
+`integration`, `boot`, `core` and `bytes` suites support focused work. A merge
+requires the final-source gates in [AGENTS.md](AGENTS.md), including both GCC 14
+and GCC 16 for compiler/kernel changes and separate affected emulator profiles.
 
-Make's compiler-consuming tests build the current compiler once per invocation;
-Meson reuses an unchanged build. No historical binary pin is needed for either
-developer path. A completed matching run record determines full native test coverage;
-compiler-only or focused checks do not cover the full system. See the
-[developer-test contract](docs/developer-test-contract.md) for result interpretation,
-explicit acceptance pins and sanitizer controls, and the
-[development contract](AGENTS.md) for design and review requirements.
-
+Normal development reuses dependency-tracked compiler and C++ fixture builds.
+Changing source reruns affected build commands; changing toolchain/configuration
+requires another directory. Make is a convenience entrypoint to the same graph,
+with `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` controls. Explicit
+pinned legacy compatibility remains in the [developer-test contract](docs/developer-test-contract.md).
+Selected artifact identity, a focused pass or registration alone does not establish
+full native, sanitizer, emulator or hardware qualification.

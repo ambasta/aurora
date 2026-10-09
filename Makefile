@@ -1,5 +1,5 @@
-# Test goals enter one controlled compiler run. Ordinary builds and compiler-free
-# focused gates retain their existing behavior. A dry run only prints this route.
+# Aggregate tests enter the canonical incremental Meson graph. Explicit pinned
+# acceptance and focused legacy goals retain their separate routes.
 override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
@@ -9,7 +9,7 @@ override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
 # In particular, default path aliases must not select a different compiler.
-override _AURORA_USER_CONTROLS := CXX CXXFLAGS IR_TEST_CXXFLAGS IR_TEST_BUILD_PREFIX OUT AURORAC \
+override _AURORA_USER_CONTROLS := MESON_BUILD_DIR AURORA_BUILD_JOBS AURORA_TEST_JOBS CXX CXXFLAGS IR_TEST_CXXFLAGS IR_TEST_BUILD_PREFIX OUT AURORAC \
     ACCEPTANCE_COMPILER ACCEPTANCE_COMPILER_SHA256 PACKAGE_IDENTITY_COMPILER \
     PACKAGE_IDENTITY_COMPILER_SHA256 PACKAGE_IDENTITY_TEST_FLAGS PACKAGE_IDENTITY_CAP_MIB \
     PACKAGE_MANIFEST_COMPILER PACKAGE_MANIFEST_COMPILER_SHA256 PACKAGE_MANIFEST_TEST_FLAGS \
@@ -33,7 +33,7 @@ $(error unsupported raw flag syntax in controls: $(_AURORA_BAD_RAW_FLAGS))
 endif
 
 # Inspect raw cap data before export can expand a Make expression. Never echo it.
-override _AURORA_CAP_CONTROLS := PACKAGE_IDENTITY_CAP_MIB PACKAGE_MANIFEST_CAP_MIB PACKAGE_GRAPH_CAP_MIB KERNEL_BUDGET_CAP_MIB ROUND_ROBIN_TEST_CAP_MIB IPC_TRANSACTION_CAP_MIB
+override _AURORA_CAP_CONTROLS := AURORA_BUILD_JOBS AURORA_TEST_JOBS PACKAGE_IDENTITY_CAP_MIB PACKAGE_MANIFEST_CAP_MIB PACKAGE_GRAPH_CAP_MIB KERNEL_BUDGET_CAP_MIB ROUND_ROBIN_TEST_CAP_MIB IPC_TRANSACTION_CAP_MIB
 override _AURORA_CAP_EMPTY :=
 override _AURORA_CAP_SPACE := $(_AURORA_CAP_EMPTY) $(_AURORA_CAP_EMPTY)
 override _AURORA_CAP_TAB := $(_AURORA_CAP_EMPTY)	$(_AURORA_CAP_EMPTY)
@@ -87,8 +87,13 @@ endif
 
 ifeq ($(_AURORA_DISPATCH),yes)
 .PHONY: $(_AURORA_TEST_GOALS)
+ifneq ($(filter test test-compiler,$(MAKECMDGOALS)),)
+$(MAKECMDGOALS):
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite $(if $(filter test-compiler,$@),compiler,full)
+else
 $(_AURORA_TEST_GOALS):
 	python3 -B scripts/compiler_contract.py run --repo-root "$(CURDIR)" --entry root --goal "$@"
+endif
 else
 # The validated receipt, not a boolean flag, authorizes the sealed inner graph.
 # Declare this prerequisite first, including on host-only aggregate prerequisites,
@@ -109,8 +114,8 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
     test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-client-disposal test-terminal-event test-native-cap-contracts \
     run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
-    program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream \
-    test-developer-commands test-inventory test-iommu-diagnostics: aurora-test-context
+    program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream capture-framebuffer \
+    test-developer-commands test-inventory test-iommu-diagnostics test-artifact-budget: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -127,7 +132,7 @@ all: compiler kernel
 # Export these selectors so both environment and make NAME=value syntax work.
 export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
-.PHONY: help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream
+.PHONY: capture-framebuffer help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream
 help:
 	@printf '%s\n' \
 	  'make                  Build the compiler and BIOS kernel image' \
@@ -140,10 +145,11 @@ help:
 	  'make smoke-program-console-uefi  Build/check and test the protected command console' \
 	  'make qualify-program-console-uefi  Qualify an independently reviewed prebuilt protected console' \
 	  'make test-program-stream  Run copied-stream and two-role authority host tests' \
+	  'make capture-framebuffer  Build/check and save a local PNG preview under build/' \
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
-	  'make test-compiler    Run the compiler-only suite (fresh compiler)' \
-	  'make test             Run the full native suite (fresh compiler)' \
+	  'make test-compiler    Run the incremental Meson compiler suite' \
+	  'make test             Run the complete Meson native graph' \
 	  'make smoke-all        Run the full emulator suite, including both consoles' \
 	  'make test-developer-commands  Check shortcuts with fake tools only' \
 	  '' \
@@ -172,6 +178,9 @@ smoke-program-console-uefi:
 qualify-program-console-uefi:
 	./scripts/kernel-program-console-smoke.sh --qualification
 
+capture-framebuffer:
+	./scripts/kernel-framebuffer-preview.sh
+
 test-program-stream:
 	./scripts/kernel-program-tests.sh
 
@@ -188,6 +197,8 @@ kernel-uefi:
 
 # Synthetic shortcut checks also run in the native aggregate.
 test-developer-commands:
+	python3 -B tests/framebuffer-preview.py
+	python3 -B -O tests/framebuffer-preview.py
 	python3 -B tests/developer-commands.py
 	python3 -B -O tests/developer-commands.py
 	python3 -B tests/uefi-firmware.py
@@ -531,5 +542,13 @@ test: test-terminal-event
 test: test-inventory test-developer-commands
 test-inventory:
 	python3 -B tests/test-inventory.py
+
+# Compiler-free controls; retain complete scans before and after native commands.
+.PHONY: test-artifact-budget
+test-artifact-budget:
+	python3 -B tests/test_artifact_budget.py
+	python3 -B -O tests/test_artifact_budget.py
+
+test: test-artifact-budget
 
 endif # controlled outer dispatcher / original inner graph

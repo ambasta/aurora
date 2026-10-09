@@ -1049,7 +1049,8 @@ def main():
     if not diagnostic_only:
         compiler = args.compiler.resolve(strict=True)
         identity = resolve_identity(args, compiler, ROOT)
-    self_test(temporary_parent=Path(tempfile.gettempdir()) if args.profile == "dev" else None)
+    self_test(temporary_parent=Path(tempfile.gettempdir())
+              if args.profile == "dev" or args.meson_selected_compiler else None)
     frozen = ROOT / "evidence/package-manifest/contract-before-implementation.md"
     require(sha(frozen) == CONTRACT_SHA256, "frozen pre-implementation contract byte identity")
     if args.self_test_only:
@@ -1060,7 +1061,7 @@ def main():
         return
     artifacts = (
         developer_artifacts(args, "manifest")
-        if args.profile == "dev"
+        if args.profile == "dev" or args.meson_selected_compiler
         else artifact_path(args.artifact_root or ROOT / f"build/package-manifest-{os.getpid()}")
     )
     require(artifacts.parent.is_dir() and not artifacts.exists(), "fresh artifact root with existing parent required")

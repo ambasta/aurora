@@ -1,160 +1,91 @@
-# Incremental developer tests
+# Canonical incremental native tests
 
-This is a focused developer path alongside Make. It builds the native C++23
-`aurorac` once per changed compiler input and runs existing core and byte/storage
-scripts directly. It does not invoke compiler-contract build orchestration, create a fresh
-compiler per test invocation, or change any existing Make or firmware command.
+The graph-completion change is an **unqualified source-only candidate** based on
+PR102. Historical results below do not qualify this new graph. Run it on the final
+source with both GCC 14 and GCC 16 before claiming complete native acceptance.
 
-## Run
+## Build and run
 
-On x86-64 Linux, install Meson 1.12.1 or newer and Ninja using your usual package
-manager. The existing C++23 compiler, Python 3.10 or newer and GNU binutils are also required.
-The minimum Meson version is deliberately the tested version for this prototype;
-older-version compatibility has not been qualified.
-Choose a compiler when configuring a new build directory:
+Use Meson 1.12.1+, Ninja, Python 3.10+, GNU binutils and a C++23 GNU/Linux x86-64
+host. Select matching real `gcc` and `g++` on PATH: a stack-guard runner invokes
+bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
-CXX=g++ meson setup build/meson --backend=ninja
-meson compile -C build/meson -j 2
-meson test -C build/meson --suite dev --num-processes 2 --print-errorlogs
+# PATH must already select the matching GCC 14 pair.
+CXX=g++ meson setup build/gcc14 --backend=ninja -Dlsp=false
+meson compile -C build/gcc14 -j 3
+meson test -C build/gcc14 --suite dev --no-rebuild --num-processes 4 --print-errorlogs
+meson test -C build/gcc14 --suite full --no-rebuild --num-processes 4 --print-errorlogs
+# Repeat setup/compile/full in build/gcc16 with the matching GCC 16 PATH.
 ```
 
-Use a separate build directory to compare a different compiler or flags. No
-formatter or optional style package is needed. Meson stores the configured C++
-command and supplies it to the existing native-observer scripts.
+Three compile jobs and four test workers are initial configurable choices, not a
+scaling guarantee. The prior two-job GCC 16 compile peaked at 2.38 GB aggregate
+owned RSS on a host with about 6.78 GB available and no swap. Nine visible CPUs
+do not establish nine-core throughput. Measure peak memory and reduce workers
+for heavy subprocess compilations; shared fixed-image writers serialize locally.
 
-`meson compile` builds `aurorac`, the existing C++ initialization-facts fixture,
-and the storage-codec example assembly. Repeating it without input changes does
-no compilation. The compiler's C++ include dependencies come from the compiler's
-generated dependency file. The example declares its Aurora source, the compiler
-target, `library/std/bytes.au` and `library/std/binary.au` as inputs. Those modules
-currently import no other modules; future imports must be added to this dependency declaration
-until the compiler can emit dependency files itself.
+Ninja tracks C++ headers and Aurora fixture imports. Unchanged compiler/fixture
+builds are reused, but test outcomes are not cached. A different toolchain or flag
+configuration needs a separate directory. A setup-time compiler/backend/binutils/
+runtime fingerprint rejects in-place toolchain replacement, including direct
+Meson builds/tests. Unset `CPATH`, `CPLUS_INCLUDE_PATH`, `C_INCLUDE_PATH` and
+`LIBRARY_PATH`, including empty definitions; use explicit Meson include/link flags
+instead. Pre-policy fingerprints need a fresh directory because their implicit
+search environment was not recorded. Use a clean directory for bootstrap
+compatibility or uncertain dependency identity. Do not modify inputs while
+qualifying. Record final source/tool identities and Meson's standard commands,
+introspection and logs; no new qualification supervisor is introduced.
 
-## Choose the checks for the change
+`make test` invokes the same `full` graph. `make test-compiler`, `make -C compiler
+test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to an
+explicitly configured directory, or omit it for a stable compiler/configuration-
+keyed directory. `AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
+`SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
+convenience route; use explicit configured sanitizer builds/separate focused gates.
+Explicit pinned `make test-acceptance` remains a distinct legacy compatibility
+workflow, not another mandatory run of the same native cases.
 
-Before every merge, run both complete `dev` and `slow` suites on the final
-integrated source, including after conflict resolution. Before every
-compiler-affecting merge and every release, also complete root `make test`.
-Focused checks are additional; Meson is not complete Make-native qualification.
-Squash verified changes without rewriting existing main history.
+## Coverage and limits
 
-`dev` is quick feedback, including public developer-command routing and inventory
-consistency. `slow` holds complete longer integration/ABI and source-model runners;
-no cases are sampled away to meet a timing target. Fifteen formerly Make-only
-compiler source/oracle runners are now in `slow`, including constructor-return
-regressions in templates, arrays, decimals and enum composition.
+`full` currently contains 240 tests: 67 `dev` and 173 `slow`. `integration` and
+`boot` are additional named selections; native `boot` checks/builds images but
+never starts QEMU. Keep development quick with `dev` or exact test names; full
+package profiles are slow. `packages` selects both partial and full profiles.
 
-The checked inventory is `tests/compiler-test-inventory.json`: all 76 compiler
-Python files are runnable, including files imported as helpers. 73 have direct
-Make recipes: 71 are reachable from the root native graph and formatter/linter
-checks are focused targets. Three are supplemental/differential runners requiring independent
-inputs or qualification. 56 scripts are registered in Meson and 20 remain explicit
-gaps, including fixture-based ABI/IR, formatter/linter, artifact-managed UTF-8/XFS,
-and supplemental qualifications. Package dev registrations are partial selections;
-script registration alone does not imply complete native coverage. The inventory
-gate compares the actual Meson introspection commands and both Makefiles against
-that classification, failing on added/removed script membership or changed literal
-root-Make dependency reachability. It does not
-compare every argument, profile or suite membership. The standalone Make check
-validates files and Make membership; Meson membership is verified only inside the
-Meson invocation using its actual introspection file.
+All 72 compiler Python runners reachable from legacy root Make are registered.
+The 15 newly covered runners are diagnostics, IR exhaustive, method-values ABI,
+readonly-windows source/native-IR, short-circuit source/native-IR, source overlays,
+token scan, UTF-8 range/lines and XFS geometry/root/root-API/root-entry. Fixed
+lexer/IR/ABI and module C++ fixtures are dependency-tracked build targets; the
+separate offline XFS verifier is registered. Five explicitly classified
+non-root style/supplemental runners still require their separate inputs.
 
-`full` and an unfiltered run cover every registered non-LSP test; `dev` and `slow`
-partition those registrations, not the complete Make graph. Use `meson test -C
-build/meson --list` for the current test count. Existing `core`, `bytes`, `compiler`
-and `packages` memberships remain available. Optional LSP tests use `lsp`.
-Use two workers to bound compiler/test memory; cold builds are separate from warm
-runs. Keep full Make and Meson phases sequential, with source unchanged throughout.
+Full package Identity/Manifest/Graph retain respectively 5,503/20, 20,022/29 and
+5,548/30 native/rejection cases; dev selections remain 183/20, 157/29 and 187/30.
+Both retain output-preservation and native negative controls. Full profiles use
+fresh build-local artifacts and the existing 1,024 MiB candidate caps. All 38
+non-compiler root prerequisites map to 115 native registrations, preserving
+ordinary/optimized Python controls, fault/capacity checks and complex negative
+compilation sweeps. See `tests/native/inventory.json` for exact mappings and the
+few byte-identical repeated commands deduplicated within a full invocation.
 
-```sh
-meson test -C build/meson --suite core --num-processes 2 --print-errorlogs
-meson test -C build/meson --suite bytes --num-processes 2 --print-errorlogs
-meson test -C build/meson --suite slow --num-processes 2 --print-errorlogs
-meson test -C build/meson --suite full --num-processes 2 --print-errorlogs
-meson test -C build/meson modules source-depth --num-processes 2 --print-errorlogs
-```
+Canonical Meson uses its checked-libstdc++ configuration (`_GLIBCXX_ASSERTIONS`
+and large-file definitions); historical Make compiler bytes need not match.
+Special native `-O1`, debug, no-PIE, exception/RTTI and testing macros remain where
+required; the existing `-O2` framebuffer variants remain distinct. Existing
+compiler Python runners use explicit optimized checks rather than Python assert;
+ordinary/optimized harness controls remain separate where they test mode behavior.
+`tests/test-inventory.py` checks runner/source membership, exact profiles/arguments,
+suites, fixtures and native registration contracts. New unaccounted runners fail.
 
-Choose by actual dependencies: compiler frontend/class/integer/module changes
-start with `core`; `std.bytes`, `std.binary` or `std.binary_buffer` changes start with `bytes`.
-Run the affected component's additional tests for surfaces not registered here,
-including templates, overloads, readonly windows, short-circuit joins and text.
-Package changes can start with the partial `packages` suite described below. A focused pass does not imply those other surfaces were exercised.
-Run `dev` for a quick cross-component pass. Run `slow` as well, or `full`,
-when qualifying all registered coverage; a `dev` pass alone does not cover the
-exhaustive JSON/storage/ABI sweeps. The Make full-native graph remains separate.
-For leaf documentation edits, also review content, commands and links. The final
-pre-merge `dev` and `slow` gate still applies; root `make test` is also required for compiler-affecting merges and releases.
+Observed Meson compiler identity never claims an external pin or fresh bootstrap
+build. Full native execution still needs independent final-source review; normal
+BIOS/UEFI smoke, affected fault/recovery profiles, sanitizers and physical hardware
+remain separate gates. Retained receipts/logs remain readable; generated products
+can be losslessly archived with exact mapping after review.
 
-## Named coverage
-
-The `core` suite keeps eleven complete tests, without sampling their cases:
-
-- `frontend`: parsing, scalar/array/class basics, ownership and borrow rejections,
-  reflection, initialization, stack/depth boundaries and exact SIGILL checks
-- `classes`: constructors, receiver mutability, privacy, method calls and cycles
-- `value-calls`: copied class arguments/results, nominal/visibility rejection,
-  evaluation order, alias isolation and wide-value boundaries
-- `owned-mutation`: direct owned-field replacement and child receiver source checks
-- `owned-mutation-ir`: direct typed-IR field/receiver controls
-- `owned-mutation-abi`: handwritten field/receiver ABI controls
-- `signed-integers`: division/remainder boundaries and traps, evaluation order,
-  integer algorithms, overflow and access rejection
-- `unsigned-integers`: full-width arithmetic, comparison, shifts, conversion,
-  overflow traps and mixed-type/literal rejection
-- `modules`: imports, defining-module lookup, visibility/reflection isolation,
-  cycles, file/path/resource limits and rejected source/output aliases
-- `source-depth`: every existing oversized nesting/AST rejection, with unchanged
-  source and absent output on failure
-- `initialization-facts`: the existing C++ model fixture, also in `compiler`
-
-These registrations preserve the runners' native full-width result checks,
-exact SIGILL expectations and diagnostic/output-preservation checks. The core registrations do not alter their runners or oracles; no exhaustive
-matrix is replaced with first-N cases.
-
-The `bytes` suite has ten named tests, with their existing default case counts:
-
-- `byte-codec`: owned byte encodings, layouts, rejections and the storage example
-- `binary-buffer`: owned record reads/writes, unchanged-on-failure bytes, copied values,
-  reader interoperation, exact bounds traps and rejection cases
-- `owned-sector`: byte/record copies, whole-range failure preservation and record reports
-- `block-io`: sector snapshots, readonly/range errors and explicit flush outcomes
-- `xfs-sector`: copied header inspection and source-capacity checks
-- `sector-values`: sector-sized copied value and rejection/trap cases
-- `sector-values-ir`: direct typed-IR/layout controls
-- `sector-values-abi`: handwritten value-boundary ABI controls
-- `packed-values`: copied values, bounds traps and rejection cases
-- `storage-binary`: readonly readers, CRC32C and offline XFS header cases
-
-`meson test -C build/meson` runs all 24 registered tests. Select an individual
-test by name, or use a named suite for the relevant feedback loop. Test
-invocations always rerun the selected tests; a successful previous run is never
-used as a cache of current correctness. A library-only edit does not require
-rebuilding the native compiler, but a selected test run reads the edited library.
-The byte/storage Python oracles still compile their small C++ signal observer once
-per test process. Python runners compile/assemble generated Aurora cases. The no-compilation
-claim applies to an unchanged `meson compile`, not to these executable tests.
-
-Tests run in parallel by default. Each Python script already owns unique
-temporary directories; Meson places those below `build/meson/tests` by setting
-`TMPDIR`, `TMP` and `TEMP`. Module symlinks, FIFOs, alias checks and oversized-source
-fixtures are all contained in those private directories. The source tree and
-other build directories are not output destinations. The C++ model writes no files.
-Meson's normal test logs are in `build/meson/meson-logs`. Existing temporary-output
-cleanup remains unchanged; these focused logs are not the historical native
-acceptance receipts and do not preserve every generated binary.
-
-Only these targets are migrated. Use `make test` explicitly for the complete
-native qualification graph and its matching run receipt. Existing sanitizer,
-firmware, QEMU and independently pinned qualification workflows remain separate. A pass
-here is focused developer evidence, not full-system or hardware qualification.
-
-## Implementation references
-
-- [Meson build targets](https://mesonbuild.com/Build-targets.html)
-- [Meson generated sources](https://mesonbuild.com/Generating-sources.html)
-- [Meson unit tests and suites](https://mesonbuild.com/Unit-tests.html)
-- [Meson custom-target dependency options](https://mesonbuild.com/Reference-manual_functions.html#custom_target)
+## Historical measurements (different source and graph)
 
 ## Final joined developer suite — 2026-10-07
 
