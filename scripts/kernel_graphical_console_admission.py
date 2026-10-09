@@ -497,52 +497,45 @@ def normalize_instruction(decoder, row, payload):
 
 
 STACK_MEMORY_PUSH_OWNER = "_ZN6aurora4uefi21run_graphical_consoleEmRKNS0_5BytesE"
-STACK_MEMORY_PUSH_SITES = ((0x79C, 8, bytes.fromhex("ff742408")), (0x7A6, 24, bytes.fromhex("ff742418")))
-STACK_MEMORY_PUSH_LAYOUTS = {
-    5437: STACK_MEMORY_PUSH_SITES,
-    8448: ((0xC86, 24, bytes.fromhex("ff742418")), (0xC90, 40, bytes.fromhex("ff742428"))),
-}
 
 
 def stack_memory_push_evidence(symbols, code, payload):
-    """Authorize only the separate retained GCC16 normal/capture argument-copy sites.
+    """Authorize the owner's bounded pair of direct RSP argument-copy pushes.
 
-    This binds original encoding and ownership, not copied values or authority.
-    The core still proves the eight-byte read against each pre-push live depth.
+    Linked ownership and actual encodings select sites, not unrelated function
+    size or instruction offsets. This proves no copied-value authority; the core
+    bounds every eight-byte read against the old live frame before each push.
     """
     memory_rows = [row for row in code.values() if row.op.startswith("push") and "(" in row.args]
-    owner = symbols.get(STACK_MEMORY_PUSH_OWNER)
-    if not memory_rows and (owner is None or owner.size not in STACK_MEMORY_PUSH_LAYOUTS):
+    if not memory_rows:
         return {}, []
-    need(
-        owner is not None and owner.size in STACK_MEMORY_PUSH_LAYOUTS, "Unreviewed memory-push owner or emitted extent"
-    )
-    layout = STACK_MEMORY_PUSH_LAYOUTS[owner.size]
-    expected = {owner.address + offset for offset, _, _ in layout}
-    need({row.address for row in memory_rows} == expected, "Unknown, missing or foreign memory-push site")
+    owner = symbols.get(STACK_MEMORY_PUSH_OWNER)
+    need(owner is not None and len(memory_rows) == 2, "Unreviewed memory-push owner or site inventory")
     sites, receipts = {}, []
-    for offset, displacement, raw in layout:
-        address = owner.address + offset
-        row = code[address]
+    for row in sorted(memory_rows, key=lambda item: item.address):
+        address = row.address
+        operand = re.fullmatch(r"(0x[0-9a-f]+)\(%rsp\)", row.args)
+        need(row.op == "push" and row.size == 4 and operand, "Unsupported direct qword memory-push form")
+        displacement = int(operand[1], 16)
+        # This four-byte encoding has a signed disp8. Only aligned forward
+        # sources are admitted; prefixes, other bases and widths still reject.
+        need(0 < displacement < 128 and displacement % 8 == 0, "Unsupported memory-push displacement")
+        raw = bytes((0xFF, 0x74, 0x24, displacement))
         need(
-            row.op == "push"
-            and row.args == hex(displacement) + "(%rsp)"
-            and row.size == 4
-            and payload[address : row.next] == raw
-            and row.next <= owner.address + owner.size,
-            "Changed exact memory-push opcode, addressing or operand",
+            payload[address : row.next] == raw and row.next <= owner.address + owner.size,
+            "Changed memory-push opcode or owner extent",
         )
         need(
             [name for name, symbol in symbols.items() if symbol.address <= address < symbol.address + symbol.size]
             == [STACK_MEMORY_PUSH_OWNER],
-            "Ambiguous memory-push function ownership",
+            "Ambiguous or foreign memory-push function ownership",
         )
         sites[address] = displacement
         receipts.append(
             dict(
                 owner=owner.name,
                 address=address,
-                offset=offset,
+                offset=address - owner.address,
                 bytes=raw.hex(),
                 operand=row.args,
                 source_old_rsp=displacement,

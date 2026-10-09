@@ -469,7 +469,8 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
             require(
                 type(address) is int
                 and type(displacement) is int
-                and displacement in (8, 24, 40)
+                and 0 < displacement < 128
+                and displacement % 8 == 0
                 and begin <= address < end
                 and address in instructions,
                 "Unproved memory-push address or displacement",

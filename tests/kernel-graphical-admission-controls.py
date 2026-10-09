@@ -2725,6 +2725,10 @@ class Admission(unittest.TestCase):
         with self.assertRaises(ValueError):
             decoder.analyze_function(symbol, code, {base: name})
         for changed in (
+            [],
+            dict(owner=name, sites=permit["sites"], extra=True),
+            dict(owner=name, sites=[]),
+            dict(owner=name, sites={base + 4: "8"}),
             dict(owner="other", sites=permit["sites"]),
             dict(owner=name, sites={}),
             dict(owner=name, sites={base - 4: 8}),
@@ -2784,104 +2788,100 @@ class Admission(unittest.TestCase):
                 memory_pushes=dict(owner=name, sites={**permit["sites"], base + 17: 8}),
             )
 
-    def test_graphical_memory_push_authorization_is_closed(self):
-        base = 0x2000
-        name = graphical.STACK_MEMORY_PUSH_OWNER
-        owner = decoder.Symbol(name, base, 5437, 1, 2)
-        payload = bytearray(base + 5437)
-        code = {}
-        for offset, displacement, raw in (
-            (0x79C, 8, bytes.fromhex("ff742408")),
-            (0x7A6, 24, bytes.fromhex("ff742418")),
+    def test_graphical_memory_push_sites_follow_operands_and_owner(self):
+        base, name = 0x2000, graphical.STACK_MEMORY_PUSH_OWNER
+        for size, offsets, displacements in (
+            (128, (16, 32), (8, 24)),
+            (384, (64, 144), (8, 40)),
+            (512, (40, 288), (16, 120)),
         ):
-            address = base + offset
-            payload[address : address + 4] = raw
-            code[address] = decoder.Instruction(address, 4, "push", hex(displacement) + "(%rsp)")
-        permits, receipts = graphical.stack_memory_push_evidence({name: owner}, code, bytes(payload))
-        self.assertEqual(permits, {name: dict(owner=name, sites={base + 0x79C: 8, base + 0x7A6: 24})})
-        self.assertEqual(len(receipts), 2)
+            owner = decoder.Symbol(name, base, size, 1, 2)
+            payload, code = bytearray(base + size), {}
+            for offset, displacement in zip(offsets, displacements):
+                address = base + offset
+                payload[address : address + 4] = bytes((0xFF, 0x74, 0x24, displacement))
+                code[address] = decoder.Instruction(address, 4, "push", hex(displacement) + "(%rsp)")
+            permits, receipts = graphical.stack_memory_push_evidence({name: owner}, code, bytes(payload))
+            self.assertEqual(permits[name]["sites"], dict(zip((base + value for value in offsets), displacements)))
+            self.assertEqual([row["offset"] for row in receipts], list(offsets))
+            for symbols in (
+                {},
+                {name: decoder.Symbol(name, base, offsets[-1] + 3, 1, 2)},
+                {name: owner, "alias": decoder.Symbol("alias", base, size, 1, 2)},
+            ):
+                with self.subTest(symbols=symbols), self.assertRaises(ValueError):
+                    graphical.stack_memory_push_evidence(symbols, code, bytes(payload))
         self.assertEqual(graphical.stack_memory_push_evidence({}, {}, b""), ({}, []))
-        for symbols in (
-            {},
-            {name: decoder.Symbol(name, base, 5436, 1, 2)},
-            {name: owner, "alias": decoder.Symbol("alias", base, 5437, 1, 2)},
-        ):
-            with self.subTest(symbols=list(symbols)), self.assertRaises(ValueError):
-                graphical.stack_memory_push_evidence(symbols, code, bytes(payload))
+        # A compiler may use only register pushes; no memory authorization is needed.
+        self.assertEqual(graphical.stack_memory_push_evidence({name: owner}, {}, b""), ({}, []))
         for address, row in code.items():
             changed = bytearray(payload)
-            changed[address + 3] ^= 8
-            with self.subTest(bytes=address), self.assertRaises(ValueError):
+            changed[address] ^= 1
+            with self.assertRaises(ValueError):
                 graphical.stack_memory_push_evidence({name: owner}, code, bytes(changed))
             for op, args, size in (
                 ("push", "0x8(%rbp)", 4),
-                ("push", "0x18(%rsp)", 4),
+                ("push", "0x8(%rsp,%rax,1)", 4),
+                ("push", "-0x8(%rsp)", 4),
+                ("push", "0x80(%rsp)", 4),
+                ("push", "0x1(%rsp)", 4),
+                ("push", "0x0(%rsp)", 4),
                 ("pushw", row.args, 4),
                 ("push", row.args, 5),
             ):
-                if (op, args, size) == (row.op, row.args, row.size):
-                    continue
-                altered = dict(code)
-                altered[address] = decoder.Instruction(address, size, op, args)
-                with self.subTest(operand=(address, op, args, size)), self.assertRaises(ValueError):
-                    graphical.stack_memory_push_evidence({name: owner}, altered, bytes(payload))
-            altered = dict(code)
-            del altered[address]
-            with self.assertRaises(ValueError):
-                graphical.stack_memory_push_evidence({name: owner}, altered, bytes(payload))
-            altered[address + 1] = decoder.Instruction(address + 1, 4, row.op, row.args)
-            with self.assertRaises(ValueError):
-                graphical.stack_memory_push_evidence({name: owner}, altered, bytes(payload))
+                changed_code = dict(code)
+                changed_code[address] = decoder.Instruction(address, size, op, args)
+                with self.subTest(form=(op, args, size)), self.assertRaises(ValueError):
+                    graphical.stack_memory_push_evidence({name: owner}, changed_code, bytes(payload))
+        missing = dict(code)
+        del missing[address]
         with self.assertRaises(ValueError):
-            graphical.stack_memory_push_evidence({name: owner}, {}, bytes(payload))
+            graphical.stack_memory_push_evidence({name: owner}, missing, bytes(payload))
+        extra = dict(code)
+        extra[base + 8] = decoder.Instruction(base + 8, 4, "push", "0x8(%rsp)")
+        with self.assertRaises(ValueError):
+            graphical.stack_memory_push_evidence({name: owner}, extra, bytes(payload))
 
-    def test_capture_memory_push_layout_stays_separate(self):
-        base = 0x2000
-        name = graphical.STACK_MEMORY_PUSH_OWNER
-        owner = decoder.Symbol(name, base, 8448, 1, 2)
-        payload = bytearray(base + 8448)
-        code = {}
-        for offset, displacement, raw in (
-            (0xC86, 24, bytes.fromhex("ff742418")),
-            (0xC90, 40, bytes.fromhex("ff742428")),
-        ):
-            address = base + offset
-            payload[address : address + 4] = raw
-            code[address] = decoder.Instruction(address, 4, "push", hex(displacement) + "(%rsp)")
-        permits, receipts = graphical.stack_memory_push_evidence({name: owner}, code, bytes(payload))
-        self.assertEqual(permits[name]["sites"], {base + 0xC86: 24, base + 0xC90: 40})
-        for extent in (5437, 8447, 8449):
-            with self.subTest(extent=extent), self.assertRaises(ValueError):
-                graphical.stack_memory_push_evidence(
-                    {name: decoder.Symbol(name, base, extent, 1, 2)}, code, bytes(payload)
-                )
-        for address, row in code.items():
-            altered = dict(code)
-            altered[address] = decoder.Instruction(
-                address, 4, "push", "0x18(%rsp)" if row.args == "0x28(%rsp)" else "0x28(%rsp)"
-            )
+    def test_memory_push_full_width_bounds_and_stack_balance(self):
+        base, name = 0x2000, graphical.STACK_MEMORY_PUSH_OWNER
+        for displacement in (8, 16, 40, 120):
+            depth = displacement + 8
+            body = {
+                base: decoder.Instruction(base, 4, "sub", "$" + hex(depth) + ",%rsp"),
+                base + 4: decoder.Instruction(base + 4, 4, "push", hex(displacement) + "(%rsp)"),
+                base + 8: decoder.Instruction(base + 8, 4, "add", "$" + hex(depth + 8) + ",%rsp"),
+                base + 12: decoder.Instruction(base + 12, 1, "ret", ""),
+            }
+            sym = decoder.Symbol(name, base, 13, 1, 2)
+            grant = dict(owner=name, sites={base + 4: displacement})
+            result = decoder.analyze_function(sym, body, {base: name}, memory_pushes=grant)
+            self.assertEqual(result["stack_memory_pushes"][0]["depth_before"], depth)
             with self.assertRaises(ValueError):
-                graphical.stack_memory_push_evidence({name: owner}, altered, bytes(payload))
-            changed = bytearray(payload)
-            changed[address + 3] ^= 16
-            with self.assertRaises(ValueError):
-                graphical.stack_memory_push_evidence({name: owner}, code, bytes(changed))
-        body = {
-            base: decoder.Instruction(base, 4, "sub", "$0x30,%rsp"),
-            base + 4: decoder.Instruction(base + 4, 4, "push", "0x28(%rsp)"),
-            base + 8: decoder.Instruction(base + 8, 4, "add", "$0x38,%rsp"),
-            base + 12: decoder.Instruction(base + 12, 1, "ret", ""),
+                decoder.analyze_function(sym, body, {base: name})
+            for frame, release, error in ((depth - 8, depth, "pre-push"), (depth, depth + 16, "Unbalanced")):
+                changed = dict(body)
+                changed[base] = decoder.Instruction(base, 4, "sub", f"${frame:#x},%rsp")
+                changed[base + 8] = decoder.Instruction(base + 8, 4, "add", f"${release:#x},%rsp")
+                with self.subTest(displacement=displacement, error=error), self.assertRaisesRegex(ValueError, error):
+                    decoder.analyze_function(sym, changed, {base: name}, memory_pushes=grant)
+
+    def test_memory_push_copies_saved_slot_without_overwriting_it(self):
+        name = "saved_slot_read"
+        code = {
+            0: decoder.Instruction(0, 1, "push", "%rbp"),
+            1: decoder.Instruction(1, 2, "push", "%r14"),
+            3: decoder.Instruction(3, 4, "push", "0x8(%rsp)"),
+            7: decoder.Instruction(7, 1, "pop", "%rax"),
+            8: decoder.Instruction(8, 2, "pop", "%r14"),
+            10: decoder.Instruction(10, 1, "pop", "%rbp"),
+            11: decoder.Instruction(11, 1, "ret", ""),
         }
-        sym = decoder.Symbol(name, base, 13, 1, 2)
-        grant = dict(owner=name, sites={base + 4: 40})
-        result = decoder.analyze_function(sym, body, {base: name}, memory_pushes=grant)
-        self.assertEqual(result["stack_memory_pushes"][0]["depth_before"], 48)
-        with self.assertRaises(ValueError):
-            decoder.analyze_function(sym, body, {base: name})
-        body[base] = decoder.Instruction(base, 4, "sub", "$0x28,%rsp")
-        body[base + 8] = decoder.Instruction(base + 8, 4, "add", "$0x30,%rsp")
-        with self.assertRaisesRegex(ValueError, "pre-push"):
-            decoder.analyze_function(sym, body, {base: name}, memory_pushes=grant)
+        result = decoder.analyze_function(
+            decoder.Symbol(name, 0, 12, 1, 2), code, {0: name}, memory_pushes=dict(owner=name, sites={3: 8})
+        )
+        self.assertEqual(result["local_peak"], 32)
+        self.assertEqual(result["returns"], 1)
+        self.assertEqual(result["stack_memory_pushes"][0]["depth_before"], 16)
 
     def test_exact_generated_signed_division_pairs(self):
         owner = "__au_v_m1_24kernel_graphical_console_n0__d9draw_cell"
