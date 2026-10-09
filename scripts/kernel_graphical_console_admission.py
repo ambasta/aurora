@@ -4952,15 +4952,29 @@ CAPTURE_SEPARATE_PROOF_SHA256 = {'14': '8efaf96b69d1f5b21f7ba1a74a5f221d33aab9ac
 CAPTURE_SEPARATE_SOURCE_SHA256 = "215aea74759a326b663023460e4d0e5a87332a6178e35cf2dc44afe0d2529004"
 
 
+# These exact Meson-built host compilers produced all 38 capture artifacts
+# byte-for-byte equal to the reviewed Make-built variant for their toolchain.
+# Keep complete tool tuples paired; this does not admit another image layout.
+CAPTURE_SEPARATE_MESON_COMPILER_SHA256 = {
+    "14": "f22b84ebd2d2c3a3aa4ebe84118aa3dc8d7cbeec410b45f04a589c7ab134db1c",
+    "16": "12efb3bffd1c3bbee24d7bfc8a9f7d43d90707c63b3c81fcf299e3e2241e71a2",
+}
+
+
 def verify_capture_separate_applicability(build, version):
     need(type(build) is dict and version in CAPTURE_SEPARATE_TOOL_SHA256,
          "Missing separate-validator capture applicability")
     need(build.get("mode")==MODES[1] and build.get("flags")==expected_flags(MODES[1]),
          "Changed separate-validator capture mode/flags")
     need(type(build.get("tools")) is dict, "Missing separate-validator capture tools")
-    for name,expected in CAPTURE_SEPARATE_TOOL_SHA256[version].items():
+    original = CAPTURE_SEPARATE_TOOL_SHA256[version]
+    meson = dict(original, compiler=CAPTURE_SEPARATE_MESON_COMPILER_SHA256[version])
+    actual = {}
+    for name in original:
         row=build.get(name) if name in ("compiler","cxx","pe_linker") else build["tools"].get(name)
-        need(type(row) is dict and row.get("sha256")==expected, "Changed separate-validator capture tool: "+name)
+        need(type(row) is dict, "Missing separate-validator capture tool: "+name)
+        actual[name] = row.get("sha256")
+    need(actual in (original, meson), "Changed separate-validator capture tool tuple")
     sources=build.get("source_sha256")
     need(type(sources) is dict and all(type(n) is str for n in sources), "Missing separate-validator source closure")
     compiled={n:v for n,v in sources.items() if n.startswith(("compiler/","kernel/","library/","examples/"))

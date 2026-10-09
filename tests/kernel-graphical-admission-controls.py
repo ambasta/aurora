@@ -10245,6 +10245,30 @@ class SeparateValidatorCapture(unittest.TestCase):
         self.assertEqual(result['selector']['invalid_bytes'],249)
         graphical.require_capture_linked_proof('graphical-console-capture',result,self.build)
 
+    def test_gcc14_meson_compiler_exact_tool_tuple(self):
+        result = self.proof()
+        build = deepcopy(self.build)
+        build['compiler']['sha256'] = graphical.CAPTURE_SEPARATE_MESON_COMPILER_SHA256['14']
+        graphical.require_capture_linked_proof('graphical-console-capture', result, build)
+        for name in graphical.CAPTURE_SEPARATE_TOOL_SHA256['14']:
+            changed = deepcopy(build)
+            row = changed[name] if name in ('compiler', 'cxx', 'pe_linker') else changed['tools'][name]
+            row['sha256'] = '0' * 64
+            with self.subTest(tool=name), self.assertRaises(ValueError):
+                graphical.require_capture_linked_proof('graphical-console-capture', result, changed)
+        other = '16' if '14' == '14' else '14'
+        for compiler in (graphical.CAPTURE_SEPARATE_MESON_COMPILER_SHA256[other],
+                         graphical.CAPTURE_SEPARATE_TOOL_SHA256[other]['compiler']):
+            changed = deepcopy(build); changed['compiler']['sha256'] = compiler
+            with self.subTest(crossed_compiler=compiler), self.assertRaises(ValueError):
+                graphical.require_capture_linked_proof('graphical-console-capture', result, changed)
+        changed = deepcopy(build); changed['flags'] = []
+        with self.assertRaises(ValueError):
+            graphical.require_capture_linked_proof('graphical-console-capture', result, changed)
+        changed = deepcopy(build); changed['source_sha256']['compiler/main.cpp'] = '0' * 64
+        with self.assertRaises(ValueError):
+            graphical.require_capture_linked_proof('graphical-console-capture', result, changed)
+
     def test_separate_capture_rejects_mixed_file_tool_source_and_proof(self):
         result=self.proof()
         for name in self.files:
@@ -10483,6 +10507,30 @@ class SeparateValidatorGcc16Capture(unittest.TestCase):
         self.assertEqual(len(result['original_state']),24)
         self.assertEqual(len(result['files']),7)
         graphical.require_capture_linked_proof('graphical-console-capture',result,self.build)
+
+    def test_gcc16_meson_compiler_exact_tool_tuple(self):
+        result = self.proof()
+        build = deepcopy(self.build)
+        build['compiler']['sha256'] = graphical.CAPTURE_SEPARATE_MESON_COMPILER_SHA256['16']
+        graphical.require_capture_linked_proof('graphical-console-capture', result, build)
+        for name in graphical.CAPTURE_SEPARATE_TOOL_SHA256['16']:
+            changed = deepcopy(build)
+            row = changed[name] if name in ('compiler', 'cxx', 'pe_linker') else changed['tools'][name]
+            row['sha256'] = '0' * 64
+            with self.subTest(tool=name), self.assertRaises(ValueError):
+                graphical.require_capture_linked_proof('graphical-console-capture', result, changed)
+        other = '16' if '16' == '14' else '14'
+        for compiler in (graphical.CAPTURE_SEPARATE_MESON_COMPILER_SHA256[other],
+                         graphical.CAPTURE_SEPARATE_TOOL_SHA256[other]['compiler']):
+            changed = deepcopy(build); changed['compiler']['sha256'] = compiler
+            with self.subTest(crossed_compiler=compiler), self.assertRaises(ValueError):
+                graphical.require_capture_linked_proof('graphical-console-capture', result, changed)
+        changed = deepcopy(build); changed['flags'] = []
+        with self.assertRaises(ValueError):
+            graphical.require_capture_linked_proof('graphical-console-capture', result, changed)
+        changed = deepcopy(build); changed['source_sha256']['compiler/main.cpp'] = '0' * 64
+        with self.assertRaises(ValueError):
+            graphical.require_capture_linked_proof('graphical-console-capture', result, changed)
 
     def test_gcc16_rejects_mixed_files_tools_source_and_proof(self):
         result=self.proof()
