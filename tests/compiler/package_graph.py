@@ -723,10 +723,12 @@ def ownership_cases():
     model = graph(data, offsets, lengths, 2)
     expected = expected_graph(data, offsets, lengths, 2, (0,))
     helper = (
-        "auto make_order()->package::GraphOrderResult{{" + setup + "const package::GraphOrderResult r="
-        "package::order_manifests(borrow_bytes(owner),offsets,lengths,2);return r;}}"
-        "auto make_entry()->package::GraphEntryResult{{" + setup + "const package::GraphEntryResult r="
-        "package::ordered_manifest(borrow_bytes(owner),offsets,lengths,2,0);return r;}}"
+        "auto make_order()->package::GraphOrderResult{{"
+        + setup
+        + "return package::order_manifests(borrow_bytes(owner),offsets,lengths,2);}}"
+        "auto make_entry()->package::GraphEntryResult{{"
+        + setup
+        + "return package::ordered_manifest(borrow_bytes(owner),offsets,lengths,2,0);}}"
         "auto copy_order(package::GraphOrderResult r)->package::GraphOrderResult{return r;}"
         "auto copy_entry(package::GraphEntryResult r)->package::GraphEntryResult{return r;}"
     )
@@ -843,7 +845,8 @@ def negative_cases():
         (
             "unsupported-span-field-syntax",
             PREFIX + "class Leak{builtin::span<const u8> value;};",
-            "unsupported class field type 'builtin::span<const u8>': class fields require scalar, class, private fixed-array or private owned-byte storage",
+            "unsupported class field type 'builtin::span<const u8>': class fields require scalar, class, "
+            "private fixed-array or private owned-byte storage",
         ),
         (
             "graph-enum-no-integer-conversion",

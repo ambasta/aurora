@@ -704,8 +704,6 @@ def rejection_cases(suite):
         ("class result requires fresh local", method_init + "Packet saved=factory.snapshot();saved=factory.snapshot();return 42;", ""),
         ("class result cannot be temporary argument", method_init + "return consume(factory.snapshot());",
          "auto consume(Packet value)->i64{return 42;}"),
-        ("class result cannot be directly returned", method_init + "Packet p=forward(factory);return 42;",
-         "auto forward(Factory source)->Packet{return source.snapshot();}"),
         ("mutable result method rejects const receiver", "const Factory factory=Factory(Status::ok,42u64);"
          "const Packet result=factory.advance(0u64);return 42;", ""),
         ("const result field cannot mutate", method_init + "const Packet result=factory.snapshot();"
@@ -719,6 +717,11 @@ def rejection_cases(suite):
     ):
         suite.check(label + " remains rejected", program("return 42;", BASE +
                     "class Invalid{public:Invalid(){}" + declaration + "};"), reject=True)
+    suite.check("direct copied class return preserves enum payload", program(
+        method_init + "Packet p=forward(factory);const Leaf item=p.item;"
+        "if(p.tag!=Status::ok){return 1;}if(!p.valid){return 2;}"
+        "if(item.status()!=Status::ok){return 3;}return i64(item.get());", BASE,
+        "auto forward(Factory source)->Packet{return source.snapshot();}"))
     suite.check("direct class construction return preserves enum payload", program(
         "Maker maker=Maker();Leaf result=maker.make();"
         "if(result.status()!=Status::ok){return 1;}return i64(result.get());", BASE +

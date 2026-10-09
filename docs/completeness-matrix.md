@@ -117,6 +117,13 @@ uses direct unit-scale drawing, while the status page retains its scale selectio
 These consumers retain separate image/stack and actual guest acceptance gates;
 historical guest evidence is not a new run.
 
+Direct [copied call returns](../compiler/VALUE-CALLS.md#source-contract) accept
+exact ordinary free-function, overload, template and method results through the
+existing checked result storage and private ABI. `std.json` drops immediate
+result-only bindings; ownership, snapshots and synchronous loan cleanup remain
+unchanged. This convenience adds no copy elision or general class expressions;
+final-source qualification remains separate from prior results.
+
 The two JSON append reports normalize invalid success counts once at construction
 and expose plain status reads while preserving failure-count masking and public
 constructor behavior. See the [invariant proof and bounded oracle](json-string-write.md#copied-append-report-invariants).

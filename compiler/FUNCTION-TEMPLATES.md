@@ -20,7 +20,8 @@ auto make_pair(T first, U second) -> pair<T,U> {
 `std::make_pair<i64,u8>(42,7u8)` returns an independent `std::pair<i64,u8>`.
 Arguments use existing readonly scalar/enum/complete-class value boundaries;
 class snapshots are evaluated left to right and the copied result initializes a
-fresh typed local. Six source parameters and 64 scalar leaves at class-value
+fresh typed local or a [direct copied return](VALUE-CALLS.md#source-contract).
+Six source parameters and 64 scalar leaves at class-value
 boundaries remain the limits. Class-valued arguments still require named complete
 locals. `examples/function_token_values.au` executes a byte-array/source-range
 factory, independent copies, fresh projections, mutation and zero-filled storage.
