@@ -365,6 +365,11 @@ timeouts fail without semantic observations and retain partial output; the
 compiler-free controls exercise these paths with real subprocesses. The limits
 are watchdogs, not performance assertions.
 
+Measured on the PR107 full-run source `a08571bd` with Debian GCC 16.2.0-3 on
+cloud x86-64 Linux, Graph batch 052 used 0.149009 compiler CPU seconds and
+9.905246 native CPU seconds for 10 cases / 2,780 scalar observations. These are
+recorded costs for that batch, not a Gentoo result or per-case performance target.
+
 ### Focused correction verification — 2026-10-07
 
 The 618-file formatted candidate based on `f458620b325c4f17c32b32c3c4a09b2771a472b8`

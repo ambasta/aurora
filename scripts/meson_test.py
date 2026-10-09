@@ -46,12 +46,14 @@ def execute(root, scope):
     )
     meson = str(Path(meson).absolute())
     cxx = contract.tool_record(contract.parse_cxx(env.get("CXX", "g++")))
-    # The snapshot also checks matching gcc/CXX versions and binds both tools.
-    host_identity = meson_toolchain.snapshot([cxx["resolved"]])
-    config = dict(toolchain=host_identity, cpp_flags=env.get("CXXFLAGS", ""))
+    # Reject unsupported search paths before setup without hashing the toolchain.
+    for name in meson_toolchain.IMPLICIT_SEARCH_ENV:
+        if name in env:
+            raise ValueError("Unset " + name + "; use explicit Meson include/link flags in a fresh build directory")
+    config = dict(cxx=cxx["resolved"], compiler_sha256=cxx["sha256"], cpp_flags=env.get("CXXFLAGS", ""))
     key = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:16]
-    # Both fresh explicit directories and stable compiler/configuration-keyed
-    # defaults are configured here; existing directories must match below.
+    # Compiler/flag changes select a new default; backend/runtime changes are
+    # rejected by the complete identity check below and need a fresh directory.
     supplied = env.get("MESON_BUILD_DIR")
     build = Path(supplied) if supplied else root / "build" / ("meson-" + key)
     build = (root / build).resolve() if not build.is_absolute() else build.resolve()
@@ -64,8 +66,14 @@ def execute(root, scope):
     for name in contract.MAKE_CONTROL:
         env.pop(name, None)
     env["CXX"] = cxx["resolved"]
-    build.mkdir(parents=True, exist_ok=True)
-    with (build / ".aurora-test.lock").open("a") as lock:
+    try:
+        build.mkdir(parents=True, exist_ok=True)
+        lock = (build / ".aurora-test.lock").open("a")
+    except OSError as error:
+        raise contract.ContractError(
+            f"Cannot prepare build directory/lock at {build}: {error}. Select a writable MESON_BUILD_DIR."
+        ) from error
+    with lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
@@ -73,6 +81,8 @@ def execute(root, scope):
                 f"Build directory is already in use: {build}. "
                 "Wait for its active build/test command to finish, or set MESON_BUILD_DIR to a different directory."
             ) from error
+        except OSError as error:
+            raise contract.ContractError(f"Cannot lock {build}: {error}. Check directory/lock permissions.") from error
         if not (build / "build.ninja").exists():
             subprocess.run(
                 [meson, "setup", str(build), str(root), "--backend=ninja", "-Dlsp=false"],
@@ -96,10 +106,19 @@ def execute(root, scope):
             cpp_args == shlex.split(env.get("CXXFLAGS", "")),
             "Configured cpp_args differ from CXXFLAGS; select matching flags/build directory",
         )
-        # Re-observe after setup/introspection; the directory-selection snapshot
-        # must not hide a toolchain replacement before compilation.
-        meson_toolchain.verify(
-            json.loads((build / "aurora-toolchain.json").read_text()), meson_toolchain.snapshot(command)
+        identity_path = build / "aurora-toolchain.json"
+        try:
+            configured_identity = json.loads(identity_path.read_text())
+        except OSError as error:
+            raise contract.ContractError(
+                f"Cannot read configured toolchain identity {identity_path}: {error}. "
+                "Check read permissions or select a fresh MESON_BUILD_DIR."
+            ) from error
+        # One complete observation in this wrapper, immediately before compile.
+        # Setup and direct Meson builds retain their own independent guards.
+        contract.require(
+            configured_identity == meson_toolchain.snapshot(command),
+            f"Host toolchain changed for {build}; set MESON_BUILD_DIR to a fresh directory to avoid stale objects",
         )
         subprocess.run([meson, "compile", "-C", str(build), "-j", str(build_jobs)], cwd=root, env=env, check=True)
         subprocess.run(
@@ -126,11 +145,18 @@ def main():
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--suite", choices=["full", "compiler", "dev", "slow", "integration", "boot"], default="full")
     args = parser.parse_args()
-    execute(args.repo_root, args.suite)
+    try:
+        execute(args.repo_root, args.suite)
+    except OSError as error:
+        target = error.filename or os.environ.get("MESON_BUILD_DIR") or args.repo_root
+        raise SystemExit(
+            f"Cannot run Meson setup/build/test at {target}: {error}. "
+            "Check path/tool availability and permissions, or select a fresh writable MESON_BUILD_DIR."
+        ) from error
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (contract.ContractError, subprocess.CalledProcessError, OSError, ValueError) as error:
+    except (contract.ContractError, subprocess.CalledProcessError, ValueError) as error:
         raise SystemExit(str(error))
