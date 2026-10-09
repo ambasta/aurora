@@ -17,6 +17,12 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("graphical_image_policy", ROOT / "tests/kernel-uefi-image.py")
 policy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(policy)
+capture_spec = importlib.util.spec_from_file_location(
+    "graphical_capture_artifact_policy", ROOT / "scripts/kernel_graphical_console_admission.py"
+)
+capture_policy = importlib.util.module_from_spec(capture_spec)
+sys.modules[capture_spec.name] = capture_policy
+capture_spec.loader.exec_module(capture_policy)
 
 OBJECTS = (
     "payload",
@@ -91,6 +97,20 @@ def serial():
     return dict(
         symbols=symbols, language_symbols=language, calls=calls, contents={name: b"\0clean object\0" for name in calls}
     )
+
+
+def fixture_artifacts(capture=False):
+    # These byte containers exercise only the absence/ownership policy. They
+    # intentionally cannot satisfy the unimplemented actual linked fixture proof.
+    paths = ("payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI") + tuple(name + ".o" for name in OBJECTS)
+    artifacts = {name: dict(contents=b"normal\0", symbols=b"", relocations=b"") for name in paths}
+    if capture:
+        artifacts["graphical-console.o"] = dict(
+            contents=b"AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario=\0",
+            symbols=b"capture_scenario\npixel_attempts\n",
+            relocations=b"",
+        )
+    return artifacts
 
 
 class ImagePolicy(unittest.TestCase):
@@ -399,6 +419,107 @@ class ImagePolicy(unittest.TestCase):
             source.index('python3 tests/kernel-uefi-image.py "${image_policy[@]}"'),
             source.index("scripts/kernel_graphical_console_admission.py end --mode"),
         )
+
+    def test_production_fixture_absence_covers_every_artifact_and_evidence_channel(self):
+        baseline = fixture_artifacts()
+        result = capture_policy.capture_artifact_evidence("graphical-console", baseline)
+        self.assertEqual(result["status"], "fixture-absent")
+        self.assertEqual(result["fixture_tokens"], {})
+        # Independent unique names cover data, state, functions and relocation
+        # targets. Generic "normal" and the production framebuffer restoration
+        # helper must remain legal.
+        tokens = (
+            b"graphical_capture",
+            b"capture_scenario",
+            b"capture_gate",
+            b"pixel_attempts",
+            b"AURORA_GRAPHICAL_CAPTURE_GATE:",
+            b"AURORA_GRAPHICAL_CAPTURE_RELEASED",
+            b"AURORA_GRAPHICAL_PRE_SAMPLE:",
+            b"capture initial state",
+            b"capture UART status",
+            b"capture selector",
+            b"capture release deadline",
+            b"pixel attempt counter overflow",
+            b"cross-console",
+            b"cross-display",
+            b"stale-console",
+            b"stale-display",
+            b"first-pixel-error",
+            b"interior-pixel-error",
+        )
+        for name in baseline:
+            for field in ("contents", "symbols", "relocations"):
+                for token in tokens:
+                    changed = copy.deepcopy(baseline)
+                    changed[name][field] += token
+                    with (
+                        self.subTest(name=name, field=field, token=token),
+                        self.assertRaisesRegex(ValueError, "Capture fixture leaked into production"),
+                    ):
+                        capture_policy.capture_artifact_evidence("graphical-console", changed)
+        baseline["graphical-console.o"]["contents"] += b"normal\0normal private memory\0"
+        baseline["graphical-console.o"]["symbols"] += b"FramebufferPayload::restore_graphical_fixture\n"
+        capture_policy.capture_artifact_evidence("graphical-console", baseline)
+
+    def test_capture_fixture_ownership_is_closed_and_does_not_admit_linked_forms(self):
+        baseline = fixture_artifacts(capture=True)
+        evidence = capture_policy.capture_artifact_evidence("graphical-console-capture", baseline)
+        self.assertEqual(evidence["status"], "requires-actual-linked-fixture-proof")
+        with self.assertRaisesRegex(ValueError, "Capture fixture linked proof pending"):
+            capture_policy.require_capture_linked_proof(evidence["mode"])
+        containers = {"payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "embed.o", "embed-pe.o"}
+        for name in baseline:
+            for field in ("contents", "symbols", "relocations"):
+                changed = copy.deepcopy(baseline)
+                changed[name][field] += b"capture_scenario"
+                if name == "graphical-console.o" or name in containers:
+                    capture_policy.capture_artifact_evidence("graphical-console-capture", changed)
+                else:
+                    with (
+                        self.subTest(owner=name, field=field),
+                        self.assertRaisesRegex(ValueError, "foreign ownership"),
+                    ):
+                        capture_policy.capture_artifact_evidence("graphical-console-capture", changed)
+        for field, token in (
+            ("contents", b"AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario="),
+            ("symbols", b"capture_scenario"),
+            ("symbols", b"pixel_attempts"),
+        ):
+            changed = copy.deepcopy(baseline)
+            changed["graphical-console.o"][field] = changed["graphical-console.o"][field].replace(token, b"wrong")
+            with self.subTest(missing=token), self.assertRaisesRegex(ValueError, "Missing capture fixture"):
+                capture_policy.capture_artifact_evidence("graphical-console-capture", changed)
+
+    def test_fixture_artifact_inventory_mode_and_evidence_cannot_be_omitted_or_relabeled(self):
+        for mode in ("graphical-console", "graphical-console-capture"):
+            baseline = fixture_artifacts(capture=mode.endswith("-capture"))
+            capture_policy.capture_artifact_evidence(mode, baseline)
+            for name in baseline:
+                changed = copy.deepcopy(baseline)
+                del changed[name]
+                with self.subTest(mode=mode, missing=name), self.assertRaisesRegex(ValueError, "artifact inventory"):
+                    capture_policy.capture_artifact_evidence(mode, changed)
+            changed = copy.deepcopy(baseline)
+            changed["fixture.o"] = dict(contents=b"", symbols=b"", relocations=b"")
+            with self.assertRaisesRegex(ValueError, "artifact inventory"):
+                capture_policy.capture_artifact_evidence(mode, changed)
+            for field in ("contents", "symbols", "relocations"):
+                changed = copy.deepcopy(baseline)
+                del changed["graphical-console.o"][field]
+                with self.assertRaisesRegex(ValueError, "evidence fields"):
+                    capture_policy.capture_artifact_evidence(mode, changed)
+                changed = copy.deepcopy(baseline)
+                changed["graphical-console.o"][field] = "untrusted decoded substitute"
+                with self.assertRaisesRegex(ValueError, "original bytes"):
+                    capture_policy.capture_artifact_evidence(mode, changed)
+        for mode in ("capture", "console", "framebuffer", "graphical-console-F"):
+            with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, "Unknown graphical profile"):
+                capture_policy.capture_artifact_evidence(mode, fixture_artifacts())
+        with self.assertRaisesRegex(ValueError, "leaked into production"):
+            capture_policy.capture_artifact_evidence("graphical-console", fixture_artifacts(capture=True))
+        with self.assertRaisesRegex(ValueError, "Missing capture fixture"):
+            capture_policy.capture_artifact_evidence("graphical-console-capture", fixture_artifacts())
 
 
 if __name__ == "__main__":

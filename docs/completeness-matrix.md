@@ -28,11 +28,16 @@ hardware support.
 
 ### Current contract map
 
-A separate [bounded graphical-console source draft](framebuffer-console.md#unqualified-serial-input-graphical-session) combines
-Aurora-owned Line64 editing and dirty cells under distinct Console/Display borrows.
-Its generated consumer passed 67 scoped hosted cases; native image/linked-stack
-admission and transcript-to-physical-pixel guest evidence remain pending.
-Existing static-frame and serial-profile evidence does not transfer.
+A separate [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)
+combines Aurora-owned Line64 editing and dirty cells under distinct Console/Display
+borrows. Its original 988-file image snapshots passed the independently reviewed
+positive three-boot window 004: real PTY editing/help/status/rejection/exit,
+17 physical/PPM capture pairs and ordinary normal restoration with exit 33.
+The earlier 67 hosted cases retain their original scope. A joined capture-only
+seven-selector failure candidate adds a required 68th hosted case; its focused
+run, new exact image/stack admission, negative/budget/capacity/idle guests and
+final integrated dev/slow/full Make remain pending. The 96-sample guard remains
+hosted-only. Original positive receipts do not qualify this changed source.
 
 This isolated next-language checkpoint adds an unqualified explicit leading group
 of distinct ConsoleSession/DisplaySession borrows for the planned graphical line

@@ -122,6 +122,7 @@ class ProfileMetadata(unittest.TestCase):
             "tests/compiler-test-inventory.json",
             "examples/kernel-graphical-console.au",
             "kernel/uefi/graphical-console.cpp",
+            "kernel/uefi/graphical-capture-policy.hpp",
             "kernel/uefi/graphical-console-entry.S",
             "scripts/kernel-uefi-build.sh",
             "scripts/kernel_graphical_console_admission.py",
@@ -228,6 +229,7 @@ class ProfileMetadata(unittest.TestCase):
             "kernel/graphical-session.hpp",
             "kernel/uefi/framebuffer-pixels.hpp",
             "kernel/uefi/framebuffer-policy.hpp",
+            "kernel/uefi/graphical-capture-policy.hpp",
             "kernel/uefi/handoff.hpp",
             "kernel/uefi/runtime-layout.hpp",
         }
@@ -257,7 +259,7 @@ class ProfileMetadata(unittest.TestCase):
             base = Path(directory)
             compiler = base / "compiler"
             compiler.write_text("inert compiler identity fixture")
-            for scenario in ("success", "short", "failure", "drift", "failure-and-drift"):
+            for scenario in ("success", "short", "excess", "failure", "drift", "failure-and-drift"):
                 out = base / scenario
                 identity = SimpleNamespace(record=lambda: {"mode": "mocked-control"}, verify=lambda: None)
                 if "drift" in scenario:
@@ -272,10 +274,8 @@ class ProfileMetadata(unittest.TestCase):
                     (work / "consumer.s").write_text("synthetic generated output")
                     if "failure" in scenario:
                         raise RuntimeError("synthetic native failure")
-                    records.extend(
-                        dict(name=str(n), geometry=[], status="passed")
-                        for n in range(66 if scenario == "short" else 67)
-                    )
+                    count = {"short": 67, "excess": 69}.get(scenario, 68)
+                    records.extend(dict(name=str(n), geometry=[], status="passed") for n in range(count))
 
                 args = SimpleNamespace(run=compiler, developer_selected_compiler=True, artifacts=out)
                 with (
@@ -294,14 +294,46 @@ class ProfileMetadata(unittest.TestCase):
                             runner.run_gate(args)
                         if "failure" in scenario:
                             self.assertEqual(str(error.exception), "synthetic native failure")
+                        elif scenario in ("short", "excess"):
+                            self.assertEqual(str(error.exception), "incomplete hosted graphical case inventory")
                 record = json.loads((out / "run.json").read_text())
                 self.assertEqual(record["status"], "passed" if scenario == "success" else "failed")
                 self.assertFalse(record["native_complete"])
                 self.assertFalse(record["guest_executed"])
                 self.assertFalse(record["image_qualified"])
+                self.assertEqual(record["case_count"], len(record["cases"]))
+                self.assertEqual(record["expected_cases"], dict(transcript_geometry=39, output_failure=7, denial=22))
+                if scenario == "success":
+                    self.assertEqual(record["case_count"], 68)
                 self.assertIn("consumer.s", record["generated_sha256"])
                 if "drift" in scenario:
                     self.assertEqual(record["finalization_error"], "synthetic identity drift")
+
+    def test_hosted_observer_rebuilt_for_each_execution(self):
+        runner = load("graphical_metadata_rebuild", "tests/kernel-graphical-console.py")
+        with tempfile.TemporaryDirectory(prefix="graphical-rebuild-controls-") as directory:
+            work = Path(directory)
+            calls = []
+
+            def command(argv, directory, name):
+                calls.append((argv, directory, name))
+                if name == "link":
+                    raise RuntimeError("stopped before native execution")
+
+            with (
+                patch.object(runner, "command", side_effect=command),
+                patch.object(runner.subprocess, "run", side_effect=AssertionError("No subprocess permitted")),
+            ):
+                for _ in range(2):
+                    with self.assertRaisesRegex(RuntimeError, "stopped before native execution"):
+                        runner.execute_cases(work / "compiler", work, [])
+            self.assertEqual([name for _, _, name in calls], ["compile", "assemble", "link"] * 2)
+            for argv, directory, name in calls:
+                self.assertEqual(directory, work)
+                if name == "link":
+                    self.assertIn(str(ROOT / "tests/kernel-graphical-console.cpp"), argv)
+                    self.assertIn(str(work / "consumer.o"), argv)
+                    self.assertEqual(argv[-2:], ["-o", str(work / "consumer")])
 
     def test_graphical_route_inventory_mutations(self):
         inventory = load("graphical_metadata_routes", "tests/test-inventory.py")

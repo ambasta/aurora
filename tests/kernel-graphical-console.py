@@ -219,7 +219,7 @@ def execute_cases(compiler, work, records):
     script = samples("hez\blp\nstatus\nexit\nUNCONSUMED")
     geometry = (440, 146, 443, 1)
     total = check_case(binary, work, records, "failure-baseline", script, geometry)
-    for index in (0, 1, 53, total // 2, total - 1):
+    for index in (0, 1, 53, 55, total // 2, total - 1):
         check_case(binary, work, records, f"failure-{index}", script, geometry, index)
     modes = [
         "null-record",
@@ -311,7 +311,7 @@ def run_gate(args):
     primary = None
     try:
         execute_cases(compiler, work, records)
-        require(len(records) == 67, "incomplete hosted graphical case inventory")
+        require(len(records) == 68, "incomplete hosted graphical case inventory")
     except BaseException as error:
         primary = error
         report.update(error=str(error), exception_type=type(error).__name__)
@@ -330,7 +330,7 @@ def run_gate(args):
         status="failed" if primary else "passed",
         compiler_identity=identity.record(),
         case_count=len(records),
-        expected_cases=dict(transcript_geometry=39, output_failure=6, denial=22),
+        expected_cases=dict(transcript_geometry=39, output_failure=7, denial=22),
         generated_sha256={
             name: digest(work / name) for name in ("consumer.s", "consumer.o", "consumer") if (work / name).is_file()
         },
@@ -338,7 +338,7 @@ def run_gate(args):
     write_json(work / "run.json", report)
     if primary is not None:
         raise primary
-    print("PASS: 67 hosted generated-consumer cases; no native image or guest qualification")
+    print("PASS: 68 hosted generated-consumer cases; no native image or guest qualification")
     return work
 
 

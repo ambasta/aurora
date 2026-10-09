@@ -1,4 +1,7 @@
 #include "graphical-profile.hpp"
+#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
+#include "graphical-capture-policy.hpp"
+#endif
 #include "graphical-console.hpp"
 #include "framebuffer-payload.hpp"
 #include "framebuffer-pixels.hpp"
@@ -27,6 +30,11 @@ U64 owned_arena{}, kernel_root{}, wait_stack{}, wakes{}, expected_wake{}, table_
 unsigned active_operation{};
 // Consumer effects only; diagnostic UART writes below are deliberately excluded.
 U64 consumer_entries{}, sample_calls{}, output_attempts{}, completed_samples{};
+#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
+namespace Capture = graphical_capture;
+Capture::Scenario capture_scenario{Capture::Scenario::invalid};
+U64 pixel_attempts{};
+#endif
 std::optional<FramebufferAdmission> graphics;
 [[nodiscard]] auto timer_mapping() -> bool;
 bool ready{}, waiting{};
@@ -64,6 +72,14 @@ extern const std::byte wait_end asm("uefi_console_poll_end");
     Serial::number(output_attempts);
     Serial::text(" stores=");
     Serial::number(stores);
+#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
+    Serial::text(" completed=");
+    Serial::number(completed_samples);
+    Serial::text(" wakes=");
+    Serial::number(wakes);
+    Serial::text(" pixel_attempts=");
+    Serial::number(pixel_attempts);
+#endif
     Serial::text("\r\n");
 #ifndef AURORA_UEFI_GRAPHICAL_CAPTURE
     Io::write(0xf4, 0x11);
@@ -124,6 +140,7 @@ __attribute__((noinline)) auto wait_for_sample() -> void {
 // it is consumed here before initialize_input resets the UART input FIFO.
 // No framebuffer write or service grant exists yet.
 auto capture_gate() -> void {
+    require(capture_scenario == Capture::Scenario::invalid && pixel_attempts == 0, "capture initial state");
     Serial::text("AURORA_GRAPHICAL_CAPTURE_GATE: base=");
     Serial::number(graphics->geometry().base());
     Serial::text(" bytes=");
@@ -133,8 +150,12 @@ auto capture_gate() -> void {
         const auto status = Io::read(0x3fd);
         require((status & 0x1e) == 0, "capture UART status");
         if (status & 1) {
-            require(Io::read(0x3f8) == 0x47, "capture release byte");
-            Serial::text("AURORA_GRAPHICAL_CAPTURE_RELEASED\r\n");
+            const auto selected = Capture::select(Io::read(0x3f8));
+            require(selected != Capture::Scenario::invalid, "capture selector");
+            capture_scenario = selected;
+            Serial::text("AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario=");
+            Serial::text(Capture::name(selected));
+            Serial::text("\r\n");
             return;
         }
         asm volatile("pause" : : : "memory");
@@ -189,6 +210,12 @@ public:
                     graphics->mapping(page),
                 "pixel mapping");
         require(stores < 1000000, "pixel lifetime budget");
+#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
+        require(pixel_attempts != UINT64_MAX, "pixel attempt counter overflow");
+        ++pixel_attempts;
+        if (Capture::fail_pixel(capture_scenario, stores))
+            return static_cast<U64>(FramebufferPixelResult::out_of_bounds);
+#endif
         const auto result = FramebufferPixels<FramebufferMmio>::pixel(*graphics, x, y, red, green, blue);
         if (result == FramebufferPixelResult::success)
             ++stores;
@@ -358,14 +385,28 @@ auto interrupt_dispatch(U64 frame) -> void {
     ready = true;
     require(quiet() && active_operation == 0, "paired ready boundary");
     // Neither service is opened until both mappings and common quiet state pass.
-    const auto console_argument = Service::open();
-    const auto display_argument = Display::open();
-    const graphical::ServiceArgument argument{console_argument.grant,
-                                              console_argument.generation,
-                                              display_argument.grant,
-                                              display_argument.generation,
-                                              display_argument.width,
-                                              display_argument.height};
+    auto console_argument = Service::open();
+    auto display_argument = Display::open();
+    graphical::ServiceArgument argument{console_argument.grant,
+                                        console_argument.generation,
+                                        display_argument.grant,
+                                        display_argument.generation,
+                                        display_argument.width,
+                                        display_argument.height};
+#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
+    // Only this host-owned record changes; real Session preflights stay unchanged.
+    if (capture_scenario == Capture::Scenario::cross_console)
+        argument.console_grant = display_argument.grant;
+    else if (capture_scenario == Capture::Scenario::cross_display)
+        argument.display_grant = console_argument.grant;
+    else if (capture_scenario == Capture::Scenario::stale_console) {
+        static_cast<void>(Service::close(console_argument, 0));
+        console_argument = Service::open();
+    } else if (capture_scenario == Capture::Scenario::stale_display) {
+        static_cast<void>(Display::close(display_argument, 0));
+        display_argument = Display::open();
+    }
+#endif
     const auto completion = Entry::invoke(&argument, argument, [](const graphical::ServiceArgument *record) {
         require(consumer_entries == 0, "single consumer entry");
         ++consumer_entries;
@@ -390,6 +431,18 @@ auto interrupt_dispatch(U64 frame) -> void {
     Serial::number(wakes);
     Serial::text(" stores=");
     Serial::number(stores);
+#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
+    Serial::text(" entries=");
+    Serial::number(consumer_entries);
+    Serial::text(" samples=");
+    Serial::number(sample_calls);
+    Serial::text(" output_attempts=");
+    Serial::number(output_attempts);
+    Serial::text(" completed=");
+    Serial::number(completed_samples);
+    Serial::text(" pixel_attempts=");
+    Serial::number(pixel_attempts);
+#endif
     Serial::text("\r\n");
 #ifndef AURORA_UEFI_GRAPHICAL_CAPTURE
     Io::write(0xf4, mapped == 0 ? 0x10 : 0x11);

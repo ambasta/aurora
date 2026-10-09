@@ -110,6 +110,238 @@ def read_json(path):
     )
 
 
+# These are SOURCE contracts, never synthetic replacements for emitted code.
+# The native overlay implements the independently reviewed closed fixture plan.
+# Freeze complete token streams, plus each conditional region and its insertion
+# point, so a matching fragment cannot hide a second writer or bypassing path.
+# Whitespace/comments are irrelevant; strings, operators and all other tokens
+# remain exact. All three Session headers are unchanged reviewed dependencies.
+CAPTURE_NATIVE = "kernel/uefi/graphical-console.cpp"
+CAPTURE_POLICY = "kernel/uefi/graphical-capture-policy.hpp"
+CAPTURE_SOURCE_PINS = {
+    CAPTURE_POLICY: "d243cfdd14409fdbbe6803662378c12e9ff17f72734c4702e9f24b158cd53611",
+    "kernel/graphical-session.hpp": "27ef0622f075054ab3062148e332b66d68d3e37dc4801e3ff0b7be279b61d79f",
+    "kernel/console-session.hpp": "8dcf227c5283735ffa02bc41f40509f907a980f56877189cb04d345b082af21f",
+    "kernel/display-session.hpp": "a087a8e34438ff75c373b7015133db274c18ddd8f5a8c92b750f20893bd9117d",
+}
+CAPTURE_REGIONS = (
+    ("policy include", "ifdef", 3, "864f5fcd25a82700a95438723b30f9e7e3302661c8f1b58e32503c18adb94f01"),
+    ("private state", "ifdef", 143, "594d1f1292f5a429620ca1e3eb9a6da93deb0634a375da90b5277660d1c1aea7"),
+    ("failure diagnostics", "ifdef", 456, "acc794c0ac7709b2ad4c2a39aa63952b39596e619723bcdc680c3b069706da44"),
+    ("production fail exit", "ifndef", 463, "77105a271a56baed767bd387c269f99d8f181029b6950b226932a84ac3be933a"),
+    ("selector gate and sole writer", "ifdef", 907, "49b4dc9144b81945ce82034234a68e8bf37b2e5aefcb7ca8a9ce22ed26d6199c"),
+    ("admitted pixel failure", "ifdef", 1246, "7be663f9d39f01990c9850ffcfb75374736911348fb84bc9cd94329852f0eb78"),
+    ("pre-sample diagnostics", "ifdef", 1847, "ddf0a795439653c175b4e86475c001392cec7056510d2ff1a1019be3064878c8"),
+    ("pre-grant gate call", "ifdef", 2930, "f8ad783a0ef5ac8964306cfa7eb8b44fe293e471a247cf6049fb7a463714477c"),
+    ("local record and real reopen", "ifdef", 3047, "f2f7d5c3a0806f8b88198e1b99d88942984c81ff1b1b037859ba98f7ca1dab42"),
+    ("completion diagnostics", "ifdef", 3273, "b7be54c1a7e28646f80d7ffa8ff17fbc102407f256413d1956572d5da7b8da72"),
+    ("production completion exit", "ifndef", 3280, "5b0af10a4420bb529ad54f0ea52302a493b18c1b59b2666d3ca098fb1e3b9d22"),
+)
+CAPTURE_SELECTORS = {
+    "G": "normal",
+    "C": "cross-console",
+    "D": "cross-display",
+    "c": "stale-console",
+    "d": "stale-display",
+    "F": "first-pixel-error",
+    "I": "interior-pixel-error",
+}
+CAPTURE_LINKED_REQUIREMENTS = (
+    "closed selector decode, sole scenario writer and release ordering",
+    "local six-word record mutations and genuine Session close/reopen generations",
+    "trusted-record identity and both preflights dominate the sole compiled entry",
+    "pixel admission dominates one checked attempt increment and fixed 0/55 failure before store",
+    "exact failure/completion diagnostics and successful-store accounting",
+    "actual object/link bytes, relocations, frames and unchanged generated language/bridge bytes",
+)
+CAPTURE_ONLY_TOKENS = tuple(
+    text.encode()
+    for text in (
+        "graphical_capture",
+        "capture_scenario",
+        "capture_gate",
+        "pixel_attempts",
+        "AURORA_GRAPHICAL_CAPTURE_GATE:",
+        "AURORA_GRAPHICAL_CAPTURE_RELEASED",
+        "AURORA_GRAPHICAL_PRE_SAMPLE:",
+        "capture initial state",
+        "capture UART status",
+        "capture selector",
+        "capture release deadline",
+        "pixel attempt counter overflow",
+        "cross-console",
+        "cross-display",
+        "stale-console",
+        "stale-display",
+        "first-pixel-error",
+        "interior-pixel-error",
+    )
+)
+CAPTURE_ARTIFACTS = ("payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI") + tuple(
+    name + ".o"
+    for name in CPP_OBJECTS
+    + ASSEMBLY_OBJECTS
+    + ("loader", "embed", "transition", "loader-pe", "embed-pe", "transition-pe", "memory-pe")
+)
+CPP_SOURCE_TOKEN = re.compile(
+    r'//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|'
+    r"[A-Za-z_]\w*|0[xX][0-9A-Fa-f]+[uUlL]*|[0-9]+[uUlL]*|"
+    r"::|->|\+\+|--|==|!=|<=|>=|&&|\|\||<<|>>|\+=|-=|\*=|/=|%=|&=|\|=|\^=|[^\s]"
+)
+
+
+def capture_source_tokens(text):
+    need(not re.search(r"\\\r?\n|\?\?/", text), "Unreviewed capture source line splicing")
+    return [row.group() for row in CPP_SOURCE_TOKEN.finditer(text) if not row.group().startswith(("//", "/*"))]
+
+
+def capture_source_digest(text):
+    return hashlib.sha256(canonical(capture_source_tokens(text)).encode()).hexdigest()
+
+
+def capture_source_projection(text):
+    """Only the actual closed profile directives, not a general preprocessor."""
+    production, capture, regions, region = "", "", [], None
+    for line in text.splitlines(keepends=True):
+        directive = line.strip()
+        if directive in ("#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE", "#ifndef AURORA_UEFI_GRAPHICAL_CAPTURE"):
+            need(region is None, "Nested capture source condition")
+            region = [directive.split()[0][1:], "", len(capture_source_tokens(production))]
+        elif directive == "#endif":
+            need(region is not None, "Unmatched capture source condition")
+            kind, body, position = region
+            regions.append((kind, position, capture_source_digest(body)))
+            if kind == "ifndef":
+                production += body
+            else:
+                capture += body
+            region = None
+        else:
+            need(not directive.startswith("#") or directive.startswith("#include "), "Unreviewed source directive")
+            if region is not None:
+                region[1] += line
+            else:
+                production += line
+                capture += line
+    need(region is None, "Unclosed capture source condition")
+    return production, capture, regions
+
+
+def capture_source_evidence(mode, sources=None):
+    need(mode in MODES, "Unknown graphical profile")
+    paths = {CAPTURE_NATIVE, *CAPTURE_SOURCE_PINS}
+    if sources is None:
+        sources = {name: (ROOT / name).read_text() for name in paths}
+    need(set(sources) == paths, "Changed capture source dependency inventory")
+    for name, expected in CAPTURE_SOURCE_PINS.items():
+        need(capture_source_digest(sources[name]) == expected, "Unreviewed capture source dependency: " + name)
+    production, capture, regions = capture_source_projection(sources[CAPTURE_NATIVE])
+    need(len(regions) == len(CAPTURE_REGIONS), "Changed capture conditional region inventory")
+    for actual, (name, kind, position, expected) in zip(regions, CAPTURE_REGIONS):
+        need(actual == (kind, position, expected), "Changed capture source region/position: " + name)
+    need(
+        capture_source_digest(production) == "1e85afab1304e327bbf9dbce2677e1665ee7059ebdafffaef8a9fa15f3472066",
+        "Changed ordinary graphical source projection",
+    )
+    need(
+        capture_source_digest(capture) == "6116de63e74e431c0df88a36366efbd704d0b682bd976b0ff7e43ed23bc0a7a0",
+        "Changed complete capture graphical source projection",
+    )
+    return dict(
+        schema="aurora-graphical-capture-source-v1",
+        mode=mode,
+        status="source-contract-only",
+        source_sha256={name: hashlib.sha256(sources[name].encode()).hexdigest() for name in sorted(sources)},
+        selectors=dict(CAPTURE_SELECTORS) if mode == MODES[1] else {},
+        invalid_selectors=249 if mode == MODES[1] else 0,
+        failure_successful_store_ordinals=[0, 55] if mode == MODES[1] else [],
+        regions=[name for name, *_ in CAPTURE_REGIONS],
+        remaining_linked_proofs=list(CAPTURE_LINKED_REQUIREMENTS)
+        if mode == MODES[1]
+        else ["production fixture absence"],
+    )
+
+
+def capture_artifact_evidence(mode, artifacts):
+    """Presence/ownership is necessary; it cannot establish capture semantics."""
+    need(mode in MODES, "Unknown graphical profile")
+    need(set(artifacts) == set(CAPTURE_ARTIFACTS), "Changed fixture artifact inventory")
+    embedded = {"payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "embed.o", "embed-pe.o"}
+    found, hashes = {}, {}
+    for name, fields in artifacts.items():
+        need(set(fields) == {"contents", "symbols", "relocations"}, "Changed fixture artifact evidence fields")
+        hashes[name] = {}
+        for field, value in fields.items():
+            need(type(value) is bytes, "Fixture artifact evidence must retain original bytes")
+            hashes[name][field] = hashlib.sha256(value).hexdigest()
+            tokens = [token.decode() for token in CAPTURE_ONLY_TOKENS if token in value]
+            if tokens:
+                need(
+                    mode == MODES[1], "Capture fixture leaked into production: " + name + ":" + field + ": " + tokens[0]
+                )
+                need(
+                    name == "graphical-console.o" or name in embedded,
+                    "Capture fixture has foreign ownership: " + name + ":" + field,
+                )
+                found[name + ":" + field] = tokens
+    if mode == MODES[1]:
+        owner = artifacts["graphical-console.o"]
+        need(
+            all(token in owner["symbols"] for token in (b"capture_scenario", b"pixel_attempts"))
+            and b"AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario=" in owner["contents"],
+            "Missing capture fixture state or exact release diagnostic",
+        )
+    return dict(
+        mode=mode,
+        status="requires-actual-linked-fixture-proof" if mode == MODES[1] else "fixture-absent",
+        fixture_tokens=found,
+        artifact_sha256=hashes,
+    )
+
+
+def require_capture_linked_proof(mode):
+    need(mode in MODES, "Unknown graphical profile")
+    # Intentionally no override, receipt pin or source predicate can clear this.
+    # Replace only after actual compiler output and independent linked review;
+    # retain all original instruction/stack/import/IRQ/paging guards meanwhile.
+    need(
+        mode != MODES[1],
+        "Capture fixture linked proof pending: construct the exact capture objects/ELF, retain original "
+        "instruction bytes/operands, relocations and .su frames, then independently review: "
+        + "; ".join(CAPTURE_LINKED_REQUIREMENTS),
+    )
+
+
+def unreviewed_linked_function(symbol, original_code, payload, error):
+    """Retain unknown emission as a precise blocker, never a neutral opcode."""
+    reason = str(error)
+    rows = [
+        row
+        for address, row in sorted(original_code.items())
+        if symbol.address <= address < symbol.address + symbol.size
+    ]
+    if reason.startswith("Unknown instruction semantics: "):
+        rows = [row for row in rows if row.op == reason.removeprefix("Unknown instruction semantics: ")]
+    elif reason.startswith("Unbounded or unknown stack adjustment: "):
+        rows = [row for row in rows if row.args == reason.removeprefix("Unbounded or unknown stack adjustment: ")]
+    evidence = [
+        dict(
+            address=row.address,
+            bytes=payload[row.address : row.address + row.size].hex(),
+            operation=row.op,
+            operands=row.args,
+        )
+        for row in rows
+    ]
+    return (
+        symbol.name
+        + ": "
+        + reason
+        + "; call/stack effect remains unproved; original linked instructions="
+        + canonical(evidence)
+    )
+
+
 def verify_bridge_body(decoder, body, starts):
     need(
         len(body) == 6
@@ -1964,6 +2196,7 @@ def stack_evidence(directory):
     starts = {symbol.address: name for name, symbol in linked.functions.items()}
     need(len(starts) == len(linked.functions), "Ambiguous linked function starts")
     code, disassembly = decoder.disassemble(directory / "payload.elf")
+    original_code = dict(code)
     payload = (directory / "payload.bin").read_bytes()
     divisions = verify_generated_divisions(linked.functions, code, payload)
     body = lambda symbol: [r for a, r in sorted(code.items()) if symbol.address <= a < symbol.address + symbol.size]
@@ -2012,7 +2245,7 @@ def stack_evidence(directory):
         try:
             functions[name] = decoder.analyze_function(symbol, code, starts, fault=name == "fault_common")
         except ValueError as error:
-            raise ValueError(name + ": " + str(error)) from error
+            raise ValueError(unreviewed_linked_function(symbol, original_code, payload, error)) from error
     console.verify_noreturn(functions, decoder.NORETURN)
     verify_bridge_body(decoder, body(linked.functions[BRIDGE]), starts)
     private_abi = verify_private_abi(decoder, linked, code, starts, language.functions, functions)
@@ -2160,7 +2393,8 @@ def provenance(mode):
     return record
 
 
-def image_evidence(directory):
+def image_evidence(directory, mode):
+    fixture_source = capture_source_evidence(mode)
     image = load("graphical_image_decoder", ROOT / "tests/kernel-uefi-image.py")
     binary = (directory / "payload.bin").read_bytes()
     elf = (directory / "payload.elf").read_bytes()
@@ -2193,12 +2427,22 @@ def image_evidence(directory):
         payload_bytes=len(binary),
     )
     need(canonical(read_json(directory / "image-metadata.json")) == canonical(metadata), "Image metadata drift")
+    fixture_artifacts = {}
+    for name in CAPTURE_ARTIFACTS:
+        path = directory / name
+        symbolic = name.endswith((".o", ".elf"))
+        fixture_artifacts[name] = dict(
+            contents=path.read_bytes(),
+            symbols=subprocess.check_output(["nm", "-a", path]) if symbolic else b"",
+            relocations=subprocess.check_output(["objdump", "-r", path]) if symbolic else b"",
+        )
     return dict(
         **metadata,
         elf_sha256=hashlib.sha256(elf).hexdigest(),
         object_relocations=objects,
         poll=poll,
         graphical_policy=graphical_policy,
+        capture_fixture=dict(source=fixture_source, artifacts=capture_artifact_evidence(mode, fixture_artifacts)),
     )
 
 
@@ -2206,14 +2450,15 @@ def emit(mode):
     RECEIPT.unlink(missing_ok=True)
     record = provenance(mode)
     result = dict(
-        schema="aurora-graphical-console-admission-v1",
+        schema="aurora-graphical-console-admission-v2",
         status="requires-independent-review",
         mode=mode,
         clock="tcg-original-clock",
         build=record,
-        image=image_evidence(BUILD),
+        image=image_evidence(BUILD, mode),
         stack=stack_evidence(BUILD),
     )
+    require_capture_linked_proof(mode)
     need(record == provenance(mode), "Build changed during admission")
     result["sha256"] = common.hashes(source_files() + build_files() + [BUILD / "graphical-console-build.json"])
     RECEIPT.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
@@ -2229,7 +2474,7 @@ def checked(mode):
         "Unexpected receipt keys",
     )
     need(
-        receipt["schema"] == "aurora-graphical-console-admission-v1"
+        receipt["schema"] == "aurora-graphical-console-admission-v2"
         and receipt["mode"] == mode
         and receipt["status"] == "requires-independent-review"
         and receipt["clock"] == "tcg-original-clock",
@@ -2241,10 +2486,11 @@ def checked(mode):
         "Admission source/output inventory or bytes changed",
     )
     need(
-        canonical(receipt["image"]) == canonical(image_evidence(BUILD))
+        canonical(receipt["image"]) == canonical(image_evidence(BUILD, mode))
         and canonical(receipt["stack"]) == canonical(stack_evidence(BUILD)),
         "Receipt image/stack evidence differs from fresh combined proof",
     )
+    require_capture_linked_proof(mode)
     return receipt
 
 
@@ -2264,7 +2510,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "action",
-        choices=("begin", "end", "begin-build", "end-build", "emit", "verify", "checked", "reviewed", "diagnose"),
+        choices=(
+            "begin",
+            "end",
+            "begin-build",
+            "end-build",
+            "emit",
+            "verify",
+            "checked",
+            "reviewed",
+            "diagnose",
+            "source",
+        ),
     )
     parser.add_argument("--mode", required=True, choices=MODES)
     parser.add_argument("--compiler")
@@ -2283,6 +2540,8 @@ def main():
         print("Verified externally pinned exact combined evidence.")
     elif args.action == "diagnose":
         print(json.dumps(stack_evidence(BUILD), indent=2, sort_keys=True))
+    elif args.action == "source":
+        print(json.dumps(capture_source_evidence(args.mode), indent=2, sort_keys=True))
     else:
         checked(args.mode)
         print("Verified current combined receipt identity; independent qualification not claimed.")

@@ -5,6 +5,7 @@
 #include "../kernel/console-session.hpp"
 #include "../kernel/display-session.hpp"
 #include "../kernel/uefi/framebuffer-pixels.hpp"
+#include "../kernel/uefi/graphical-capture-policy.hpp"
 #include <array>
 #include <cstdlib>
 #include <filesystem>
@@ -12,6 +13,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -29,6 +31,53 @@ bool quiet = true, denied = false;
 auto need(bool value) -> void {
     if (!value)
         std::abort();
+}
+auto check_capture_policy() -> void {
+    namespace policy = aurora::uefi::graphical_capture;
+    using Scenario = policy::Scenario;
+    for (unsigned byte = 0; byte < 256; ++byte) {
+        auto expected = Scenario::invalid;
+        std::string_view expected_name = "invalid";
+        switch (byte) {
+        case 'G':
+            expected = Scenario::normal;
+            expected_name = "normal";
+            break;
+        case 'C':
+            expected = Scenario::cross_console;
+            expected_name = "cross-console";
+            break;
+        case 'D':
+            expected = Scenario::cross_display;
+            expected_name = "cross-display";
+            break;
+        case 'c':
+            expected = Scenario::stale_console;
+            expected_name = "stale-console";
+            break;
+        case 'd':
+            expected = Scenario::stale_display;
+            expected_name = "stale-display";
+            break;
+        case 'F':
+            expected = Scenario::first_pixel_error;
+            expected_name = "first-pixel-error";
+            break;
+        case 'I':
+            expected = Scenario::interior_pixel_error;
+            expected_name = "interior-pixel-error";
+            break;
+        }
+        const auto actual = policy::select(static_cast<std::uint8_t>(byte));
+        need(actual == expected && policy::name(actual) == expected_name);
+        // Expected ordinals come from the reviewed fixture contract, never the
+        // policy under test. Check every nearby count and wide boundary values.
+        for (U64 successful_stores = 0; successful_stores <= 256; ++successful_stores)
+            need(policy::fail_pixel(actual, successful_stores) ==
+                 ((byte == 'F' && successful_stores == 0) || (byte == 'I' && successful_stores == 55)));
+        for (const U64 successful_stores : {U64{999999}, U64{1000000}, std::numeric_limits<U64>::max()})
+            need(!policy::fail_pixel(actual, successful_stores));
+    }
 }
 auto word(std::ostream &stream, U64 value, unsigned count) -> void {
     for (unsigned i = 0; i < count; ++i)
@@ -130,6 +179,7 @@ extern "C" auto __au_runtime_display_pixel(const void *grant, U64 generation, U6
     return Display::pixel(grant, generation, x, y, r, g, b);
 }
 int main(int argc, char **argv) {
+    check_capture_policy();
     need(argc == 9);
     const U64 width = std::stoull(argv[1]), height = std::stoull(argv[2]), pitch = std::stoull(argv[3]);
     const U64 format = std::stoull(argv[4]);
