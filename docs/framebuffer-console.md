@@ -408,9 +408,11 @@ the validation predicates are unchanged. Other profiles do not enable these
 emission attributes. This boundary changes paired generated inputs, so fresh
 image/stack and capture-contract review is required before qualification reuse.
 
-The graphical stack adapter may authorize only the separate exact GCC16 normal
-and capture pairs of RSP-relative qword argument pushes, bound to their owner, offsets, opcodes and
-operands. The shared decoder otherwise rejects memory pushes. For an authorized
+The graphical stack adapter may authorize only a pair of direct RSP-relative
+qword argument pushes in the existing graphical entry owner. Actual instruction
+sites, unique ownership and four-byte opcodes replace historical function sizes
+and instruction offsets. Only positive, aligned disp8 sources are admitted.
+The shared decoder otherwise rejects memory pushes. For an authorized
 site it bounds the complete eight-byte source against the old live frame before
 adding eight bytes of stack consumption; stale or unused sites and unbalanced
 paths reject. This proves bounded stack effects, not copied-value initialization
