@@ -132,15 +132,45 @@ public:
     }
 };
 
+// One bootstrap translation unit owns the parser body. Hosted policy tests keep
+// the inline implementation; the image avoids different discarded COMDAT copies.
+[[nodiscard]] auto read_event_ivrs(std::span<const std::byte> bytes, unsigned bits) -> std::optional<EventIvrs>;
+
 class EventAhciPortFact final {
 public:
-    std::uint32_t command{}, command_issue{}, sata_active{};
+    std::uint32_t command{}, command_issue{}, sata_active{}, task_file{};
+    std::uint64_t command_list{}, received_fis{};
+    [[nodiscard]] auto operator==(const EventAhciPortFact &) const -> bool = default;
 };
 class EventAhciFacts final {
 public:
     std::uint64_t base{};
     std::uint32_t capability{}, global_control{}, implemented_ports{};
     std::array<EventAhciPortFact, 6> ports{};
+    [[nodiscard]] auto operator==(const EventAhciFacts &) const -> bool = default;
+    template <bool detailed, class Reader>
+    [[nodiscard]] static auto sample(std::uint64_t base, Reader &&read) -> EventAhciFacts {
+        EventAhciFacts result;
+        result.base = base;
+        result.capability = read(0);
+        result.global_control = read(4);
+        result.implemented_ports = read(12);
+        for (unsigned port = 0; port < result.ports.size(); ++port) {
+            auto &fact = result.ports[port];
+            const auto at = 0x100 + port * 0x80;
+            fact.command = read(at + 0x18);
+            fact.sata_active = read(at + 0x34);
+            fact.command_issue = read(at + 0x38);
+            if constexpr (detailed) {
+                fact.task_file = read(at + 0x20);
+                const auto clb = read(at), clbu = read(at + 4);
+                const auto fb = read(at + 8), fbu = read(at + 12);
+                fact.command_list = std::uint64_t{clb} | (std::uint64_t{clbu} << 32);
+                fact.received_fis = std::uint64_t{fb} | (std::uint64_t{fbu} << 32);
+            }
+        }
+        return result;
+    }
     [[nodiscard]] auto quiescent(std::uint64_t admitted_base) const -> bool {
         // Retained QEMU ahci_reg_init(): six ports, 32 command slots, Gen1,
         // AHCI-only, NCQ and 64-bit DMA. The reader obtains every port, including
@@ -162,6 +192,7 @@ class EventResources final {
     friend class EventAdmission;
     std::uint64_t edu_base_{}, ahci_base_{};
     unsigned physical_bits_{}, iommu_requester_{}, edu_command_{};
+    bool observation_only_{};
     EventResources() = default;
     [[nodiscard]] static auto overlaps(std::uint64_t a, std::uint64_t n, std::uint64_t b, std::uint64_t m) -> bool {
         return !n || !m || n > ~std::uint64_t{0} - a || m > ~std::uint64_t{0} - b || (a < b + m && b < a + n);
@@ -175,7 +206,7 @@ class EventResources final {
                caps.get(24, 4) == 0x00004005 && caps.get(28, 4) == 0x00005808 && caps.get(32, 4) == 0x00805c05 &&
                caps.get(36, 4) == 0 && caps.get(40) == 0;
     }
-    [[nodiscard]] static auto identity(const EventPciFact &fact, unsigned iommu) -> bool {
+    [[nodiscard]] static auto identity(const EventPciFact &fact, unsigned iommu, bool observation_only) -> bool {
         const Bytes h{fact.header};
         const auto requester = fact.requester();
         if (fact.segment || fact.bus || fact.device > 31 || fact.function > 7 || (h.get(14, 1) & 0x7f) ||
@@ -185,7 +216,7 @@ class EventResources final {
         if (requester == iommu)
             return h.get(0, 4) == 0x14191022 && h.get(4, 2) == 7 && h.get(6, 2) == 0x10 && h.get(8, 4) == 0x08060000 &&
                    h.get(14, 1) == 0 && h.get(0x34, 1) == 0x60;
-        if (h.get(4, 2) & 4)
+        if (!observation_only && (h.get(4, 2) & 4))
             return false;
         if (requester == 0)
             return h.get(0, 4) == 0x29c08086 && h.get(8, 4) == 0x06000000;
@@ -200,6 +231,11 @@ class EventResources final {
     }
 
 public:
+    // Observation may describe inherited BME but cannot mint EventAdmission.
+    enum class Purpose {
+        admission,
+        read_only_observation
+    };
     static constexpr std::size_t maximum_functions = 6, maximum_bars = 8;
     [[nodiscard]] auto edu_base() const -> std::uint64_t {
         return edu_base_;
@@ -234,7 +270,9 @@ public:
                                                  std::span<const std::byte> map,
                                                  std::size_t stride,
                                                  std::uint64_t arena,
-                                                 std::uint64_t apic) -> std::optional<EventResources> {
+                                                 std::uint64_t apic,
+                                                 Purpose purpose = Purpose::admission)
+        -> std::optional<EventResources> {
         if (copied.size() != maximum_functions || current.size() != maximum_functions || bars.empty() ||
             bars.size() > maximum_bars || root_segment != 0 || root.physical_bits() != ivrs.physical_bits() ||
             root.source() != PciResourceSource::Edk2Stable202502Root || !MemoryMap{map, stride, 1}.valid() ||
@@ -245,6 +283,7 @@ public:
             apic >= limit || 4096 > limit - apic)
             return std::nullopt;
         EventResources result;
+        result.observation_only_ = purpose == Purpose::read_only_observation;
         result.physical_bits_ = ivrs.physical_bits();
         result.iommu_requester_ = ivrs.unit().device_id();
         std::array<bool, maximum_bars> seen{};
@@ -252,16 +291,21 @@ public:
         unsigned consumed = 0;
         for (std::size_t i = 0; i < current.size(); ++i) {
             const auto &now = current[i];
-            if (!identity(now, result.iommu_requester_) || !ivrs.covers(now.segment, now.bus, now.device, now.function))
+            if (!identity(now, result.iommu_requester_, result.observation_only_) ||
+                !ivrs.covers(now.segment, now.bus, now.device, now.function))
                 return std::nullopt;
             for (std::size_t j = 0; j < i; ++j)
                 if (current[j].requester() == now.requester())
                     return std::nullopt;
-            unsigned matches = 0;
-            for (const auto &prior : copied)
-                if (prior.same(now))
-                    ++matches;
-            if (matches != 1)
+            bool matched = false;
+            for (const auto &prior : copied) {
+                if (!prior.same(now))
+                    continue;
+                if (matched)
+                    return std::nullopt;
+                matched = true;
+            }
+            if (!matched)
                 return std::nullopt;
             const auto snapshot = PciBarSnapshot::parse(now.segment, now.bus, now.device, now.function, now.header);
             if (!snapshot)
@@ -359,7 +403,7 @@ class EventAdmission final {
 public:
     [[nodiscard]] static auto admit(const EventResources &resources, const EventAhciFacts &ahci)
         -> std::optional<EventAdmission> {
-        if (!ahci.quiescent(resources.ahci_base()))
+        if (resources.observation_only_ || !ahci.quiescent(resources.ahci_base()))
             return std::nullopt;
         return EventAdmission{resources};
     }

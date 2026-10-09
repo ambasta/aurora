@@ -27,13 +27,14 @@ flags=(-std=c++23 -O2 -fstack-usage -fcallgraph-info=su -Wall -Wextra -Werror -f
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
- iommu-event-denial|iommu-event-success|iommu-event-overflow|iommu-event-command-error)
+ iommu-event-denial|iommu-event-success|iommu-event-overflow|iommu-event-command-error|iommu-event-observe)
    extra+=(-maccumulate-outgoing-args -DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_IOMMU_EVENT)
    case "$UEFI_MODE" in
      iommu-event-denial) event_case=0 ;;
      iommu-event-success) event_case=1 ;;
      iommu-event-overflow) event_case=2 ;;
      iommu-event-command-error) event_case=3 ;;
+     iommu-event-observe) event_case=4 ;;
    esac
    extra+=("-DAURORA_IOMMU_EVENT_CASE=$event_case") ;;
  graphical-console|graphical-console-capture)
@@ -171,13 +172,13 @@ if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "$
  runtime_objects+=(build/uefi/runtime-entry.o build/uefi/runtime-exceptions.o)
 fi
 event_objects=()
-if [[ "${UEFI_MODE:-normal}" == iommu-event-* ]]; then
+if [[ "${UEFI_MODE:-normal}" == iommu-event-* && "$UEFI_MODE" != iommu-event-observe ]]; then
     "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/event-intake.cpp -o build/uefi/event-intake.o
     event_objects+=(build/uefi/event-intake.o)
 fi
 console_objects=()
 language_entry=examples/kernel.au
-if [[ "${UEFI_MODE:-normal}" == iommu-event-* ]]; then language_entry=examples/kernel-iommu-event-service.au; fi
+if [[ "${UEFI_MODE:-normal}" == iommu-event-* && "$UEFI_MODE" != iommu-event-observe ]]; then language_entry=examples/kernel-iommu-event-service.au; fi
 framebuffer_objects=()
 if [[ "${UEFI_MODE:-normal}" == framebuffer || "${UEFI_MODE:-normal}" == framebuffer-record || "${UEFI_MODE:-normal}" == framebuffer-permissions || "${UEFI_MODE:-normal}" == framebuffer-stale ]]; then
     language_entry=examples/kernel-display-service.au
@@ -199,7 +200,7 @@ if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == g
     console_objects+=(build/uefi/console-entry.o build/uefi/graphical-console.o)
 fi
 "$compiler" --module-root kernel/policies --module-root library "$language_entry" -o build/uefi/language.s
-if [[ "${UEFI_MODE:-normal}" == iommu-event-* ]]; then
+if [[ "${UEFI_MODE:-normal}" == iommu-event-* && "$UEFI_MODE" != iommu-event-observe ]]; then
     as --64 build/uefi/language.s kernel/uefi/event-service-entry.S -o build/uefi/language.o
 elif [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
     as --64 build/uefi/language.s kernel/uefi/graphical-console-entry.S -o build/uefi/language.o
@@ -305,6 +306,7 @@ case "${UEFI_MODE:-normal}" in
     ipc*|budget*|dispatch*|user-*|program-*) image_policy+=(--ipc-policy) ;;
     owned-bytes) image_policy+=(--owned-bytes) ;;
     graphical-console|graphical-console-capture) image_policy+=(--graphical-console) ;;
+    iommu-event-observe) image_policy+=(--iommu-event-observe) ;;
     iommu-event-*) image_policy+=(--iommu-event) ;;
 esac
 case "${UEFI_MODE:-normal}" in

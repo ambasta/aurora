@@ -1,6 +1,11 @@
 // Opt-in default-model admission. All firmware data is copied; no firmware
 // pointer survives ExitBootServices. This adapter performs only reads until the
-// final sealed EventAdmission reaches the separately bounded producer.
+// final sealed EventAdmission reaches the separately bounded producer. Case 4
+// is observation-only: no producer is linked and no admission can be minted.
+#if AURORA_IOMMU_EVENT_CASE == 4
+[[gnu::noipa]] auto inspect_event(U64, const Bytes &, const Q35Ecam &, EcamWindow &, const PciInventory &, unsigned)
+    -> bool asm("uefi_event_observation");
+#endif
 [[gnu::noinline]] auto inspect_event(U64 arena,
                                      const Bytes &handoff,
                                      const Q35Ecam &aperture,
@@ -21,7 +26,7 @@
         std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + 0x60000), EventIvrs::maximum_table};
     const auto length = Bytes{ivrs_bytes}.get(4, 4);
     const auto ivrs =
-        length <= ivrs_bytes.size() ? EventIvrs::parse_qemu_default(ivrs_bytes.first(length), bits) : std::nullopt;
+        length <= ivrs_bytes.size() ? read_event_ivrs(ivrs_bytes.first(length), bits) : std::nullopt;
     if (!ivrs || saved.get(112) != ivrs->unit().device_id())
         return false;
     std::array<EventPciFact, 6> copied{}, current{};
@@ -84,7 +89,12 @@
                                                               map,
                                                               handoff.get(40),
                                                               arena,
-                                                              0xfee00000);
+                                                              0xfee00000
+#if AURORA_IOMMU_EVENT_CASE == 4
+                                                              ,
+                                                              EventResources::Purpose::read_only_observation
+#endif
+    );
     if (!resources) {
         Serial::text("AURORA_EVENT_REJECTED: reason=resources-or-bme\r\n");
         return false;
@@ -98,37 +108,56 @@
         return false;
     constexpr U64 window = PageTables::window_address + 4096;
     constexpr U64 flags = 1 | 8 | 16 | PageTables::nx;
-    EventAhciFacts ahci{};
-    ahci.base = resources->ahci_base();
-    *slot = ahci.base | flags;
+    *slot = resources->ahci_base() | flags;
     asm volatile("invlpg (%0)" ::"r"(window) : "memory");
     const auto read = [&](unsigned offset) {
         return *reinterpret_cast<volatile const std::uint32_t *>(window + offset);
     };
-    ahci.capability = read(0);
-    ahci.global_control = read(4);
-    ahci.implemented_ports = read(12);
-    for (unsigned port = 0; port < 6; ++port) {
-        ahci.ports[port].command = read(0x100 + port * 0x80 + 0x18);
-        ahci.ports[port].sata_active = read(0x100 + port * 0x80 + 0x34);
-        ahci.ports[port].command_issue = read(0x100 + port * 0x80 + 0x38);
-    }
-    // Check a second complete register pass, then revoke the mapping even when
-    // unstable or active. No reset, BME clear, engine stop or W1C write fallback.
-    bool stable = ahci.capability == read(0) && ahci.global_control == read(4) && ahci.implemented_ports == read(12);
-    for (unsigned port = 0; port < 6; ++port)
-        stable = stable && ahci.ports[port].command == read(0x100 + port * 0x80 + 0x18) &&
-                 ahci.ports[port].sata_active == read(0x100 + port * 0x80 + 0x34) &&
-                 ahci.ports[port].command_issue == read(0x100 + port * 0x80 + 0x38);
+    constexpr bool detailed = AURORA_IOMMU_EVENT_CASE == 4;
+    const auto ahci = EventAhciFacts::sample<detailed>(resources->ahci_base(), read);
+    const auto second = EventAhciFacts::sample<detailed>(resources->ahci_base(), read);
+    // Every read is performed, even after a mismatch. Revoke before reporting.
+    const bool stable = ahci == second;
     *slot = 0;
     asm volatile("invlpg (%0)" ::"r"(window) : "memory");
+#if AURORA_IOMMU_EVENT_CASE == 4
+    for (const auto *snapshot : {&ahci, &second}) {
+        Serial::text("AURORA_EVENT_AHCI: sample=");
+        Serial::number(snapshot == &ahci ? 0 : 1);
+        Serial::text(" base=");
+        Serial::number(snapshot->base);
+        Serial::text(" cap=");
+        Serial::number(snapshot->capability);
+        Serial::text(" ghc=");
+        Serial::number(snapshot->global_control);
+        Serial::text(" pi=");
+        Serial::number(snapshot->implemented_ports);
+        Serial::text("\r\n");
+        for (unsigned port = 0; port < snapshot->ports.size(); ++port) {
+            const auto &fact = snapshot->ports[port];
+            Serial::text("AURORA_EVENT_AHCI_PORT: port=");
+            Serial::number(port);
+            Serial::text(" cmd=");
+            Serial::number(fact.command);
+            Serial::text(" ci=");
+            Serial::number(fact.command_issue);
+            Serial::text(" sact=");
+            Serial::number(fact.sata_active);
+            Serial::text(" tfd=");
+            Serial::number(fact.task_file);
+            Serial::text(" clb=");
+            Serial::number(fact.command_list);
+            Serial::text(" fb=");
+            Serial::number(fact.received_fis);
+            Serial::text("\r\n");
+        }
+    }
+    Serial::text("AURORA_EVENT_OBSERVATION: stable=");
+    Serial::number(stable);
+    Serial::text("\r\n");
+#endif
     if (!stable || !tables.verify(arena, handoff))
         return false;
-    const auto admission = EventAdmission::admit(*resources, ahci);
-    if (!admission) {
-        Serial::text("AURORA_EVENT_REJECTED: reason=firmware-master-active\r\n");
-        return false;
-    }
     for (const auto &fact : current) {
         const auto page = aperture.address(fact.segment, fact.bus, fact.device, fact.function);
         const auto after = page ? ecam.read(*page) : std::nullopt;
@@ -138,6 +167,16 @@
     const auto after_caps = ecam.iommu_capability(*address);
     if (!after_caps || *after_caps != *caps || !ecam.closed() || !tables.verify(arena, handoff))
         return false;
+#if AURORA_IOMMU_EVENT_CASE == 4
+    Serial::text("AURORA_EVENT_OBSERVATION_OK: pci-unchanged=1 windows-closed=1 producer-linked=0\r\n");
+    return true;
+#else
+    const auto admission = EventAdmission::admit(*resources, ahci);
+    if (!admission) {
+        Serial::text("AURORA_EVENT_REJECTED: reason=firmware-master-active\r\n");
+        return false;
+    }
     Serial::text("AURORA_EVENT_ADMISSION_OK: default-ivrs=1 masters-quiescent=1\r\n");
     run_event_intake(arena, handoff, *admission);
+#endif
 }

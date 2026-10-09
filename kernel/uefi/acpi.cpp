@@ -12,6 +12,12 @@
 #endif
 #include "../console.hpp"
 namespace aurora::uefi {
+#ifdef AURORA_UEFI_IOMMU_EVENT
+[[gnu::noinline]] auto read_event_ivrs(std::span<const std::byte> bytes, unsigned bits) -> std::optional<EventIvrs> {
+    return EventIvrs::parse_qemu_default(bytes, bits);
+}
+#endif
+
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
 namespace {
 constinit std::optional<Topology> copied_topology;
@@ -370,7 +376,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     }
     Serial::text("\r\n");
 #ifdef AURORA_UEFI_IOMMU_EVENT
-    const auto facts = EventIvrs::parse_qemu_default(*ivrs, physical_bits);
+    const auto facts = read_event_ivrs(*ivrs, physical_bits);
 #else
     const auto facts = Ivrs::parse_qemu_10_0_13(*ivrs, physical_bits);
 #endif

@@ -39,6 +39,12 @@ def call(name, address=0):
 
 
 def fixture(mode=admission.MODES[0]):
+    if mode == "iommu-event-observe":
+        symbols = defined("uefi_event_observation") + defined("aurora_kernel_value")
+        objects = {name: "" for name in policy.event_objects(mode)}
+        objects["language"] = defined("aurora_kernel_value")
+        objects["pci"] = defined("uefi_event_observation")
+        return dict(symbols=symbols, object_symbols=objects, calls={}, language_bindings={}, mode=mode)
     symbols = "".join(
         defined(name) for name in policy.EVENT_BRIDGES | policy.EVENT_IMPORTS | policy.EVENT_REFLECTION_HELPERS
     )
@@ -92,6 +98,36 @@ class EventAdmission(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 policy.image_options(args)
+
+    def test_observation_cannot_link_or_inherit_production_authority(self):
+        valid = fixture("iommu-event-observe")
+        policy.event_object_policy(**valid)
+        for owner in valid["object_symbols"]:
+            for name in (
+                admission.BOOTSTRAP,
+                admission.BRIDGE,
+                "uefi_event_backing",
+                "uefi_event_terminal",
+                "__au_runtime_console_put",
+                "BootLifetimeRing",
+                "EventAdmission",
+            ):
+                changed = copy.deepcopy(valid)
+                changed["object_symbols"][owner] += imported(name)
+                with self.assertRaises(ValueError):
+                    policy.event_object_policy(**changed)
+        for owner in valid["object_symbols"]:
+            changed = copy.deepcopy(valid)
+            del changed["object_symbols"][owner]
+            with self.assertRaises(ValueError):
+                policy.event_object_policy(**changed)
+        for mode in admission.MODES[:-1]:
+            changed = copy.deepcopy(valid)
+            changed["mode"] = mode
+            with self.assertRaises(ValueError):
+                policy.event_object_policy(**changed)
+        with self.assertRaises(ValueError):
+            policy.profile_selection(valid["symbols"], valid["object_symbols"], False)
 
     def test_exact_authority_ownership_and_direct_calls(self):
         for mode in admission.MODES:

@@ -19,7 +19,13 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "iommu-event-admission.json"
-MODES = ("iommu-event-denial", "iommu-event-success", "iommu-event-overflow", "iommu-event-command-error")
+MODES = (
+    "iommu-event-denial",
+    "iommu-event-success",
+    "iommu-event-overflow",
+    "iommu-event-command-error",
+    "iommu-event-observe",
+)
 ENTRY = "__au_v_m1_26kernel_iommu_event_service_n0__d18iommu_event_intake"
 BRIDGE = "__au_runtime_iommu_event_entry"
 VALUE_BRIDGE = "__au_runtime_iommu_event_value"
@@ -129,10 +135,14 @@ def source_files():
     )
 
 
-def build_files():
+def cpp_objects(mode):
+    return CPP_OBJECTS[:-1] if mode == "iommu-event-observe" else CPP_OBJECTS
+
+
+def build_files(mode):
     names = ["payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "uefi-payload.hpp", "language.s"]
-    names += [name + ".o" for name in sorted(image.EVENT_OBJECTS)]
-    names += [name + suffix for name in CPP_OBJECTS + ("loader",) for suffix in (".su", ".ci")]
+    names += [name + ".o" for name in sorted(image.event_objects(mode))]
+    names += [name + suffix for name in cpp_objects(mode) + ("loader",) for suffix in (".su", ".ci")]
     return [BUILD / name for name in names]
 
 
@@ -148,7 +158,7 @@ def verify_inputs(manifest, mode):
     )
     verify_flags(mode, manifest["flags"])
     need(manifest["translation_unit_flags"] == TU_FLAGS, "Changed Event translation-unit flags")
-    need(manifest["objects"] == sorted(image.EVENT_OBJECTS), "Changed Event object inventory")
+    need(manifest["objects"] == sorted(image.event_objects(mode)), "Changed Event object inventory")
     need(manifest["source_sha256"] == common.hashes(source_files()), "Event source changed since build began")
     need(set(manifest["tools"]) == set(TOOLS), "Changed Event tool inventory")
     for name, item in {
@@ -177,7 +187,7 @@ def begin_build(mode, compiler, cxx, flags, pe_linker):
         cxx=common.executable(cxx),
         pe_linker=common.executable(pe_linker),
         tools={name: common.executable(name) for name in TOOLS},
-        objects=sorted(image.EVENT_OBJECTS),
+        objects=sorted(image.event_objects(mode)),
         translation_unit_flags=TU_FLAGS,
     )
     (BUILD / "iommu-event-build-start.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -186,16 +196,20 @@ def begin_build(mode, compiler, cxx, flags, pe_linker):
 def end_build(mode):
     manifest = read_json(BUILD / "iommu-event-build-start.json")
     verify_inputs(manifest, mode)
-    need({path.stem for path in BUILD.glob("*.o")} == image.EVENT_OBJECTS, "Foreign or missing Event build object")
-    manifest["output_sha256"] = common.hashes(build_files())
+    need(
+        {path.stem for path in BUILD.glob("*.o")} == image.event_objects(mode), "Foreign or missing Event build object"
+    )
+    manifest["output_sha256"] = common.hashes(build_files(mode))
     (BUILD / "iommu-event-build.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
 
 def provenance(mode):
     manifest = read_json(BUILD / "iommu-event-build.json")
     verify_inputs(manifest, mode)
-    need(manifest["output_sha256"] == common.hashes(build_files()), "Event build output changed")
-    need({path.stem for path in BUILD.glob("*.o")} == image.EVENT_OBJECTS, "Foreign or missing Event build object")
+    need(manifest["output_sha256"] == common.hashes(build_files(mode)), "Event build output changed")
+    need(
+        {path.stem for path in BUILD.glob("*.o")} == image.event_objects(mode), "Foreign or missing Event build object"
+    )
     return manifest
 
 
@@ -305,7 +319,7 @@ def backing_evidence(linked, directory):
 def stack_evidence(directory, mode):
     need(mode in MODES, "Unsupported Event stack mode")
     decoder = load("iommu_event_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
-    decoder.CPP_OBJECTS = CPP_OBJECTS
+    decoder.CPP_OBJECTS = cpp_objects(mode)
     # Reviewed ordinary scalar forms retain the decoder's RSP/RBP and level
     # dataflow checks. Fences and PAUSE have no operands or implicit stack effect.
     decoder.NEUTRAL |= frozenset(
@@ -342,7 +356,12 @@ def stack_evidence(directory, mode):
         "Unaccounted Event linked function/frame inventory",
     )
     need(
-        {ENTRY, BRIDGE, VALUE_BRIDGE, "aurora_kernel_value"} <= language.functions.keys(),
+        (
+            {"aurora_kernel_value"}
+            if mode == "iommu-event-observe"
+            else {ENTRY, BRIDGE, VALUE_BRIDGE, "aurora_kernel_value"}
+        )
+        <= language.functions.keys(),
         "Missing private Event source/bridge inventory",
     )
     starts = {symbol.address: name for name, symbol in linked.functions.items()}
@@ -362,23 +381,34 @@ def stack_evidence(directory, mode):
         for address, row in sorted(code.items())
         if linked.functions[name].address <= address < linked.functions[name].address + linked.functions[name].size
     ]
-    verify_bridge(decoder, body(BRIDGE), starts)
-    verify_value_bridge(decoder, body(VALUE_BRIDGE), starts)
+    if mode != "iommu-event-observe":
+        verify_bridge(decoder, body(BRIDGE), starts)
+        verify_value_bridge(decoder, body(VALUE_BRIDGE), starts)
     levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts, associations)
     for name in functions:
         if name != decoder.WALK:
             decoder.calculate(functions, frames, levels, name)
     normal = decoder.calculate(functions, frames, levels, "uefi_payload_entry")
-    consumer = decoder.calculate(functions, frames, levels, ENTRY)
-    bootstrap = decoder.calculate(functions, frames, levels, BOOTSTRAP)
+    consumer = decoder.calculate(
+        functions, frames, levels, "aurora_kernel_value" if mode == "iommu-event-observe" else ENTRY
+    )
+    bootstrap = decoder.calculate(
+        functions, frames, levels, "uefi_event_observation" if mode == "iommu-event-observe" else BOOTSTRAP
+    )
     fault = 48 + max(
         decoder.calculate(functions, frames, levels, name)["peak"]
         for name in ("uefi_payload_fault", "uefi_payload_page_fault")
     )
     reserve = verify_stack_budgets(normal["peak"], consumer["peak"], fault)
-    need(BOOTSTRAP in normal["closure"], "Event bootstrap unreachable from actual payload entry")
+    if mode == "iommu-event-observe":
+        need(
+            "uefi_event_observation" in normal["closure"] and BOOTSTRAP not in functions,
+            "Readonly observation missing or producer reachable",
+        )
+    else:
+        need(BOOTSTRAP in normal["closure"], "Event bootstrap unreachable from actual payload entry")
     need(
-        (ENTRY in normal["closure"]) == (mode != "iommu-event-overflow"),
+        (ENTRY in normal["closure"]) == (mode not in ("iommu-event-overflow", "iommu-event-observe")),
         "Event source entry reachability disagrees with exact mode",
     )
     return dict(
@@ -405,13 +435,14 @@ def image_evidence(directory, mode):
     image.pe_validate((directory / "esp/EFI/BOOT/BOOTX64.EFI").read_bytes(), binary)
     image.elf_validate(elf, binary)
     result = image.event_image_policy(directory, mode=mode)
-    for name in CPP_OBJECTS + ASSEMBLY_OBJECTS:
+    for name in cpp_objects(mode) + ASSEMBLY_OBJECTS:
         relocations = subprocess.check_output(["readelf", "-rW", directory / (name + ".o")], text=True)
         kinds = set(re.findall(r"R_X86_64_\w+", relocations))
         need(kinds <= {"R_X86_64_PC32", "R_X86_64_PLT32"}, "Non-PIC Event object: " + name)
         need(name != "memory" or not kinds, "Memory primitives acquired a helper/relocation")
     decoder = load("iommu_event_image_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
-    result["backing"] = backing_evidence(decoder.Elf(directory / "payload.elf"), directory)
+    if mode != "iommu-event-observe":
+        result["backing"] = backing_evidence(decoder.Elf(directory / "payload.elf"), directory)
     return result
 
 
@@ -427,7 +458,7 @@ def emit(mode):
         image=image_evidence(BUILD, mode),
         stack=stack_evidence(BUILD, mode),
     )
-    result["sha256"] = common.hashes(source_files() + build_files() + [BUILD / "iommu-event-build.json"])
+    result["sha256"] = common.hashes(source_files() + build_files(mode) + [BUILD / "iommu-event-build.json"])
     RECEIPT.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print("PASS: exact finite Event image/stack checks; independent review and guest qualification remain separate.")
     return result
@@ -445,7 +476,7 @@ def checked(mode):
     )
     need(receipt["build"] == provenance(mode), "Event receipt provenance changed")
     need(
-        receipt["sha256"] == common.hashes(source_files() + build_files() + [BUILD / "iommu-event-build.json"]),
+        receipt["sha256"] == common.hashes(source_files() + build_files(mode) + [BUILD / "iommu-event-build.json"]),
         "Event receipt source/output inventory changed",
     )
     need(

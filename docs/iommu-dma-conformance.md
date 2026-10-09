@@ -56,6 +56,35 @@ copy. Serial/QMP evidence and verified process cleanup are required. No mapping
 API, invalidation completion, page release, concurrent producer or physical-device
 support follows. Historical NVMe/IVRS policies and guest results stay separate.
 
+### Read-only firmware observation checkpoint
+
+The fresh `iommu-event-observe` build is the next dependency for the blocked
+handoff. It copies two complete six-port AHCI samples (CAP/GHC/PI and each
+CMD/CI/SACT/TFD/CLB/FB) through a read-only UC/NX page, revokes that page before
+serial reporting, and checks PCI/capability equality afterward. Matching samples
+are observations only, not an idle, drain, ownership or transition guarantee.
+Resource observations may retain inherited BME; their explicit read-only purpose
+cannot become `EventAdmission`, and EDU must still have command 2. Production
+Event admission retains its BME denial. The observation image links the ordinary
+scalar language fixture and no Event producer, session, retained DMA backing or
+service bridge. It returns through the existing normal diagnostic exit.
+
+Acceptance is focused hosted positive/negative controls, a fresh GCC 16 image and
+existing linked-image/stack admission under the unchanged 128 KiB payload and
+16 KiB stack bounds, followed by an independently reviewed, separately authorized
+read-only emulator plan. No transition writes, new DMA, reset/fallback, physical
+access or recovered lost-run evidence is claimed. Raw observations must precede
+any exact PCI command-reduction policy.
+
+For the later handoff, [AHCI 1.3.1 sections 10.1.2 and 10.3](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/serial-ata-ahci-spec-rev1-3-1.pdf)
+require ST clear and CR=0 before FRE clear and FR=0. The pinned
+[QEMU 10.0.13 implementation](https://github.com/qemu/qemu/blob/v10.0.13/hw/ide/ahci.c)
+clears CI/SACT when ST is cleared, so post-stop zeroes cannot prove prior idleness.
+Any future stop must first establish equal idle CI/SACT/TFD samples, ordinary-RAM
+firmware backing that remains retained, and an exact reviewed command reduction
+with readback. An attempt limit would not establish the specification's timed
+wait or physical drain. That transition is not implemented by this checkpoint.
+
 ## Mechanism and trust boundary
 
 The harnesses launch q35/TCG with 64 MiB guest RAM, AMD-Vi and an EDU PCI test

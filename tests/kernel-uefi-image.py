@@ -224,7 +224,39 @@ EVENT_IMPORTS = frozenset(
     ("__au_runtime_iommu_event_poll", "__au_runtime_iommu_event_acknowledge", "__au_runtime_console_put")
 )
 EVENT_ENTRY = "__au_v_m1_26kernel_iommu_event_service_n0__d18iommu_event_intake"
-EVENT_MODES = ("iommu-event-denial", "iommu-event-success", "iommu-event-overflow", "iommu-event-command-error")
+EVENT_MODES = (
+    "iommu-event-denial",
+    "iommu-event-success",
+    "iommu-event-overflow",
+    "iommu-event-command-error",
+    "iommu-event-observe",
+)
+
+
+def event_objects(mode):
+    return EVENT_OBJECTS - {"event-intake"} if mode == "iommu-event-observe" else EVENT_OBJECTS
+
+
+def observation_object_policy(symbols, object_symbols):
+    need(set(object_symbols) == event_objects("iommu-event-observe"), "Exact observation object inventory required")
+    names = nm_entries(symbols)
+    need(names.get("uefi_event_observation") in ("t", "T"), "Missing readonly observation entry")
+    for owner, text in {"linked": symbols, **object_symbols}.items():
+        entries = nm_entries(text)
+        need(
+            not any(
+                name.startswith(("__au_runtime_", "uefi_event_backing", "uefi_event_terminal"))
+                or "run_event_intake" in name
+                or "BootLifetimeRing" in name
+                or "EventAdmission" in name
+                for name in entries
+            ),
+            "Observation linked producer/session authority: " + owner,
+        )
+    need(
+        nm_entries(object_symbols["language"]).get("aurora_kernel_value") == "T",
+        "Observation requires ordinary scalar language fixture",
+    )
 
 
 def image_options(arguments):
@@ -235,6 +267,7 @@ def image_options(arguments):
         ["--ipc-policy", "--disposal-policy"],
         ["--graphical-console"],
         ["--iommu-event"],
+        ["--iommu-event-observe"],
     )
     need(arguments in allowed, "Expected one exact supported image-policy flag combination")
     return dict(
@@ -242,7 +275,8 @@ def image_options(arguments):
         require_owned_bytes="--owned-bytes" in arguments,
         require_disposal="--disposal-policy" in arguments,
         require_graphical_console="--graphical-console" in arguments,
-        require_iommu_event="--iommu-event" in arguments,
+        require_iommu_event="--iommu-event" in arguments or "--iommu-event-observe" in arguments,
+        require_iommu_observe="--iommu-event-observe" in arguments,
     )
 
 
@@ -265,7 +299,7 @@ def nm_entries(text):
     return result
 
 
-def profile_selection(symbols, object_names, graphical, event=False):
+def profile_selection(symbols, object_names, graphical, event=False, observe=False):
     # Do not impose the paired duplicate-symbol policy on historical profiles.
     names = (
         nm_entries(symbols)
@@ -283,7 +317,11 @@ def profile_selection(symbols, object_names, graphical, event=False):
     )
     need(event or not event_present, "Event image requires explicit --iommu-event")
     need(not (event and graphical), "Event and graphical image policies cannot combine")
-    if event:
+    need(observe or "uefi_event_observation" not in names, "Observation requires explicit --iommu-event-observe")
+    if observe:
+        need(event and not graphical and not event_present, "Observation cannot acquire production Event authority")
+        need(set(object_names) == event_objects("iommu-event-observe"), "Exact observation objects required")
+    if event and not observe:
         need(set(object_names) == EVENT_OBJECTS, "Exact Event object inventory required")
         need(
             {name for name in names if name.startswith("__au_runtime_")} == EVENT_BRIDGES | EVENT_IMPORTS,
@@ -367,8 +405,11 @@ def profile_selection(symbols, object_names, graphical, event=False):
 
 def event_object_policy(symbols, object_symbols, calls, language_bindings, mode):
     """Exact finite Event authority ownership; machine CFG admission is separate."""
-    profile_selection(symbols, object_symbols, False, True)
     need(mode in EVENT_MODES, "Unknown Event image mode")
+    profile_selection(symbols, object_symbols, False, True, mode == "iommu-event-observe")
+    if mode == "iommu-event-observe":
+        observation_object_policy(symbols, object_symbols)
+        return
     parsed = {name: nm_entries(value) for name, value in object_symbols.items()}
     language = parsed["language"]
     need(
@@ -452,14 +493,18 @@ def event_image_policy(directory, symbols=None, mode=None):
         )
     if symbols is None:
         symbols = subprocess.check_output(["nm", "-a", str(directory / "payload.elf")], text=True)
-    profile_selection(symbols, {path.stem for path in directory.glob("*.o")}, False, True)
+    profile_selection(
+        symbols, {path.stem for path in directory.glob("*.o")}, False, True, mode == "iommu-event-observe"
+    )
     objects = {
         name: subprocess.check_output(["nm", "-a", str(directory / (name + ".o"))], text=True)
-        for name in sorted(EVENT_OBJECTS)
+        for name in sorted(event_objects(mode))
     }
     calls = {
         name: subprocess.check_output(["objdump", "-drwC", str(directory / (name + ".o"))], text=True)
-        for name in ("payload", "event-intake", "language")
+        for name in (
+            ("payload", "language") if mode == "iommu-event-observe" else ("payload", "event-intake", "language")
+        )
     }
     bindings = subprocess.check_output(["readelf", "-sW", str(directory / "language.o")], text=True)
     event_object_policy(symbols, objects, calls, elf_function_bindings(bindings), mode)
@@ -470,10 +515,12 @@ def event_image_policy(directory, symbols=None, mode=None):
     )
     return dict(
         mode=mode,
-        objects=sorted(EVENT_OBJECTS),
-        language_imports=sorted(EVENT_IMPORTS),
-        language_bridges=sorted(EVENT_BRIDGES),
-        reflection_helpers=sorted(EVENT_REFLECTION_HELPERS),
+        objects=sorted(event_objects(mode)),
+        language_imports=[] if mode == "iommu-event-observe" else sorted(EVENT_IMPORTS),
+        language_bridges=[] if mode == "iommu-event-observe" else sorted(EVENT_BRIDGES),
+        reflection_helpers=sorted(
+            name for name in nm_entries(objects["language"]) if name.startswith(("aurora_reflect_", "__au_reflect_"))
+        ),
     )
 
 
@@ -654,6 +701,7 @@ def main(
     require_disposal=False,
     require_graphical_console=False,
     require_iommu_event=False,
+    require_iommu_observe=False,
 ):
     need(
         not require_graphical_console or not (require_ipc or require_owned_bytes or require_disposal),
@@ -673,11 +721,16 @@ def main(
     names = ["payload", "payload-entry", "language", "acpi", "pci", "runtime", "memory"]
     symbols = subprocess.check_output(["nm", "-a", str(BUILD / "payload.elf")], text=True)
     profile = profile_selection(
-        symbols, {path.stem for path in BUILD.glob("*.o")}, require_graphical_console, require_iommu_event
+        symbols,
+        {path.stem for path in BUILD.glob("*.o")},
+        require_graphical_console,
+        require_iommu_event,
+        require_iommu_observe,
     )
     if require_iommu_event:
         event_image_policy(BUILD, symbols)
-        names += ["event-intake"]
+        if not require_iommu_observe:
+            names += ["event-intake"]
     if require_graphical_console:
         graphical_image_policy(BUILD, symbols)
     if require_owned_bytes:

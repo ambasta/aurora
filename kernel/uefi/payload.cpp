@@ -24,7 +24,7 @@ using U64 = std::uint64_t;
 auto payload_entry() -> void asm("uefi_payload_entry") __attribute__((visibility("hidden")));
 auto generic_fault() -> void asm("uefi_payload_fault") __attribute__((visibility("hidden")));
 auto page_fault() -> void asm("uefi_payload_page_fault") __attribute__((visibility("hidden")));
-#if defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_IOMMU_EVENT) && AURORA_IOMMU_EVENT_CASE != 4
 auto language_value() -> long long asm("__au_runtime_iommu_event_value");
 #elif defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
 auto language_value() -> long long asm("__au_runtime_graphical_value");

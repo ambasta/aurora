@@ -240,6 +240,42 @@ auto resource_controls() -> void {
     const auto good = admit(facts, facts, bars, memory(), caps, caps);
     check(good && good->edu_base() == 0xc0000000 && good->ahci_base() == 0xc1000000 &&
           good->edu_initial_command() == 2 && good->iommu_device_id() == 8);
+    // A BME-bearing description can authorize only bounded read-only observation.
+    // Even a fully cold observation cannot become EventAdmission.
+    for (unsigned i = 0; i < facts.size(); ++i) {
+        auto inherited = facts;
+        put(inherited[i].header, 4, Bytes{inherited[i].header}.get(4, 2) | 4, 2);
+        const auto observation = EventResources::admit_qemu_default(*ivrs,
+                                                                    inherited,
+                                                                    inherited,
+                                                                    caps,
+                                                                    caps,
+                                                                    bars,
+                                                                    *root,
+                                                                    0,
+                                                                    memory(),
+                                                                    40,
+                                                                    0x400000,
+                                                                    0xfee00000,
+                                                                    EventResources::Purpose::read_only_observation);
+        check(observation.has_value() == (i != 2)); // EDU must remain cold.
+        if (observation)
+            check(!EventAdmission::admit(*observation, ahci()));
+    }
+    const auto cold_observation = EventResources::admit_qemu_default(*ivrs,
+                                                                     facts,
+                                                                     facts,
+                                                                     caps,
+                                                                     caps,
+                                                                     bars,
+                                                                     *root,
+                                                                     0,
+                                                                     memory(),
+                                                                     40,
+                                                                     0x400000,
+                                                                     0xfee00000,
+                                                                     EventResources::Purpose::read_only_observation);
+    check(cold_observation && !EventAdmission::admit(*cold_observation, ahci()));
     const auto admission = EventAdmission::admit(*good, ahci());
     check(admission && admission->edu_base() == 0xc0000000 && admission->iommu_base() == 0xfed80000 &&
           admission->edu_config_address() == 0xe0020000 && admission->physical_bits() == 40);
@@ -391,7 +427,53 @@ auto resource_controls() -> void {
     check(!EventAdmission::admit(*good, {}));
 }
 
+auto observation_controls() -> void {
+    std::vector<unsigned> offsets;
+    const auto read = [&](unsigned at) {
+        offsets.push_back(at);
+        return at + 1;
+    };
+    const auto first = EventAhciFacts::sample<true>(0xc1000000, read);
+    std::vector<unsigned> expected{0, 4, 12};
+    for (unsigned port = 0; port < 6; ++port) {
+        const auto at = 0x100 + port * 0x80;
+        for (unsigned offset : {0x18U, 0x34U, 0x38U, 0x20U, 0U, 4U, 8U, 12U})
+            expected.push_back(at + offset);
+        const auto &fact = first.ports[port];
+        check(fact.command == at + 0x19 && fact.command_issue == at + 0x39 && fact.sata_active == at + 0x35 &&
+              fact.task_file == at + 0x21);
+        check(fact.command_list == (std::uint64_t{at + 5} << 32 | (at + 1)) &&
+              fact.received_fis == (std::uint64_t{at + 13} << 32 | (at + 9)));
+        for (unsigned field = 0; field < 6; ++field) {
+            auto changed = first;
+            auto &entry = changed.ports[port];
+            if (field == 0)
+                ++entry.command;
+            if (field == 1)
+                ++entry.command_issue;
+            if (field == 2)
+                ++entry.sata_active;
+            if (field == 3)
+                ++entry.task_file;
+            if (field == 4)
+                ++entry.command_list;
+            if (field == 5)
+                ++entry.received_fis;
+            check(first != changed);
+        }
+    }
+    check(offsets == expected);
+    offsets.clear();
+    check(first == EventAhciFacts::sample<true>(0xc1000000, read));
+    check(offsets == expected);
+    offsets.clear();
+    const auto basic = EventAhciFacts::sample<false>(0xc1000000, read);
+    check(offsets.size() == 21 && basic.ports[0].task_file == 0 && basic.ports[0].command_list == 0);
+    check(first != basic);
+}
+
 auto main() -> int {
+    observation_controls();
     parser_controls();
     resource_controls();
     std::cout << "UEFI Event profile: " << checks << " checks passed\n";
