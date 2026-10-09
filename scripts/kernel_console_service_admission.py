@@ -263,7 +263,7 @@ def stack_evidence(directory):
 
 
 def build_files():
-    names = ["payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "uefi-payload.hpp", "language.s"]
+    names = ["payload.ld", "payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "uefi-payload.hpp", "language.s"]
     names += [
         name + ".o"
         for name in (

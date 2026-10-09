@@ -140,7 +140,7 @@ def cpp_objects(mode):
 
 
 def build_files(mode):
-    names = ["payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "uefi-payload.hpp", "language.s"]
+    names = ["payload.ld", "payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "uefi-payload.hpp", "language.s"]
     names += [name + ".o" for name in sorted(image.event_objects(mode))]
     names += [name + suffix for name in cpp_objects(mode) + ("loader",) for suffix in (".su", ".ci")]
     return [BUILD / name for name in names]

@@ -226,7 +226,9 @@ if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/owned-bytes.cpp -o build/uefi/owned-bytes-profile.o
     owned_bytes_objects+=(build/uefi/owned-bytes-runtime.o build/uefi/owned-bytes-profile.o)
 fi
-ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 \
+# One layout source; only Event profiles opt into alignment-ordered BSS.
+"$cxx" -E -P -x c "${extra[@]}" kernel/uefi/payload.ld -o build/uefi/payload.ld
+ld -nostdlib -T build/uefi/payload.ld -z max-page-size=0x1000 \
     build/uefi/payload-entry.o build/uefi/memory.o build/uefi/payload.o build/uefi/acpi.o \
     build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" "${console_objects[@]}" \
     build/uefi/language.o "${owned_bytes_objects[@]}" "${framebuffer_objects[@]}" "${event_objects[@]}" -o build/uefi/payload.elf

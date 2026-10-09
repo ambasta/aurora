@@ -37,20 +37,29 @@ class EcamWindow final {
     WindowAuthority authority_;
     unsigned reads_{};
     unsigned revoked_{};
-    [[gnu::noinline, nodiscard]] auto begin(U64 page, bool writable = false) -> std::optional<WindowTicket> {
+#ifdef AURORA_UEFI_IOMMU_EVENT
+    AURORA_UEFI_EVENT_OUTLINE [[nodiscard]] auto begin(U64 page, bool writable = false) -> std::optional<WindowTicket>
+#else
+    [[nodiscard]] auto begin(U64 page) -> std::optional<WindowTicket>
+#endif
+    {
         if (!slot_ || *slot_ != 0 || !aperture_.admits_page(page))
             return std::nullopt;
         auto ticket = authority_.acquire();
         if (!ticket)
             return std::nullopt;
-        // PAT3 (PWT|PCD) was verified UC; supervisor, NX, nonglobal. Only
-        // the exact command-reduction method requests a writable mapping.
+        // PAT3 (PWT|PCD) was verified UC; supervisor, NX, nonglobal.
+#ifdef AURORA_UEFI_IOMMU_EVENT
+        // Only Event command reduction requests a writable mapping.
         *slot_ = page | 1 | 8 | 16 | PageTables::nx | (writable ? 2 : 0);
+#else
+        *slot_ = page | 1 | 8 | 16 | PageTables::nx;
+#endif
         asm volatile("invlpg (%0)" : : "r"(PageTables::window_address) : "memory");
         ++reads_;
         return ticket;
     }
-    [[gnu::noinline, nodiscard]] auto end(WindowTicket ticket) -> bool {
+    AURORA_UEFI_EVENT_OUTLINE [[nodiscard]] auto end(WindowTicket ticket) -> bool {
         if (!authority_.accepts(ticket))
             return false;
         *slot_ = 0;
@@ -58,7 +67,7 @@ class EcamWindow final {
         ++revoked_;
         return *slot_ == 0 && authority_.revoke(ticket);
     }
-    [[gnu::noinline, nodiscard]] static auto snapshot() -> std::array<std::byte, 64> {
+    AURORA_UEFI_EVENT_OUTLINE [[nodiscard]] static auto snapshot() -> std::array<std::byte, 64> {
         std::array<std::byte, 64> result{};
         // Naturally aligned configuration DWORD loads, restricted to standard header.
         for (unsigned offset = 0; offset < 64; offset += 4) {
@@ -73,7 +82,7 @@ class EcamWindow final {
 public:
     EcamWindow(const Q35Ecam &aperture, volatile U64 *slot) : aperture_(aperture), slot_(slot) {
     }
-    [[gnu::noinline, nodiscard]] auto read(U64 page) -> std::optional<std::array<std::byte, 64>> {
+    AURORA_UEFI_EVENT_OUTLINE [[nodiscard]] auto read(U64 page) -> std::optional<std::array<std::byte, 64>> {
         auto ticket = begin(page);
         if (!ticket)
             return std::nullopt;

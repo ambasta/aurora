@@ -838,7 +838,7 @@ def prove_carrier_preserved(symbol, instructions, starts, carrier, trusted_marke
 
 
 VERIFIER_SOURCE_PINS = {
-    "kernel/uefi/tables.hpp": "abca3b73d20845896f09457b7f544f264b021a2b436d3bf1b974ed1717ab7c8b",
+    "kernel/uefi/tables.hpp": "eb19107f06a1d09e84f05ac928801011f529a599f7ae130cf6ba629969e41f10",
     "kernel/uefi/handoff.hpp": "b5a753a311a1408e5b8368acebb8bdd5b55d2681b186b9bffa63a350815e0f33",
 }
 # Full compiler display signatures remain unmodified receipt data. cpp_frames
@@ -860,7 +860,7 @@ def verifier_source_contract(associations, source_hashes):
         require(
             row["source"] == "kernel/uefi/tables.hpp"
             and row["source_sha256"] == VERIFIER_SOURCE_PINS["kernel/uefi/tables.hpp"]
-            and (row["line"], row["column"]) == (166, 27)
+            and (row["line"], row["column"]) == (172, 27)
             and row["kind"] == "static"
             and row["object"] in {name + ".o" for name in CPP_OBJECTS}
             and row["callgraph"] == row["object"][:-2] + ".ci",
@@ -870,7 +870,7 @@ def verifier_source_contract(associations, source_hashes):
         source_sha256=dict(VERIFIER_SOURCE_PINS),
         symbol=WALK,
         source="kernel/uefi/tables.hpp",
-        line=166,
+        line=172,
         column=27,
         compiler_records=[{key: row[key] for key in ("object", "callgraph", "record")} for row in records],
         assumption=(
@@ -1759,7 +1759,7 @@ def self_test():
         callgraph="payload.ci",
         source="kernel/uefi/tables.hpp",
         source_sha256=VERIFIER_SOURCE_PINS["kernel/uefi/tables.hpp"],
-        line=166,
+        line=172,
         column=27,
         record=source_signature,
         bytes=96,
@@ -1787,7 +1787,7 @@ def self_test():
     for field, changed in (
         ("source", "kernel/uefi/payload.cpp"),
         ("source_sha256", "0" * 64),
-        ("line", 167),
+        ("line", 173),
         ("column", 28),
         ("object", "invented.o"),
         ("callgraph", "other.ci"),

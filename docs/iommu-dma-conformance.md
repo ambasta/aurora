@@ -37,26 +37,34 @@ ownership, other endpoint bus mastering disabled, and AHCI engines idle. It does
 not reset an unsuitable controller to force admission. The newly implemented
 firmware handoff below is a separate one-shot boundary before Event admission.
 
-The denial image passes independent linked-image and stack review: 11,776 bytes
+The earlier denial-image checkpoint passed linked-image and stack review: 11,776 bytes
 including its exception reserve fit the 15,360-byte admission cap within the
 unchanged 16 KiB stack. The first rejected stack attempt remains retained; the
 Event-only build uses fixed outgoing argument slots. The image invokes the real
 Aurora loop after a finite producer batch and preserves all raw ring slots and
 protected data before and after intake. Command-only diagnostics leave EDU bus
 mastering disabled. Overflow at initial admission remains a pre-entry refusal.
-No Event-intake guest has run yet; hosted and image checks do not establish live
-transport behavior, firmware quiescence, physical isolation or completion.
+Hosted and image checks alone do not establish live transport behavior, firmware
+quiescence, physical isolation or completion.
 
 Build-only modes are `iommu-event-denial`, `iommu-event-success`,
 `iommu-event-overflow` and `iommu-event-command-error`, selected through
-`UEFI_MODE` for `scripts/kernel-uefi-build.sh`. Only the denial image currently has
-linked-image qualification. Execution requires the exact retained model, verified
+`UEFI_MODE` for `scripts/kernel-uefi-build.sh`. Each mode requires independent
+linked-image qualification. Execution requires the exact reviewed model, verified
 split firmware, an admitted raw ESP and a separately reviewed supervised plan.
 The FAT helper uses pinned mtools, reconstructs a second identical image and
 checks every allocation and loader byte; each guest receives a fresh writable
 copy. Serial/QMP evidence and verified process cleanup are required. No mapping
 API, invalidation completion, page release, concurrent producer or physical-device
 support follows. Historical NVMe/IVRS policies and guest results stay separate.
+
+On 2026-10-09, implementation tree
+`9cc4ef76649faca206f8e70407acaa95c9f75b32` passed all 259 full-suite tests with
+Debian GCC 16.2.0-3 and binutils 2.47. All four active Event modes passed independent
+image/stack and actual guest review on the fresh custom QEMU 10.0.13/default
+split-OVMF tuple. Denial execution from tree `4d44dd72` applies through re-admitted,
+byte-identical execution images; success, overflow and command-error ran freshly
+on `9cc4ef76`.
 
 ### Read-only firmware observation checkpoint
 
@@ -138,8 +146,13 @@ admission is used.
 Focused hosted controls exercise successful ordering, each read/write failure,
 FR timeout, unexpected AHCI/PCI changes, unsuitable backing and retry refusal.
 The first production builds exceeded the unchanged 128 KiB bound; their failures
-remain preserved. Shared ECAM/window bodies and BSS alignment packing now fit
-that bound without removing checks, snapshots, sections or alignments. PE/PIC
+remain preserved. Event-only ECAM/verifier outlining and BSS alignment packing
+fit that bound without removing checks, snapshots, sections or alignments.
+Other UEFI profiles retain their original outlining and BSS input order; the
+shared linker source selects the policy from the existing Event build flag.
+Event-specific firmware capture clauses also stay inside that build family;
+ordinary BAR capture keeps its original entrypoint and compiled body. The
+generated linker input is retained in the existing image build receipts. PE/PIC
 checks pass. Extracting the complete bounded FR wait into its own policy helper
 removes the counter spill; no SUBL decoder permission was added. Sharing the
 unchanged page-table verifier body refreshes only its independently reviewed

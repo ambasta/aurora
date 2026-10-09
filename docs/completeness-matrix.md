@@ -46,23 +46,14 @@ hardware support.
 
 ### Current contract map
 
-The separate Event-intake draft adds a compiler-sealed Event session, a bounded
-Aurora poll/decode/report/acknowledge loop and an opt-in UEFI transport. Its
-[published checkpoint](iommu-dma-conformance.md) documents earlier focused hosted
-and denial-image results. This integration has no final-source GCC 16 full or transition-guest qualification. A narrow one-shot handoff implementation now retains
-validated firmware backing, rejects active command engines, clears only live FIS
-enables and applies exact command-only PCI reductions with readback. Its first
-production sizing failures remain preserved. Shared BSS packing and repeated-body
-factoring now fit the unchanged cap. A separate bounded FR-poll helper removes
-the stack-counter spill without extending decoder permissions; the fresh denial
-image passes strict image/stack checks, while other profiles and guest/full
-qualification remain separate. A separate
-`iommu-event-observe` build adds read-only firmware/AHCI snapshots with no linked
-Event producer, preserving production BME denial. A separately reviewed fresh
-stock/default-split-OVMF run reached equal AHCI samples with five FIS engines
-still enabled. The next diagnostic revision adds read-only EDU command/status/IRQ
-samples and copied firmware-backing descriptors; its source and hosted controls
-do not establish fresh guest results or permission to stop controllers.
+The Event-intake draft combines sealed Event/Console borrows with a bounded
+Aurora poll/decode/report/acknowledge loop. Its one-shot firmware handoff retains
+validated backing, rejects active command engines, clears only FIS enables and
+applies exact PCI command reductions with readback before Event admission.
+The implementation passed GCC 16 full tests and independent image/guest review
+for all four active emulator profiles; the [contract](iommu-dma-conformance.md)
+records source, toolchain and runtime scope. Read-only observation cannot grant
+admission; physical isolation, drain and reclamation remain unqualified.
 
 The current-source `make smoke-graphical-console` runner now retains fresh
 production/capture pixel evidence and an actual final normal restoration. The
@@ -106,7 +97,7 @@ The [source contract](../compiler/UNSIGNED.md#source-contract) keeps capacities
 decimal-only. Both display consumers now import the shared base 5x7 font;
 readable five-bit groups preserve every glyph and fallback. The graphical view
 uses direct unit-scale drawing, while the status page retains its scale selection.
-This source cleanup needs final integrated image/stack and guest qualification;
+These consumers retain separate image/stack and actual guest acceptance gates;
 historical guest evidence is not a new run.
 
 The two JSON append reports normalize invalid success counts once at construction

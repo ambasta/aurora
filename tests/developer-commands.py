@@ -365,6 +365,7 @@ class DeveloperCommands(unittest.TestCase):
                     "pci",
                     "runtime",
                     "loader",
+                    "event-intake",
                     "framebuffer",
                     "console",
                     "graphical-console",

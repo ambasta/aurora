@@ -105,8 +105,12 @@ public:
     BarLoader(const Bytes &boot, U64 arena, unsigned bits) : boot_(boot), arena_(arena), bits_(bits) {
     }
 
+#ifdef AURORA_UEFI_IOMMU_EVENT
 private:
     [[nodiscard]] auto capture_profile(bool event) -> bool {
+#else
+    [[nodiscard]] auto capture() -> bool {
+#endif
         if (bits_ < 32 || bits_ > 52 || !boot_.get(72))
             return false;
         std::array<std::byte, 16> pci_guid{}, root_guid{};
@@ -137,6 +141,7 @@ private:
                     reinterpret_cast<void *>(*current), &where[0], &where[1], &where[2], &where[3]) ||
                 where[0] != 0 || where[1] > 255 || where[2] > 31 || where[3] > 7)
                 return false;
+#ifdef AURORA_UEFI_IOMMU_EVENT
             const bool target = event ? header.get(0, 4) == 0x11e81234 && header.get(9, 3) == 0x00ff00 &&
                                             header.get(14, 1) == 0 && where[1] == 0 && where[2] == 4 && where[3] == 0
                                       : header.get(0, 4) == 0x00101b36 && header.get(9, 3) == 0x010802 &&
@@ -168,6 +173,12 @@ private:
                         record[128 + byte] = capability[byte];
                 }
             }
+#else
+            const bool target = header.get(0, 4) == 0x00101b36 && header.get(9, 3) == 0x010802 &&
+                                header.get(14, 1) == 0 && where[1] == 0 && where[2] == 2 && where[3] == 0;
+            if (header.get(9, 3) == 0x010802 && !target)
+                return false;
+#endif
             const auto header_type = header.get(14, 1) & 127;
             if (header_type > 1)
                 return false;
@@ -207,8 +218,12 @@ private:
                 if (type == 2)
                     ++bar_index;
             }
+#ifdef AURORA_UEFI_IOMMU_EVENT
             if (event ? !target
                       : (header.get(0, 4) != 0x00101b36 || header.get(9, 3) != 0x010802 || header.get(14, 1) != 0))
+#else
+            if (header.get(0, 4) != 0x00101b36 || header.get(9, 3) != 0x010802 || header.get(14, 1) != 0)
+#endif
                 continue;
             if (++found != 1)
                 return false;
@@ -218,7 +233,11 @@ private:
             const auto size = descriptors(resources, record.subspan(512, 512), 1);
             if (!size || !release(resources))
                 return false;
+#ifdef AURORA_UEFI_IOMMU_EVENT
             put(record, 0, event ? event_magic : magic);
+#else
+            put(record, 0, magic);
+#endif
             put(record, 8, 1, 4);
             put(record, 12, record_bytes, 4);
             for (unsigned i = 0; i < 4; ++i)
@@ -267,10 +286,15 @@ private:
                 record[1024 + i] = copied[i];
             print_descriptor("root", record.subspan(1024, *size));
         }
+#ifdef AURORA_UEFI_IOMMU_EVENT
         return release(handles) && roots == 1 &&
                (!event || (Bytes{record}.get(96) == 6 && Bytes{record}.get(104) == 1));
+#else
+        return release(handles) && roots == 1;
+#endif
     }
 
+#ifdef AURORA_UEFI_IOMMU_EVENT
 public:
     static constexpr U64 event_magic = 0x3154564541525541ULL;
     [[nodiscard]] auto capture() -> bool {
@@ -279,5 +303,6 @@ public:
     [[nodiscard]] auto capture_event() -> bool {
         return capture_profile(true);
     }
+#endif
 };
 } // namespace aurora::uefi
