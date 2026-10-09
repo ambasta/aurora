@@ -67,6 +67,7 @@ digest = common.digest
 verify_irq_body = console.verify_irq_body
 verify_irq_reachability = console.verify_irq_reachability
 verify_stack_budgets = console.verify_stack_budgets
+verify_reflection_body = common.verify_reflection_body
 
 
 BUILD_KEYS = {
@@ -2823,7 +2824,7 @@ def expected_language_functions():
     } | REFLECTION_HELPERS
     names.update(mangle("v", "", name) for name in ("graphical_console", "draw_glyph", "draw_cell"))
     methods = {
-        "Line64": ("finish", "reject", "consume"),
+        "Line64": ("finish", "clear_submission", "submission_size", "submission_byte", "reject", "consume"),
         "TextCells": (
             "initialize",
             "append",
@@ -2882,97 +2883,6 @@ def verify_language_object(language):
             "Generated function escaped private ELF binding: " + name,
         )
     return sorted(imports)
-
-
-def verify_reflection_body(decoder, symbol, rows, payload):
-    """Closed constant lookup: exact bytes, complete coverage, no authority/memory."""
-    need(
-        symbol.name in REFLECTION_HELPERS and rows and symbol.address >= 0 and symbol.size > 0,
-        "Unknown or empty reflection helper",
-    )
-    cursor = symbol.address
-    for row in rows:
-        need(row.address == cursor and row.size > 0, "Reflection instruction coverage gap/overlap")
-        cursor += row.size
-    need(cursor == symbol.address + symbol.size <= len(payload), "Reflection extent/coverage mismatch")
-
-    def raw(row):
-        return payload[row.address : row.address + row.size]
-
-    def immediate(row, op, register):
-        match = re.fullmatch(r"\$(0x[0-9a-f]+|[0-9]+),%" + register, row.args)
-        need(row.op == op and match, "Reflection operand is not an immediate scalar")
-        value = int(match[1], 0)
-        need(0 <= value <= 0x7FFFFFFF, "Reflection scalar exceeds closed imm32 range")
-        if op == "cmp":
-            expected = [bytes.fromhex("4883ff") + bytes([value])] if value <= 127 else []
-            expected += [bytes.fromhex("4881ff") + value.to_bytes(4, "little")]
-        else:
-            expected = [bytes.fromhex("48c7c0") + value.to_bytes(4, "little")]
-        need(raw(row) in expected, "Reflection immediate opcode/bytes mismatch")
-        return value
-
-    index, keys, targets = 0, [], []
-    while index < len(rows) and rows[index].op == "cmp":
-        value = immediate(rows[index], "cmp", "rdi")
-        need(value not in keys and index + 1 < len(rows), "Duplicate/truncated reflection comparison")
-        branch = rows[index + 1]
-        need(branch.op == "je", "Reflection comparison must have an equality branch")
-        target = decoder.target_of(branch)
-        branch_bytes = raw(branch)
-        if branch.size == 6 and branch_bytes[:2] == bytes.fromhex("0f84"):
-            displacement = int.from_bytes(branch_bytes[2:], "little", signed=True)
-        elif branch.size == 2 and branch_bytes[:1] == b"\x74":
-            displacement = int.from_bytes(branch_bytes[1:], "little", signed=True)
-        else:
-            raise ValueError("Reflection equality-branch opcode/bytes mismatch")
-        need(
-            type(target) is int
-            and target == branch.address + branch.size + displacement
-            and target > branch.address
-            and target not in targets,
-            "Reflection external/backward/duplicate or misdecoded branch",
-        )
-        keys.append(value)
-        targets.append(target)
-        index += 2
-    need(keys, "Reflection helper lacks a closed lookup ladder")
-    arms = []
-    while index < len(rows):
-        row = rows[index]
-        arms.append(row.address)
-        if row.op == "ud2":
-            need(not row.args and raw(row) == bytes.fromhex("0f0b"), "Reflection trap bytes/operands mismatch")
-            index += 1
-            continue
-        if row.op == "xor":
-            need(
-                row.args == "%rax,%rax" and raw(row) == bytes.fromhex("4831c0"),
-                "Reflection zero return must be exact register self-zeroing",
-            )
-        else:
-            immediate(row, "mov", "rax")
-        need(
-            index + 1 < len(rows)
-            and rows[index + 1].op == "ret"
-            and not rows[index + 1].args
-            and raw(rows[index + 1]) == b"\xc3",
-            "Reflection return arm must terminate exactly",
-        )
-        index += 2
-    need(
-        len(arms) == len(targets) + 1 and targets == arms[1:],
-        "Reflection branches must cover only complete internal return arms",
-    )
-    return dict(
-        symbol=symbol.name,
-        address=symbol.address,
-        bytes=symbol.size,
-        cases=len(keys),
-        arms=len(arms),
-        calls=0,
-        data_accesses=0,
-    )
 
 
 def verify_generated_divisions(functions, code, payload):

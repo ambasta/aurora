@@ -58,10 +58,16 @@ int main(int argc, char **argv) {
     if (argc > 2)
         malformed = std::atoi(argv[2]);
     const Argument argument{&authority, 41};
-    const auto result = checked_console_entry(&argument);
-    need(result <= 1);
-    if (result == 1)
-        need(output_count == output_limit + 1);
-    std::fprintf(stderr, "completion=%lu attempts=%lu\n", result, output_count);
-    return static_cast<int>(result);
+    const int sessions = argc > 3 ? std::atoi(argv[3]) : 1;
+    need(sessions == 1 || sessions == 2);
+    for (int index = 0; index < sessions; ++index) {
+        const auto result = checked_console_entry(&argument);
+        need(result <= 1);
+        if (result == 1)
+            need(output_count == output_limit + 1);
+        std::fprintf(stderr, "completion=%lu attempts=%lu\n", result, output_count);
+        if (result != 0)
+            return static_cast<int>(result);
+    }
+    return 0;
 }

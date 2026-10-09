@@ -21,6 +21,7 @@ class Line64 {
     i64 length;
     bool rejected;
     bool after_cr;
+    bool submitted;
 
     auto finish() -> ConsoleEvent {
         ConsoleEvent event = ConsoleEvent::unknown;
@@ -48,24 +49,48 @@ class Line64 {
                 }
             }
         }
-        i64 index = 0;
-        while (index < 64) {
-            bytes[index] = '\0';
-            index = index + 1;
-        }
-        length = 0;
-        rejected = false;
+        submitted = true;
         return event;
     }
+
+    auto clear_submission() -> bool {
+        if (submitted) {
+            i64 index = 0;
+            while (index < 64) {
+                bytes[index] = '\0';
+                index = index + 1;
+            }
+            length = 0;
+            rejected = false;
+            submitted = false;
+        }
+        return true;
+    }
 public:
-    Line64() : bytes{}, length(0), rejected(false), after_cr(false) {
+    Line64() : bytes{}, length(0), rejected(false), after_cr(false), submitted(false) {
     }
 
+    // A completed line is readable only until the next byte or damage sample.
+    // Copies own their bytes; no view of the editor's fields can escape.
+    auto submission_size() const -> i64 {
+        if (!submitted || rejected) {
+            return -1;
+        }
+        return length;
+    }
+    auto submission_byte(i64 index) const -> u8 {
+        if (!submitted || rejected || index < 0 || index >= length) {
+            return '\0';
+        }
+        return bytes[index];
+    }
     auto reject() -> bool {
+        clear_submission();
         rejected = true;
         return true;
     }
     auto consume(u8 byte) -> ConsoleEvent {
+        clear_submission();
         const bool suppressed_lf = after_cr && byte == '\n';
         after_cr = byte == '\r';
         if (suppressed_lf) {
@@ -94,6 +119,7 @@ public:
         return ConsoleEvent::echo;
     }
 };
+
 
 auto graphical_glyph_bits(u8 byte) -> u64 {
     if (byte == 'a') { return 0b11110'10001'11110'10000'01110'00000'00000u64; }

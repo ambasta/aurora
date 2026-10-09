@@ -85,7 +85,10 @@ qualify a later change. Each reviewed PR records its final-source native, image
 and guest results; structural admission alone never establishes that qualification.
 
 The simple-UEFI console owns its complete Line64 editor, command parser and
-presentation in one Aurora frame. The [sealed service contract](../compiler/SERVICES.md)
+presentation and a single RAM-only `note` in one Aurora frame. `write note <text>`
+and `cat note` use at most 53 content bytes, disappear at session exit, and add no
+persistent filesystem or device authority. Graphical commands remain unchanged;
+the addition requires fresh final-source qualification. The [sealed service contract](../compiler/SERVICES.md)
 keeps copied reports separate from authority; the [kernel contract](native-console-service.md)
 records exact hosted, linked-stack/image, five-profile PTY and restoration scope.
 BIOS/protected editors, general services and physical hardware remain separate.

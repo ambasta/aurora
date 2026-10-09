@@ -147,7 +147,7 @@ def cases():
     exit_tail = samples("exit\rSHOULD-NOT-BE-CONSUMED")
     yield "exit", exit_tail
     yield "editing", samples("hez\blp\r\nstatus\nx\x7fy\n\b\x7f\n") + exit_tail
-    yield "commands", samples("help\nstatus\runknown\r\n\n") + exit_tail
+    yield "commands", samples("help\nstatus\runknown\r\n\nwrite note x\ncat note\n") + exit_tail
     yield "capacity64", samples("x" * 64 + "\n") + exit_tail
     yield "overflow65", samples("x" * 65 + "\b\n") + exit_tail
     yield "bad-control", samples("abc") + [(1, 1, 0), (1, 255, 0)] + samples("help\n") + exit_tail

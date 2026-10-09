@@ -3,12 +3,19 @@
 
 from pathlib import Path
 import hashlib
+import importlib.util
 import json
 import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build/uefi"
+
+spec = importlib.util.spec_from_file_location(
+    "image_admission_common", ROOT / "scripts/kernel_program_console_admission.py"
+)
+common = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(common)
 
 
 def need(value, reason):
@@ -660,7 +667,10 @@ def console_service_policy(symbols, language_symbols, calls, contents, graphical
     for row in language_symbols.splitlines():
         fields = row.split()
         if len(fields) == 3 and fields[1] == "T":
-            need(fields[2] in allowed_globals, "Native service exposed a source entry: " + fields[2])
+            need(
+                fields[2] in allowed_globals or (not graphical and common.is_reflection_helper(fields[2])),
+                "Native service exposed a source entry: " + fields[2],
+            )
 
 
 def graphical_image_policy(directory, symbols=None):
@@ -777,6 +787,7 @@ def main(
             }
             contents = {name: (BUILD / (name + ".o")).read_bytes() for name in host_names}
             language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "language.o")], text=True)
+            common.verify_reflection_image(BUILD)
             console_service_policy(symbols, language_symbols, calls, contents, require_graphical_console)
     if "uefi_service_drain_begin" in symbols:
         policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
