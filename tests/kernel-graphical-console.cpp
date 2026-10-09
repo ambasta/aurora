@@ -189,7 +189,9 @@ extern "C" auto __au_runtime_display_pixel(const void *grant, U64 generation, U6
 }
 int main(int argc, char **argv) {
     check_capture_policy();
-    need(argc == 9);
+    need(argc == 9 || argc == 10);
+    const U64 sessions = argc == 10 ? std::stoull(argv[9]) : 1;
+    need(sessions == 1 || sessions == 2);
     const U64 width = std::stoull(argv[1]), height = std::stoull(argv[2]), pitch = std::stoull(argv[3]);
     const U64 format = std::stoull(argv[4]);
     row_pitch = pitch;
@@ -199,6 +201,7 @@ int main(int argc, char **argv) {
     fail_after = std::stoull(argv[7]);
     const std::string mode = argv[8];
     denied = mode != "normal";
+    need(sessions == 1 || !denied);
     std::filesystem::create_directories(output);
     trace.open(output / "stores.bin", std::ios::binary);
     std::ifstream input(argv[6]);
@@ -224,73 +227,77 @@ int main(int argc, char **argv) {
         *geometry, map, 40, 1, 0x1000000, 36, (1U << 5) | (1U << 16), 0x0007040600070406ULL);
     need(admission.has_value());
     bytes.assign(size + 64, std::byte{0xa5});
-    auto console = Console::open();
-    auto display = Display::open();
-    aurora::graphical::ServiceArgument record{
-        console.grant, console.generation, display.grant, display.generation, width, height};
-    auto copied = record;
-    const auto *incoming = &record;
-    if (mode == "null-record")
-        incoming = nullptr;
-    else if (mode == "copied-record")
-        incoming = &copied;
-    else if (mode == "null-console")
-        record.console_grant = nullptr;
-    else if (mode == "null-display")
-        record.display_grant = nullptr;
-    else if (mode == "forged-console")
-        record.console_grant = reinterpret_cast<const void *>(1);
-    else if (mode == "forged-display")
-        record.display_grant = reinterpret_cast<const void *>(1);
-    else if (mode == "crossed") {
-        record.console_grant = display.grant;
-        record.display_grant = console.grant;
-    } else if (mode == "duplicate-console")
-        record.display_grant = console.grant;
-    else if (mode == "duplicate-display")
-        record.console_grant = display.grant;
-    else if (mode == "zero-console")
-        record.console_generation = 0;
-    else if (mode == "zero-display")
-        record.display_generation = 0;
-    else if (mode == "max-console")
-        record.console_generation = std::numeric_limits<U64>::max();
-    else if (mode == "max-display")
-        record.display_generation = std::numeric_limits<U64>::max();
-    else if (mode == "width")
-        ++record.width;
-    else if (mode == "height")
-        ++record.height;
-    else if (mode == "not-quiet")
-        quiet = false;
-    else if (mode == "stale-console" || mode == "stale-display" || mode == "stale-both") {
-        if (mode != "stale-display") {
-            static_cast<void>(Console::close(console, 0));
-            console = Console::open();
-        }
-        if (mode != "stale-console") {
-            static_cast<void>(Display::close(display, 0));
-            display = Display::open();
-        }
-    } else if (mode != "normal" && mode != "geometry" && mode != "reentry")
-        std::abort();
-    const auto completion = Entry::invoke(incoming, record, [&](const auto *argument) -> U64 {
-        if (mode == "reentry") {
-            return static_cast<U64>(Entry::invoke(argument, record, [](const auto *nested) -> U64 {
-                ++entries;
-                return __au_runtime_graphical_entry(nested);
-            }));
-        }
-        ++entries;
-        return __au_runtime_graphical_entry(argument);
-    });
-    need(!denied);
-    checkpoint();
-    const U64 raw = static_cast<U64>(completion);
-    // Never forward raw graphical completion into either legacy closed enum.
-    const U64 legacy = raw <= 1 ? 0 : 1;
-    static_cast<void>(Console::close(console, legacy));
-    static_cast<void>(Display::close(display, legacy));
+    U64 raw{};
+    for (U64 session = 0; session < sessions; ++session) {
+        auto console = Console::open();
+        auto display = Display::open();
+        aurora::graphical::ServiceArgument record{
+            console.grant, console.generation, display.grant, display.generation, width, height};
+        auto copied = record;
+        const auto *incoming = &record;
+        if (mode == "null-record")
+            incoming = nullptr;
+        else if (mode == "copied-record")
+            incoming = &copied;
+        else if (mode == "null-console")
+            record.console_grant = nullptr;
+        else if (mode == "null-display")
+            record.display_grant = nullptr;
+        else if (mode == "forged-console")
+            record.console_grant = reinterpret_cast<const void *>(1);
+        else if (mode == "forged-display")
+            record.display_grant = reinterpret_cast<const void *>(1);
+        else if (mode == "crossed") {
+            record.console_grant = display.grant;
+            record.display_grant = console.grant;
+        } else if (mode == "duplicate-console")
+            record.display_grant = console.grant;
+        else if (mode == "duplicate-display")
+            record.console_grant = display.grant;
+        else if (mode == "zero-console")
+            record.console_generation = 0;
+        else if (mode == "zero-display")
+            record.display_generation = 0;
+        else if (mode == "max-console")
+            record.console_generation = std::numeric_limits<U64>::max();
+        else if (mode == "max-display")
+            record.display_generation = std::numeric_limits<U64>::max();
+        else if (mode == "width")
+            ++record.width;
+        else if (mode == "height")
+            ++record.height;
+        else if (mode == "not-quiet")
+            quiet = false;
+        else if (mode == "stale-console" || mode == "stale-display" || mode == "stale-both") {
+            if (mode != "stale-display") {
+                static_cast<void>(Console::close(console, 0));
+                console = Console::open();
+            }
+            if (mode != "stale-console") {
+                static_cast<void>(Display::close(display, 0));
+                display = Display::open();
+            }
+        } else if (mode != "normal" && mode != "geometry" && mode != "reentry")
+            std::abort();
+        const auto completion = Entry::invoke(incoming, record, [&](const auto *argument) -> U64 {
+            if (mode == "reentry") {
+                return static_cast<U64>(Entry::invoke(argument, record, [](const auto *nested) -> U64 {
+                    ++entries;
+                    return __au_runtime_graphical_entry(nested);
+                }));
+            }
+            ++entries;
+            return __au_runtime_graphical_entry(argument);
+        });
+        need(!denied);
+        checkpoint();
+        raw = static_cast<U64>(completion);
+        // Never forward raw graphical completion into either legacy closed enum.
+        const U64 legacy = raw <= 1 ? 0 : 1;
+        static_cast<void>(Console::close(console, legacy));
+        static_cast<void>(Display::close(display, legacy));
+        need(sessions == 1 || raw == 0);
+    }
     trace.close();
     need(!trace.fail());
     std::ofstream final_pixels(output / "pixels.bin", std::ios::binary);

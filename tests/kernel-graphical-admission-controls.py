@@ -30,8 +30,7 @@ decoder = graphical.load("graphical_controls_decoder", ROOT / "tests/kernel-uefi
 REFLECTION = (
     "aurora_reflect_size",
     "aurora_reflect_field_count",
-    "__au_reflect_s1_size",
-    "__au_reflect_s1_field_count",
+    *(f"__au_reflect_s{module}_{field}" for module in (1, 2, 3, 4, 5) for field in ("size", "field_count")),
 )
 
 # Independent frozen image006 fixtures: original bytes and objdump operands.
@@ -3103,7 +3102,7 @@ class Admission(unittest.TestCase):
                 verify(symbols=imports + [decoder.Symbol(name, 0, 0, 0, 0)])
             with self.assertRaises(ValueError):
                 verify(functions=names - {name})
-        for extra in ("aurora_reflect_address", "__au_reflect_s2_size", "__au_reflect_s1_address"):
+        for extra in ("aurora_reflect_address", "__au_reflect_s6_size", "__au_reflect_s1_address"):
             with self.assertRaises(ValueError):
                 verify(functions=names | {extra})
 

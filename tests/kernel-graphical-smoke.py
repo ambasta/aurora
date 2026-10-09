@@ -244,7 +244,7 @@ if action == 'guest':
             self.assertTrue(all(row["status"] == "failed" for row in rows))
 
     def test_matrix_and_mutations(self):
-        self.assertEqual(len(smoke.CASES), 13)
+        self.assertEqual(len(smoke.CASES), 17)
         for case in smoke.CASES:
             model, rows = expected(case)
             raw = transcript(rows)

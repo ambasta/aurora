@@ -87,11 +87,12 @@ Historical receipts remain scoped to their exact source and toolchain; they do n
 qualify a later change. Each reviewed PR records its final-source native, image
 and guest results; structural admission alone never establishes that qualification.
 
-The simple-UEFI console owns its complete Line64 editor, command parser and
-presentation and a single RAM-only `note` in one Aurora frame. `write note <text>`
+The simple-UEFI and graphical consoles share an Aurora `console.session_note`
+policy for one invocation-local RAM-only `note`. `write note <text>`
 and `cat note` use at most 53 content bytes, disappear at session exit, and add no
-persistent filesystem or device authority. Graphical commands remain unchanged;
-the addition requires fresh final-source qualification. The [sealed service contract](../compiler/SERVICES.md)
+persistent filesystem or device authority. Graphical readback uses ordinary
+response cells under the unchanged input/pixel budgets; the addition requires
+fresh final-source qualification. The [sealed service contract](../compiler/SERVICES.md)
 keeps copied reports separate from authority; the [kernel contract](native-console-service.md)
 records exact hosted, linked-stack/image, five-profile PTY and restoration scope.
 BIOS/protected editors, general services and physical hardware remain separate.

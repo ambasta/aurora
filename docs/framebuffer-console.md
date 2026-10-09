@@ -48,7 +48,7 @@ restoration boot. A preview never creates those approvals.
 ## Current-source graphical smoke
 
 `make smoke-graphical-console` builds and checks normal UEFI, production graphical
-and capture graphical images sequentially, then runs fourteen fresh graphical
+and capture graphical images sequentially, then runs eighteen fresh graphical
 cases and one actual normal restoration. It reuses the existing v3 admission;
 that receipt stays structure-only and never grants behavioral qualification.
 No external approval receipts or historical compiler/address allowlists are needed
@@ -65,10 +65,12 @@ Then run `python3 -B scripts/kernel_graphical_smoke.py --images DIR/images
 or the CODE/VARS pair and empty strings for unused inputs. The shell uses the
 shared firmware selector; usual QEMU/firmware/compiler overrides apply.
 
-Coverage includes production help/status/edit/exit; capture BS/DEL/CRLF,
+Coverage includes production help/status/note write/read/edit/exit; capture BS/DEL/CRLF,
 rejection/recovery/exit and a sent but unconsumed sentinel; exact capacity 64,
 overflow 65 locking/recovery, event 80 and native idle 4096; an explicit fixture-G
-regression; invalid selector, all four C/D/c/d no-effect authority denials and F/I
+regression; note readback, shorter/empty replacement, malformed/control-byte
+preservation and the maximum 53-byte note; invalid selector, all four C/D/c/d
+no-effect authority denials and F/I
 pixel failures. The 96-copy guard remains hosted-only. Idle has no input or pause
 from release through its terminal marker. Production uses observed viewport
 boundaries because it has no PRE_SAMPLE markers. Capture sends only the selector
@@ -99,6 +101,20 @@ This rebuild does not replace the staged-normal boot validation. This isolated
 window leaves no persistent guest state, so one final boot suffices.
 Ordinary/optimized compiler-free runner
 controls belong to Meson `dev`/`full` and `make test-graphical-controls`.
+
+The graphical console shares `console.session_note` with the simple serial
+console: exact `write note <text>` replaces one RAM-only note, and `cat note`
+renders its content or a missing message. Content is at most 53 printable ASCII
+bytes; empty content is valid and replacement clears the previous suffix. A new
+invocation starts missing. The hosted transcript oracle additionally covers
+UART damage, invalid bytes and same-process session reset. These source changes
+require fresh qualification; this paragraph records no new execution.
+
+The existing 68 response cells, 80 input events, 96 copied samples and pixel,
+stack and image limits are unchanged. Maximum-length write/read/exit with LF
+uses 79 events; extra editing or CRLF bytes can exhaust that budget. Input is
+still serial, with no physical keyboard, filesystem, disk persistence or new
+device authority.
 
 ## Dependency and outcome
 

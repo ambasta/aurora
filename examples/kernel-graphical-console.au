@@ -1,6 +1,8 @@
-// UNQUALIFIED SOURCE-ONLY DRAFT. Not connected to any native boot profile.
 module kernel_graphical_console;
 import graphics.font5x7;
+import std.binary_buffer;
+import std.binary;
+import console.session_note;
 
 // The exact accepted Line64 policy is reused below; a source gate must keep it
 // identical to kernel-console-service.au until shared-module extraction is reviewed.
@@ -237,11 +239,11 @@ public:
     auto commit(i64 index) -> bool { committed[index] = desired[index]; return true; }
     auto finish_paint() -> bool { previous_cursor = cursor; painted = true; return true; }
     auto show_ready() -> bool {
-        array<u8, 42> text = {'A', 'U', 'R', 'O', 'R', 'A', ' ', 'g', 'r', 'a', 'p', 'h', 'i', 'c', 'a', 'l', ' ', 'c', 'o', 'n', 's', 'o', 'l', 'e', ':', ' ', 'h', 'e', 'l', 'p', ' ', 's', 't', 'a', 't', 'u', 's', ' ', 'e', 'x', 'i', 't'};
+        array<u8, 43> text = "AURORA graphical console: help for commands";
         return response(borrow_bytes(text));
     }
     auto show_help() -> bool {
-        array<u8, 62> text = {'h', 'e', 'l', 'p', ' ', 'S', 'h', 'o', 'w', ' ', 'c', 'o', 'm', 'm', 'a', 'n', 'd', 's', ';', ' ', 's', 't', 'a', 't', 'u', 's', ' ', 'S', 'h', 'o', 'w', ' ', 'b', 'o', 'o', 't', ' ', 's', 't', 'a', 't', 'e', ';', ' ', 'e', 'x', 'i', 't', ' ', 'C', 'l', 'o', 's', 'e', ' ', 's', 'e', 's', 's', 'i', 'o', 'n'};
+        array<u8, 61> text = "help; status; write note <text> (RAM, max 53); cat note; exit";
         return response(borrow_bytes(text));
     }
     auto show_status() -> bool {
@@ -255,6 +257,26 @@ public:
     auto show_rejected() -> bool {
         array<u8, 63> text = {'L', 'i', 'n', 'e', ' ', 'r', 'e', 'j', 'e', 'c', 't', 'e', 'd', ':', ' ', 't', 'o', 'o', ' ', 'l', 'o', 'n', 'g', ',', ' ', 'n', 'o', 'n', '-', 'A', 'S', 'C', 'I', 'I', '/', 'c', 'o', 'n', 't', 'r', 'o', 'l', ' ', 'b', 'y', 't', 'e', ',', ' ', 'o', 'r', ' ', 'U', 'A', 'R', 'T', ' ', 'e', 'r', 'r', 'o', 'r', '.'};
         return response(borrow_bytes(text));
+    }
+    auto show_note(console::NoteEvent action, console::SessionNote note) -> bool {
+        if (action == console::NoteEvent::written) {
+            array<u8, 40> text = "note: RAM-only; lost when session exits.";
+            return response(borrow_bytes(text));
+        }
+        if (action == console::NoteEvent::missing) {
+            array<u8, 27> text = "note: not found (RAM-only).";
+            return response(borrow_bytes(text));
+        }
+        if (action == console::NoteEvent::read) {
+            array<u8, 53> text = "                                                     ";
+            i64 index = 0;
+            while (index < note.size()) {
+                text[index] = note.at(index);
+                index = index + 1;
+            }
+            return response(borrow_bytes(text));
+        }
+        return show_unknown();
     }
     auto show_exit() -> bool {
         array<u8, 19> text = {'A', 'U', 'R', 'O', 'R', 'A', '_', 'C', 'O', 'N', 'S', 'O', 'L', 'E', '_', 'E', 'X', 'I', 'T'};
@@ -358,6 +380,8 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
         return GraphicalCompletion::invalid_geometry;
     }
     Line64 line = Line64();
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    console::SessionNote note = console::SessionNote(empty);
     TextCells cells = TextCells();
     cells.initialize();
     if (!cells.show_ready()) { return GraphicalCompletion::state_failure; }
@@ -402,7 +426,17 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
                             else {
                                 if (event == ConsoleEvent::status) { okay = cells.show_status(); }
                                 else {
-                                    if (event == ConsoleEvent::unknown) { okay = cells.show_unknown(); }
+                                    if (event == ConsoleEvent::unknown) {
+                                        std::BinaryBuffer64 command = std::BinaryBuffer64();
+                                        const i64 count = line.submission_size();
+                                        i64 copied = 0;
+                                        while (copied < count) {
+                                            command.write_u8(copied, line.submission_byte(copied));
+                                            copied = copied + 1;
+                                        }
+                                        const console::NoteEvent action = note.submit(command, count);
+                                        okay = cells.show_note(action, note);
+                                    }
                                     else {
                                         if (event == ConsoleEvent::rejected) { okay = cells.show_rejected(); }
                                         else {

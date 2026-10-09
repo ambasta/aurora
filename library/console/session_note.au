@@ -1,0 +1,66 @@
+export module console.session_note;
+import std.binary_buffer;
+import std.binary;
+
+export namespace console {
+    // One session-local RAM note. No device, disk, allocator or service authority.
+    enum class NoteEvent { unknown, written, read, missing };
+
+    class SessionNote {
+        std::BinaryBuffer64 bytes;
+        i64 length;
+    public:
+        SessionNote(std::BinaryBuffer64 empty) : bytes(empty), length(-1) {
+        }
+
+        auto size() const -> i64 {
+            return length;
+        }
+        auto at(i64 index) const -> u8 {
+            return bytes.at(index);
+        }
+        auto submit(std::BinaryBuffer64 command, i64 count) -> NoteEvent {
+            if (count == 8) {
+                if (command.at(0) == 'c' && command.at(1) == 'a' && command.at(2) == 't'
+                    && command.at(3) == ' ' && command.at(4) == 'n' && command.at(5) == 'o'
+                    && command.at(6) == 't' && command.at(7) == 'e') {
+                    if (length < 0) {
+                        return NoteEvent::missing;
+                    }
+                    return NoteEvent::read;
+                }
+            }
+            if (count < 11 || count > 64) {
+                return NoteEvent::unknown;
+            }
+            if (command.at(0) != 'w' || command.at(1) != 'r' || command.at(2) != 'i'
+                || command.at(3) != 't' || command.at(4) != 'e' || command.at(5) != ' '
+                || command.at(6) != 'n' || command.at(7) != 'o' || command.at(8) != 't'
+                || command.at(9) != 'e' || command.at(10) != ' ') {
+                return NoteEvent::unknown;
+            }
+            // Validate before replacement, even for callers other than Line64.
+            i64 checked = 11;
+            while (checked < count) {
+                const u8 byte = command.at(checked);
+                if (byte < ' ' || byte > '~') {
+                    return NoteEvent::unknown;
+                }
+                checked = checked + 1;
+            }
+            // Replace the complete backing, including the unused suffix.
+            const i64 content_size = count - 11;
+            i64 index = 0;
+            while (index < 64) {
+                u8 byte = '\0';
+                if (index < content_size) {
+                    byte = command.at(index + 11);
+                }
+                bytes.write_u8(index, byte);
+                index = index + 1;
+            }
+            length = content_size;
+            return NoteEvent::written;
+        }
+    };
+}

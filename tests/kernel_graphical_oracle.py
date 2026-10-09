@@ -106,12 +106,12 @@ FONT = {
 }
 
 RESPONSES = {
-    b"help": "help Show commands; status Show boot state; exit Close session",
+    b"help": "help; status; write note <text> (RAM, max 53); cat note; exit",
     b"status": "Boot self-tests passed; UEFI; timer polling; line capacity=64",
     b"exit": "AURORA_CONSOLE_EXIT",
     b"": " ",
 }
-READY = "AURORA graphical console: help status exit"
+READY = "AURORA graphical console: help for commands"
 REJECTED = "Line rejected: too long, non-ASCII/control byte, or UART error."
 UNKNOWN = "Unknown command. Type help."
 BOUNDED = "INPUT BUDGET EXHAUSTED"
@@ -121,19 +121,27 @@ def byte_samples(data):
     return [(1, byte, 0) for byte in data]
 
 
-def reference(samples, width=800, height=600, pitch=800, pixel_format=1, fail_after=None):
+def reference(
+    samples, width=800, height=600, pitch=800, pixel_format=1, fail_after=None, sessions=1, initial_pixels=None
+):
     """Model completed paints and ordered writes, without executing any source.
 
     Input exhaustion is an oracle error; production next() blocks rather than
     inventing EOF. Clean absent samples are likewise not copied to Aurora by the
     real Session and are excluded here. Offset/value store pairs exclude guards.
     Failure is a recoverable host pixel status after exactly fail_after stores.
+    Two-session reset checks retain framebuffer bytes while resetting application
+    state; failure injection is kept in the existing single-session cases.
     """
     samples = list(samples)
     if pitch < width or pitch > 1024 or pixel_format not in (0, 1):
         raise ValueError("Invalid test framebuffer")
     mapped = ((pitch * height * 4 + 4095) // 4096) * 4096
-    pixels = bytearray(b"\xa5") * (mapped + 64)
+    if sessions not in (1, 2) or (sessions == 2 and fail_after is not None):
+        raise ValueError("Expected one session, or two sessions without failure injection")
+    pixels = bytearray(b"\xa5") * (mapped + 64) if initial_pixels is None else bytearray(initial_pixels)
+    if len(pixels) != mapped + 64:
+        raise ValueError("Initial framebuffer size mismatch")
     frames, stores, frame_stores = [], [], []
     consumed = 0
 
@@ -147,6 +155,17 @@ def reference(samples, width=800, height=600, pitch=800, pixel_format=1, fail_af
     def finish(completion):
         frames.append(capture())
         frame_stores.append(len(stores))
+        if sessions == 2:
+            if completion != 0:
+                raise ValueError("First reset session must exit normally")
+            following = reference(samples[consumed:], width, height, pitch, pixel_format, initial_pixels=pixels)
+            return dict(
+                following,
+                consumed=consumed + following["consumed"],
+                frames=frames + following["frames"],
+                stores=stores + following["stores"],
+                frame_stores=frame_stores + [len(stores) + n for n in following["frame_stores"]],
+            )
         return {
             "completion": completion,
             "consumed": consumed,
@@ -193,6 +212,7 @@ def reference(samples, width=800, height=600, pitch=800, pixel_format=1, fail_af
     rejected, previous_cr = False, False
     event_count = 0
     terminal = None
+    note = None
 
     def respond(text):
         nonlocal desired, cursor
@@ -240,7 +260,14 @@ def reference(samples, width=800, height=600, pitch=800, pixel_format=1, fail_af
             continue
         if byte in (10, 13):
             command = bytes(line)
-            respond(REJECTED if rejected else RESPONSES.get(command, UNKNOWN))
+            response = REJECTED if rejected else RESPONSES.get(command, UNKNOWN)
+            if not rejected:
+                if command == b"cat note":
+                    response = "note: not found (RAM-only)." if note is None else note.decode("ascii")
+                elif command.startswith(b"write note "):
+                    note = command[11:]
+                    response = "note: RAM-only; lost when session exits."
+            respond(response)
             if not rejected and command == b"exit":
                 cursor, terminal = -1, 0
             line.clear()

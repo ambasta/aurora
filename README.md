@@ -70,7 +70,7 @@ and the [UEFI results](docs/uefi-console-results.md) for focused validation and 
 The simple UEFI editor and command presentation are Aurora-owned through a
 [sealed synchronous console service](docs/native-console-service.md). BIOS and
 the protected-program console retain their explicitly scoped legacy adapters.
-The simple UEFI prompt also supports `write note <text>` and `cat note`: one
+The simple UEFI and graphical prompts also support `write note <text>` and `cat note`: one
 RAM-only note, at most 53 ASCII bytes, lost when the session exits. This is not
 a persistent filesystem; see its [scope](docs/native-console-service.md#session-local-ram-note).
 For automated console acceptance, use `make smoke-console` (BIOS) or
