@@ -345,3 +345,14 @@ foreach mode : ['ordinary', 'optimized']
     test('iommu-diagnostics-' + mode, python, args: diagnostic_args,
          suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 endforeach
+
+# Compiler-free controls for complete per-command artifact accounting.
+foreach mode : ['ordinary', 'optimized']
+    budget_args = ['-B']
+    if mode == 'optimized'
+        budget_args += ['-O']
+    endif
+    budget_args += [files('test_artifact_budget.py')]
+    test('artifact-budget-' + mode, python, args: budget_args,
+         suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+endforeach

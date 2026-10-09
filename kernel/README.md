@@ -66,6 +66,8 @@ with `elf_i386`/`elf_x86_64` emulations and `--orphan-handling=error`, `objcopy`
 that every GNU release or distribution has passed the full kernel suite. A
 C++ compiler configured for a distribution is not itself a target-hardware limit.
 
+UEFI PE linking explicitly requests `--dynamicbase --nxcompat`; the required
+relocation/NX header flags must not depend on the linker build defaults.
 Freestanding C++ flags explicitly select `-fcf-protection=none` and
 `-mstringop-strategy=libcall`: distro CET defaults must not add unmodeled
 instructions, and compiler-generated bulk copies/clears use the admitted memory

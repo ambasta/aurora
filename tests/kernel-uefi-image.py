@@ -219,18 +219,25 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
     if "uefi_runtime_enter" in symbols:
         names += ["runtime-entry", "runtime-exceptions"]
         terminal_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
-        need(policy_call_present(terminal_calls, "aurora_kernel_terminal_event"),
-             "Runtime must call the actual Aurora terminal-event producer")
-        terminal_symbols = {row.split()[2]: int(row.split()[0], 16)
-                            for row in symbols.splitlines() if len(row.split()) == 3}
-        need(0 < terminal_symbols.get("aurora_kernel_terminal_event", 0)
-             < terminal_symbols["__payload_text_end"], "Terminal-event entry outside owned payload RX")
+        need(
+            policy_call_present(terminal_calls, "aurora_kernel_terminal_event"),
+            "Runtime must call the actual Aurora terminal-event producer",
+        )
+        terminal_symbols = {
+            row.split()[2]: int(row.split()[0], 16) for row in symbols.splitlines() if len(row.split()) == 3
+        }
+        need(
+            0 < terminal_symbols.get("aurora_kernel_terminal_event", 0) < terminal_symbols["__payload_text_end"],
+            "Terminal-event entry outside owned payload RX",
+        )
     if "uefi_console_interrupt" in symbols:
         names += ["console", "console-entry"]
         need("uefi_runtime_enter" not in symbols, "Console linked a user runtime")
         console_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "console.o")], text=True)
-        need(policy_call_present(console_calls, "__au_runtime_console_entry"),
-             "Console host must call the actual sealed service bridge")
+        need(
+            policy_call_present(console_calls, "__au_runtime_console_entry"),
+            "Console host must call the actual sealed service bridge",
+        )
         language_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "language.o")], text=True)
         for entry in ("__au_runtime_console_next", "__au_runtime_console_put"):
             need(policy_call_present(language_calls, entry), "Aurora service must use the closed operation: " + entry)
@@ -238,15 +245,30 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
             need(legacy not in symbols, "Native console retained legacy policy wrapper: " + legacy)
         for object_name in ("payload", "acpi", "pci", "runtime", "console", "loader"):
             host_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / (object_name + ".o"))], text=True)
-            for legacy in ("aurora::console::Line::", "aurora::console::Presentation<",
-                           "aurora_console_byte", "aurora_console_command", "__au_runtime_bytes_"):
+            for legacy in (
+                "aurora::console::Line::",
+                "aurora::console::Presentation<",
+                "aurora_console_byte",
+                "aurora_console_command",
+                "__au_runtime_bytes_",
+            ):
                 need(legacy not in host_calls, "Native console retained a legacy/owner reference in " + object_name)
             host_bytes = (BUILD / (object_name + ".o")).read_bytes()
-            for response in (b"Unknown command.", b"Line rejected:", b"Show commands", b"line capacity=64", b"aurora> "):
+            for response in (
+                b"Unknown command.",
+                b"Line rejected:",
+                b"Show commands",
+                b"line capacity=64",
+                b"aurora> ",
+            ):
                 need(response not in host_bytes, "Human command presentation remains in C++ " + object_name)
         language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "language.o")], text=True)
-        allowed_globals = {"__au_runtime_console_entry", "__au_runtime_console_value",
-                           "aurora_reflect_size", "aurora_reflect_field_count"}
+        allowed_globals = {
+            "__au_runtime_console_entry",
+            "__au_runtime_console_value",
+            "aurora_reflect_size",
+            "aurora_reflect_field_count",
+        }
         for row in language_symbols.splitlines():
             fields = row.split()
             if len(fields) == 3 and fields[1] == "T":
@@ -310,6 +332,8 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
         (nt + 4, 0x14C, 2),
         (opt, 0x10B, 2),
         (opt + 68, 3, 2),
+        (opt + 70, u(data, opt + 70, 2) & ~0x40, 2),
+        (opt + 70, u(data, opt + 70, 2) & ~0x100, 2),
         (opt + 32, 512, 4),
         (opt + 56, 0xFFFFFFFF, 4),
         (opt + 16, 0, 4),

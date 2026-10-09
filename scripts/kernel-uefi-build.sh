@@ -245,7 +245,7 @@ as --64 build/uefi/embed.S -o build/uefi/embed.o
 as --64 kernel/uefi/transition.S -o build/uefi/transition.o
 "$cxx" "${flags[@]}" "${extra[@]}" -fpie -maccumulate-outgoing-args -Ibuild/uefi -c kernel/uefi/loader.cpp -o build/uefi/loader.o
 for name in loader embed transition memory; do objcopy --remove-section=.comment --remove-section=.note.GNU-stack "build/uefi/$name.o" "build/uefi/$name-pe.o"; done
-"$UEFI_LINKER" -mi386pep --subsystem 10 --entry=aurora_efi_entry --image-base=0x100000 --enable-reloc-section --no-insert-timestamp build/uefi/loader-pe.o build/uefi/embed-pe.o build/uefi/transition-pe.o build/uefi/memory-pe.o -o build/uefi/esp/EFI/BOOT/BOOTX64.EFI
+"$UEFI_LINKER" -mi386pep --subsystem 10 --entry=aurora_efi_entry --image-base=0x100000 --enable-reloc-section --dynamicbase --nxcompat --no-insert-timestamp build/uefi/loader-pe.o build/uefi/embed-pe.o build/uefi/transition-pe.o build/uefi/memory-pe.o -o build/uefi/esp/EFI/BOOT/BOOTX64.EFI
 printf 'Built UEFI PE32+ loader and independent payload\n'
 
 image_policy=()

@@ -9,14 +9,18 @@ list of current limitations. This source is integrated with accepted PR97 / main
 structural-formatter, protected-console, byte-literal and JSON-report work.
 The persistent simple-UEFI Aurora console service has the bounded qualification
 noted below.
-Compiler-affecting merges require final integrated `dev`, `slow`, and complete
-root `make test`; the checked runner inventory explicitly records remaining Meson
+Compiler- and kernel-affecting merges require final integrated GCC 14 and GCC 16
+`dev`, `slow`, complete root `make test`, and relevant image/smoke gates; the checked runner inventory explicitly records remaining Meson
 gaps. Public protected-console commands build and check local artifacts; separately
 pinned first-image qualification remains an explicit opt-in gate.
 Kernel host portability pins freestanding CET/string-operation policy and binds
 stack metadata through complete source locations and exact object symbols; see
 the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
 This mechanism does not transfer qualification between compiler or distro builds.
+The shared native harness retains complete per-command artifact accounting with
+a `scandir` traversal preserving stable-tree totals and failing closed on scan
+errors; compiler-free controls cover its accounting and error boundaries. This is no new native qualification or whole-suite speed claim;
+see the [test contract](developer-test-contract.md#complete-native-artifact-accounting).
 None of the six destination goals is complete. A bounded feature or passing test
 suite does not establish production safety, whole-system readiness or physical
 hardware support.

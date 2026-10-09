@@ -110,7 +110,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-client-disposal test-terminal-event test-native-cap-contracts \
     run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
     program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream capture-framebuffer \
-    test-developer-commands test-inventory test-iommu-diagnostics: aurora-test-context
+    test-developer-commands test-inventory test-iommu-diagnostics test-artifact-budget: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -539,3 +539,11 @@ test-inventory:
 	python3 -B tests/test-inventory.py
 
 endif # controlled outer dispatcher / original inner graph
+
+# Compiler-free controls; retain complete scans before and after native commands.
+.PHONY: test-artifact-budget
+test-artifact-budget:
+	python3 -B tests/test_artifact_budget.py
+	python3 -B -O tests/test_artifact_budget.py
+
+test: test-artifact-budget
