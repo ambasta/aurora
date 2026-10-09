@@ -21,7 +21,7 @@ Historical test receipts are kept in [verification history](docs/verification.md
 
 ## Try it
 
-Use an x86-64 Linux host with a C++23-capable GNU C++ compiler, GNU Make and
+Use an x86-64 Linux host with GCC 16 (C++23), GNU Make and
 binutils, Python 3 and Bash. The native tests also use Meson 1.12.1+, Ninja,
 coreutils and ripgrep.
 Run commands from the repository root, in a path without whitespace, one build
@@ -80,8 +80,8 @@ See [local development](docs/local-development.md) for dependencies, compiler an
 firmware options, build-only commands and troubleshooting. `make help` lists the
 entrypoints. Host/toolchain qualification is recorded with each tested result.
 Use the [canonical Meson/Ninja graph](docs/meson-bootstrap.md) for incremental
-compiler/fixture builds and complete parallel native tests. The graph-completion
-change is a source-only candidate until fresh GCC 14 and GCC 16 runs pass.
+compiler/fixture builds and complete parallel native tests. GCC 16 is the required
+merge/release toolchain; GCC 14 checks are optional targeted compatibility evidence.
 
 ## Explore the project
 
@@ -109,11 +109,11 @@ formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
 
 ```sh
-meson compile -C build/gcc14 -j 3
-meson test -C build/gcc14 --suite dev --no-rebuild --num-processes 4
-meson test -C build/gcc14 --suite full --no-rebuild --num-processes 4
+meson compile -C build/gcc16 -j 3
+meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4
+meson test -C build/gcc16 --suite full --no-rebuild --num-processes 4
 ./scripts/compiler-test.sh    # compiler-only Meson selection
-CXX=g++ make test            # configure/build, then complete Meson graph; no QEMU
+CXX=g++ make test            # alternative to direct Meson full above; no QEMU
 make smoke-all               # separate emulator matrix; QEMU and firmware required
 ```
 
@@ -123,8 +123,8 @@ compiler-only shortcuts configure a fresh build directory automatically and reus
 it incrementally. `dev` is quick feedback; `full` includes all
 native compiler, full-package and kernel/boot-image gates. Named `slow`,
 `integration`, `boot`, `core` and `bytes` suites support focused work. A merge
-requires the final-source gates in [AGENTS.md](AGENTS.md), including both GCC 14
-and GCC 16 for compiler/kernel changes and separate affected emulator profiles.
+requires the final-source GCC 16 gates in [AGENTS.md](AGENTS.md), including the
+complete `full` suite and separate normal BIOS/UEFI and affected emulator profiles.
 
 Normal development reuses dependency-tracked compiler and C++ fixture builds.
 Changing source reruns affected build commands; changing toolchain/configuration

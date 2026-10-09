@@ -1,7 +1,7 @@
 # Protected command console implementation contract
 
 Status: scoped command, recovery and hostile-profile guest evidence independently accepted.
-Publication additionally requires a matching final integrated dev/slow run.
+Publication also requires the [canonical final-source native gate](../AGENTS.md#workflow).
 Started at b3551be8 and composed the accepted compiler/repair source through main
 1024f40e plus the qualified terminal-event and structural-formatter source joins.
 
@@ -105,10 +105,10 @@ stop at the exact admitted site/reason, exit 35, without output or prompt recove
 Every profile restored the normal image. A separate actual normal UEFI boot then
 passed exit 33 on exact bytes independently rebound to prior terminal admission.
 
-Final repository acceptance requires both dev and slow on this final integrated
-source, including its documentation; the matching external receipts record that
-result. No full-native, broad kernel or physical-hardware qualification is
-claimed; full make test remains required before release.
+Final repository acceptance follows the [canonical final-source gates](../AGENTS.md#workflow),
+including documentation changes and independent review.
+The existing dev/slow receipts retain their original source and coverage; no new
+full-native, broad kernel or physical-hardware qualification is claimed.
 
 Bulk evidence, original failures and exact source/compiler/image/replay hashes
 are retained in the external checkpoint evidence package. The first build's

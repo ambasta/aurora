@@ -1,4 +1,4 @@
-# Root native Meson migration candidate
+# Canonical root native Meson graph
 
 `meson.build` registers the complete non-compiler root Make prerequisites. The
 machine-checked `inventory.json` maps all 38 prerequisite goals to complete
@@ -33,6 +33,9 @@ No QEMU guest or hardware action is included. The BIOS native gate still runs
 the existing normal image builder and its complete image/negative-control check;
 it is not a smoke boot. Explicit pinned Make acceptance remains a separate path.
 
-This is an unqualified migration candidate. AST, inventory self-tests and static
-path/graph checks are not native execution, final-source equivalence evidence,
-GCC 14/GCC 16 acceptance, sanitizer or emulator qualification.
+Every merge or release requires complete final-source GCC 16 `full` execution
+and independent review under [the development contract](../../AGENTS.md).
+GCC 14 is optional targeted compatibility evidence. AST, inventory self-tests and
+static path/graph checks do not substitute for native execution, final-source
+equivalence evidence, sanitizer or emulator qualification. Historical results
+retain their original source/tool scope.

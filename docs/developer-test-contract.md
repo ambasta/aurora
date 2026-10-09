@@ -1,11 +1,12 @@
 # Developer test-build and explicit acceptance contract
 
-## Canonical Meson migration candidate — 2026-10-09
+## Canonical Meson graph and current merge policy — 2026-10-09
 
-Normal `make test` and compiler-only aliases now select the incremental Meson
-native graph described in [the build guide](meson-bootstrap.md). This source-only
-migration is unqualified until its final full graph passes separately with GCC 14
-and GCC 16. Meson logs, final source/tool identities and independent coverage review
+Normal `make test` and compiler-only aliases select the complete incremental Meson
+native graph described in [the build guide](meson-bootstrap.md). Every merge or
+release requires its complete `full` suite on the final integrated source with
+GCC 16. GCC 14 is optional targeted compatibility evidence, not a routine gate.
+Meson logs, final source/tool identities and independent source/coverage review
 are required; observed compiler identity does not claim a fresh bootstrap build.
 The explicit pinned `make test-acceptance` route and historical fresh-build
 contract below remain for their distinct compatibility/provenance checks. They
@@ -116,23 +117,29 @@ local workflow. It does not establish independent approval, compiler correctness
 resistance to a malicious compiler, global memory safety or a complete supply-chain
 proof. Physical-hardware and broad-host qualification remain separate.
 
-## Two-toolchain merge gates
+## GCC 16 merge gates
 
-Compiler- and kernel-affecting merges require separate GCC 14 and GCC 16 runs on
-one final integrated source: complete Meson `dev` and `slow`, plus complete root
-`make test` with a new matching completed `run.json` for each compiler. Use
-separate Meson build directories and run shared-output Make/image commands
-sequentially. A missing compiler or dependency leaves that tuple unqualified;
-do not skip its gates or substitute another version's receipt.
+Every merge or release requires the complete Meson `full` suite on the final
+integrated source with GCC 16, including after conflict resolution. `full`
+includes all `dev` and `slow` coverage; neither separate reruns of those subsets
+nor a duplicate `make test` are required. `make test` invokes that same graph.
+Reuse dependency-tracked builds only within a matching toolchain/configuration;
+use separate directories for changed identities and fresh directories for clean
+bootstrap checks or uncertain dependency tracking. Run shared-output Make/image
+commands sequentially. Missing tools or dependencies leave the candidate
+unqualified; do not skip gates or substitute another source/version's receipt.
 
 Select `CXX` and matching real `gcc`/`g++` executables on `PATH`, since inherited
 runners can call bare tools. Record the actual assembler, ELF/PE linkers and
 runtime libraries too; compiler version alone does not identify a distro tuple.
-The existing build-once driver records each native run. No historical pin is
-required for ordinary developer runs; independently pinned acceptance remains a
-separate mode.
+A Debian GCC 16.2.0-3 result is not Gentoo GCC 16.2.1 qualification. Retain Meson's
+commands, introspection and test logs for the final source. No historical pin or
+legacy `run.json` is required for canonical developer runs; independently pinned
+acceptance remains a separate mode with its existing matching `run.json` contract.
+GCC 14 may be used for targeted compatibility investigations; preserve its
+historical receipts without requiring another routine full run.
 
-For each compiler, build/check and smoke normal BIOS and UEFI images using
+With GCC 16, build/check and smoke normal BIOS and UEFI images using
 `make run` and `make run-uefi`. Also run existing image/admission and smoke
 entrypoints for each profile affected by the source or compiler-output change,
 with its applicable fault/recovery controls and a separate successful normal
@@ -141,7 +148,12 @@ a developer framebuffer preview remains explicitly unqualified capture output.
 All commands, source identities, failures and limits belong with that run's
 retained evidence. Reuse existing runners; this adds no separate matrix harness.
 
-## Ordinary developer tests
+## Historical build-once native workflow
+
+The build-once recipe below describes historical ordinary `make test` runs and
+the retained explicit `make test-acceptance` compatibility contract. Current
+`make test` uses the canonical graph above and does not produce these legacy
+fresh-build receipts.
 
 Compiler-free IOMMU routing checks inspect guarded literal Make target membership,
 so adding or reordering grouped targets does not change their prerequisite check.

@@ -2,7 +2,7 @@
 
 Output-only rendering and bounded graphical-session diagnostics have
 independently accepted guest captures on exact pinned fixtures. The joined
-capture-failure candidate, final developer/slow/full-Make gates and merge review
+capture-failure candidate, final GCC 16 `full` gate and merge review
 remain pending; this is not a claim of whole-system readiness.
 The current source join adds the reviewed GCC 14/GCC 16 portability machinery
 and readable binary glyph spellings. Graphical compiler frames now bind exact
@@ -12,7 +12,7 @@ compiler alias name is retained through metadata joining; only the already prove
 same-body pair is canonicalized afterward. The unchanged
 legacy verifier's local visited-array invariant has a separately reviewed source
 applicability check for the joined headers. This is source integration only:
-changed-output image admission, failure-fixture guests and both toolchains'
+changed-output image admission, failure-fixture guests and the GCC 16
 final integrated gates remain pending. Capture admission now checks current
 build provenance and bounded image/stack/state structure instead of replaying
 historical compiler/object tuples or absolute capture instruction inventories.
@@ -135,8 +135,8 @@ record page writable or disables CR0.WP. The existing generic smoke oracle does 
 The accepted hosted/native evidence covers independent generated-Aurora pixels,
 RGB/BGR guard/padding, source/IR/private-ABI authority, exact linked mixed-stack and
 image checks, reviewed guest admission, real screenshot/physical before-and-after
-capture and denied grants with no stores. Final joined Meson developer/slow,
-complete root Make and independent merge review are still required.
+capture and denied grants with no stores. The final integrated GCC 16 Meson
+`full` suite and independent merge review are still required.
 
 ### Accepted aperture probe, 2026-10-08
 
@@ -330,8 +330,8 @@ geometry fault, retry, rollback or synchronous fault is claimed.
 The new candidate requires focused generated-consumer verification, exact
 production/capture reconstruction and independent image admission, separate
 guest denial/pixel-failure windows and positive regression, actual normal
-restoration, then the final integrated full Meson graph on GCC 14 and GCC 16
-and independent review.
+restoration, then the final integrated full Meson graph on GCC 16 and independent
+review. GCC 14 checks are optional targeted compatibility evidence.
 Original 988-file image receipts and preserved-image guest results do not qualify
 the new joined source. Partial/null-pair denials and deterministic synchronous faults
 remain separate from the seven selectors; no new keyboard, desktop or physical

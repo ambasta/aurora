@@ -6,8 +6,9 @@ This is the canonical project-level status and contract index. Update this secti
 in place; the checkpoint summaries below are historical. The implementation
 includes a bounded Aurora-owned graphical console, distinct sealed service
 borrows, readable glyph literals, host-toolchain portability and a complete
-canonical Meson graph. Compiler- and kernel-affecting merges require final
-integrated GCC 14 and GCC 16 full tests plus applicable image and boot checks.
+canonical Meson graph. Every merge or release requires final integrated GCC 16
+`full` tests plus normal BIOS/UEFI and applicable image/actual guest checks.
+GCC 14 is optional targeted compatibility evidence, not a routine gate.
 Make is a convenience entrypoint to the same incremental graph; a second full
 Make aggregate is not required. Fresh explicit build directories configure
 automatically, and existing directories must match their toolchain and flags.
@@ -136,15 +137,16 @@ Those bounded results do not establish a general process API or whole kernel.
 The byte-character-literal increment passes its native, lexical, formatter and
 JSON spelling gates; 38 kernel-root assemblies remain byte-identical to the
 console predecessor. This preserves compiled behavior without claiming another
-guest run. Final integrated developer/slow gates and independent review are
-required before merge, as for every source change.
+guest run. Complete final integrated GCC 16 `full` coverage and independent
+review are required before merge, as for every source change.
 
 PR91's recorded final join passed 41 Meson developer and 12 slow tests, plus its
 focused return/IR checks. That is not a new full-root-native, sanitizer, all-mode
 emulator or physical-hardware qualification. For each capability, retain its
 source-specific evidence and exclusions in the [verification history](verification.md)
-and linked results. Run both `dev` and `slow` on every final integrated merge
-candidate, including documentation changes; this index itself records no new run.
+and linked results. Run complete GCC 16 `full` on every final integrated merge
+candidate, including documentation changes; it includes `dev` and `slow` without
+requiring duplicate runs. This index itself records no new execution.
 
 ## Historical checkpoint summaries
 

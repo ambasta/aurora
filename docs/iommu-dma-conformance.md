@@ -184,9 +184,9 @@ supervisor, binary download or hidden target substitution. A new build or path/p
 cannot borrow historical acceptance. The model README describes reconstruction,
 build instructions and target preparation without embedding private paths.
 
-Before merge, independently review this additive result update and complete
-final-source Meson `dev` and `slow` per AGENTS.md. Complete root native and affected emulator
-qualification remain separate gates; no old receipt qualifies the changed test
+Before merge, independently review this additive result update and complete the
+[canonical final-source native gate](../AGENTS.md#workflow). Actual affected emulator
+qualification remains separate; no old receipt qualifies the changed test
 routing. Future model qualification still needs actual cache-hit observations,
 requester/bus boundaries, excluded-path regressions, broader permissions, command
 read/malformed-command corrections and controls, full-capacity/event-memory-error,

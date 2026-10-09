@@ -1,22 +1,23 @@
 # Canonical incremental native tests
 
-This joined graphical-console and canonical-graph source is pending final
-qualification with GCC 14 and GCC 16. Previous separately qualified snapshots do
-not qualify this combined tree.
+Meson/Ninja is the canonical complete native graph. Every merge or release
+requires its complete `full` suite on the final integrated source with GCC 16,
+plus the separate applicable image and actual guest gates. GCC 14 is optional
+targeted compatibility evidence. Previous snapshots do not qualify a new tree.
 
 ## Build and run
 
-Use Meson 1.12.1+, Ninja, Python 3.10+, GNU binutils and a C++23 GNU/Linux x86-64
-host. Select matching real `gcc` and `g++` on PATH: a stack-guard runner invokes
-bare `gcc`. Keep one stable build directory per toolchain/configuration:
+Use Meson 1.12.1+, Ninja, Python 3.10+, GNU binutils and GCC 16 (C++23) on a
+GNU/Linux x86-64 host. Select matching real `gcc` and `g++` on PATH: a stack-guard
+runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
-# PATH must already select the matching GCC 14 pair.
-CXX=g++ meson setup build/gcc14 --backend=ninja -Dlsp=false
-meson compile -C build/gcc14 -j 3
-meson test -C build/gcc14 --suite dev --no-rebuild --num-processes 4 --print-errorlogs
-meson test -C build/gcc14 --suite full --no-rebuild --num-processes 4 --print-errorlogs
-# Repeat setup/compile/full in build/gcc16 with the matching GCC 16 PATH.
+# PATH must already select the matching GCC 16 pair.
+CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false
+meson compile -C build/gcc16 -j 3
+# Optional quick feedback while developing; full below includes these tests.
+meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4 --print-errorlogs
+meson test -C build/gcc16 --suite full --no-rebuild --num-processes 4 --print-errorlogs
 ```
 
 Three compile jobs and four test workers are initial configurable choices, not a

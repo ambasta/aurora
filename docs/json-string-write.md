@@ -42,8 +42,8 @@ copied observations, return/project composed values, replace complete child
 reports and check failure masking before extreme-value arithmetic. The same
 fixtures pass against the preceding accessor-normalizing implementation and the
 constructor-normalizing implementation. Existing real-owner lifetime, byte,
-transaction and borrow-rejection regressions remain required, as do the complete
-final-source Meson `dev` and `slow` suites.
+transaction and borrow-rejection regressions remain required, as does the
+[complete final-source native gate](../AGENTS.md#workflow).
 
 Static x86-64 assembly inspection with the unchanged accepted compiler counts
 43 to 10 instruction lines for scalar `status()` and 32 to 10 for string
