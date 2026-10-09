@@ -1296,6 +1296,110 @@ def paired_frame_envelope(decoder, symbol, code):
     return rows
 
 
+def paired_gcc16_slot_frame(decoder, symbol, code):
+    """Prove the closed GCC16 allocation/save-slot form on every CFG path.
+
+    This is a frame constituent only. Separate exact-machine and storage proofs
+    must justify each admitted external/indexed write and all helper effects.
+    """
+    layouts = {
+        PAIRED_ROOT: (0xE8, {"rbx": 0xC0, "rbp": 0xC8, "r12": 0xD0, "r14": 0xD8, "r15": 0xE0},
+                      {0x789: ("movb", "$0x0,0x48(%rsp,%rax,1)")}),
+        PAIRED_ALIAS: (0x78, {"rbx": 0x48, "rbp": 0x50, "r12": 0x58, "r13": 0x60,
+                              "r14": 0x68, "r15": 0x70}, {0x76: ("movb", "$0x1,(%rdx,%rax,1)")}),
+        PAIRED_LAYOUT: (0xB8, {"rbx": 0xB0}, {}),
+    }
+    need(symbol.name in layouts, "Unknown GCC16 save-slot frame owner")
+    size, slots, external = layouts[symbol.name]
+    rows = paired_rows(symbol, code)
+    successors, _, _ = paired_cfg(decoder, symbol, code)
+    registers = (*PAIRED_CALLER_SAVED, *PAIRED_SAVES)
+    initial = tuple(name if name in PAIRED_SAVES else None for name in registers)
+    states = {symbol.address: (0, initial, (None,) * size)}
+    pending, returns, saves, restores = [symbol.address], set(), set(), set()
+
+    def schedule(address, allocation, regs, memory):
+        state = allocation, tuple(regs[name] for name in registers), tuple(memory)
+        prior = states.get(address)
+        if prior is not None:
+            need(prior[0] == allocation, "GCC16 frame allocation disagrees at CFG join")
+            state = allocation, tuple(a if a == b else None for a, b in zip(prior[1], state[1])), tuple(
+                a if a == b else None for a, b in zip(prior[2], state[2])
+            )
+            if state == prior:
+                return
+        states[address] = state
+        pending.append(address)
+
+    while pending:
+        address = pending.pop()
+        allocation, values, memory = states[address]
+        regs, memory = dict(zip(registers, values)), list(memory)
+        row = code[address]
+        args = decoder.arguments(row.args)
+        offset = address - symbol.address
+        need(row.op not in ("push", "pop", "leave", "enter"), "Unexpected GCC16 frame stack operation")
+        if row.op == "ret":
+            need(allocation == 0 and all(regs[name] == name for name in PAIRED_SAVES),
+                 "GCC16 return has unbalanced allocation or damaged callee save")
+            returns.add(address)
+            continue
+        if args[-1:] in (["%rsp"], ["%esp"], ["%sp"], ["%spl"]):
+            need(args == ["$" + hex(size), "%rsp"] and row.op in ("sub", "add"),
+                 "Unknown GCC16 stack allocation operand")
+            need(allocation == (0 if row.op == "sub" else size), "Repeated or missing GCC16 frame allocation")
+            allocation = size if row.op == "sub" else 0
+        elif row.op == "call":
+            need(allocation == size, "GCC16 call outside allocated frame")
+            for name in PAIRED_CALLER_SAVED:
+                regs[name] = None
+        elif row.op not in PAIRED_NO_WRITE | decoder.BRANCHES and not (row.op == "xchg" and row.args == "%ax,%ax"):
+            need(row.op in {"mov", "movabs", "movb", "movq", "movzbl", "lea", "xor", "and", "or",
+                            "sub", "add", "shl", "shr", "sete", "setne", "seta", "setae", "setb", "setbe", "cmove"},
+                 "Unknown or multi-destination GCC16 frame instruction")
+            need(args, "Unknown GCC16 frame instruction")
+            value = None
+            if row.op == "mov" and len(args) == 2:
+                source = paired_register(args[0])
+                if source in regs and args[0] == "%" + source:
+                    value = regs[source]
+                slot = paired_slot(args[0])
+                if slot is not None:
+                    need(allocation == size and slot + 8 <= size, "GCC16 restore reads outside allocation")
+                    parts = memory[slot:slot + 8]
+                    if parts[0] is not None and parts == [(parts[0][0], index) for index in range(8)]:
+                        value = parts[0][0]
+                        if value in slots:
+                            need(slot == slots[value] and args[-1] == "%" + value,
+                                 "GCC16 callee restore uses wrong slot/register")
+                            restores.add((address, value, slot))
+            if "(" in args[-1]:
+                slot = paired_slot(args[-1])
+                if slot is None:
+                    need(external.get(offset) == (row.op, row.args) and allocation == size,
+                         "Unclassified GCC16 frame memory write")
+                else:
+                    width = paired_width(row, args)
+                    need(allocation == size and slot + width <= size, "GCC16 store escapes allocated frame")
+                    overlap = [name for name, start in slots.items() if slot < start + 8 and start < slot + width]
+                    if overlap:
+                        need(len(overlap) == 1 and width == 8 and slot == slots[overlap[0]]
+                             and value == overlap[0] and args[0] == "%" + overlap[0],
+                             "GCC16 private spill overwrites a callee-save slot")
+                        saves.add((address, overlap[0], slot))
+                    memory[slot:slot + width] = [(value, index) if value is not None else None for index in range(width)]
+            else:
+                destination = paired_register(args[-1])
+                need(destination in regs, "Unknown GCC16 frame register effect")
+                regs[destination] = value if args[-1] == "%" + destination else None
+        for target in successors[address]:
+            schedule(target, allocation, regs, memory)
+    need(returns and {name for _, name, _ in saves} == set(slots)
+         and {name for _, name, _ in restores} == set(slots), "Incomplete GCC16 save/restore inventory")
+    return dict(allocation=size, frame_with_return=size + 8, save_slots=slots,
+                saves=sorted(saves), restores=sorted(restores), returns=sorted(returns))
+
+
 def paired_readonly_leaf(decoder, name, symbols, code, functions):
     need(
         name == PAIRED_LEVEL_HELPER and name in symbols and not functions[name]["calls"],
@@ -1846,6 +1950,163 @@ def paired_helper_effects(decoder, symbols, code, functions):
     return effects
 
 
+def paired_gcc16_helper_effects(decoder, symbols, code, functions):
+    effects = {}
+    for name in PAIRED_HELPERS:
+        symbol = symbols[name]
+        rows = paired_rows(symbol, code)
+        need(not functions[name]["calls"] and all(row.op != "call" for row in rows), "Paired helper acquired a call")
+        if name == PAIRED_LAYOUT:
+            frame = paired_gcc16_slot_frame(decoder, symbol, code)
+            private = []
+            for row in rows:
+                args = decoder.arguments(row.args)
+                if args[-1:] and "(" in args[-1] and row.op not in PAIRED_NO_WRITE | decoder.BRANCHES:
+                    slot, width = paired_slot(args[-1]), paired_width(row, args)
+                    need(slot is not None and 0 <= slot and slot + width <= 0xB8,
+                         "GCC16 layout helper writes outside private frame")
+                    private.append((row.address, slot, width))
+            effects[name] = dict(caller_memory_writes=0, private_stores=private,
+                                 callee_saved_preserved=list(PAIRED_SAVES), calls=0, frame=frame)
+            continue
+        saved = ("rbx",) if name == PAIRED_ENTRY else ()
+        prologue = [row for row in rows if row.op == "push"]
+        need([row.args for row in prologue] == ["%" + value for value in saved], "Changed helper register saves")
+        # A per-path save/restore automaton proves preservation, including early
+        # layout rejection returns before its conditional prologue.
+        successors, _, _ = paired_cfg(decoder, symbol, code)
+        states, pending = {symbol.address: ((), 0)}, [symbol.address]
+        stores = []
+        while pending:
+            address = pending.pop()
+            row = code[address]
+            stack, allocation = states[address]
+            args = decoder.arguments(row.args)
+            if row.op == "push":
+                need(args == ["%" + saved[len(stack)]] and not allocation, "Unbalanced paired helper save")
+                stack += (args[0],)
+            elif row.op == "pop":
+                need(stack and args == [stack[-1]] and not allocation, "Unbalanced paired helper restore")
+                stack = stack[:-1]
+            elif args[-1:] == ["%rsp"] and row.op in ("sub", "add"):
+                need(
+                    name == PAIRED_LAYOUT and row.args == "$0xb8,%rsp" and len(stack) == 6,
+                    "Unknown helper stack allocation",
+                )
+                need(allocation == (0 if row.op == "sub" else 0xB8), "Changed helper private-frame lifetime")
+                allocation = 0xB8 if row.op == "sub" else 0
+            elif row.op == "ret":
+                need(not stack and not allocation, "Helper returns without restoring its caller")
+            elif row.op not in PAIRED_NO_WRITE | decoder.BRANCHES:
+                need(
+                    row.op
+                    in {
+                        "mov",
+                        "movabs",
+                        "movq",
+                        "movzbl",
+                        "lea",
+                        "xor",
+                        "and",
+                        "or",
+                        "sub",
+                        "add",
+                        "shl",
+                        "shr",
+                        "setae",
+                        "cmovae",
+                    },
+                    "Unknown paired helper effect",
+                )
+                destination = paired_register(args[-1])
+                need(destination != "rsp", "Unknown helper stack write")
+                if destination in PAIRED_SAVES:
+                    need("%" + destination in stack, "Paired helper clobbers an unsaved callee register")
+                if "(" in args[-1]:
+                    slot = paired_slot(args[-1])
+                    width = paired_width(row, args)
+                    need(
+                        name == PAIRED_LAYOUT
+                        and allocation == 0xB8
+                        and slot is not None
+                        and 0 <= slot
+                        and slot + width <= allocation,
+                        "Paired helper writes caller/unknown memory",
+                    )
+                    stores.append((address, slot, width))
+            state = stack, allocation
+            for target in successors[address]:
+                if target in states:
+                    need(states[target] == state, "Helper stack preservation disagrees at CFG join")
+                else:
+                    states[target] = state
+                    pending.append(target)
+        # Classify even unreachable instructions; exact machine coverage prevents
+        # hidden stores in ignored padding and the reachable pass checks lifetime.
+        all_stores = [
+            row.address
+            for row in rows
+            if decoder.arguments(row.args)[-1:]
+            and "(" in decoder.arguments(row.args)[-1]
+            and row.op not in PAIRED_NO_WRITE | decoder.BRANCHES
+        ]
+        need(set(all_stores) == {address for address, _, _ in stores}, "Unclassified paired helper memory write")
+        effects[name] = dict(
+            caller_memory_writes=0,
+            private_stores=sorted(set(stores)),
+            callee_saved_preserved=list(PAIRED_SAVES),
+            calls=0,
+        )
+    return effects
+
+
+def paired_gcc16_guard_contract(decoder, symbols, code):
+    symbol = symbols[PAIRED_GUARD]
+    # Both additions branch on carry before either unsigned endpoint comparison.
+    # The only true results establish rhs >= lhs_end or lhs >= rhs_end.
+    expected = [
+        (0, "add", "%rdi,%rsi"), (3, "jb", 0x15), (5, "add", "%rdx,%rcx"),
+        (8, "jb", 0x15), (0xA, "mov", "$0x1,%eax"), (0xF, "cmp", "%rsi,%rdx"),
+        (0x12, "jb", 0x20), (0x14, "ret", ""), (0x15, "xor", "%eax,%eax"),
+        (0x17, "ret", ""), (0x20, "cmp", "%rcx,%rdi"), (0x23, "setae", "%al"),
+        (0x26, "ret", ""),
+    ]
+    for offset, op, args in expected:
+        row = code[symbol.address + offset]
+        need(row.op == op and (decoder.target_of(row) == symbol.address + args
+             if isinstance(args, int) else row.args == args), "Changed GCC16 disjointness/overflow predicate")
+    need({row.address for row in paired_rows(symbol, code) if row.op not in {"nopl", "nopw", "nop"}}
+         == {symbol.address + offset for offset, _, _ in expected}, "Unclassified GCC16 guard instruction")
+    return dict(endpoint_additions_overflow_checked=True, unsigned_disjoint_endpoints=True, caller_memory_writes=0)
+
+
+PAIRED_GCC16_MACHINE_CONTRACTS = {
+    '_ZNK6aurora4uefi10PageTables16verify_graphicalEmRKNS0_5BytesEPKNS0_18LocalApicAdmissionEPKNS0_20FramebufferAdmissionE': (2512, 561, '1c9f7755fd96fc7e1f56a44e82da2e5c036e1f89e1633e4610befa7fa1f07978'),
+    '_ZZNK6aurora4uefi10PageTables16verify_graphicalEmRKNS0_5BytesEPKNS0_18LocalApicAdmissionEPKNS0_20FramebufferAdmissionEENKUlOT_mjmE_clIRKSD_EEbSC_mjm': (932, 203, 'f3000925e7753004a02924e2145c962d69f71c969ad69b0cbef9a306ff2c0f1d'),
+    '_ZN6aurora4uefi20RuntimeLayoutProfileILm2EE5validEm': (714, 141, '0048919eda23f803e3088bc3174b10947d7e4533c5bb7254c9e7e4ef6cb4c3a6'),
+    '_ZNK6aurora4uefi5Bytes3getEmj': (102, 31, 'eae393a9a39601eb8a2a32285728dfad1d5f3b3b80e3f9ace6a6f1ccdc3b0bc9'),
+    '_ZN6aurora4uefi14expected_flagsEmRKNS0_5BytesE': (714, 138, '0ca4f24e09c658c0c58812b4ae35910e6947015f37972724622447873a942244'),
+    '_ZN6aurora4uefi10PageTables33paired_graphical_storage_disjointEmmmm': (39, 14, '8af6ed02855c460056f9bf347ba5fcb4de0ad402e19021f58171119a431037cc'),
+    '_ZNK6aurora4uefi10PageTables5entryEm': (132, 37, '9d8328eaaa13c372e732543f87f1c1d16e31411653ddb9f214b37636a6e73c71'),
+    '_ZNK6aurora4uefi10PageTables11window_slotEv.isra.0': (115, 29, 'b66ac4f0516ae6d93820a6e70063f31b8d29bfc281750eb8bce77d4fe9b6346f'),
+}
+
+
+def paired_gcc16_exact_machine(decoder, symbols, code, starts, payload):
+    need(payload is not None, "Paired snapshot/guard linked storage proof requires exact machine bytes")
+    receipts = {}
+    for name, (size, count, expected) in PAIRED_GCC16_MACHINE_CONTRACTS.items():
+        need(name in symbols and symbols[name].size == size, "Changed paired audited function size: " + name)
+        inventory = paired_machine_inventory(decoder, symbols[name], code, starts, payload)
+        actual = hashlib.sha256(canonical(inventory).encode()).hexdigest()
+        need(
+            len(inventory) == count and actual == expected, "Changed paired audited instruction/byte inventory: " + name
+        )
+        receipts[name] = dict(bytes=size, instructions=count, normalized_sha256=actual)
+    need(len(receipts) == 8, "Incomplete paired audited machine inventory")
+    return receipts
+
+
 def paired_require_slice(symbol, code, offset, operations):
     address = symbol.address + offset
     for operation in operations:
@@ -2322,6 +2583,630 @@ def paired_walker_storage(decoder, symbol, code, starts):
     )
 
 
+def paired_gcc16_root_storage(decoder, symbols, code, starts, functions):
+    symbol = symbols[PAIRED_ROOT]
+    rows = paired_rows(symbol, code)
+    begin = symbol.address
+    frame = paired_gcc16_slot_frame(decoder, symbol, code)
+    paired_require_slice(symbol, code, 0, [("sub", "$0xe8,%rsp"),
+        ("mov", "(%rdi),%r10"), ("mov", "0x8(%rdi),%r9"), ("mov", "0x10(%rdi),%rax"),
+        ("mov", "%rsi,0x38(%rsp)"), ("mov", "%rcx,0x30(%rsp)"), ("mov", "%r8,0x28(%rsp)"),
+        ("mov", "%r10,0x58(%rsp)"), ("mov", "%r9,0x60(%rsp)"), ("mov", "%rax,0x68(%rsp)")])
+    successors, predecessors, dominators = paired_cfg(decoder, symbol, code)
+    rootcall, bitmap_store = begin + 0x7B5, begin + 0x789
+    captures = {begin + offset for offset in (7, 0xA, 0xE, 0x21, 0x26, 0x2B)}
+    need(captures <= dominators[rootcall], "Partial or bypassed GCC16 snapshot capture")
+    paired_require_slice(symbol, code, 0xC1, [("lea", "-0x1(%r9),%rdx"), ("cmp", "$0xf,%rdx"),
+        ("seta", "%dl"), ("xor", "$0x1,%eax"), ("or", "%al,%dl")])
+    branch = code[begin + 0xD1]
+    need(branch.op == "je" and decoder.target_of(branch) == begin + 0x100,
+         "GCC16 used/layout validation does not select the valid successor")
+    paired_require_slice(symbol, code, 0x100, [("lea", "0x11000(%r15),%rax"), ("cmp", "%rax,%r10")])
+    branch = code[begin + 0x10A]
+    need(branch.op == "jne" and decoder.target_of(branch) == begin + 0x420,
+         "GCC16 snapshot base lacks arena-table rejection")
+    required = {begin + offset for offset in (0xA7, 0xC1, 0xC5, 0xC9, 0xCC, 0xCF, 0xD1, 0x100, 0x107, 0x10A)}
+    need(required <= dominators[rootcall], "GCC16 used/base/arena checks do not dominate walking")
+    objects = dict(bitmap=(0x48, 16), snapshot=(0x58, 24), helper_closure=(0x70, 24), closure=(0x88, 56))
+    intervals = sorted((start, start + size) for start, size in objects.values())
+    need(
+        all(0 <= start < end <= 0xE8 for start, end in intervals)
+        and all(left[1] <= right[0] for left, right in zip(intervals, intervals[1:])),
+        "Paired protected root objects overlap or escape the real frame",
+    )
+    construction = {
+        0x21: (0x58, "captured_base"), 0x26: (0x60, "captured_used"), 0x2B: (0x68, "captured_framebuffer"),
+        0x651: (0x98, ("frame", 0x70)), 0x663: (0x88, ("frame", 0x58)),
+        0x670: (0xA0, ("frame", 0x30)), 0x67D: (0x70, ("frame", 0x40)),
+        0x687: (0x90, ("frame", 0x48)), 0x694: (0xA8, ("frame", 0x28)),
+        0x6A1: (0x78, "bytes"), 0x6A6: (0x80, ("frame", 0x38)),
+        0x6AE: (0xB0, ("frame", 0x38)), 0x6B6: (0xB8, "bytes"),
+    }
+    guard_calls = (0x6BE, 0x6E0, 0x705, 0x729, 0x750, 0x777)
+    guard_args = (
+        ("original", 24, ("frame", 0x48), 16), ("original", 24, ("frame", 0x58), 24),
+        ("original", 24, ("frame", 0x88), 56), (("frame", 0x58), 24, ("frame", 0x48), 16),
+        (("frame", 0x58), 24, ("frame", 0x88), 56), (("frame", 0x48), 16, ("frame", 0x88), 56),
+    )
+    guard_states = dict(zip(guard_calls, guard_args))
+    for offset in guard_calls:
+        row = code[begin + offset]
+        copy_result = code[row.next]
+        need((copy_result.op, copy_result.args) == ("mov", "%eax,%r8d"), "Changed GCC16 guard result copy")
+        test = code[copy_result.next]
+        branch = code[test.next]
+        need(
+            row.op == "call"
+            and starts.get(decoder.target_of(row)) == PAIRED_GUARD
+            and (test.op, test.args) == ("test", "%al,%al")
+            and branch.op == "je"
+            and decoder.target_of(branch) == begin + 0x54A,
+            "Paired guard does not reject its false result",
+        )
+        need(
+            {row.address, test.address, branch.address, branch.next} <= dominators[bitmap_store]
+            and branch.next in dominators[rootcall],
+            "Paired bitmap write/walk bypasses a successful storage guard",
+        )
+    paired_require_slice(symbol, code, 0x787, [("xor", "%eax,%eax"),
+        ("movb", "$0x0,0x48(%rsp,%rax,1)"), ("add", "$0x1,%rax"), ("cmp", "$0x10,%rax")])
+    loop = code[begin + 0x796]
+    need(loop.op == "jne" and decoder.target_of(loop) == bitmap_store
+         and predecessors[bitmap_store] == {begin + 0x787, loop.address}, "Changed bounded GCC16 bitmap loop")
+    paired_require_slice(symbol, code, 0x798, [("lea", "0x88(%rsp),%rsi"),
+        ("mov", "0x58(%rsp),%rdx"), ("xor", "%r8d,%r8d"), ("mov", "$0x3,%ecx"),
+        ("mov", "%rsi,%rdi"), ("mov", "0x58(%rsp),%r15")])
+    # Symbolic pointer/capture lineage with byte-granular local slots. Facts meet
+    # conservatively at every CFG join. Arithmetic invalidates origins; exact
+    # loop contracts below summarize only the two bounded bitmap loops.
+    initial = {name: None for name in (*PAIRED_CALLER_SAVED, *PAIRED_SAVES)}
+    initial.update(rdi="original", rdx="bytes", rsi="arena", rcx="lapic", r8="framebuffer")
+    registers = tuple(initial)
+    initial = tuple(initial[name] for name in registers)
+    states, pending = {begin: (initial, (None,) * 0xE8)}, [begin]
+    observed_stores, observed_calls, constructed = {}, {}, set()
+
+    def schedule(address, regs, memory):
+        state = tuple(regs[name] for name in registers), tuple(memory)
+        prior = states.get(address)
+        if prior is not None:
+            state = (
+                tuple(a if a == b else None for a, b in zip(prior[0], state[0])),
+                tuple(a if a == b else None for a, b in zip(prior[1], state[1])),
+            )
+            if state == prior:
+                return
+        states[address] = state
+        pending.append(address)
+
+    def remembered(memory, slot, size=8):
+        parts = memory[slot : slot + size]
+        if len(parts) == size and all(
+            part is not None and part == (parts[0][0], index) for index, part in enumerate(parts)
+        ):
+            return parts[0][0]
+        return None
+
+    while pending:
+        address = pending.pop()
+        row, offset = code[address], address - begin
+        regs, memory = states[address]
+        regs, memory = dict(zip(registers, regs)), list(memory)
+        args = decoder.arguments(row.args)
+        if row.op == "ret":
+            continue
+        # Every field load from original-this belongs to the single observation
+        # interval. No helper may subsequently receive it except as guard integer.
+        for operand in args:
+            for used in re.findall(r"%[a-z0-9]+", operand):
+                if "(" in operand and regs.get(paired_register(used)) == "original":
+                    need(
+                        offset in (7, 0xA, 0xE) and used == "%rdi" and operand == args[0],
+                        "Late original descriptor read or aliased original receiver",
+                    )
+        if offset == 0xC1:
+            need(regs["r9"] == "captured_used", "GCC16 used validation lost captured snapshot lineage")
+        if offset == 0x100:
+            need(regs["r15"] == "arena", "GCC16 table-base computation lost original arena lineage")
+        if offset == 0x107:
+            need(regs["r10"] == "captured_base", "GCC16 base validation lost captured snapshot lineage")
+        if row.op == "call":
+            target = starts.get(decoder.target_of(row))
+            need(target in (*PAIRED_HELPERS, PAIRED_ALIAS), "Unknown root helper effect")
+            if target == PAIRED_GUARD:
+                values = tuple(regs[name] for name in ("rdi", "rsi", "rdx", "rcx"))
+                need(
+                    offset in guard_states and values == guard_states[offset],
+                    "Wrong storage guard object/extent/lineage",
+                )
+            elif target == PAIRED_ALIAS:
+                need(
+                    offset == 0x7B5
+                    and (regs["rdi"], regs["rsi"], regs["rdx"], regs["rcx"], regs["r8"])
+                    == (("frame", 0x88), ("frame", 0x88), "captured_base", 3, 0),
+                    "Paired external root lacks snapshot/closure/level-three provenance",
+                )
+                for slot, value in ((0x88, ("frame", 0x58)), (0x90, ("frame", 0x48)), (0x98, ("frame", 0x70))):
+                    need(remembered(memory, slot) == value, "Wrong paired immutable closure field")
+            elif target == PAIRED_LAYOUT:
+                need(regs["rdi"] == "arena", "GCC16 layout helper lost original arena argument")
+            elif target == PAIRED_ENTRY:
+                need(regs["rdi"] == ("frame", 0x58), "Paired member receiver is not the immutable snapshot")
+            elif target == PAIRED_WINDOW:
+                need(
+                    (regs["rdi"], regs["rsi"]) == ("captured_base", "captured_used"),
+                    "Paired scalarized window receiver lacks snapshot provenance",
+                )
+            else:
+                need(
+                    not any(
+                        regs[name] == "original" or isinstance(regs[name], tuple)
+                        for name in ("rdi", "rsi", "rdx", "rcx", "r8", "r9")
+                    ),
+                    "Paired private/original address escapes to an unrelated helper",
+                )
+            observed_calls[address] = target
+            for name in PAIRED_CALLER_SAVED:
+                regs[name] = None
+        elif args[-1:] == ["%rsp"]:
+            need(offset in (0, 0x50, 0xF6) and row.op in ("sub", "add"),
+                 "GCC16 root frame moves during protected lifetime")
+        elif row.op not in PAIRED_NO_WRITE | decoder.BRANCHES and not (row.op == "xchg" and row.args == "%ax,%ax"):
+            value, destination = None, paired_register(args[-1])
+            if row.op in ("mov", "movabs") and len(args) == 2:
+                source = paired_register(args[0])
+                if args[0].startswith("$"):
+                    value = int(args[0][1:], 16)
+                elif source and args[0] == "%" + source:
+                    value = regs[source]
+                elif offset in (7, 0xA, 0xE):
+                    value = {7: "captured_base", 0xA: "captured_used", 0xE: "captured_framebuffer"}[offset]
+                elif paired_slot(args[0]) is not None:
+                    value = remembered(memory, paired_slot(args[0]))
+            elif row.op == "lea" and paired_slot(args[0]) is not None:
+                value = ("frame", paired_slot(args[0]))
+            elif row.op == "xor" and len(args) == 2 and args[0] == args[1]:
+                value = 0
+            if "(" in args[-1]:
+                slot, width = paired_slot(args[-1]), paired_width(row, args)
+                if slot is None:
+                    need(
+                        address == bitmap_store and (row.op, row.args) == ("movb", "$0x0,0x48(%rsp,%rax,1)"),
+                        "Unclassified root external/aliased write",
+                    )
+                    # The exact zero-start/increment/cmp16 loop above bounds this indexed store.
+                    observed_stores[address] = dict(object="bitmap", offset=0x48, bytes=16)
+                else:
+                    need(0 <= slot and slot + width <= 0xE8, "Root write escapes allocated frame")
+                    overlap = [
+                        name for name, (first, size) in objects.items() if slot < first + size and first < slot + width
+                    ]
+                    if overlap:
+                        need(
+                            offset in construction and width == 8 and construction[offset] == (slot, value),
+                            "Root spill overlaps or changes immutable snapshot/closure",
+                        )
+                        constructed.add(offset)
+                    memory[slot : slot + width] = [
+                        (value, index) if value is not None else None for index in range(width)
+                    ]
+                    observed_stores[address] = dict(
+                        object=overlap[0] if overlap else "private_scalar", offset=slot, bytes=width
+                    )
+            elif destination:
+                # Partial writes destroy pointer provenance. Zero-extending
+                # immediates/zero are scalar constants, never preserved pointers.
+                regs[destination] = value if args[-1] == "%" + destination or isinstance(value, int) else None
+            else:
+                need(False, "Unknown paired root destination/effect")
+        if offset == 0x7CF:
+            # The inventory exit is taken only when its integer counter equals
+            # the captured used count. This fact is used as window_slot's second
+            # scalarized receiver; it is not assumed to survive any call.
+            need(
+                row.op == "je"
+                and decoder.target_of(row) == begin + 0x81A
+                and code[begin + 0x7C5].args == "0x60(%rsp),%rax"
+                and code[begin + 0x7CC].args == "%rcx,%rax",
+                "Changed postwalk used-count equality",
+            )
+            branch_regs = dict(regs, rcx="captured_used")
+            schedule(begin + 0x81A, branch_regs, memory)
+            schedule(row.next, regs, memory)
+        else:
+            for target in successors[address]:
+                schedule(target, regs, memory)
+    need(
+        constructed == set(construction) and {begin + offset for offset in construction} <= dominators[rootcall],
+        "Missing or bypassed immutable paired object initialization",
+    )
+    all_stores = {
+        row.address
+        for row in rows
+        if "(" in decoder.arguments(row.args)[-1] and row.op not in PAIRED_NO_WRITE | decoder.BRANCHES
+    }
+    need(all_stores == set(observed_stores), "Root contains an unclassified/unreachable memory write")
+    need(
+        set(observed_calls) == {call["address"] for call in functions[PAIRED_ROOT]["calls"]},
+        "Root call inventories disagree",
+    )
+    external = [
+        (name, call)
+        for name, function in functions.items()
+        for call in function["calls"]
+        if call["target"] == PAIRED_ALIAS and name != PAIRED_ALIAS
+    ]
+    need(
+        len(external) == 1
+        and external[0][0] == PAIRED_ROOT
+        and external[0][1]["address"] == rootcall
+        and external[0][1]["kind"] == "call"
+        and external[0][1]["level"] == 3,
+        "Unexpected paired walker external caller or entry level",
+    )
+    return dict(
+        symbol=PAIRED_ROOT,
+        frame_bytes=0xE8,
+        frame_preservation=frame,
+        objects=objects,
+        coherent_capture_qwords=3,
+        postwalk_conditional_on_bounded_walker=True,
+        guards=[begin + offset for offset in guard_calls],
+        bitmap_initialization=bitmap_store,
+        rootcall=rootcall,
+        stores=observed_stores,
+        snapshot_member_receivers=6,
+        original_descriptor_integer_only=True,
+    )
+
+
+def paired_gcc16_walker_storage(decoder, symbol, code, starts):
+    paired_gcc16_slot_frame(decoder, symbol, code)
+    rows = paired_rows(symbol, code)
+    begin = symbol.address
+    successors, predecessors, dominators = paired_cfg(decoder, symbol, code)
+    # Original machine sequence: the descriptor comes only from closure[0], and
+    # closure[8] is the root bitmap. Root validation gave 1 <= used <= 16 and a
+    # page-aligned arena+0x11000 base below 2**32; hence end cannot overflow and
+    # (table-base)>>12 is in [0,15]. All rejection edges go to the false return.
+    prefix = [
+        ("mov", "(%rdi),%rax"), ("mov", "%r12,0x58(%rsp)"), ("mov", "%rdx,%r12"),
+        ("mov", "(%rax),%rdx"), ("cmp", "%rdx,%r12"), ("jb", 0x220),
+        ("mov", "0x8(%rax),%rax"), ("shl", "$0xc,%rax"), ("add", "%rdx,%rax"),
+        ("cmp", "%rax,%r12"), ("jae", 0x220), ("test", "$0xfff,%r12d"), ("jne", 0x220),
+        ("mov", "%r12,%rax"), ("sub", "%rdx,%rax"), ("mov", "0x8(%rdi),%rdx"),
+        ("shr", "$0xc,%rax"), ("cmpb", "$0x0,(%rdx,%rax,1)"), ("jne", 0x220),
+        ("mov", "%r13,0x60(%rsp)"), ("mov", "%ecx,%r9d"), ("xor", "%r13d,%r13d"),
+        ("mov", "%r14,0x68(%rsp)"), ("mov", "%r12,%r14"), ("mov", "%rbx,0x48(%rsp)"),
+        ("mov", "%rbp,0x50(%rsp)"), ("mov", "%r15,0x70(%rsp)"),
+        ("movb", "$0x1,(%rdx,%rax,1)"),
+    ]
+    address, protected = begin + 4, []
+    for op, args in prefix:
+        row = code[address]
+        need(row.op == op and (decoder.target_of(row) == begin + args if isinstance(args, int) else row.args == args),
+             "Changed GCC16 bounded visited-index/snapshot instruction")
+        protected.append(address)
+        address = row.next
+    bitmap_store = protected[-1]
+    need(bitmap_store == begin + 0x76 and set(protected[:-1]) <= dominators[bitmap_store],
+         "GCC16 visited write bypasses a bounds/alignment check")
+    for previous, address in zip(protected, protected[1:]):
+        need(predecessors[address] == {previous}, "Entry into middle of GCC16 visited bounds proof")
+    child = begin + 0x353
+    need(bitmap_store in dominators[child], "Paired child bypasses visited storage proof")
+    # Conditional local transformer, not a child memory proof: assuming smaller
+    # descendants preserve caller memory, the known root closure reaches both
+    # self arguments. The ascending engine below discharges that assumption at
+    # each actual seed and rechecks pointer forwarding. Full-width spills retain
+    # byte tags; every overlapping partial/wide write destroys those tags.
+    initial = {name: None for name in (*PAIRED_CALLER_SAVED, *PAIRED_SAVES)}
+    initial.update(rdi="closure", rsi="closure")
+    registers = tuple(initial)
+    states = {begin: (tuple(initial[name] for name in registers), (None,) * 0x78)}
+    pending, calls, stores = [begin], set(), set()
+
+    def schedule(address, regs, memory):
+        state = tuple(regs[name] for name in registers), tuple(memory)
+        prior = states.get(address)
+        if prior is not None:
+            state = (
+                tuple(a if a == b else None for a, b in zip(prior[0], state[0])),
+                tuple(a if a == b else None for a, b in zip(prior[1], state[1])),
+            )
+            if state == prior:
+                return
+        states[address] = state
+        pending.append(address)
+
+    while pending:
+        address = pending.pop()
+        row = code[address]
+        regs, memory = states[address]
+        regs, memory = dict(zip(registers, regs)), list(memory)
+        args = decoder.arguments(row.args)
+        if row.op == "ret":
+            continue
+        if row.op == "call":
+            target = starts.get(decoder.target_of(row))
+            if target == symbol.name:
+                need(
+                    address == child and regs["rdi"] == regs["rsi"] == "closure",
+                    "Paired child closure is unknown, clobbered or not forwarded identically",
+                )
+            else:
+                need(target == PAIRED_LEVEL_HELPER, "Unproved paired helper write contract")
+                need(regs["rdi"] != "closure" and regs["rsi"] != "closure", "Paired closure escapes to scalar helper")
+            calls.add(address)
+            for name in PAIRED_CALLER_SAVED:
+                regs[name] = None
+        elif row.op not in PAIRED_NO_WRITE | decoder.BRANCHES and not (row.op == "xchg" and row.args == "%ax,%ax"):
+            destination, value = paired_register(args[-1]), None
+            if row.op == "mov" and len(args) == 2:
+                source = paired_register(args[0])
+                if source is not None and args[0] == "%" + source:
+                    value = regs[source]
+                slot = paired_slot(args[0])
+                if slot is not None:
+                    parts = memory[slot : slot + 8]
+                    if parts == [("closure", index) for index in range(8)]:
+                        value = "closure"
+            if "(" in args[-1]:
+                slot = paired_slot(args[-1])
+                if slot is None:
+                    need(address == bitmap_store, "Unclassified paired walker external/aliased write")
+                else:
+                    width = paired_width(row, args)
+                    need(0 <= slot and slot + width <= 0x78, "Paired private spill escapes allocation")
+                    memory[slot : slot + width] = [(value, index) if value else None for index in range(width)]
+                stores.add(address)
+            elif destination and destination != "rsp":
+                regs[destination] = value if args[-1] == "%" + destination else None
+        for target in successors[address]:
+            schedule(target, regs, memory)
+    need(calls == {row.address for row in rows if row.op == "call"}, "Incomplete paired walker call effect proof")
+    need(
+        stores
+        == {
+            row.address
+            for row in rows
+            if "(" in decoder.arguments(row.args)[-1] and row.op not in PAIRED_NO_WRITE | decoder.BRANCHES
+        },
+        "Unclassified paired walker write",
+    )
+    return dict(
+        bitmap_store=bitmap_store,
+        bitmap_index=[0, 15],
+        private_spill_bytes=0x78,
+        conditional_on_smaller_seed=True,
+        stores=sorted(stores),
+        calls=sorted(calls),
+    )
+
+
+def paired_gcc16_level_induction(decoder, symbol, code, starts, generic, bitmap_stores=(), storage=None):
+    """Original-instruction ECX/R9D and byte-spill fixed points for seeds 0..3.
+
+    bitmap_stores must be the exact addresses whose bounded, root-owned target
+    was proved by the linked root and local walker contract. With storage set,
+    each seed also establishes caller-memory preservation and closure forwarding;
+    a child may preserve spills only after its smaller seed was established.
+    Without storage this is solely a pure level constituent, never admission.
+    """
+    paired_gcc16_slot_frame(decoder, symbol, code)
+    rows = paired_rows(symbol, code)
+    begin, end = symbol.address, symbol.address + symbol.size
+    body = {row.address: row for row in rows}
+    bitmap_stores = frozenset(bitmap_stores)
+    need(bitmap_stores <= set(body), "Bitmap write summary references another function")
+    call_rows = [row for row in rows if row.op == "call"]
+    targets = [starts.get(decoder.target_of(row)) for row in call_rows]
+    need(
+        targets.count(symbol.name) == 1 and targets.count(PAIRED_LEVEL_HELPER) == 2 and len(targets) == 3,
+        "Unexpected paired helper/self-call inventory",
+    )
+    generic_calls = {row["address"]: row for row in generic["calls"]}
+    need(set(generic_calls) == {row.address for row in call_rows}, "Paired generic call inventory mismatch")
+
+    def register(operand):
+        if operand in ("%rcx", "%ecx", "%cx", "%cl", "%ch"):
+            return 0
+        if operand in ("%r9", "%r9d", "%r9w", "%r9b"):
+            return 1
+        return None
+
+    def width(operand):
+        if re.fullmatch(r"%r(?:ax|bx|cx|dx|si|di|bp|[89]|1[0-5])", operand):
+            return 8
+        if re.fullmatch(r"%(?:e(?:ax|bx|cx|dx|si|di|bp)|r(?:[89]|1[0-5])d)", operand):
+            return 4
+        if re.fullmatch(r"%(?:ax|bx|cx|dx|si|di|bp|r(?:[89]|1[0-5])w)", operand):
+            return 2
+        if re.fullmatch(r"%(?:al|ah|bl|bh|cl|ch|dl|dh|sil|dil|bpl|r(?:[89]|1[0-5])b)", operand):
+            return 1
+        return None
+
+    def stack_slot(operand):
+        match = re.fullmatch(r"(0x[0-9a-f]+)?\(%rsp\)", operand)
+        return int(match[1] or "0", 16) if match else None
+
+    if storage is not None:
+        need(
+            storage["walker"]["conditional_on_smaller_seed"] is True
+            and bitmap_stores == {storage["walker"]["bitmap_store"]}
+            and set(storage["helpers"]) == set(PAIRED_HELPERS)
+            and all(effect["caller_memory_writes"] == 0 for effect in storage["helpers"].values()),
+            "Missing paired local storage/helper premise",
+        )
+    levels = {}
+    readonly = {"cmp", "cmpb", "test", "nop", "nopl", "nopw", "cs", "data16"}
+    preserve_flags = {
+        "setae",
+        "xchg",
+        "mov",
+        "movabs",
+        "movb",
+        "movl",
+        "movq",
+        "movw",
+        "movzbl",
+        "lea",
+        "push",
+        "pop",
+        "nop",
+        "nopl",
+        "nopw",
+        "cs",
+        "data16",
+    }
+    for seed in range(4):
+        # Byte precision prevents adjacent qword data spills from being treated
+        # as preserving overlapping dword level facts. No address-only memo.
+        closure_seed = ("closure", "closure") if storage is not None else (None, None)
+        states = {begin: (seed, None, None, (None,) * 0x78, closure_seed)}
+        pending, visited, calls, returns = [begin], set(), {}, set()
+
+        def schedule(address, state):
+            need(begin <= address < end and address in body, "Paired CFG leaves body or enters an instruction interior")
+            prior = states.get(address)
+            if prior is not None:
+                state = tuple(a if a == b else None for a, b in zip(prior[:3], state[:3])) + (
+                    tuple(a if a == b else None for a, b in zip(prior[3], state[3])),
+                    tuple(a if a == b else None for a, b in zip(prior[4], state[4])),
+                )
+                if state == prior:
+                    return
+            states[address] = state
+            pending.append(address)
+
+        while pending:
+            address = pending.pop()
+            row = body[address]
+            need(
+                row.next <= end and row.op in PAIRED_LEVEL_OPS | {"setae", "xchg"} | decoder.BRANCHES,
+                "Unreviewed paired level instruction or extent",
+            )
+            need(row.op != "xchg" or row.args == "%ax,%ax", "Unknown GCC16 level exchange")
+            visited.add(address)
+            cx, r9, zf, memory, closure = states[address]
+            values, memory, next_closure = [cx, r9], list(memory), list(closure)
+            args = decoder.arguments(row.args)
+            next_zf = zf if row.op in preserve_flags | decoder.BRANCHES else None
+            if row.op == "ret":
+                returns.add(address)
+                continue
+            if row.op == "call":
+                target = starts.get(decoder.target_of(row))
+                call = dict(generic_calls[address])
+                if target == symbol.name:
+                    need(
+                        seed > 0 and seed - 1 in levels and cx == seed - 1,
+                        "Paired child lacks previously proved decreasing level",
+                    )
+                    if storage is not None:
+                        need(
+                            levels[cx].get("caller_memory_contract") is True and closure == ("closure", "closure"),
+                            "Paired child lacks established memory contract or identical closure",
+                        )
+                    call["level"] = cx
+                else:
+                    need(target == PAIRED_LEVEL_HELPER, "Unexpected paired level callee")
+                    if storage is not None:
+                        need("closure" not in closure, "Paired closure escapes to scalar helper")
+                    call["level"] = None
+                previous = calls.get(address)
+                need(previous is None or previous == call, "Paired call level facts disagree at a join")
+                calls[address] = call
+                # No caller-saved level/flag survives even a read-only helper.
+                schedule(row.next, (None, None, None, tuple(memory), (None, None)))
+                continue
+            if row.op in decoder.BRANCHES:
+                target = decoder.target_of(row)
+                taken = (
+                    zf if row.op in ("je", "jz") else (not zf if zf is not None and row.op in ("jne", "jnz") else None)
+                )
+                if row.op == "jmp" or taken is not False:
+                    schedule(target, (cx, r9, zf, tuple(memory), closure))
+                if row.op != "jmp" and taken is not True:
+                    schedule(row.next, (cx, r9, zf, tuple(memory), closure))
+                continue
+            if args and row.op not in readonly:
+                closure_register = paired_register(args[-1])
+                if closure_register in ("rdi", "rsi"):
+                    destination = ("rdi", "rsi").index(closure_register)
+                    next_closure[destination] = None
+                    if row.op == "mov" and args[-1] == "%" + closure_register:
+                        source = paired_register(args[0])
+                        if source in ("rdi", "rsi") and args[0] == "%" + source:
+                            next_closure[destination] = closure[("rdi", "rsi").index(source)]
+                        else:
+                            offset = stack_slot(args[0])
+                            if offset is not None and memory[offset : offset + 8] == [("closure", i) for i in range(8)]:
+                                next_closure[destination] = "closure"
+                destination = register(args[-1])
+                if destination is not None:
+                    values[destination] = None
+                    if row.op == "mov" and len(args) == 2 and args[-1] in ("%ecx", "%r9d"):
+                        source = register(args[0])
+                        if source is not None and args[0] in ("%ecx", "%r9d"):
+                            values[destination] = (cx, r9)[source]
+                        else:
+                            offset = stack_slot(args[0])
+                            if offset in frozenset((0x18, 0x28, 0x38)) and offset + 4 <= 0x78:
+                                content = memory[offset : offset + 4]
+                                if len(content) == 4 and all(type(value) is int for value in content):
+                                    value = int.from_bytes(bytes(content), "little")
+                                    values[destination] = value if value <= 3 else None
+                    elif row.op == "lea" and row.args == "-0x1(%r9),%ecx" and r9 is not None:
+                        values[0] = (r9 - 1) & 0xFFFFFFFF
+                if "(" in args[-1]:
+                    offset = stack_slot(args[-1])
+                    if offset is None:
+                        need(
+                            address in bitmap_stores and row.op == "movb" and row.args == "$0x1,(%rdx,%rax,1)",
+                            "Unproved paired external/aliased write",
+                        )
+                    else:
+                        size = {"movb": 1, "movw": 2, "movl": 4, "movq": 8}.get(row.op)
+                        if row.op == "mov" and len(args) == 2:
+                            size = width(args[0])
+                        need(
+                            size is not None and 0 <= offset and offset + size <= 0x78,
+                            "Unbounded or unknown paired spill write width/range",
+                        )
+                        memory[offset : offset + size] = [None] * size
+                        if row.op == "mov" and args[0] in ("%ecx", "%r9d") and offset in frozenset((0x18, 0x28, 0x38)):
+                            value = (cx, r9)[register(args[0])]
+                            if value is not None:
+                                memory[offset : offset + 4] = value.to_bytes(4, "little")
+                        if row.op == "mov" and size == 8 and args[0] in ("%rdi", "%rsi"):
+                            value = closure[("%rdi", "%rsi").index(args[0])]
+                            if value == "closure":
+                                memory[offset : offset + 8] = [("closure", i) for i in range(8)]
+            if row.op == "test" and row.args == "%r9d,%r9d" and r9 is not None:
+                next_zf = r9 == 0
+            schedule(row.next, (values[0], values[1], next_zf, tuple(memory), tuple(next_closure)))
+        recursive = [row for row in calls.values() if row["target"] == symbol.name]
+        need(
+            not recursive if seed == 0 else len(recursive) == 1 and recursive[0]["level"] == seed - 1,
+            "Paired recursion is not bounded for every seed",
+        )
+        need(returns, "Paired seed has no returning path")
+        levels[seed] = dict(
+            generic,
+            calls=sorted(calls.values(), key=lambda row: row["address"]),
+            instructions=len(visited),
+            returns=len(returns),
+            seed=seed,
+            private_spill_bytes=0x78,
+            caller_saved_killed=True,
+            caller_memory_contract=storage is not None,
+            established_child_seed=None if seed == 0 else seed - 1,
+            identical_closure_forwarding=storage is not None,
+        )
+    return levels
+
+
 def paired_linked_storage(decoder, functions, symbols, code, starts, payload):
     inventory = paired_exact_machine(decoder, symbols, code, starts, payload)
     helpers = paired_helper_effects(decoder, symbols, code, functions)
@@ -2343,10 +3228,20 @@ def paired_recursion_proofs(decoder, functions, symbols, code, starts, paired_wa
     )
     # The original legacy contract remains authoritative and unchanged.
     legacy_levels, legacy_roots = decoder.recursion_proof(functions, symbols, code, starts, associations)
-    need(paired_walk == PAIRED_WALK, "Unknown concrete paired walker identity")
-    storage = paired_linked_storage(decoder, functions, symbols, code, starts, payload)
+    need(paired_walk in (PAIRED_WALK, PAIRED_ALIAS), "Unknown concrete paired walker identity")
+    if paired_walk == PAIRED_WALK:
+        storage = paired_linked_storage(decoder, functions, symbols, code, starts, payload)
+        induction = paired_level_induction
+    else:
+        machine = paired_gcc16_exact_machine(decoder, symbols, code, starts, payload)
+        helpers = paired_gcc16_helper_effects(decoder, symbols, code, functions)
+        guard = paired_gcc16_guard_contract(decoder, symbols, code)
+        root = paired_gcc16_root_storage(decoder, symbols, code, starts, functions)
+        walker = paired_gcc16_walker_storage(decoder, symbols[PAIRED_ALIAS], code, starts)
+        storage = dict(machine=machine, helpers=helpers, guard=guard, root=root, walker=walker)
+        induction = paired_gcc16_level_induction
     paired_readonly_leaf(decoder, PAIRED_LEVEL_HELPER, symbols, code, functions)
-    levels = paired_level_induction(
+    levels = induction(
         decoder,
         symbols[paired_walk],
         code,
@@ -2842,6 +3737,41 @@ def paired_alias_evidence(obj):
     )
 
 
+def paired_walker_evidence(obj):
+    """Keep GCC14 equal aliases distinct from GCC16's single raw definition."""
+    present = {PAIRED_WALK, PAIRED_ALIAS} & set(obj.functions)
+    if present == {PAIRED_WALK, PAIRED_ALIAS}:
+        return dict(paired_alias_evidence(obj), emission="gcc14-equal-aliases")
+    need(present == {PAIRED_ALIAS}, "Missing exact or unknown paired walker definition inventory")
+    first = obj.functions[PAIRED_ALIAS]
+    need(first.size == 932 and first.kind == 2 and first.section > 0,
+         "Changed GCC16 single walker extent/type")
+    need({row.name for row in obj.symbols
+          if row.section == first.section and row.address == first.address and row.kind == 2} == present,
+         "Unexpected GCC16 same-address function definition")
+    definitions = []
+    for section in obj.sections:
+        if section[1] != 2:
+            continue
+        need(section[9] == 24, "Unsupported GCC16 symbol table")
+        strings = obj.section_data(section[6])
+        for position in range(section[4], section[4] + section[5], 24):
+            offset, info, other, index, address, size = struct.unpack_from("<IBBHQQ", obj.data, position)
+            end = strings.find(b"\0", offset)
+            need(end >= offset, "Invalid GCC16 walker symbol string")
+            name = strings[offset:end].decode()
+            if name not in {PAIRED_WALK, PAIRED_ALIAS}:
+                continue
+            need(name == PAIRED_ALIAS and info == 0x22 and other == 2
+                 and (index, address, size) == (first.section, first.address, first.size),
+                 "Changed GCC16 raw WEAK/HIDDEN walker definition")
+            definitions.append(dict(name=name, address=address, size=size, section=index,
+                                    binding="WEAK", visibility="HIDDEN", type="FUNC"))
+    need(len(definitions) == 1, "Duplicate or missing GCC16 raw walker definition")
+    return dict(canonical=PAIRED_ALIAS, emission="gcc16-single-definition", definitions=definitions,
+                body_sha256=hashlib.sha256(obj.function_bytes(first)).hexdigest())
+
+
 def paired_metadata_symbol(text):
     """Select one raw compiler name from the separately proved exact alias pair.
 
@@ -2861,7 +3791,7 @@ def paired_metadata_symbol(text):
     return names[0]
 
 
-def graphical_cpp_frames(decoder, directory, linked):
+def graphical_cpp_frames(decoder, directory, linked, paired_walk=PAIRED_WALK):
     # Keep the shared decoder untouched. Both alias names cross its exact
     # object/link byte-and-relocation association before one frame is counted.
     associated, receipts, alias_objects = {}, {}, []
@@ -2869,11 +3799,13 @@ def graphical_cpp_frames(decoder, directory, linked):
         obj = decoder.Elf(directory / (name + ".o"))
         need(obj.type == 1, "Expected relocatable C++ object")
         if name == "graphical-console":
-            evidence = paired_alias_evidence(obj)
-            for symbol in (PAIRED_WALK, PAIRED_ALIAS):
+            evidence = paired_walker_evidence(obj)
+            need(evidence["canonical"] == paired_walk, "Object/linked paired definition forms disagree")
+            definitions = [row["name"] for row in evidence.get("aliases", evidence.get("definitions", []))]
+            for symbol in definitions:
                 decoder.associate_object(linked, obj, obj.functions[symbol])
             alias_objects.append(
-                dict(object=name + ".o", **evidence, associated_linked_symbols=[PAIRED_WALK, PAIRED_ALIAS])
+                dict(object=name + ".o", **evidence, associated_linked_symbols=definitions)
             )
         else:
             need(not {PAIRED_WALK, PAIRED_ALIAS} & set(obj.functions), "Paired walker outside exact graphical object")
@@ -2883,11 +3815,13 @@ def graphical_cpp_frames(decoder, directory, linked):
         omitted = None
         if name == "graphical-console":
             raw_alias = paired_metadata_symbol((directory / (name + ".ci")).read_text())
-            omitted = PAIRED_ALIAS if raw_alias == PAIRED_WALK else PAIRED_WALK
+            need(raw_alias in definitions, "Compiler walker definition is absent from exact object")
+            if paired_walk == PAIRED_WALK:
+                omitted = PAIRED_ALIAS if raw_alias == PAIRED_WALK else PAIRED_WALK
         symbols = {key: value for key, value in obj.functions.items() if key != omitted}
         rows = decoder.object_stack_rows(directory, name, symbols)
         for raw_symbol, row in rows.items():
-            symbol = PAIRED_WALK if raw_symbol == PAIRED_ALIAS else raw_symbol
+            symbol = PAIRED_WALK if raw_symbol == PAIRED_ALIAS and paired_walk == PAIRED_WALK else raw_symbol
             need(symbol in linked.functions, "Object function omitted from linked profile")
             decoder.associate_object(linked, obj, obj.functions[raw_symbol])
             if symbol in associated:
@@ -2928,8 +3862,8 @@ def stack_evidence(directory):
     linked = decoder.Elf(directory / "payload.elf")
     need(linked.type == 2, "Expected linked executable payload")
     need(not subprocess.check_output(["nm", "-u", directory / "payload.elf"], text=True).strip(), "Unresolved payload")
-    paired_linked = paired_alias_evidence(linked)
-    paired_walk = PAIRED_WALK
+    paired_linked = paired_walker_evidence(linked)
+    paired_walk = paired_linked["canonical"]
     old_rows = decoder.stack_rows
     bounded = []
 
@@ -2943,11 +3877,12 @@ def stack_evidence(directory):
         ))
 
     decoder.stack_rows = stack_rows
-    frames, associations, alias_objects = graphical_cpp_frames(decoder, directory, linked)
+    frames, associations, alias_objects = graphical_cpp_frames(decoder, directory, linked, paired_walk)
     verify_session_frames(frames, associations)
     # Raw symbols and evidence remain intact; only the analyzed function graph
     # loses the compatibility spelling after both associations have succeeded.
-    del linked.functions[PAIRED_ALIAS]
+    if paired_walk == PAIRED_WALK:
+        del linked.functions[PAIRED_ALIAS]
     named = {row.name: row for row in linked.symbols if row.section}
     irq = named["uefi_console_interrupt"]
     irq_object = decoder.Elf(directory / "console-entry.o")

@@ -332,3 +332,12 @@ Original 988-file image receipts and preserved-image guest results do not qualif
 the new joined source. Partial/null-pair denials and deterministic synchronous faults
 remain separate from the seven selectors; no new keyboard, desktop or physical
 hardware qualification follows.
+
+The paired verifier also has a separate, closed GCC16 emission proof. Its actual
+single walker definition remains bound through raw `.ci`/`.su`, object and linked
+bytes; no second alias is synthesized. The eight exact bodies require distinct
+root and walker save-slot, snapshot, six-guard, indexed bitmap and decreasing-level
+proofs. Unknown or mixed layouts reject, and existing stack/IRQ/wait budgets stay
+unchanged. Source controls and retained-body analysis do not qualify a fresh
+image or guest; complete current-source admission and independent review remain
+required for each toolchain.

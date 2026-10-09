@@ -52,6 +52,10 @@ seven-selector failure candidate adds a required 68th hosted case; its focused
 run, new exact image/stack admission, denial/pixel-failure guests and
 final integrated dev/slow/full Make remain pending. The 96-sample guard remains
 hosted-only. Preserved-image receipts do not qualify this changed source.
+The checker distinguishes the exact GCC14 alias-pair and GCC16 single-definition
+paired-verifier layouts, with separate machine/storage/recursion contracts and
+unchanged budgets. Source controls do not replace either toolchain's fresh image
+admission, affected guests or final aggregate gates.
 
 This isolated next-language checkpoint adds an unqualified explicit leading group
 of distinct ConsoleSession/DisplaySession borrows for the planned graphical line

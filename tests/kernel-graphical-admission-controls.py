@@ -1167,6 +1167,1182 @@ def body(operations):
     return [decoder.Instruction(index, 1, op, args) for index, (op, args) in enumerate(operations)]
 
 
+# Independently retained GCC16 image-window003 instruction bytes and operands.
+# The fixture relocates direct targets without invoking a compiler/disassembler.
+PAIRED_GCC16_LINKED_FIXTURES = {
+    'root': """
+0|4881ece8000000|sub|$0xe8,%rsp
+7|4c8b17|mov|(%rdi),%r10
+a|4c8b4f08|mov|0x8(%rdi),%r9
+e|488b4710|mov|0x10(%rdi),%rax
+12|4889742438|mov|%rsi,0x38(%rsp)
+17|48894c2430|mov|%rcx,0x30(%rsp)
+1c|4c89442428|mov|%r8,0x28(%rsp)
+21|4c89542458|mov|%r10,0x58(%rsp)
+26|4c894c2460|mov|%r9,0x60(%rsp)
+2b|4889442468|mov|%rax,0x68(%rsp)
+30|4885c9|test|%rcx,%rcx
+33|7415|je|+4a
+35|4d85c0|test|%r8,%r8
+38|4d89c3|mov|%r8,%r11
+3b|410f94c0|sete|%r8b
+3f|4885c0|test|%rax,%rax
+42|0f95c0|setne|%al
+45|4108c0|or|%al,%r8b
+48|7416|je|+60
+4a|4531c0|xor|%r8d,%r8d
+4d|4489c0|mov|%r8d,%eax
+50|4881c4e8000000|add|$0xe8,%rsp
+57|c3|ret|
+58|0f1f840000000000|nopl|0x0(%rax,%rax,1)
+60|4889ac24c8000000|mov|%rbp,0xc8(%rsp)
+68|4889fd|mov|%rdi,%rbp
+6b|488b7c2438|mov|0x38(%rsp),%rdi
+70|4c89a424d0000000|mov|%r12,0xd0(%rsp)
+78|4989cc|mov|%rcx,%r12
+7b|4c89b424d8000000|mov|%r14,0xd8(%rsp)
+83|4989d6|mov|%rdx,%r14
+86|4c89bc24e0000000|mov|%r15,0xe0(%rsp)
+8e|4c8b7c2438|mov|0x38(%rsp),%r15
+93|4488442420|mov|%r8b,0x20(%rsp)
+98|4c895c2418|mov|%r11,0x18(%rsp)
+9d|4c894c2410|mov|%r9,0x10(%rsp)
+a2|4c89542408|mov|%r10,0x8(%rsp)
+a7|e800000000|call|@layout
+ac|4c8b4c2410|mov|0x10(%rsp),%r9
+b1|4c8b542408|mov|0x8(%rsp),%r10
+b6|4c8b5c2418|mov|0x18(%rsp),%r11
+bb|440fb6442420|movzbl|0x20(%rsp),%r8d
+c1|498d51ff|lea|-0x1(%r9),%rdx
+c5|4883fa0f|cmp|$0xf,%rdx
+c9|0f97c2|seta|%dl
+cc|83f001|xor|$0x1,%eax
+cf|08c2|or|%al,%dl
+d1|742d|je|+100
+d3|488bac24c8000000|mov|0xc8(%rsp),%rbp
+db|4c8ba424d0000000|mov|0xd0(%rsp),%r12
+e3|4489c0|mov|%r8d,%eax
+e6|4c8bb424d8000000|mov|0xd8(%rsp),%r14
+ee|4c8bbc24e0000000|mov|0xe0(%rsp),%r15
+f6|4881c4e8000000|add|$0xe8,%rsp
+fd|c3|ret|
+fe|6690|xchg|%ax,%ax
+100|498d8700100100|lea|0x11000(%r15),%rax
+107|4939c2|cmp|%rax,%r10
+10a|0f8510030000|jne|+420
+110|4d8b4608|mov|0x8(%r14),%r8
+114|4983f807|cmp|$0x7,%r8
+118|0f8602030000|jbe|+420
+11e|498b3e|mov|(%r14),%rdi
+121|31c0|xor|%eax,%eax
+123|31f6|xor|%esi,%esi
+125|0f1f440000|nopl|0x0(%rax,%rax,1)
+12a|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+135|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+140|0fb61407|movzbl|(%rdi,%rax,1),%edx
+144|8d0cc500000000|lea|0x0(,%rax,8),%ecx
+14b|4883c001|add|$0x1,%rax
+14f|48d3e2|shl|%cl,%rdx
+152|4809d6|or|%rdx,%rsi
+155|4883f808|cmp|$0x8,%rax
+159|75e5|jne|+140
+15b|48b849464555524f5241|movabs|$0x41524f5255454649,%rax
+165|4839c6|cmp|%rax,%rsi
+168|0f85b2020000|jne|+420
+16e|498d40f8|lea|-0x8(%r8),%rax
+172|4883f803|cmp|$0x3,%rax
+176|0f86a4020000|jbe|+420
+17c|0fb64709|movzbl|0x9(%rdi),%eax
+180|0fb6570a|movzbl|0xa(%rdi),%edx
+184|48c1e008|shl|$0x8,%rax
+188|48c1e210|shl|$0x10,%rdx
+18c|4809d0|or|%rdx,%rax
+18f|0fb65708|movzbl|0x8(%rdi),%edx
+193|4809d0|or|%rdx,%rax
+196|0fb6570b|movzbl|0xb(%rdi),%edx
+19a|48c1e218|shl|$0x18,%rdx
+19e|4809d0|or|%rdx,%rax
+1a1|4883f806|cmp|$0x6,%rax
+1a5|0f8575020000|jne|+420
+1ab|498d40f4|lea|-0xc(%r8),%rax
+1af|4883f803|cmp|$0x3,%rax
+1b3|0f8667020000|jbe|+420
+1b9|0fb6470e|movzbl|0xe(%rdi),%eax
+1bd|0fb6570d|movzbl|0xd(%rdi),%edx
+1c1|48c1e010|shl|$0x10,%rax
+1c5|48c1e208|shl|$0x8,%rdx
+1c9|4809d0|or|%rdx,%rax
+1cc|0fb6570c|movzbl|0xc(%rdi),%edx
+1d0|4809d0|or|%rdx,%rax
+1d3|0fb6570f|movzbl|0xf(%rdi),%edx
+1d7|48c1e218|shl|$0x18,%rdx
+1db|4809d0|or|%rdx,%rax
+1de|483d80000000|cmp|$0x80,%rax
+1e4|0f8536020000|jne|+420
+1ea|498d40f0|lea|-0x10(%r8),%rax
+1ee|4883f807|cmp|$0x7,%rax
+1f2|0f8628020000|jbe|+420
+1f8|31c0|xor|%eax,%eax
+1fa|31f6|xor|%esi,%esi
+1fc|0f1f4000|nopl|0x0(%rax)
+200|0fb6540710|movzbl|0x10(%rdi,%rax,1),%edx
+205|8d0cc500000000|lea|0x0(,%rax,8),%ecx
+20c|4883c001|add|$0x1,%rax
+210|48d3e2|shl|%cl,%rdx
+213|4809d6|or|%rdx,%rsi
+216|4883f808|cmp|$0x8,%rax
+21a|75e4|jne|+200
+21c|4881fe00001000|cmp|$0x100000,%rsi
+223|0f85f7010000|jne|+420
+229|498d40e8|lea|-0x18(%r8),%rax
+22d|4883f807|cmp|$0x7,%rax
+231|0f86e9010000|jbe|+420
+237|31c0|xor|%eax,%eax
+239|31f6|xor|%esi,%esi
+23b|0fb6540718|movzbl|0x18(%rdi,%rax,1),%edx
+240|8d0cc500000000|lea|0x0(,%rax,8),%ecx
+247|4883c001|add|$0x1,%rax
+24b|48d3e2|shl|%cl,%rdx
+24e|4809d6|or|%rdx,%rsi
+251|4883f808|cmp|$0x8,%rax
+255|75e4|jne|+23b
+257|4939f7|cmp|%rsi,%r15
+25a|0f85c0010000|jne|+420
+260|498d40e0|lea|-0x20(%r8),%rax
+264|4883f807|cmp|$0x7,%rax
+268|0f86b2010000|jbe|+420
+26e|31c0|xor|%eax,%eax
+270|31f6|xor|%esi,%esi
+272|0fb6540720|movzbl|0x20(%rdi,%rax,1),%edx
+277|8d0cc500000000|lea|0x0(,%rax,8),%ecx
+27e|4883c001|add|$0x1,%rax
+282|48d3e2|shl|%cl,%rdx
+285|4809d6|or|%rdx,%rsi
+288|4883f808|cmp|$0x8,%rax
+28c|75e4|jne|+272
+28e|4883ee01|sub|$0x1,%rsi
+292|4881feffff0000|cmp|$0xffff,%rsi
+299|0f8781010000|ja|+420
+29f|498d40d8|lea|-0x28(%r8),%rax
+2a3|4883f807|cmp|$0x7,%rax
+2a7|0f8673010000|jbe|+420
+2ad|31c0|xor|%eax,%eax
+2af|31d2|xor|%edx,%edx
+2b1|0fb6740728|movzbl|0x28(%rdi,%rax,1),%esi
+2b6|8d0cc500000000|lea|0x0(,%rax,8),%ecx
+2bd|4883c001|add|$0x1,%rax
+2c1|48d3e6|shl|%cl,%rsi
+2c4|4809f2|or|%rsi,%rdx
+2c7|4883f808|cmp|$0x8,%rax
+2cb|75e4|jne|+2b1
+2cd|4883ea28|sub|$0x28,%rdx
+2d1|4881fad8000000|cmp|$0xd8,%rdx
+2d8|0f8742010000|ja|+420
+2de|4983e830|sub|$0x30,%r8
+2e2|4983f803|cmp|$0x3,%r8
+2e6|0f8634010000|jbe|+420
+2ec|0fb64732|movzbl|0x32(%rdi),%eax
+2f0|0fb65731|movzbl|0x31(%rdi),%edx
+2f4|48c1e010|shl|$0x10,%rax
+2f8|48c1e208|shl|$0x8,%rdx
+2fc|4809d0|or|%rdx,%rax
+2ff|0fb65730|movzbl|0x30(%rdi),%edx
+303|4809d0|or|%rdx,%rax
+306|0fb65733|movzbl|0x33(%rdi),%edx
+30a|48c1e218|shl|$0x18,%rdx
+30e|4809d0|or|%rdx,%rax
+311|4883e801|sub|$0x1,%rax
+315|0f8505010000|jne|+420
+31b|ba04000000|mov|$0x4,%edx
+320|be34000000|mov|$0x34,%esi
+325|4c89f7|mov|%r14,%rdi
+328|4c89542410|mov|%r10,0x10(%rsp)
+32d|4c894c2418|mov|%r9,0x18(%rsp)
+332|4c895c2420|mov|%r11,0x20(%rsp)
+337|e800000000|call|@bytes
+33c|4883e801|sub|$0x1,%rax
+340|4883f802|cmp|$0x2,%rax
+344|0f87d6000000|ja|+420
+34a|ba08000000|mov|$0x8,%edx
+34f|be38000000|mov|$0x38,%esi
+354|4c89f7|mov|%r14,%rdi
+357|e800000000|call|@bytes
+35c|4989c0|mov|%rax,%r8
+35f|488d40ff|lea|-0x1(%rax),%rax
+363|483dffff0100|cmp|$0x1ffff,%rax
+369|0f87b1000000|ja|+420
+36f|ba08000000|mov|$0x8,%edx
+374|be50000000|mov|$0x50,%esi
+379|4c89f7|mov|%r14,%rdi
+37c|48899c24c0000000|mov|%rbx,0xc0(%rsp)
+384|4c89442408|mov|%r8,0x8(%rsp)
+389|e800000000|call|@bytes
+38e|4889c3|mov|%rax,%rbx
+391|483b442408|cmp|0x8(%rsp),%rax
+396|7277|jb|+40f
+398|ba08000000|mov|$0x8,%edx
+39d|be40000000|mov|$0x40,%esi
+3a2|4c89f7|mov|%r14,%rdi
+3a5|e800000000|call|@bytes
+3aa|4885c0|test|%rax,%rax
+3ad|7460|je|+40f
+3af|a9ff0f0000|test|$0xfff,%eax
+3b4|7559|jne|+40f
+3b6|ba08000000|mov|$0x8,%edx
+3bb|be48000000|mov|$0x48,%esi
+3c0|4c89f7|mov|%r14,%rdi
+3c3|4889442408|mov|%rax,0x8(%rsp)
+3c8|e800000000|call|@bytes
+3cd|4889de|mov|%rbx,%rsi
+3d0|4c8b542410|mov|0x10(%rsp),%r10
+3d5|4c8b4c2418|mov|0x18(%rsp),%r9
+3da|4839c3|cmp|%rax,%rbx
+3dd|4c8b5c2420|mov|0x20(%rsp),%r11
+3e2|410f92c0|setb|%r8b
+3e6|483b442408|cmp|0x8(%rsp),%rax
+3eb|0f92c2|setb|%dl
+3ee|4109d0|or|%edx,%r8d
+3f1|4881fb00000200|cmp|$0x20000,%rbx
+3f8|0f97c2|seta|%dl
+3fb|4809c6|or|%rax,%rsi
+3fe|4109d0|or|%edx,%r8d
+401|f7c6ff0f0000|test|$0xfff,%esi
+407|0f95c0|setne|%al
+40a|4108c0|or|%al,%r8b
+40d|7439|je|+448
+40f|488b9c24c0000000|mov|0xc0(%rsp),%rbx
+417|660f1f840000000000|nopw|0x0(%rax,%rax,1)
+420|488bac24c8000000|mov|0xc8(%rsp),%rbp
+428|4c8ba424d0000000|mov|0xd0(%rsp),%r12
+430|4531c0|xor|%r8d,%r8d
+433|4c8bb424d8000000|mov|0xd8(%rsp),%r14
+43b|4c8bbc24e0000000|mov|0xe0(%rsp),%r15
+443|e905fcffff|jmp|+4d
+448|ba08000000|mov|$0x8,%edx
+44d|be58000000|mov|$0x58,%esi
+452|4c89f7|mov|%r14,%rdi
+455|4488442420|mov|%r8b,0x20(%rsp)
+45a|4c895c2418|mov|%r11,0x18(%rsp)
+45f|4c894c2410|mov|%r9,0x10(%rsp)
+464|4c89542408|mov|%r10,0x8(%rsp)
+469|e800000000|call|@bytes
+46e|4839442408|cmp|%rax,0x8(%rsp)
+473|440fb6442420|movzbl|0x20(%rsp),%r8d
+479|0f85cb000000|jne|+54a
+47f|ba08000000|mov|$0x8,%edx
+484|be60000000|mov|$0x60,%esi
+489|4c89f7|mov|%r14,%rdi
+48c|4488442408|mov|%r8b,0x8(%rsp)
+491|e800000000|call|@bytes
+496|4839442410|cmp|%rax,0x10(%rsp)
+49b|440fb6442408|movzbl|0x8(%rsp),%r8d
+4a1|0f85a3000000|jne|+54a
+4a7|ba08000000|mov|$0x8,%edx
+4ac|be68000000|mov|$0x68,%esi
+4b1|4c89f7|mov|%r14,%rdi
+4b4|e800000000|call|@bytes
+4b9|440fb6442408|movzbl|0x8(%rsp),%r8d
+4bf|4889c2|mov|%rax,%rdx
+4c2|498d8700200200|lea|0x22000(%r15),%rax
+4c9|4839c2|cmp|%rax,%rdx
+4cc|757c|jne|+54a
+4ce|ba08000000|mov|$0x8,%edx
+4d3|be70000000|mov|$0x70,%esi
+4d8|4c89f7|mov|%r14,%rdi
+4db|e800000000|call|@bytes
+4e0|440fb6442408|movzbl|0x8(%rsp),%r8d
+4e6|4885c0|test|%rax,%rax
+4e9|745f|je|+54a
+4eb|ba08000000|mov|$0x8,%edx
+4f0|be78000000|mov|$0x78,%esi
+4f5|4c89f7|mov|%r14,%rdi
+4f8|e800000000|call|@bytes
+4fd|440fb6442408|movzbl|0x8(%rsp),%r8d
+503|4889c2|mov|%rax,%rdx
+506|498d8700000e00|lea|0xe0000(%r15),%rax
+50d|4839c2|cmp|%rax,%rdx
+510|7538|jne|+54a
+512|4d3b3c24|cmp|(%r12),%r15
+516|7532|jne|+54a
+518|4c8b5c2418|mov|0x18(%rsp),%r11
+51d|4d3b7b30|cmp|0x30(%r11),%r15
+521|7527|jne|+54a
+523|418b4c2408|mov|0x8(%r12),%ecx
+528|498b03|mov|(%r11),%rax
+52b|498b5318|mov|0x18(%r11),%rdx
+52f|8d71e0|lea|-0x20(%rcx),%esi
+532|83fe14|cmp|$0x14,%esi
+535|4889542440|mov|%rdx,0x40(%rsp)
+53a|400f97c6|seta|%sil
+53e|4885c0|test|%rax,%rax
+541|400f94c7|sete|%dil
+545|4008fe|or|%dil,%sil
+548|740d|je|+557
+54a|488b9c24c0000000|mov|0xc0(%rsp),%rbx
+552|e97cfbffff|jmp|+d3
+557|488d72ff|lea|-0x1(%rdx),%rsi
+55b|4881feffff2f00|cmp|$0x2fffff,%rsi
+562|7605|jbe|+569
+564|4531c0|xor|%r8d,%r8d
+567|ebe1|jmp|+54a
+569|4889c6|mov|%rax,%rsi
+56c|4809d6|or|%rdx,%rsi
+56f|81e6ff0f0000|and|$0xfff,%esi
+575|4989f4|mov|%rsi,%r12
+578|75ea|jne|+564
+57a|498b7b08|mov|0x8(%r11),%rdi
+57e|4839d7|cmp|%rdx,%rdi
+581|72e1|jb|+564
+583|be01000000|mov|$0x1,%esi
+588|48d3e6|shl|%cl,%rsi
+58b|4889f1|mov|%rsi,%rcx
+58e|4839f0|cmp|%rsi,%rax
+591|73d1|jae|+564
+593|4829c1|sub|%rax,%rcx
+596|4839f9|cmp|%rdi,%rcx
+599|410f93c0|setae|%r8b
+59d|4981ffffffefff|cmp|$0xffffffffffefffff,%r15
+5a4|0f96c1|setbe|%cl
+5a7|4120c8|and|%cl,%r8b
+5aa|749e|je|+54a
+5ac|488d0c10|lea|(%rax,%rdx,1),%rcx
+5b0|4939cf|cmp|%rcx,%r15
+5b3|730c|jae|+5c1
+5b5|498db700001000|lea|0x100000(%r15),%rsi
+5bc|4839f0|cmp|%rsi,%rax
+5bf|72a3|jb|+564
+5c1|be0000e0fe|mov|$0xfee00000,%esi
+5c6|bfff0fe0fe|mov|$0xfee00fff,%edi
+5cb|4839ce|cmp|%rcx,%rsi
+5ce|410f93c0|setae|%r8b
+5d2|4839c7|cmp|%rax,%rdi
+5d5|410f92c1|setb|%r9b
+5d9|4508c8|or|%r9b,%r8b
+5dc|0f8468ffffff|je|+54a
+5e2|41b80000c0fe|mov|$0xfec00000,%r8d
+5e8|41b9ff0fc0fe|mov|$0xfec00fff,%r9d
+5ee|4939c8|cmp|%rcx,%r8
+5f1|410f93c0|setae|%r8b
+5f5|4939c1|cmp|%rax,%r9
+5f8|410f92c1|setb|%r9b
+5fc|4508c8|or|%r9b,%r8b
+5ff|0f8445ffffff|je|+54a
+605|41b8ffffffef|mov|$0xefffffff,%r8d
+60b|4939c0|cmp|%rax,%r8
+60e|b8000000e0|mov|$0xe0000000,%eax
+613|410f92c0|setb|%r8b
+617|4839c8|cmp|%rcx,%rax
+61a|0f93c0|setae|%al
+61d|4108c0|or|%al,%r8b
+620|0f8424ffffff|je|+54a
+626|4c39ff|cmp|%r15,%rdi
+629|0f82b7010000|jb|+7e6
+62f|498d8700001000|lea|0x100000(%r15),%rax
+636|4839c6|cmp|%rax,%rsi
+639|0f8225ffffff|jb|+564
+63f|488d542470|lea|0x70(%rsp),%rdx
+644|488d4c2458|lea|0x58(%rsp),%rcx
+649|be18000000|mov|$0x18,%esi
+64e|4889ef|mov|%rbp,%rdi
+651|4889942498000000|mov|%rdx,0x98(%rsp)
+659|488d542430|lea|0x30(%rsp),%rdx
+65e|488d442440|lea|0x40(%rsp),%rax
+663|48898c2488000000|mov|%rcx,0x88(%rsp)
+66b|488d4c2448|lea|0x48(%rsp),%rcx
+670|48899424a0000000|mov|%rdx,0xa0(%rsp)
+678|488d542428|lea|0x28(%rsp),%rdx
+67d|4889442470|mov|%rax,0x70(%rsp)
+682|488d442438|lea|0x38(%rsp),%rax
+687|48898c2490000000|mov|%rcx,0x90(%rsp)
+68f|b910000000|mov|$0x10,%ecx
+694|48899424a8000000|mov|%rdx,0xa8(%rsp)
+69c|488d542448|lea|0x48(%rsp),%rdx
+6a1|4c89742478|mov|%r14,0x78(%rsp)
+6a6|4889842480000000|mov|%rax,0x80(%rsp)
+6ae|48898424b0000000|mov|%rax,0xb0(%rsp)
+6b6|4c89b424b8000000|mov|%r14,0xb8(%rsp)
+6be|e800000000|call|@guard
+6c3|4189c0|mov|%eax,%r8d
+6c6|84c0|test|%al,%al
+6c8|0f847cfeffff|je|+54a
+6ce|b918000000|mov|$0x18,%ecx
+6d3|488d542458|lea|0x58(%rsp),%rdx
+6d8|be18000000|mov|$0x18,%esi
+6dd|4889ef|mov|%rbp,%rdi
+6e0|e800000000|call|@guard
+6e5|4189c0|mov|%eax,%r8d
+6e8|84c0|test|%al,%al
+6ea|0f845afeffff|je|+54a
+6f0|b938000000|mov|$0x38,%ecx
+6f5|488d942488000000|lea|0x88(%rsp),%rdx
+6fd|be18000000|mov|$0x18,%esi
+702|4889ef|mov|%rbp,%rdi
+705|e800000000|call|@guard
+70a|4189c0|mov|%eax,%r8d
+70d|84c0|test|%al,%al
+70f|0f8435feffff|je|+54a
+715|b910000000|mov|$0x10,%ecx
+71a|488d542448|lea|0x48(%rsp),%rdx
+71f|be18000000|mov|$0x18,%esi
+724|488d7c2458|lea|0x58(%rsp),%rdi
+729|e800000000|call|@guard
+72e|4189c0|mov|%eax,%r8d
+731|84c0|test|%al,%al
+733|0f8411feffff|je|+54a
+739|b938000000|mov|$0x38,%ecx
+73e|be18000000|mov|$0x18,%esi
+743|488d7c2458|lea|0x58(%rsp),%rdi
+748|488d942488000000|lea|0x88(%rsp),%rdx
+750|e800000000|call|@guard
+755|4189c0|mov|%eax,%r8d
+758|84c0|test|%al,%al
+75a|0f84eafdffff|je|+54a
+760|b938000000|mov|$0x38,%ecx
+765|be10000000|mov|$0x10,%esi
+76a|488d7c2448|lea|0x48(%rsp),%rdi
+76f|488d942488000000|lea|0x88(%rsp),%rdx
+777|e800000000|call|@guard
+77c|4189c0|mov|%eax,%r8d
+77f|84c0|test|%al,%al
+781|0f84c3fdffff|je|+54a
+787|31c0|xor|%eax,%eax
+789|c644044800|movb|$0x0,0x48(%rsp,%rax,1)
+78e|4883c001|add|$0x1,%rax
+792|4883f810|cmp|$0x10,%rax
+796|75f1|jne|+789
+798|488db42488000000|lea|0x88(%rsp),%rsi
+7a0|488b542458|mov|0x58(%rsp),%rdx
+7a5|4531c0|xor|%r8d,%r8d
+7a8|b903000000|mov|$0x3,%ecx
+7ad|4889f7|mov|%rsi,%rdi
+7b0|4c8b7c2458|mov|0x58(%rsp),%r15
+7b5|e800000000|call|@walk
+7ba|4189c0|mov|%eax,%r8d
+7bd|84c0|test|%al,%al
+7bf|0f8485fdffff|je|+54a
+7c5|488b442460|mov|0x60(%rsp),%rax
+7ca|31c9|xor|%ecx,%ecx
+7cc|4839c8|cmp|%rcx,%rax
+7cf|7449|je|+81a
+7d1|440fb6440c48|movzbl|0x48(%rsp,%rcx,1),%r8d
+7d7|4584c0|test|%r8b,%r8b
+7da|0f846afdffff|je|+54a
+7e0|4883c101|add|$0x1,%rcx
+7e4|ebe6|jmp|+7cc
+7e6|48b80020000000a0ffff|movabs|$0xffffa00000002000,%rax
+7f0|4801c2|add|%rax,%rdx
+7f3|4939d7|cmp|%rdx,%r15
+7f6|0f8343feffff|jae|+63f
+7fc|bafdff0700|mov|$0x7fffd,%edx
+801|498d8700001000|lea|0x100000(%r15),%rax
+808|48c1e22d|shl|$0x2d,%rdx
+80c|4839c2|cmp|%rax,%rdx
+80f|0f824ffdffff|jb|+564
+815|e925feffff|jmp|+63f
+81a|488b6c2438|mov|0x38(%rsp),%rbp
+81f|4c89f6|mov|%r14,%rsi
+822|4c89e7|mov|%r12,%rdi
+825|48894c2418|mov|%rcx,0x18(%rsp)
+82a|e800000000|call|@flags
+82f|4a8d542500|lea|0x0(%rbp,%r12,1),%rdx
+834|488d7c2458|lea|0x58(%rsp),%rdi
+839|4889d6|mov|%rdx,%rsi
+83c|4889542408|mov|%rdx,0x8(%rsp)
+841|4889442410|mov|%rax,0x10(%rsp)
+846|e800000000|call|@entry
+84b|4c8b442410|mov|0x10(%rsp),%r8
+850|4889c6|mov|%rax,%rsi
+853|488b442408|mov|0x8(%rsp),%rax
+858|4889f2|mov|%rsi,%rdx
+85b|4c09c0|or|%r8,%rax
+85e|4d85c0|test|%r8,%r8
+861|490f44c0|cmove|%r8,%rax
+865|4883e29f|and|$0xffffffffffffff9f,%rdx
+869|4d85c0|test|%r8,%r8
+86c|480f44d6|cmove|%rsi,%rdx
+870|4839c2|cmp|%rax,%rdx
+873|0f85ebfcffff|jne|+564
+879|498d9c2400100000|lea|0x1000(%r12),%rbx
+881|488b4c2418|mov|0x18(%rsp),%rcx
+886|4881fb00001000|cmp|$0x100000,%rbx
+88d|4989dc|mov|%rbx,%r12
+890|758d|jne|+81f
+892|4889ce|mov|%rcx,%rsi
+895|4c89ff|mov|%r15,%rdi
+898|e800000000|call|@window
+89d|4885c0|test|%rax,%rax
+8a0|0f84befcffff|je|+564
+8a6|beffff0100|mov|$0x1ffff,%esi
+8ab|488d7c2458|lea|0x58(%rsp),%rdi
+8b0|48c1e62f|shl|$0x2f,%rsi
+8b4|e800000000|call|@entry
+8b9|4885c0|test|%rax,%rax
+8bc|0f85a2fcffff|jne|+564
+8c2|bef9ff0f00|mov|$0xffff9,%esi
+8c7|488d7c2458|lea|0x58(%rsp),%rdi
+8cc|48c1e62c|shl|$0x2c,%rsi
+8d0|e800000000|call|@entry
+8d5|48ba1b00e0fe00000080|movabs|$0x80000000fee0001b,%rdx
+8df|4883e09f|and|$0xffffffffffffff9f,%rax
+8e3|4839d0|cmp|%rdx,%rax
+8e6|0f8578fcffff|jne|+564
+8ec|488b5c2440|mov|0x40(%rsp),%rbx
+8f1|4c8b442428|mov|0x28(%rsp),%r8
+8f6|31d2|xor|%edx,%edx
+8f8|49bb0010000000a0ffff|movabs|$0xffffa00000001000,%r11
+902|4839da|cmp|%rbx,%rdx
+905|0f8381000000|jae|+98c
+90b|4a8d341a|lea|(%rdx,%r11,1),%rsi
+90f|488d7c2458|lea|0x58(%rsp),%rdi
+914|4c89442418|mov|%r8,0x18(%rsp)
+919|4889542410|mov|%rdx,0x10(%rsp)
+91e|4889742408|mov|%rsi,0x8(%rsp)
+923|e800000000|call|@entry
+928|488b542410|mov|0x10(%rsp),%rdx
+92d|4c8b442418|mov|0x18(%rsp),%r8
+932|49bb0010000000a0ffff|movabs|$0xffffa00000001000,%r11
+93c|49b91b00000000000080|movabs|$0x800000000000001b,%r9
+946|4883e09f|and|$0xffffffffffffff9f,%rax
+94a|4889c1|mov|%rax,%rcx
+94d|48b8ffefffffff5f0000|movabs|$0x5fffffffefff,%rax
+957|4839d0|cmp|%rdx,%rax
+95a|7270|jb|+9cc
+95c|493b5018|cmp|0x18(%r8),%rdx
+960|736a|jae|+9cc
+962|48b800f0ffffff5f0000|movabs|$0x5ffffffff000,%rax
+96c|490300|add|(%r8),%rax
+96f|4803442408|add|0x8(%rsp),%rax
+974|4c09c8|or|%r9,%rax
+977|4839c1|cmp|%rax,%rcx
+97a|0f85e4fbffff|jne|+564
+980|4881c200100000|add|$0x1000,%rdx
+987|e976ffffff|jmp|+902
+98c|befdff0700|mov|$0x7fffd,%esi
+991|488d7c2458|lea|0x58(%rsp),%rdi
+996|48c1e62d|shl|$0x2d,%rsi
+99a|e800000000|call|@entry
+99f|4885c0|test|%rax,%rax
+9a2|0f85bcfbffff|jne|+564
+9a8|48b80010000000a0ffff|movabs|$0xffffa00000001000,%rax
+9b2|488d7c2458|lea|0x58(%rsp),%rdi
+9b7|488d3403|lea|(%rbx,%rax,1),%rsi
+9bb|e800000000|call|@entry
+9c0|4885c0|test|%rax,%rax
+9c3|410f94c0|sete|%r8b
+9c7|e97efbffff|jmp|+54a
+9cc|31c0|xor|%eax,%eax
+9ce|eba7|jmp|+977
+""",
+    'walk': """
+0|4883ec78|sub|$0x78,%rsp
+4|488b07|mov|(%rdi),%rax
+7|4c89642458|mov|%r12,0x58(%rsp)
+c|4989d4|mov|%rdx,%r12
+f|488b10|mov|(%rax),%rdx
+12|4939d4|cmp|%rdx,%r12
+15|0f8205020000|jb|+220
+1b|488b4008|mov|0x8(%rax),%rax
+1f|48c1e00c|shl|$0xc,%rax
+23|4801d0|add|%rdx,%rax
+26|4939c4|cmp|%rax,%r12
+29|0f83f1010000|jae|+220
+2f|41f7c4ff0f0000|test|$0xfff,%r12d
+36|0f85e4010000|jne|+220
+3c|4c89e0|mov|%r12,%rax
+3f|4829d0|sub|%rdx,%rax
+42|488b5708|mov|0x8(%rdi),%rdx
+46|48c1e80c|shr|$0xc,%rax
+4a|803c0200|cmpb|$0x0,(%rdx,%rax,1)
+4e|0f85cc010000|jne|+220
+54|4c896c2460|mov|%r13,0x60(%rsp)
+59|4189c9|mov|%ecx,%r9d
+5c|4531ed|xor|%r13d,%r13d
+5f|4c89742468|mov|%r14,0x68(%rsp)
+64|4d89e6|mov|%r12,%r14
+67|48895c2448|mov|%rbx,0x48(%rsp)
+6c|48896c2450|mov|%rbp,0x50(%rsp)
+71|4c897c2470|mov|%r15,0x70(%rsp)
+76|c6040201|movb|$0x1,(%rdx,%rax,1)
+7a|8d44c90c|lea|0xc(%rcx,%rcx,8),%eax
+7e|4c89442408|mov|%r8,0x8(%rsp)
+83|4889742420|mov|%rsi,0x20(%rsp)
+88|48897c2410|mov|%rdi,0x10(%rsp)
+8d|89442404|mov|%eax,0x4(%rsp)
+91|e99f000000|jmp|+135
+96|662e0f1f840000000000|cs|nopw 0x0(%rax,%rax,1)
+a0|4585c9|test|%r9d,%r9d
+a3|0f8587010000|jne|+230
+a9|488b742410|mov|0x10(%rsp),%rsi
+ae|488b4628|mov|0x28(%rsi),%rax
+b2|488b00|mov|(%rax),%rax
+b5|4939c0|cmp|%rax,%r8
+b8|0f8235010000|jb|+1f3
+be|488d9000001000|lea|0x100000(%rax),%rdx
+c5|4939d0|cmp|%rdx,%r8
+c8|0f8325010000|jae|+1f3
+ce|4c89c7|mov|%r8,%rdi
+d1|488b7630|mov|0x30(%rsi),%rsi
+d5|4c89442418|mov|%r8,0x18(%rsp)
+da|4829c7|sub|%rax,%rdi
+dd|44894c2428|mov|%r9d,0x28(%rsp)
+e2|e800000000|call|@flags
+e7|4885c0|test|%rax,%rax
+ea|0f8403010000|je|+1f3
+f0|4c8b442418|mov|0x18(%rsp),%r8
+f5|448b4c2428|mov|0x28(%rsp),%r9d
+fa|4909c0|or|%rax,%r8
+fd|4939d8|cmp|%rbx,%r8
+100|0f85ed000000|jne|+1f3
+106|0f1f4000|nopl|0x0(%rax)
+10a|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+115|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+120|4983c501|add|$0x1,%r13
+124|4983c608|add|$0x8,%r14
+128|4981fd00020000|cmp|$0x200,%r13
+12f|0f8465020000|je|+39a
+135|498b16|mov|(%r14),%rdx
+138|4885d2|test|%rdx,%rdx
+13b|74e3|je|+120
+13d|0fb64c2404|movzbl|0x4(%rsp),%ecx
+142|4d89e8|mov|%r13,%r8
+145|4889d3|mov|%rdx,%rbx
+148|48b80000000000800000|movabs|$0x800000000000,%rax
+152|4883e39f|and|$0xffffffffffffff9f,%rbx
+156|49d3e0|shl|%cl,%r8
+159|4c0b442408|or|0x8(%rsp),%r8
+15e|4985c0|test|%rax,%r8
+161|0f8439ffffff|je|+a0
+167|48be000000000000ffff|movabs|$0xffff000000000000,%rsi
+171|4c09c6|or|%r8,%rsi
+174|4989f4|mov|%rsi,%r12
+177|4585c9|test|%r9d,%r9d
+17a|0f85b3000000|jne|+233
+180|48b8000000000090ffff|movabs|$0xffff900000000000,%rax
+18a|4839c6|cmp|%rax,%rsi
+18d|0f84dd010000|je|+370
+193|48b8ff0f000000a0ffff|movabs|$0xffffa00000000fff,%rax
+19d|4839f0|cmp|%rsi,%rax
+1a0|0f8303ffffff|jae|+a9
+1a6|41f7c0ff0f0000|test|$0xfff,%r8d
+1ad|0f85f6feffff|jne|+a9
+1b3|488b442410|mov|0x10(%rsp),%rax
+1b8|488b4020|mov|0x20(%rax),%rax
+1bc|488b10|mov|(%rax),%rdx
+1bf|48b800f0ffffff5f0000|movabs|$0x5ffffffff000,%rax
+1c9|488d0c06|lea|(%rsi,%rax,1),%rcx
+1cd|483b4a18|cmp|0x18(%rdx),%rcx
+1d1|0f83d2feffff|jae|+a9
+1d7|480302|add|(%rdx),%rax
+1da|48ba1b00000000000080|movabs|$0x800000000000001b,%rdx
+1e4|4801f0|add|%rsi,%rax
+1e7|4809d0|or|%rdx,%rax
+1ea|4839c3|cmp|%rax,%rbx
+1ed|0f842dffffff|je|+120
+1f3|31ff|xor|%edi,%edi
+1f5|488b5c2448|mov|0x48(%rsp),%rbx
+1fa|488b6c2450|mov|0x50(%rsp),%rbp
+1ff|89f8|mov|%edi,%eax
+201|4c8b6c2460|mov|0x60(%rsp),%r13
+206|4c8b742468|mov|0x68(%rsp),%r14
+20b|4c8b7c2470|mov|0x70(%rsp),%r15
+210|4c8b642458|mov|0x58(%rsp),%r12
+215|4883c478|add|$0x78,%rsp
+219|c3|ret|
+21a|660f1f440000|nopw|0x0(%rax,%rax,1)
+220|31ff|xor|%edi,%edi
+222|4c8b642458|mov|0x58(%rsp),%r12
+227|4883c478|add|$0x78,%rsp
+22b|89f8|mov|%edi,%eax
+22d|c3|ret|
+22e|6690|xchg|%ax,%ax
+230|4d89c4|mov|%r8,%r12
+233|48b89f0f00000000f0ff|movabs|$0xfff0000000000f9f,%rax
+23d|4821d0|and|%rdx,%rax
+240|4883f803|cmp|$0x3,%rax
+244|75ad|jne|+1f3
+246|0fb64c2404|movzbl|0x4(%rsp),%ecx
+24b|48c7c0ffffffff|mov|$0xffffffffffffffff,%rax
+252|48d3e0|shl|%cl,%rax
+255|4889c1|mov|%rax,%rcx
+258|48b8000000000080ffff|movabs|$0xffff800000000000,%rax
+262|4821c8|and|%rcx,%rax
+265|4c39e0|cmp|%r12,%rax
+268|0f84c7000000|je|+335
+26e|48b8000000000090ffff|movabs|$0xffff900000000000,%rax
+278|4821c8|and|%rcx,%rax
+27b|4c39e0|cmp|%r12,%rax
+27e|0f84b1000000|je|+335
+284|488b442410|mov|0x10(%rsp),%rax
+289|4c8b7810|mov|0x10(%rax),%r15
+28d|48b80000000000a0ffff|movabs|$0xffffa00000000000,%rax
+297|498b3f|mov|(%r15),%rdi
+29a|480307|add|(%rdi),%rax
+29d|4821c8|and|%rcx,%rax
+2a0|4c39e0|cmp|%r12,%rax
+2a3|48b80010000000a0ffff|movabs|$0xffffa00000001000,%rax
+2ad|400f93c7|setae|%dil
+2b1|4821c8|and|%rcx,%rax
+2b4|4939c4|cmp|%rax,%r12
+2b7|0f93c0|setae|%al
+2ba|4020c7|and|%al,%dil
+2bd|7576|jne|+335
+2bf|4c896c2430|mov|%r13,0x30(%rsp)
+2c4|498b6f08|mov|0x8(%r15),%rbp
+2c8|4531ed|xor|%r13d,%r13d
+2cb|4889cb|mov|%rcx,%rbx
+2ce|4889542418|mov|%rdx,0x18(%rsp)
+2d3|4c89442428|mov|%r8,0x28(%rsp)
+2d8|40887c243f|mov|%dil,0x3f(%rsp)
+2dd|44894c2438|mov|%r9d,0x38(%rsp)
+2e2|eb18|jmp|+2fc
+2e4|0f1f4000|nopl|0x0(%rax)
+2e8|4981c500100000|add|$0x1000,%r13
+2ef|4981fd00001000|cmp|$0x100000,%r13
+2f6|0f8494000000|je|+390
+2fc|4889ee|mov|%rbp,%rsi
+2ff|4c89ef|mov|%r13,%rdi
+302|e800000000|call|@flags
+307|4885c0|test|%rax,%rax
+30a|74dc|je|+2e8
+30c|498b4710|mov|0x10(%r15),%rax
+310|488b08|mov|(%rax),%rcx
+313|4c01e9|add|%r13,%rcx
+316|4889c8|mov|%rcx,%rax
+319|4821d8|and|%rbx,%rax
+31c|4c39e0|cmp|%r12,%rax
+31f|75c7|jne|+2e8
+321|488b542418|mov|0x18(%rsp),%rdx
+326|4c8b442428|mov|0x28(%rsp),%r8
+32b|4c8b6c2430|mov|0x30(%rsp),%r13
+330|448b4c2438|mov|0x38(%rsp),%r9d
+335|488b742420|mov|0x20(%rsp),%rsi
+33a|418d49ff|lea|-0x1(%r9),%ecx
+33e|44894c2418|mov|%r9d,0x18(%rsp)
+343|48b800f0ffffffff0f00|movabs|$0xffffffffff000,%rax
+34d|4821c2|and|%rax,%rdx
+350|4889f7|mov|%rsi,%rdi
+353|e800000000|call|@walk
+358|448b4c2418|mov|0x18(%rsp),%r9d
+35d|84c0|test|%al,%al
+35f|89c7|mov|%eax,%edi
+361|0f85b9fdffff|jne|+120
+367|e989feffff|jmp|+1f5
+36c|0f1f4000|nopl|0x0(%rax)
+370|48b81b00e0fe00000080|movabs|$0x80000000fee0001b,%rax
+37a|4839c3|cmp|%rax,%rbx
+37d|0f849dfdffff|je|+120
+383|e96bfeffff|jmp|+1f3
+388|0f1f840000000000|nopl|0x0(%rax,%rax,1)
+390|0fb67c243f|movzbl|0x3f(%rsp),%edi
+395|e95bfeffff|jmp|+1f5
+39a|bf01000000|mov|$0x1,%edi
+39f|e951feffff|jmp|+1f5
+""",
+    'layout': """
+0|488d870000f0ff|lea|-0x100000(%rdi),%rax
+7|ba0000e0ff|mov|$0xffe00000,%edx
+c|4839c2|cmp|%rax,%rdx
+f|7307|jae|+18
+11|31c0|xor|%eax,%eax
+13|c3|ret|
+14|0f1f4000|nopl|0x0(%rax)
+18|f7c7ff0f0000|test|$0xfff,%edi
+1e|75f1|jne|+11
+20|4881ecb8000000|sub|$0xb8,%rsp
+27|bf01000000|mov|$0x1,%edi
+2c|48beffffffffff7f0000|movabs|$0x7fffffffffff,%rsi
+36|48c744242000000000|movq|$0x0,0x20(%rsp)
+3f|488d4c2410|lea|0x10(%rsp),%rcx
+44|48c744242800100800|movq|$0x81000,0x28(%rsp)
+4d|48c744243000100800|movq|$0x81000,0x30(%rsp)
+56|48c744243800100000|movq|$0x1000,0x38(%rsp)
+5f|48c744244000200800|movq|$0x82000,0x40(%rsp)
+68|48c744244800100000|movq|$0x1000,0x48(%rsp)
+71|48c744245000400800|movq|$0x84000,0x50(%rsp)
+7a|48c744245800400000|movq|$0x4000,0x58(%rsp)
+83|48c744246000900800|movq|$0x89000,0x60(%rsp)
+8c|48c744246800400000|movq|$0x4000,0x68(%rsp)
+95|48c744247000000b00|movq|$0xb0000,0x70(%rsp)
+9e|48c744247800200000|movq|$0x2000,0x78(%rsp)
+a7|48c784248000000000000c00|movq|$0xc0000,0x80(%rsp)
+b3|48c784248800000000000100|movq|$0x10000,0x88(%rsp)
+bf|48c784249000000000000900|movq|$0x90000,0x90(%rsp)
+cb|48c784249800000000000100|movq|$0x10000,0x98(%rsp)
+d7|48c78424a000000000000a00|movq|$0xa0000,0xa0(%rsp)
+e3|48c78424a800000000000100|movq|$0x10000,0xa8(%rsp)
+ef|48c744240800300800|movq|$0x83000,0x8(%rsp)
+f8|48c744241000800800|movq|$0x88000,0x10(%rsp)
+101|48c744241800d00800|movq|$0x8d000,0x18(%rsp)
+10a|4c8b01|mov|(%rcx),%r8
+10d|4981f8ffff0f00|cmp|$0xfffff,%r8
+114|7758|ja|+16e
+116|41f7c0ff0f0000|test|$0xfff,%r8d
+11d|754f|jne|+16e
+11f|48899c24b0000000|mov|%rbx,0xb0(%rsp)
+127|488d442408|lea|0x8(%rsp),%rax
+12c|4d8d9000100000|lea|0x1000(%r8),%r10
+133|eb29|jmp|+15e
+135|0f1f00|nopl|(%rax)
+138|4989d1|mov|%rdx,%r9
+13b|4181e1ff0f0000|and|$0xfff,%r9d
+142|7522|jne|+166
+144|4c39d2|cmp|%r10,%rdx
+147|730c|jae|+155
+149|4881c200100000|add|$0x1000,%rdx
+150|4939d0|cmp|%rdx,%r8
+153|7211|jb|+166
+155|4883c008|add|$0x8,%rax
+159|4839c1|cmp|%rax,%rcx
+15c|741a|je|+178
+15e|488b10|mov|(%rax),%rdx
+161|4839d6|cmp|%rdx,%rsi
+164|73d2|jae|+138
+166|488b9c24b0000000|mov|0xb0(%rsp),%rbx
+16e|31c0|xor|%eax,%eax
+170|4881c4b8000000|add|$0xb8,%rsp
+177|c3|ret|
+178|4883c108|add|$0x8,%rcx
+17c|4883ff02|cmp|$0x2,%rdi
+180|0f8532010000|jne|+2b8
+186|48beffffffffff7f0000|movabs|$0x7fffffffffff,%rsi
+190|488d4c2420|lea|0x20(%rsp),%rcx
+195|4c8b01|mov|(%rcx),%r8
+198|4981f8ffff0f00|cmp|$0xfffff,%r8
+19f|77c5|ja|+166
+1a1|4c8b5108|mov|0x8(%rcx),%r10
+1a5|4d85d2|test|%r10,%r10
+1a8|74bc|je|+166
+1aa|4c89c0|mov|%r8,%rax
+1ad|4c09d0|or|%r10,%rax
+1b0|a9ff0f0000|test|$0xfff,%eax
+1b5|75af|jne|+166
+1b7|48b80000000000800000|movabs|$0x800000000000,%rax
+1c1|4c29c0|sub|%r8,%rax
+1c4|4c39d0|cmp|%r10,%rax
+1c7|729d|jb|+166
+1c9|b800001000|mov|$0x100000,%eax
+1ce|4c29c0|sub|%r8,%rax
+1d1|4c39d0|cmp|%r10,%rax
+1d4|7290|jb|+166
+1d6|4d85c9|test|%r9,%r9
+1d9|7475|je|+250
+1db|488d442420|lea|0x20(%rsp),%rax
+1e0|4f8d1c10|lea|(%r8,%r10,1),%r11
+1e4|eb59|jmp|+23f
+1e6|662e0f1f840000000000|cs|nopw 0x0(%rax,%rax,1)
+1f0|488b7808|mov|0x8(%rax),%rdi
+1f4|4885ff|test|%rdi,%rdi
+1f7|0f8469ffffff|je|+166
+1fd|4889d3|mov|%rdx,%rbx
+200|4809fb|or|%rdi,%rbx
+203|f7c3ff0f0000|test|$0xfff,%ebx
+209|0f8557ffffff|jne|+166
+20f|48bb0000000000800000|movabs|$0x800000000000,%rbx
+219|4829d3|sub|%rdx,%rbx
+21c|4839fb|cmp|%rdi,%rbx
+21f|0f8241ffffff|jb|+166
+225|4c39da|cmp|%r11,%rdx
+228|730c|jae|+236
+22a|4801fa|add|%rdi,%rdx
+22d|4939d0|cmp|%rdx,%r8
+230|0f8230ffffff|jb|+166
+236|4883c010|add|$0x10,%rax
+23a|4839c8|cmp|%rcx,%rax
+23d|7411|je|+250
+23f|488b10|mov|(%rax),%rdx
+242|4839d6|cmp|%rdx,%rsi
+245|0f821bffffff|jb|+166
+24b|eba3|jmp|+1f0
+24d|0f1f00|nopl|(%rax)
+250|488d442408|lea|0x8(%rsp),%rax
+255|488b10|mov|(%rax),%rdx
+258|4839d6|cmp|%rdx,%rsi
+25b|0f8205ffffff|jb|+166
+261|f7c2ff0f0000|test|$0xfff,%edx
+267|0f85f9feffff|jne|+166
+26d|4b8d3c10|lea|(%r8,%r10,1),%rdi
+271|4839fa|cmp|%rdi,%rdx
+274|7310|jae|+286
+276|4881c200100000|add|$0x1000,%rdx
+27d|4939d0|cmp|%rdx,%r8
+280|0f82e0feffff|jb|+166
+286|4883c008|add|$0x8,%rax
+28a|488d542420|lea|0x20(%rsp),%rdx
+28f|4839c2|cmp|%rax,%rdx
+292|75c1|jne|+255
+294|4983c101|add|$0x1,%r9
+298|4883c110|add|$0x10,%rcx
+29c|4983f909|cmp|$0x9,%r9
+2a0|0f85effeffff|jne|+195
+2a6|488b9c24b0000000|mov|0xb0(%rsp),%rbx
+2ae|b801000000|mov|$0x1,%eax
+2b3|e9b8feffff|jmp|+170
+2b8|488b9c24b0000000|mov|0xb0(%rsp),%rbx
+2c0|bf02000000|mov|$0x2,%edi
+2c5|e940feffff|jmp|+10a
+""",
+    'bytes': """
+0|83fa08|cmp|$0x8,%edx
+3|775b|ja|+60
+5|488b4708|mov|0x8(%rdi),%rax
+9|4839f0|cmp|%rsi,%rax
+c|7252|jb|+60
+e|89d1|mov|%edx,%ecx
+10|4829f0|sub|%rsi,%rax
+13|4839c8|cmp|%rcx,%rax
+16|7248|jb|+60
+18|85d2|test|%edx,%edx
+1a|7444|je|+60
+1c|480337|add|(%rdi),%rsi
+1f|c1e203|shl|$0x3,%edx
+22|31c9|xor|%ecx,%ecx
+24|31ff|xor|%edi,%edi
+26|0f1f4000|nopl|0x0(%rax)
+2a|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+35|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+40|0fb606|movzbl|(%rsi),%eax
+43|4883c601|add|$0x1,%rsi
+47|48d3e0|shl|%cl,%rax
+4a|83c108|add|$0x8,%ecx
+4d|4809c7|or|%rax,%rdi
+50|39ca|cmp|%ecx,%edx
+52|75ec|jne|+40
+54|4889f8|mov|%rdi,%rax
+57|c3|ret|
+58|0f1f840000000000|nopl|0x0(%rax,%rax,1)
+60|31ff|xor|%edi,%edi
+62|4889f8|mov|%rdi,%rax
+65|c3|ret|
+""",
+    'flags': """
+0|488b4e08|mov|0x8(%rsi),%rcx
+4|4883f907|cmp|$0x7,%rcx
+8|766c|jbe|+76
+a|488d41f8|lea|-0x8(%rcx),%rax
+e|4883f803|cmp|$0x3,%rax
+12|7662|jbe|+76
+14|488b16|mov|(%rsi),%rdx
+17|0fb6420a|movzbl|0xa(%rdx),%eax
+1b|440fb64209|movzbl|0x9(%rdx),%r8d
+20|48c1e010|shl|$0x10,%rax
+24|49c1e008|shl|$0x8,%r8
+28|4c09c0|or|%r8,%rax
+2b|440fb64208|movzbl|0x8(%rdx),%r8d
+30|0fb6520b|movzbl|0xb(%rdx),%edx
+34|4c09c0|or|%r8,%rax
+37|48c1e218|shl|$0x18,%rdx
+3b|4809d0|or|%rdx,%rax
+3e|488d50fb|lea|-0x5(%rax),%rdx
+42|4883fa01|cmp|$0x1,%rdx
+46|0f86a4010000|jbe|+1f0
+4c|4883f804|cmp|$0x4,%rax
+50|0f85ba010000|jne|+210
+56|4881ff00100800|cmp|$0x81000,%rdi
+5d|0f849a010000|je|+1fd
+63|488d870000faff|lea|-0x60000(%rdi),%rax
+6a|483dff0f0200|cmp|$0x20fff,%rax
+70|0f866a010000|jbe|+1e0
+76|488d8700f0ffff|lea|-0x1000(%rdi),%rax
+7d|483dffff0000|cmp|$0xffff,%rax
+83|0f8674010000|jbe|+1fd
+89|4885ff|test|%rdi,%rdi
+8c|0f846b010000|je|+1fd
+92|488d8700f0feff|lea|-0x11000(%rdi),%rax
+99|483dffff0000|cmp|$0xffff,%rax
+9f|0f863b010000|jbe|+1e0
+a5|4881ff00200400|cmp|$0x42000,%rdi
+ac|0f842e010000|je|+1e0
+b2|488d8700c0fbff|lea|-0x44000(%rdi),%rax
+b9|483dff3f0000|cmp|$0x3fff,%rax
+bf|0f861b010000|jbe|+1e0
+c5|488d870000fbff|lea|-0x50000(%rdi),%rax
+cc|483dffff0000|cmp|$0xffff,%rax
+d2|0f8608010000|jbe|+1e0
+d8|4881ff00100200|cmp|$0x21000,%rdi
+df|0f84c8010000|je|+2ad
+e5|4881ffff1f0200|cmp|$0x21fff,%rdi
+ec|0f86c6010000|jbe|+2b8
+f2|4883f957|cmp|$0x57,%rcx
+f6|0f86bc010000|jbe|+2b8
+fc|4c8b06|mov|(%rsi),%r8
+ff|31c0|xor|%eax,%eax
+101|31f6|xor|%esi,%esi
+103|0f1f8000000000|nopl|0x0(%rax)
+10a|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+115|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+120|410fb6540050|movzbl|0x50(%r8,%rax,1),%edx
+126|8d0cc500000000|lea|0x0(,%rax,8),%ecx
+12d|4883c001|add|$0x1,%rax
+131|48d3e2|shl|%cl,%rdx
+134|4809d6|or|%rdx,%rsi
+137|4883f808|cmp|$0x8,%rax
+13b|75e3|jne|+120
+13d|4881c600200200|add|$0x22000,%rsi
+144|4839f7|cmp|%rsi,%rdi
+147|0f836b010000|jae|+2b8
+14d|4881ef00200200|sub|$0x22000,%rdi
+154|31c0|xor|%eax,%eax
+156|31f6|xor|%esi,%esi
+158|410fb6540040|movzbl|0x40(%r8,%rax,1),%edx
+15e|8d0cc500000000|lea|0x0(,%rax,8),%ecx
+165|4883c001|add|$0x1,%rax
+169|48d3e2|shl|%cl,%rdx
+16c|4809d6|or|%rdx,%rsi
+16f|4883f808|cmp|$0x8,%rax
+173|75e3|jne|+158
+175|4839f7|cmp|%rsi,%rdi
+178|0f822f010000|jb|+2ad
+17e|31c0|xor|%eax,%eax
+180|31f6|xor|%esi,%esi
+182|0f1f840000000000|nopl|0x0(%rax,%rax,1)
+18a|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+195|66662e0f1f840000000000|data16|cs nopw 0x0(%rax,%rax,1)
+1a0|410fb6540048|movzbl|0x48(%r8,%rax,1),%edx
+1a6|8d0cc500000000|lea|0x0(,%rax,8),%ecx
+1ad|4883c001|add|$0x1,%rax
+1b1|48d3e2|shl|%cl,%rdx
+1b4|4809d6|or|%rdx,%rsi
+1b7|4883f808|cmp|$0x8,%rax
+1bb|75e3|jne|+1a0
+1bd|48ba0300000000000080|movabs|$0x8000000000000003,%rdx
+1c7|4839f7|cmp|%rsi,%rdi
+1ca|48b80100000000000080|movabs|$0x8000000000000001,%rax
+1d4|480f43c2|cmovae|%rdx,%rax
+1d8|c3|ret|
+1d9|0f1f8000000000|nopl|0x0(%rax)
+1e0|48b80300000000000080|movabs|$0x8000000000000003,%rax
+1ea|c3|ret|
+1eb|0f1f440000|nopl|0x0(%rax,%rax,1)
+1f0|4881ff00000e00|cmp|$0xe0000,%rdi
+1f7|0f8566feffff|jne|+63
+1fd|48b80100000000000080|movabs|$0x8000000000000001,%rax
+207|c3|ret|
+208|0f1f840000000000|nopl|0x0(%rax,%rax,1)
+210|4883f803|cmp|$0x3,%rax
+214|0f85a1000000|jne|+2bb
+21a|4881ffffff0f00|cmp|$0xfffff,%rdi
+221|0f87befeffff|ja|+e5
+227|f7c7ff0f0000|test|$0xfff,%edi
+22d|0f8530feffff|jne|+63
+233|4881ff00100800|cmp|$0x81000,%rdi
+23a|74c1|je|+1fd
+23c|488d8700c0f7ff|lea|-0x84000(%rdi),%rax
+243|483dff3f0000|cmp|$0x3fff,%rax
+249|7695|jbe|+1e0
+24b|4881ff00200800|cmp|$0x82000,%rdi
+252|748c|je|+1e0
+254|488d870070f7ff|lea|-0x89000(%rdi),%rax
+25b|483dff3f0000|cmp|$0x3fff,%rax
+261|0f8679ffffff|jbe|+1e0
+267|488d870000f4ff|lea|-0xc0000(%rdi),%rax
+26e|483dffff0000|cmp|$0xffff,%rax
+274|0f8666ffffff|jbe|+1e0
+27a|4881ffffff0800|cmp|$0x8ffff,%rdi
+281|0f86dcfdffff|jbe|+63
+287|488d870000f7ff|lea|-0x90000(%rdi),%rax
+28e|483dffff0100|cmp|$0x1ffff,%rax
+294|0f8646ffffff|jbe|+1e0
+29a|488d870000f5ff|lea|-0xb0000(%rdi),%rax
+2a1|483dff1f0000|cmp|$0x1fff,%rax
+2a7|0f8718feffff|ja|+c5
+2ad|b801000000|mov|$0x1,%eax
+2b2|c3|ret|
+2b3|0f1f440000|nopl|0x0(%rax,%rax,1)
+2b8|31c0|xor|%eax,%eax
+2ba|c3|ret|
+2bb|4883f801|cmp|$0x1,%rax
+2bf|0f86b1fdffff|jbe|+76
+2c5|e999fdffff|jmp|+63
+""",
+    'guard': """
+0|4801fe|add|%rdi,%rsi
+3|7210|jb|+15
+5|4801d1|add|%rdx,%rcx
+8|720b|jb|+15
+a|b801000000|mov|$0x1,%eax
+f|4839f2|cmp|%rsi,%rdx
+12|720c|jb|+20
+14|c3|ret|
+15|31c0|xor|%eax,%eax
+17|c3|ret|
+18|0f1f840000000000|nopl|0x0(%rax,%rax,1)
+20|4839cf|cmp|%rcx,%rdi
+23|0f93c0|setae|%al
+26|c3|ret|
+""",
+    'entry': """
+0|53|push|%rbx
+1|4c8b07|mov|(%rdi),%r8
+4|488d1500000000|lea|@levels,%rdx
+b|49b99f0f00000000f0ff|movabs|$0xfff0000000000f9f,%r9
+15|488b7f08|mov|0x8(%rdi),%rdi
+19|4c8d5a0c|lea|0xc(%rdx),%r11
+1d|49ba00f0ffffffff0f00|movabs|$0xffffffffff000,%r10
+27|4c89c0|mov|%r8,%rax
+2a|48c1e70c|shl|$0xc,%rdi
+2e|4c01c7|add|%r8,%rdi
+31|8b0a|mov|(%rdx),%ecx
+33|4889f3|mov|%rsi,%rbx
+36|48d3eb|shr|%cl,%rbx
+39|4889d9|mov|%rbx,%rcx
+3c|81e1ff010000|and|$0x1ff,%ecx
+42|488b04c8|mov|(%rax,%rcx,8),%rax
+46|4889c1|mov|%rax,%rcx
+49|4c21c9|and|%r9,%rcx
+4c|4883f903|cmp|$0x3,%rcx
+50|752e|jne|+80
+52|4c21d0|and|%r10,%rax
+55|4c39c0|cmp|%r8,%rax
+58|7226|jb|+80
+5a|4839f8|cmp|%rdi,%rax
+5d|7321|jae|+80
+5f|4883c204|add|$0x4,%rdx
+63|4c39da|cmp|%r11,%rdx
+66|75c9|jne|+31
+68|48c1ee0c|shr|$0xc,%rsi
+6c|5b|pop|%rbx
+6d|81e6ff010000|and|$0x1ff,%esi
+73|488b04f0|mov|(%rax,%rsi,8),%rax
+77|c3|ret|
+78|0f1f840000000000|nopl|0x0(%rax,%rax,1)
+80|31c0|xor|%eax,%eax
+82|5b|pop|%rbx
+83|c3|ret|
+""",
+    'window': """
+0|48c1e60c|shl|$0xc,%rsi
+4|4889f8|mov|%rdi,%rax
+7|488d1500000000|lea|@levels,%rdx
+e|49b89f0f00000000f0ff|movabs|$0xfff0000000000f9f,%r8
+18|4801fe|add|%rdi,%rsi
+1b|4c8d520c|lea|0xc(%rdx),%r10
+1f|49b900f0ffffffff0f00|movabs|$0xffffffffff000,%r9
+29|49bb000000000080ffff|movabs|$0xffff800000000000,%r11
+33|8b0a|mov|(%rdx),%ecx
+35|49d3eb|shr|%cl,%r11
+38|4c89d9|mov|%r11,%rcx
+3b|81e1ff010000|and|$0x1ff,%ecx
+41|488b04c8|mov|(%rax,%rcx,8),%rax
+45|4889c1|mov|%rax,%rcx
+48|4c21c1|and|%r8,%rcx
+4b|4883f903|cmp|$0x3,%rcx
+4f|751f|jne|+70
+51|4c21c8|and|%r9,%rax
+54|4839f8|cmp|%rdi,%rax
+57|7217|jb|+70
+59|4839f0|cmp|%rsi,%rax
+5c|7312|jae|+70
+5e|4883c204|add|$0x4,%rdx
+62|4c39d2|cmp|%r10,%rdx
+65|75c2|jne|+29
+67|c3|ret|
+68|0f1f840000000000|nopl|0x0(%rax,%rax,1)
+70|31c0|xor|%eax,%eax
+72|c3|ret|
+""",
+}
+
+
 def fixture(specification, analyze=True):
     """Build machine-shaped fixtures only; the expected denials are below."""
     starts = {100 * index: name for index, name in enumerate(specification)}
@@ -1210,6 +2386,57 @@ class Admission(unittest.TestCase):
             section_data=lambda index: strings if index == 2 else b"",
             function_bytes=lambda symbol: b"\x90" * symbol.size,
         )
+
+    @staticmethod
+    def gcc16_single_object(linked=False):
+        obj=Admission.paired_object(linked)
+        name=graphical.PAIRED_ALIAS;address=0x8240 if linked else 0
+        strings=b"\0"+name.encode()+b"\0"
+        obj.data=struct.pack("<IBBHQQ",1,0x22,2,3,address,932)+strings
+        obj.sections=[(0,)*10,(0,2,0,0,0,24,2,0,8,24),(0,3,0,0,24,len(strings),0,0,1,0),(0,)*10]
+        obj.symbols=[decoder.Symbol(name,address,932,3,2)];obj.functions={name:obj.symbols[0]}
+        obj.section_data=lambda index:strings if index==2 else b""
+        return obj
+
+    def test_gcc16_single_definition_raw_metadata_binding(self):
+        for linked in (False,True):
+            obj=self.gcc16_single_object(linked)
+            proof=graphical.paired_walker_evidence(obj)
+            self.assertEqual(proof["canonical"],graphical.PAIRED_ALIAS)
+            self.assertEqual(len(proof["definitions"]),1)
+            self.assertNotIn("aliases",proof)
+            for field,value in (("size",931),("section",0),("kind",0)):
+                changed=self.gcc16_single_object(linked);row=changed.functions[graphical.PAIRED_ALIAS]
+                values=dict(name=row.name,address=row.address,size=row.size,section=row.section,kind=row.kind);values[field]=value
+                changed.functions[row.name]=decoder.Symbol(**values)
+                with self.subTest(field=field),self.assertRaises(ValueError):graphical.paired_walker_evidence(changed)
+            for index,value in ((4,0x12),(5,0)):
+                changed=self.gcc16_single_object(linked);raw=bytearray(changed.data);raw[index]=value;changed.data=bytes(raw)
+                with self.subTest(raw=index),self.assertRaises(ValueError):graphical.paired_walker_evidence(changed)
+            changed=self.gcc16_single_object(linked);row=changed.symbols[0]
+            changed.symbols.append(decoder.Symbol("unproved_alias",row.address,row.size,row.section,row.kind))
+            with self.assertRaises(ValueError):graphical.paired_walker_evidence(changed)
+            changed=self.gcc16_single_object(linked);row=changed.symbols[0]
+            changed.functions[graphical.PAIRED_WALK]=decoder.Symbol(graphical.PAIRED_WALK,row.address,row.size,row.section,row.kind)
+            with self.assertRaises(ValueError):graphical.paired_walker_evidence(changed)
+        with tempfile.TemporaryDirectory(prefix="gcc16-frame-controls-") as directory:
+            root=Path(directory);location="kernel/uefi/tables.hpp:1:1";signature="exact single walker signature"
+            (root/"graphical-console.su").write_text(location+":"+signature+"\t128\tstatic\n")
+            label=signature+"\n"+location+"\n128 bytes (static)"
+            graph='graph: { title: "kernel/uefi/graphical-console.cpp"\nnode: { title: '+json.dumps(graphical.PAIRED_ALIAS)+' label: '+json.dumps(label)+' }\n}'
+            obj,linked=self.gcc16_single_object(),self.gcc16_single_object(True)
+            with patch.object(graphical,"CPP_OBJECTS",("graphical-console",)),patch.object(decoder,"Elf",return_value=obj):
+                (root/"graphical-console.ci").write_text(graph)
+                frames,receipts,proof=graphical.graphical_cpp_frames(decoder,root,linked,graphical.PAIRED_ALIAS)
+                self.assertEqual(frames,{graphical.PAIRED_ALIAS:128})
+                self.assertEqual(receipts[graphical.PAIRED_ALIAS][0]["compiler_symbol"],graphical.PAIRED_ALIAS)
+                self.assertNotIn(graphical.PAIRED_WALK,linked.functions)
+                for changed in (graph.replace(graphical.PAIRED_ALIAS,graphical.PAIRED_WALK),
+                                graph.replace("128 bytes","136 bytes"),graph.replace("tables.hpp:1:1","tables.hpp:2:1"),
+                                graph.replace(' }\n}', ' }\n'+graph.splitlines()[1]+'\n}')):
+                    (root/"graphical-console.ci").write_text(changed)
+                    with self.subTest(metadata=changed),self.assertRaises(ValueError):
+                        graphical.graphical_cpp_frames(decoder,root,linked,graphical.PAIRED_ALIAS)
 
     def test_exact_paired_alias_raw_identity(self):
         evidence = graphical.paired_alias_evidence(self.paired_object())
@@ -2454,6 +3681,148 @@ class Admission(unittest.TestCase):
         starts = {symbol.address: name for name, symbol in symbols.items()}
         functions = {name: decoder.analyze_function(symbol, code, starts) for name, symbol in symbols.items()}
         return functions, symbols, code, starts, bytes(payload)
+
+    @staticmethod
+    def paired_gcc16_linked_fixture(shift=0):
+        # These are independently retained emitted rows, not an expected shape
+        # synthesized from production constants or proof results.
+        names = {
+            "root": graphical.PAIRED_ROOT,
+            "walk": graphical.PAIRED_ALIAS,
+            "layout": graphical.PAIRED_LAYOUT,
+            "bytes": graphical.PAIRED_BYTES,
+            "flags": graphical.PAIRED_LEVEL_HELPER,
+            "guard": graphical.PAIRED_GUARD,
+            "entry": graphical.PAIRED_ENTRY,
+            "window": graphical.PAIRED_WINDOW,
+        }
+        locations = {label: shift + 0x1000 * (index + 1) for index, label in enumerate(names)}
+        data_address = shift + 0xA000
+        payload, code, symbols = bytearray(data_address + 12), {}, {}
+        payload[data_address:] = bytes.fromhex("270000001e00000015000000")
+        for label, text in PAIRED_GCC16_LINKED_FIXTURES.items():
+            base = locations[label]
+            for line in text.strip().splitlines():
+                offset, machine, op, args = line.split("|")
+                raw = bytearray.fromhex(machine)
+                address = base + int(offset, 16)
+                if args.startswith("@levels"):
+                    delta = data_address - (address + len(raw))
+                    raw[-4:] = delta.to_bytes(4, "little", signed=True)
+                    args = hex(delta) + "(%rip)," + args.split(",")[1]
+                elif args.startswith("@"):
+                    target = locations[args[1:]]
+                    raw[-4:] = (target - address - len(raw)).to_bytes(4, "little", signed=True)
+                    args = f"{target:x} <{args[1:]}>"
+                elif args.startswith("+"):
+                    args = f"{base + int(args[1:], 16):x} <{label}>"
+                payload[address : address + len(raw)] = raw
+                code[address] = decoder.Instruction(address, len(raw), op, args)
+            symbols[names[label]] = decoder.Symbol(names[label], base, address + len(raw) - base, 1, 2)
+        starts = {symbol.address: name for name, symbol in symbols.items()}
+        functions = {name: decoder.analyze_function(symbol, code, starts) for name, symbol in symbols.items()}
+        return functions, symbols, code, starts, bytes(payload)
+
+
+    @staticmethod
+    def gcc16_storage_proof(functions, symbols, code, starts, payload):
+        result = dict(machine=graphical.paired_gcc16_exact_machine(decoder, symbols, code, starts, payload),
+                      helpers=graphical.paired_gcc16_helper_effects(decoder, symbols, code, functions),
+                      guard=graphical.paired_gcc16_guard_contract(decoder, symbols, code),
+                      root=graphical.paired_gcc16_root_storage(decoder, symbols, code, starts, functions),
+                      walker=graphical.paired_gcc16_walker_storage(decoder, symbols[graphical.PAIRED_ALIAS], code, starts))
+        levels = graphical.paired_gcc16_level_induction(decoder, symbols[graphical.PAIRED_ALIAS], code, starts,
+            functions[graphical.PAIRED_ALIAS], (result["walker"]["bitmap_store"],), result)
+        return result, levels
+
+    def test_gcc16_closed_storage_profile_and_relocation(self):
+        for shift in (0, 0x100000):
+            fixture = self.paired_gcc16_linked_fixture(shift)
+            proof, levels = self.gcc16_storage_proof(*fixture)
+            self.assertEqual(len(proof["machine"]), 8)
+            self.assertEqual(proof["root"]["objects"], {"bitmap": (0x48,16), "snapshot": (0x58,24),
+                "helper_closure": (0x70,24), "closure": (0x88,56)})
+            self.assertEqual(len(proof["root"]["guards"]), 6)
+            for seed in range(4):
+                self.assertTrue(levels[seed]["caller_memory_contract"])
+                self.assertEqual(levels[seed]["established_child_seed"], seed-1 if seed else None)
+                self.assertEqual([call["level"] for call in levels[seed]["calls"]
+                                  if call["target"] == graphical.PAIRED_ALIAS], [seed-1] if seed else [])
+            with self.assertRaises(ValueError):
+                graphical.paired_exact_machine(decoder, fixture[1], fixture[2], fixture[3], fixture[4])
+        old = self.paired_linked_fixture()
+        with self.assertRaises(ValueError):
+            graphical.paired_gcc16_exact_machine(decoder, old[1], old[2], old[3], old[4])
+
+    def test_gcc16_each_body_and_guard_is_closed(self):
+        functions, symbols, code, starts, payload = self.paired_gcc16_linked_fixture()
+        for symbol in symbols.values():
+            changed = bytearray(payload)
+            changed[symbol.address] ^= 1
+            with self.subTest(symbol=symbol.name), self.assertRaises(ValueError):
+                graphical.paired_gcc16_exact_machine(decoder, symbols, code, starts, bytes(changed))
+        root = symbols[graphical.PAIRED_ROOT]
+        for offset in (0x6BE,0x6E0,0x705,0x729,0x750,0x777):
+            altered = dict(code); row = code[root.address+offset]
+            altered[row.address] = decoder.Instruction(row.address,row.size,row.op,
+                f"{symbols[graphical.PAIRED_LEVEL_HELPER].address:x} <wrong>")
+            with self.subTest(guard=offset), self.assertRaises(ValueError):
+                graphical.paired_gcc16_root_storage(decoder,symbols,altered,starts,functions)
+        for offset,op,args in ((0x7,"mov","0x8(%rdi),%r10"),
+                               (0xAC,"mov","$0x1,%r9d"),
+                               (0xB1,"mov","$0x111000,%r10"),
+                               (0x8E,"mov","$0x100000,%r15"),
+                               (0x644,"lea","0x48(%rsp),%rcx"),
+                               (0x792,"cmp","$0x11,%rax"),
+                               (0x7A8,"mov","$0x4,%ecx")):
+            altered=dict(code);row=code[root.address+offset]
+            altered[row.address]=decoder.Instruction(row.address,row.size,op,args)
+            with self.subTest(root=offset), self.assertRaises(ValueError):
+                graphical.paired_gcc16_root_storage(decoder,symbols,altered,starts,functions)
+        guard=symbols[graphical.PAIRED_GUARD]
+        for offset in (3,8,0x12):
+            altered=dict(code);row=code[guard.address+offset]
+            altered[row.address]=decoder.Instruction(row.address,row.size,"jae",row.args)
+            with self.subTest(overflow_or_disjoint=offset), self.assertRaises(ValueError):
+                graphical.paired_gcc16_guard_contract(decoder,symbols,altered)
+
+    def test_gcc16_save_slots_and_recursive_lineage_reject_mutations(self):
+        functions,symbols,code,starts,payload=self.paired_gcc16_linked_fixture()
+        proof,levels=self.gcc16_storage_proof(functions,symbols,code,starts,payload)
+        for name in (graphical.PAIRED_ROOT,graphical.PAIRED_ALIAS,graphical.PAIRED_LAYOUT):
+            symbol=symbols[name];frame=graphical.paired_gcc16_slot_frame(decoder,symbol,code)
+            for address,register,slot in frame["saves"]:
+                for args in (code[address].args.replace(hex(slot),hex(slot+1)),
+                             code[address].args.replace("%"+register,"%eax")):
+                    altered=dict(code);row=code[address]
+                    altered[address]=decoder.Instruction(address,row.size,row.op,args)
+                    with self.subTest(save=(name,address,args)), self.assertRaises(ValueError):
+                        graphical.paired_gcc16_slot_frame(decoder,symbol,altered)
+            for address,register,slot in frame["restores"]:
+                altered=dict(code);row=code[address]
+                altered[address]=decoder.Instruction(address,row.size,row.op,row.args.replace(hex(slot),hex(slot+8)))
+                with self.subTest(restore=(name,address)), self.assertRaises(ValueError):
+                    graphical.paired_gcc16_slot_frame(decoder,symbol,altered)
+        root=symbols[graphical.PAIRED_ROOT];row=code[root.address+0x12];altered=dict(code)
+        altered[row.address]=decoder.Instruction(row.address,row.size,"xchg","%r13,%rax")
+        with self.assertRaises(ValueError):
+            graphical.paired_gcc16_slot_frame(decoder,root,altered)
+        walk=symbols[graphical.PAIRED_ALIAS]
+        for offset,op,args in ((0x15,"jae",code[walk.address+0x15].args),
+                               (0x76,"movb","$0x1,(%rdx,%rcx,1)"),
+                               (0x350,"mov","%rax,%rdi")):
+            altered=dict(code);row=code[walk.address+offset]
+            altered[row.address]=decoder.Instruction(row.address,row.size,op,args)
+            with self.subTest(walker=offset), self.assertRaises(ValueError):
+                graphical.paired_gcc16_walker_storage(decoder,walk,altered,starts)
+        for offset,op,args in ((0x33A,"lea","0x0(%r9),%ecx"),
+                               (0x33E,"mov","%rsi,0x18(%rsp)"),
+                               (0x350,"mov","%rax,%rdi")):
+            altered=dict(code);row=code[walk.address+offset]
+            altered[row.address]=decoder.Instruction(row.address,row.size,op,args)
+            with self.subTest(induction=offset), self.assertRaises(ValueError):
+                graphical.paired_gcc16_level_induction(decoder,walk,altered,starts,functions[walk.name],
+                                                       (proof["walker"]["bitmap_store"],),proof)
 
     def test_linked_snapshot_contract_and_relocated_baseline(self):
         for shift in (0, 0x100000):
