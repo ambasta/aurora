@@ -19,13 +19,11 @@ import time
 from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
 
 FLOOR, RESERVE, SOURCE_CAP = 1 << 30, 24 << 20, 64 << 10
-# A batch shares one process, not one case's time allowance. Scale the existing
-# single-case watchdog by batch cardinality, with one CPU second to terminate after
-# SIGXCPU. A command gets at most two CPU minutes / six wall minutes, below the
-# full-profile Meson watchdog. These ceilings are not performance expectations.
-# Manifest is the largest caller (128 cases); Graph uses at most 96.
-MAX_BATCH_CASES, CASE_CPU_SECONDS, CASE_WALL_SECONDS = 128, 10, 30
-MAX_COMMAND_CPU_SECONDS, MAX_COMMAND_WALL_SECONDS = 120, 360
+# Batches share fixed runaway guards; small host-tool/rejection commands keep
+# their tighter limits. These ceilings are not performance expectations.
+MAX_BATCH_CASES = 128
+BATCH_CPU_SECONDS, BATCH_WALL_SECONDS = 120, 360
+COMMAND_CPU_SECONDS, COMMAND_WALL_SECONDS = 10, 30
 
 
 def require(ok, message):
@@ -77,12 +75,9 @@ class PackageRunner:
             if include_host_tools or path == self.compiler or path not in self.host_tools:
                 require(sha(path) == wanted, "input/tool changed during execution: " + str(path))
 
-    def command(self, args, directory, name, *, compiler=False, allow_rejection=False, case_count=1):
-        require(
-            type(case_count) is int and 1 <= case_count <= MAX_BATCH_CASES, "package command case count out of bounds"
-        )
-        cpu_seconds = min(CASE_CPU_SECONDS * case_count, MAX_COMMAND_CPU_SECONDS)
-        wall_seconds = min(CASE_WALL_SECONDS * case_count, MAX_COMMAND_WALL_SECONDS)
+    def command(self, args, directory, name, *, compiler=False, allow_rejection=False, batch=False):
+        cpu_seconds = BATCH_CPU_SECONDS if batch else COMMAND_CPU_SECONDS
+        wall_seconds = BATCH_WALL_SECONDS if batch else COMMAND_WALL_SECONDS
         args = list(args)
         if str(args[0]) in self.tools:
             args[0] = self.tools[str(args[0])]
@@ -101,8 +96,7 @@ class PackageRunner:
         require(not host_scope or executable in self.pins, "trusted host tool lacks suite baseline")
         record = dict(
             command=list(map(str, args)),
-            resource_policy="case-scaled batch watchdog; not a performance assertion",
-            case_count=case_count,
+            resource_policy="fixed command watchdog; not a performance assertion",
             wall_seconds=wall_seconds,
             cpu_soft_hard_seconds=[cpu_seconds, cpu_seconds + 1],
             address_space_bytes=(512 if compiler else 128) << 20,
@@ -113,14 +107,29 @@ class PackageRunner:
         )
         try:
             with (directory / (name + ".stdout")).open("wb") as out, (directory / (name + ".stderr")).open("wb") as err:
-                result = subprocess.run(
-                    list(map(str, args)),
-                    stdout=out,
-                    stderr=err,
-                    timeout=wall_seconds,
-                    preexec_fn=limits,
-                    env=temporary_environment(self.artifacts),
-                )
+                # Commands are serial in this process, so the reaped-child usage
+                # delta belongs to this command (including on timeout or signal).
+                usage_before = resource.getrusage(resource.RUSAGE_CHILDREN)
+                started = time.monotonic()
+                try:
+                    result = subprocess.run(
+                        list(map(str, args)),
+                        stdout=out,
+                        stderr=err,
+                        timeout=wall_seconds,
+                        preexec_fn=limits,
+                        env=temporary_environment(self.artifacts),
+                    )
+                finally:
+                    usage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
+                    user = usage_after.ru_utime - usage_before.ru_utime
+                    system = usage_after.ru_stime - usage_before.ru_stime
+                    record.update(
+                        elapsed_wall_seconds=time.monotonic() - started,
+                        child_user_seconds=user,
+                        child_system_seconds=system,
+                        child_cpu_seconds=user + system,
+                    )
             record["returncode"] = result.returncode
             stderr = (directory / (name + ".stderr")).read_bytes()
             if result.returncode < 0:
@@ -211,7 +220,7 @@ class PackageRunner:
                 directory,
                 "compiler",
                 compiler=True,
-                case_count=len(cases),
+                batch=True,
             )
             expected = tuple(value for case in cases for value in case.expected)
             asm = [".text", ".globl _start", "_start:"]
@@ -257,7 +266,7 @@ class PackageRunner:
             require(not undefined.strip(), "freestanding binary must have no unresolved symbols")
             _, elf, _ = self.command(["readelf", "-l", "-d", directory / "program"], directory, "elf-linkage")
             require(b"INTERP" not in elf and b"NEEDED" not in elf, "no ELF interpreter or runtime library dependencies")
-            code, output, _ = self.command([directory / "program"], directory, "native", case_count=len(cases))
+            code, output, _ = self.command([directory / "program"], directory, "native", batch=True)
             observed = self.validate(output, expected, code)
             require((directory / "input.au").read_text() == source, "compiler must preserve source")
             offset = 0

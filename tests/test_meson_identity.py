@@ -90,6 +90,19 @@ class MesonIdentityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 meson_toolchain.verify(legacy, observed)
 
+    def test_snapshot_rejects_missing_or_mismatched_gcc_before_hashing(self):
+        for gcc in (None, "/synthetic/gcc"):
+            with (
+                self.subTest(gcc=gcc),
+                patch.dict(os.environ, {}, clear=True),
+                patch.object(meson_toolchain.shutil, "which", return_value=gcc),
+                patch.object(meson_toolchain.subprocess, "check_output", side_effect=["14.2.0", "16.2.0"]),
+                patch.object(Path, "read_bytes") as read,
+            ):
+                with self.assertRaisesRegex(ValueError, "Select matching bare gcc on PATH and configured CXX"):
+                    meson_toolchain.snapshot(["/synthetic/g++"])
+                read.assert_not_called()
+
     def test_direct_meson_guard_rejects_before_creating_record(self):
         with tempfile.TemporaryDirectory() as tmp:
             record = Path(tmp) / "aurora-toolchain.json"
@@ -116,13 +129,31 @@ class MesonIdentityTests(unittest.TestCase):
                     patch.object(
                         contract, "tool_record", return_value={"resolved": "/synthetic/compiler", "sha256": "0" * 64}
                     ),
-                    patch.object(contract, "query", return_value="14.2.0"),
+                    patch.object(meson_test.shutil, "which", return_value="/synthetic/meson"),
                     patch.object(meson_test.subprocess, "run") as launch,
                 ):
                     with self.assertRaisesRegex(ValueError, "Unset " + name):
                         meson_test.execute(root, "full")
                     launch.assert_not_called()
                     self.assertFalse((root / "build").exists())
+
+    def test_missing_meson_cli_reports_recovery_without_creating_build(self):
+        entrypoint = Path(__file__).resolve().parents[1] / "scripts/meson_test.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = subprocess.run(
+                [sys.executable, "-B", str(entrypoint), "--repo-root", str(root)],
+                env={"PATH": str(root)},
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Meson was not found on PATH", result.stderr)
+            self.assertIn("install Meson 1.12.1+ and Ninja", result.stderr)
+            self.assertIn("docs/meson-bootstrap.md", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(list(root.iterdir()), [])
 
     def test_cli_modes_are_exclusive(self):
         parser = argparse.ArgumentParser()
@@ -145,7 +176,7 @@ class MesonEntrypointTests(unittest.TestCase):
             patch.dict(os.environ, {}, clear=True),
             patch.object(contract, "tool_record", side_effect=lambda name: dict(resolved=name, sha256=name)),
             patch.object(contract, "parse_cxx", return_value="/synthetic/g++"),
-            patch.object(contract, "query", return_value="14.2.0"),
+            patch.object(meson_test.shutil, "which", return_value="/synthetic/meson"),
             patch.object(meson_toolchain, "snapshot", return_value=self.identity),
             patch.object(meson_test.subprocess, "run", side_effect=self.run_command),
             patch.object(meson_test.subprocess, "check_output", side_effect=self.introspect),
@@ -155,6 +186,7 @@ class MesonEntrypointTests(unittest.TestCase):
 
     def run_command(self, command, **kwargs):
         self.calls.append(command)
+        self.assertEqual(command[0], "/synthetic/meson")
         self.assertTrue(kwargs["check"])
         self.assertEqual(kwargs["env"]["CXX"], "/synthetic/g++")
         if command[1] == self.failure:
@@ -217,6 +249,10 @@ class MesonEntrypointTests(unittest.TestCase):
                     meson_test.execute(self.root, "full")
                 self.assertEqual(caught.exception.returncode, 23)
                 self.assertEqual([command[1] for command in self.calls], expected)
+                self.failure = None
+                self.calls.clear()
+                meson_test.execute(self.root, "full")
+                self.assertEqual([command[1] for command in self.calls][-2:], ["compile", "test"])
 
     def test_existing_explicit_build_rejects_different_compiler_or_flags(self):
         os.environ["MESON_BUILD_DIR"] = str(self.root / "configured")
@@ -229,6 +265,62 @@ class MesonEntrypointTests(unittest.TestCase):
                 with self.assertRaises(contract.ContractError):
                     meson_test.execute(self.root, "full")
                 self.assertEqual(self.calls, [])
+
+    def test_lock_contention_names_directory_and_retry_succeeds(self):
+        build = self.root / "busy-build"
+        build.mkdir()
+        os.environ["MESON_BUILD_DIR"] = "busy-build"
+        with (build / ".aurora-test.lock").open("a") as lock:
+            meson_test.fcntl.flock(lock, meson_test.fcntl.LOCK_EX | meson_test.fcntl.LOCK_NB)
+            with self.assertRaises(contract.ContractError) as caught:
+                meson_test.execute(self.root, "full")
+            message = str(caught.exception)
+            self.assertIn(str(build.resolve()), message)
+            self.assertIn("Wait for its active build/test command to finish", message)
+            self.assertIn("MESON_BUILD_DIR", message)
+            self.assertEqual(self.calls, [])
+            self.assertFalse((build / "build.ninja").exists())
+        # The lock file stays in place: contention depends on the held lock.
+        self.assertTrue((build / ".aurora-test.lock").exists())
+        meson_test.execute(self.root, "full")
+        self.assertEqual([command[1] for command in self.calls], ["setup", "compile", "test"])
+
+    def test_other_lock_errors_are_not_reported_as_contention(self):
+        with patch.object(meson_test.fcntl, "flock", side_effect=PermissionError("permission fixture")):
+            with self.assertRaisesRegex(PermissionError, "permission fixture"):
+                meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls, [])
+
+    def test_changed_toolchain_selects_fresh_default_and_rejects_explicit_reuse(self):
+        meson_test.execute(self.root, "full")
+        original = self.calls[0][2]
+        self.identity["files"]["/synthetic/g++"] = "replacement"
+        self.calls.clear()
+        meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls[0][1], "setup")
+        self.assertNotEqual(self.calls[0][2], original)
+        os.environ["MESON_BUILD_DIR"] = original
+        self.calls.clear()
+        with self.assertRaisesRegex(ValueError, "Host toolchain changed"):
+            meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls, [])
+
+    def test_replacement_after_directory_selection_rejected_before_compile(self):
+        changed = dict(files={"/synthetic/g++": "replacement"}, version="14")
+        with patch.object(meson_toolchain, "snapshot", side_effect=[self.identity, changed]) as snapshot:
+            with self.assertRaisesRegex(ValueError, "Host toolchain changed"):
+                meson_test.execute(self.root, "full")
+        self.assertEqual(snapshot.call_count, 2)
+        self.assertEqual([command[1] for command in self.calls], ["setup"])
+
+    def test_existing_unbound_build_rejected_before_compile(self):
+        build = self.root / "unbound"
+        build.mkdir()
+        (build / "build.ninja").touch()
+        os.environ["MESON_BUILD_DIR"] = str(build)
+        with self.assertRaises(FileNotFoundError):
+            meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls, [])
 
 
 class NativeCompilerWrapperTests(unittest.TestCase):

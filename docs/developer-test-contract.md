@@ -355,17 +355,15 @@ scope, independent/repeated roots, preexisting allocated history and sparse
 images, link accounting, owned overflow, archive growth and cleanup failure.
 These compiler-free controls are not native or emulator acceptance evidence.
 
-Manifest/Graph compiler and native commands use a case-scaled batch watchdog:
-10 CPU seconds and 30 wall seconds per actual case, capped at 120 CPU / 360 wall
-seconds per command, with a one-second CPU hard-limit grace. This is a total
-batch allowance, not an individually enforced deadline for each case. Batch
-cardinality must be 1..128; Graph still batches at 96 and Manifest at 128.
-Host tools and rejection compilations retain the single-command allowance.
-Command receipts distinguish CPU/file-size exhaustion, wall timeout, other
-signals and normal exits. Exhaustion fails the run without semantic observations;
-these ceilings are runaway guards, not performance or correctness assertions.
-The existing cap controls cover bounded scaling, termination classification,
-retained partial output and complete multi-case transport without timing tests.
+Manifest/Graph batch compiler/native commands have fixed runaway guards: 120 CPU
+seconds (121 hard) and 360 wall seconds. Host tools and rejection compilations
+keep their 10 CPU / 30 wall seconds. Batches remain bounded at 128 cases, with
+Graph using at most 96. Existing command receipts retain actual child user/system/total CPU
+and elapsed wall seconds, separating compiler, host-tool and native-run costs.
+CPU usage is the reaped-child delta in the serial runner. Signals and wall
+timeouts fail without semantic observations and retain partial output; the
+compiler-free controls exercise these paths with real subprocesses. The limits
+are watchdogs, not performance assertions.
 
 ### Focused correction verification — 2026-10-07
 

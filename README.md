@@ -118,7 +118,7 @@ meson compile -C build/gcc16 -j 3
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4
 meson test -C build/gcc16 --suite full --no-rebuild --num-processes 4
 ./scripts/compiler-test.sh    # compiler-only Meson selection
-CXX=g++ make test            # alternative to direct Meson full above; no QEMU
+make test                    # alternative to direct Meson full above; no QEMU
 make smoke-all               # separate emulator matrix; QEMU and firmware required
 ```
 

@@ -12,6 +12,8 @@ GCC 14 is optional targeted compatibility evidence, not a routine gate.
 Make is a convenience entrypoint to the same incremental graph; a second full
 Make aggregate is not required. Fresh explicit build directories configure
 automatically, and existing directories must match their toolchain and flags.
+Package Manifest/Graph command receipts distinguish actual compiler and native
+CPU/wall cost under fixed watchdogs; see the [test contract](developer-test-contract.md).
 Public protected-console commands build and check local artifacts; separately
 pinned first-image qualification remains an explicit opt-in workflow.
 Kernel host portability pins freestanding CET/string-operation policy and binds
