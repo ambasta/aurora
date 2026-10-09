@@ -1,6 +1,8 @@
 #pragma once
 #include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace aurora {
 // A byte spelling always denotes u8. Keep decoding shared by the scanner and
@@ -58,5 +60,56 @@ inline std::optional<unsigned char> decodeByteLiteral(std::string_view text) {
     if (high < 0 || low < 0)
         return std::nullopt;
     return static_cast<unsigned char>(high * 16 + low);
+}
+// Strings are initializer syntax for existing bounded byte arrays, not values of
+// a new string type. Raw text is valid UTF-8; escapes can denote arbitrary bytes.
+inline std::optional<std::vector<unsigned char>> decodeByteStringLiteral(std::string_view text) {
+    if (text.size() < 2 || text.front() != '"' || text.back() != '"')
+        return std::nullopt;
+    const auto body = text.substr(1, text.size() - 2);
+    std::vector<unsigned char> bytes;
+    for (std::size_t at = 0; at < body.size();) {
+        const auto first = static_cast<unsigned char>(body[at]);
+        if (first == '\\') {
+            if (at + 1 == body.size())
+                return std::nullopt;
+            const std::size_t width = body[at + 1] == 'x' ? 4 : 2;
+            if (width > body.size() - at)
+                return std::nullopt;
+            const auto value = body[at + 1] == '"' ? std::optional<unsigned char>('"')
+                                                   : decodeByteLiteral("'" + std::string(body.substr(at, width)) + "'");
+            if (!value)
+                return std::nullopt;
+            bytes.push_back(*value);
+            at += width;
+        } else if (first < 0x80) {
+            if (first < 0x20 || first == 0x7f || first == '"')
+                return std::nullopt;
+            bytes.push_back(first);
+            ++at;
+        } else {
+            const std::size_t width = first >= 0xc2 && first <= 0xdf   ? 2
+                                      : first >= 0xe0 && first <= 0xef ? 3
+                                      : first >= 0xf0 && first <= 0xf4 ? 4
+                                                                       : 0;
+            if (!width || width > body.size() - at)
+                return std::nullopt;
+            unsigned scalar = first & (width == 2 ? 0x1f : width == 3 ? 0x0f : 0x07);
+            for (std::size_t index = 1; index < width; ++index) {
+                const auto next = static_cast<unsigned char>(body[at + index]);
+                if (next < 0x80 || next > 0xbf)
+                    return std::nullopt;
+                scalar = (scalar << 6) | (next & 0x3f);
+            }
+            if ((width == 3 && scalar < 0x800) || (width == 4 && scalar < 0x10000) || scalar > 0x10ffff ||
+                (scalar >= 0xd800 && scalar <= 0xdfff))
+                return std::nullopt;
+            bytes.insert(bytes.end(), body.begin() + at, body.begin() + at + width);
+            at += width;
+        }
+        if (bytes.size() > 4096)
+            return std::nullopt;
+    }
+    return bytes;
 }
 } // namespace aurora

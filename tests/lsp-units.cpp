@@ -1,4 +1,5 @@
 #include "../compiler/lsp/positions.hpp"
+#include "../compiler/lexer.hpp"
 #include <iostream>
 #include <sstream>
 
@@ -68,6 +69,12 @@ int main() {
                 "CRLF midpoint end rounds up");
         require(utf16Position(unicode, 18).line == 2, "bare CR newline");
         require(utf16Position(unicode, 9999).line == 3, "clamped EOF position");
+        const std::string literalSource = "\t\"é😀\\0\"";
+        const auto literal = aurora::lex(literalSource).front();
+        require(literal.span.begin.offset == 1 && literal.span.end.offset == 11 &&
+                    utf16Position(literalSource, literal.span.begin.offset).character == 1 &&
+                    utf16Position(literalSource, literal.span.end.offset, true).character == 8,
+                "byte-string token positions count UTF-8 bytes and UTF-16 editor units separately");
         require(validUtf8(unicode), "valid UTF-8");
         for (const std::string &bad : {std::string("\xc0\xaf"),
                                        std::string("\xed\xa0\x80"),

@@ -1195,6 +1195,8 @@ class SemanticAnalyzer {
         }
         if (e->op == "array_literal")
             fail(e->token, "array literals require a typed local initializer");
+        if (e->op == "byte_string")
+            fail(e->token, "byte-string literals require a typed local u8 array initializer");
         if (e->op == "member") {
             if (e->args[0]->op != "name")
                 fail(e->token, "field access currently requires a class local");
@@ -1674,13 +1676,27 @@ class SemanticAnalyzer {
             }
             return;
         }
-        if (expression->op != "array_literal")
-            fail(expression->token, "array local requires an array literal or same-type array copy");
-        if (expression->args.size() != static_cast<std::size_t>(type.length))
-            fail(expression->token, "array initializer length does not match its declared type");
-        for (const auto &value : expression->args) {
-            match(this->expression(value), Type(type.elementKind), value->token);
-            push();
+        if (expression->op == "byte_string") {
+            if (type.elementKind != TypeKind::U8)
+                fail(expression->token, "byte-string initializers require u8 array elements");
+            const auto bytes = decodeByteStringLiteral(expression->token.text);
+            if (!bytes)
+                fail(expression->token, "invalid byte-string literal");
+            if (bytes->size() != static_cast<std::size_t>(type.length))
+                fail(expression->token, "array initializer length does not match its declared type");
+            for (const auto value : *bytes) {
+                emit(ir::Constant{value, Type::U8});
+                push();
+            }
+        } else {
+            if (expression->op != "array_literal")
+                fail(expression->token, "array local requires an array literal or same-type array copy");
+            if (expression->args.size() != static_cast<std::size_t>(type.length))
+                fail(expression->token, "array initializer length does not match its declared type");
+            for (const auto &value : expression->args) {
+                match(this->expression(value), Type(type.elementKind), value->token);
+                push();
+            }
         }
         const int destination = add(statement->name, type, statement->mutableValue, statement->token);
         for (int index = type.length - 1; index >= 0; --index) {

@@ -370,6 +370,10 @@ public:
             attach(e, primary());
             return e;
         }
+        if (t.text[0] == '"') {
+            e->op = "byte_string";
+            return e;
+        }
         if (t.text[0] == '\'') {
             e->op = "byte";
             return e;

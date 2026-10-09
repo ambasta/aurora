@@ -67,12 +67,12 @@ inline LexedSource lexSource(std::shared_ptr<const SourceText> source,
             trivia(TriviaKind::LineComment, begin);
             continue;
         }
-        if (byte == '\'') {
+        if (byte == '\'' || byte == '"') {
             ++index;
             bool closed = false;
             while (index < s.size() && s[index] != '\n' && s[index] != '\r') {
                 const auto current = s[index++];
-                if (current == '\'') {
+                if (current == static_cast<char>(byte)) {
                     closed = true;
                     break;
                 }
@@ -87,8 +87,11 @@ inline LexedSource lexSource(std::shared_ptr<const SourceText> source,
             while (closed && index < s.size() && asciiSuffix(static_cast<unsigned char>(s[index])))
                 ++index;
             const auto text = s.substr(begin.offset, index - begin.offset);
-            if (!closed || !decodeByteLiteral(text))
-                throw Error(DiagnosticCode::InvalidByteLiteral, "invalid byte literal", span(begin));
+            if (byte == '\'') {
+                if (!closed || !decodeByteLiteral(text))
+                    throw Error(DiagnosticCode::InvalidByteLiteral, "invalid byte literal", span(begin));
+            } else if (!closed || !decodeByteStringLiteral(text))
+                throw Error(DiagnosticCode::InvalidByteStringLiteral, "invalid byte-string literal", span(begin));
             out.tokens.emplace_back(text, span(begin));
             continue;
         }

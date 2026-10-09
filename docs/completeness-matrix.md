@@ -89,7 +89,13 @@ exact-kind loans/helper verification and copied closed results. Its compiler
 contract is in [SERVICES.md](../compiler/SERVICES.md); native framebuffer/guest
 acceptance remains a separately gated integration.
 
-ASCII byte character literals provide a bounded compiler/JSON increment: single-quoted ASCII and explicit byte escapes have exact `u8` type, lossless spans and unchanged checked operations. Two JSON quote append sites use the syntax. See the [source contract](../compiler/BYTES.md#ascii-byte-character-literals). No Unicode character type, strings or new kernel/hardware qualification is implied.
+ASCII byte character literals provide a bounded compiler/JSON increment: single-quoted ASCII and explicit byte escapes have exact `u8` type, lossless spans and unchanged checked operations. Two JSON quote append sites use the syntax. See the [source contract](../compiler/BYTES.md#ascii-byte-character-literals). No Unicode character type, general string values or new kernel/hardware qualification is implied.
+
+Double-quoted [byte-string initializers](../compiler/BYTES.md#bounded-byte-string-array-initializers)
+now fill named fixed `u8` arrays at their exact decoded byte length, with UTF-8
+source text and explicit byte escapes. Event/native serial-console messages use
+them; existing storage, borrows, IR and authority remain unchanged. Final-source
+qualification is separate from the predecessor's recorded results.
 
 Binary integer expression literals now have `0b`/`0B` prefixes and C++ apostrophe
 separators between digits, retaining exact i64/u64/u8 types and checked ranges.

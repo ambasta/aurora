@@ -156,6 +156,17 @@ void byteLiterals() {
     for (const std::string spelling : {"''", "'ab'", "'\\x100'", "'\\q'", "'a'u8"})
         rejected("module x;auto f()->u8{return " + spelling + ";}", aurora::DiagnosticCode::InvalidByteLiteral);
 }
+void byteStrings() {
+    golden(R"(module x;auto f()->u8{const array<u8,6> a="IOMMU ";return a[0];})",
+           "module x;\nauto f() -> u8 {\n    const array<u8, 6> a = \"IOMMU \";\n    return a[0];\n}\n");
+    verify(R"(module x;auto f()->u8{const array<u8,20> a="é😀 // { } ; \" \\ \0\xff";return a[0];})",
+           "byte-string-punctuation.au");
+    verify("module x;auto f()->u8{const array<u8,4096> a=\"" + std::string(4096, 'a') + "\";return a[0];}",
+           "byte-string-soft-width.au");
+    for (const std::string spelling : {"\"\\q\"", "\"\\x0\"", "\"a\"u8", "\"unclosed"})
+        rejected("module x;auto f()->u8{const array<u8,1> a=" + spelling + ";return a[0];}",
+                 aurora::DiagnosticCode::InvalidByteStringLiteral);
+}
 void cases() {
     golden("module x;auto f()->u64{return 0b10001'10001'10001'11111'10001'10001'01110u64;}",
            "module x;\nauto f() -> u64 {\n"
@@ -308,6 +319,7 @@ void cases() {
 int main(int argc, char **argv) {
     try {
         byteLiterals();
+        byteStrings();
         cases();
         for (int index = 1; index < argc; ++index)
             verify(read(argv[index]), argv[index]);

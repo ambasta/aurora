@@ -49,7 +49,8 @@ UTF-16 positions and adds its existing explicit unknown-location marker only
 when the diagnostic has no source span.
 
 Invalid [byte literal spellings](BYTES.md#ascii-byte-character-literals) use
-AU1002. This lexical family is distinct from AU1001 unsupported source characters.
+AU1002; invalid [byte-string spellings](BYTES.md#bounded-byte-string-array-initializers)
+use AU1003. Both are distinct from AU1001 unsupported source characters.
 
 ## Coordinates and provenance
 
@@ -57,8 +58,8 @@ Every lexical token owns a shared reference to an immutable `SourceText` snapsho
 with the path as supplied/opened and exact source bytes. `SourceSpan` is a half-open
 range: zero-based byte offsets, one-based lines and one-based byte columns. LF
 starts a new line; CR and tab each count as one byte. EOF is a zero-width range.
-The lexer continues to accept non-ASCII bytes in line comments and rejects them
-elsewhere under the existing language grammar.
+The lexer accepts non-ASCII bytes in line comments and valid UTF-8 within
+double-quoted byte-string initializers; other token grammar is unchanged.
 
 These coordinates are **not LSP positions**. An LSP client/server must translate
 against the same snapshot to zero-based lines and negotiated position encoding

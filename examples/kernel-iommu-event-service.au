@@ -38,7 +38,7 @@ auto event_text(builtin::ConsoleSession& console, builtin::span<const u8> text) 
 }
 
 auto event_hex(builtin::ConsoleSession& console, u64 word, i64 digits) -> bool {
-    const array<u8, 16> hex = {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
+    const array<u8, 16> hex = "0123456789abcdef";
     i64 index = digits;
     while (index > 0) {
         index = index - 1;
@@ -49,13 +49,13 @@ auto event_hex(builtin::ConsoleSession& console, u64 word, i64 digits) -> bool {
 }
 
 auto event_report(builtin::ConsoleSession& console, u64 kind, u64 word0, u64 word1, u64 status) -> bool {
-    const array<u8, 6> prefix = {'I','O','M','M','U',' '};
-    const array<u8, 5> raw = {' ','r','a','w','='};
-    const array<u8, 5> rid = {' ','r','i','d','='};
-    const array<u8, 5> dom = {' ','d','o','m','='};
-    const array<u8, 5> dva = {' ','d','v','a','='};
-    const array<u8, 8> stat = {' ','s','t','a','t','u','s','='};
-    const array<u8, 2> newline = {'\r','\n'};
+    const array<u8, 6> prefix = "IOMMU ";
+    const array<u8, 5> raw = " raw=";
+    const array<u8, 5> rid = " rid=";
+    const array<u8, 5> dom = " dom=";
+    const array<u8, 5> dva = " dva=";
+    const array<u8, 8> stat = " status=";
+    const array<u8, 2> newline = "\r\n";
     if (!event_text(console, borrow_bytes(prefix))) { return false; }
     u8 tag = 'U';
     if (kind == 2u64) { tag = 'F'; }
