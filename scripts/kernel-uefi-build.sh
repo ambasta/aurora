@@ -9,7 +9,9 @@ uefi_linker_select
 mkdir -p build/uefi/esp/EFI/BOOT
 compiler="${AURORAC:-build/aurorac}"
 if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi
-flags=(-std=c++23 -O2 -fstack-usage -Wall -Wextra -Werror -ffreestanding -fno-exceptions -fno-rtti -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns)
+# Keep distro defaults outside the admitted instruction profile. Preserve exact
+# compiler source/symbol metadata alongside the independent linked CFG proof.
+flags=(-std=c++23 -O2 -fstack-usage -fcallgraph-info=su -Wall -Wextra -Werror -ffreestanding -fcf-protection=none -mstringop-strategy=libcall -fno-exceptions -fno-rtti -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns)
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;

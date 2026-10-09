@@ -66,6 +66,23 @@ with `elf_i386`/`elf_x86_64` emulations and `--orphan-handling=error`, `objcopy`
 that every GNU release or distribution has passed the full kernel suite. A
 C++ compiler configured for a distribution is not itself a target-hardware limit.
 
+Freestanding C++ flags explicitly select `-fcf-protection=none` and
+`-mstringop-strategy=libcall`: distro CET defaults must not add unmodeled
+instructions, and compiler-generated bulk copies/clears use the admitted memory
+primitives. UEFI stack admission retains both GCC `-fstack-usage` (`.su`) and
+`-fcallgraph-info=su` (`.ci`) output. Each complete source location and signature
+must join one exact assembler symbol in that object; ambiguous clones fail closed.
+The object/link byte and relocation checks and linked-instruction stack analysis
+remain authoritative. Profile build manifests include both metadata files;
+standalone stack reports record current source hashes but are not compilation
+provenance. Missing `.ci` files require rebuilding, not a display-name fallback.
+The recursion proof tracks the actual callee-saved level register and its
+entry-relative spill lifetime across the CFG, including untouched early returns.
+Its sole nonlocal byte-marker store depends explicitly on the reviewed C++
+`visited` array's private lifetime and checked slot bound. Fixed source hashes
+and exact compiler/object associations bind that invariant; this is not an
+independent arbitrary-pointer memory proof. Other nonlocal stores reject.
+
 `kernel/boot.ld` fixes the BIOS `.text` at 0x7c00 and requires exactly 512 bytes
 with `_boot` first. The linker helper explicitly disables generated build IDs,
 discards only named GNU metadata, rejects other orphan sections, and rejects

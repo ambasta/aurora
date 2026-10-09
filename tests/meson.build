@@ -296,7 +296,10 @@ foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'fra
 endforeach
 display_session = executable('display-session', 'kernel-display-session.cpp', native: true, install: false)
 test('display-session', display_session, suite: ['full', 'dev'], timeout: 120)
-foreach control : ['kernel-framebuffer-admission.py', 'kernel_framebuffer_probe_oracle.py', 'test_framebuffer_capture.py']
+foreach control : [
+    'kernel-framebuffer-admission.py', 'kernel_framebuffer_probe_oracle.py',
+    'test_framebuffer_capture.py', 'framebuffer-preview.py',
+]
     test(control, python, args: ['-B', files(control)], suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 endforeach
 test('display-renderer-native', python,

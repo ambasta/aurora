@@ -109,7 +109,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
     test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-client-disposal test-terminal-event test-native-cap-contracts \
     run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
-    program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream \
+    program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream capture-framebuffer \
     test-developer-commands test-inventory test-iommu-diagnostics: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
@@ -127,7 +127,7 @@ all: compiler kernel
 # Export these selectors so both environment and make NAME=value syntax work.
 export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
-.PHONY: help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream
+.PHONY: capture-framebuffer help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream
 help:
 	@printf '%s\n' \
 	  'make                  Build the compiler and BIOS kernel image' \
@@ -140,6 +140,7 @@ help:
 	  'make smoke-program-console-uefi  Build/check and test the protected command console' \
 	  'make qualify-program-console-uefi  Qualify an independently reviewed prebuilt protected console' \
 	  'make test-program-stream  Run copied-stream and two-role authority host tests' \
+	  'make capture-framebuffer  Build/check and save a local PNG preview under build/' \
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
 	  'make test-compiler    Run the compiler-only suite (fresh compiler)' \
@@ -172,6 +173,9 @@ smoke-program-console-uefi:
 qualify-program-console-uefi:
 	./scripts/kernel-program-console-smoke.sh --qualification
 
+capture-framebuffer:
+	./scripts/kernel-framebuffer-preview.sh
+
 test-program-stream:
 	./scripts/kernel-program-tests.sh
 
@@ -188,6 +192,8 @@ kernel-uefi:
 
 # Synthetic shortcut checks also run in the native aggregate.
 test-developer-commands:
+	python3 -B tests/framebuffer-preview.py
+	python3 -B -O tests/framebuffer-preview.py
 	python3 -B tests/developer-commands.py
 	python3 -B -O tests/developer-commands.py
 	python3 -B tests/uefi-firmware.py

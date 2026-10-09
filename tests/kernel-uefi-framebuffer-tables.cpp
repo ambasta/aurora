@@ -73,8 +73,11 @@ int main() {
     need(!PageTables{root, 0}.prepare_framebuffer(*geometry));
     need(!PageTables{root, 17}.prepare_framebuffer(*geometry));
     need(!PageTables{root + 1, tables.used()}.prepare_framebuffer(*geometry));
-    need(!PageTables{0, tables.used()}.prepare_framebuffer(*geometry));
-    need(!PageTables{UINT64_MAX, tables.used()}.prepare_framebuffer(*geometry));
+    // Runtime-invalid addresses exercise the guard instead of folding away the
+    // rejection call (and diagnosing its unreachable table access at address 0).
+    const volatile U64 invalid_bases[] = {0, UINT64_MAX};
+    for (const auto invalid_base : invalid_bases)
+        need(!PageTables{invalid_base, tables.used()}.prepare_framebuffer(*geometry));
     need(storage == unchanged);
     need(tables.prepare_framebuffer(*geometry));
     need(tables.used() == before + 4 && tables.used() <= 16);

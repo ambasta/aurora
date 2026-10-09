@@ -7,6 +7,28 @@ Firmware `SetMode` can clear its display before the controlled capture boundary.
 No GPU driver, desktop, physical Framework display support, DMA or IOMMU claim
 follows from this work.
 
+## Developer preview
+
+Run `make capture-framebuffer` to build the current framebuffer profile through
+its normal image and mixed-stack checks, then capture one bounded QEMU guest.
+No external manifest, machine-specific review receipt or Python image package is
+needed. The command prints a fresh `build/framebuffer-preview/run-*/framebuffer.png`
+path; the same directory keeps the raw PPM, physical before/after bytes and logs.
+It uses the existing exact 800×600 q35/TCG/std-VGA fixture and pixel oracle, with a
+90-second guest limit and bounded process cleanup. Other firmware geometries
+fail closed. `QEMU`, `QEMU_DATA`, `OVMF`, `OVMF_CODE`/`OVMF_VARS`, `OVMF_DIR`, `CXX`
+and `UEFI_LD` work as on the [other developer commands](local-development.md).
+Missing prerequisites report `BLOCKED`; build, admission and guest failures remain
+failures. The successful framebuffer image remains in `build/uefi`; normal boot
+commands rebuild their own profile.
+
+This is a developer preview, not independently qualified evidence. Its record
+says `qualified: false`; it runs neither the three negative guests nor a normal
+restoration boot. The stricter prebuilt qualification path remains
+`scripts/kernel-framebuffer-capture.py` (see `--help`): it still requires the pinned
+manifest, four independent approval roles, all four cases and an actual normal
+restoration boot. A preview never creates those approvals.
+
 ## Dependency and outcome
 
 The candidate is a native Aurora-rendered graphical status page after
@@ -54,7 +76,8 @@ record and complete tree before constructing its counterpart. Its exact resource
 field drift rejects. The external qualification additionally pins q35/TCG,
 qemu64, one CPU, 128 MiB, std VGA, QEMU, OVMF and tool data; guest metadata cannot
 prove those environment identities. Source/model and final-image reviews remain
-required before a mapping/rendering guest.
+required for independent qualification; developer previews retain the automated
+image, stack and runtime guards.
 
 The mapping window begins at `0xffffa00000001000`; both end guards are absent.
 Its maximum extent requires four additional intermediate table pages, within the
@@ -74,7 +97,7 @@ The dedicated probe runner accepts only explicitly pinned QEMU/firmware/EFI
 inputs, uses disposable q35/TCG/std-VGA with the original clock, records its exact
 command/output and requires ordered firmware-exit/private-paging markers. It does
 not build or approve an image. A separate normal-image restoration remains
-required. The qualification-only pre-store UART gate follows private paging,
+required. The capture-only pre-store UART gate follows private paging,
 accepts exactly byte `0x47`, and has a ten-million-iteration bound. It gives
 Aurora no input capability. The host pauses QEMU, captures all 469 pages, releases
 the gate, then pauses the completed or fail-stopped image for comparison. Record,
@@ -122,7 +145,9 @@ with r14 saved before assignment and unchanged root-3/decrement/restore proof.
 The lookup and recursive walker prohibit IPA cloning/partial inlining to retain
 unambiguous object identities and exact four-level roots. Original decoder
 controls plus new mutations pass; budgets remain 16 KiB stack and 15,360-byte
-mixed-stack/fault cap. Final exact-image pins are required before every guest.
+mixed-stack/fault cap. Independent qualification requires final exact-image
+review pins; the developer preview binds the automatic admission to current
+source and image bytes.
 
 ### Accepted native capture, 2026-10-08
 

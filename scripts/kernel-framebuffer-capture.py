@@ -218,11 +218,11 @@ class Channel:
         self.slog.close()
 
 
-def command(pins, roots, esp, serial, qmp=False):
-    args = [
-        str(pins["qemu"]),
-        "-L",
-        str(roots["data"]),
+def command(pins, roots, esp, serial, qmp=False, firmware_args=None):
+    args = [str(pins["qemu"])]
+    if roots.get("data"):
+        args += ["-L", str(roots["data"])]
+    args += [
         "-machine",
         "q35",
         "-accel",
@@ -233,8 +233,9 @@ def command(pins, roots, esp, serial, qmp=False):
         "1",
         "-m",
         "128M",
-        "-bios",
-        str(pins["firmware"]),
+    ]
+    args += firmware_args if firmware_args is not None else ["-bios", str(pins["firmware"])]
+    args += [
         "-drive",
         "format=raw,file=fat:ro:" + esp + ",snapshot=on",
         "-vga",
@@ -267,7 +268,7 @@ def terminate(proc):
     need(proc.poll() is not None, "QEMU not reaped")
 
 
-def run_case(mode, manifest, pins, roots, env, directory):
+def run_case(mode, manifest, pins, roots, env, directory, *, firmware_args=None):
     directory.mkdir()
     proc = channel = None
     master = slave = None
@@ -276,7 +277,9 @@ def run_case(mode, manifest, pins, roots, env, directory):
     try:
         master, slave = os.openpty()
         tty.setraw(slave)
-        argv = command(pins, roots, manifest["cases"][mode]["esp"], os.ttyname(slave), qmp=True)
+        argv = command(
+            pins, roots, manifest["cases"][mode]["esp"], os.ttyname(slave), qmp=True, firmware_args=firmware_args
+        )
         receipt["command"] = argv
         with open(directory / "qemu.stderr", "xb") as stderr:
             proc = subprocess.Popen(

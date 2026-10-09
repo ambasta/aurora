@@ -25,6 +25,7 @@ make                         # compiler + BIOS image, without QEMU
 make kernel-uefi             # separate UEFI loader/payload, without QEMU
 make run                     # normal BIOS build and verified QEMU boot
 make run-uefi                # discovers installed non-Secure-Boot firmware
+make capture-framebuffer     # build/check and save an emulator-only PNG preview
 ./scripts/compiler-test.sh   # fresh compiler, complete compiler-only tests
 make test                    # fresh compiler, complete native aggregate
 ```
@@ -37,7 +38,12 @@ OVMF=/path/to/OVMF.fd /path/to/aurora/scripts/kernel-run.sh uefi
 /path/to/aurora/scripts/compiler-test.sh
 ```
 
-Both wrappers support `--help`. The run wrapper calls the existing normal smoke
+The [framebuffer preview](framebuffer-console.md#developer-preview) saves its PNG
+and logs in a fresh directory under `build/`, uses Python standard-library image
+encoding, and needs no externally pinned manifest or review receipt. It is not
+qualified evidence. Its launcher also supports `--help`.
+
+Both run/compiler wrappers support `--help`. The run wrapper calls the existing normal smoke
 runner rather than maintaining a second QEMU recipe. It rejects inherited,
 nonempty `KERNEL_TEST_*`, `KERNEL_USER_PROBE_MODE` and `UEFI_MODE` controls so that
 an earlier fault-injection setting cannot silently change a normal boot.
