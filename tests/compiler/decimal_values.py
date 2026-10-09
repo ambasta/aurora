@@ -393,18 +393,17 @@ def method_result_cases(suite):
          "c.snapshot();return 42;"),
         ("method result cannot be temporary argument", "Counter c=Counter(1u64);"
          "return consume(c.snapshot());"),
-        ("method result cannot be returned directly", "Counter c=Counter(1u64);"
-         "const Report r=forward(c);return 42;"),
         ("method result wrong nominal class", "Counter c=Counter(1u64);"
          "Other r=c.snapshot();return 42;"),
         ("const method result cannot mutate", "Counter c=Counter(1u64);"
          "const Report r=c.snapshot();r.set(42u64);return 42;"),
     ]:
         helpers = "auto consume(Report r)->i64{return 42;}"
-        if name == "method result cannot be returned directly":
-            helpers += "auto forward(Counter c)->Report{return c.snapshot();}"
         suite.check(name, program(body, REPORT + "class Other{public:u64 value;};", helpers),
                     reject=True)
+    suite.check("direct copied method return preserves payload", program(
+        "Counter c=Counter(1u64);const Report r=forward(c);return r.get();", REPORT,
+        "auto forward(Counter c)->Report{return c.snapshot();}", result="u64"), expected=1)
     suite.check("explicit method class parameter copies independent result", program(
         "Counter receiver=Counter(0u64);Report source=Report(42u64);Report result=receiver.take(source);"
         "source.set(0u64);return i64(result.get());", REPORT.replace("auto forwarded()", "auto take(Report r)"
