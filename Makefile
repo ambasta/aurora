@@ -150,7 +150,7 @@ help:
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
 	  'make test-compiler    Run the incremental Meson compiler suite' \
-	  'make test             Run the complete Meson native graph' \
+	  'make test             Configure/build and run the complete Meson native graph' \
 	  'make smoke-all        Run the full emulator suite, including both consoles' \
 	  'make test-developer-commands  Check shortcuts with fake tools only' \
 	  '' \

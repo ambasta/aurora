@@ -38,9 +38,11 @@ qualifying. Record final source/tool identities and Meson's standard commands,
 introspection and logs; no new qualification supervisor is introduced.
 
 `make test` invokes the same `full` graph. `make test-compiler`, `make -C compiler
-test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to an
-explicitly configured directory, or omit it for a stable compiler/configuration-
-keyed directory. `AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
+test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
+fresh or matching configured directory, or omit it for a stable compiler/configuration-
+keyed directory. The shortcuts run Meson setup automatically when needed, stop on
+setup/build/test failure, and reject mismatched existing compiler/flag selections.
+`AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
 `SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
 convenience route; use explicit configured sanitizer builds/separate focused gates.
 Explicit pinned `make test-acceptance` remains a distinct legacy compatibility
