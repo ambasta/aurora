@@ -72,8 +72,8 @@ preservation, not a new guest execution or physical-hardware qualification.
 Typed IR, u8 representation and the backend are unchanged; no new ABI, cast,
 Unicode type or ownership operation is introduced. The feature is registered
 in the complete Meson developer/byte/full suites and compiler Make test graph.
-Both final integrated `dev` and `slow` suites and independent review remain
-mandatory before merge; focused results never substitute for those gates.
+The [canonical final-source merge gates](../AGENTS.md#workflow) and independent
+review remain mandatory; focused results never substitute for those gates.
 
 ## Physical representation gate
 

@@ -18,7 +18,15 @@ def main():
         work = Path(temporary)
         assembly, obj, binary = work / "page.s", work / "page.o", work / "page"
         subprocess.run(
-            [str(compiler), str(ROOT / "examples/kernel-display-service.au"), "-o", str(assembly)], check=True
+            [
+                str(compiler),
+                "--module-root",
+                str(ROOT / "library"),
+                str(ROOT / "examples/kernel-display-service.au"),
+                "-o",
+                str(assembly),
+            ],
+            check=True,
         )
         subprocess.run(
             ["as", "--64", str(assembly), str(ROOT / "kernel/uefi/display-service-entry.S"), "-o", str(obj)], check=True

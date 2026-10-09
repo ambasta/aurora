@@ -38,12 +38,11 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    actual generated layout/behavior. Fail closed for unsupported syntax/semantics.
 4. Run dependency-selected focused checks while developing. Keep `dev` fast;
    complete `slow`, `integration` and native `boot` coverage belongs to `full`.
-   Before every merge, run complete `full` on the final integrated source,
-   including after conflict resolution. Compiler- or kernel-affecting merges and
-   releases require separate GCC 14 and GCC 16 full runs. `make test` selects the
-   same Meson graph; do not run a second duplicate Make aggregate for credit.
-   The current Meson-completion migration remains unqualified until both new
-   graphs pass independent source/coverage review and execution.
+   Before every merge or release, run complete `full` with GCC 16 on the final
+   integrated source, including after conflict resolution. `make test` selects
+   the same Meson graph; do not run a second duplicate Make aggregate for credit.
+   GCC 14 is optional targeted compatibility evidence, not a routine merge or
+   release gate. Preserve historical results with their original source/tool scope.
    Use stable, separate build directories per toolchain/configuration. Ninja
    tracks source/header dependencies; never share a build across changed
    toolchain identities. Use a fresh directory for clean/bootstrap checks and
@@ -51,11 +50,12 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    real `gcc`/`g++` tools on PATH as well as `CXX`. Record final source identity,
    compiler/binutils/runtime identities, actual commands and Meson test logs.
    A selected-compiler digest is artifact stability, not a fresh-build receipt.
-   For both toolchains, also build and smoke normal BIOS and UEFI images. Run
+   With GCC 16, also build and smoke normal BIOS and UEFI images. Run
    existing image/admission and emulator gates for each affected kernel profile,
    including applicable fault/recovery cases and a normal restoration boot.
    The native `boot` suite does not run QEMU. Missing tools, skipped gates and
-   prior-source results leave that toolchain unqualified.
+   prior-source results leave the current candidate unqualified. Record the actual
+   GCC 16 distribution/version; Debian GCC 16.2.0-3 is not Gentoo 16.2.1 evidence.
    Separately pinned bootstrap compatibility remains available through
    `make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>` and its
    existing matching `run.json` contract. It is not an additional mandatory

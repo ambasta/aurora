@@ -33,6 +33,7 @@ SOURCE_INPUTS = (
     "examples/kernel-graphical-console.au",
     "examples/kernel-console-service.au",
     "examples/kernel-display-service.au",
+    "library/graphics/font5x7.au",
     "kernel/uefi/graphical-console-entry.S",
     "scripts/compiler_contract.py",
     "scripts/package_profiles.py",
@@ -133,8 +134,9 @@ def drift_checks():
     display = (ROOT / "examples/kernel-display-service.au").read_text()
     for marker in ("enum class ConsoleEvent", "class Line64"):
         require(source_block(graphical, marker) == source_block(console, marker), f"copied {marker} drift")
-    marker = "auto glyph_bits(u8 byte)"
-    require(source_block(graphical, marker) == source_block(display, marker), "legacy font drift")
+    for consumer in (graphical, display):
+        require("import graphics.font5x7;" in consumer, "shared font import missing")
+        require("auto glyph_bits(" not in consumer, "duplicated base font")
 
 
 def samples(text):
@@ -192,9 +194,41 @@ def check_case(binary, work, records, name, script, geometry, fail_after=None):
     return count
 
 
+def check_font(compiler, work):
+    from kernel_graphical_oracle import FONT
+
+    source, assembly, harness, binary = (work / ("font-probe" + suffix) for suffix in (".au", ".s", ".cpp", ""))
+    source.write_text(
+        "module font_probe;\nimport graphics.font5x7;\n"
+        "auto font_glyph(u8 byte) -> u64 { return graphics::glyph_bits(byte); }\n"
+    )
+    command([compiler, "--module-root", ROOT / "library", source, "-o", assembly], work, "font-compile")
+    harness.write_text(
+        "#include <cstdint>\n#include <cstdio>\n"
+        'extern "C" std::uint64_t font_glyph(std::uint8_t);\n'
+        "int main() { for (unsigned b = 0; b != 256; ++b) "
+        'std::printf("%llu\\n", static_cast<unsigned long long>(font_glyph(b))); }\n'
+    )
+    command(shlex.split(os.environ.get("CXX", "g++")) + [harness, assembly, "-o", binary], work, "font-link")
+    actual = [int(line) for line in command([binary], work, "font-run").stdout.splitlines()]
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 :-"
+    fallback = "11111/10000/10000/10000/10001/11010/11111"
+    expected = []
+    for byte in range(256):
+        rows = FONT[chr(byte)] if chr(byte) in alphabet else fallback
+        expected.append(sum((bit == "1") << index for index, bit in enumerate(rows.replace("/", ""))))
+    require(actual == expected, "shared font: exhaustive byte mapping differs from independent visual rows")
+    print("PASS shared font: all 256 byte mappings, including unsupported-byte fallback")
+
+
 def execute_cases(compiler, work, records):
+    check_font(compiler, work)
     assembly, obj, binary = work / "consumer.s", work / "consumer.o", work / "consumer"
-    command([compiler, ROOT / "examples/kernel-graphical-console.au", "-o", assembly], work, "compile")
+    command(
+        [compiler, "--module-root", ROOT / "library", ROOT / "examples/kernel-graphical-console.au", "-o", assembly],
+        work,
+        "compile",
+    )
     command(["as", "--64", assembly, ROOT / "kernel/uefi/graphical-console-entry.S", "-o", obj], work, "assemble")
     command(
         shlex.split(os.environ.get("CXX", "g++"))

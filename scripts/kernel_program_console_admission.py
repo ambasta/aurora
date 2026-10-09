@@ -118,13 +118,6 @@ def graph_peak(functions, frames, root, recursive, target=None):
     return dict(peak=result[0], path=result[1])
 
 
-def normalize_copied_flag_clear(decoder, row):
-    # Independently reviewed pending-IRQ variant: this clears IF in the copied
-    # flags slot. It cannot alter RSP or authorize another stack operand/mask.
-    need(row.op == "andq" and row.args == "$0xfffffffffffffdff,0x50(%rsp)", "Unreviewed qword flag-clear instruction")
-    return decoder.Instruction(row.address, row.size, "and", row.args)
-
-
 def switch_envelope(rows):
     """Resolve one bounded six-entry PIC switch without fixing its base register."""
     need(len(rows) == 6, "Missing switch guard")
@@ -148,35 +141,48 @@ def switch_envelope(rows):
     return table_load.address + table_load.size + int(displacement[1], 16)
 
 
+def switch_window(rows, decoder):
+    """Find the ordered switch proof across independent, flag-preserving MOVs."""
+    position = len(rows) - 1
+    core, independent = [], []
+    for mnemonic in ("jmp", "add", "movslq", "lea", "ja", "cmp"):
+        while position >= 0 and rows[position].op != mnemonic:
+            row = rows[position]
+            need(row.op == "mov" and row.op in decoder.PRESERVE_FLAGS, "Unsupported switch interleaving")
+            independent.append(row)
+            position -= 1
+        need(position >= 0, "Missing switch operation: " + mnemonic)
+        core.append(rows[position])
+        position -= 1
+    core.reverse()
+    table = switch_envelope(core)
+    base = decoder.arguments(core[2].args)[-1]
+    registers = {"%" + name for name in "rax rbx rcx rdx rsi rdi rbp r8 r9 r10 r11 r12 r13 r14 r15".split()}
+    for row in independent:
+        operands = decoder.arguments(row.args)
+        need(
+            len(operands) == 2
+            and operands[1] in registers - {"%rax", base}
+            and (operands[0] in registers or re.fullmatch(r"(?:0x[0-9a-f]+|[0-9]+)?\(%rsp\)", operands[0])),
+            "Interleaved move changes switch state or has unsupported operands",
+        )
+    return dict(table=table, guard=core[0], jump=core[-1], independent=independent)
+
+
+def switch_no_bypass(body, guard, jump, targets, decoder):
+    """No direct or table edge may enter the guarded envelope after its bound."""
+    for target in targets:
+        need(not guard.address < target <= jump.address, "Switch table target bypasses bound")
+    for row in body:
+        if (row.op in decoder.BRANCHES or row.op == "call") and row is not jump:
+            target = decoder.target_of(row)
+            need(not guard.address < target <= jump.address, "Transfer bypasses switch bound")
+
+
 def stack_evidence(directory):
     decoder = load("program_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     decoder.CPP_OBJECTS = ("payload", "acpi", "pci", "runtime")
-    decoder.NEUTRAL |= frozenset(
-        (
-            "sti",
-            "wrmsr",
-            "sar",
-            "movswl",
-            "movzwl",
-            "movw",
-            "sal",
-            "setg",
-            "setge",
-            "cmovb",
-            "cmovg",
-            "cmovge",
-            "testb",
-            "testl",
-            "testw",
-            "cmovs",
-            "bswap",
-            "lgdt",
-            "lidt",
-            "ltr",
-        )
-    )
-    decoder.READ_ONLY |= frozenset(("testb", "testl", "testw"))
-    decoder.PRESERVE_FLAGS |= frozenset(("sti", "wrmsr"))
+    decoder.configure_console("program")
     original_rows = decoder.stack_rows
     # The CFG decoder independently accounts for every stack adjustment below.
     # GCC dynamic,bounded here denotes call arguments, not an unbounded VLA.
@@ -185,15 +191,6 @@ def stack_evidence(directory):
     code, disassembly = decoder.disassemble(directory / "payload.elf")
     normalized_stack_immediates = []
     for address, row in list(code.items()):
-        if row.op == "andq":
-            code[address] = normalize_copied_flag_clear(decoder, row)
-            normalized_stack_immediates.append(
-                dict(
-                    address=address,
-                    original=row.op + " " + row.args,
-                    equivalent="and " + row.args + "; exact copied-IF clear, stack pointer unchanged",
-                )
-            )
         if row.op == "push" and re.fullmatch(r"(?:0x[0-9a-f]+)?\(%r(?:sp|ip)\)", row.args):
             code[address] = decoder.Instruction(address, row.size, row.op, "%rax")
             normalized_stack_immediates.append(
@@ -256,9 +253,8 @@ def stack_evidence(directory):
             return decoder.analyze_function(symbol, code, starts, fault=symbol.name == "fault_common")
         need(len(indirect) == 1, "Unexpected indirect branch inventory")
         index = indirect[0]
-        need(index >= 5, "Missing switch guard")
-        guard, reject, table_load, offset_load, addition, jump = body[index - 5 : index + 1]
-        table = switch_envelope(body[index - 5 : index + 1])
+        envelope = switch_window(body[: index + 1], decoder)
+        table, guard, jump = (envelope[key] for key in ("table", "guard", "jump"))
         raw = (directory / "payload.bin").read_bytes()
         need(
             named["__payload_text_end"].address <= table and table + 24 <= named["__payload_read_end"].address,
@@ -271,12 +267,7 @@ def stack_evidence(directory):
             all(symbol.address <= value < symbol.address + symbol.size and value in code for value in targets),
             "Switch targets leave exact function",
         )
-        for row in body:
-            if row.op in decoder.BRANCHES or row.op == "call":
-                if row is jump:
-                    continue
-                target = decoder.target_of(row)
-                need(not guard.address < target <= jump.address, "Transfer bypasses switch bound")
+        switch_no_bypass(body, guard, jump, targets, decoder)
         results = []
         for target in sorted(set(targets)):
             selected = dict(code)
@@ -288,7 +279,15 @@ def stack_evidence(directory):
                 prior = calls.get(call["address"])
                 need(prior is None or prior == call, "Switch changes copied call-site facts")
                 calls[call["address"]] = call
-        switches.append(dict(function=symbol.name, guard=guard.address, table=table, targets=targets))
+        switches.append(
+            dict(
+                function=symbol.name,
+                guard=guard.address,
+                table=table,
+                targets=targets,
+                independent_moves=[row.address for row in envelope["independent"]],
+            )
+        )
         return dict(
             local_peak=max(item["local_peak"] for item in results),
             push_peak=max(item["push_peak"] for item in results),

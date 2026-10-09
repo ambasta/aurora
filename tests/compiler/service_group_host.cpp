@@ -12,13 +12,20 @@ struct Argument {
     std::uint64_t displayGeneration;
     std::uint64_t width, height;
 };
-struct Sample { std::uint64_t present, byte, damaged; };
+struct Sample {
+    std::uint64_t present, byte, damaged;
+};
 unsigned nexts{}, putCount{}, pixels{};
 int mode{};
 std::string trace;
-void need(bool okay) { if (!okay) std::abort(); }
-void aligned() { need(reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0)) % 16 == 0); }
+void need(bool okay) {
+    if (!okay)
+        std::abort();
 }
+void aligned() {
+    need(reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0)) % 16 == 0);
+}
+} // namespace
 extern "C" std::uint64_t checked_group_entry(const Argument *);
 extern "C" void __au_runtime_console_next(const void *grant, std::uint64_t generation, Sample *sample) {
     aligned();
@@ -34,12 +41,17 @@ extern "C" std::uint64_t __au_runtime_console_put(const void *grant, std::uint64
     ++putCount;
     return 0;
 }
-extern "C" std::uint64_t __au_runtime_display_pixel(const void *grant, std::uint64_t generation,
-    std::uint64_t x, std::uint64_t y, std::uint64_t r, std::uint64_t g, std::uint64_t b) {
+extern "C" std::uint64_t __au_runtime_display_pixel(const void *grant,
+                                                    std::uint64_t generation,
+                                                    std::uint64_t x,
+                                                    std::uint64_t y,
+                                                    std::uint64_t r,
+                                                    std::uint64_t g,
+                                                    std::uint64_t b) {
     aligned();
     const std::uint64_t reds[] = {'Q', 11, 'Q', 11, 11, 11, 11};
-    need(grant == &displayAuthority && generation == 97 && x == 7 && y == 9 &&
-         pixels < 7 && r == reds[pixels] && g == 13 && b == 17);
+    need(grant == &displayAuthority && generation == 97 && x == 7 && y == 9 && pixels < 7 && r == reds[pixels] &&
+         g == 13 && b == 17);
     trace += 'P';
     ++pixels;
     return mode == 3 ? 1 : 0;
@@ -53,5 +65,6 @@ int main(int argc, char **argv) {
     else
         need(result == -2 && nexts == 1 && putCount == 0 && pixels == (mode == 3 ? 1u : 0u) &&
              trace == (mode == 3 ? "NP" : "N"));
-    std::puts("PASS distinct service ABI: reordered pair, singleton subsets, independent generations and span forwarding");
+    std::puts(
+        "PASS distinct service ABI: reordered pair, singleton subsets, independent generations and span forwarding");
 }

@@ -134,7 +134,7 @@ def reference(samples, width=800, height=600, pitch=800, pixel_format=1, fail_af
         raise ValueError("Invalid test framebuffer")
     mapped = ((pitch * height * 4 + 4095) // 4096) * 4096
     pixels = bytearray(b"\xa5") * (mapped + 64)
-    frames, stores = [], []
+    frames, stores, frame_stores = [], [], []
     consumed = 0
 
     def capture():
@@ -146,11 +146,13 @@ def reference(samples, width=800, height=600, pitch=800, pixel_format=1, fail_af
 
     def finish(completion):
         frames.append(capture())
+        frame_stores.append(len(stores))
         return {
             "completion": completion,
             "consumed": consumed,
             "frames": frames,
             "stores": stores,
+            "frame_stores": frame_stores,
             "pixels": bytes(pixels),
         }
 
@@ -219,6 +221,7 @@ def reference(samples, width=800, height=600, pitch=800, pixel_format=1, fail_af
             cursor, terminal = -1, 1
             continue
         frames.append(capture())
+        frame_stores.append(len(stores))
         if consumed >= len(samples):
             raise ValueError("Script exhausted while native next() would still wait")
         present, byte, damaged = samples[consumed]

@@ -78,12 +78,26 @@ The object/link byte and relocation checks and linked-instruction stack analysis
 remain authoritative. Profile build manifests include both metadata files;
 standalone stack reports record current source hashes but are not compilation
 provenance. Missing `.ci` files require rebuilding, not a display-name fallback.
+Console admission profiles share one scalar instruction configuration, including
+GCC's byte `orb` form; stack-pointer writes, frame balance and unknown instructions
+still pass through the same operand/control-flow guards. A PE/ELF layout check
+alone does not establish those stack guarantees.
 The recursion proof tracks the actual callee-saved level register and its
 entry-relative spill lifetime across the CFG, including untouched early returns.
 Its sole nonlocal byte-marker store depends explicitly on the reviewed C++
 `visited` array's private lifetime and checked slot bound. Fixed source hashes
 and exact compiler/object associations bind that invariant; this is not an
 independent arbitrary-pointer memory proof. Other nonlocal stores reject.
+
+Graphical capture admission v3 binds current build provenance and checks bounded
+image/stack/private-ABI structure plus fourteen typed, aligned, disjoint BSS
+state fields. Its capture evidence explicitly says `structure-only` with hosted
+and guest behavior qualification pending. Historical capture object/tool hashes,
+absolute instruction replay and encoded whole-build test snapshots are retired;
+selector/authority/pixel/diagnostic behavior still requires hosted and actual
+guest gates. The separate paired-walker exact-body/storage/recursion fixtures
+remain narrow compiler-emission assumptions, not blanket compiler independence
+or arbitrary machine-safety proof. See the [capture contract](../docs/framebuffer-console.md).
 
 `kernel/boot.ld` fixes the BIOS `.text` at 0x7c00 and requires exactly 512 bytes
 with `_boot` first. The linker helper explicitly disables generated build IDs,

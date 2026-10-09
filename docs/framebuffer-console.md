@@ -2,7 +2,7 @@
 
 Output-only rendering and bounded graphical-session diagnostics have
 independently accepted guest captures on exact pinned fixtures. The joined
-capture-failure candidate, final developer/slow/full-Make gates and merge review
+capture-failure candidate, final GCC 16 `full` gate and merge review
 remain pending; this is not a claim of whole-system readiness.
 The current source join adds the reviewed GCC 14/GCC 16 portability machinery
 and readable binary glyph spellings. Graphical compiler frames now bind exact
@@ -12,14 +12,13 @@ compiler alias name is retained through metadata joining; only the already prove
 same-body pair is canonicalized afterward. The unchanged
 legacy verifier's local visited-array invariant has a separately reviewed source
 applicability check for the joined headers. This is source integration only:
-changed-output image admission, failure-fixture guests and both toolchains'
-final integrated gates remain pending. Historical exact-image contracts continue
-to reject changed images until their own admission is reviewed. A second closed
-GCC 14 capture file tuple records the reviewed libcall-emission delta and exact
-compiler/tool/compiled-source applicability; mixed tuples reject. Its unchanged
-14-function capture semantics do not replace fresh complete image/stack admission,
-including added memory calls in interrupt and wait closure. No new capture guest
-or whole-image acceptance is implied by that source update.
+changed-output image admission, failure-fixture guests and the GCC 16
+final integrated gates remain pending. Capture admission now checks current
+build provenance and bounded image/stack/state structure instead of replaying
+historical compiler/object tuples or absolute capture instruction inventories.
+This deliberately retires those capture machine-behavior proof claims; hosted
+and actual guest behavior gates remain required. Historical receipts retain
+only their original source/image scope and confer no new acceptance.
 Firmware `SetMode` can clear its display before the controlled capture boundary.
 No GPU driver, desktop, physical Framework display support, DMA or IOMMU claim
 follows from this work.
@@ -46,6 +45,54 @@ restoration boot. The stricter prebuilt qualification path remains
 manifest, four independent approval roles, all four cases and an actual normal
 restoration boot. A preview never creates those approvals.
 
+## Current-source graphical smoke
+
+`make smoke-graphical-console` builds and checks normal UEFI, production graphical
+and capture graphical images sequentially, then runs fourteen fresh graphical
+cases and one actual normal restoration. It reuses the existing v3 admission;
+that receipt stays structure-only and never grants behavioral qualification.
+No external approval receipts or historical compiler/address allowlists are needed
+for this developer command. Independent review and final GCC 16 `full` remain
+separate merge gates. This command creates new observations, not recovered evidence.
+
+For review before execution, use `scripts/kernel-graphical-smoke.sh --build-only`.
+It prints a fresh directory containing ordinary image copies and build logs.
+Then run `python3 -B scripts/kernel_graphical_smoke.py --images DIR/images
+--evidence DIR/guests QEMU OVMF CODE VARS DATA`, using either a combined OVMF path
+or the CODE/VARS pair and empty strings for unused inputs. The shell uses the
+shared firmware selector; usual QEMU/firmware/compiler overrides apply.
+
+Coverage includes production help/status/edit/exit; capture BS/DEL/CRLF,
+rejection/recovery/exit and a sent but unconsumed sentinel; exact capacity 64,
+overflow 65 locking/recovery, event 80 and native idle 4096; an explicit fixture-G
+regression; invalid selector, all four C/D/c/d no-effect authority denials and F/I
+pixel failures. The 96-copy guard remains hosted-only. Idle has no input or pause
+from release through its terminal marker. Production uses observed viewport
+boundaries because it has no PRE_SAMPLE markers. Capture sends only the selector
+before PRE_SAMPLE 0, then synchronizes every byte on completed-sample markers.
+
+Every saved physical/PPM pair checks scanout, the model viewport, every outside
+byte and the 1,024-byte tail against a real baseline. Captures retain selected
+editing/control/capacity milestones and final state; this is sampled evidence,
+not continuous memory observation. F/I overlays exactly 0/55 successful model
+stores on that baseline and checks 1/56 attempts, without hosted A5-fill bytes.
+The production baseline is its already-painted initial state; it cannot establish
+pre-initial-paint outside-byte preservation. Production's actual exit 33 is
+separate from the capture guests' QMP quit 0.
+
+Guests use original-clock q35/TCG, one CPU and disposable snapshot media, with
+no network or physical-device access. Each graphical guest has a 90-second wall
+limit (production also has at most 80 small 56,032-byte state probes per chunk,
+with full pairs only at matches); restoration has
+30 seconds. Serial is limited to 1 MiB, cumulative QMP and each child output file
+to 4 MiB. Per-case raw pairs, input, serial, QMP, stderr and summary are preserved
+on first failure; remaining cases stop, owned QEMU is reaped, and the retained
+normal image is actually booted in `finally`. Normal restoration does not change
+the last capture build left in `build/uefi`; normal developer commands rebuild
+that shared output themselves. This isolated window leaves no persistent guest
+state, so one final restoration suffices. Ordinary/optimized compiler-free runner
+controls belong to Meson `dev`/`full` and `make test-graphical-controls`.
+
 ## Dependency and outcome
 
 The output-only checkpoint is a native Aurora-rendered graphical status page after
@@ -59,12 +106,15 @@ The trusted host boundary only authenticates, bounds-checks, packs pixels and
 performs ordered volatile stores. No raw pointer, mutable framebuffer span or
 `OwnedBytes` video-memory surrogate is introduced.
 
-Font constants use seven five-bit binary groups with the existing packed-bit
-orientation documented beside `glyph_bits`. Character dispatch, fallback, bit
-positions and drawing code are unchanged; no table storage or stack layout is
-added. Decimal-equivalent assembly and all 256 input-byte mappings are the
-spelling-change gates. Historical guest captures below retain their original
-source/compiler scope; new compiler syntax requires fresh integrated gates.
+The shared `graphics.font5x7` library module supplies the base A-Z, 0-9, space,
+colon and hyphen glyphs and the original unsupported-byte fallback. Constants
+retain seven readable five-bit binary groups and their documented packed-bit
+orientation. The graphical consumer adds its lowercase/punctuation glyphs and
+draws at unit scale directly; the status page retains its 3x/2x scale selection.
+The hosted gate checks all 256 base-font byte mappings against independent visual
+rows and both consumers against their existing pixel oracles. Historical guest
+captures retain their original source/compiler scope; extraction and simplified
+unit-scale drawing require fresh integrated image/stack and guest gates.
 
 ## Provisional transport and authority
 
@@ -133,8 +183,8 @@ record page writable or disables CR0.WP. The existing generic smoke oracle does 
 The accepted hosted/native evidence covers independent generated-Aurora pixels,
 RGB/BGR guard/padding, source/IR/private-ABI authority, exact linked mixed-stack and
 image checks, reviewed guest admission, real screenshot/physical before-and-after
-capture and denied grants with no stores. Final joined Meson developer/slow,
-complete root Make and independent merge review are still required.
+capture and denied grants with no stores. The final integrated GCC 16 Meson
+`full` suite and independent merge review are still required.
 
 ### Accepted aperture probe, 2026-10-08
 
@@ -234,10 +284,11 @@ require their own combined linked-stack/image begin/end/emit admission;
 every new attempt invalidates prior combined receipts before build work. Missing
 or failed checks reject. Automatic evidence still requires independent exact-image
 review and cannot authorize a guest or borrow a legacy profile's qualification.
-Version-2 image receipts separate capture-fixture source/artifact evidence by
-mode. The checker's `source --mode graphical-console-capture` action checks only
-the source contract; capture admission deliberately rejects until the newly
-constructed linked fixture paths receive independent exact-byte review.
+Version-3 image receipts separate capture source/artifact and measured state
+structure by mode. Capture state evidence says `structure-only` and
+`behavior_qualification: pending-hosted-and-guest-gates`; emitting or checking a
+receipt does not mark those gates passed. The
+`source --mode graphical-console-capture` action checks only the source contract.
 The capture profile separates its bounded pre-store selector from editor input,
 emits completed-sample/store markers, and leaves terminal or failed scanout intact
 for external physical capture and ordinary normal-image restoration.
@@ -327,8 +378,8 @@ geometry fault, retry, rollback or synchronous fault is claimed.
 The new candidate requires focused generated-consumer verification, exact
 production/capture reconstruction and independent image admission, separate
 guest denial/pixel-failure windows and positive regression, actual normal
-restoration, then the final integrated full Meson graph on GCC 14 and GCC 16
-and independent review.
+restoration, then the final integrated full Meson graph on GCC 16 and independent
+review. GCC 14 checks are optional targeted compatibility evidence.
 Original 988-file image receipts and preserved-image guest results do not qualify
 the new joined source. Partial/null-pair denials and deterministic synchronous faults
 remain separate from the seven selectors; no new keyboard, desktop or physical
@@ -358,12 +409,22 @@ adding eight bytes of stack consumption; stale or unused sites and unbalanced
 paths reject. This proves bounded stack effects, not copied-value initialization
 or authority. Existing save/return checks and whole-image budgets remain in force.
 
-Capture qualification retains complete toolchain-specific file, instruction and
-private-state tuples. The separate-validator GCC14 path composes real validator
-calls with selector, crossed/stale grant, fixed pixel-failure and diagnostic
-proofs. The GCC16 variant also proves its emitted inline UART/text/decimal loops
-and separately binds its seven-file tuple including callgraph metadata. Both
-variants reject fixed error cases before the MMIO effect; GCC14 increments the
-successful-store counter before that effect, while GCC16 increments it after. Mixed tuples and unknown emitted forms reject. An analysis of retained
-failed bytes leaves the failed attempt intact and does not constitute a new
-build receipt, guest result or completed integrated qualification.
+Current capture admission retains PE/ELF/PIC checks, `.su`/`.ci` associations,
+object/linked-byte binding, bounded stack/control-flow and private-ABI checks,
+source capture-policy controls, and production fixture absence. Fourteen named
+BSS fields must have the expected type, size, alignment, containment and disjoint
+storage: nine counters/state fields, Console and Display grants and generations,
+and the graphical entry's active flag. Addresses and section indexes are measured;
+current source/tool/output hashes bind the local build rather than select an
+allowlisted historical machine.
+
+The removed capture checker replayed exact instruction/file/tool tuples to claim
+selector, authority, pixel-failure, diagnostic and inline UART/text/decimal
+behavior. The replacement does not establish those semantics or validate every
+historical GCC16 state global. Hosted grant/state/failure tests and actual guest
+capture, denial, pixel-failure and normal-restoration gates remain required.
+Compiler-free controls use small hand-authored structural/negative fixtures;
+complete encoded build snapshots are no longer repository test inputs.
+The separate paired-walker exact-body/storage/recursion fixtures and narrow
+memory-push assumptions above remain unchanged. This is bounded stack/layout
+evidence, not arbitrary machine safety or complete compiler independence.

@@ -58,7 +58,7 @@ No shortcut promises unsupervised execution using an active sealed compiler.
 ## Dependencies and overrides
 
 Install dependencies using your normal host package-management workflow:
-GNU C++ with C++23 support, GNU Make, GNU binutils (`as`, `ld`, `objcopy`,
+GCC 16 with C++23 support, GNU Make, GNU binutils (`as`, `ld`, `objcopy`,
 `objdump`, `nm`, `readelf`), Python 3 and Bash. The complete native graph also
 uses GNU coreutils and ripgrep. QEMU boots additionally need GNU `timeout`,
 QEMU system x86-64 and its matching PC firmware/data files. UEFI needs a
@@ -289,11 +289,16 @@ additional normal guest-boot gate.
 
 ### Merge gates and retained test artifacts
 
-Compiler-affecting merges require final integrated Meson `dev`, Meson `slow`, and
-root `make test`, each as a separate completed phase. Meson registrations remain
-partial against Make; `tests/compiler-test-inventory.json` and the developer
-inventory gate record the remaining gaps. Focused runs do not replace these gates.
-The supervised Make run sets TMPDIR/TMP/TEMP to its retained `build/test-contract-*/tmp`
-directory. Artifact-capable JSON, UTF-8, geometry and ABI recipes also select unique
-`build/` descendants explicitly. A failed run keeps its evidence there; no cleanup
-of unrelated temporary directories is performed.
+Every merge or release requires the complete Meson `full` suite with GCC 16 on
+the final integrated source, including after conflict resolution. `full` covers
+`dev`, `slow` and the complete native root inventory; `make test` selects the
+same graph, so a duplicate aggregate is not required. GCC 14 is optional targeted
+compatibility evidence. Focused checks do not replace full coverage, independent
+review or the separate normal BIOS/UEFI and affected-profile guest gates in the
+[developer-test contract](developer-test-contract.md#gcc-16-merge-gates).
+
+Retain Meson logs under the configured build directory and per-command artifacts
+in their recorded run-owned locations, with source and actual tool identities.
+The separate legacy supervised acceptance path retains its
+`build/test-contract-*/tmp` and matching `run.json` contract.
+Failed-run evidence is preserved; unrelated temporary directories are not cleaned.

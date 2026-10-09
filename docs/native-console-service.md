@@ -70,8 +70,8 @@ Required before qualification or merge:
 4. Actual simple-UEFI PTY editing, full/overlong/malformed input, CRLF, commands,
    idle wake and output evidence. Injected authority/transport faults must fail
    as intended, followed by a fresh normal-image restoration boot.
-5. Full final-source Meson developer and slow suites, then independent source and
-   evidence review. Any later source change invalidates dependent gates.
+5. The [complete final-source native gate](../AGENTS.md#workflow), then independent
+   source and evidence review. Any later source change invalidates dependent gates.
 
 No hardware qualification, full-native release, general OS service framework or
 self-hosted compiler claim follows from this bounded migration. The C++23

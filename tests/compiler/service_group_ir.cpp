@@ -37,11 +37,9 @@ Module groupDirect(bool displayFirst = false) {
 Module groupForwarded(bool reverseTarget = false) {
     auto m = groupDirect(reverseTarget);
     auto caller = groupEntry("group_caller");
-    const ServiceCall call = reverseTarget
-                                 ? ServiceCall{"group_leaf", 2, 0, {0, 0}, service::Kind::Display,
-                                               {{1, service::Kind::Console}}}
-                                 : ServiceCall{"group_leaf", 1, 0, {0, 0}, service::Kind::Console,
-                                               {{2, service::Kind::Display}}};
+    const ServiceCall call =
+        reverseTarget ? ServiceCall{"group_leaf", 2, 0, {0, 0}, service::Kind::Display, {{1, service::Kind::Console}}}
+                      : ServiceCall{"group_leaf", 1, 0, {0, 0}, service::Kind::Console, {{2, service::Kind::Display}}};
     caller.code.insert(caller.code.end(),
                        {AcquireServiceLoan{1, 16, service::Kind::Console},
                         AcquireServiceLoan{2, 32, service::Kind::Display},
@@ -83,9 +81,9 @@ Module groupConsoleSubsets(bool directConsole = false) {
     auto caller = groupEntry("console_subset_caller");
     caller.code.push_back(AcquireServiceLoan{2, 32, service::Kind::Display});
     if (directConsole)
-        caller.code.insert(caller.code.end(),
-                           {Constant{65, Type::U8},
-                            ServiceOperation{16, service::Operation::Put, 0, service::Kind::Console}});
+        caller.code.insert(
+            caller.code.end(),
+            {Constant{65, Type::U8}, ServiceOperation{16, service::Operation::Put, 0, service::Kind::Console}});
     else
         caller.code.insert(caller.code.end(),
                            {AcquireServiceLoan{1, 16, service::Kind::Console},
@@ -121,11 +119,10 @@ Module groupSampleForwarded(bool displayFirst) {
     caller.frameBytes = 64;
     caller.objectSlots[64] = {std::string(service::sampleName), false};
     caller.slots = {{64, Type::Bool}, {56, Type::U8}, {48, Type::Bool}};
-    const ServiceCall call = displayFirst
-                                 ? ServiceCall{"group_sample", 2, 64, {0, 0}, service::Kind::Display,
-                                               {{1, service::Kind::Console}}}
-                                 : ServiceCall{"group_sample", 1, 64, {0, 0}, service::Kind::Console,
-                                               {{2, service::Kind::Display}}};
+    const ServiceCall call =
+        displayFirst
+            ? ServiceCall{"group_sample", 2, 64, {0, 0}, service::Kind::Display, {{1, service::Kind::Console}}}
+            : ServiceCall{"group_sample", 1, 64, {0, 0}, service::Kind::Console, {{2, service::Kind::Display}}};
     caller.code.insert(caller.code.end(),
                        {BeginObject{64},
                         AcquireServiceLoan{1, 16, service::Kind::Console},
@@ -146,13 +143,27 @@ ServiceCall &groupSampleCall(Module &m) {
 Module executedNonlexical() {
     auto m = groupForwarded(true); // Target formals reverse the caller's roots.
     const auto ordered = m.functions.back().code;
-    m.functions.back().code = {
-        ordered[0], ordered[1], Jump{10},
-        // The call is textually before either acquisition, but reached afterward.
-        Label{20}, ordered[4], ordered[5], ordered[6], Jump{30},
-        Label{10}, ordered[2], ordered[3], Jump{20},
-        // Reuse both released IDs at new sites with unchanged roots and kinds.
-        Label{30}, ordered[2], ordered[3], ordered[4], ordered[5], ordered[6], Return{}};
+    m.functions.back().code = {ordered[0],
+                               ordered[1],
+                               Jump{10},
+                               // The call is textually before either acquisition, but reached afterward.
+                               Label{20},
+                               ordered[4],
+                               ordered[5],
+                               ordered[6],
+                               Jump{30},
+                               Label{10},
+                               ordered[2],
+                               ordered[3],
+                               Jump{20},
+                               // Reuse both released IDs at new sites with unchanged roots and kinds.
+                               Label{30},
+                               ordered[2],
+                               ordered[3],
+                               ordered[4],
+                               ordered[5],
+                               ordered[6],
+                               Return{}};
     return m;
 }
 } // namespace
@@ -163,9 +174,9 @@ int main(int argc, char **argv) {
     good(groupDirect(true));
     good(groupForwarded());
     good(groupForwarded(true));
-    good(groupSubsets()); // The unrelated Display loan can complete while Console is suspended.
-    good(groupSubsets(true)); // Direct Display operations also remain available.
-    good(groupConsoleSubsets()); // The Console child loan can complete while Display is suspended.
+    good(groupSubsets());            // The unrelated Display loan can complete while Console is suspended.
+    good(groupSubsets(true));        // Direct Display operations also remain available.
+    good(groupConsoleSubsets());     // The Console child loan can complete while Display is suspended.
     good(groupConsoleSubsets(true)); // Direct Console operations also remain available.
     good(groupSample(false));
     good(groupSample(true)); // Copied Console reports do not depend on formal order.
@@ -188,8 +199,7 @@ int main(int argc, char **argv) {
             });
         bad(groupSampleForwarded(displayFirst), [](auto &m) {
             m.functions.back().code.insert(m.functions.back().code.begin() + 3,
-                                           ServiceOperation{16, service::Operation::Next, 64,
-                                                            service::Kind::Console});
+                                           ServiceOperation{16, service::Operation::Next, 64, service::Kind::Console});
         });
         bad(groupSampleForwarded(displayFirst), [](auto &m) {
             const auto sampleName = std::string(service::sampleName);
@@ -207,9 +217,18 @@ int main(int argc, char **argv) {
 
     auto nonlexical = groupForwarded();
     const auto ordered = nonlexical.functions.back().code;
-    nonlexical.functions.back().code = {ordered[0], ordered[1], Jump{10}, Label{20},
-                                        ordered[4], ordered[5], ordered[6], Return{},
-                                        Label{10}, ordered[2], ordered[3], Jump{20}};
+    nonlexical.functions.back().code = {ordered[0],
+                                        ordered[1],
+                                        Jump{10},
+                                        Label{20},
+                                        ordered[4],
+                                        ordered[5],
+                                        ordered[6],
+                                        Return{},
+                                        Label{10},
+                                        ordered[2],
+                                        ordered[3],
+                                        Jump{20}};
     good(nonlexical); // Control flow acquires before calling; textual order does not.
 
     auto loop = groupForwarded();
@@ -330,15 +349,15 @@ int main(int argc, char **argv) {
 
     // Only the borrowed roots are suspended; neither may be reused while suspended.
     bad(groupSubsets(true), [](auto &m) {
-        m.functions.back().code.insert(m.functions.back().code.begin() + 3,
-                                       {Constant{65, Type::U8},
-                                        ServiceOperation{16, service::Operation::Put, 0, service::Kind::Console}});
+        m.functions.back().code.insert(
+            m.functions.back().code.begin() + 3,
+            {Constant{65, Type::U8}, ServiceOperation{16, service::Operation::Put, 0, service::Kind::Console}});
     });
     bad(groupConsoleSubsets(true), [](auto &m) {
         F suspendedDisplay;
         appendPixel(suspendedDisplay, 32);
-        m.functions.back().code.insert(m.functions.back().code.begin() + 3,
-                                       suspendedDisplay.code.begin(), suspendedDisplay.code.end());
+        m.functions.back().code.insert(
+            m.functions.back().code.begin() + 3, suspendedDisplay.code.begin(), suspendedDisplay.code.end());
     });
     bad(groupForwarded(), [](auto &m) {
         m.functions.back().code.insert(m.functions.back().code.begin() + 4,
@@ -359,8 +378,7 @@ int main(int argc, char **argv) {
                                        ReleaseServiceLoan{2, service::Kind::Display});
     });
     bad(groupForwarded(), [](auto &m) {
-        m.functions.back().code.insert(m.functions.back().code.begin() + 4,
-                                       {Constant{0, Type::Bool}, BranchFalse{99}});
+        m.functions.back().code.insert(m.functions.back().code.begin() + 4, {Constant{0, Type::Bool}, BranchFalse{99}});
         m.functions.back().code.insert(m.functions.back().code.begin() + 7, Label{99});
     });
     bad(loop, [](auto &m) {

@@ -209,7 +209,9 @@ GRAPHICAL_OBJECTS = frozenset(
         "memory-pe",
     )
 )
-REFLECTION_HELPERS = frozenset(("aurora_reflect_size", "aurora_reflect_field_count"))
+REFLECTION_HELPERS = frozenset(
+    ("aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s1_field_count")
+)
 GRAPHICAL_BRIDGES = frozenset(("__au_runtime_graphical_entry", "__au_runtime_graphical_value"))
 GRAPHICAL_IMPORTS = frozenset(("__au_runtime_console_next", "__au_runtime_display_pixel"))
 GRAPHICAL_HOST = GRAPHICAL_IMPORTS | {"__au_runtime_console_put"}
@@ -270,7 +272,7 @@ def profile_selection(symbols, object_names, graphical):
             "Graphical runtime authority must be linked code",
         )
         need(
-            {name for name in names if name.startswith("aurora_reflect_")} == REFLECTION_HELPERS
+            {name for name in names if name.startswith(("aurora_reflect_", "__au_reflect_"))} == REFLECTION_HELPERS
             and all(names[name] == "T" for name in REFLECTION_HELPERS),
             "Graphical reflection helper inventory/type mismatch",
         )
@@ -326,7 +328,7 @@ def graphical_object_policy(symbols, object_symbols, calls, language_bindings):
         "payload": (set(), {"__au_runtime_graphical_value"}),
     }
     for object_name, entries in parsed.items():
-        reflection = {name for name in entries if name.startswith("aurora_reflect_")}
+        reflection = {name for name in entries if name.startswith(("aurora_reflect_", "__au_reflect_"))}
         need(
             reflection == (REFLECTION_HELPERS if object_name == "language" else set())
             and all(entries[name] == "T" for name in reflection),

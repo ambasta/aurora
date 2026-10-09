@@ -44,7 +44,12 @@ OBJECTS = (
 )
 ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
 BRIDGE, VALUE = "__au_runtime_graphical_entry", "__au_runtime_graphical_value"
-REFLECTION = ("aurora_reflect_size", "aurora_reflect_field_count")
+REFLECTION = (
+    "aurora_reflect_size",
+    "aurora_reflect_field_count",
+    "__au_reflect_s1_size",
+    "__au_reflect_s1_field_count",
+)
 NEXT, PUT, PIXEL = "__au_runtime_console_next", "__au_runtime_console_put", "__au_runtime_display_pixel"
 
 
@@ -292,7 +297,13 @@ class ImagePolicy(unittest.TestCase):
                 f["object_symbols"]["runtime"] += defined(n)
 
             self.reject(cross)
-        for extra in ("aurora_reflect_address", "aurora_reflect_size_extra", "unrelated_global"):
+        for extra in (
+            "aurora_reflect_address",
+            "aurora_reflect_size_extra",
+            "__au_reflect_s2_size",
+            "__au_reflect_s1_address",
+            "unrelated_global",
+        ):
             self.reject(
                 lambda f, n=extra: f["object_symbols"].update(language=f["object_symbols"]["language"] + defined(n))
             )
@@ -462,12 +473,12 @@ class ImagePolicy(unittest.TestCase):
         baseline["graphical-console.o"]["symbols"] += b"FramebufferPayload::restore_graphical_fixture\n"
         capture_policy.capture_artifact_evidence("graphical-console", baseline)
 
-    def test_capture_fixture_ownership_is_closed_and_does_not_admit_linked_forms(self):
+    def test_capture_fixture_ownership_does_not_replace_state_layout_or_behavior_gates(self):
         baseline = fixture_artifacts(capture=True)
         evidence = capture_policy.capture_artifact_evidence("graphical-console-capture", baseline)
-        self.assertEqual(evidence["status"], "requires-actual-linked-fixture-proof")
-        with self.assertRaisesRegex(ValueError, "Capture fixture linked proof pending"):
-            capture_policy.require_capture_linked_proof(evidence["mode"])
+        self.assertEqual(evidence["status"], "structure-only-behavior-qualification-pending")
+        with self.assertRaisesRegex(ValueError, "Missing current capture structure evidence"):
+            capture_policy.require_capture_structure(evidence["mode"])
         containers = {"payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "embed.o", "embed-pe.o"}
         for name in baseline:
             for field in ("contents", "symbols", "relocations"):

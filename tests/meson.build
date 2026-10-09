@@ -325,6 +325,13 @@ test('graphical-admission-controls-optimized', python,
      args: ['-B', '-O', files('kernel-graphical-admission-controls.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 
+test('graphical-smoke-controls', python,
+     args: ['-B', files('kernel-graphical-smoke.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+test('graphical-smoke-controls-optimized', python,
+     args: ['-B', '-O', files('kernel-graphical-smoke.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+
 # Previously Make-only complete source oracles. Keep exhaustive sweeps in slow.
 foreach runner : [
   'templates', 'function_templates', 'function_overloads', 'fixed_containers',
