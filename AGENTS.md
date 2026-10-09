@@ -41,10 +41,17 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    including after conflict resolution or another source change. Focused checks
    supplement these gates; they never replace them. Keep `dev` fast and retain
    exhaustive integration/ABI coverage in `slow`, without sampling away tests.
-   Before every compiler-affecting merge and every release, also run the complete
-   root `make test` native graph. Meson does not yet cover every Make runner. Run it
-   under the shared build-once compiler contract, plus actual emulator gates for
-   kernel-affecting qualification. For independently pinned native acceptance,
+   Before every compiler- or kernel-affecting merge and every release, complete
+   `dev`, `slow`, and the full root `make test` native graph separately with GNU
+   GCC 14 and GCC 16 on the final integrated source. Meson does not yet cover
+   every Make runner. Use the shared build-once compiler contract for each native
+   run; select matching real `gcc`/`g++` tools for inherited bare-tool invocations
+   as well as `CXX`, and record actual compiler, binutils and runtime identities.
+   For both toolchains, also build and smoke the normal BIOS and UEFI images.
+   Run the existing image/admission and emulator gates for every affected kernel
+   profile, including applicable fault/recovery cases and a normal restoration
+   boot. Missing tools, skipped gates or prior-source receipts leave that
+   toolchain unqualified; they cannot silently satisfy merge acceptance. For independently pinned native acceptance,
    use `make test-acceptance` with an externally reviewed
    `ACCEPTANCE_COMPILER_SHA256`. Full native qualification requires a newly
    completed matching `run.json`; Make exit zero alone is not evidence. Fault

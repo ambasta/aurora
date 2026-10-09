@@ -142,6 +142,7 @@ class ProfileMetadata(unittest.TestCase):
         for required in (
             "graphical-console.o",
             "graphical-console.su",
+            "graphical-console.ci",
             "language.o",
             "language.s",
             "console-entry.o",
@@ -152,6 +153,9 @@ class ProfileMetadata(unittest.TestCase):
             "esp/EFI/BOOT/BOOTX64.EFI",
         ):
             self.assertIn(required, paths)
+        for name in admission.CPP_OBJECTS + ("loader",):
+            for suffix in (".su", ".ci"):
+                self.assertIn(name + suffix, paths)
         self.assertTrue(
             {
                 "console.o",

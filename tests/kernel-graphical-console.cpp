@@ -37,39 +37,48 @@ auto check_capture_policy() -> void {
     using Scenario = policy::Scenario;
     for (unsigned byte = 0; byte < 256; ++byte) {
         auto expected = Scenario::invalid;
+        unsigned expected_code = 0;
         std::string_view expected_name = "invalid";
         switch (byte) {
         case 'G':
             expected = Scenario::normal;
+            expected_code = 1;
             expected_name = "normal";
             break;
         case 'C':
             expected = Scenario::cross_console;
+            expected_code = 2;
             expected_name = "cross-console";
             break;
         case 'D':
             expected = Scenario::cross_display;
+            expected_code = 3;
             expected_name = "cross-display";
             break;
         case 'c':
             expected = Scenario::stale_console;
+            expected_code = 4;
             expected_name = "stale-console";
             break;
         case 'd':
             expected = Scenario::stale_display;
+            expected_code = 5;
             expected_name = "stale-display";
             break;
         case 'F':
             expected = Scenario::first_pixel_error;
+            expected_code = 6;
             expected_name = "first-pixel-error";
             break;
         case 'I':
             expected = Scenario::interior_pixel_error;
+            expected_code = 7;
             expected_name = "interior-pixel-error";
             break;
         }
         const auto actual = policy::select(static_cast<std::uint8_t>(byte));
-        need(actual == expected && policy::name(actual) == expected_name);
+        need(actual == expected && static_cast<unsigned>(actual) == expected_code &&
+             policy::name(actual) == expected_name);
         // Expected ordinals come from the reviewed fixture contract, never the
         // policy under test. Check every nearby count and wide boundary values.
         for (U64 successful_stores = 0; successful_stores <= 256; ++successful_stores)

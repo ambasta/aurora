@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Exact combined graphical Console admission; no inherited image qualification.
 
-Source-only until an allocated build supplies actual linked forms. Unknown forms
-fail closed. A successful emit is evidence for independent review, never review.
+Capture contracts bind the observed numeric capture002 linked forms. Unknown
+forms fail closed. Successful emit is evidence for independent review, never review.
 """
 
 from pathlib import Path
@@ -31,7 +31,7 @@ CPP_OBJECTS = ("payload", "acpi", "pci", "runtime", "graphical-console")
 ASSEMBLY_OBJECTS = ("payload-entry", "console-entry", "language", "memory")
 BASE_FLAGS = tuple(
     (
-        "-std=c++23 -O2 -fstack-usage -Wall -Wextra -Werror -ffreestanding "
+        "-std=c++23 -O2 -fstack-usage -fcallgraph-info=su -Wall -Wextra -Werror -ffreestanding -fcf-protection=none -mstringop-strategy=libcall "
         "-fno-exceptions -fno-rtti -fno-stack-protector -fno-asynchronous-unwind-tables "
         "-fno-unwind-tables -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns"
     ).split()
@@ -129,7 +129,7 @@ CAPTURE_REGIONS = (
     ("private state", "ifdef", 143, "594d1f1292f5a429620ca1e3eb9a6da93deb0634a375da90b5277660d1c1aea7"),
     ("failure diagnostics", "ifdef", 456, "acc794c0ac7709b2ad4c2a39aa63952b39596e619723bcdc680c3b069706da44"),
     ("production fail exit", "ifndef", 463, "77105a271a56baed767bd387c269f99d8f181029b6950b226932a84ac3be933a"),
-    ("selector gate and sole writer", "ifdef", 907, "49b4dc9144b81945ce82034234a68e8bf37b2e5aefcb7ca8a9ce22ed26d6199c"),
+    ("selector gate and sole writer", "ifdef", 907, "99e40589f9d9a15e42b20e22bc37602409112fbac244f92e2b3b5420323ee19a"),
     ("admitted pixel failure", "ifdef", 1246, "7be663f9d39f01990c9850ffcfb75374736911348fb84bc9cd94329852f0eb78"),
     ("pre-sample diagnostics", "ifdef", 1847, "ddf0a795439653c175b4e86475c001392cec7056510d2ff1a1019be3064878c8"),
     ("pre-grant gate call", "ifdef", 2930, "f8ad783a0ef5ac8964306cfa7eb8b44fe293e471a247cf6049fb7a463714477c"),
@@ -146,6 +146,7 @@ CAPTURE_SELECTORS = {
     "F": "first-pixel-error",
     "I": "interior-pixel-error",
 }
+CAPTURE_SELECTOR_CODES = {"G": 1, "C": 2, "D": 3, "c": 4, "d": 5, "F": 6, "I": 7}
 CAPTURE_LINKED_REQUIREMENTS = (
     "closed selector decode, sole scenario writer and release ordering",
     "local six-word record mutations and genuine Session close/reopen generations",
@@ -244,15 +245,20 @@ def capture_source_evidence(mode, sources=None):
         "Changed ordinary graphical source projection",
     )
     need(
-        capture_source_digest(capture) == "6116de63e74e431c0df88a36366efbd704d0b682bd976b0ff7e43ed23bc0a7a0",
+        capture_source_digest(capture) == "452260bade4db427f3d07ee0c38fe1ff52931d6467895bda59dec42cfd01a809",
         "Changed complete capture graphical source projection",
     )
     return dict(
-        schema="aurora-graphical-capture-source-v1",
+        schema="aurora-graphical-capture-source-v2",
         mode=mode,
         status="source-contract-only",
         source_sha256={name: hashlib.sha256(sources[name].encode()).hexdigest() for name in sorted(sources)},
         selectors=dict(CAPTURE_SELECTORS) if mode == MODES[1] else {},
+        release=(
+            dict(prefix="AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=", codes=dict(CAPTURE_SELECTOR_CODES), invalid=0)
+            if mode == MODES[1]
+            else None
+        ),
         invalid_selectors=249 if mode == MODES[1] else 0,
         failure_successful_store_ordinals=[0, 55] if mode == MODES[1] else [],
         regions=[name for name, *_ in CAPTURE_REGIONS],
@@ -288,7 +294,7 @@ def capture_artifact_evidence(mode, artifacts):
         owner = artifacts["graphical-console.o"]
         need(
             all(token in owner["symbols"] for token in (b"capture_scenario", b"pixel_attempts"))
-            and b"AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario=" in owner["contents"],
+            and b"AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=" in owner["contents"],
             "Missing capture fixture state or exact release diagnostic",
         )
     return dict(
@@ -299,16 +305,21 @@ def capture_artifact_evidence(mode, artifacts):
     )
 
 
-def require_capture_linked_proof(mode):
+def require_capture_linked_proof(mode, evidence=None):
     need(mode in MODES, "Unknown graphical profile")
-    # Intentionally no override, receipt pin or source predicate can clear this.
-    # Replace only after actual compiler output and independent linked review;
-    # retain all original instruction/stack/import/IRQ/paging guards meanwhile.
+    if mode == MODES[0]:
+        need(evidence is None, "Production cannot carry capture linked proof")
+        return
+    # emit/checked supply only their freshly recomputed stack proof, after all
+    # source/output provenance, object association and ordinary safety guards.
+    # Close the complete independently reviewed proof object, including exact
+    # files/bodies, selector, authority, pixel and diagnostic facts. A source
+    # contract, artifact-presence record or external receipt pin cannot replace it.
     need(
-        mode != MODES[1],
-        "Capture fixture linked proof pending: construct the exact capture objects/ELF, retain original "
-        "instruction bytes/operands, relocations and .su frames, then independently review: "
-        + "; ".join(CAPTURE_LINKED_REQUIREMENTS),
+        type(evidence) is dict
+        and hashlib.sha256(canonical(evidence).encode()).hexdigest()
+        == "c060811e6e5afabe3527685dfc87905d56ef319ef0caaade1f93063cb1565af2",
+        "Capture fixture linked proof pending: missing or changed complete current numeric002 proof",
     )
 
 
@@ -339,6 +350,768 @@ def unreviewed_linked_function(symbol, original_code, payload, error):
         + reason
         + "; call/stack effect remains unproved; original linked instructions="
         + canonical(evidence)
+    )
+
+
+# Numeric capture002, retained after its deliberate linked-proof rejection.
+# This is an address-specific emitted-form contract for the exact compiler tuple,
+# not a relocation/opcode allowance. Whole original instructions (including
+# padding), data, ELF, object relocations and .su bytes remain closed. Semantic
+# checks below additionally establish the reviewed fixture behavior.
+CAPTURE_RUN = "_ZN6aurora4uefi21run_graphical_consoleEmRKNS0_5BytesE"
+CAPTURE_CONSOLE = "_ZN6aurora7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS3_15ServicePlatformEE"
+CAPTURE_DISPLAY = "_ZN6aurora7display7SessionINS_4uefi12_GLOBAL__N_116DisplayTransportENS3_15ServicePlatformEE"
+CAPTURE_FAIL = "_ZN6aurora4uefi12_GLOBAL__N_14failESt17basic_string_viewIcSt11char_traitsIcEE"
+CAPTURE_PLATFORM_FAIL = "_ZN6aurora4uefi12_GLOBAL__N_115ServicePlatform4failEv"
+CAPTURE_MACHINE_CONTRACTS = {
+    "_ZN6aurora4uefi12_GLOBAL__N_113timer_mappingEv": (
+        0x3700,
+        159,
+        37,
+        "6e11125735e34ef0701183d2f3427d918f1deaf74f8d429399076b9dca9ee844",
+    ),
+    "_ZN6aurora4uefi12_GLOBAL__N_15quietEv": (
+        0x37A0,
+        181,
+        54,
+        "5a6c682866e2e24bb00c865af3f534ec79cefdd6ae49cf1bec2eb28d616a9054",
+    ),
+    "_ZN6aurora4uefi12_GLOBAL__N_14failESt17basic_string_viewIcSt11char_traitsIcEE": (
+        0x3860,
+        302,
+        61,
+        "3bfeefb04473b7ce5caff2baa1dc0e4217751355e52019627b2975d46e45d800",
+    ),
+    "_ZN6aurora4uefi12_GLOBAL__N_115ServicePlatform4failEv": (
+        0x3990,
+        21,
+        4,
+        "952742cd535c11523a1e81074e161cf17d8137d15d0d43729f5119ef477e255a",
+    ),
+    "_ZN6aurora7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS3_15ServicePlatformEE8validateEPKvmb": (
+        0x39B0,
+        81,
+        23,
+        "b69073216128440c8318c71ceadd8dc5abcbd199b7713c0178c085c3587ea798",
+    ),
+    "_ZN6aurora7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS3_15ServicePlatformEE4openEv": (
+        0x3A10,
+        105,
+        23,
+        "3461a6904be113d664558b24ce7c6955a7bcee6a5193ded964179e918874b219",
+    ),
+    "_ZN6aurora7display7SessionINS_4uefi12_GLOBAL__N_116DisplayTransportENS3_15ServicePlatformEE8validateEPKvmb": (
+        0x3A80,
+        126,
+        35,
+        "278a6028ec82948ebc7931d97f219357170100bc09599afdb379d1426d11ae3e",
+    ),
+    "_ZN6aurora7display7SessionINS_4uefi12_GLOBAL__N_116DisplayTransportENS3_15ServicePlatformEE4openEv": (
+        0x3B00,
+        215,
+        47,
+        "577e3fb7f7c0115e7c7ca631c8819eb33ccba165667cf2453120a44adb5fb8b4",
+    ),
+    "__au_runtime_console_put": (0x4320, 413, 95, "06290d07df8509d8fba603080304993ca2ac50707945a9f75bc766f2e5745f55"),
+    "_ZN6aurora4uefi21run_graphical_consoleEmRKNS0_5BytesE": (
+        0x4E20,
+        4599,
+        934,
+        "7e3f6ba5a613342d796ab7a07c05a405c9e37b532b5b5371df55185e04c2b134",
+    ),
+    "__au_runtime_console_next": (
+        0x44C0,
+        1586,
+        375,
+        "3c451c00820806e0448867cc60a43df32e0c4529484dc27a960d10849f314cc5",
+    ),
+    "__au_runtime_display_pixel": (
+        0x3BE0,
+        1223,
+        250,
+        "6fb76fb5d6e35c967e0ce59c12fb1a5cce2dd0389b517056dddd299519917e29",
+    ),
+    "_ZN6aurora7console4UartINS_8hardware2IoELNS0_11FifoTriggerE192EE6numberEm": (
+        0x7B00,
+        219,
+        57,
+        "5ee41bf219caf5629e8b8439568b32d2d1d3a553e695c5c4b9345b6c382fce3f",
+    ),
+    (
+        "_ZN6aurora7console4UartINS_8hardware2IoELNS0_11FifoTriggerE192EE4textE"
+        "St17basic_string_viewIcSt11char_traitsIcEE"
+    ): (
+        0x7A90,
+        104,
+        36,
+        "65ecfaa7aad5e6998f062a24fbe619478d7e88ae1885e28365ff54914056ea4d",
+    ),
+}
+CAPTURE_FILE_CONTRACTS = {
+    "payload.bin": "b07c591fa80dccbc9b34ea2037f720850ccb6e0d5ad33f7f8deeb891a0266d35",
+    "payload.elf": "8f575ff00dbc15b346aa024e38f0153f2288253afdb6dbb61e84e9b4849c9cd3",
+    "graphical-console.o": "72c43139c2c56d7ff207938b1d6ed849df2c2cca0746fae8aec82259882d18fb",
+    "graphical-console.su": "67dcdd6fbc51d1f72c32346764fadd7dccb1852c70ec2a9f8292793a9f1abd7e",
+    "language.o": "b079cf859050110b5a6a891be36433819cdf0bd93886968bc4f0a0bf08e63bd8",
+    "language.s": "e554e294ee0d9c91542b70c79c2907974ae69ee27f4076f562e7b3bbfb279c5d",
+}
+CAPTURE_STATE_CONTRACTS = {
+    "_ZN6aurora4uefi12_GLOBAL__N_116consumer_entriesE": (0x101E8, 8, 3, 1),
+    "_ZN6aurora4uefi12_GLOBAL__N_112sample_callsE": (0x101E0, 8, 3, 1),
+    "_ZN6aurora4uefi12_GLOBAL__N_115output_attemptsE": (0x101D8, 8, 3, 1),
+    "_ZN6aurora4uefi12_GLOBAL__N_16storesE": (0x101F8, 8, 3, 1),
+    "_ZN6aurora4uefi12_GLOBAL__N_117completed_samplesE": (0x101D0, 8, 3, 1),
+    "_ZN6aurora4uefi12_GLOBAL__N_15wakesE": (0x10210, 8, 3, 1),
+    "_ZN6aurora4uefi12_GLOBAL__N_114pixel_attemptsE": (0x101C0, 8, 3, 1),
+    "_ZN6aurora7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS3_15ServicePlatformEE6grant_E": (
+        0x10140,
+        24,
+        3,
+        1,
+    ),
+    "_ZN6aurora7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS3_15ServicePlatformEE11generation_E": (
+        0x10130,
+        8,
+        3,
+        1,
+    ),
+    "_ZN6aurora7display7SessionINS_4uefi12_GLOBAL__N_116DisplayTransportENS3_15ServicePlatformEE6grant_E": (
+        0x10100,
+        48,
+        3,
+        1,
+    ),
+    "_ZN6aurora7display7SessionINS_4uefi12_GLOBAL__N_116DisplayTransportENS3_15ServicePlatformEE11generation_E": (
+        0x100E8,
+        8,
+        3,
+        1,
+    ),
+    "_ZN6aurora4uefi12_GLOBAL__N_116active_operationE": (0x101F0, 4, 3, 1),
+    "_ZN6aurora4uefi12_GLOBAL__N_116capture_scenarioE": (0x101C8, 1, 3, 1),
+    (
+        "_ZN6aurora9graphical5EntryINS_7console7SessionINS_4uefi12_GLOBAL__N_116ServiceTransportENS5_15ServicePlatform"
+        "EEENS_7display7SessionINS5_16DisplayTransportES7_EES7_E7active_E"
+    ): (
+        0x100E0,
+        1,
+        3,
+        1,
+    ),
+}
+
+
+def capture_rip_target(row, payload):
+    matches = list(re.finditer(r"(-?0x[0-9a-f]+)\(%rip\)", row.args))
+    need(len(matches) == 1, "Capture RIP operand is not one exact displacement")
+    displacement = int(matches[0][1], 16)
+    encoded = struct.pack("<i", displacement)
+    raw = payload[row.address : row.next]
+    need(len(raw) == row.size and raw.count(encoded) == 1, "Capture RIP bytes/operand disagree")
+    return row.next + displacement
+
+
+def capture_cfg(decoder, symbol, code):
+    rows = paired_rows(symbol, code)
+    addresses = {row.address for row in rows}
+    successors, predecessors = {}, {address: set() for address in addresses}
+    for row in rows:
+        edges = set()
+        if row.op in decoder.BRANCHES:
+            target = decoder.target_of(row)  # No indirect transfer exception.
+            need(target in addresses, "Capture branch leaves its exact function")
+            edges.add(target)
+        terminal = row.op in ("ret", "ud2", "jmp")
+        if row.op == "call":
+            target = decoder.target_of(row)
+            terminal = target in (0x3860, 0x3990)
+        if not terminal and row.next in addresses:
+            edges.add(row.next)
+        successors[row.address] = edges
+        for target in edges:
+            predecessors[target].add(row.address)
+    reachable, pending = set(), [symbol.address]
+    while pending:
+        address = pending.pop()
+        if address not in reachable:
+            reachable.add(address)
+            pending.extend(successors[address])
+    dominators = {address: ({address} if address == symbol.address else set(reachable)) for address in reachable}
+    changed = True
+    while changed:
+        changed = False
+        for address in sorted(reachable - {symbol.address}):
+            incoming = predecessors[address] & reachable
+            need(incoming, "Capture reachable block lacks a predecessor")
+            value = {address} | set.intersection(*(dominators[parent] for parent in incoming))
+            if value != dominators[address]:
+                dominators[address], changed = value, True
+    return successors, dominators
+
+
+def capture_expect(code, expected):
+    for address, operation in expected.items():
+        row = code.get(address)
+        need(
+            row is not None and (row.op, row.args) == operation, "Changed capture semantic instruction: " + hex(address)
+        )
+
+
+def capture_call(decoder, code, address, target):
+    row = code.get(address)
+    need(
+        row is not None and row.op == "call" and decoder.target_of(row) == target,
+        "Changed capture semantic callee: " + hex(address),
+    )
+
+
+def capture_readonly(linked, address, count):
+    need(
+        any(
+            section[1] == 1
+            and section[2] & 2
+            and not section[2] & 5
+            and section[3] <= address
+            and address + count <= section[3] + section[5]
+            for section in linked.sections
+        ),
+        "Capture selector/diagnostic data is not in allocated read-only storage",
+    )
+
+
+def capture_direct_writers(decoder, code, payload, target, count):
+    result = []
+    readonly = {"cmp", "cmpb", "cmpl", "cmpq", "cmpw", "test", "testb", "testl", "testw", "bt", "lea"}
+    for row in code.values():
+        args = decoder.arguments(row.args)
+        if row.op in readonly or not args or "%rip" not in args[-1]:
+            continue
+        address = capture_rip_target(row, payload)
+        if address >= target + count or address + 8 <= target:
+            continue
+        width = paired_width(row, args)
+        if address < target + count and target < address + width:
+            result.append(row.address)
+    return sorted(result)
+
+
+def capture_selector_proof(decoder, linked, code, payload):
+    capture_expect(
+        code,
+        {
+            0x53B3: ("mov", "$0x989680,%ecx"),
+            0x53B8: ("mov", "$0x3fd,%edx"),
+            0x53C0: ("pause", ""),
+            0x53C2: ("sub", "$0x1,%ecx"),
+            0x53CB: ("in", "(%dx),%al"),
+            0x53CC: ("test", "$0x1e,%al"),
+            0x53D4: ("test", "$0x1,%al"),
+            0x53D8: ("mov", "$0x3f8,%edx"),
+            0x53DD: ("in", "(%dx),%al"),
+            0x53DE: ("sub", "$0x43,%eax"),
+            0x53E1: ("cmp", "$0x21,%al"),
+            0x53F6: ("movzbl", "%al,%eax"),
+            0x5400: ("movzbl", "(%rdx,%rax,1),%ebx"),
+            0x5404: ("test", "%bl,%bl"),
+            0x541F: ("movzbl", "%bl,%edi"),
+        },
+    )
+    for address, operation, target in (
+        (0x53C5, "je", 0x545C),
+        (0x53CE, "jne", 0x57EB),
+        (0x53D6, "je", 0x53C0),
+        (0x53E3, "jbe", 0x53F6),
+        (0x5406, "je", 0x53E5),
+    ):
+        need(
+            code[address].op == operation and decoder.target_of(code[address]) == target,
+            "Changed closed capture selector rejection edge",
+        )
+    need(
+        code[0x53F9].op == "lea"
+        and code[0x53F9].args.endswith(",%rdx")
+        and capture_rip_target(code[0x53F9], payload) == 0xE8A0,
+        "Changed capture byte table address",
+    )
+    capture_readonly(linked, 0xE8A0, 34)
+    table = payload[0xE8A0:0xE8C2]
+    expected = {ord("G"): 1, ord("C"): 2, ord("D"): 3, ord("c"): 4, ord("d"): 5, ord("F"): 6, ord("I"): 7}
+    decoded = {}
+    for byte in range(256):
+        index = (byte - 0x43) & 255
+        selected = table[index] if index <= 33 else 0
+        need(selected == expected.get(byte, 0), "Capture selector table admits a wrong byte/code")
+        if selected:
+            decoded[chr(byte)] = selected
+    need(
+        capture_direct_writers(decoder, code, payload, 0x101C8, 1) == [0x5414],
+        "Capture scenario has a missing, late or additional writer",
+    )
+    need(
+        code[0x5414].op == "mov"
+        and code[0x5414].args.startswith("%bl,")
+        and capture_rip_target(code[0x5414], payload) == 0x101C8,
+        "Capture scenario is not the validated byte result",
+    )
+    capture_call(decoder, code, 0x541A, 0x7A90)
+    capture_call(decoder, code, 0x5422, 0x7B00)
+    capture_expect(
+        code,
+        {
+            0x7A99: ("push", "%rbx"),
+            0x7AA8: ("mov", "$0x3f8,%ebx"),
+            0x7AF5: ("pop", "%rbx"),
+            0x7AF6: ("ret", ""),
+            0x7AF7: ("ret", ""),
+        },
+    )
+    text_symbol = next(symbol for symbol in linked.functions.values() if symbol.address == 0x7A90)
+    _, text_dominators = capture_cfg(decoder, text_symbol, code)
+    need(
+        {0x7A99, 0x7AF5} <= text_dominators[0x7AF6] and 0x7A99 in text_dominators[0x7AA8],
+        "Capture diagnostic callee does not restore full RBX",
+    )
+    for row in paired_rows(text_symbol, code):
+        arguments = decoder.arguments(row.args)
+        need(row.op != "call", "Capture release text helper acquired an unproved callee")
+        if arguments and paired_register(arguments[-1]) == "rbx" and row.op not in decoder.READ_ONLY | {"push"}:
+            need(row.address in (0x7AA8, 0x7AF5), "Capture diagnostic callee acquired an RBX clobber")
+    # The complete text helper contract below saves/restores RBX on the nonempty
+    # path and leaves it unchanged on the empty path. The only later release
+    # value is zero-extended BL, whose producing write zero-extended all EBX.
+    _, dominators = capture_cfg(decoder, linked.functions[CAPTURE_RUN], code)
+    required = {
+        0x5344,
+        0x534D,
+        0x53CB,
+        0x53CC,
+        0x53D4,
+        0x53DD,
+        0x53DE,
+        0x53E1,
+        0x53F6,
+        0x53F9,
+        0x5400,
+        0x5404,
+        0x5414,
+        0x541A,
+        0x541F,
+    }
+    need(required <= dominators[0x5422], "Capture numeric release bypasses validated selector/state lineage")
+    need({0x5414, 0x5422, 0x5433} <= dominators[0x5AAC], "Capture grants precede release completion")
+    return dict(selectors=decoded, invalid_bytes=249, table=[0xE8A0, 34], writer=0x5414, numeric_release=0x5422)
+
+
+def capture_authority_proof(decoder, linked, code, payload):
+    symbol = linked.functions[CAPTURE_RUN]
+    edges, dominators = capture_cfg(decoder, symbol, code)
+    reaches_entry = {0x5C19}
+    while True:
+        larger = reaches_entry | {address for address, targets in edges.items() if targets & reaches_entry}
+        if larger == reaches_entry:
+            break
+        reaches_entry = larger
+    for address, target in (
+        (0x5AAC, 0x3A10),
+        (0x5ABB, 0x3B00),
+        (0x5B65, 0x39B0),
+        (0x5B90, 0x3A80),
+        (0x5EB9, 0x39B0),
+        (0x5ED0, 0x39B0),
+        (0x5EDE, 0x3A10),
+        (0x5EFB, 0x3A80),
+        (0x5F2E, 0x3A80),
+        (0x5F40, 0x3B00),
+        (0x5C19, 0xD017),
+    ):
+        capture_call(decoder, code, address, target)
+    capture_expect(
+        code,
+        {
+            0x5046: ("lea", "0xf0(%rsp),%rcx"),
+            0x50A5: ("mov", "%rcx,0x8(%rsp)"),
+            0x5C14: ("mov", "0x8(%rsp),%rdi"),
+            0x5B53: ("mov", "0xf8(%rsp),%rsi"),
+            0x5B5B: ("mov", "0xf0(%rsp),%rdi"),
+            0x5B63: ("xor", "%edx,%edx"),
+            0x5B72: ("mov", "0x108(%rsp),%rsi"),
+            0x5B7A: ("xor", "%edx,%edx"),
+            0x5B7C: ("mov", "0x100(%rsp),%rdi"),
+            0x5C4D: ("mov", "%r13,0xf0(%rsp)"),
+            0x5EA4: ("mov", "%rbx,0x100(%rsp)"),
+            0x5EE3: ("mov", "%rax,%rbx"),
+            0x5EE6: ("mov", "%rdx,%rbp"),
+            0x3A18: ("cmp", "$0xffffffffffffffff,%rbx"),
+            0x3A43: ("lea", "0x1(%rbx),%rdx"),
+            0x3B0D: ("cmp", "$0xffffffffffffffff,%rax"),
+            0x3B1E: ("lea", "0x1(%rax),%rbp"),
+            0x5B26: ("cmp", "$0x2,%al"),
+            0x5B2E: ("cmp", "$0x3,%al"),
+            0x5B36: ("cmp", "$0x4,%al"),
+            0x5B3E: ("cmp", "$0x5,%al"),
+            0x5EB7: ("xor", "%edx,%edx"),
+            0x5EC4: ("mov", "$0x1,%edx"),
+            0x5EF3: ("xor", "%edx,%edx"),
+            0x5F26: ("mov", "$0x1,%edx"),
+        },
+    )
+    for row in paired_rows(symbol, code):
+        if 0x5046 < row.address < 0x50A5:
+            arguments = decoder.arguments(row.args)
+            need(
+                row.op != "call"
+                and row.op not in decoder.BRANCHES
+                and not (arguments and paired_register(arguments[-1]) == "rcx" and row.op not in decoder.READ_ONLY),
+                "Capture local record pointer register is clobbered before its save",
+            )
+    expected_record_writes = {
+        0x5AD0: (0xF0, "%rbx"),
+        0x5AE8: (0xF8, "%rbp"),
+        0x5AF5: (0x108, "%rax"),
+        0x5B0E: (0x100, "%r13"),
+        0x5B16: (0x110, "%rcx"),
+        0x5B1E: (0x118, "%rdi"),
+        0x5C4D: (0xF0, "%r13"),
+        0x5EA4: (0x100, "%rbx"),
+    }
+    observed = {}
+    pointer_writes = []
+    for row in paired_rows(symbol, code):
+        if row.address not in reaches_entry:
+            continue
+        args = decoder.arguments(row.args)
+        if row.op in decoder.READ_ONLY | {"lea", "nop", "nopl", "nopw", "cs", "data16"} or len(args) != 2:
+            continue
+        slot = paired_slot(args[-1])
+        if slot is None:
+            continue
+        if not (
+            (row.address >= 0x5AAC and slot < 0x120 and 0xF0 < slot + 8)
+            or (row.address >= 0x50A5 and slot < 16 and 8 < slot + 8)
+        ):
+            continue
+        width = paired_width(row, args)
+        if row.address >= 0x5AAC and slot < 0x120 and 0xF0 < slot + width:
+            need(width == 8, "Capture record gained a partial/overlapping write")
+            observed[row.address] = (slot, args[0])
+        if row.address >= 0x50A5 and slot < 16 and 8 < slot + width:
+            pointer_writes.append(row.address)
+    need(observed == expected_record_writes, "Capture record/geometry/generation writer inventory changed")
+    need(pointer_writes == [0x50A5], "Capture local record pointer slot is overwritten before entry")
+    for branch, opcode, destination in (
+        (0x5B28, "je", 0x5C4D),
+        (0x5B30, "je", 0x5EA4),
+        (0x5B38, "je", 0x5EB1),
+        (0x5B40, "je", 0x5EEE),
+    ):
+        need(
+            code[branch].op == opcode and decoder.target_of(code[branch]) == destination,
+            "Changed fixed cross/stale scenario branch",
+        )
+    for clear, target, reopen, preflights in (
+        (0x5ED5, 0x10150, 0x5EDE, {0x5EB9, 0x5EC9, 0x5ED0}),
+        (0x5F37, 0x10128, 0x5F40, {0x5EFB, 0x5F0C, 0x5F05, 0x5F1A, 0x5F2E}),
+    ):
+        need(
+            code[clear].op == "movw"
+            and code[clear].args.startswith("$0x0,")
+            and capture_rip_target(code[clear], payload) == target,
+            "Capture stale fixture lacks real Session close",
+        )
+        need(preflights | {clear} <= dominators[reopen], "Capture reopen bypasses real close validation")
+    for address, target in ((0x5EC9, 0x10151), (0x5F0C, 0x10129)):
+        need(
+            code[address].op == "movb"
+            and code[address].args.startswith("$0x1,")
+            and capture_rip_target(code[address], payload) == target,
+            "Capture stale fixture skips Session enter",
+        )
+    for target, writer in ((0x10130, 0x3A65), (0x100E8, 0x3BA2), (0x10148, 0x3A6C), (0x10108, 0x3BA9)):
+        need(
+            capture_direct_writers(decoder, code, payload, target, 8) == [writer],
+            "Capture Session generation has an additional/reset writer",
+        )
+    for name, comparison, dereference, overflow, advance, generation_store in (
+        (CAPTURE_CONSOLE, 0x39BB, 0x39CA, 0x3A18, 0x3A43, 0x3A65),
+        (CAPTURE_DISPLAY, 0x3A88, 0x3A9A, 0x3B0D, 0x3B1E, 0x3BA2),
+    ):
+        _, validation = capture_cfg(decoder, linked.functions[name + "8validateEPKvmb"], code)
+        need(comparison in validation[dereference], "Session grant is dereferenced before exact address equality")
+        _, opening = capture_cfg(decoder, linked.functions[name + "4openEv"], code)
+        need({overflow, advance} <= opening[generation_store], "Session reopen can reset/wrap/bypass generation")
+    required = {
+        0x5046,
+        0x50A5,
+        0x5414,
+        0x5422,
+        0x5AAC,
+        0x5ABB,
+        0x5B65,
+        0x5B90,
+        0x5B99,
+        0x5BA6,
+        0x5BC1,
+        0x5BDB,
+        0x5BE7,
+        0x5BF4,
+        0x5C09,
+        0x5C14,
+    }
+    need(required <= dominators[0x5C19], "Compiled entry bypasses local record identity or paired preflight")
+    need(capture_direct_writers(decoder, code, payload, 0x101E8, 8) == [0x5C09], "Consumer entry counter writer drift")
+    return dict(
+        record_bytes=48,
+        record_stack_offset=0xF0,
+        record_pointer=[0x5046, 0x50A5, 0x5C14],
+        cross_writes=[0x5C4D, 0x5EA4],
+        real_reopens=[0x5EDE, 0x5F40],
+        preflights=[0x5B65, 0x5B90],
+        compiled_entry=0x5C19,
+        stale_record_generations_preserved=[0xF8, 0x108],
+    )
+
+
+def capture_pixel_proof(decoder, linked, code, payload):
+    symbol = linked.functions["__au_runtime_display_pixel"]
+    edges, dominators = capture_cfg(decoder, symbol, code)
+    capture_expect(
+        code,
+        {
+            0x3DF0: ("cmp", "$0xffffffffffffffff,%rax"),
+            0x3DFA: ("add", "$0x1,%rax"),
+            0x3E0C: ("cmp", "$0x6,%al"),
+            0x3E14: ("test", "%rcx,%rcx"),
+            0x3FA0: ("cmp", "$0x7,%al"),
+            0x3FA4: ("cmp", "$0x37,%rcx"),
+            0x3E1D: ("mov", "$0x1,%ebx"),
+            0x3FFF: ("add", "$0x1,%rcx"),
+            0x4017: ("mov", "%ebp,(%rbx)"),
+            0x4019: ("xor", "%ebx,%ebx"),
+            0x3CF4: ("cmp", "$0xff,%rax"),
+            0x3DDC: ("cmp", "$0xf423f,%rcx"),
+            0x3EB3: ("mov", "%rbx,%rax"),
+        },
+    )
+    for branch, op, target in (
+        (0x3DF4, "je", 0x4096),
+        (0x3E0E, "jne", 0x3FA0),
+        (0x3E17, "jne", 0x3FA0),
+        (0x3FA2, "jne", 0x3FAE),
+        (0x3FA8, "je", 0x3E1D),
+    ):
+        need(
+            code[branch].op == op and decoder.target_of(code[branch]) == target,
+            "Capture fixed pixel failure edge changed",
+        )
+    for address, target in (
+        (0x3DD5, 0x101F8),
+        (0x3DE9, 0x101C0),
+        (0x3DFE, 0x101C0),
+        (0x3E05, 0x101C8),
+        (0x400D, 0x101F8),
+    ):
+        need(capture_rip_target(code[address], payload) == target, "Capture pixel state lineage changed")
+    for address, operation, prefix, suffix in (
+        (0x3DD5, "mov", "", ",%rcx"),
+        (0x3DE9, "mov", "", ",%rax"),
+        (0x3DFE, "mov", "%rax,", "(%rip)"),
+        (0x3E05, "movzbl", "", ",%eax"),
+        (0x400D, "mov", "%rcx,", "(%rip)"),
+    ):
+        need(
+            code[address].op == operation
+            and code[address].args.startswith(prefix)
+            and code[address].args.endswith(suffix),
+            "Capture pixel counter register lineage changed",
+        )
+    need(
+        capture_direct_writers(decoder, code, payload, 0x101C0, 8) == [0x3DFE],
+        "Capture attempt increment is missing or duplicated",
+    )
+    need(
+        capture_direct_writers(decoder, code, payload, 0x101F8, 8) == [0x400D],
+        "Capture successful-store counter writer drift",
+    )
+    required = {
+        0x3BF9,
+        0x3C1F,
+        0x3C39,
+        0x3C4C,
+        0x3C55,
+        0x3C60,
+        0x3C6B,
+        0x3C74,
+        0x3C81,
+        0x3C8B,
+        0x3C9F,
+        0x3CAF,
+        0x3CBE,
+        0x3CD1,
+        0x3CF4,
+        0x3D00,
+        0x3D09,
+        0x3D12,
+        0x3D30,
+        0x3D7B,
+        0x3DCC,
+        0x3DDC,
+        0x3DE9,
+        0x3DF0,
+        0x3DFA,
+        0x3DFE,
+        0x3E05,
+        0x3E0C,
+        0x3FA0,
+        0x3FD1,
+        0x3FFF,
+        0x400D,
+    }
+    need(required <= dominators[0x4017], "Pixel store bypasses admission, checked attempt or fixed failure predicates")
+    reachable, pending = set(), [0x3E1D]
+    while pending:
+        address = pending.pop()
+        if address not in reachable:
+            reachable.add(address)
+            pending.extend(edges[address])
+    need(not {0x3FFF, 0x400D, 0x4017} & reachable, "Injected pixel failure can reach a store effect")
+    indirect_writes = []
+    for row in paired_rows(symbol, code):
+        arguments = decoder.arguments(row.args)
+        if row.op in decoder.READ_ONLY | {"lea", "nop", "nopl", "nopw", "cs", "data16"} or not arguments:
+            continue
+        destination = arguments[-1]
+        if "(" in destination and "%rip" not in destination and "%rsp" not in destination:
+            indirect_writes.append(row.address)
+    need(indirect_writes == [0x4017], "Capture pixel acquired another non-frame store")
+    return dict(
+        attempt_writer=0x3DFE,
+        failure_successful_store_ordinals=[0, 55],
+        error_join=0x3E1D,
+        successful_store_counter=0x400D,
+        mmio_store=0x4017,
+        success_order="attempt, fixture predicates, successful counter, MMIO store",
+        returned_error=1,
+    )
+
+
+def capture_serial_sequence(decoder, linked, code, payload, begin, end, seeds):
+    registers, result, address = dict(seeds), [], begin
+    while address < end:
+        row = code[address]
+        args = decoder.arguments(row.args)
+        if row.address == 0x5DA6:
+            need(
+                row.op == "movb" and row.args.startswith("$0x0,") and capture_rip_target(row, payload) == 0x10179,
+                "Capture completion does not clear ready state",
+            )
+        elif row.op == "call":
+            target = decoder.target_of(row)
+            if target == 0x7A90:
+                length, data = registers.get("rdi"), registers.get("rsi")
+                if (length, data) == ("reason_length", "reason_data"):
+                    result.append(["text", "<reason>"])
+                else:
+                    need(
+                        type(length) is int and type(data) is int and 0 < length < 128,
+                        "Unproved capture text arguments",
+                    )
+                    capture_readonly(linked, data, length + 1)
+                    need(payload[data + length] == 0, "Capture diagnostic string extent changed")
+                    result.append(["text", payload[data : data + length].decode("ascii")])
+            else:
+                need(target == 0x7B00 and "rdi" in registers, "Unproved capture diagnostic callee/value")
+                result.append(["number", registers["rdi"]])
+            for register in PAIRED_CALLER_SAVED:
+                registers.pop(register, None)
+        elif row.op in ("mov", "movzbl", "lea") and len(args) == 2:
+            destination = paired_register(args[-1])
+            need(destination is not None, "Capture diagnostic unexpectedly writes memory")
+            source = args[0]
+            if source.startswith("$"):
+                value = int(source[1:], 0)
+            elif "%rip" in source:
+                target = capture_rip_target(row, payload)
+                value = target if row.op == "lea" else ["counter", target]
+            else:
+                value = registers.get(paired_register(source))
+                need(value is not None, "Unproved capture diagnostic register lineage")
+            registers[destination] = value
+        elif row.op not in ("nop", "nopl", "nopw", "cs", "data16"):
+            raise ValueError("Unreviewed capture diagnostic instruction: " + hex(address))
+        address = row.next
+    need(address == end, "Capture diagnostic boundary is not an instruction boundary")
+    return result
+
+
+def capture_diagnostic_proof(decoder, linked, code, payload):
+    fail = capture_serial_sequence(
+        decoder, linked, code, payload, 0x3884, 0x397C, {"rbp": "reason_length", "rbx": "reason_data"}
+    )
+    expected = [["text", "AURORA_GRAPHICAL_CONSOLE_FAIL: "], ["text", "<reason>"]]
+    fields = (
+        (" entries=", 0x101E8),
+        (" samples=", 0x101E0),
+        (" output_attempts=", 0x101D8),
+        (" stores=", 0x101F8),
+        (" completed=", 0x101D0),
+        (" wakes=", 0x10210),
+        (" pixel_attempts=", 0x101C0),
+    )
+    for label, counter in fields:
+        expected += [["text", label], ["number", ["counter", counter]]]
+    expected += [["text", "\r\n"]]
+    need(fail == expected, "Capture failure diagnostic counter order/source changed")
+    completion = capture_serial_sequence(decoder, linked, code, payload, 0x5D9A, 0x5E96, {"r12": "completion"})
+    complete_expected = [["text", "AURORA_GRAPHICAL_CONSOLE_COMPLETE: completion="], ["number", "completion"]]
+    for label, counter in (fields[5], fields[3], fields[0], fields[1], fields[2], fields[4], fields[6]):
+        complete_expected += [["text", label], ["number", ["counter", counter]]]
+    complete_expected += [["text", "\r\n"]]
+    need(completion == complete_expected, "Capture completion diagnostic counter order/source changed")
+    release = capture_serial_sequence(decoder, linked, code, payload, 0x541F, 0x5438, {"rbx": "selected_code"})
+    need(release == [["number", "selected_code"], ["text", "\r\n"]], "Capture release numeric value changed")
+    capture_expect(code, {0x3980: ("cli", ""), 0x3981: ("hlt", ""), 0x5EA0: ("cli", ""), 0x5EA1: ("hlt", "")})
+    return dict(failure=fail, completion=completion, release=release, terminal="capture cli/hlt loops")
+
+
+def capture_linked_evidence(decoder, linked, code, payload, file_hashes):
+    need(file_hashes == CAPTURE_FILE_CONTRACTS, "Changed exact capture object/relocation/frame/language/image bytes")
+    need(
+        hashlib.sha256(payload).hexdigest() == CAPTURE_FILE_CONTRACTS["payload.bin"],
+        "Changed exact capture payload bytes",
+    )
+    for row in code.values():
+        if row.op == "call" or row.op in decoder.BRANCHES:
+            decoder.target_of(row)  # The complete capture has no indirect control flow.
+    named = {row.name: row for row in linked.symbols if row.section}
+    for name, identity in CAPTURE_STATE_CONTRACTS.items():
+        need(name in named, "Missing capture state symbol: " + name)
+        symbol = named[name]
+        need(
+            (symbol.address, symbol.size, symbol.section, symbol.kind) == identity,
+            "Changed capture grant/counter/state storage identity: " + name,
+        )
+        need(linked.sections[symbol.section][1] == 8, "Capture private state is not zero-initialized BSS")
+    bodies = {}
+    for name, (address, size, count, expected) in CAPTURE_MACHINE_CONTRACTS.items():
+        need(name in linked.functions, "Missing exact capture body: " + name)
+        symbol = linked.functions[name]
+        need((symbol.address, symbol.size) == (address, size), "Changed exact capture body extent: " + name)
+        rows = paired_rows(symbol, code)
+        inventory = [[row.address, row.size, row.op, row.args, payload[row.address : row.next].hex()] for row in rows]
+        need(
+            len(rows) == count and hashlib.sha256(canonical(inventory).encode()).hexdigest() == expected,
+            "Changed original capture instruction/byte inventory: " + name,
+        )
+        bodies[name] = dict(address=address, bytes=size, instructions=count, sha256=expected)
+    return dict(
+        schema="aurora-graphical-capture-linked-v1",
+        status="checked-contract-requires-independent-review",
+        files=dict(file_hashes),
+        original_bodies=bodies,
+        selector=capture_selector_proof(decoder, linked, code, payload),
+        authority=capture_authority_proof(decoder, linked, code, payload),
+        pixel=capture_pixel_proof(decoder, linked, code, payload),
+        diagnostics=capture_diagnostic_proof(decoder, linked, code, payload),
     )
 
 
@@ -1503,13 +2276,13 @@ def paired_linked_storage(decoder, functions, symbols, code, starts, payload):
     return dict(machine=inventory, helpers=helpers, root=root, walker=walker)
 
 
-def paired_recursion_proofs(decoder, functions, symbols, code, starts, paired_walk, payload=None):
+def paired_recursion_proofs(decoder, functions, symbols, code, starts, paired_walk, payload=None, associations=None):
     legacy = decoder.WALK
     need(
         paired_walk != legacy and {legacy, paired_walk} <= set(functions), "Two separate concrete page walkers required"
     )
     # The original legacy contract remains authoritative and unchanged.
-    legacy_levels, legacy_roots = decoder.recursion_proof(functions, symbols, code, starts)
+    legacy_levels, legacy_roots = decoder.recursion_proof(functions, symbols, code, starts, associations)
     need(paired_walk == PAIRED_WALK, "Unknown concrete paired walker identity")
     storage = paired_linked_storage(decoder, functions, symbols, code, starts, payload)
     paired_readonly_leaf(decoder, PAIRED_LEVEL_HELPER, symbols, code, functions)
@@ -1928,88 +2701,23 @@ def verify_retained_wait_paths(functions, owner, recursive):
     return paths
 
 
-# GCC's source-specific lambda signatures accompany the two exact linkage
-# names above; no general ELF alias or signature normalization is admitted.
-PAIRED_SU_PARENT = (
-    "aurora::uefi::PageTables::verify_graphical(uint64_t, const aurora::uefi::Bytes&, const aurora::"
-    "uefi::LocalApicAdmission*, const aurora::uefi::FramebufferAdmission*) const"
-)
-PAIRED_SU_LAMBDA = "::<lambda(auto:2&&, uint64_t, unsigned int, uint64_t)>"
-PAIRED_SU = PAIRED_SU_PARENT + PAIRED_SU_LAMBDA + " [with auto:2 = const " + PAIRED_SU_PARENT + PAIRED_SU_LAMBDA + "&]"
-PAIRED_DEMANGLED_PARENT = (
-    "bool aurora::uefi::PageTables::verify_graphical(unsigned long, aurora::uefi::Bytes const&, auro"
-    "ra::uefi::LocalApicAdmission const*, aurora::uefi::FramebufferAdmission const*) const::"
-)
-PAIRED_DEMANGLED_LAMBDA = "{lambda(auto:1&&, unsigned long, unsigned int, unsigned long)#3}"
-PAIRED_DEMANGLED = (
-    PAIRED_DEMANGLED_PARENT
-    + PAIRED_DEMANGLED_LAMBDA
-    + "::operator()<"
-    + PAIRED_DEMANGLED_LAMBDA
-    + " const&>("
-    + PAIRED_DEMANGLED_LAMBDA
-    + " const&, unsigned long, unsigned int, unsigned long) const"
-)
-
-
-def paired_frame_identity(signature):
-    # No general typedef substitution or substring-selected lambda identity.
-    # The normalized spelling is accepted only for this entire exact signature.
-    if signature in (PAIRED_SU, PAIRED_SU.replace("uint64_t", "unsigned long"), PAIRED_DEMANGLED):
-        return PAIRED_WALK
-    need(
-        not ("PageTables::verify_graphical(" in signature and ("<lambda(" in signature or "{lambda(" in signature)),
-        "Unknown exact paired walker frame signature",
-    )
-    return None
-
-
-# These two distinct authority validators collide under the legacy decoder's
-# template-erasing name extraction. Associate only the complete observed GCC
-# signature and demangler spelling, retaining the exact separate ELF identities.
-SESSION_VALIDATORS = {}
-for _space, _transport in (("console", "ServiceTransport"), ("display", "DisplayTransport")):
-    _symbol = (
-        "_ZN6aurora7"
-        + _space
-        + "7SessionINS_4uefi12_GLOBAL__N_116"
-        + _transport
-        + "ENS3_15ServicePlatformEE8validateEPKvmb"
-    )
-    _stack = (
-        "static void aurora::"
-        + _space
-        + "::Session<Transport, Platform>::validate(const void*, uint64_t, bool) "
-        + "[with Transport = aurora::uefi::{anonymous}::"
-        + _transport
-        + "; Platform = aurora::uefi::{anonymous}::ServicePlatform]"
-    )
-    _demangled = (
-        "aurora::"
-        + _space
-        + "::Session<aurora::uefi::(anonymous namespace)::"
-        + _transport
-        + ", aurora::uefi::(anonymous namespace)::ServicePlatform>::validate(void const*, unsigned long, bool)"
-    )
-    SESSION_VALIDATORS[_symbol] = (_stack, _demangled)
-
-
-def session_frame_identity(signature):
-    for symbol, spellings in SESSION_VALIDATORS.items():
-        if signature in spellings:
-            return symbol
-    need("::validate(" not in signature, "Unknown exact Session validator frame signature")
-    return None
+# The compiler's .ci assembler symbol joins its complete .su source record.
+# These exact authority symbols are inventory requirements, never name guesses.
+SESSION_VALIDATORS = {
+    "_ZN6aurora7" + space + "7SessionINS_4uefi12_GLOBAL__N_116" + transport
+    + "ENS3_15ServicePlatformEE8validateEPKvmb": "kernel/" + space + "-session.hpp"
+    for space, transport in (("console", "ServiceTransport"), ("display", "DisplayTransport"))
+}
 
 
 def verify_session_frames(frames, associations):
-    for symbol in SESSION_VALIDATORS:
+    for symbol, source in SESSION_VALIDATORS.items():
         need(symbol in frames and symbol in associations, "Missing distinct Session validator frame")
         need(
             len(associations[symbol]) == 1
             and associations[symbol][0]["object"] == "graphical-console.o"
-            and associations[symbol][0]["record"] == SESSION_VALIDATORS[symbol][0],
-            "Session validator frame has foreign or duplicated ownership/signature",
+            and (ROOT / associations[symbol][0]["source"]).resolve() == (ROOT / source).resolve(),
+            "Session validator frame has foreign or duplicated ownership/source",
         )
 
 
@@ -2090,27 +2798,26 @@ def graphical_cpp_frames(decoder, directory, linked):
             )
         else:
             need(not {PAIRED_WALK, PAIRED_ALIAS} & set(obj.functions), "Paired walker outside exact graphical object")
-        rows = decoder.stack_rows((directory / (name + ".su")).read_text())
-        names = [symbol for symbol in obj.functions if symbol != PAIRED_ALIAS]
-        spellings = decoder.command("c++filt", *names).splitlines() if names else []
-        need(len(names) == len(spellings), "Demangler record mismatch")
-        used = set()
-        for symbol, spelling in zip(names, spellings):
-            identity = decoder.frame_identity(spelling) if symbol.startswith("_Z") else symbol
-            if identity in SESSION_VALIDATORS:
-                need(symbol == identity and name == "graphical-console", "Crossed Session validator ELF identity")
-            need(identity in rows, "Missing exact compiler frame: " + symbol)
-            need(identity not in used, "Ambiguous object/frame association: " + identity)
-            used.add(identity)
-            size, signature = rows[identity]
-            need(8 <= size <= decoder.STACK_CAP, "Invalid compiler frame bound")
+        # Only the independently proved same-body alias is excluded. The
+        # mandatory .ci/.su join still rejects every extra/missing compiler node.
+        symbols = {key: value for key, value in obj.functions.items() if key != PAIRED_ALIAS}
+        rows = decoder.object_stack_rows(directory, name, symbols)
+        for symbol, row in rows.items():
             need(symbol in linked.functions, "Object function omitted from linked profile")
             decoder.associate_object(linked, obj, obj.functions[symbol])
             if symbol in associated:
-                need(associated[symbol] == size, "Conflicting COMDAT compiler frames")
-            associated[symbol] = size
-            receipts.setdefault(symbol, []).append(dict(object=name + ".o", record=signature, bytes=size))
-        need(used == set(rows), "Stack records lack exact object definitions: " + name)
+                need(associated[symbol] == row.size, "Conflicting COMDAT compiler frames")
+            associated[symbol] = row.size
+            source = (ROOT / row.source).resolve()
+            need(source.is_relative_to(ROOT / "kernel"), "Compiler frame outside kernel source inventory")
+            contents = source.read_bytes()
+            lines = contents.decode().splitlines()
+            need(row.line <= len(lines) and row.column <= len(lines[row.line - 1]) + 1, "Invalid frame location")
+            receipts.setdefault(symbol, []).append(dict(
+                object=name + ".o", callgraph=name + ".ci", source=row.source,
+                source_sha256=hashlib.sha256(contents).hexdigest(), line=row.line,
+                column=row.column, record=row.signature, bytes=row.size, kind=row.kind,
+            ))
     need(len(alias_objects) == 1, "Missing exact graphical alias association")
     return associated, receipts, alias_objects
 
@@ -2138,46 +2845,17 @@ def stack_evidence(directory):
     need(not subprocess.check_output(["nm", "-u", directory / "payload.elf"], text=True).strip(), "Unresolved payload")
     paired_linked = paired_alias_evidence(linked)
     paired_walk = PAIRED_WALK
-    old_identity = decoder.frame_identity
-    aliases = {
-        "aurora::uefi::service_next": "__au_runtime_console_next",
-        "aurora::uefi::service_put": "__au_runtime_console_put",
-        "aurora::uefi::display_pixel": "__au_runtime_display_pixel",
-        "aurora::uefi::interrupt_dispatch": "uefi_console_interrupt_dispatch",
-    }
-
-    def identity(signature):
-        session = session_frame_identity(signature)
-        if session is not None:
-            return session
-        paired = paired_frame_identity(signature)
-        if paired is not None:
-            return paired
-        value = old_identity(signature)
-        return aliases.get(value, value)
-
-    decoder.frame_identity = identity
     old_rows = decoder.stack_rows
     bounded = []
 
     def stack_rows(text):
-        lines = []
-        for line in text.splitlines():
-            if line.endswith("\tdynamic,bounded"):
-                need(
-                    any(
-                        name in line
-                        for name in (
-                            "aurora::uefi::run_graphical_console(",
-                            "FramebufferPayload::restore_graphical_fixture(",
-                        )
-                    ),
-                    "Unreviewed dynamically bounded C++ frame",
-                )
-                bounded.append(line)
-                line = line.removesuffix("\tdynamic,bounded") + "\tstatic"
-            lines.append(line)
-        return old_rows("\n".join(lines))
+        bounded.extend(line for line in text.splitlines() if line.endswith("\tdynamic,bounded"))
+        return old_rows(text, allow_bounded=lambda signature: any(
+            name in signature for name in (
+                "aurora::uefi::run_graphical_console(",
+                "FramebufferPayload::restore_graphical_fixture(",
+            )
+        ))
 
     decoder.stack_rows = stack_rows
     frames, associations, alias_objects = graphical_cpp_frames(decoder, directory, linked)
@@ -2249,7 +2927,7 @@ def stack_evidence(directory):
     console.verify_noreturn(functions, decoder.NORETURN)
     verify_bridge_body(decoder, body(linked.functions[BRIDGE]), starts)
     private_abi = verify_private_abi(decoder, linked, code, starts, language.functions, functions)
-    proofs = paired_recursion_proofs(decoder, functions, linked.functions, code, starts, paired_walk, payload)
+    proofs = paired_recursion_proofs(decoder, functions, linked.functions, code, starts, paired_walk, payload, associations)
     recursive = {proof["symbol"] for proof in proofs.values()}
     for name in functions:
         common.graph_peak(functions, frames, name, recursive)
@@ -2272,6 +2950,15 @@ def stack_evidence(directory):
     verify_stack_budgets(normal["peak"], waiting["peak"], irq_peak, fault)
     waiting["peak_with_interrupt"] = waiting["peak"] + irq_peak
     waiting["peak_with_interrupt_and_fault"] = waiting["peak"] + irq_peak + fault
+    capture_fixture = None
+    if "_ZN6aurora4uefi12_GLOBAL__N_116capture_scenarioE" in named:
+        capture_fixture = capture_linked_evidence(
+            decoder,
+            linked,
+            original_code,
+            payload,
+            {name: digest(directory / name) for name in CAPTURE_FILE_CONTRACTS},
+        )
     return dict(
         stack_bytes=16384,
         cap_bytes=15360,
@@ -2300,6 +2987,7 @@ def stack_evidence(directory):
         paired_walker_identity=dict(linked=paired_linked, objects=alias_objects),
         page_verifiers=proofs,
         disassembly_sha256=hashlib.sha256(disassembly.encode()).hexdigest(),
+        capture_fixture=capture_fixture,
     )
 
 
@@ -2315,7 +3003,7 @@ def build_files():
         "image-metadata.json",
     ]
     names += [name + ".o" for name in CPP_OBJECTS + ASSEMBLY_OBJECTS + ("loader", "embed", "transition")]
-    names += [name + ".su" for name in CPP_OBJECTS + ("loader",)]
+    names += [name + suffix for name in CPP_OBJECTS + ("loader",) for suffix in (".su", ".ci")]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
     return [BUILD / name for name in names]
 
@@ -2458,7 +3146,7 @@ def emit(mode):
         image=image_evidence(BUILD, mode),
         stack=stack_evidence(BUILD),
     )
-    require_capture_linked_proof(mode)
+    require_capture_linked_proof(mode, result["stack"].get("capture_fixture"))
     need(record == provenance(mode), "Build changed during admission")
     result["sha256"] = common.hashes(source_files() + build_files() + [BUILD / "graphical-console-build.json"])
     RECEIPT.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
@@ -2485,12 +3173,13 @@ def checked(mode):
         receipt["sha256"] == common.hashes(source_files() + build_files() + [BUILD / "graphical-console-build.json"]),
         "Admission source/output inventory or bytes changed",
     )
+    current_image, current_stack = image_evidence(BUILD, mode), stack_evidence(BUILD)
     need(
-        canonical(receipt["image"]) == canonical(image_evidence(BUILD, mode))
-        and canonical(receipt["stack"]) == canonical(stack_evidence(BUILD)),
+        canonical(receipt["image"]) == canonical(current_image)
+        and canonical(receipt["stack"]) == canonical(current_stack),
         "Receipt image/stack evidence differs from fresh combined proof",
     )
-    require_capture_linked_proof(mode)
+    require_capture_linked_proof(mode, current_stack.get("capture_fixture"))
     return receipt
 
 

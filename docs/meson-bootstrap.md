@@ -45,14 +45,14 @@ no cases are sampled away to meet a timing target. Fifteen formerly Make-only
 compiler source/oracle runners are now in `slow`, including constructor-return
 regressions in templates, arrays, decimals and enum composition.
 
-The checked inventory is `tests/compiler-test-inventory.json`: all 79 compiler
-Python files are runnable, including files imported as helpers. 75 have direct
-Make recipes: 73 are reachable from the root native graph and formatter/linter
+The checked inventory is `tests/compiler-test-inventory.json`: all 80 compiler
+Python files are runnable, including files imported as helpers. 76 have direct
+Make recipes: 74 are reachable from the root native graph and formatter/linter
 checks are focused targets. Three are supplemental/differential runners requiring
 independent inputs or qualification. The fourth file without a direct recipe,
 `service_group.py`, runs as a mandatory child of `display_service.py` in both Make
 and Meson; its false direct-membership flags do not mean it is skipped.
-58 scripts are directly registered in Meson and 21 lack direct registration,
+59 scripts are directly registered in Meson and 21 lack direct registration,
 including that composed child and the 20 separately documented fixture-based
 ABI/IR, formatter/linter, artifact-managed UTF-8/XFS and supplemental gaps.
 Package dev registrations are partial selections;

@@ -153,8 +153,8 @@ auto capture_gate() -> void {
             const auto selected = Capture::select(Io::read(0x3f8));
             require(selected != Capture::Scenario::invalid, "capture selector");
             capture_scenario = selected;
-            Serial::text("AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario=");
-            Serial::text(Capture::name(selected));
+            Serial::text("AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=");
+            Serial::number(static_cast<U64>(selected));
             Serial::text("\r\n");
             return;
         }

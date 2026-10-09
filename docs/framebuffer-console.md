@@ -1,12 +1,43 @@
 # Bounded firmware framebuffer console
 
-Output-only rendering and a bounded positive interactive diagnostic have
+Output-only rendering and bounded graphical-session diagnostics have
 independently accepted guest captures on exact pinned fixtures. The joined
 capture-failure candidate, final developer/slow/full-Make gates and merge review
 remain pending; this is not a claim of whole-system readiness.
+The current source join adds the reviewed GCC 14/GCC 16 portability machinery
+and readable binary glyph spellings. Graphical compiler frames now bind exact
+assembler symbols through `.ci` and complete `.su` source records, retaining
+object/linked-byte checks and the separately proved paired alias. The unchanged
+legacy verifier's local visited-array invariant has a separately reviewed source
+applicability check for the joined headers. This is source integration only:
+changed-output image admission, failure-fixture guests and both toolchains'
+final integrated gates remain pending. Historical exact-image contracts continue
+to reject changed images until their own admission is reviewed.
 Firmware `SetMode` can clear its display before the controlled capture boundary.
 No GPU driver, desktop, physical Framework display support, DMA or IOMMU claim
 follows from this work.
+
+## Developer preview
+
+Run `make capture-framebuffer` to build the current framebuffer profile through
+its normal image and mixed-stack checks, then capture one bounded QEMU guest.
+No external manifest, machine-specific review receipt or Python image package is
+needed. The command prints a fresh `build/framebuffer-preview/run-*/framebuffer.png`
+path; the same directory keeps the raw PPM, physical before/after bytes and logs.
+It uses the existing exact 800×600 q35/TCG/std-VGA fixture and pixel oracle, with a
+90-second guest limit and bounded process cleanup. Other firmware geometries
+fail closed. `QEMU`, `QEMU_DATA`, `OVMF`, `OVMF_CODE`/`OVMF_VARS`, `OVMF_DIR`, `CXX`
+and `UEFI_LD` work as on the [other developer commands](local-development.md).
+Missing prerequisites report `BLOCKED`; build, admission and guest failures remain
+failures. The successful framebuffer image remains in `build/uefi`; normal boot
+commands rebuild their own profile.
+
+This is a developer preview, not independently qualified evidence. Its record
+says `qualified: false`; it runs neither the three negative guests nor a normal
+restoration boot. The stricter prebuilt qualification path remains
+`scripts/kernel-framebuffer-capture.py` (see `--help`): it still requires the pinned
+manifest, four independent approval roles, all four cases and an actual normal
+restoration boot. A preview never creates those approvals.
 
 ## Dependency and outcome
 
@@ -20,6 +51,13 @@ colors, clipping, cursor/layout and all human-facing content.
 The trusted host boundary only authenticates, bounds-checks, packs pixels and
 performs ordered volatile stores. No raw pointer, mutable framebuffer span or
 `OwnedBytes` video-memory surrogate is introduced.
+
+Font constants use seven five-bit binary groups with the existing packed-bit
+orientation documented beside `glyph_bits`. Character dispatch, fallback, bit
+positions and drawing code are unchanged; no table storage or stack layout is
+added. Decimal-equivalent assembly and all 256 input-byte mappings are the
+spelling-change gates. Historical guest captures below retain their original
+source/compiler scope; new compiler syntax requires fresh integrated gates.
 
 ## Provisional transport and authority
 
@@ -56,7 +94,8 @@ record and complete tree before constructing its counterpart. Its exact resource
 field drift rejects. The external qualification additionally pins q35/TCG,
 qemu64, one CPU, 128 MiB, std VGA, QEMU, OVMF and tool data; guest metadata cannot
 prove those environment identities. Source/model and final-image reviews remain
-required before a mapping/rendering guest.
+required for independent qualification; developer previews retain the automated
+image, stack and runtime guards.
 
 The mapping window begins at `0xffffa00000001000`; both end guards are absent.
 Its maximum extent requires four additional intermediate table pages, within the
@@ -76,7 +115,7 @@ The dedicated probe runner accepts only explicitly pinned QEMU/firmware/EFI
 inputs, uses disposable q35/TCG/std-VGA with the original clock, records its exact
 command/output and requires ordered firmware-exit/private-paging markers. It does
 not build or approve an image. A separate normal-image restoration remains
-required. The qualification-only pre-store UART gate follows private paging,
+required. The capture-only pre-store UART gate follows private paging,
 accepts exactly byte `0x47`, and has a ten-million-iteration bound. It gives
 Aurora no input capability. The host pauses QEMU, captures all 469 pages, releases
 the gate, then pauses the completed or fail-stopped image for comparison. Record,
@@ -124,7 +163,9 @@ with r14 saved before assignment and unchanged root-3/decrement/restore proof.
 The lookup and recursive walker prohibit IPA cloning/partial inlining to retain
 unambiguous object identities and exact four-level roots. Original decoder
 controls plus new mutations pass; budgets remain 16 KiB stack and 15,360-byte
-mixed-stack/fault cap. Final exact-image pins are required before every guest.
+mixed-stack/fault cap. Independent qualification requires final exact-image
+review pins; the developer preview binds the automatic admission to current
+source and image bytes.
 
 ### Accepted native capture, 2026-10-08
 
@@ -225,24 +266,40 @@ This accepts that positive interaction only; it preserves failed earlier attempt
 and the restoration's sampled-process-provenance limit, with no continuous or
 post-entry mapping claim.
 
+Four separate windows on the preserved capture image also qualified exact
+64-byte capacity, 65th-byte overflow locking and recovery, 80-event termination
+and the native 4096-wake idle deadline. Their 22 additional physical/PPM capture
+pairs matched exact model stores or unchanged initial pixels. Idle reached
+4,097 raw polls with zero copied samples and retained the initial 7,826 stores;
+this fail-stop is distinct from the hosted-only 96-copy guard. Each window had
+its own actual ordinary normal restoration with exit 33; capture termination by
+QMP is not native debug-exit 35. Independent review
+`remaining-guest-results-review-001/review.json` has SHA-256
+`4a2e9b38ea04e9ec6c1e2a141ffd6e5f9ad55145429821282cfceb338cfaf143`.
+These results retain the same sampled-provenance limits and qualify only those
+preserved images, not the numeric-selector candidate below.
+
 The joined capture-only failure extension is unqualified. Its pure closed policy
 accepts exactly seven selector bytes before any grant, consumer entry or store:
 
-| Byte | Scenario | Fixed action |
-|---|---|---|
-| G | normal | Use both live grants |
-| C | cross-console | Put the live Display grant in the local Console field |
-| D | cross-display | Put the live Console grant in the local Display field |
-| c | stale-console | Close/reopen Console and invoke with its saved old generation |
-| d | stale-display | Close/reopen Display and invoke with its saved old generation |
-| F | first-pixel-error | Fail the first pixel attempt, before any store |
-| I | interior-pixel-error | Fail after exactly 55 successful stores |
+| Byte | Release code | Scenario | Fixed action |
+|---|---|---|---|
+| G | 1 | normal | Use both live grants |
+| C | 2 | cross-console | Put the live Display grant in the local Console field |
+| D | 3 | cross-display | Put the live Console grant in the local Display field |
+| c | 4 | stale-console | Close/reopen Console and invoke with its saved old generation |
+| d | 5 | stale-display | Close/reopen Display and invoke with its saved old generation |
+| F | 6 | first-pixel-error | Fail the first pixel attempt, before any store |
+| I | 7 | interior-pixel-error | Fail after exactly 55 successful stores |
 
 All other 249 bytes reject with `capture selector` and no release marker.
-A valid byte emits `AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario=NAME`; the
-ten-million-iteration gate and UART-error rejection are unchanged. No later byte
-selects a scenario. The hosted observer independently checks all 256 selector
-values, exact names and fixed failure predicates. The complete hosted runner now
+A valid byte emits `AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=N` through the
+existing decimal-number writer, with exactly the code above; invalid code 0 is
+never released. The source-contract receipt is
+`aurora-graphical-capture-source-v2`. The ten-million-iteration gate and UART-error
+rejection are unchanged. No later byte selects a scenario.
+The hosted observer independently checks all 256 selector values, literal numeric
+codes, exact names and fixed failure predicates. The complete hosted runner now
 requires 68 cases: 39 transcript/geometry, seven baseline/output-failure cases
 (including ordinal 55) and 22 pre-entry denials. This inventory is prepared, not
 a claim of a new hosted pass.
@@ -262,9 +319,9 @@ geometry fault, retry, rollback or synchronous fault is claimed.
 
 The new candidate requires focused generated-consumer verification, exact
 production/capture reconstruction and independent image admission, separate
-guest negative/budget/capacity/idle windows and positive regression, actual normal
+guest denial/pixel-failure windows and positive regression, actual normal
 restoration, then final integrated dev/slow/root Make and independent review.
-Original 988-file image receipts and positive-window results do not qualify the
-new joined source. Partial/null-pair denials and deterministic synchronous faults
+Original 988-file image receipts and preserved-image guest results do not qualify
+the new joined source. Partial/null-pair denials and deterministic synchronous faults
 remain separate from the seven selectors; no new keyboard, desktop or physical
 hardware qualification follows.

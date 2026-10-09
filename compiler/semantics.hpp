@@ -3,6 +3,7 @@
 #include "ir_verify.hpp"
 #include "syntax.hpp"
 #include "byte_literal.hpp"
+#include "integer_literal.hpp"
 #include <algorithm>
 #include <bit>
 #include <limits>
@@ -1135,23 +1136,13 @@ class SemanticAnalyzer {
         const bool unsignedValue = byteValue || token.text.ends_with("u64");
         const auto suffixLength = byteValue ? 2 : unsignedValue ? 3 : 0;
         const auto digits = token.text.substr(0, token.text.size() - suffixLength);
-        try {
-            if (digits.empty() || !std::all_of(digits.begin(), digits.end(), [](unsigned char c) {
-                    return c >= '0' && c <= '9';
-                }))
-                fail(token, "integer literal out of range or invalid suffix");
-            std::size_t used = 0;
-            const auto value = std::stoull(digits, &used);
-            if (used != digits.size() || (byteValue && value > 255) ||
-                (!unsignedValue && value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
-                fail(token, "integer literal out of range");
-            return {std::bit_cast<std::int64_t>(static_cast<std::uint64_t>(value)),
-                    byteValue       ? Type::U8
-                    : unsignedValue ? Type::U64
-                                    : Type::I64};
-        } catch (const std::exception &) {
+        const auto value = decodeIntegerMagnitude(digits);
+        if (!value)
             fail(token, "integer literal out of range or invalid suffix");
-        }
+        if ((byteValue && *value > 255) ||
+            (!unsignedValue && *value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
+            fail(token, "integer literal out of range or invalid suffix");
+        return {std::bit_cast<std::int64_t>(*value), byteValue ? Type::U8 : unsignedValue ? Type::U64 : Type::I64};
     }
     Type expression(ExpressionPtr e) {
         const auto &n = e->resolvedName.empty() ? e->token.text : e->resolvedName;
@@ -1233,15 +1224,27 @@ class SemanticAnalyzer {
             // magnitude.
             if (n == "-" && e->args[0]->op == "number" && !e->args[0]->token.text.ends_with("u64") &&
                 !e->args[0]->token.text.ends_with("u8")) {
-                try {
-                    std::size_t used = 0;
-                    if (std::stoull(e->args[0]->token.text, &used) == (1ULL << 63) &&
-                        used == e->args[0]->token.text.size()) {
-                        emit(ir::Constant{std::numeric_limits<std::int64_t>::min(), Type::I64});
-                        return Type::I64;
+                const auto &spelling = e->args[0]->token.text;
+                std::optional<std::uint64_t> magnitude;
+                if (spelling.starts_with("0b") || spelling.starts_with("0B")) {
+                    magnitude = decodeIntegerMagnitude(spelling);
+                    if (!magnitude)
+                        fail(e->token, "integer literal out of range");
+                } else {
+                    // Preserve decimal diagnostics: a partial parse falls through
+                    // to the whole number token, but magnitude overflow names '-'.
+                    try {
+                        std::size_t used = 0;
+                        const auto value = std::stoull(spelling, &used);
+                        if (used == spelling.size())
+                            magnitude = value;
+                    } catch (const std::exception &) {
+                        fail(e->token, "integer literal out of range");
                     }
-                } catch (const std::exception &) {
-                    fail(e->token, "integer literal out of range");
+                }
+                if (magnitude == (1ULL << 63)) {
+                    emit(ir::Constant{std::numeric_limits<std::int64_t>::min(), Type::I64});
+                    return Type::I64;
                 }
             }
             auto t = expression(e->args[0]);

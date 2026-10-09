@@ -71,6 +71,10 @@ A separately reviewed protected-command profile offers `upper`. Its
 automatic local build/image/stack checks for public commands, the separate
 review-pinned first-image qualification, scoped guest evidence and final integration gates.
 
+For the output-only graphical status page, `make capture-framebuffer` builds and
+saves a PNG under `build/`. This [developer preview](docs/framebuffer-console.md#developer-preview)
+needs no independent review receipts and does not establish qualification.
+
 See [local development](docs/local-development.md) for dependencies, compiler and
 firmware options, build-only commands and troubleshooting. `make help` lists the
 entrypoints. Host/toolchain qualification is recorded with each tested result.

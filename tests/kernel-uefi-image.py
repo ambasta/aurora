@@ -576,6 +576,8 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False, r
         (nt + 4, 0x14C, 2),
         (opt, 0x10B, 2),
         (opt + 68, 3, 2),
+        (opt + 70, u(data, opt + 70, 2) & ~0x40, 2),
+        (opt + 70, u(data, opt + 70, 2) & ~0x100, 2),
         (opt + 32, 512, 4),
         (opt + 56, 0xFFFFFFFF, 4),
         (opt + 16, 0, 4),

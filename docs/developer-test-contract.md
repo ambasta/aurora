@@ -104,6 +104,31 @@ local workflow. It does not establish independent approval, compiler correctness
 resistance to a malicious compiler, global memory safety or a complete supply-chain
 proof. Physical-hardware and broad-host qualification remain separate.
 
+## Two-toolchain merge gates
+
+Compiler- and kernel-affecting merges require separate GCC 14 and GCC 16 runs on
+one final integrated source: complete Meson `dev` and `slow`, plus complete root
+`make test` with a new matching completed `run.json` for each compiler. Use
+separate Meson build directories and run shared-output Make/image commands
+sequentially. A missing compiler or dependency leaves that tuple unqualified;
+do not skip its gates or substitute another version's receipt.
+
+Select `CXX` and matching real `gcc`/`g++` executables on `PATH`, since inherited
+runners can call bare tools. Record the actual assembler, ELF/PE linkers and
+runtime libraries too; compiler version alone does not identify a distro tuple.
+The existing build-once driver records each native run. No historical pin is
+required for ordinary developer runs; independently pinned acceptance remains a
+separate mode.
+
+For each compiler, build/check and smoke normal BIOS and UEFI images using
+`make run` and `make run-uefi`. Also run existing image/admission and smoke
+entrypoints for each profile affected by the source or compiler-output change,
+with its applicable fault/recovery controls and a separate successful normal
+restoration boot. Meson/native-only results do not substitute for these guests;
+a developer framebuffer preview remains explicitly unqualified capture output.
+All commands, source identities, failures and limits belong with that run's
+retained evidence. Reuse existing runners; this adds no separate matrix harness.
+
 ## Ordinary developer tests
 
 From the repository root:
@@ -678,3 +703,17 @@ existing independently pinned and controlled full-build modes are not relaxed.
 Meson/Ninja owns the compiler build; Python retains the package oracles, case
 driving, per-invocation output accounting and receipt writing. See the
 [semantic coverage and commands](meson-bootstrap.md#semantic-package-feedback).
+
+
+## Complete native artifact accounting
+
+The shared UTF-8-range/JSON harness still measures every artifact entry before
+and after each child command. Its `scandir` traversal counts allocated blocks,
+including each hardlink name and symlink itself, without descending through child
+directory symlinks. Stat failures still propagate. Enumeration errors now fail closed instead of
+`pathlib` silently omitting unreadable subtrees, including a transient failure;
+there is no retry or partial total. This deliberately tightens the storage guard,
+not the stable-tree accounting. No cached totals, reduced check frequency, case selection, identity
+checks, reserve or free-space thresholds change. `make test-artifact-budget` and
+Meson `dev`/`full` include ordinary and optimized compiler-free equivalence controls.
+Walker microbenchmarks are not full-suite performance or qualification results.

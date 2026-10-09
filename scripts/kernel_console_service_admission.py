@@ -157,25 +157,10 @@ def stack_evidence(directory):
     )
     decoder.READ_ONLY |= frozenset(("testb", "testl", "testw"))
     decoder.PRESERVE_FLAGS |= frozenset(("sti", "wrmsr"))
-    old_identity = decoder.frame_identity
-    aliases = {
-        "aurora::uefi::service_next": "__au_runtime_console_next",
-        "aurora::uefi::service_put": "__au_runtime_console_put",
-        "aurora::uefi::interrupt_dispatch": "uefi_console_interrupt_dispatch",
-    }
-    decoder.frame_identity = lambda value: aliases.get(old_identity(value), old_identity(value))
     old_rows = decoder.stack_rows
-
-    def bounded_rows(text):
-        lines = []
-        for line in text.splitlines():
-            if line.endswith("\tdynamic,bounded"):
-                need("aurora::uefi::run_console(" in line, "Unreviewed dynamically bounded C++ frame")
-                line = line.removesuffix("\tdynamic,bounded") + "\tstatic"
-            lines.append(line)
-        return old_rows("\n".join(lines))
-
-    decoder.stack_rows = bounded_rows
+    decoder.stack_rows = lambda text: old_rows(
+        text, allow_bounded=lambda signature: "aurora::uefi::run_console(" in signature
+    )
     linked = decoder.Elf(directory / "payload.elf")
     need(linked.type == 2, "Expected linked executable payload")
     need(not subprocess.check_output(["nm", "-u", directory / "payload.elf"], text=True).strip(), "Unresolved payload")
@@ -249,7 +234,7 @@ def stack_evidence(directory):
         row for address, row in sorted(code.items()) if bridge.address <= address < bridge.address + bridge.size
     ]
     verify_bridge_body(decoder, bridge_body, starts)
-    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts)
+    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts, associations)
     recursive = {decoder.WALK}
     for name in functions:
         common.graph_peak(functions, frames, name, recursive)
@@ -321,7 +306,11 @@ def build_files():
             "transition",
         )
     ]
-    names += [name + ".su" for name in ("payload", "acpi", "pci", "runtime", "console", "loader")]
+    names += [
+        name + suffix
+        for name in ("payload", "acpi", "pci", "runtime", "console", "loader")
+        for suffix in (".su", ".ci")
+    ]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
     return [BUILD / name for name in names]
 

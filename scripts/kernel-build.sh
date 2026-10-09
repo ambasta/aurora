@@ -45,6 +45,8 @@ as --64 build/kernel-language.s -o build/kernel-language.o
 as --32 kernel/boot.S -o build/boot.o
 ./scripts/kernel-boot-link.sh build/boot.o build/boot.bin
 as --64 kernel/start.S -o build/start.o
+# Share the already admitted freestanding implementations with the UEFI image.
+as --64 kernel/uefi/memory.S -o build/kernel-memory.o
 as --64 kernel/exceptions.S -o build/exceptions.o
 as --64 kernel/user.S -o build/user.o
 program_asm_flags=()
@@ -119,13 +121,14 @@ for flag in INPUT OUTPUT; do
     variable="KERNEL_TEST_TERMINAL_EVENT_${flag}"
     if [[ "${!variable:-0}" == 1 ]]; then extra+=("-DAURORA_TERMINAL_EVENT_${flag}"); fi
 done
+# Freestanding images do not inherit distro CET or bulk-string policy.
 for source in main interrupts protection user-program address-spaces apic scheduler; do
-"$cxx" -std=c++23 -Wall -Wextra -Werror -O2 -fstack-usage -ffreestanding -fno-exceptions -fno-rtti \
+"$cxx" -std=c++23 -Wall -Wextra -Werror -O2 -fstack-usage -ffreestanding -fcf-protection=none -mstringop-strategy=libcall -fno-exceptions -fno-rtti \
     -fno-stack-protector -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables \
     -Ibuild -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns "${extra[@]}" -c "kernel/$source.cpp" -o "build/kernel-$source.o"
 done
 ld -nostdlib -z max-page-size=0x1000 -T kernel/link.ld \
-    build/kernel-apic.o build/kernel-scheduler.o build/start.o build/exceptions.o build/user.o \
+    build/kernel-apic.o build/kernel-scheduler.o build/kernel-memory.o build/start.o build/exceptions.o build/user.o \
     build/kernel-user-program.o build/kernel-address-spaces.o build/kernel-user-images.o \
     build/kernel-protection.o build/kernel-interrupts.o build/kernel-main.o build/kernel-language.o \
     "${console_objects[@]}" -o build/kernel.elf

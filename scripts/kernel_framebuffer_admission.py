@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fresh graphics-profile image/stack evidence; independent review remains required."""
+"""Automatic graphics image/stack checks, separate from independent qualification."""
 
 from pathlib import Path
 import argparse
@@ -91,25 +91,12 @@ def stack_evidence(directory):
     )
     decoder.READ_ONLY |= frozenset(("testb", "testl", "testw"))
     decoder.PRESERVE_FLAGS |= frozenset(("mfence", "pause"))
-    original_identity = decoder.frame_identity
-
-    def identity(signature):
-        value = original_identity(signature)
-        return {"aurora::uefi::__au_runtime_display_pixel": "__au_runtime_display_pixel"}.get(value, value)
-
-    decoder.frame_identity = identity
     original_rows = decoder.stack_rows
     original_bounded_rows = []
 
     def bounded_rows(text):
-        lines = []
-        for line in text.splitlines():
-            if line.endswith("\tdynamic,bounded"):
-                need("FramebufferPayload::restore_fixture(" in line, "Unreviewed dynamically bounded frame")
-                original_bounded_rows.append(line)
-                line = line.removesuffix("\tdynamic,bounded") + "\tstatic"
-            lines.append(line)
-        return original_rows("\n".join(lines))
+        original_bounded_rows.extend(line for line in text.splitlines() if line.endswith("\tdynamic,bounded"))
+        return original_rows(text, allow_bounded=lambda signature: "FramebufferPayload::restore_fixture(" in signature)
 
     decoder.stack_rows = bounded_rows
     linked = decoder.Elf(directory / "payload.elf")
@@ -165,7 +152,7 @@ def stack_evidence(directory):
     bridge = linked.functions[BRIDGE]
     body = [row for address, row in sorted(code.items()) if bridge.address <= address < bridge.address + bridge.size]
     console.verify_bridge_body(decoder, body, starts)
-    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts)
+    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts, associations)
     recursive = {decoder.WALK}
     for name in functions:
         common.graph_peak(functions, frames, name, recursive)
@@ -212,7 +199,11 @@ def build_files():
             "transition",
         )
     ]
-    names += [name + ".su" for name in ("payload", "acpi", "pci", "runtime", "framebuffer", "loader")]
+    names += [
+        name + suffix
+        for name in ("payload", "acpi", "pci", "runtime", "framebuffer", "loader")
+        for suffix in (".su", ".ci")
+    ]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
     return [BUILD / name for name in names]
 
@@ -282,12 +273,33 @@ def emit(mode):
     )
     result["sha256"] = common.hashes(common.source_files() + build_files() + [BUILD / "framebuffer-build.json"])
     (BUILD / "framebuffer-admission.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
-    print("PASS: automated graphics image/mixed-stack checks; independent exact-image review still required")
+    print("PASS: automated graphics image/mixed-stack checks; independent qualification still requires review")
+
+
+def checked(mode):
+    """Bind automatic checks to current bytes; this does not establish review."""
+    need(mode in MODES, "Unsupported framebuffer profile")
+    receipt = json.loads((BUILD / "framebuffer-admission.json").read_text())
+    need(
+        receipt["schema"] == "aurora-framebuffer-admission-v1" and receipt["mode"] == mode,
+        "Admission covers another profile",
+    )
+    need(
+        receipt["status"] == "requires-independent-review" and receipt["clock"] == "tcg-original-clock",
+        "Unexpected admission status or clock",
+    )
+    record = json.loads((BUILD / "framebuffer-build.json").read_text())
+    inputs(record, mode)
+    need(record["output_sha256"] == common.hashes(build_files()), "Build output changed")
+    need(receipt["build"] == record, "Admitted build provenance changed")
+    expected = common.hashes(common.source_files() + build_files() + [BUILD / "framebuffer-build.json"])
+    need(receipt["sha256"] == expected, "Admission source/output inventory or bytes changed")
+    return receipt
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("begin", "end", "emit"))
+    parser.add_argument("action", choices=("begin", "end", "emit", "checked"))
     parser.add_argument("--mode", required=True, choices=MODES)
     parser.add_argument("--compiler")
     parser.add_argument("--cxx")
@@ -297,8 +309,11 @@ def main():
         begin(args.mode, args.compiler, args.cxx, args.flag)
     elif args.action == "end":
         end(args.mode)
-    else:
+    elif args.action == "emit":
         emit(args.mode)
+    else:
+        checked(args.mode)
+        print("PASS: current-source framebuffer admission; independent qualification not claimed")
 
 
 if __name__ == "__main__":

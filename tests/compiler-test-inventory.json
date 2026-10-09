@@ -6,6 +6,13 @@
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
   },
+  "binary_literals.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "reason": "Complete binary integer spelling, native and decimal-equivalence runner.",
+    "root_make": true
+  },
   "block_io.py": {
     "kind": "runner",
     "make": true,

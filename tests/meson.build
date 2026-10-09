@@ -20,6 +20,7 @@ foreach entry : [
     ['owning-classes', 'compiler/owning_classes.py', 'core'],
     ['signed-integers', 'compiler/integers.py', 'core'],
     ['unsigned-integers', 'compiler/unsigned.py', 'core'],
+    ['binary-literals', 'compiler/binary_literals.py', 'core'],
     ['modules', 'modules/run.py', 'core'],
     ['source-depth', 'modules/robustness.py', 'core'],
     ['byte-literals', 'compiler/byte_literals.py', 'bytes'],
@@ -298,7 +299,10 @@ foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'fra
 endforeach
 display_session = executable('display-session', 'kernel-display-session.cpp', native: true, install: false)
 test('display-session', display_session, suite: ['full', 'dev'], timeout: 120)
-foreach control : ['kernel-framebuffer-admission.py', 'kernel_framebuffer_probe_oracle.py', 'test_framebuffer_capture.py']
+foreach control : [
+    'kernel-framebuffer-admission.py', 'kernel_framebuffer_probe_oracle.py',
+    'test_framebuffer_capture.py', 'framebuffer-preview.py',
+]
     test(control, python, args: ['-B', files(control)], suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 endforeach
 test('display-renderer-native', python,
@@ -366,5 +370,16 @@ foreach mode : ['ordinary', 'optimized']
     endif
     diagnostic_args += [files('iommu-diagnostics.py')]
     test('iommu-diagnostics-' + mode, python, args: diagnostic_args,
+         suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+endforeach
+
+# Compiler-free controls for complete per-command artifact accounting.
+foreach mode : ['ordinary', 'optimized']
+    budget_args = ['-B']
+    if mode == 'optimized'
+        budget_args += ['-O']
+    endif
+    budget_args += [files('test_artifact_budget.py')]
+    test('artifact-budget-' + mode, python, args: budget_args,
          suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 endforeach

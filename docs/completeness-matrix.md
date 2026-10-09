@@ -9,10 +9,18 @@ list of current limitations. This source is integrated with accepted PR97 / main
 structural-formatter, protected-console, byte-literal and JSON-report work.
 The persistent simple-UEFI Aurora console service has the bounded qualification
 noted below.
-Compiler-affecting merges require final integrated `dev`, `slow`, and complete
-root `make test`; the checked runner inventory explicitly records remaining Meson
+Compiler- and kernel-affecting merges require final integrated GCC 14 and GCC 16
+`dev`, `slow`, complete root `make test`, and relevant image/smoke gates; the checked runner inventory explicitly records remaining Meson
 gaps. Public protected-console commands build and check local artifacts; separately
 pinned first-image qualification remains an explicit opt-in gate.
+Kernel host portability pins freestanding CET/string-operation policy and binds
+stack metadata through complete source locations and exact object symbols; see
+the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
+This mechanism does not transfer qualification between compiler or distro builds.
+The shared native harness retains complete per-command artifact accounting with
+a `scandir` traversal preserving stable-tree totals and failing closed on scan
+errors; compiler-free controls cover its accounting and error boundaries. This is no new native qualification or whole-suite speed claim;
+see the [test contract](developer-test-contract.md#complete-native-artifact-accounting).
 None of the six destination goals is complete. A bounded feature or passing test
 suite does not establish production safety, whole-system readiness or physical
 hardware support.
@@ -33,11 +41,15 @@ combines Aurora-owned Line64 editing and dirty cells under distinct Console/Disp
 borrows. Its original 988-file image snapshots passed the independently reviewed
 positive three-boot window 004: real PTY editing/help/status/rejection/exit,
 17 physical/PPM capture pairs and ordinary normal restoration with exit 33.
+Four further preserved-image windows passed 64-byte capacity, 65th-byte overflow
+recovery, 80-event termination and native 4096-wake idle fail-stop, with 22 additional
+physical/PPM pairs and their own normal restorations. The linked contract records
+the independent review and exact scope.
 The earlier 67 hosted cases retain their original scope. A joined capture-only
 seven-selector failure candidate adds a required 68th hosted case; its focused
-run, new exact image/stack admission, negative/budget/capacity/idle guests and
+run, new exact image/stack admission, denial/pixel-failure guests and
 final integrated dev/slow/full Make remain pending. The 96-sample guard remains
-hosted-only. Original positive receipts do not qualify this changed source.
+hosted-only. Preserved-image receipts do not qualify this changed source.
 
 This isolated next-language checkpoint adds an unqualified explicit leading group
 of distinct ConsoleSession/DisplaySession borrows for the planned graphical line
@@ -58,6 +70,13 @@ acceptance remains a separately gated integration.
 
 ASCII byte character literals provide a bounded compiler/JSON increment: single-quoted ASCII and explicit byte escapes have exact `u8` type, lossless spans and unchanged checked operations. Two JSON quote append sites use the syntax. See the [source contract](../compiler/BYTES.md#ascii-byte-character-literals). No Unicode character type, strings or new kernel/hardware qualification is implied.
 
+Binary integer expression literals now have `0b`/`0B` prefixes and C++ apostrophe
+separators between digits, retaining exact i64/u64/u8 types and checked ranges.
+The [source contract](../compiler/UNSIGNED.md#source-contract) keeps capacities
+decimal-only. Readable five-bit font groups preserve packed values and dispatch;
+no table storage or stack change is introduced. Compiler-wide final integrated
+qualification remains required; historical guest evidence is not a new run.
+
 The two JSON append reports normalize invalid success counts once at construction
 and expose plain status reads while preserving failure-count masking and public
 constructor behavior. See the [invariant proof and bounded oracle](json-string-write.md#copied-append-report-invariants).
@@ -66,7 +85,9 @@ This library-only pilot adds no compiler semantics or broad optimization claim.
 The output-only Aurora framebuffer status page joins the sealed service
 architecture. Its independently accepted pinned-guest screenshot/physical capture,
 no-write failure cases and remaining final integration gates are kept in the
-[framebuffer console contract](framebuffer-console.md). This is software pixel
+[framebuffer console contract](framebuffer-console.md). `make capture-framebuffer`
+provides a locally built PNG preview without external review receipts; its
+unqualified result does not replace the stricter evidence path. This is software pixel
 output on one QEMU/OVMF fixture, with no GPU-driver or physical-device claim.
 
 Use these entrypoints for exact supported APIs; do not infer a current API from an

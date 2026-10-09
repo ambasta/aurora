@@ -208,6 +208,34 @@ class CaptureControls(unittest.TestCase):
             self.assertEqual(receipt["status"], "failed")
             self.assertTrue((pathlib.Path(d) / "case/receipt.json").is_file())
 
+    def test_timeout_and_interrupt_reap_guest_and_close_pipes(self):
+        for error in (ValueError("QMP response timeout"), KeyboardInterrupt("interrupted")):
+            with tempfile.TemporaryDirectory() as d:
+                proc = Mock(returncode=None)
+                proc.stdin = tempfile.TemporaryFile()
+                proc.stdout = tempfile.TemporaryFile()
+                proc.poll.side_effect = lambda: proc.returncode
+                proc.terminate.side_effect = lambda: setattr(proc, "returncode", -15)
+                proc.wait.side_effect = lambda **kwargs: proc.returncode
+                with (
+                    patch.object(runner.subprocess, "Popen", return_value=proc),
+                    patch.object(runner.Channel, "receive", side_effect=error),
+                ):
+                    receipt = runner.run_case(
+                        "framebuffer",
+                        {"cases": {"framebuffer": {"esp": "/esp"}}},
+                        {"qemu": "fake", "firmware": "/firmware"},
+                        {"data": "/data"},
+                        {},
+                        pathlib.Path(d) / "case",
+                    )
+                self.assertEqual(receipt["status"], "failed")
+                self.assertIn(str(error), receipt["error"])
+                proc.terminate.assert_called_once()
+                proc.wait.assert_called_once_with(timeout=2)
+                self.assertTrue(proc.stdin.closed and proc.stdout.closed)
+                self.assertEqual(receipt["exit_status"], -15)
+
     def test_bounded_clock(self):
         obj = runner.Channel.__new__(runner.Channel)
         obj.deadline = time.monotonic() - 1

@@ -157,6 +157,12 @@ void byteLiterals() {
         rejected("module x;auto f()->u8{return " + spelling + ";}", aurora::DiagnosticCode::InvalidByteLiteral);
 }
 void cases() {
+    golden("module x;auto f()->u64{return 0b10001'10001'10001'11111'10001'10001'01110u64;}",
+           "module x;\nauto f() -> u64 {\n"
+           "    return 0b10001'10001'10001'11111'10001'10001'01110u64;\n}\n");
+    verify("module x;auto f()->u8{return 0B0000'0001u8+'\\0';}", "binary-byte.au");
+    verify("module x;auto f()->i64{return -0b1'000000000000000000000000000000000000000000000000000000000000000;}",
+           "binary-minimum.au");
     qualifiedNames();
     structuralWrapping();
     golden("module x;auto f(i64 a,i64 b)->bool{return a==1&&(b<1)||!(a==2);}",

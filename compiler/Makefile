@@ -159,6 +159,7 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 -B -O ../tests/compiler/owning_classes.py $(abspath $(OUT))
 	python3 ../tests/compiler/integers.py $(abspath $(OUT))
 	python3 ../tests/compiler/unsigned.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/binary_literals.py $(abspath $(OUT))
 	python3 ../tests/compiler/u8_numeric.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/byte_literals.py $(abspath $(OUT))
 	python3 ../tests/compiler/byte_codec.py $(abspath $(OUT))

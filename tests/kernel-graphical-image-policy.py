@@ -106,7 +106,7 @@ def fixture_artifacts(capture=False):
     artifacts = {name: dict(contents=b"normal\0", symbols=b"", relocations=b"") for name in paths}
     if capture:
         artifacts["graphical-console.o"] = dict(
-            contents=b"AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario=\0",
+            contents=b"AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=\0",
             symbols=b"capture_scenario\npixel_attempts\n",
             relocations=b"",
         )
@@ -482,7 +482,7 @@ class ImagePolicy(unittest.TestCase):
                     ):
                         capture_policy.capture_artifact_evidence("graphical-console-capture", changed)
         for field, token in (
-            ("contents", b"AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario="),
+            ("contents", b"AURORA_GRAPHICAL_CAPTURE_RELEASED: selector="),
             ("symbols", b"capture_scenario"),
             ("symbols", b"pixel_attempts"),
         ):
