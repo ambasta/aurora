@@ -164,6 +164,7 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 -B -O ../tests/compiler/owning_classes.py $(abspath $(OUT))
 	python3 ../tests/compiler/integers.py $(abspath $(OUT))
 	python3 ../tests/compiler/unsigned.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/binary_literals.py $(abspath $(OUT))
 	python3 ../tests/compiler/u8_numeric.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/byte_literals.py $(abspath $(OUT))
 	python3 ../tests/compiler/byte_codec.py $(abspath $(OUT))
@@ -421,8 +422,8 @@ test-display-service: $(OUT)
 	@set -eu; \
 	work="$$(mktemp -d "$(dir $(abspath $(OUT)))display-service.XXXXXXXX")"; \
 	python3 -B -O ../tests/compiler/display_service.py "$(abspath $(OUT))"; \
-	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/display_service_ir.cpp -o "$$work/ir-tests"; \
-	"$$work/ir-tests"; \
+	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/service_group_ir.cpp -o "$$work/ir-tests"; \
+	python3 -B -O ../tests/compiler/service_group_ir_abi.py "$$work/ir-tests"; \
 	printf 'PASS display service Make recipe: %s\n' "$$work"
 
 endif # controlled outer dispatcher / original inner graph

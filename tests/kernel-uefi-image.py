@@ -188,7 +188,279 @@ def owned_bytes_symbols(symbols):
     )
 
 
-def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
+# The IRQ is shared with the serial Console profile; it is not a profile selector.
+GRAPHICAL_OBJECTS = frozenset(
+    (
+        "payload",
+        "payload-entry",
+        "language",
+        "acpi",
+        "pci",
+        "runtime",
+        "memory",
+        "graphical-console",
+        "console-entry",
+        "loader",
+        "embed",
+        "transition",
+        "loader-pe",
+        "embed-pe",
+        "transition-pe",
+        "memory-pe",
+    )
+)
+REFLECTION_HELPERS = frozenset(("aurora_reflect_size", "aurora_reflect_field_count"))
+GRAPHICAL_BRIDGES = frozenset(("__au_runtime_graphical_entry", "__au_runtime_graphical_value"))
+GRAPHICAL_IMPORTS = frozenset(("__au_runtime_console_next", "__au_runtime_display_pixel"))
+GRAPHICAL_HOST = GRAPHICAL_IMPORTS | {"__au_runtime_console_put"}
+GRAPHICAL_ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
+
+
+def image_options(arguments):
+    allowed = ([], ["--ipc-policy"], ["--owned-bytes"], ["--ipc-policy", "--disposal-policy"], ["--graphical-console"])
+    need(arguments in allowed, "Expected one exact supported image-policy flag combination")
+    return dict(
+        require_ipc="--ipc-policy" in arguments,
+        require_owned_bytes="--owned-bytes" in arguments,
+        require_disposal="--disposal-policy" in arguments,
+        require_graphical_console="--graphical-console" in arguments,
+    )
+
+
+def nm_entries(text):
+    result = {}
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) == 3:
+            _, kind, name = fields
+        elif len(fields) == 2 and fields[0] in ("U", "w", "v"):
+            kind, name = fields
+        else:
+            continue
+        # File/section metadata can repeat; retain data and weak symbols so
+        # neither can masquerade as (or add) a runtime authority.
+        if kind in ("a", "N", "n") or name.startswith("."):
+            continue
+        need(name not in result, "Duplicate code/import symbol: " + name)
+        result[name] = kind
+    return result
+
+
+def profile_selection(symbols, object_names, graphical):
+    # Do not impose the paired duplicate-symbol policy on historical profiles.
+    names = (
+        nm_entries(symbols)
+        if graphical
+        else {fields[-1]: fields[-2] for line in symbols.splitlines() if len(fields := line.split()) in (2, 3)}
+    )
+    paired = (
+        any(name.startswith("__au_runtime_graphical_") or "kernel_graphical_console" in name for name in names)
+        or "graphical-console" in object_names
+    )
+    need(graphical or not paired, "Paired image requires explicit --graphical-console")
+    if graphical:
+        need(set(object_names) == GRAPHICAL_OBJECTS, "Exact graphical object inventory required")
+        need("uefi_console_interrupt" in names, "Graphical profile requires its console IRQ")
+        need(
+            {name for name in names if name.startswith("__au_runtime_")} == GRAPHICAL_BRIDGES | GRAPHICAL_HOST,
+            "Crossed or incomplete graphical runtime authority inventory",
+        )
+        need(
+            all(names.get(name) in ("t", "T") for name in GRAPHICAL_BRIDGES | GRAPHICAL_HOST),
+            "Graphical runtime authority must be linked code",
+        )
+        need(
+            {name for name in names if name.startswith("aurora_reflect_")} == REFLECTION_HELPERS
+            and all(names[name] == "T" for name in REFLECTION_HELPERS),
+            "Graphical reflection helper inventory/type mismatch",
+        )
+        need(
+            names.get(GRAPHICAL_ENTRY) == "t" and names.get("aurora_kernel_value") == "t",
+            "Paired source/value entries must stay local",
+        )
+        need(
+            not any(name.startswith(("uefi_runtime_", "aurora_user_", "aurora_kernel_budget_")) for name in names),
+            "Graphical profile linked a protected runtime or budget fixture",
+        )
+    return "graphical" if graphical else ("console" if "uefi_console_interrupt" in names else "ordinary")
+
+
+def graphical_object_policy(symbols, object_symbols, calls, language_bindings):
+    """Pure ownership/call policy; linked opcode/stack admission remains mandatory."""
+    profile_selection(symbols, object_symbols, True)
+    parsed = {name: nm_entries(value) for name, value in object_symbols.items()}
+    language = parsed["language"]
+    need(
+        {name for name, kind in language.items() if kind in ("U", "w", "v")} == GRAPHICAL_IMPORTS,
+        "Graphical generated imports must be exactly Console.next and Display.pixel",
+    )
+    need(
+        {name for name, kind in language.items() if kind.isupper() and kind != "U"}
+        == GRAPHICAL_BRIDGES | REFLECTION_HELPERS
+        and all(language.get(name) == "T" for name in GRAPHICAL_BRIDGES | REFLECTION_HELPERS),
+        "Graphical globals must be exactly paired bridges and closed reflection helpers",
+    )
+    need(
+        language.get(GRAPHICAL_ENTRY) == "t" and language.get("aurora_kernel_value") == "t",
+        "Graphical source/value entries must remain local",
+    )
+    need(
+        set(language_bindings) == {name for name, kind in language.items() if kind in ("t", "T")},
+        "Graphical ELF function/binding inventory mismatch",
+    )
+    for name, binding in language_bindings.items():
+        need(
+            binding
+            == (
+                ("GLOBAL", "HIDDEN")
+                if name in GRAPHICAL_BRIDGES
+                else ("GLOBAL", "DEFAULT")
+                if name in REFLECTION_HELPERS
+                else ("LOCAL", "DEFAULT")
+            ),
+            "Graphical function escaped private ELF binding: " + name,
+        )
+    expected = {
+        "language": (GRAPHICAL_BRIDGES, GRAPHICAL_IMPORTS),
+        "graphical-console": (GRAPHICAL_HOST, {"__au_runtime_graphical_entry"}),
+        "payload": (set(), {"__au_runtime_graphical_value"}),
+    }
+    for object_name, entries in parsed.items():
+        reflection = {name for name in entries if name.startswith("aurora_reflect_")}
+        need(
+            reflection == (REFLECTION_HELPERS if object_name == "language" else set())
+            and all(entries[name] == "T" for name in reflection),
+            "Wrong reflection helper owner/importer: " + object_name,
+        )
+        defined, imported = expected.get(object_name, (set(), set()))
+        authorities = {name: kind for name, kind in entries.items() if name.startswith("__au_runtime_")}
+        need(
+            all(kind in ("T", "U") for kind in authorities.values())
+            and {name for name, kind in authorities.items() if kind != "U"} == defined
+            and {name for name, kind in authorities.items() if kind == "U"} == imported,
+            "Wrong graphical authority owner/importer: " + object_name,
+        )
+        if object_name != "language":
+            need(
+                GRAPHICAL_ENTRY not in entries and "aurora_kernel_value" not in entries,
+                "Graphical source/value entry escaped language object: " + object_name,
+            )
+    need(
+        parsed["console-entry"].get("uefi_console_interrupt") == "T"
+        and parsed["console-entry"].get("uefi_console_interrupt_dispatch") == "U"
+        and parsed["graphical-console"].get("uefi_console_interrupt_dispatch") == "T"
+        and parsed["graphical-console"].get("uefi_console_interrupt") == "U",
+        "Graphical engine/IRQ ownership mismatch",
+    )
+    for name, owner, importer in (
+        ("uefi_console_interrupt", "console-entry", "graphical-console"),
+        ("uefi_console_interrupt_dispatch", "graphical-console", "console-entry"),
+    ):
+        need(
+            [obj for obj, entries in parsed.items() if name in entries and entries[name] != "U"] == [owner],
+            "Crossed graphical engine/IRQ definition: " + name,
+        )
+        need(
+            [obj for obj, entries in parsed.items() if entries.get(name) == "U"] == [importer],
+            "Crossed graphical engine/IRQ importer: " + name,
+        )
+    for object_name, targets in (
+        ("graphical-console", ("__au_runtime_graphical_entry",)),
+        ("payload", ("__au_runtime_graphical_value",)),
+        ("language", tuple(sorted(GRAPHICAL_IMPORTS))),
+    ):
+        for target in targets:
+            need(
+                policy_call_present(calls[object_name], target),
+                "Missing exact graphical direct call in " + object_name + ": " + target,
+            )
+
+
+def elf_function_bindings(text):
+    result = {}
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) == 8 and fields[3] == "FUNC" and fields[6] != "UND":
+            need(fields[7] not in result, "Duplicate generated ELF function")
+            result[fields[7]] = (fields[4], fields[5])
+    return result
+
+
+def console_service_policy(symbols, language_symbols, calls, contents, graphical=False):
+    """Retain the serial Console checks for both engines, with explicit bridges."""
+    engine = "graphical-console" if graphical else "console"
+    bridge = "__au_runtime_graphical_entry" if graphical else "__au_runtime_console_entry"
+    operations = GRAPHICAL_IMPORTS if graphical else ("__au_runtime_console_next", "__au_runtime_console_put")
+    need("uefi_runtime_enter" not in symbols, "Console linked a user runtime")
+    need(policy_call_present(calls[engine], bridge), "Console host must call the actual sealed service bridge")
+    for entry in operations:
+        need(policy_call_present(calls["language"], entry), "Aurora service must use the closed operation: " + entry)
+    for legacy in ("aurora_console_byte", "aurora_console_command"):
+        need(legacy not in symbols, "Native console retained legacy policy wrapper: " + legacy)
+    for object_name in ("payload", "acpi", "pci", "runtime", engine, "loader"):
+        for legacy in (
+            "aurora::console::Line::",
+            "aurora::console::Presentation<",
+            "aurora_console_byte",
+            "aurora_console_command",
+            "__au_runtime_bytes_",
+        ):
+            need(legacy not in calls[object_name], "Native console retained a legacy/owner reference in " + object_name)
+        for response in (b"Unknown command.", b"Line rejected:", b"Show commands", b"line capacity=64", b"aurora> "):
+            need(response not in contents[object_name], "Human command presentation remains in C++ " + object_name)
+    allowed_globals = (
+        GRAPHICAL_BRIDGES | REFLECTION_HELPERS
+        if graphical
+        else {
+            "__au_runtime_console_entry",
+            "__au_runtime_console_value",
+            "aurora_reflect_size",
+            "aurora_reflect_field_count",
+        }
+    )
+    for row in language_symbols.splitlines():
+        fields = row.split()
+        if len(fields) == 3 and fields[1] == "T":
+            need(fields[2] in allowed_globals, "Native service exposed a source entry: " + fields[2])
+
+
+def graphical_image_policy(directory, symbols=None):
+    """Read-only explicit paired policy, shared by image build and receipt replay.
+
+    This does not emit metadata or replace PE/ELF/PIC/combined stack admission.
+    Extra stale profile objects fail closed; never delete evidence to pass it.
+    """
+    directory = Path(directory)
+    if symbols is None:
+        symbols = subprocess.check_output(["nm", "-a", str(directory / "payload.elf")], text=True)
+    profile_selection(symbols, {path.stem for path in directory.glob("*.o")}, True)
+    object_symbols = {
+        name: subprocess.check_output(["nm", "-a", str(directory / (name + ".o"))], text=True)
+        for name in sorted(GRAPHICAL_OBJECTS)
+    }
+    host_names = ("payload", "acpi", "pci", "runtime", "graphical-console", "loader")
+    calls = {
+        name: subprocess.check_output(["objdump", "-drwC", str(directory / (name + ".o"))], text=True)
+        for name in (*host_names, "language")
+    }
+    bindings = subprocess.check_output(["readelf", "-sW", str(directory / "language.o")], text=True)
+    graphical_object_policy(symbols, object_symbols, calls, elf_function_bindings(bindings))
+    contents = {name: (directory / (name + ".o")).read_bytes() for name in host_names}
+    console_service_policy(symbols, object_symbols["language"], calls, contents, graphical=True)
+    return dict(
+        objects=sorted(GRAPHICAL_OBJECTS),
+        language_imports=sorted(GRAPHICAL_IMPORTS),
+        language_bridges=sorted(GRAPHICAL_BRIDGES),
+        host_authorities=sorted(GRAPHICAL_HOST),
+        reflection_helpers=sorted(REFLECTION_HELPERS),
+    )
+
+
+def main(require_ipc=False, require_owned_bytes=False, require_disposal=False, require_graphical_console=False):
+    need(
+        not require_graphical_console or not (require_ipc or require_owned_bytes or require_disposal),
+        "Graphical profile cannot combine with another image-policy flag",
+    )
     pe_path = BUILD / "esp/EFI/BOOT/BOOTX64.EFI"
     data = pe_path.read_bytes()
     binary = (BUILD / "payload.bin").read_bytes()
@@ -197,6 +469,9 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
     elf_validate(elf, binary)
     names = ["payload", "payload-entry", "language", "acpi", "pci", "runtime", "memory"]
     symbols = subprocess.check_output(["nm", "-a", str(BUILD / "payload.elf")], text=True)
+    profile = profile_selection(symbols, {path.stem for path in BUILD.glob("*.o")}, require_graphical_console)
+    if require_graphical_console:
+        graphical_image_policy(BUILD, symbols)
     if require_owned_bytes:
         need(not require_ipc, "Owned-byte and IPC profiles cannot combine")
         owned_bytes_symbols(symbols)
@@ -230,49 +505,18 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
             0 < terminal_symbols.get("aurora_kernel_terminal_event", 0) < terminal_symbols["__payload_text_end"],
             "Terminal-event entry outside owned payload RX",
         )
-    if "uefi_console_interrupt" in symbols:
-        names += ["console", "console-entry"]
-        need("uefi_runtime_enter" not in symbols, "Console linked a user runtime")
-        console_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "console.o")], text=True)
-        need(
-            policy_call_present(console_calls, "__au_runtime_console_entry"),
-            "Console host must call the actual sealed service bridge",
-        )
-        language_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "language.o")], text=True)
-        for entry in ("__au_runtime_console_next", "__au_runtime_console_put"):
-            need(policy_call_present(language_calls, entry), "Aurora service must use the closed operation: " + entry)
-        for legacy in ("aurora_console_byte", "aurora_console_command"):
-            need(legacy not in symbols, "Native console retained legacy policy wrapper: " + legacy)
-        for object_name in ("payload", "acpi", "pci", "runtime", "console", "loader"):
-            host_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / (object_name + ".o"))], text=True)
-            for legacy in (
-                "aurora::console::Line::",
-                "aurora::console::Presentation<",
-                "aurora_console_byte",
-                "aurora_console_command",
-                "__au_runtime_bytes_",
-            ):
-                need(legacy not in host_calls, "Native console retained a legacy/owner reference in " + object_name)
-            host_bytes = (BUILD / (object_name + ".o")).read_bytes()
-            for response in (
-                b"Unknown command.",
-                b"Line rejected:",
-                b"Show commands",
-                b"line capacity=64",
-                b"aurora> ",
-            ):
-                need(response not in host_bytes, "Human command presentation remains in C++ " + object_name)
-        language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "language.o")], text=True)
-        allowed_globals = {
-            "__au_runtime_console_entry",
-            "__au_runtime_console_value",
-            "aurora_reflect_size",
-            "aurora_reflect_field_count",
-        }
-        for row in language_symbols.splitlines():
-            fields = row.split()
-            if len(fields) == 3 and fields[1] == "T":
-                need(fields[2] in allowed_globals, "Native service exposed a source entry: " + fields[2])
+    if profile in ("console", "graphical"):
+        engine = "graphical-console" if require_graphical_console else "console"
+        names += [engine, "console-entry"]
+        if not require_graphical_console:
+            host_names = ("payload", "acpi", "pci", "runtime", engine, "loader")
+            calls = {
+                name: subprocess.check_output(["objdump", "-drwC", str(BUILD / (name + ".o"))], text=True)
+                for name in (*host_names, "language")
+            }
+            contents = {name: (BUILD / (name + ".o")).read_bytes() for name in host_names}
+            language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "language.o")], text=True)
+            console_service_policy(symbols, language_symbols, calls, contents, require_graphical_console)
     if "uefi_service_drain_begin" in symbols:
         policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
         need(budget_call_present(policy_relocations), "Service timer does not call the actual Aurora budget entry")
@@ -376,10 +620,8 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False):
 if __name__ == "__main__":
     import sys
 
-    if sys.argv[1:] not in ([], ["--ipc-policy"], ["--owned-bytes"], ["--ipc-policy", "--disposal-policy"]):
-        raise SystemExit("Expected optional --ipc-policy or --owned-bytes")
-    main(
-        require_ipc="--ipc-policy" in sys.argv[1:],
-        require_owned_bytes=sys.argv[1:] == ["--owned-bytes"],
-        require_disposal="--disposal-policy" in sys.argv[1:],
-    )
+    try:
+        options = image_options(sys.argv[1:])
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+    main(**options)

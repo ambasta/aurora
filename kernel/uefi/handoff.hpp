@@ -82,8 +82,11 @@ public:
         if (bytes.size() != header)
             return false;
         const Bytes h{bytes};
+        // v6 requires both the copied RSDP and immutable graphics record.
+        // Neither the version nor either description grants device access.
         return h.get(0) == magic &&
-               (h.get(8, 4) == 1 || h.get(8, 4) == 2 || h.get(8, 4) == 3 || h.get(8, 4) == 4 || h.get(8, 4) == 5) &&
+               (h.get(8, 4) == 1 || h.get(8, 4) == 2 || h.get(8, 4) == 3 || h.get(8, 4) == 4 || h.get(8, 4) == 5 ||
+                h.get(8, 4) == 6) &&
                h.get(12, 4) == header && h.get(16) == arena_bytes && h.get(24) == actual && actual >= 0x100000 &&
                actual % 4096 == 0 && actual <= 0x100000000ULL - arena_bytes && h.get(32) > 0 &&
                h.get(32) <= MemoryMap::max_bytes && h.get(40) >= 40 && h.get(40) <= 256 && h.get(48, 4) == 1 &&
@@ -93,9 +96,9 @@ public:
                h.get(80) <= payload_limit && h.get(88) == actual + tables_offset && h.get(96) > 0 &&
                h.get(96) <= table_pages && h.get(104) == actual + payload_offset &&
                (h.get(8, 4) == 3 ? RuntimeLayout::valid(actual) && h.get(120) == actual + RuntimeLayout::metadata_offset
-                : h.get(8, 4) == 4 ? h.get(120) == actual + bar_record_offset
-                : h.get(8, 4) == 5 ? h.get(120) == actual + framebuffer_record_offset
-                                   : h.get(120) == 0) &&
+                : h.get(8, 4) == 4                       ? h.get(120) == actual + bar_record_offset
+                : (h.get(8, 4) == 5 || h.get(8, 4) == 6) ? h.get(120) == actual + framebuffer_record_offset
+                                                         : h.get(120) == 0) &&
                ((h.get(8, 4) == 1 || h.get(8, 4) == 5) ? h.get(112) == 0 : h.get(112) > 0);
     }
 };

@@ -1,8 +1,25 @@
 # Bounded firmware framebuffer console
 
-Integrated output-only rendering checkpoint with independently accepted guest
-capture on the exact pinned fixture. Final joined developer/slow/full-Make gates
-and merge review remain pending; this is not a claim of whole-system readiness.
+Output-only rendering and bounded graphical-session diagnostics have
+independently accepted guest captures on exact pinned fixtures. The joined
+capture-failure candidate, final developer/slow/full-Make gates and merge review
+remain pending; this is not a claim of whole-system readiness.
+The current source join adds the reviewed GCC 14/GCC 16 portability machinery
+and readable binary glyph spellings. Graphical compiler frames now bind exact
+assembler symbols through `.ci` and complete `.su` source records, retaining
+object/linked-byte checks and the separately proved paired alias. The raw
+compiler alias name is retained through metadata joining; only the already proved
+same-body pair is canonicalized afterward. The unchanged
+legacy verifier's local visited-array invariant has a separately reviewed source
+applicability check for the joined headers. This is source integration only:
+changed-output image admission, failure-fixture guests and both toolchains'
+final integrated gates remain pending. Historical exact-image contracts continue
+to reject changed images until their own admission is reviewed. A second closed
+GCC 14 capture file tuple records the reviewed libcall-emission delta and exact
+compiler/tool/compiled-source applicability; mixed tuples reject. Its unchanged
+14-function capture semantics do not replace fresh complete image/stack admission,
+including added memory calls in interrupt and wait closure. No new capture guest
+or whole-image acceptance is implied by that source update.
 Firmware `SetMode` can clear its display before the controlled capture boundary.
 No GPU driver, desktop, physical Framework display support, DMA or IOMMU claim
 follows from this work.
@@ -31,7 +48,7 @@ restoration boot. A preview never creates those approvals.
 
 ## Dependency and outcome
 
-The candidate is a native Aurora-rendered graphical status page after
+The output-only checkpoint is a native Aurora-rendered graphical status page after
 `ExitBootServices`, through sealed `DisplaySession` on accepted NativeConsole
 PR97/main `916fd18f18995241c1da367db6a04e7eb3cfce63`. The compiler extension
 retains kind-checked exclusive synchronous borrowing and existing readonly byte
@@ -39,15 +56,23 @@ windows. Its focused compiler/Console regression review is separate from final
 integrated acceptance. Aurora owns the project-authored font, rasterization,
 colors, clipping, cursor/layout and all human-facing content.
 The trusted host boundary only authenticates, bounds-checks, packs pixels and
-perform ordered volatile stores. No raw pointer, mutable framebuffer span or
+performs ordered volatile stores. No raw pointer, mutable framebuffer span or
 `OwnedBytes` video-memory surrogate is introduced.
+
+Font constants use seven five-bit binary groups with the existing packed-bit
+orientation documented beside `glyph_bits`. Character dispatch, fallback, bit
+positions and drawing code are unchanged; no table storage or stack layout is
+added. Decimal-equivalent assembly and all 256 input-byte mappings are the
+spelling-change gates. Historical guest captures below retain their original
+source/compiler scope; new compiler syntax requires fresh integrated gates.
 
 ## Provisional transport and authority
 
 Handoff v5 retains the 128-byte header and reserves its own record at arena offset
 `0xe0000`, supervisor read-only/NX. The other versions retain their existing
 meaning. The output-only build rejects combination with ACPI, runtime, BAR and
-console profiles; mixed input/display borrowing is a later explicit extension.
+console profiles; combined input/display borrowing uses the separate v6 contract
+below.
 The 64-byte version-1 graphics record contains magic/version/length, physical
 base/resource bytes, width/height/pixel pitch/format, selected mode/mode count and
 zero reserved bytes. It carries no firmware pointer.
@@ -174,3 +199,171 @@ separate normal image then actually booted through the standard normal oracle
 `87d128213af579dec28b8f5f1850ad4c030ec560ddb1fec9bf574669571d98f6`.
 No new CPU/GPU device activation, DMA/IOMMU progress, physical hardware support,
 interactive graphical input or general compositor follows from this checkpoint.
+
+## Bounded serial-input graphical session
+
+A separate profile combines distinct ConsoleSession and DisplaySession borrows
+in one synchronous invocation. `examples/kernel-graphical-console.au`
+reuses the exact Aurora Line64 editor and project font, adding all printable ASCII,
+two rows of 68 text cells, an underline cursor and dirty-cell redraw. The prompt
+accepts 64 bytes, BS/DEL, CR/LF/CRLF and the existing help/status/exit commands;
+invalid/damaged/overflow lines reject until submission. The second row retains
+only the latest response. There is no scrolling terminal or keyboard driver.
+
+The viewport is 408x18 pixels at (32,128), requiring at least 440x146 geometry.
+Outside pixels and padding remain untouched. At most 80 byte events and 96 copied
+samples yield at most 82 changed paint passes and 992,938 pixel stores, below the
+unchanged million-store cap. Source exhaustion renders a final response; the
+separate native 4096-total-wake ceiling fail-stops without inventing input.
+The 96-sample guard has hosted-only coverage through damaged copied observations;
+clean absent UART polls stay inside the native session and do not consume it.
+Closed graphical completion values are independently checked and explicitly
+mapped when both original sessions close. Pixel failure stops without retry or
+rollback. No source capability contains or replaces the other.
+
+The native source profile uses handoff v6, independent Console/Display
+preflight, exact paired LAPIC/framebuffer whole-tree verification and observational
+timer/interrupt/UART quiet checks. Versions 1–5 retain their original contracts.
+The 1 MiB arena, 16 page-table pages and 16 KiB stack stay unchanged. Each exact
+image must establish normal + fault <= 15,360, wait + IRQ + fault <= 15,360 and
+IRQ + fault <= 4,096 bytes, including the 176-byte IRQ frame and alignment.
+
+Developer entry remains `UEFI_MODE=graphical-console ./scripts/kernel-uefi-build.sh`
+(with `graphical-console-capture` reserved for controlled capture). Both modes
+require their own combined linked-stack/image begin/end/emit admission;
+every new attempt invalidates prior combined receipts before build work. Missing
+or failed checks reject. Automatic evidence still requires independent exact-image
+review and cannot authorize a guest or borrow a legacy profile's qualification.
+Version-2 image receipts separate capture-fixture source/artifact evidence by
+mode. The checker's `source --mode graphical-console-capture` action checks only
+the source contract; capture admission deliberately rejects until the newly
+constructed linked fixture paths receive independent exact-byte review.
+The capture profile separates its bounded pre-store selector from editor input,
+emits completed-sample/store markers, and leaves terminal or failed scanout intact
+for external physical capture and ordinary normal-image restoration.
+
+`make test-graphical-console` now shares the controlled build-once compiler and
+includes the paired paging model and ordinary/optimized admission controls.
+Meson `slow`/`full` includes the complete hosted runner; `dev`/`full` includes
+paging and admission controls. A directly pinned run uses
+`python3 -B -O tests/kernel-graphical-console.py --run /path/to/aurorac
+--compiler-sha256 REVIEWED_SHA256`; a controlled `--developer-build-receipt`
+is also supported. Every invocation recompiles the observer and hashes its
+recursive quoted-header closure, including the capture policy. Existing routes
+remain sufficient; registration alone is not aggregate qualification.
+
+The earlier actual generated consumer passed
+67 hosted cases: 39 transcript/geometry cases, six baseline/output-failure cases,
+and 22 pre-entry denials. Intermediate and final pixels, exact ordered stores,
+untouched guards/padding, bounded completion and no-retry behavior were checked
+against a separate model. Independent receipt/source review confirmed that scope;
+most successful raw outputs were compacted into comparison receipts and hashes.
+
+The independently accepted positive three-boot window 004 covers the original
+988-file production and capture source snapshots and their exact admitted images.
+Actual PTY input exercised editing, help/status, rejection locking, CRLF and exit.
+All 17 physical/PPM capture pairs matched: two production initial/help captures
+and fifteen capture-profile baseline/intermediate/final captures. The capture
+guest consumed 31 samples, left its sentinel unconsumed and made 26,163 stores;
+the production guest completed with 16,321 stores and exit 33. A separate ordinary
+normal image passed its existing serial oracle with actual exit 33. Independent
+review `interactive-results-review-004/review.json` has SHA-256
+`e28aacf7b586aca97a8583cc61d6ba71d450067042751097e79d9c73ac148f43`.
+This accepts that positive interaction only; it preserves failed earlier attempts
+and the restoration's sampled-process-provenance limit, with no continuous or
+post-entry mapping claim.
+
+Four separate windows on the preserved capture image also qualified exact
+64-byte capacity, 65th-byte overflow locking and recovery, 80-event termination
+and the native 4096-wake idle deadline. Their 22 additional physical/PPM capture
+pairs matched exact model stores or unchanged initial pixels. Idle reached
+4,097 raw polls with zero copied samples and retained the initial 7,826 stores;
+this fail-stop is distinct from the hosted-only 96-copy guard. Each window had
+its own actual ordinary normal restoration with exit 33; capture termination by
+QMP is not native debug-exit 35. Independent review
+`remaining-guest-results-review-001/review.json` has SHA-256
+`4a2e9b38ea04e9ec6c1e2a141ffd6e5f9ad55145429821282cfceb338cfaf143`.
+These results retain the same sampled-provenance limits and qualify only those
+preserved images, not the numeric-selector candidate below.
+
+The joined capture-only failure extension is unqualified. Its pure closed policy
+accepts exactly seven selector bytes before any grant, consumer entry or store:
+
+| Byte | Release code | Scenario | Fixed action |
+|---|---|---|---|
+| G | 1 | normal | Use both live grants |
+| C | 2 | cross-console | Put the live Display grant in the local Console field |
+| D | 3 | cross-display | Put the live Console grant in the local Display field |
+| c | 4 | stale-console | Close/reopen Console and invoke with its saved old generation |
+| d | 5 | stale-display | Close/reopen Display and invoke with its saved old generation |
+| F | 6 | first-pixel-error | Fail the first pixel attempt, before any store |
+| I | 7 | interior-pixel-error | Fail after exactly 55 successful stores |
+
+All other 249 bytes reject with `capture selector` and no release marker.
+A valid byte emits `AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=N` through the
+existing decimal-number writer, with exactly the code above; invalid code 0 is
+never released. The source-contract receipt is
+`aurora-graphical-capture-source-v2`. The ten-million-iteration gate and UART-error
+rejection are unchanged. No later byte selects a scenario.
+The hosted observer independently checks all 256 selector values, literal numeric
+codes, exact names and fixed failure predicates. The complete hosted runner now
+requires 68 cases: 39 transcript/geometry, seven baseline/output-failure cases
+(including ordinal 55) and 22 pre-entry denials. This inventory is prepared, not
+a claim of a new hosted pass.
+
+Failure lines retain their original fields and append capture-only
+`completed=N wakes=W pixel_attempts=P`; completion lines append
+`entries=E samples=R output_attempts=O completed=N pixel_attempts=P` after their
+existing completion/wakes/stores fields. Production diagnostics retain their
+original format. C/D/c/d must fail paired-service preflight with zero counters
+and an unchanged full framebuffer; an invalid selector also has no release.
+F/I return graphical completion 2 with one entry, zero samples/output attempts and
+respectively 1/56 pixel attempts and 0/55 stores, before any pre-sample marker.
+I preserves exactly the first 55 model stores: a 6x9 background cell and the
+first glyph pixel.
+These inject the existing transport failure result at valid coordinates; no
+geometry fault, retry, rollback or synchronous fault is claimed.
+
+The new candidate requires focused generated-consumer verification, exact
+production/capture reconstruction and independent image admission, separate
+guest denial/pixel-failure windows and positive regression, actual normal
+restoration, then the final integrated full Meson graph on GCC 14 and GCC 16
+and independent review.
+Original 988-file image receipts and preserved-image guest results do not qualify
+the new joined source. Partial/null-pair denials and deterministic synchronous faults
+remain separate from the seven selectors; no new keyboard, desktop or physical
+hardware qualification follows.
+
+The paired verifier also has a separate, closed GCC16 emission proof. Its actual
+single walker definition remains bound through raw `.ci`/`.su`, object and linked
+bytes; no second alias is synthesized. The eight exact bodies require distinct
+root and walker save-slot, snapshot, six-guard, indexed bitmap and decreasing-level
+proofs. Unknown or mixed layouts reject, and existing stack/IRQ/wait budgets stay
+unchanged. Source controls and retained-body analysis do not qualify a fresh
+image or guest; complete current-source admission and independent review remain
+required for each toolchain.
+
+Only the graphical profile requires the private Console and Display validators
+to remain separate non-inlined, non-cloned bootstrap functions. Their raw compiler
+symbols, source ownership and frame sizes must agree with object/linked evidence;
+the validation predicates are unchanged. Other profiles do not enable these
+emission attributes. This boundary changes paired generated inputs, so fresh
+image/stack and capture-contract review is required before qualification reuse.
+
+The graphical stack adapter may authorize only the separate exact GCC16 normal
+and capture pairs of RSP-relative qword argument pushes, bound to their owner, offsets, opcodes and
+operands. The shared decoder otherwise rejects memory pushes. For an authorized
+site it bounds the complete eight-byte source against the old live frame before
+adding eight bytes of stack consumption; stale or unused sites and unbalanced
+paths reject. This proves bounded stack effects, not copied-value initialization
+or authority. Existing save/return checks and whole-image budgets remain in force.
+
+Capture qualification retains complete toolchain-specific file, instruction and
+private-state tuples. The separate-validator GCC14 path composes real validator
+calls with selector, crossed/stale grant, fixed pixel-failure and diagnostic
+proofs. The GCC16 variant also proves its emitted inline UART/text/decimal loops
+and separately binds its seven-file tuple including callgraph metadata. Both
+variants reject fixed error cases before the MMIO effect; GCC14 increments the
+successful-store counter before that effect, while GCC16 increments it after. Mixed tuples and unknown emitted forms reject. An analysis of retained
+failed bytes leaves the failed attempt intact and does not constitute a new
+build receipt, guest result or completed integrated qualification.

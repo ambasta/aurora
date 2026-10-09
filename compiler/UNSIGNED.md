@@ -8,11 +8,17 @@ value-call rules apply without weakening privacy, initialization or constness.
 
 ## Source contract
 
-Decimal unsigned literals use the exact suffix `u64`, for example `42u64` and
-`18446744073709551615u64`. Leading zeros remain decimal. Unsuffixed literals remain
-i64 even when used in an unsigned initializer; context does not convert them.
-Out-of-range literals, other suffixes and unsigned unary minus are rejected.
-Hexadecimal/binary literals and digit separators remain deferred.
+Decimal and `0b`/`0B` binary expression literals use the exact suffix `u64` or
+`u8`, or no suffix for i64. For example, `0b10'1010u64`, `0B00101010u8` and
+`0b101010` all denote 42 with distinct exact types. C++ apostrophe separators
+are allowed only between binary digits; no leading, trailing or doubled separator
+is accepted. Leading zeros do not change the base: `010` remains decimal ten.
+Context never converts a literal. Invalid digits, other suffixes, out-of-range
+magnitudes and unsigned unary minus are rejected. Unary minus admits exactly
+`-2^63`, including its binary spelling; a positive `2^63` still requires `u64`.
+Hexadecimal literals, decimal digit separators and binary array/template capacities
+remain unsupported. Capacity grammar stays decimal-only. This spelling extension
+adds no storage, implicit conversion, checked-operation or IR changes.
 
 `u64(signed_expression)` checks that the i64 argument is nonnegative.
 `i64(unsigned_expression)` checks that the u64 argument is at most INT64_MAX.

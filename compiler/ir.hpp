@@ -259,6 +259,11 @@ public:
     int resultOffset; // exact pristine ConsoleSample for next, zero for scalar operations
     service::Kind kind = service::Kind::Console;
 };
+class ServiceArgument {
+public:
+    int loanId;
+    service::Kind kind;
+};
 class ServiceCall {
 public:
     std::string callee;
@@ -266,6 +271,8 @@ public:
     int resultOffset;
     std::vector<int> spanArguments; // full parameter positions, capability/scalars zero
     service::Kind kind = service::Kind::Console;
+    // The first loan retains its original representation for single-service IR.
+    std::vector<ServiceArgument> additionalServices{};
 };
 class BindRegionParameter {
 public:

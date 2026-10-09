@@ -5,9 +5,11 @@ Each case copies only entry scripts/Makefile into a temporary fixture. Fake tool
 record argv/environment or fail immediately. This does not establish compiler,
 native aggregate, firmware or emulator acceptance.
 """
+
 from pathlib import Path
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,26 +32,51 @@ class DeveloperCommands(unittest.TestCase):
         self.bin = self.home / "bin"
         self.bin.mkdir()
         self.record = self.home / "calls"
-        self.env = {"PATH": str(self.bin), "HOME": str(self.home),
-                    "CALLS": str(self.record), "LC_ALL": "C"}
-        for name in ("kernel-run.sh", "compiler-test.sh", "kernel-build.sh", "kernel-uefi-build.sh", "uefi-firmware.sh", "uefi-linker.sh", "host-build-check.sh"):
+        self.env = {"PATH": str(self.bin), "HOME": str(self.home), "CALLS": str(self.record), "LC_ALL": "C"}
+        for name in (
+            "kernel-run.sh",
+            "compiler-test.sh",
+            "kernel-build.sh",
+            "kernel-uefi-build.sh",
+            "uefi-firmware.sh",
+            "uefi-linker.sh",
+            "host-build-check.sh",
+        ):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
         shutil.copy2(ROOT / "scripts/kernel-console.sh", self.scripts / "kernel-console.sh")
-        for name in ('kernel-uefi-console.sh', 'kernel_uefi_console_clock.py', 'kernel_emulator_clock.py'):
-            shutil.copy2(ROOT / 'scripts' / name, self.scripts / name)
+        for name in ("kernel-uefi-console.sh", "kernel_uefi_console_clock.py", "kernel_emulator_clock.py"):
+            shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         for name in ("bash", "dirname", "cat", "mkdir", "printf"):
             resolved = shutil.which(name)
             self.assertIsNotNone(resolved, name)
             (self.bin / name).symlink_to(resolved)
-        for name in ("qemu-system-x86_64", "timeout", "g++", "python3",
-                     "as", "ld", "objcopy", "objdump", "nm", "readelf"):
+        for name in (
+            "qemu-system-x86_64",
+            "timeout",
+            "g++",
+            "python3",
+            "as",
+            "ld",
+            "objcopy",
+            "objdump",
+            "nm",
+            "readelf",
+        ):
             self.tool(name, "exit 93\n")
         self.tool("ld", 'printf "Supported emulations:\n i386pep\n"\n')
-        self.tool("make", 'printf "make|%s|%s|%s|%s\\n" "$PWD" "$*" "${CXX-}" "${CXXFLAGS-}" >> "$CALLS"\nexit "${FAKE_STATUS:-0}"\n')
+        self.tool(
+            "make",
+            'printf "make|%s|%s|%s|%s\\n" "$PWD" "$*" "${CXX-}" "${CXXFLAGS-}" >> "$CALLS"\nexit "${FAKE_STATUS:-0}"\n',
+        )
         for name, label in (("kernel-smoke.sh", "bios"), ("kernel-uefi-smoke.sh", "uefi")):
-            self.script(self.scripts / name,
-                        'printf "%s|%s|%s|%s|%s|%s|%s\\n" "' + label + '" "$PWD" "$*" "${CXX-}" "${QEMU-}" "${OVMF-}" "${QEMU_DATA-}" >> "$CALLS"\nexit "${FAKE_STATUS:-0}"\n')
+            self.script(
+                self.scripts / name,
+                'printf "%s|%s|%s|%s|%s|%s|%s\\n" "'
+                + label
+                + '" "$PWD" "$*" "${CXX-}" "${QEMU-}" "${OVMF-}" "${QEMU_DATA-}" >> "$CALLS"\n'
+                'exit "${FAKE_STATUS:-0}"\n',
+            )
 
     def script(self, path, body):
         path.write_text("#!/bin/bash\nset -eu\n" + body)
@@ -61,10 +88,15 @@ class DeveloperCommands(unittest.TestCase):
 
     def run_script(self, name, *args, env=None, expected=0):
         current = self.env | (env or {})
-        result = subprocess.run([BASH, str(self.scripts / name), *args],
-                                cwd=self.home, env=current, text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                timeout=5)
+        result = subprocess.run(
+            [BASH, str(self.scripts / name), *args],
+            cwd=self.home,
+            env=current,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=5,
+        )
         self.assertEqual(result.returncode, expected, result.stdout)
         return result.stdout
 
@@ -124,25 +156,37 @@ class DeveloperCommands(unittest.TestCase):
             self.script(self.scripts / name, 'mkdir -p build/uefi\nprintf "{}" > build/user-metadata.json\n')
         # Clock selection and full argv binding must use the real helper. Only
         # the normal serial validators are synthetic in this routing fixture.
-        shutil.copy2(ROOT / "scripts/kernel_emulator_clock.py",
-                     self.scripts / "kernel_emulator_clock.py")
+        shutil.copy2(ROOT / "scripts/kernel_emulator_clock.py", self.scripts / "kernel_emulator_clock.py")
         self.env["REAL_PYTHON"] = sys.executable
-        self.tool("python3", 'case "$1" in\n'
-                  '  scripts/kernel_emulator_clock.py) exec "$REAL_PYTHON" -B "$@" ;;\n'
-                  '  tests/kernel-smoke.py|tests/kernel-uefi-smoke.py) exit 0 ;;\n'
-                  '  *) echo "Unexpected Python command in terminal fixture" >&2; exit 93 ;;\n'
-                  'esac\n')
-        self.tool("qemu-system-x86_64", 'if [ -t 0 ]; then state=terminal; else state=detached; fi\n'
-                  'printf "qemu|stdin-%s\\n" "$state" >> "$CALLS"\nexit 33\n')
+        self.tool(
+            "python3",
+            'case "$1" in\n'
+            '  scripts/kernel_emulator_clock.py) exec "$REAL_PYTHON" -B "$@" ;;\n'
+            "  tests/kernel-smoke.py|tests/kernel-uefi-smoke.py) exit 0 ;;\n"
+            '  *) echo "Unexpected Python command in terminal fixture" >&2; exit 93 ;;\n'
+            "esac\n",
+        )
+        self.tool(
+            "qemu-system-x86_64",
+            "if [ -t 0 ]; then state=terminal; else state=detached; fi\n"
+            'printf "qemu|stdin-%s\\n" "$state" >> "$CALLS"\n'
+            "exit 33\n",
+        )
         for name in ("kernel-smoke.sh", "kernel-uefi-smoke.sh"):
             leader, follower = os.openpty()
             self.addCleanup(os.close, leader)
             try:
                 self.assertTrue(os.isatty(follower))
-                result = subprocess.run([BASH, str(self.scripts / name)], cwd=self.home,
-                                        env=self.env | {"OVMF": self.firmware()}, stdin=follower,
-                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                        timeout=10)
+                result = subprocess.run(
+                    [BASH, str(self.scripts / name)],
+                    cwd=self.home,
+                    env=self.env | {"OVMF": self.firmware()},
+                    stdin=follower,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=10,
+                )
             finally:
                 os.close(follower)
             self.assertEqual(result.returncode, 0, result.stdout)
@@ -155,15 +199,19 @@ class DeveloperCommands(unittest.TestCase):
         self.assertEqual(receipt["execution_status"], "not-established-by-command-receipt")
 
     def test_fault_environment_is_rejected_before_dispatch(self):
-        for name in ("KERNEL_TEST_DIVISION", "KERNEL_TEST_FUTURE_MODE", "KERNEL_USER_PROBE_MODE",
-                     "KERNEL_CONSOLE", "UEFI_MODE"):
+        for name in (
+            "KERNEL_TEST_DIVISION",
+            "KERNEL_TEST_FUTURE_MODE",
+            "KERNEL_USER_PROBE_MODE",
+            "KERNEL_CONSOLE",
+            "UEFI_MODE",
+        ):
             output = self.run_script("kernel-run.sh", env={name: "1"}, expected=2)
             self.assertIn("Unset " + name, output)
         self.assert_no_work()
 
     def test_console_launcher_is_foreground_bounded_and_preserves_status(self):
-        self.script(self.scripts / "kernel-build.sh",
-                    'printf "build|%s\\n" "$KERNEL_CONSOLE" >> "$CALLS"\n')
+        self.script(self.scripts / "kernel-build.sh", 'printf "build|%s\\n" "$KERNEL_CONSOLE" >> "$CALLS"\n')
         self.tool("timeout", 'printf "timeout|%s\\n" "$*" >> "$CALLS"\nexit "$FAKE_STATUS"\n')
         for status, expected in ((33, 0), (35, 35), (124, 124)):
             self.run_script("kernel-console.sh", env={"FAKE_STATUS": str(status)}, expected=expected)
@@ -181,31 +229,40 @@ class DeveloperCommands(unittest.TestCase):
         self.assert_no_work()
 
     def test_uefi_console_uses_original_clock_and_preserves_status(self):
-        self.script(self.scripts / 'kernel-uefi-build.sh',
-                    'mkdir -p build/uefi\nprintf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\n')
-        self.env['REAL_PYTHON'] = sys.executable
-        self.tool('python3', 'exec "$REAL_PYTHON" -B "$@"\n')
-        self.tool('timeout', 'printf "timeout|%s\\n" "$*" >> "$CALLS"\nexit "$FAKE_STATUS"\n')
+        self.script(
+            self.scripts / "kernel-uefi-build.sh",
+            'mkdir -p build/uefi\nprintf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\n',
+        )
+        self.env["REAL_PYTHON"] = sys.executable
+        self.tool("python3", 'exec "$REAL_PYTHON" -B "$@"\n')
+        self.tool("timeout", 'printf "timeout|%s\\n" "$*" >> "$CALLS"\nexit "$FAKE_STATUS"\n')
         firmware = self.firmware()
         for status, expected in ((33, 0), (35, 35), (124, 124)):
-            self.run_script('kernel-uefi-console.sh', env={'FAKE_STATUS': str(status), 'OVMF': firmware},
-                            expected=expected)
+            self.run_script(
+                "kernel-uefi-console.sh", env={"FAKE_STATUS": str(status), "OVMF": firmware}, expected=expected
+            )
         self.assertEqual(len(self.calls()), 6)
         for build, command in zip(self.calls()[::2], self.calls()[1::2]):
-            self.assertEqual(build, 'build|console')
-            self.assertTrue(command.startswith('timeout|--foreground --kill-after=2 300 qemu-system-x86_64 '))
-            self.assertIn('-machine q35 -accel tcg', command)
-            self.assertNotIn('-icount', command)
-        receipt = json.loads((self.repo / 'build/uefi/console.clock.json').read_text())
-        self.assertEqual(receipt['clock_profile'], 'tcg-original-clock')
-        self.assertEqual(receipt['command_template'], 'normal')
-        self.assertEqual(receipt['execution_status'], 'not-established-by-command-receipt')
+            self.assertEqual(build, "build|console")
+            self.assertTrue(command.startswith("timeout|--foreground --kill-after=2 300 qemu-system-x86_64 "))
+            self.assertIn("-machine q35 -accel tcg", command)
+            self.assertNotIn("-icount", command)
+        receipt = json.loads((self.repo / "build/uefi/console.clock.json").read_text())
+        self.assertEqual(receipt["clock_profile"], "tcg-original-clock")
+        self.assertEqual(receipt["command_template"], "normal")
+        self.assertEqual(receipt["execution_status"], "not-established-by-command-receipt")
 
     def test_uefi_console_rejects_mixed_controls_before_build(self):
-        for name in ('KERNEL_TEST_SCHEDULE', 'KERNEL_USER_PROBE_MODE', 'KERNEL_CONSOLE', 'UEFI_MODE',
-                     'UEFI_CONSOLE_HANDOFF', 'AURORA_TEST_CONTEXT'):
-            self.run_script('kernel-uefi-console.sh', env={name: '1'}, expected=2)
-        self.run_script('kernel-uefi-console.sh', 'extra', expected=2)
+        for name in (
+            "KERNEL_TEST_SCHEDULE",
+            "KERNEL_USER_PROBE_MODE",
+            "KERNEL_CONSOLE",
+            "UEFI_MODE",
+            "UEFI_CONSOLE_HANDOFF",
+            "AURORA_TEST_CONTEXT",
+        ):
+            self.run_script("kernel-uefi-console.sh", env={name: "1"}, expected=2)
+        self.run_script("kernel-uefi-console.sh", "extra", expected=2)
         self.assert_no_work()
 
     def test_empty_fault_environment_is_not_an_injection(self):
@@ -223,9 +280,17 @@ class DeveloperCommands(unittest.TestCase):
         self.assert_no_work()
 
     def test_invalid_firmware_and_data_fail_before_build(self):
-        self.assertIn("combined OVMF.fd", self.run_script("kernel-run.sh", "uefi", env={"OVMF": str(self.home / "missing.fd")}, expected=2))
-        self.assertIn("combined OVMF.fd", self.run_script("kernel-run.sh", "uefi", env={"OVMF": str(self.home)}, expected=2))
-        self.assertIn("QEMU_DATA", self.run_script("kernel-run.sh", env={"QEMU_DATA": str(self.home / "missing-data")}, expected=2))
+        self.assertIn(
+            "combined OVMF.fd",
+            self.run_script("kernel-run.sh", "uefi", env={"OVMF": str(self.home / "missing.fd")}, expected=2),
+        )
+        self.assertIn(
+            "combined OVMF.fd", self.run_script("kernel-run.sh", "uefi", env={"OVMF": str(self.home)}, expected=2)
+        )
+        self.assertIn(
+            "QEMU_DATA",
+            self.run_script("kernel-run.sh", env={"QEMU_DATA": str(self.home / "missing-data")}, expected=2),
+        )
         self.assert_no_work()
 
     def test_compiler_route_preserves_controls_and_failure(self):
@@ -240,7 +305,10 @@ class DeveloperCommands(unittest.TestCase):
 
     def test_image_builders_check_dependencies_before_outputs(self):
         for name in ("kernel-build.sh", "kernel-uefi-build.sh"):
-            self.assertIn("Missing dependency: no-such-compiler", self.run_script(name, env={"CXX": "no-such-compiler"}, expected=2))
+            self.assertIn(
+                "Missing dependency: no-such-compiler",
+                self.run_script(name, env={"CXX": "no-such-compiler"}, expected=2),
+            )
         (self.bin / "readelf").unlink()
         self.assertIn("Missing dependency: readelf", self.run_script("kernel-uefi-build.sh", expected=2))
         self.assert_no_work()
@@ -252,15 +320,15 @@ class DeveloperCommands(unittest.TestCase):
 
     def test_make_uefi_checks_linker_before_compiler_build(self):
         self.tool("ld", 'printf "Supported emulations:\n elf_x86_64\n"\n')
-        result = subprocess.run([MAKE, "kernel-uefi"], cwd=self.repo, env=self.env,
-                                text=True, capture_output=True, timeout=5)
+        result = subprocess.run(
+            [MAKE, "kernel-uefi"], cwd=self.repo, env=self.env, text=True, capture_output=True, timeout=5
+        )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Missing UEFI PE linker", result.stderr)
         self.assert_no_work()
 
     def test_explicit_uefi_linker_never_falls_back(self):
-        self.assertIn("UEFI_LD", self.run_script("kernel-uefi-build.sh",
-            env={"UEFI_LD": "no-such-linker"}, expected=2))
+        self.assertIn("UEFI_LD", self.run_script("kernel-uefi-build.sh", env={"UEFI_LD": "no-such-linker"}, expected=2))
         self.tool("elf-only", 'printf "Supported emulations:\n elf_x86_64\n"\n')
         self.run_script("kernel-uefi-build.sh", env={"UEFI_LD": "elf-only"}, expected=2)
         self.assert_no_work()
@@ -280,15 +348,45 @@ class DeveloperCommands(unittest.TestCase):
             self.run_script(name, env={"CXX": cxx, "FAKE_STATUS": "79"}, expected=79)
         self.assertEqual(self.calls(), [f"make|{self.repo}|-C compiler|{cxx}|", f"make|{self.repo}|-C compiler|{cxx}|"])
         # This is a source-routing assertion, not proof of a successful build.
-        for name, count in (("kernel-build.sh", 1), ("kernel-uefi-build.sh", 5)):
+        for name in ("kernel-build.sh", "kernel-uefi-build.sh"):
             source = (self.scripts / name).read_text()
             self.assertNotIn("\ng++ ", source)
-            self.assertEqual(source.count('\n"$cxx" '), count)
+            if name == "kernel-build.sh":
+                self.assertEqual(source.count('\n"$cxx" '), 1)
+                continue
+            # Include indented profile-specific compiles, not just the five
+            # common translation units. This checks routing, never execution.
+            rows = re.findall(r'^\s*"\$cxx" [^\n]* -c (\S+) -o (\S+)$', source, re.MULTILINE)
+            expected = [
+                ("kernel/uefi/" + name + ".cpp", "build/uefi/" + name + ".o")
+                for name in (
+                    "payload",
+                    "acpi",
+                    "pci",
+                    "runtime",
+                    "loader",
+                    "framebuffer",
+                    "console",
+                    "graphical-console",
+                )
+            ]
+            expected += [
+                ("kernel/owned-bytes.cpp", "build/uefi/owned-bytes-runtime.o"),
+                ("kernel/uefi/owned-bytes.cpp", "build/uefi/owned-bytes-profile.o"),
+            ]
+            self.assertCountEqual(rows, expected)
 
     def test_make_help_and_run_selectors(self):
         self.assertIsNotNone(MAKE)
-        result = subprocess.run([MAKE, "help"], cwd=self.repo, env=self.env,
-                                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
+        result = subprocess.run(
+            [MAKE, "help"],
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=5,
+        )
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("make run-uefi", result.stdout)
         self.assert_no_work()
@@ -296,9 +394,15 @@ class DeveloperCommands(unittest.TestCase):
         qemu = str(self.tool("alternate qemu", "exit 93\n"))
         data = self.home / "make qemu data"
         data.mkdir()
-        result = subprocess.run([MAKE, "run-uefi", "CXX=g++-16", "QEMU=" + qemu, "OVMF=" + firmware, "QEMU_DATA=" + str(data)],
-                                cwd=self.repo, env=self.env, text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
+        result = subprocess.run(
+            [MAKE, "run-uefi", "CXX=g++-16", "QEMU=" + qemu, "OVMF=" + firmware, "QEMU_DATA=" + str(data)],
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=5,
+        )
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(self.calls(), [f"uefi|{self.repo}|normal|g++-16|{qemu}|{firmware}|{data}"])
 
@@ -307,22 +411,33 @@ class DeveloperCommands(unittest.TestCase):
         self.tool("as", 'echo "selected assembler"\n')
         pe = str(self.tool("selected PE", 'printf "Supported emulations:\n i386pep\n"\n'))
         self.run_script("host-build-check.sh", env={"CXX": cxx, "UEFI_LD": pe})
-        self.assertEqual([line.split("|")[2] for line in self.calls()],
-                         ["-C compiler --always-make", "kernel", "kernel-uefi", "test-uefi", "test-developer-commands"])
+        self.assertEqual(
+            [line.split("|")[2] for line in self.calls()],
+            ["-C compiler --always-make", "kernel", "kernel-uefi", "test-uefi", "test-developer-commands"],
+        )
         self.assertTrue(all(line.split("|")[3] == cxx for line in self.calls()))
 
     def test_host_check_stops_on_first_failed_gate(self):
-        self.tool("g++", 'echo "selected C++"\n'); self.tool("as", 'echo "assembler"\n')
+        self.tool("g++", 'echo "selected C++"\n')
+        self.tool("as", 'echo "assembler"\n')
         self.run_script("host-build-check.sh", env={"FAKE_STATUS": "79"}, expected=79)
         self.assertEqual(len(self.calls()), 1)
 
     def test_host_check_rejects_pins_faults_and_make_bypasses(self):
-        for name, value in (("AURORAC", "/stale/aurorac"), ("OUT", "/another/compiler"),
-                            ("MAKEFLAGS", "n"), ("MFLAGS", "-i"), ("GNUMAKEFLAGS", "-n"),
-                            ("MAKEFILES", "injected.mk"), ("MAKEOVERRIDES", "CXX=other"),
-                            ("KERNEL_TEST_FAULT", "1"), ("KERNEL_USER_PROBE_MODE", "1"),
-                            ("KERNEL_CONSOLE", "1"), ("KERNEL_CONSOLE", "0"),
-                            ("UEFI_MODE", "bad-table")):
+        for name, value in (
+            ("AURORAC", "/stale/aurorac"),
+            ("OUT", "/another/compiler"),
+            ("MAKEFLAGS", "n"),
+            ("MFLAGS", "-i"),
+            ("GNUMAKEFLAGS", "-n"),
+            ("MAKEFILES", "injected.mk"),
+            ("MAKEOVERRIDES", "CXX=other"),
+            ("KERNEL_TEST_FAULT", "1"),
+            ("KERNEL_USER_PROBE_MODE", "1"),
+            ("KERNEL_CONSOLE", "1"),
+            ("KERNEL_CONSOLE", "0"),
+            ("UEFI_MODE", "bad-table"),
+        ):
             with self.subTest(name=name):
                 self.assertIn("Unset " + name, self.run_script("host-build-check.sh", env={name: value}, expected=2))
         self.assert_no_work()
@@ -335,8 +450,7 @@ class DeveloperCommands(unittest.TestCase):
 
     def test_direct_shortcuts_reject_inherited_context_before_work(self):
         env = {"AURORA_TEST_CONTEXT": "/invalid/context.json", "AURORAC": "/selected/aurorac"}
-        for name, args in (("kernel-run.sh", ("bios",)), ("kernel-run.sh", ("uefi",)),
-                           ("compiler-test.sh", ())):
+        for name, args in (("kernel-run.sh", ("bios",)), ("kernel-run.sh", ("uefi",)), ("compiler-test.sh", ())):
             output = self.run_script(name, *args, env=env, expected=2)
             self.assertIn("rejects inherited AURORA_TEST_CONTEXT", output)
         self.assert_no_work()
@@ -345,15 +459,27 @@ class DeveloperCommands(unittest.TestCase):
         # The checker is mocked to reject. Any runner/build call adds an extra
         # record (or creates build/) and fails this test. No real receipt or
         # compiler is synthesized and no native-acceptance credit is claimed.
-        self.tool("python3", 'printf "context-check|%s|%s|%s\\n" "$*" "${AURORA_TEST_CONTEXT-}" "${AURORAC-}" >> "$CALLS"\nexit 79\n')
+        self.tool(
+            "python3",
+            'printf "context-check|%s|%s|%s\\n" "$*" "${AURORA_TEST_CONTEXT-}" "${AURORAC-}" >> "$CALLS"\nexit 79\n',
+        )
         env = self.env | {"AURORA_TEST_CONTEXT": "/invalid/context.json", "AURORAC": "/selected/aurorac"}
         for goal in ("test-nvme-queues", "smoke-nvme-prepare", "run", "run-uefi", "kernel-uefi"):
-            result = subprocess.run([MAKE, goal], cwd=self.repo, env=env, text=True,
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
+            result = subprocess.run(
+                [MAKE, goal],
+                cwd=self.repo,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=5,
+            )
             self.assertNotEqual(result.returncode, 0, result.stdout)
             calls = self.calls()
             self.assertEqual(len(calls), 1, calls)
-            self.assertTrue(calls[0].startswith("context-check|-B scripts/compiler_contract.py check --repo-root "), calls)
+            self.assertTrue(
+                calls[0].startswith("context-check|-B scripts/compiler_contract.py check --repo-root "), calls
+            )
             self.assertTrue(calls[0].endswith("|/invalid/context.json|/selected/aurorac"), calls)
             self.assertFalse((self.repo / "build").exists())
             self.record.unlink()

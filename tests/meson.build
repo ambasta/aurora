@@ -20,6 +20,7 @@ foreach entry : [
     ['owning-classes', 'compiler/owning_classes.py', 'core'],
     ['signed-integers', 'compiler/integers.py', 'core'],
     ['unsigned-integers', 'compiler/unsigned.py', 'core'],
+    ['binary-literals', 'compiler/binary_literals.py', 'core'],
     ['modules', 'modules/run.py', 'core'],
     ['source-depth', 'modules/robustness.py', 'core'],
     ['byte-literals', 'compiler/byte_literals.py', 'bytes'],
@@ -277,10 +278,12 @@ test('console-service-admission-controls', python,
 
 # Second sealed kind reuses the service verifier and private bridge.
 display_service_ir = executable(
-    'display-service-ir', 'compiler/display_service_ir.cpp',
+    'display-service-ir', 'compiler/service_group_ir.cpp',
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
-test('display-service-ir', display_service_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
+test('display-service-ir', python,
+     args: ['-B', '-O', files('compiler/service_group_ir_abi.py'), display_service_ir.full_path()],
+     depends: display_service_ir, suite: ['full', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 test('display-service-source-native', python,
      args: ['-B', '-O', files('compiler/display_service.py'), aurorac],
      depends: aurorac, suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
@@ -305,6 +308,23 @@ endforeach
 test('display-renderer-native', python,
      args: ['-B', files('kernel-display-renderer.py'), aurorac], depends: aurorac,
      suite: ['full', 'slow'], env: oracle_env, timeout: 300)
+# The complete generated graphical consumer remains outside fast developer feedback.
+# Its driver builds consumer/harness artifacts per invocation, never aurorac itself.
+test('graphical-console-native', python,
+     args: ['-B', '-O', files('kernel-graphical-console.py'), '--run', aurorac,
+            '--developer-selected-compiler'], depends: aurorac,
+     suite: ['full', 'slow'], env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
+graphical_paging = executable('graphical-paging', 'kernel-graphical-paging.cpp',
+                            native: true, install: false, override_options: ['optimization=1'],
+                            link_args: ['-no-pie'])
+test('graphical-paging', graphical_paging, suite: ['full', 'dev'], timeout: 120)
+test('graphical-admission-controls', python,
+     args: ['-B', files('kernel-graphical-admission-controls.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+test('graphical-admission-controls-optimized', python,
+     args: ['-B', '-O', files('kernel-graphical-admission-controls.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+
 # Previously Make-only complete source oracles. Keep exhaustive sweeps in slow.
 foreach runner : [
   'templates', 'function_templates', 'function_overloads', 'fixed_containers',
@@ -319,6 +339,14 @@ foreach runner : [
 endforeach
 
 # Public Make routing must be exercised by the required developer suite.
+test('graphical-image-policy', python, args: ['-B', files('kernel-graphical-image-policy.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+test('graphical-image-policy-optimized', python, args: ['-B', '-O', files('kernel-graphical-image-policy.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+test('graphical-profile-metadata', python, args: ['-B', files('kernel-graphical-profile-metadata.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+test('graphical-profile-metadata-optimized', python, args: ['-B', '-O', files('kernel-graphical-profile-metadata.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 test('developer-commands', python, args: ['-B', files('developer-commands.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 test('developer-commands-optimized', python, args: ['-B', '-O', files('developer-commands.py')],

@@ -100,8 +100,12 @@ inline LexedSource lexSource(std::shared_ptr<const SourceText> source,
             continue;
         }
         if (std::isdigit(byte)) {
+            const bool binary = byte == '0' && index + 1 < s.size() && (s[index + 1] == 'b' || s[index + 1] == 'B');
             ++index;
-            while (index < s.size() && (std::isalnum(static_cast<unsigned char>(s[index])) || s[index] == '_'))
+            // Keep attempted binary spellings whole, including invalid digits,
+            // separators and suffixes; semantic validation rejects them once.
+            while (index < s.size() && (std::isalnum(static_cast<unsigned char>(s[index])) || s[index] == '_' ||
+                                        (binary && s[index] == '\'')))
                 ++index;
             out.tokens.emplace_back(s.substr(begin.offset, index - begin.offset), span(begin));
             continue;

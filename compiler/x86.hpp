@@ -203,21 +203,23 @@ class X86Emitter {
         return recordBytes;
     }
     int packService(const ir::Function &target, const ir::ServiceCall &operation) {
-        for (std::size_t reverse = target.parameters.size(); reverse > 1; --reverse)
-            if (!target.parameters[reverse - 1].isSpan())
+        for (std::size_t reverse = target.parameters.size(); reverse > 0; --reverse)
+            if (!target.parameters[reverse - 1].isSpan() && !target.parameters[reverse - 1].isService())
                 pop(argumentRegisters[reverse - 1]);
         const int bytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
         reserveStack(bytes);
         for (int byte = 0; byte < bytes; byte += 8)
             line("movq $0, " + std::to_string(byte) + "(%rsp)");
-        const int capability = serviceLoanOffsets.at(operation.loanId);
-        for (int byte = 0; byte < service::capabilityBytes; byte += 8) {
-            line("movq " + address(capability - byte) + ", %rax");
-            line("movq %rax, " + std::to_string(byte) + "(%rsp)");
-        }
-        for (std::size_t index = 1; index < target.parameters.size(); ++index) {
+        for (std::size_t index = 0; index < target.parameters.size(); ++index) {
             const int offset = recordOffset(target, index);
-            if (target.parameters[index].isSpan()) {
+            if (target.parameters[index].isService()) {
+                const int loan = index == 0 ? operation.loanId : operation.additionalServices.at(index - 1).loanId;
+                const int capability = serviceLoanOffsets.at(loan);
+                for (int byte = 0; byte < service::capabilityBytes; byte += 8) {
+                    line("movq " + address(capability - byte) + ", %rax");
+                    line("movq %rax, " + std::to_string(offset + byte) + "(%rsp)");
+                }
+            } else if (target.parameters[index].isSpan()) {
                 for (int byte = 0; byte < ir::spanBytes; byte += 8) {
                     line("movq " + address(operation.spanArguments[index] - byte) + ", %rax");
                     line("movq %rax, " + std::to_string(offset + byte) + "(%rsp)");
@@ -596,11 +598,12 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::BindServiceParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     for (int byte = 0; byte < service::capabilityBytes; byte += 8) {
-                        line("movq " + std::to_string(byte) + "(%r11), %rax");
+                        line("movq " + std::to_string(recordOffset(*currentFunction, operation.index) + byte) +
+                             "(%r11), %rax");
                         line("movq %rax, " + address(operation.offset - byte));
                     }
                 } else if constexpr (std::is_same_v<Op, ir::AcquireServiceLoan>) {
-                    serviceLoanOffsets[operation.loanId] = operation.offset;
+                    // Static loan-to-root map is prepared before code emission.
                 } else if constexpr (std::is_same_v<Op, ir::ReleaseServiceLoan>) {
                     // Static provenance is checked across joins independently.
                 } else if constexpr (std::is_same_v<Op, ir::ServiceCall>) {
@@ -1020,6 +1023,9 @@ public:
         for (const auto &function : module.functions) {
             stackDepth = 0;
             serviceLoanOffsets.clear();
+            for (const auto &operation : function.code)
+                if (const auto *loan = std::get_if<ir::AcquireServiceLoan>(&operation))
+                    serviceLoanOffsets.emplace(loan->loanId, loan->offset);
             divisionIndex = 0;
             currentFunction = &function;
             const bool aggregate = aggregateSignature(function);

@@ -4,7 +4,7 @@ override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-acceptance test-compiler test-image test-kernel test-division test-uefi-runtime test-terminal-event test-semantics test-semantics-stress test-unsigned test-uefi-span test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-round-robin test-console test-ipc-transaction test-client-disposal test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases,$(MAKECMDGOALS))
+override _AURORA_TEST_GOALS := $(filter test test-acceptance test-compiler test-image test-kernel test-division test-uefi-runtime test-terminal-event test-semantics test-semantics-stress test-unsigned test-uefi-span test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-round-robin test-console test-graphical-console test-ipc-transaction test-client-disposal test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases,$(MAKECMDGOALS))
 override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
@@ -115,7 +115,8 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-client-disposal test-terminal-event test-native-cap-contracts \
     run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
     program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream capture-framebuffer \
-    test-developer-commands test-inventory test-iommu-diagnostics test-artifact-budget: aurora-test-context
+    test-developer-commands test-inventory test-graphical-console test-graphical-paging \
+    test-graphical-controls test-iommu-diagnostics test-artifact-budget: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -197,6 +198,10 @@ kernel-uefi:
 
 # Synthetic shortcut checks also run in the native aggregate.
 test-developer-commands:
+	python3 -B tests/kernel-graphical-image-policy.py
+	python3 -B -O tests/kernel-graphical-image-policy.py
+	python3 -B tests/kernel-graphical-profile-metadata.py
+	python3 -B -O tests/kernel-graphical-profile-metadata.py
 	python3 -B tests/framebuffer-preview.py
 	python3 -B -O tests/framebuffer-preview.py
 	python3 -B tests/developer-commands.py
@@ -537,6 +542,23 @@ test-lint:
 test-terminal-event: compiler
 	python3 -B -O tests/kernel-terminal-event-native.py --compiler "$(AURORAC)" $(AURORA_TEST_IDENTITY_ARGS)
 test: test-terminal-event
+
+# Hosted graphical coverage is distinct from linked-image and guest qualification.
+# The actual consumer shares the supervisor's immutable build-once compiler.
+.PHONY: test-graphical-console test-graphical-paging test-graphical-controls
+test-graphical-console: compiler test-graphical-paging test-graphical-controls
+	python3 -B -O tests/kernel-graphical-console.py --run "$(AURORAC)" $(AURORA_TEST_IDENTITY_ARGS)
+
+test-graphical-paging:
+	mkdir -p build
+	$(CXX) -std=c++23 -O1 -Wall -Wextra -Wpedantic -Werror -no-pie tests/kernel-graphical-paging.cpp -o build/kernel-graphical-paging-test
+	build/kernel-graphical-paging-test
+
+test-graphical-controls:
+	python3 -B tests/kernel-graphical-admission-controls.py
+	python3 -B -O tests/kernel-graphical-admission-controls.py
+
+test: test-graphical-console
 
 .PHONY: test-inventory
 test: test-inventory test-developer-commands

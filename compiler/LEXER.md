@@ -17,6 +17,12 @@ Single-quoted [byte literals](BYTES.md#ascii-byte-character-literals) are one
 lossless token, including escapes and delimiters. Malformed spellings use AU1002
 with the attempted literal span; quote-like bytes inside comments stay trivia.
 
+Binary integer spellings retain their `0b`/`0B` prefix, C++ apostrophe separators
+and exact suffix as one token. Malformed binary digit/separator/suffix attempts
+also stay whole for semantic integer-literal rejection; an apostrophe starting a
+token still begins a byte literal. The [integer contract](UNSIGNED.md#source-contract)
+defines ranges and keeps array/template capacities decimal-only.
+
 The legacy `lex(contents, path)` API wraps the same scanner with
 `TriviaRetention::Discard` and returns only tokens. Compilation therefore does
 not retain a trivia vector. `Parser` owns a copy of those tokens, so consuming

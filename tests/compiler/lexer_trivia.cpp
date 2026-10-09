@@ -1,5 +1,6 @@
 #include "lexer.hpp"
 #include "parser.hpp"
+#include "integer_literal.hpp"
 #include <algorithm>
 #include <clocale>
 #include <fstream>
@@ -93,6 +94,62 @@ void verify(const std::string &source, const std::string &path) {
         next = span.end.offset;
     }
     require(next == source.size() && reconstructed == source, "lossless source reconstruction");
+}
+void binaryLiterals() {
+    const std::string prefix = "// header\r\n\t";
+    for (const std::string spelling : {"0b0",
+                                       "0B00101",
+                                       "0b1'0010'11u8",
+                                       "0b1'0u64",
+                                       "0b10001'10001'10001'11111'10001'10001'01110u64",
+                                       "0b",
+                                       "0b2",
+                                       "0b'1",
+                                       "0b1''0",
+                                       "0b1'",
+                                       "0b1'u64",
+                                       "0b1u64'0",
+                                       "0b1_0",
+                                       "0b1u65"}) {
+        verify(prefix + spelling + "+'[' // preserve 'row'\r\n", "binary.au");
+        const auto tokens = aurora::lexSource(prefix + spelling).tokens;
+        require(tokens.size() == 2 && tokens[0].text == spelling && tokens[0].span.begin.line == 2 &&
+                    tokens[0].span.begin.column == 2 && tokens[0].span.end.offset == prefix.size() + spelling.size(),
+                "binary spelling is not one lossless token");
+    }
+    for (std::uint64_t value = 0; value < 256; ++value) {
+        std::string spelling = "0b";
+        for (int bit = 7; bit >= 0; --bit) {
+            if (bit != 7)
+                spelling += '\'';
+            spelling += ((value >> bit) & 1) ? '1' : '0';
+        }
+        require(aurora::decodeIntegerMagnitude(spelling) == value, "binary digit/separator decoding");
+        require(aurora::decodeIntegerMagnitude(std::to_string(value)) == value, "decimal decoding changed");
+        verify(spelling + "u8+'\\''", "binary-byte-boundary.au");
+    }
+    require(aurora::decodeIntegerMagnitude("18446744073709551615") == UINT64_MAX &&
+                aurora::decodeIntegerMagnitude("0B" + std::string(64, '1')) == UINT64_MAX &&
+                aurora::decodeIntegerMagnitude("0008") == 8 &&
+                aurora::decodeIntegerMagnitude("0b" + std::string(128, '0') + "1") == 1,
+            "full-width or leading-zero magnitude decoding");
+    for (const std::string &spelling : std::vector<std::string>{"",
+                                                                "0b",
+                                                                "0B",
+                                                                "0b2",
+                                                                "0b102",
+                                                                "0b'1",
+                                                                "0b1''0",
+                                                                "0b1'",
+                                                                "0b1_0",
+                                                                "0b1u64",
+                                                                "0b1'a",
+                                                                "0b1u8'0",
+                                                                "1'0",
+                                                                "0x10",
+                                                                "18446744073709551616",
+                                                                "0b1" + std::string(64, '0')})
+        require(!aurora::decodeIntegerMagnitude(spelling), "invalid integer magnitude accepted: " + spelling);
 }
 void byteLiterals() {
     const std::string prefix = "// header\r\n\t";
@@ -212,6 +269,7 @@ int main(int argc, char **argv) {
         }
         require(std::setlocale(LC_CTYPE, originalLocale.c_str()) != nullptr, "cannot restore locale");
         cases();
+        binaryLiterals();
         for (int index = 1; index < argc; ++index) {
             std::ifstream input(argv[index], std::ios::binary);
             require(input.good(), "cannot open corpus source");

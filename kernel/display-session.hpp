@@ -33,6 +33,10 @@ template <class Transport, class Platform> class Session final {
         if (!valid)
             Platform::fail();
     }
+#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
+    // Preserve two independently bound bootstrap authority frames in the paired profile.
+    [[gnu::noinline, gnu::noclone, gnu::noipa]]
+#endif
     static auto validate(const void *grant, std::uint64_t generation, bool operation) -> void {
         // Compare the exact address before dereferencing any supplied pointer.
         require(grant == &grant_);
@@ -52,6 +56,12 @@ template <class Transport, class Platform> class Session final {
     }
 
 public:
+    // Trusted host entry validation only; no source-visible operation or effects.
+    static auto preflight(const void *grant, std::uint64_t generation, std::uint64_t width, std::uint64_t height)
+        -> void {
+        validate(grant, generation, false);
+        require(width == grant_.width && height == grant_.height);
+    }
     [[nodiscard]] static auto open() -> ServiceArgument {
         const auto next = next_generation(generation_);
         require(next != 0 && !grant_.active && !grant_.operation && Platform::quiet());

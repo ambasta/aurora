@@ -34,6 +34,10 @@ template <class Transport, class Platform> class Session final {
             Platform::fail();
         }
     }
+#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
+    // Preserve two independently bound bootstrap authority frames in the paired profile.
+    [[gnu::noinline, gnu::noclone, gnu::noipa]]
+#endif
     static auto validate(const void *grant, std::uint64_t generation, bool operation) -> void {
         require(grant == &grant_);
         require(grant_.kind == console_kind && grant_.active && grant_.operation == operation && generation != 0 &&
@@ -50,6 +54,10 @@ template <class Transport, class Platform> class Session final {
     }
 
 public:
+    // Trusted host entry validation only; no source-visible operation or effects.
+    static auto preflight(const void *grant, std::uint64_t generation) -> void {
+        validate(grant, generation, false);
+    }
     [[nodiscard]] static auto open() -> ServiceArgument {
         // Reject exhausted identity before even a platform quiescence hook,
         // which may itself stop an admitted timer.

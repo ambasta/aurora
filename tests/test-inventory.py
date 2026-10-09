@@ -70,6 +70,103 @@ def check(manifest, files, make_runners, registered=None, root_runners=None):
             raise ValueError(f"Meson registration drift: {name}")
 
 
+GRAPHICAL_PYTHON_TESTS = {
+    "graphical-console-native": ("kernel-graphical-console.py", "slow", True),
+    "graphical-admission-controls": ("kernel-graphical-admission-controls.py", "dev", False),
+    "graphical-admission-controls-optimized": ("kernel-graphical-admission-controls.py", "dev", True),
+    "graphical-image-policy": ("kernel-graphical-image-policy.py", "dev", False),
+    "graphical-image-policy-optimized": ("kernel-graphical-image-policy.py", "dev", True),
+    "graphical-profile-metadata": ("kernel-graphical-profile-metadata.py", "dev", False),
+    "graphical-profile-metadata-optimized": ("kernel-graphical-profile-metadata.py", "dev", True),
+}
+
+
+def check_graphical_make(source):
+    """Narrow exact graphical routes, in addition to the compiler-only inventory."""
+    _, _, reached, recipes = make_inventory(source)
+    needed = {"test-graphical-console", "test-graphical-paging", "test-graphical-controls"}
+    if not needed <= reached:
+        raise ValueError("graphical root Make coverage drift")
+    dispatch = re.search(r"^override _AURORA_TEST_GOALS := (.*)$", source, re.MULTILINE)
+    if dispatch is None or "test-graphical-console" not in dispatch[1].split():
+        raise ValueError("graphical goal lost shared compiler dispatch")
+    context_targets = set()
+    for line in re.sub(r"\\\r?\n", " ", source).splitlines():
+        targets, separator, prerequisite = line.partition(":")
+        if separator and prerequisite.strip() == "aurora-test-context":
+            context_targets.update(targets.split())
+    if not needed <= context_targets:
+        raise ValueError("graphical goal lost active-context validation")
+    expected = {
+        "test-graphical-console": [
+            'python3 -B -O tests/kernel-graphical-console.py --run "$(AURORAC)" $(AURORA_TEST_IDENTITY_ARGS)',
+        ],
+        "test-graphical-paging": [
+            "mkdir -p build",
+            "$(CXX) -std=c++23 -O1 -Wall -Wextra -Wpedantic -Werror -no-pie "
+            "tests/kernel-graphical-paging.cpp -o build/kernel-graphical-paging-test",
+            "build/kernel-graphical-paging-test",
+        ],
+        "test-graphical-controls": [
+            "python3 -B tests/kernel-graphical-admission-controls.py",
+            "python3 -B -O tests/kernel-graphical-admission-controls.py",
+        ],
+    }
+    for target, wanted in expected.items():
+        if [line.strip() for line in recipes.get(target, [])] != wanted:
+            raise ValueError("graphical Make recipe drift: " + target)
+    if not re.search(
+        r"^test-graphical-console: compiler test-graphical-paging test-graphical-controls$", source, re.MULTILINE
+    ):
+        raise ValueError("graphical focused dependency drift")
+
+
+def check_graphical_meson(entries):
+    names = [entry["name"] for entry in entries]
+    for name, (script, feedback, optimized) in GRAPHICAL_PYTHON_TESTS.items():
+        if names.count(name) != 1:
+            raise ValueError("missing or duplicate graphical Meson test: " + name)
+        entry = next(row for row in entries if row["name"] == name)
+        expected = ["-B"] + (["-O"] if optimized else [])
+        arguments = entry["cmd"][1:]
+        size = len(expected)
+        if (
+            arguments[:size] != expected
+            or len(arguments) <= size
+            or Path(arguments[size]).resolve() != ROOT / "tests" / script
+        ):
+            raise ValueError("graphical Meson runner/flags drift: " + name)
+        tail = arguments[size + 1 :]
+        if name == "graphical-console-native":
+            if (
+                len(tail) != 3
+                or tail[0] != "--run"
+                or Path(tail[1]).name != "aurorac"
+                or tail[2] != "--developer-selected-compiler"
+                or "aurorac@exe" not in entry.get("depends", [])
+            ):
+                raise ValueError("graphical Meson selected compiler/dependency drift")
+        elif tail:
+            raise ValueError("unexpected graphical control arguments: " + name)
+        if {suite.rsplit(":", 1)[-1] for suite in entry["suite"]} != {"full", feedback}:
+            raise ValueError("graphical Meson suite drift: " + name)
+    if names.count("graphical-paging") != 1:
+        raise ValueError("missing or duplicate graphical paging Meson test")
+    paging = next(row for row in entries if row["name"] == "graphical-paging")
+    if (
+        len(paging["cmd"]) != 1
+        or Path(paging["cmd"][0]).name != "graphical-paging"
+        or not any(item.endswith("@@graphical-paging@exe") for item in paging.get("depends", []))
+        or {suite.rsplit(":", 1)[-1] for suite in paging["suite"]} != {"full", "dev"}
+    ):
+        raise ValueError("graphical paging executable/dependency/suite drift")
+    expected_scripts = {script for script, _, _ in GRAPHICAL_PYTHON_TESTS.values()}
+    for entry in entries:
+        for argument in entry["cmd"][1:]:
+            if Path(argument).name in expected_scripts and entry["name"] not in GRAPHICAL_PYTHON_TESTS:
+                raise ValueError("unexpected duplicate graphical runner registration")
+
+
 def canonical_command(arguments, root, build, workdir=None):
     """Normalize real path arguments, preserving flags and argument order."""
     roots = sorted(((Path(root).resolve(), '@SOURCE@'), (Path(build).resolve(), '@BUILD@')),
@@ -186,11 +283,13 @@ def main():
         raise ValueError("root Make no longer dispatches the complete compiler aggregate")
     make_runners = root_all | compiler_all
     root_runners |= compiler_runners
+    check_graphical_make((ROOT / "Makefile").read_text())
     registered = None
     records = None
     if args.meson_info:
         records = json.loads(args.meson_info.read_text())
         registered = set()
+        check_graphical_meson(records)
         for entry in records:
             for argument in entry["cmd"]:
                 path = Path(argument).resolve()
@@ -213,6 +312,7 @@ def main():
         f"({'verified' if registered is not None else 'declared, not checked in this invocation'}); "
         f"{len(gaps)} explicitly documented Meson gaps"
     )
+    print("PASS graphical focused Make routes and declared Meson bindings")
     print("Native inventory: " + json.dumps(native_summary, sort_keys=True))
     print("Registration is not execution; final-source full Meson and affected emulator gates remain required.")
 

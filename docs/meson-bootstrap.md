@@ -1,8 +1,8 @@
 # Canonical incremental native tests
 
-The graph-completion change is an **unqualified source-only candidate** based on
-PR102. Historical results below do not qualify this new graph. Run it on the final
-source with both GCC 14 and GCC 16 before claiming complete native acceptance.
+This joined graphical-console and canonical-graph source is pending final
+qualification with GCC 14 and GCC 16. Previous separately qualified snapshots do
+not qualify this combined tree.
 
 ## Build and run
 
@@ -288,3 +288,11 @@ compatibility check; the 33.68-second combined dev timing remains scoped to the
 prior measured candidate and compiler. Both runs record selected-artifact identity,
 not an externally approved pin. Worker count remains configurable; only the
 two-worker setting is measured here.
+
+## Graphical console coverage
+
+The joined graph retains the complete Aurora graphical hosted harness in `slow`,
+the paired paging model, both ordinary and optimized admission/image-policy/metadata
+controls, and the distinct-service private-ABI runner. Compiler binary-literal
+coverage executes through the normal compiler suite. These native tests remain
+separate from current-image graphical, failure, timeout and restoration boots.

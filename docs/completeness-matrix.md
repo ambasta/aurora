@@ -4,11 +4,11 @@
 
 This is the canonical project-level status and contract index. Update this section
 in place; the checkpoint summaries below are historical, not an accumulating
-list of current limitations. This source is integrated with accepted PR97 / main
-`916fd18f18995241c1da367db6a04e7eb3cfce63` (2026-10-08), preserving terminal-event,
-structural-formatter, protected-console, byte-literal and JSON-report work.
-The persistent simple-UEFI Aurora console service has the bounded qualification
-noted below.
+list of current limitations. This candidate joins the bounded graphical console,
+distinct service borrows, host-toolchain portability, readable glyph literals and
+the canonical Meson graph. Final joined-source native and guest qualification is
+pending; earlier snapshot results retain their original scope. The persistent
+simple-UEFI Aurora console service has the bounded qualification noted below.
 Compiler- and kernel-affecting merges require final integrated GCC 14 and GCC 16
 `full` Meson and relevant image/smoke gates. The source-only graph-completion
 candidate maps the former root Make graph into Meson, with Make as a convenience
@@ -41,6 +41,32 @@ hardware support.
 
 ### Current contract map
 
+A separate [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)
+combines Aurora-owned Line64 editing and dirty cells under distinct Console/Display
+borrows. Its original 988-file image snapshots passed the independently reviewed
+positive three-boot window 004: real PTY editing/help/status/rejection/exit,
+17 physical/PPM capture pairs and ordinary normal restoration with exit 33.
+Four further preserved-image windows passed 64-byte capacity, 65th-byte overflow
+recovery, 80-event termination and native 4096-wake idle fail-stop, with 22 additional
+physical/PPM pairs and their own normal restorations. The linked contract records
+the independent review and exact scope.
+The earlier 67 hosted cases retain their original scope. A joined capture-only
+seven-selector failure candidate adds a required 68th hosted case; its focused
+run, new exact image/stack admission, denial/pixel-failure guests and
+final integrated dev/slow/full Make remain pending. The 96-sample guard remains
+hosted-only. Preserved-image receipts do not qualify this changed source.
+The checker distinguishes the exact GCC14 alias-pair and GCC16 single-definition
+paired-verifier layouts, with separate machine/storage/recursion contracts and
+unchanged budgets. Source controls do not replace either toolchain's fresh image
+admission, affected guests or final aggregate gates.
+
+This isolated next-language checkpoint adds an unqualified explicit leading group
+of distinct ConsoleSession/DisplaySession borrows for the planned graphical line
+editor. Both formal orders and singleton/pair forwarding retain separate sealed
+authority. Focused release build, source/private-ABI and 146 cumulative hostile-IR
+checks passed; final integrated dev/slow/full Make acceptance remains pending. The [service contract](../compiler/SERVICES.md#distinct-group-checkpoint-status)
+records the compiler-only scope and remaining combined native admission boundary.
+
 The simple-UEFI console owns its complete Line64 editor, command parser and
 presentation in one Aurora frame. The [sealed service contract](../compiler/SERVICES.md)
 keeps copied reports separate from authority; the [kernel contract](native-console-service.md)
@@ -52,6 +78,13 @@ contract is in [SERVICES.md](../compiler/SERVICES.md); native framebuffer/guest
 acceptance remains a separately gated integration.
 
 ASCII byte character literals provide a bounded compiler/JSON increment: single-quoted ASCII and explicit byte escapes have exact `u8` type, lossless spans and unchanged checked operations. Two JSON quote append sites use the syntax. See the [source contract](../compiler/BYTES.md#ascii-byte-character-literals). No Unicode character type, strings or new kernel/hardware qualification is implied.
+
+Binary integer expression literals now have `0b`/`0B` prefixes and C++ apostrophe
+separators between digits, retaining exact i64/u64/u8 types and checked ranges.
+The [source contract](../compiler/UNSIGNED.md#source-contract) keeps capacities
+decimal-only. Readable five-bit font groups preserve packed values and dispatch;
+no table storage or stack change is introduced. Compiler-wide final integrated
+qualification remains required; historical guest evidence is not a new run.
 
 The two JSON append reports normalize invalid success counts once at construction
 and expose plain status reads while preserving failure-count masking and public
@@ -1575,3 +1608,13 @@ pre-guest review; final evidence review/publication remain separate. No prior pa
 transfers. See [status](kernel-owned-views-results.md).
 
 </details>
+
+Only the graphical profile requires the private Console and Display validators
+to remain separate non-inlined, non-cloned bootstrap functions. Their raw compiler
+symbols, source ownership and frame sizes must agree with object/linked evidence;
+the validation predicates are unchanged. Other profiles do not enable these
+emission attributes. This boundary changes paired generated inputs, so fresh
+image/stack and capture-contract review is required before qualification reuse.
+
+The paired GCC16 stack path also checks distinct normal and capture memory-push pairs against
+pre-push frame bounds; this adds no general memory-operand or authority allowance.

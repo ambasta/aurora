@@ -41,7 +41,10 @@ Module displayForwarded() {
     return m;
 }
 } // namespace
-int main() {
+#ifndef DISPLAY_SERVICE_IR_MAIN
+#define DISPLAY_SERVICE_IR_MAIN main
+#endif
+int DISPLAY_SERVICE_IR_MAIN() {
     console_service_regression();
     good(displayPixel());
     good(displayForwarded());
@@ -139,4 +142,5 @@ int main() {
         });
     }
     std::cout << "PASS display service IR and Console regression: " << checks << " checks\n";
+    return 0;
 }
