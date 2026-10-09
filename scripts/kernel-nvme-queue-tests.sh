@@ -79,3 +79,4 @@ done
 echo 'PASS: production queue API and invalid configuration/profile controls'
 python3 tests/kernel-uefi-nvme-stack.py --self-test
 python3 -O tests/kernel-uefi-nvme-stack.py --self-test
+python3 -B tests/kernel-uefi-nvme-stack.py --emission-test

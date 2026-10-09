@@ -189,7 +189,7 @@
     "scripts/kernel-uefi-user-phases-tests.sh": "47acd18e3786b2539761f1b533b0c70a68acfe7f2f570ee0abb6b44af12f4c0e",
     "scripts/kernel-uefi-bar-tests.sh": "5168c480b896643c6a7e93c990877ac4651c4e08b893557f82df25c12602fe5a",
     "scripts/kernel-framebuffer-tests.sh": "19199c881cef8825f806e4c809f1181f8128e985720c0ef9c3f5c21781ff05eb",
-    "scripts/kernel-nvme-queue-tests.sh": "13f709d1a2763d6fe74405c8c263cf1d3b77270be41939999d0a5f8c56f67dbb",
+    "scripts/kernel-nvme-queue-tests.sh": "dc02bcbc88c9987d196e7faaedce0d3439bca9b64c1963332b4924b9fc9af52c",
     "scripts/kernel-owned-bytes-tests.sh": "d0225a84983fbfec112a2c711a5a935f26446387a52935427ecda26fc99bc57c",
     "scripts/kernel-uefi-ivrs-tests.sh": "28e49de7e1ada9a823f9f9ec0d09857c7525cfc8bf7515fe57a63f6428a0a13c",
     "scripts/kernel-uefi-runtime-tests.sh": "9f24b5daa710f4f505a565de4ebaa86b48f54bbd42b8e6725d7e5822e8d01a62",

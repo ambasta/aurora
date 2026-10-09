@@ -103,6 +103,14 @@ case "${UEFI_MODE:-normal}" in
  nx) extra+=(-DAURORA_UEFI_NX) ;;
  *) echo 'Unknown UEFI build mode' >&2; exit 2 ;;
 esac
+# Profiles share this directory. Retire only owned profile objects and their
+# compiler sidecars before rebuilding; keep common outputs, caches and evidence.
+profile_objects=(console console-entry graphical-console framebuffer event-intake
+    owned-bytes-runtime owned-bytes-profile runtime-entry runtime-exceptions
+    user-{clean,bounds,peer}{,-entry})
+for name in "${profile_objects[@]}"; do
+    rm -f -- "build/uefi/$name.o" "build/uefi/$name.su" "build/uefi/$name.ci"
+done
 case "${UEFI_MODE:-normal}" in
  framebuffer|framebuffer-record|framebuffer-permissions|framebuffer-stale)
     framebuffer_provenance=()
