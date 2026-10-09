@@ -135,7 +135,7 @@ Normal development reuses dependency-tracked compiler and C++ fixture builds.
 Changing source reruns affected build commands; changing toolchain/configuration
 requires another directory. Make is a convenience entrypoint to the same graph,
 with `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` controls. Omit
-`MESON_BUILD_DIR` for a stable toolchain/flags-keyed directory, or set it to a
+`MESON_BUILD_DIR` for a stable compiler-bytes/flags-keyed directory, or set it to a
 fresh or matching configured directory. Explicit
 pinned legacy compatibility remains in the [developer-test contract](docs/developer-test-contract.md).
 Selected artifact identity, a focused pass or registration alone does not establish

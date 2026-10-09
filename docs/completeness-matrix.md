@@ -11,7 +11,8 @@ canonical Meson graph. Every merge or release requires final integrated GCC 16
 GCC 14 is optional targeted compatibility evidence, not a routine gate.
 Make is a convenience entrypoint to the same incremental graph; a second full
 Make aggregate is not required. Fresh explicit build directories configure
-automatically, and existing directories must match their toolchain and flags.
+automatically; compiler/flag changes select separate defaults, while changed
+backend/runtime identities reject reuse and require a fresh directory.
 Package Manifest/Graph command receipts distinguish actual compiler and native
 CPU/wall cost under fixed watchdogs; see the [test contract](developer-test-contract.md).
 Public protected-console commands build and check local artifacts; separately
@@ -42,8 +43,10 @@ hardware support.
 ### Current contract map
 
 The current-source `make smoke-graphical-console` runner now retains fresh
-production/capture pixel evidence and an actual final normal restoration. Its
-compiler-free controls are registered in ordinary/optimized Meson `dev`/`full`;
+production/capture pixel evidence and an actual final normal restoration. The
+shell also restores the shared `build/uefi` normal image after build-only,
+success, failure and handled interruption, preserving failure status and logs.
+Its compiler-free controls are registered in ordinary/optimized Meson `dev`/`full`;
 implementation and registration alone do not establish fresh guest or aggregate passes.
 
 The [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)

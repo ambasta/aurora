@@ -56,7 +56,10 @@ for this developer command. Independent review and final GCC 16 `full` remain
 separate merge gates. This command creates new observations, not recovered evidence.
 
 For review before execution, use `scripts/kernel-graphical-smoke.sh --build-only`.
-It prints a fresh directory containing ordinary image copies and build logs.
+It prints a fresh directory containing ordinary image copies and build logs,
+then rebuilds normal UEFI in the shared `build/uefi` directory before returning.
+Incoming and final shared outputs are retained as `previous-build` and `last-build`
+inside the run directory, so stale profile objects cannot contaminate normal admission.
 Then run `python3 -B scripts/kernel_graphical_smoke.py --images DIR/images
 --evidence DIR/guests QEMU OVMF CODE VARS DATA`, using either a combined OVMF path
 or the CODE/VARS pair and empty strings for unused inputs. The shell uses the
@@ -87,10 +90,14 @@ with full pairs only at matches); restoration has
 30 seconds. Serial is limited to 1 MiB, cumulative QMP and each child output file
 to 4 MiB. Per-case raw pairs, input, serial, QMP, stderr and summary are preserved
 on first failure; remaining cases stop, owned QEMU is reaped, and the retained
-normal image is actually booted in `finally`. Normal restoration does not change
-the last capture build left in `build/uefi`; normal developer commands rebuild
-that shared output themselves. This isolated window leaves no persistent guest
-state, so one final restoration suffices. Ordinary/optimized compiler-free runner
+normal image is actually booted in `finally`. Separately, the shell rebuilds
+normal UEFI in shared `build/uefi` on success, build-only, and failure or handled
+INT/TERM after staging starts. Foreground work finishes before shell restoration;
+the original failure status is preserved, and a restoration failure is reported
+with its retained build log and makes an otherwise successful command fail.
+This rebuild does not replace the staged-normal boot validation. This isolated
+window leaves no persistent guest state, so one final boot suffices.
+Ordinary/optimized compiler-free runner
 controls belong to Meson `dev`/`full` and `make test-graphical-controls`.
 
 ## Dependency and outcome

@@ -5,7 +5,10 @@ from contextlib import contextmanager
 import copy
 import io
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -85,6 +88,161 @@ def expected(case):
 
 
 class Controls(unittest.TestCase):
+    def test_shell_restores_shared_image(self):
+        builder = """#!/usr/bin/env bash
+set -eu
+echo "build:$UEFI_MODE" >> events
+mkdir -p build/uefi/esp/EFI/BOOT
+[[ $UEFI_MODE != normal || ! -f build/uefi/graphical-console.o ]] || exit 19
+[[ $UEFI_MODE == normal ]] || touch build/uefi/graphical-console.o
+restoring=0
+if [[ $UEFI_MODE == normal && -f first-normal ]]; then
+    restoring=1
+    [[ ${FAIL_RESTORE:-0} == 0 ]] || exit 29
+else
+    [[ $UEFI_MODE != normal ]] || touch first-normal
+fi
+echo "$UEFI_MODE" > build/uefi/esp/EFI/BOOT/BOOTX64.EFI
+[[ ${FAIL_BUILD:-} != "$UEFI_MODE" || $restoring == 1 ]] || exit 17
+if [[ ${INTERRUPT_AT:-} == "build:$UEFI_MODE" ]]; then
+    kill -s "$INTERRUPT_SIGNAL" "$PPID"
+    sleep 0.02
+    echo 'late-builder-write' > build/uefi/esp/EFI/BOOT/BOOTX64.EFI
+fi
+"""
+        runner = """import os, pathlib, signal, sys, time
+p = pathlib.Path
+args = sys.argv
+if '--stage' in args:
+    mode = args[args.index('--stage') + 1]
+    out = p(args[args.index('--images') + 1]) / mode
+    out.mkdir(parents=True)
+    (out / 'image').write_bytes(p('build/uefi/esp/EFI/BOOT/BOOTX64.EFI').read_bytes())
+    action = 'stage:' + mode
+else:
+    image = p(args[args.index('--images') + 1]) / 'normal/image'
+    assert image.read_bytes() == b'normal\\n'
+    action = 'guest'
+with open('events', 'a') as f: f.write(action + '\\n')
+if os.environ.get('INTERRUPT_AT') == action:
+    os.kill(os.getppid(), getattr(signal, 'SIG' + os.environ['INTERRUPT_SIGNAL']))
+    time.sleep(0.02)
+    with open('events', 'a') as f: f.write('child-finished\\n')
+if os.environ.get('FAIL_STAGE') == action: sys.exit(23)
+if action == 'guest':
+    with open('events', 'a') as f: f.write('staged-normal-boot\\n')
+    sys.exit(int(os.environ.get('GUEST_STATUS', '0')))
+"""
+        cases = [
+            ([], {}, 0),
+            (["--build-only"], {}, 0),
+            ([], {"FAIL_BUILD": "normal"}, 17),
+            ([], {"FAIL_BUILD": "graphical-console-capture"}, 17),
+            ([], {"FAIL_STAGE": "stage:graphical-console"}, 23),
+            ([], {"GUEST_STATUS": "31"}, 31),
+            ([], {"FAIL_RESTORE": "1"}, 29),
+            ([], {"GUEST_STATUS": "31", "FAIL_RESTORE": "1"}, 31),
+            (["--build-only"], {"FAIL_RESTORE": "1"}, 29),
+            ([], {"FAIL_MOVE": "1"}, 37),
+            ([], {"GUEST_STATUS": "31", "FAIL_MOVE": "1"}, 31),
+            (["--invalid"], {}, 2),
+        ]
+        for path in ("build", "build/uefi", "build/graphical-smoke"):
+            cases.append(([], {"SYMLINK": path}, 2))
+        for action in ("build:graphical-console", "stage:graphical-console", "guest"):
+            for sig, status in (("INT", 130), ("TERM", 143)):
+                cases.append(([], {"INTERRUPT_AT": action, "INTERRUPT_SIGNAL": sig}, status))
+        for arguments, overrides, status in cases:
+            with self.subTest(arguments=arguments, overrides=overrides), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / "scripts").mkdir()
+                if "SYMLINK" in overrides:
+                    (root / "outside").mkdir()
+                    (root / "outside/sentinel").write_bytes(b"unchanged")
+                    link = root / overrides["SYMLINK"]
+                    link.parent.mkdir(parents=True, exist_ok=True)
+                    link.symlink_to(root / "outside", target_is_directory=True)
+                elif arguments != ["--invalid"]:
+                    (root / "build/uefi/esp/EFI/BOOT").mkdir(parents=True)
+                    (root / "build/uefi/esp/EFI/BOOT/BOOTX64.EFI").write_bytes(b"previous")
+                    (root / "build/uefi/graphical-console.o").touch()
+                shutil.copy(ROOT / "scripts/kernel-graphical-smoke.sh", root / "scripts")
+                (root / "scripts/kernel-uefi-build.sh").write_text(builder)
+                (root / "scripts/kernel-uefi-build.sh").chmod(0o755)
+                (root / "scripts/kernel_graphical_smoke.py").write_text(runner)
+                (root / "scripts/uefi-firmware.sh").write_text(
+                    "uefi_firmware_select() { UEFI_FIRMWARE_COMBINED=rom; UEFI_FIRMWARE_CODE=; UEFI_FIRMWARE_VARS=; }\n"
+                )
+                (root / "scripts/uefi-linker.sh").write_text("uefi_linker_select() { :; }\n")
+                (root / "bin").mkdir()
+                for name in ("make", "as", "ld", "objcopy", "objdump", "nm", "readelf"):
+                    (root / "bin" / name).symlink_to("/bin/true")
+                (root / "bin/python3").symlink_to(sys.executable)
+                (root / "bin/mv").write_text(
+                    "#!/usr/bin/env bash\n"
+                    "if [[ ${FAIL_MOVE:-0} == 1 && ${@: -1} == */last-build ]]; then exit 37; fi\n"
+                    'exec /bin/mv "$@"\n'
+                )
+                (root / "bin/mv").chmod(0o755)
+                env = {k: v for k, v in os.environ.items() if not k.startswith("KERNEL_TEST_")}
+                for name in (
+                    "AURORA_TEST_CONTEXT",
+                    "KERNEL_USER_PROBE_MODE",
+                    "KERNEL_CONSOLE",
+                    "UEFI_MODE",
+                    "UEFI_CONSOLE_HANDOFF",
+                ):
+                    env.pop(name, None)
+                env.update(
+                    PATH=str(root / "bin") + os.pathsep + env["PATH"], QEMU="/bin/true", CXX="/bin/true", **overrides
+                )
+                result = subprocess.run(
+                    ["bash", "scripts/kernel-graphical-smoke.sh", *arguments],
+                    cwd=root,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, status, result.stdout + result.stderr)
+                if "SYMLINK" in overrides:
+                    self.assertTrue(link.is_symlink())
+                    self.assertEqual((root / "outside/sentinel").read_bytes(), b"unchanged")
+                    self.assertFalse((root / "events").exists())
+                    continue
+                if arguments == ["--invalid"]:
+                    self.assertFalse((root / "build").exists())
+                    continue
+                events = (root / "events").read_text().splitlines()
+                move_failed = overrides.get("FAIL_MOVE") == "1"
+                self.assertEqual(events[-1], "staged-normal-boot" if move_failed else "build:normal")
+                self.assertEqual(events.count("build:normal"), 1 if move_failed else 2)
+                restored = overrides.get("FAIL_RESTORE") != "1" and not move_failed
+                shared = root / "build/uefi/esp/EFI/BOOT/BOOTX64.EFI"
+                self.assertEqual(shared.exists() and shared.read_bytes() == b"normal\n", restored)
+                self.assertEqual((root / "build/uefi/graphical-console.o").exists(), move_failed)
+                self.assertEqual("PASS: shared normal" in result.stdout, restored)
+                self.assertEqual("restoration exited" in result.stderr, not restored)
+                self.assertEqual("staged-normal-boot" in events, "guest" in events)
+                self.assertEqual(len(list((root / "build/graphical-smoke").glob("*/build-normal-restoration.log"))), 1)
+                window = next((root / "build/graphical-smoke").iterdir())
+                self.assertEqual((window / "previous-build/esp/EFI/BOOT/BOOTX64.EFI").read_bytes(), b"previous")
+                self.assertEqual((window / "last-build/esp/EFI/BOOT/BOOTX64.EFI").is_file(), not move_failed)
+
+    def test_primary_and_restoration_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = SimpleNamespace(evidence=Path(tmp) / "new")
+            with (
+                patch("builtins.print"),
+                patch.object(smoke, "production_case", side_effect=ValueError("primary")),
+                patch.object(smoke, "restoration", side_effect=ValueError("restoration")),
+            ):
+                with self.assertRaisesRegex(ValueError, "primary"):
+                    smoke.window(args)
+            rows = json.loads((args.evidence / "summary.json").read_text())
+            self.assertEqual([row["error"] for row in rows], ["ValueError: primary", "ValueError: restoration"])
+            self.assertTrue(all(row["status"] == "failed" for row in rows))
+
     def test_matrix_and_mutations(self):
         self.assertEqual(len(smoke.CASES), 13)
         for case in smoke.CASES:
