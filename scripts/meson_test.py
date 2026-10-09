@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import subprocess
 import shlex
+import shutil
 
 import meson_toolchain
 
@@ -38,13 +39,14 @@ def execute(root, scope):
         not env.get("CPPFLAGS") and not env.get("LDFLAGS"),
         "Configure nondefault CPPFLAGS/LDFLAGS directly in a separate Meson build",
     )
-    cxx = contract.tool_record(contract.parse_cxx(env.get("CXX", "g++")))
-    gcc = contract.tool_record("gcc")
+    meson = shutil.which("meson")
     contract.require(
-        contract.query([gcc["resolved"], "-dumpfullversion"], root).strip()
-        == contract.query([cxx["resolved"], "-dumpfullversion"], root).strip(),
-        "Select matching gcc and CXX toolchain versions on PATH",
+        meson,
+        "Meson was not found on PATH; install Meson 1.12.1+ and Ninja, then retry (see docs/meson-bootstrap.md)",
     )
+    meson = str(Path(meson).absolute())
+    cxx = contract.tool_record(contract.parse_cxx(env.get("CXX", "g++")))
+    # The snapshot also checks matching gcc/CXX versions and binds both tools.
     host_identity = meson_toolchain.snapshot([cxx["resolved"]])
     config = dict(toolchain=host_identity, cpp_flags=env.get("CXXFLAGS", ""))
     key = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:16]
@@ -64,16 +66,22 @@ def execute(root, scope):
     env["CXX"] = cxx["resolved"]
     build.mkdir(parents=True, exist_ok=True)
     with (build / ".aurora-test.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise contract.ContractError(
+                f"Build directory is already in use: {build}. "
+                "Wait for its active build/test command to finish, or set MESON_BUILD_DIR to a different directory."
+            ) from error
         if not (build / "build.ninja").exists():
             subprocess.run(
-                ["meson", "setup", str(build), str(root), "--backend=ninja", "-Dlsp=false"],
+                [meson, "setup", str(build), str(root), "--backend=ninja", "-Dlsp=false"],
                 cwd=root,
                 env=env,
                 check=True,
             )
         configured = json.loads(
-            subprocess.check_output(["meson", "introspect", str(build), "--compilers"], cwd=root, env=env)
+            subprocess.check_output([meson, "introspect", str(build), "--compilers"], cwd=root, env=env)
         )
         command = configured["build"]["cpp"]["exelist"]
         contract.require(
@@ -81,20 +89,22 @@ def execute(root, scope):
             "Configured compiler differs from CXX; select the matching build directory",
         )
         options = json.loads(
-            subprocess.check_output(["meson", "introspect", str(build), "--buildoptions"], cwd=root, env=env)
+            subprocess.check_output([meson, "introspect", str(build), "--buildoptions"], cwd=root, env=env)
         )
         cpp_args = next(item["value"] for item in options if item["name"] == "cpp_args")
         contract.require(
             cpp_args == shlex.split(env.get("CXXFLAGS", "")),
             "Configured cpp_args differ from CXXFLAGS; select matching flags/build directory",
         )
+        # Re-observe after setup/introspection; the directory-selection snapshot
+        # must not hide a toolchain replacement before compilation.
         meson_toolchain.verify(
             json.loads((build / "aurora-toolchain.json").read_text()), meson_toolchain.snapshot(command)
         )
-        subprocess.run(["meson", "compile", "-C", str(build), "-j", str(build_jobs)], cwd=root, env=env, check=True)
+        subprocess.run([meson, "compile", "-C", str(build), "-j", str(build_jobs)], cwd=root, env=env, check=True)
         subprocess.run(
             [
-                "meson",
+                meson,
                 "test",
                 "-C",
                 str(build),
