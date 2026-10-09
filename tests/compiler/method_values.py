@@ -71,8 +71,17 @@ class Suite:
         self.attempts = self.selected_fixtures = 0
         self.failures, self.names = [], set()
 
-    def check(self, name, source, expected=42, error=None, modules=None,
-              existing_output=None, _selected=False):
+    def check(
+        self,
+        name,
+        source,
+        expected=42,
+        error=None,
+        modules=None,
+        existing_output=None,
+        _selected=False,
+        equivalent_source=None,
+    ):
         if not _selected:
             require(name not in self.names, "duplicate fixture name: " + name)
             self.names.add(name)
@@ -133,6 +142,28 @@ class Suite:
             else:
                 require(compiled.returncode == 0,
                         f"{name}: compiler exit {compiled.returncode}: {compiled.stderr!r}")
+                if equivalent_source is not None:
+                    named_input, named_output = directory / "named.au", directory / "named.s"
+                    named_input.write_text(equivalent_source)
+                    named_command = [str(self.compiler), str(named_input), "-o", str(named_output)]
+                    for root in roots:
+                        named_command.extend(["--module-root", str(root)])
+                    (directory / "named-command.json").write_text(json.dumps(named_command, indent=2) + "\n")
+                    named = subprocess.run(
+                        named_command,
+                        capture_output=True,
+                        timeout=10,
+                        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
+                    )
+                    (directory / "named-stderr.bin").write_bytes(named.stderr)
+                    require(named.returncode == 0, name + ": named-local comparison failed: " + repr(named.stderr))
+                    require(named_input.read_text() == equivalent_source, name + ": named input changed")
+                    for path, before in inputs.items():
+                        require(path.read_bytes() == before, name + ": input changed: " + str(path))
+                    require(
+                        output.read_bytes() == named_output.read_bytes(),
+                        name + ": direct return differs from named-local assembly",
+                    )
                 self.runner.directory = directory
                 observed, symbols = self.runner.assemble(output.read_text(), ["test"])
                 if isinstance(expected, Trap):
@@ -307,6 +338,93 @@ def native_cases(suite):
         "->std::pair<std::array<u8,3>,u8>{return value;}};",
         imports="import std.array;import std.utility;"))
 
+    direct = p(
+        "const Counter source=Counter(42);Counter result=forward(source);result.set(7);return source.get();",
+        COUNTER,
+        "auto forward(Counter source)->Counter{const Counter receiver=Counter(0);return receiver.copy(source);}",
+    )
+    suite.check(
+        "direct method result matches named-local assembly",
+        direct,
+        equivalent_source=direct.replace(
+            "return receiver.copy(source);", "const Counter result=receiver.copy(source);return result;"
+        ),
+    )
+    sibling_direct = sibling.replace("const Counter result=take(source,1);return result;", "return take(source,1);")
+    sibling_direct = sibling_direct.replace(
+        "const Counter result=take(source,2);return result;", "return take(source,2);"
+    )
+    sibling_direct = sibling_direct.replace(
+        "const Counter result=advance(source);return result;", "return advance(source);"
+    )
+    for method in ("get", "change"):
+        source = p(
+            f"Counter source=Counter(20);Sibling receiver=Sibling(20);"
+            f"Counter result=receiver.{method}(source);source.set(99);return result.get();",
+            COUNTER + sibling_direct,
+        )
+        suite.check(
+            "direct private implicit sibling result " + method,
+            source,
+            equivalent_source=source.replace(sibling_direct, sibling),
+        )
+    suite.check(
+        "direct mutable method keeps self-argument result independent",
+        p(
+            "Counter receiver=Counter(42);Counter old=receiver.relay(receiver);receiver.set(7);return old.get();",
+            COUNTER.replace("};", "auto relay(Counter source)->Counter{return replace(source);}};"),
+        ),
+    )
+    suite.check(
+        "direct method snapshots arguments before acquiring mutable receiver",
+        p(
+            "Counter result=forward();return result.get();",
+            COUNTER.replace(
+                "};",
+                "auto merge(Counter before,i64 ignored,Counter after)->Counter{"
+                "value=99;return Counter(before.get()+after.get());}};",
+            ),
+            "auto forward()->Counter{Counter receiver=Counter(20);"
+            "return receiver.merge(receiver,receiver.add(2),receiver);}",
+        ),
+    )
+    suite.check(
+        "direct method branch results have independent loop lifetimes",
+        p(
+            "Counter receiver=Counter(0);Counter a=Counter(20);Counter b=Counter(22);i64 n=0;i64 total=0;"
+            "while(n<2){Counter result=receiver.select(a,b,n==0);total=total+result.get();n=n+1;}return total;",
+            COUNTER.replace(
+                "};",
+                "auto select(Counter a,Counter b,bool first)const->Counter{"
+                "if(first){return copy(a);}return copy(b);}};",
+            ),
+        ),
+    )
+    loan = p(
+        "Receiver receiver=Receiver();Counter result=receiver.capture_value();return result.get();",
+        COUNTER + "class Receiver{public:Receiver(){}auto take(Counter value)const->Counter{return value;}"
+        "auto capture_value()const->Counter{builtin::array<u8,1> bytes={42u8};"
+        "const builtin::span<const u8> view=borrow_bytes(bytes);Counter source=Counter(i64(view.at(0)));"
+        "return take(source);}};",
+    )
+    suite.check(
+        "direct method return closes live array and span",
+        loan,
+        equivalent_source=loan.replace("return take(source);", "const Counter result=take(source);return result;"),
+    )
+    suite.check(
+        "direct empty method result retains initialization",
+        p(
+            "Empty source=Empty();Empty result=source.forward(source);return result.answer();",
+            EMPTY.replace(
+                "};",
+                "auto copy(Empty source)const->Empty{return source;}"
+                "auto forward(Empty source)const->Empty{return copy(source);}};",
+            ),
+        ),
+    )
+
+
 def model_cases(suite, seed, steps):
     rng = random.Random(seed)
     edges = {"i64": [-(1<<63), (1<<63)-1, -1, 0, 1, 42],
@@ -414,13 +532,77 @@ def rejection_cases(suite):
         ("result reassigned into existing class", "source=receiver.copy(source);return 42;", ""),
         ("result cannot initialize scalar", "i64 result=receiver.copy(source);return result;", ""),
         ("result cannot initialize inferred binding", "auto result=receiver.copy(source);return 42;", ""),
-        ("direct return class result", "Counter result=forward(source);return result.get();", "auto forward(Counter x)->Counter{Counter receiver=Counter(0);return receiver.copy(x);}"),
         ("temporary receiver remains unsupported", "return Counter(0).inspect(source);", ""),
         ("class argument outside lexical lifetime", "if(true){Counter gone=Counter(42);}return receiver.inspect(gone);", ""),
         ("new result binding not visible in own argument", "Counter result=receiver.copy(result);return 42;", ""),
         ("method extraction remains unsupported", "auto method=receiver.read;return 42;", ""),
     ):
         suite.reject(label,p(prefix+body,COUNTER,helpers))
+    for label, definition, helper, diagnostic in (
+        (
+            "exact nominal result",
+            COUNTER + "class Other{public:i64 value;};",
+            "auto forward(Counter source)->Other{return source.copy(source);}",
+            "expected Other",
+        ),
+        (
+            "scalar result cannot fill class",
+            COUNTER,
+            "auto forward(Counter source)->Counter{return source.get();}",
+            "expected Counter",
+        ),
+        (
+            "readonly receiver forbids mutable method",
+            COUNTER,
+            "auto forward(Counter source)->Counter{return source.replace(source);}",
+            "mutable receiver",
+        ),
+        (
+            "const implicit sibling forbids mutable method",
+            COUNTER.replace("};", "auto forward(Counter source)const->Counter{return replace(source);}};"),
+            "",
+            "mutable",
+        ),
+        (
+            "private method stays inaccessible",
+            "class Receiver{auto copy(Counter source)const->Counter{return source;}public:Receiver(){}};" + COUNTER,
+            "auto forward(Counter source)->Counter{Receiver receiver=Receiver();return receiver.copy(source);}",
+            "private",
+        ),
+        (
+            "temporary method receiver remains unsupported",
+            COUNTER,
+            "auto forward(Counter source)->Counter{return Counter(0).copy(source);}",
+            "method receiver",
+        ),
+        (
+            "nested class-result argument remains unsupported",
+            COUNTER,
+            "auto forward(Counter source)->Counter{return source.copy(source.copy(source));}",
+            "complete local name",
+        ),
+        (
+            "field receiver remains unsupported",
+            COUNTER + "class Holder{public:Counter item;Holder(Counter source):item(source){}};",
+            "auto forward(Holder holder,Counter source)->Counter{return holder.item.copy(source);}",
+            "complete receiver",
+        ),
+        (
+            "implicit method cannot override parameter binding",
+            COUNTER.replace("};", "auto forward(Counter copy)const->Counter{return copy(copy);}};"),
+            "",
+            "callable",
+        ),
+    ):
+        suite.reject("direct method " + label, p("return 42;", definition, helper), error=diagnostic)
+    suite.reject(
+        "direct service operation result dispatch remains rejected",
+        p(
+            "return 42;",
+            helpers="auto forward(builtin::ConsoleSession& session)->builtin::ConsoleSample{return session.next();}",
+        ),
+        error="ordinary method",
+    )
     suite.reject("equal-layout nominal mismatch remains rejected",p(prefix+
         "Other source2=Other{.value=42};return receiver.inspect(source2);",COUNTER+"class Other{public:i64 value;};"))
     suite.reject("wrong nominal class result destination",p(prefix+
@@ -483,9 +665,19 @@ def rejection_cases(suite):
     suite.reject("direct receiver class field return remains unsupported",p("return 42;",COUNTER+
         "class Holder{Counter item;public:Holder(Counter x):item(x){}auto copy(Counter ignored)const->Counter{return item;}};"))
     for label, methods, helpers in (
-        ("direct receiver cycle", "auto take(Counter x)const->Counter{const Counter result=take(x);return result;}", ""),
-        ("mutual receiver cycle", "auto take(Counter x)const->Counter{const Counter result=other(x);return result;}auto other(Counter x)const->Counter{const Counter result=take(x);return result;}", ""),
-        ("ordinary helper receiver cycle", "auto take(Counter x)const->Counter{const Counter result=helper(x);return result;}", "auto helper(Counter x)->Counter{Receiver receiver=Receiver();Counter result=receiver.take(x);return result;}"),
+        ("direct receiver cycle", "auto take(Counter x)const->Counter{return take(x);}", ""),
+        (
+            "mutual receiver cycle",
+            "auto take(Counter x)const->Counter{const Counter result=other(x);return result;}"
+            "auto other(Counter x)const->Counter{const Counter result=take(x);return result;}",
+            "",
+        ),
+        (
+            "ordinary helper receiver cycle",
+            "auto take(Counter x)const->Counter{const Counter result=helper(x);return result;}",
+            "auto helper(Counter x)->Counter{Receiver receiver=Receiver();"
+            "Counter result=receiver.take(x);return result;}",
+        ),
     ):
         suite.reject(label,p("return 42;",COUNTER+"class Receiver{public:Receiver(){}"+methods+"};",helpers),error="cycle")
     suite.reject("self containment still rejected",p("return 42;",
@@ -530,14 +722,21 @@ def module_cases(suite):
         "Counter value=Counter(42);Receiver receiver=Receiver();return receiver.inspect(value);",imports="import api;"),modules={"api":
         "export module api;export "+COUNTER+"export class Receiver{auto inspect(Counter value)const->i64{return value.get();}"
         "public:Receiver(){} };"})
-    suite.check("namespace private sibling binding cannot be hijacked by caller helper",p(
-        "api::Value source=api::Value(42);api::Receiver receiver=api::Receiver();"
-        "api::Value result=receiver.copy(source);return result.get();",
-        helpers="auto internal(api::Value value)->api::Value{const api::Value wrong=api::Value(0);return wrong;}",imports="import api;"),modules={"api":
-        "export module api;namespace api{auto hidden(i64 value)->i64{return value;}"
-        "export class Value{i64 value;public:Value(i64 n):value(n){}auto get()const->i64{return value;}};"
-        "export class Receiver{auto internal(Value value)const->Value{return value;}public:Receiver(){}"
-        "auto copy(Value value)const->Value{const Value result=internal(value);return result;}};}"})
+    suite.check(
+        "namespace private sibling binding cannot be hijacked by caller helper",
+        p(
+            "api::Value source=api::Value(42);api::Receiver receiver=api::Receiver();"
+            "api::Value result=receiver.copy(source);return result.get();",
+            helpers="auto internal(api::Value value)->api::Value{const api::Value wrong=api::Value(0);return wrong;}",
+            imports="import api;",
+        ),
+        modules={
+            "api": "export module api;namespace api{auto hidden(i64 value)->i64{return value;}"
+            "export class Value{i64 value;public:Value(i64 n):value(n){}auto get()const->i64{return value;}};"
+            "export class Receiver{auto internal(Value value)const->Value{return value;}public:Receiver(){}"
+            "auto copy(Value value)const->Value{return internal(value);}};}"
+        },
+    )
     same={"left":"export module left;export namespace left{"+COUNTER+"}",
           "right":"export module right;export namespace right{"+COUNTER+"}"}
     suite.reject("same layout same basename across modules remains nominal",p(

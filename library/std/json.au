@@ -460,15 +460,13 @@ namespace std {
         i64 index = start;
         const u8 byte = bytes.at(index);
         if (byte < 32u8 || byte == 34u8) {
-            const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, index);
-            return result;
+            return json_scalar_failure(JsonStatus::invalid_string, index);
         }
         if (byte == 92u8) {
             const i64 escape = index;
             index = index + 1;
             if (index == end) {
-                const JsonScalarResult result = json_scalar_failure(JsonStatus::truncated, end);
-                return result;
+                return json_scalar_failure(JsonStatus::truncated, end);
             }
             const u8 code = bytes.at(index);
             if (code == 34u8 || code == 92u8 || code == 47u8 || code == 98u8 || code == 102u8 || code == 110u8 || code
@@ -493,69 +491,58 @@ namespace std {
                 return result;
             } else {
                 if (code != 117u8) {
-                    const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, index);
-                    return result;
+                    return json_scalar_failure(JsonStatus::invalid_string, index);
                 }
                 index = index + 1;
                 i64 scalar = 0;
                 i64 digit = 0;
                 while (digit < 4) {
                     if (index == end) {
-                        const JsonScalarResult result = json_scalar_failure(JsonStatus::truncated, end);
-                        return result;
+                        return json_scalar_failure(JsonStatus::truncated, end);
                     }
                     const i64 value = json_hex(bytes.at(index));
                     if (value < 0) {
-                        const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, index);
-                        return result;
+                        return json_scalar_failure(JsonStatus::invalid_string, index);
                     }
                     scalar = scalar * 16 + value;
                     index = index + 1;
                     digit = digit + 1;
                 }
                 if (scalar >= 56320 && scalar <= 57343) {
-                    const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, escape);
-                    return result;
+                    return json_scalar_failure(JsonStatus::invalid_string, escape);
                 }
                 if (scalar >= 55296 && scalar <= 56319) {
                     // A surrogate code unit alone is never a scalar-valid string.
                     if (index == end) {
-                        const JsonScalarResult result = json_scalar_failure(JsonStatus::truncated, end);
-                        return result;
+                        return json_scalar_failure(JsonStatus::truncated, end);
                     }
                     if (bytes.at(index) != 92u8) {
-                        const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, escape);
-                        return result;
+                        return json_scalar_failure(JsonStatus::invalid_string, escape);
                     }
                     index = index + 1;
                     if (index == end) {
-                        const JsonScalarResult result = json_scalar_failure(JsonStatus::truncated, end);
-                        return result;
+                        return json_scalar_failure(JsonStatus::truncated, end);
                     }
                     if (bytes.at(index) != 117u8) {
-                        const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, escape);
-                        return result;
+                        return json_scalar_failure(JsonStatus::invalid_string, escape);
                     }
                     index = index + 1;
                     i64 low = 0;
                     digit = 0;
                     while (digit < 4) {
                         if (index == end) {
-                            const JsonScalarResult result = json_scalar_failure(JsonStatus::truncated, end);
-                            return result;
+                            return json_scalar_failure(JsonStatus::truncated, end);
                         }
                         const i64 value = json_hex(bytes.at(index));
                         if (value < 0) {
-                            const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, index);
-                            return result;
+                            return json_scalar_failure(JsonStatus::invalid_string, index);
                         }
                         low = low * 16 + value;
                         index = index + 1;
                         digit = digit + 1;
                     }
                     if (low < 56320 || low > 57343) {
-                        const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, escape);
-                        return result;
+                        return json_scalar_failure(JsonStatus::invalid_string, escape);
                     }
                     scalar = 65536 + (scalar - 55296) * 1024 + low - 56320;
                 }
@@ -569,12 +556,10 @@ namespace std {
             } else {
                 const Utf8DecodeResult decoded = decode_utf8(bytes, index, end - index, true);
                 if (decoded.status() == Utf8Status::truncated) {
-                    const JsonScalarResult result = json_scalar_failure(JsonStatus::truncated, end);
-                    return result;
+                    return json_scalar_failure(JsonStatus::truncated, end);
                 }
                 if (decoded.status() != Utf8Status::success) {
-                    const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_string, index);
-                    return result;
+                    return json_scalar_failure(JsonStatus::invalid_string, index);
                 }
                 const JsonScalarResult result = JsonScalarResult(JsonStatus::success, decoded.scalar_or(0u64),
                     decoded.width(), 0);
@@ -586,19 +571,16 @@ namespace std {
         i64 index = start + 1;
         while (index < end) {
             if (bytes.at(index) == 34u8) {
-                const JsonTokenResult result = json_success(JsonTokenKind::string, start, index - start + 1, index
+                return json_success(JsonTokenKind::string, start, index - start + 1, index
                     - request + 1);
-                return result;
             }
             const JsonScalarResult decoded = json_scalar(bytes, index, end);
             if (decoded.status() != JsonStatus::success) {
-                const JsonTokenResult result = json_failure(decoded.status(), decoded.error_offset());
-                return result;
+                return json_failure(decoded.status(), decoded.error_offset());
             }
             index = index + decoded.consumed_bytes();
         }
-        const JsonTokenResult result = json_failure(JsonStatus::truncated, end);
-        return result;
+        return json_failure(JsonStatus::truncated, end);
     }
     auto json_number(builtin::span<const u8> bytes, i64 start, i64 end, i64 request) -> JsonTokenResult {
         // States: start, minus, zero, integer, dot, fraction, exponent, sign, exponent digits.
@@ -650,23 +632,19 @@ namespace std {
                     }
                 }
                 if (next < 0) {
-                    const JsonTokenResult result = json_failure(JsonStatus::invalid_number, index);
-                    return result;
+                    return json_failure(JsonStatus::invalid_number, index);
                 }
                 if (index - start == 128) {
-                    const JsonTokenResult result = json_failure(JsonStatus::number_limit, index);
-                    return result;
+                    return json_failure(JsonStatus::number_limit, index);
                 }
                 state = next;
                 index = index + 1;
             }
         }
         if (state != 2 && state != 3 && state != 5 && state != 8) {
-            const JsonTokenResult result = json_failure(JsonStatus::invalid_number, index);
-            return result;
+            return json_failure(JsonStatus::invalid_number, index);
         }
-        const JsonTokenResult result = json_success(JsonTokenKind::number, start, index - start, index - request);
-        return result;
+        return json_success(JsonTokenKind::number, start, index - start, index - request);
     }
     // Validate the actual exact spelling before inspecting form or range. Copied
     // token coordinates never certify these source bytes or bypass revalidation.
@@ -729,8 +707,7 @@ namespace std {
         i64 index = 0;
         while (index < width) {
             if (index == end - start) {
-                const JsonTokenResult result = json_failure(JsonStatus::truncated, end);
-                return result;
+                return json_failure(JsonStatus::truncated, end);
             }
             u8 expected = 0u8;
             if (kind == JsonTokenKind::true_value) {
@@ -776,17 +753,14 @@ namespace std {
                 }
             }
             if (bytes.at(start + index) != expected) {
-                const JsonTokenResult result = json_failure(JsonStatus::invalid_literal, start + index);
-                return result;
+                return json_failure(JsonStatus::invalid_literal, start + index);
             }
             index = index + 1;
         }
         if (width < end - start && !json_boundary(bytes.at(start + width))) {
-            const JsonTokenResult result = json_failure(JsonStatus::invalid_literal, start + width);
-            return result;
+            return json_failure(JsonStatus::invalid_literal, start + width);
         }
-        const JsonTokenResult result = json_success(kind, start, width, start - request + width);
-        return result;
+        return json_success(kind, start, width, start - request + width);
     }
 }
 export namespace std {
@@ -831,19 +805,15 @@ export namespace std {
 
     auto decode_json_string_scalar(builtin::span<const u8> bytes, i64 offset, i64 count) -> JsonScalarResult {
         if (offset < 0 || count < 0 || offset > bytes.size()) {
-            const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_window, 0);
-            return result;
+            return json_scalar_failure(JsonStatus::invalid_window, 0);
         }
         if (count > bytes.size() - offset) {
-            const JsonScalarResult result = json_scalar_failure(JsonStatus::invalid_window, 0);
-            return result;
+            return json_scalar_failure(JsonStatus::invalid_window, 0);
         }
         if (count == 0) {
-            const JsonScalarResult result = json_scalar_failure(JsonStatus::end_of_input, 0);
-            return result;
+            return json_scalar_failure(JsonStatus::end_of_input, 0);
         }
-        const JsonScalarResult result = json_scalar(bytes, offset, offset + count);
-        return result;
+        return json_scalar(bytes, offset, offset + count);
     }
     auto escape_json_scalar(u64 scalar) -> JsonEscapeResult {
         std::array<u8, 6> bytes = std::array<u8, 6>();
@@ -907,16 +877,13 @@ export namespace std {
     }
     auto next_json_token(builtin::span<const u8> bytes, i64 offset, i64 count) -> JsonTokenResult {
         if (offset < 0 || count < 0 || offset > bytes.size()) {
-            const JsonTokenResult result = json_failure(JsonStatus::invalid_window, 0);
-            return result;
+            return json_failure(JsonStatus::invalid_window, 0);
         }
         if (count > bytes.size() - offset) {
-            const JsonTokenResult result = json_failure(JsonStatus::invalid_window, 0);
-            return result;
+            return json_failure(JsonStatus::invalid_window, 0);
         }
         if (count > 4096) {
-            const JsonTokenResult result = json_failure(JsonStatus::input_limit, offset);
-            return result;
+            return json_failure(JsonStatus::input_limit, offset);
         }
         const i64 end = offset + count;
         i64 index = offset;
@@ -949,16 +916,13 @@ export namespace std {
             kind = JsonTokenKind::comma;
         }
         if (kind != JsonTokenKind::none) {
-            const JsonTokenResult result = json_success(kind, index, 1, index - offset + 1);
-            return result;
+            return json_success(kind, index, 1, index - offset + 1);
         }
         if (byte == 34u8) {
-            const JsonTokenResult result = json_string(bytes, index, end, offset);
-            return result;
+            return json_string(bytes, index, end, offset);
         }
         if (byte == 45u8 || json_digit(byte)) {
-            const JsonTokenResult result = json_number(bytes, index, end, offset);
-            return result;
+            return json_number(bytes, index, end, offset);
         }
         if (byte == 116u8) {
             kind = JsonTokenKind::true_value;
@@ -970,11 +934,9 @@ export namespace std {
             kind = JsonTokenKind::null_value;
         }
         if (kind != JsonTokenKind::none) {
-            const JsonTokenResult result = json_literal(bytes, index, end, offset, kind);
-            return result;
+            return json_literal(bytes, index, end, offset, kind);
         }
-        const JsonTokenResult result = json_failure(JsonStatus::invalid_byte, index);
-        return result;
+        return json_failure(JsonStatus::invalid_byte, index);
     }
 }
 namespace std {
@@ -1128,30 +1090,24 @@ namespace std {
         const i64 wanted = request.index();
         const u8 mode = request.mode();
         if (offset < 0 || count < 0 || offset > bytes.size()) {
-            const JsonWalkResult result = json_walk_failure(JsonStatus::invalid_window, 0, 0, 0);
-            return result;
+            return json_walk_failure(JsonStatus::invalid_window, 0, 0, 0);
         }
         if (count > bytes.size() - offset) {
-            const JsonWalkResult result = json_walk_failure(JsonStatus::invalid_window, 0, 0, 0);
-            return result;
+            return json_walk_failure(JsonStatus::invalid_window, 0, 0, 0);
         }
         if (count > 4096) {
-            const JsonWalkResult result = json_walk_failure(JsonStatus::input_limit, offset, 0, 0);
-            return result;
+            return json_walk_failure(JsonStatus::input_limit, offset, 0, 0);
         }
         // Document bounds and cap precede selector checks; no bytes read yet.
         if (mode == 1u8) {
             if (key_offset < 0 || key_count < 0 || key_offset > key.size()) {
-                const JsonWalkResult result = json_query_failure(JsonLookupStatus::invalid_key_window, 0);
-                return result;
+                return json_query_failure(JsonLookupStatus::invalid_key_window, 0);
             }
             if (key_count > key.size() - key_offset) {
-                const JsonWalkResult result = json_query_failure(JsonLookupStatus::invalid_key_window, 0);
-                return result;
+                return json_query_failure(JsonLookupStatus::invalid_key_window, 0);
             }
             if (key_count > 4096) {
-                const JsonWalkResult result = json_query_failure(JsonLookupStatus::key_limit, key_offset);
-                return result;
+                return json_query_failure(JsonLookupStatus::key_limit, key_offset);
             }
             i64 query_index = key_offset;
             const i64 query_end = key_offset + key_count;
@@ -1162,15 +1118,13 @@ namespace std {
                     if (scalar.status() == Utf8Status::truncated) {
                         error = query_end;
                     }
-                    const JsonWalkResult result = json_query_failure(JsonLookupStatus::invalid_key, error);
-                    return result;
+                    return json_query_failure(JsonLookupStatus::invalid_key, error);
                 }
                 query_index = query_index + scalar.width();
             }
         }
         if (mode == 2u8 && wanted < 0) {
-            const JsonWalkResult result = json_query_failure(JsonLookupStatus::invalid_index, 0);
-            return result;
+            return json_query_failure(JsonLookupStatus::invalid_index, 0);
         }
         // Array: 1 initial value/end, 2 required value, 3 comma/end.
         // Object: 4 initial key/end, 5 required key, 6 colon, 7 value, 8 comma/end.
@@ -1195,8 +1149,7 @@ namespace std {
             const JsonTokenResult token = next_json_token(bytes, index, end - index);
             if (token.status() == JsonStatus::end_of_input) {
                 if (depth != 0 || !root_complete) {
-                    const JsonWalkResult result = json_walk_failure(JsonStatus::truncated, end, tokens, peak);
-                    return result;
+                    return json_walk_failure(JsonStatus::truncated, end, tokens, peak);
                 }
                 const JsonResult document = JsonResult(JsonStatus::success, 0, tokens, peak);
                 JsonLookupStatus outcome = JsonLookupStatus::success;
@@ -1225,13 +1178,11 @@ namespace std {
                 return result;
             }
             if (token.status() != JsonStatus::success) {
-                const JsonWalkResult result = json_walk_failure(token.status(), token.error_offset(), tokens, peak);
-                return result;
+                return json_walk_failure(token.status(), token.error_offset(), tokens, peak);
             }
             if (tokens == 1024) {
-                const JsonWalkResult result = json_walk_failure(JsonStatus::token_limit, token.byte_offset(), tokens,
+                return json_walk_failure(JsonStatus::token_limit, token.byte_offset(), tokens,
                     peak);
-                return result;
             }
             tokens = tokens + 1;
             index = index + token.consumed_bytes();
@@ -1326,9 +1277,8 @@ namespace std {
             if (value) {
                 if (kind == JsonTokenKind::left_brace || kind == JsonTokenKind::left_bracket) {
                     if (depth == 32) {
-                        const JsonWalkResult result = json_walk_failure(JsonStatus::depth_limit, token.byte_offset(),
+                        return json_walk_failure(JsonStatus::depth_limit, token.byte_offset(),
                             tokens, peak);
-                        return result;
                     }
                     u8 state = 1u8;
                     if (kind == JsonTokenKind::left_brace) {
@@ -1348,9 +1298,8 @@ namespace std {
                 }
             }
             if (!valid) {
-                const JsonWalkResult result = json_walk_failure(JsonStatus::invalid_structure, token.byte_offset(),
+                return json_walk_failure(JsonStatus::invalid_structure, token.byte_offset(),
                     tokens, peak);
-                return result;
             }
             if (selected_open && before_depth == 2 && depth == 1) {
                 selected_count = index - selected_start;
@@ -1376,28 +1325,24 @@ namespace std {
             }
         }
         // The language conservatively treats every while as possibly zero-trip.
-        const JsonWalkResult result = json_walk_failure(JsonStatus::truncated, end, tokens, peak);
-        return result;
+        return json_walk_failure(JsonStatus::truncated, end, tokens, peak);
     }
 }
 export namespace std {
     auto validate_json(builtin::span<const u8> bytes, i64 offset, i64 count) -> JsonResult {
         const JsonWalkRequest request = JsonWalkRequest(offset, count, 0, 0, 0, 0u8);
         const JsonWalkResult walked = json_walk(bytes, bytes, request);
-        const JsonResult result = walked.document();
-        return result;
+        return walked.document();
     }
     auto lookup_json_member(builtin::span<const u8> bytes, i64 offset, i64 count, builtin::span<const u8> key,
         i64 key_offset, i64 key_count) -> JsonLookupResult {
         const JsonWalkRequest request = JsonWalkRequest(offset, count, key_offset, key_count, 0, 1u8);
         const JsonWalkResult walked = json_walk(bytes, key, request);
-        const JsonLookupResult result = walked.lookup();
-        return result;
+        return walked.lookup();
     }
     auto lookup_json_element(builtin::span<const u8> bytes, i64 offset, i64 count, i64 index) -> JsonLookupResult {
         const JsonWalkRequest request = JsonWalkRequest(offset, count, 0, 0, index, 2u8);
         const JsonWalkResult walked = json_walk(bytes, bytes, request);
-        const JsonLookupResult result = walked.lookup();
-        return result;
+        return walked.lookup();
     }
 }

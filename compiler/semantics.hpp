@@ -689,7 +689,7 @@ class SemanticAnalyzer {
     Type callMethod(ExpressionPtr value,
                     const StatementPtr &resultBinding = nullptr,
                     bool bindResult = true,
-                    int *spanLocal = nullptr) {
+                    int *resultLocal = nullptr) {
         const bool implicit = value->op == "implicit_method_call";
         if (implicit && lookupLocal(value->token) >= 0)
             fail(value->token, "local binding shadows method and is not callable");
@@ -728,6 +728,9 @@ class SemanticAnalyzer {
                 receiverFieldIndex = member->index;
             }
         }
+        if (!bindResult && resultBinding && resultBinding->type.isClass() &&
+            (type.isService() || receiverFieldIndex >= 0))
+            fail(value->token, "direct copied return requires an ordinary method on a complete receiver");
         auto requireLiveReceiver = [&] {
             if (receiver >= 0 && !locals[receiver].live)
                 fail(value->token, "method arguments consumed the receiver or its containing object");
@@ -916,13 +919,13 @@ class SemanticAnalyzer {
                                   resultBinding->token,
                                   bindResult);
             destination = offset(local);
+            if (resultLocal)
+                *resultLocal = local;
             if (callee.result.isSpan()) {
                 locals[local].spanOrigin = receiver >= 0 ? receiver : -2;
                 locals[local].spanField = receiverSpanFields.at(callee.name);
                 if (receiver >= 0)
                     ++locals[receiver].shared;
-                if (spanLocal)
-                    *spanLocal = local;
             }
         }
         emit(ir::MethodCall{callee.name,
@@ -989,7 +992,15 @@ class SemanticAnalyzer {
             releaseSpan(*it, true);
         return callee.result;
     }
-    Type callFunction(ExpressionPtr expression, const Function &callee, const StatementPtr &resultBinding = nullptr) {
+    Type callFunction(ExpressionPtr expression,
+                      const Function &callee,
+                      const StatementPtr &resultBinding = nullptr,
+                      bool bindResult = true,
+                      int *resultLocal = nullptr) {
+        if (!bindResult && !callee.params.empty() &&
+            (callee.params.front().type.isService() || callee.params.front().type.isRegion() ||
+             callee.params.front().borrowed))
+            fail(expression->token, "direct copied return requires an ordinary function call");
         if (!callee.params.empty() && callee.params.front().type.isService())
             return callService(expression, callee, resultBinding);
         if (!callee.params.empty() && callee.params[0].type.isRegion())
@@ -1047,9 +1058,16 @@ class SemanticAnalyzer {
             }
         }
         int destination = 0;
-        if (resultBinding)
-            destination = offset(
-                add(resultBinding->name, resultBinding->type, resultBinding->mutableValue, resultBinding->token));
+        if (resultBinding) {
+            const int local = add(resultBinding->name,
+                                  resultBinding->type,
+                                  resultBinding->mutableValue,
+                                  resultBinding->token,
+                                  bindResult);
+            destination = offset(local);
+            if (resultLocal)
+                *resultLocal = local;
+        }
         if (borrowed) {
             emit(ir::BorrowedCall{callee.name,
                                   offset(root),
@@ -1072,7 +1090,10 @@ class SemanticAnalyzer {
             releaseSpan(*it, true);
         return callee.result;
     }
-    Type callOverloadedFunction(ExpressionPtr value, const StatementPtr &resultBinding = nullptr) {
+    Type callOverloadedFunction(ExpressionPtr value,
+                                const StatementPtr &resultBinding = nullptr,
+                                bool bindResult = true,
+                                int *resultLocal = nullptr) {
         // Resolve arity before touching arguments. Candidates are already restricted
         // to one defining declaration set and the caller's export visibility.
         std::vector<const Function *> candidates;
@@ -1134,9 +1155,16 @@ class SemanticAnalyzer {
         if (resultBinding)
             match(selected->result, resultBinding->type, value->token);
         int destination = 0;
-        if (resultBinding)
-            destination = offset(
-                add(resultBinding->name, resultBinding->type, resultBinding->mutableValue, resultBinding->token));
+        if (resultBinding) {
+            const int local = add(resultBinding->name,
+                                  resultBinding->type,
+                                  resultBinding->mutableValue,
+                                  resultBinding->token,
+                                  bindResult);
+            destination = offset(local);
+            if (resultLocal)
+                *resultLocal = local;
+        }
         if (aggregate || selected->result.isClass())
             emit(ir::AggregateCall{selected->name, arguments, destination, spanArguments});
         else
@@ -1560,6 +1588,23 @@ class SemanticAnalyzer {
             emit(ir::EndObject{snapshot});
         return destination;
     }
+    int initializeCopiedCall(ExpressionPtr expression, const Type &type, const Token &token) {
+        auto binding = std::make_shared<Statement>(token);
+        binding->type = type;
+        binding->mutableValue = false;
+        int destination = -1;
+        if (expression->op == "method_call" || expression->op == "implicit_method_call")
+            callMethod(expression, binding, false, &destination);
+        else if (!expression->overloadCandidates.empty())
+            callOverloadedFunction(expression, binding, false, &destination);
+        else {
+            const auto found = functions.find(expression->resolvedName);
+            if (found == functions.end())
+                fail(expression->token, "direct copied return requires a class-returning function");
+            callFunction(expression, sourceFunctions[found->second], binding, false, &destination);
+        }
+        return destination;
+    }
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);
         const auto expression = statement->expr;
@@ -1733,11 +1778,17 @@ class SemanticAnalyzer {
                 endReturnBytes(local);
                 emit(ir::ReturnOwnedObject{offset(local)});
             } else if (result.isClass()) {
-                if (s->expr->op != "name" && s->expr->op != "constructor_call")
-                    fail(s->token, "class return requires a complete local name or direct copied-class constructor");
-                const int local = s->expr->op == "constructor_call"
-                                      ? initializeCopiedConstructor(s->expr, result, s->token)
-                                      : source(s->expr);
+                int local;
+                if (s->expr->op == "name")
+                    local = source(s->expr);
+                else if (s->expr->op == "constructor_call")
+                    local = initializeCopiedConstructor(s->expr, result, s->token);
+                else if (s->expr->op == "call" || s->expr->op == "method_call" || s->expr->op == "implicit_method_call")
+                    local = initializeCopiedCall(s->expr, result, s->token);
+                else
+                    fail(s->token,
+                         "class return requires a complete local name, direct copied-class constructor or ordinary "
+                         "call");
                 match(locals[local].type, result, s->token);
                 endReturnBorrows();
                 endReturnBytes();

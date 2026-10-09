@@ -395,6 +395,47 @@ TWIN_CREATE = """
 """
 
 
+def direct_method_return_case(suite):
+    helpers = (
+        HELPERS
+        + """
+    class Reader {
+        builtin::OwnedBytes payload;
+    public:
+        Reader(builtin::ByteRegion region, builtin::OwnedBytes initial) : payload(move(initial)) {}
+        auto capture(builtin::span<const u8> bytes) -> Count {
+            payload.set(0, bytes.at(0));
+            return Count(i64(payload.at(0)) + payload.size());
+        }
+        auto forward(builtin::span<const u8> bytes) -> Count { return capture(bytes); }
+        auto clear() -> bool { return payload.set(0, 0u8); }
+    };
+    auto copy_report(Reader& receiver, builtin::span<const u8> bytes) -> Count {
+        const builtin::span<const u8> view = bytes.subspan(0, 1);
+        return receiver.forward(view);
+    }
+    """
+    )
+    body = """
+        builtin::OwnedBytes allocation = region.try_allocate(2);
+        Reader receiver = Reader(region, move(allocation));
+        builtin::array<u8, 1> bytes = {40u8};
+        i64 total = 0;
+        i64 index = 0;
+        while (index < 2) {
+            const Count result = copy_report(receiver, borrow_bytes(bytes));
+            if (!receiver.clear()) { return 0; }
+            bytes[0] = bytes[0] + 1u8;
+            total = total + result.get();
+            index = index + 1;
+        }
+        if (total != 85) { return 0; }
+        return 42;
+    """
+    exe = suite.compile("direct-method-result-closes-span-and-owner-loans", program(body, helpers))
+    suite.run(exe, 2, 2, 0, 42, 1, 1, release_order=[1])
+
+
 def multiple_field_cases(suite):
     body = (
         TWIN_CREATE
@@ -894,6 +935,7 @@ def main():
             + "\n"
         )
         borrowing_cases(suite)
+        direct_method_return_case(suite)
         multiple_field_cases(suite)
         json_cases(suite)
         rejection_cases(suite)

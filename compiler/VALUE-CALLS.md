@@ -41,8 +41,11 @@ A checked trap is fail-stop and does not publish a partially produced result.
 The intentionally small expression grammar requires:
 
 - A class argument is a complete local name.
-- A class-returning function call occurs in a typed local initializer.
-- A copied class return expression is a complete local name or a direct constructor call.
+- A class-returning ordinary function or method call occurs in a typed local
+  initializer or a direct copied-class return.
+- A copied class return expression is a complete local name, a direct constructor
+  call, or an ordinary free-function/overload/template or method call with the
+  exact declared result type.
 
 For example, `return Box(42);` is accepted in an ordinary function or method
 returning exactly `Box`. It constructs a fresh internal object using the same
@@ -55,11 +58,21 @@ in a copied-result function. Empty and composed copied
 classes follow the same completeness rules. No heap allocation, reference escape,
 new IR operation or copy-elision guarantee is introduced.
 
-`return make();`, `consume(make());`, temporary class arguments/receivers and
-`return Box{.value=42};` remain unsupported. Owning results still require an
-explicit `move(named_local)` return. This narrow convenience does not enable
-general class-valued expressions. `std.json_write` uses direct constructor
-returns for its copied append reports.
+`return make();` and `return object.copy();` use the same checked call lowering
+as a typed local initializer, with an unnamed, unbound destination whose explicit
+local identity is passed to `ReturnObject`. Method receivers remain complete
+named locals or the implicit receiver. Each result slot is fresh, pristine and
+disjoint from receiver/argument storage. Argument snapshots and synchronous span
+loans finish before the usual return cleanup; the result is then copied through
+the existing private ABI. This is source convenience, not copy elision.
+
+`consume(make());`, temporary class arguments/receivers, direct returned field
+projections and `return Box{.value=42};` remain unsupported. Service operations,
+service helpers and borrowed-object helpers still need their typed result locals.
+Owning results still require an explicit `move(named_local)` return. This narrow
+convenience does not enable general class-valued expressions. `std.json` uses
+direct copied call returns; `std.json_write` uses direct constructor returns for
+its copied append reports.
 
 Arguments evaluate left-to-right. Each class is copied at its position, before
 later argument side effects. In `f(object, object.add(1))`, the first argument

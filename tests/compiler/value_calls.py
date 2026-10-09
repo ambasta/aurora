@@ -26,8 +26,21 @@ def run(command, good=True):
     return result
 
 
-def check(name, source, modules=None, expected=42, error=None, library=False,
-          root_sets=None, setup=None, roots=True, trap=False, existing_output=None, calls_in_order=None):
+def check(
+    name,
+    source,
+    modules=None,
+    expected=42,
+    error=None,
+    library=False,
+    root_sets=None,
+    setup=None,
+    roots=True,
+    trap=False,
+    existing_output=None,
+    calls_in_order=None,
+    equivalent_source=None,
+):
     global COUNT
     with tempfile.TemporaryDirectory(prefix="aurora-modules-") as directory:
         base = Path(directory)
@@ -47,6 +60,9 @@ def check(name, source, modules=None, expected=42, error=None, library=False,
             setup(base, search)
         input_path = base / "input.au"
         input_path.write_text(source)
+        inputs = {input_path: input_path.read_bytes()}
+        for root in search:
+            inputs.update({path: path.read_bytes() for path in root.rglob("*.au")})
         assembly = base / "program.s"
         if existing_output is not None:
             assembly.write_text(existing_output)
@@ -55,7 +71,8 @@ def check(name, source, modules=None, expected=42, error=None, library=False,
             for root in search:
                 command.extend(["--module-root", root])
         compiled = run(command, good=error is None)
-        require(input_path.read_text() == source, name + ": compiler changed input")
+        for path, before in inputs.items():
+            require(path.read_bytes() == before, name + ": compiler changed input: " + str(path))
         if error:
             require(compiled.returncode == 1, name + ": invalid graph accepted")
             if existing_output is None:
@@ -64,6 +81,21 @@ def check(name, source, modules=None, expected=42, error=None, library=False,
                 require(assembly.read_text() == existing_output, name + ": existing output changed on rejection")
             require(error.encode() in compiled.stderr, name + ": " + repr(compiled.stderr))
         else:
+            if equivalent_source is not None:
+                named_input, named_output = base / "named.au", base / "named.s"
+                named_input.write_text(equivalent_source)
+                named_command = [COMPILER, named_input, "-o", named_output]
+                if roots:
+                    for root in search:
+                        named_command.extend(["--module-root", root])
+                run(named_command)
+                require(named_input.read_text() == equivalent_source, name + ": compiler changed named input")
+                for path, before in inputs.items():
+                    require(path.read_bytes() == before, name + ": compiler changed input: " + str(path))
+                require(
+                    assembly.read_bytes() == named_output.read_bytes(),
+                    name + ": direct return differs from named-local assembly",
+                )
             if calls_in_order:
                 code = assembly.read_text()
                 positions = [code.index("call " + name) for name in calls_in_order]
@@ -142,7 +174,6 @@ for name, body, helpers, error in [
     ("class parameter mutable method denied", "Counter c=Counter(42);return change(c);", "auto change(Counter c)->i64{return c.add(1);}", "mutable receiver"),
     ("class parameter private field denied", "Counter c=Counter(42);return change(c);", "auto change(Counter c)->i64{return c.value;}", "private class field"),
     ("return scalar as class denied", "Counter c=make();return c.get();", "auto make()->Counter{const i64 c=42;return c;}", "expected Counter"),
-    ("forwarded class call return needs local", "Counter c=outer();return c.get();", "auto make()->Counter{Counter c=Counter(42);return c;}auto outer()->Counter{return make();}", "complete local name"),
     ("temporary class argument denied", "return get(Counter(42));", "auto get(Counter c)->i64{return c.get();}", "complete local name"),
     ("class-return call argument needs local", "return get(make());", "auto make()->Counter{Counter c=Counter(42);return c;}auto get(Counter c)->i64{return c.get();}", "complete local name"),
     ("discard class-return call denied", "make();return 42;", "auto make()->Counter{Counter c=Counter(42);return c;}", "typed local initializer"),
@@ -226,5 +257,209 @@ for label, source, diagnostic in [
 ]:
     for prior in (None, "existing assembly must survive rejection\n"):
         check(label, source, error=diagnostic, existing_output=prior)
+
+# Direct ordinary calls retain the typed destination and complete-copy return.
+# Compare representative lowerings byte-for-byte with their named-local forms.
+factory = "auto make(i64 n)->Counter{const Counter c=Counter(n);return c;}"
+forward = program("Counter c=outer(42);return c.get();", factory + "auto outer(i64 n)->Counter{return make(n);}")
+check(
+    "direct ordinary call matches named-local assembly",
+    forward,
+    equivalent_source=forward.replace("return make(n);", "const Counter result=make(n);return result;"),
+)
+check(
+    "direct ordinary call const parameter snapshot remains independent",
+    program(
+        "const Counter source=Counter(42);Counter result=forward(source);result.add(1);return source.get();",
+        "auto identity(Counter c)->Counter{return c;}auto forward(Counter c)->Counter{return identity(c);}",
+    ),
+)
+check(
+    "direct ordinary call branch return and loop lifetimes",
+    program(
+        "i64 n=0;i64 total=0;while(n<2){Counter c=forward(n==0);total=total+c.get();n=n+1;}return total;",
+        factory + "auto forward(bool first)->Counter{if(first){return make(20);}return make(22);}",
+    ),
+)
+check(
+    "direct ordinary recursive result",
+    program(
+        "Counter source=Counter(40);Counter result=step(source,2);return result.get();",
+        "auto step(Counter source,i64 n)->Counter{if(n==0){return source;}"
+        "Counter next=source;next.add(1);return step(next,n-1);}",
+    ),
+)
+overloaded_forward = program(
+    "Counter result=forward();return result.get();",
+    "auto combine(Counter first,i64 ignored,Counter last)->Counter{return Counter(first.get()+last.get());}"
+    "auto combine(i64 first,i64 ignored,i64 last)->i64{return first+last;}"
+    "auto forward()->Counter{Counter source=Counter(20);return combine(source,source.add(2),source);}",
+)
+check(
+    "direct overloaded repeated arguments snapshot around mutation",
+    overloaded_forward,
+    equivalent_source=overloaded_forward.replace(
+        "return combine(source,source.add(2),source);",
+        "const Counter result=combine(source,source.add(2),source);return result;",
+    ),
+)
+check(
+    "direct ordinary scalar arguments evaluate once left to right",
+    program(
+        "Counter result=forward();return result.get();",
+        "auto combine(i64 a,i64 b)->Counter{return Counter(a*40+b);}"
+        "auto forward()->Counter{Counter source=Counter(0);return combine(source.add(1),source.add(1));}",
+    ),
+)
+loan_forward = program(
+    "i64 n=0;i64 total=0;while(n<2){Counter c=forward();total=total+c.get();n=n+1;}return total;",
+    "auto inspect_bytes(builtin::span<const u8> bytes)->Counter{return Counter(i64(bytes.at(0)));}"
+    "auto forward()->Counter{builtin::array<u8,1> bytes={21u8};"
+    "const builtin::span<const u8> view=borrow_bytes(bytes);return inspect_bytes(view);}",
+)
+check(
+    "direct ordinary call releases argument and return loans",
+    loan_forward,
+    equivalent_source=loan_forward.replace(
+        "return inspect_bytes(view);", "const Counter result=inspect_bytes(view);return result;"
+    ),
+)
+check(
+    "direct ordinary call closes temporary argument span",
+    program(
+        "Counter result=forward();return result.get();",
+        "auto inspect_bytes(builtin::span<const u8> bytes)->Counter{return Counter(i64(bytes.at(0)));}"
+        "auto forward()->Counter{builtin::array<u8,1> bytes={42u8};return inspect_bytes(borrow_bytes(bytes));}",
+    ),
+)
+check(
+    "direct ordinary empty result",
+    program(
+        "Empty result=forward();return result.answer();",
+        "auto make()->Empty{return Empty();}auto forward()->Empty{return make();}",
+        empty,
+    ),
+)
+check(
+    "direct ordinary composed result remains independent",
+    program(
+        "Counter source=Counter(20);Box result=forward(source);source.add(99);return result.answer();",
+        "auto make(Counter source,i64 n)->Box{return Box(source,n);}"
+        "auto forward(Counter source)->Box{return make(source,22);}",
+        COUNTER + box,
+    ),
+)
+check(
+    "direct ordinary overload selects exact argument tuple",
+    program(
+        "Counter source=Counter(42);Counter result=forward(source);return result.get();",
+        "auto pick(Counter source)->Counter{return source;}auto pick(i64 source)->i64{return source;}"
+        "auto forward(Counter source)->Counter{return pick(source);}",
+    ),
+)
+check(
+    "direct qualified ordinary calls across modules",
+    app("items::Counter source=items::forward(42);return source.get();", "import counters;"),
+    {
+        "counters": "export module counters;export namespace items{"
+        + COUNTER
+        + factory
+        + "auto forward(i64 n)->Counter{return make(n);}}"
+    },
+)
+check(
+    "direct ordinary call argument trap",
+    program(
+        "Counter result=forward(9223372036854775807);return result.get();",
+        factory + "auto forward(i64 n)->Counter{return make(n+1);}",
+    ),
+    trap=True,
+)
+for label, source, diagnostic, use_library in [
+    (
+        "direct ordinary exact nominal result",
+        program(
+            "return 42;",
+            "auto make()->Other{return Other(42);}auto forward()->Counter{return make();}",
+            COUNTER + COUNTER.replace("Counter", "Other"),
+        ),
+        "expected Counter",
+        False,
+    ),
+    (
+        "direct ordinary scalar result cannot fill class",
+        program("return 42;", "auto make()->i64{return 42;}auto forward()->Counter{return make();}"),
+        "expected Counter",
+        False,
+    ),
+    (
+        "direct ordinary overload return type cannot select candidate",
+        program(
+            "return 42;",
+            "auto pick(i64 n)->i64{return n;}auto pick(u8 n)->Counter{return Counter(i64(n));}"
+            "auto forward()->Counter{return pick(42);}",
+        ),
+        "expected Counter",
+        False,
+    ),
+    (
+        "direct ordinary nested class-result argument",
+        program(
+            "return 42;",
+            factory + "auto identity(Counter source)->Counter{return source;}"
+            "auto forward()->Counter{return identity(make(42));}",
+        ),
+        "complete local name",
+        False,
+    ),
+    (
+        "direct ordinary nested constructor argument",
+        program(
+            "return 42;",
+            "auto identity(Counter source)->Counter{return source;}"
+            "auto forward()->Counter{return identity(Counter(42));}",
+        ),
+        "complete local name",
+        False,
+    ),
+    (
+        "direct ordinary return field projection",
+        program(
+            "return 42;",
+            "auto forward(Box source)->Counter{return source.item;}",
+            COUNTER + "class Box{public:Counter item;Box(Counter c):item(c){}};",
+        ),
+        "complete local name",
+        False,
+    ),
+    (
+        "direct owning ordinary result still requires move",
+        app("return 42;", "import std.binary;import std.byte_buffer;")
+        + "auto take(builtin::ByteRegion region,std::ByteBuffer value)->std::ByteBuffer{return move(value);}"
+        "auto forward(builtin::ByteRegion region,std::ByteBuffer value)->std::ByteBuffer{"
+        "return take(region,move(value));}",
+        "move",
+        True,
+    ),
+    (
+        "direct borrowed-helper result dispatch remains rejected",
+        app("return 42;", "import std.binary;import std.byte_buffer;")
+        + "auto snapshot(const std::ByteBuffer& value)->std::ByteReadResult{"
+        "const std::ByteReadResult result=value.read_u8(0);return result;}"
+        "auto forward(const std::ByteBuffer& value)->std::ByteReadResult{return snapshot(value);}",
+        "ordinary function call",
+        True,
+    ),
+    (
+        "direct service-helper result dispatch remains rejected",
+        app("return 42;") + "auto snapshot(builtin::ConsoleSession& session)->builtin::ConsoleSample{"
+        "const builtin::ConsoleSample result=session.next();return result;}"
+        "auto forward(builtin::ConsoleSession& session)->builtin::ConsoleSample{return snapshot(session);}",
+        "ordinary function call",
+        False,
+    ),
+]:
+    for prior in (None, "existing assembly must survive rejection\n"):
+        check(label, source, error=diagnostic, existing_output=prior, library=use_library)
 
 print(f"{COUNT} class value function-boundary checks passed")
