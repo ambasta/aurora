@@ -33,6 +33,10 @@ template <class Transport, class Platform> class Session final {
         if (!valid)
             Platform::fail();
     }
+#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
+    // Preserve two independently bound bootstrap authority frames in the paired profile.
+    [[gnu::noinline, gnu::noclone, gnu::noipa]]
+#endif
     static auto validate(const void *grant, std::uint64_t generation, bool operation) -> void {
         // Compare the exact address before dereferencing any supplied pointer.
         require(grant == &grant_);

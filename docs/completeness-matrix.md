@@ -1605,3 +1605,10 @@ pre-guest review; final evidence review/publication remain separate. No prior pa
 transfers. See [status](kernel-owned-views-results.md).
 
 </details>
+
+Only the graphical profile requires the private Console and Display validators
+to remain separate non-inlined, non-cloned bootstrap functions. Their raw compiler
+symbols, source ownership and frame sizes must agree with object/linked evidence;
+the validation predicates are unchanged. Other profiles do not enable these
+emission attributes. This boundary changes paired generated inputs, so fresh
+image/stack and capture-contract review is required before qualification reuse.

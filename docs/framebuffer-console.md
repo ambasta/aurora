@@ -341,3 +341,10 @@ proofs. Unknown or mixed layouts reject, and existing stack/IRQ/wait budgets sta
 unchanged. Source controls and retained-body analysis do not qualify a fresh
 image or guest; complete current-source admission and independent review remain
 required for each toolchain.
+
+Only the graphical profile requires the private Console and Display validators
+to remain separate non-inlined, non-cloned bootstrap functions. Their raw compiler
+symbols, source ownership and frame sizes must agree with object/linked evidence;
+the validation predicates are unchanged. Other profiles do not enable these
+emission attributes. This boundary changes paired generated inputs, so fresh
+image/stack and capture-contract review is required before qualification reuse.

@@ -2574,7 +2574,7 @@ class Admission(unittest.TestCase):
     def test_session_frames_require_distinct_source_and_object_ownership(self):
         frames = {symbol: 16 for symbol in graphical.SESSION_VALIDATORS}
         associations = {
-            symbol: [dict(object="graphical-console.o", source=source, bytes=16)]
+            symbol: [dict(object="graphical-console.o", source=source, bytes=16, compiler_symbol=symbol)]
             for symbol, source in graphical.SESSION_VALIDATORS.items()
         }
         graphical.verify_session_frames(frames, associations)
@@ -2588,12 +2588,47 @@ class Admission(unittest.TestCase):
             with self.assertRaises(ValueError):
                 graphical.verify_session_frames(missing, associations)
             for records in ([], associations[symbol] * 2,
+                            [dict(object="graphical-console.o", source=source, bytes=16)],
+                            [dict(object="graphical-console.o", source=source, bytes=24, compiler_symbol=symbol)],
+                            [dict(object="graphical-console.o", source=source, bytes=16,
+                                  compiler_symbol=next(other for other in graphical.SESSION_VALIDATORS if other != symbol))],
                             [dict(object="console.o", source=source, bytes=16)],
                             [dict(object="graphical-console.o", source="kernel/foreign.hpp", bytes=16)]):
                 changed = deepcopy(associations)
                 changed[symbol] = records
                 with self.assertRaises(ValueError):
                     graphical.verify_session_frames(frames, changed)
+
+    def test_graphical_only_validator_emission_attributes(self):
+        declaration = "    static auto validate(const void *grant, std::uint64_t generation, bool operation) -> void {"
+        guard = ("#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE\n"
+                 "    // Preserve two independently bound bootstrap authority frames in the paired profile.\n"
+                 "    [[gnu::noinline, gnu::noclone, gnu::noipa]]\n"
+                 "#endif\n")
+        def check(text):
+            if text.count(declaration) != 1 or text.count(guard + declaration) != 1:
+                raise ValueError("Missing exact graphical-only validator emission declaration")
+            if text.count("gnu::noipa") != 1:
+                raise ValueError("Ambiguous validator emission attributes")
+        dependencies = {name: (ROOT / name).read_text() for name in (graphical.CAPTURE_NATIVE, *graphical.CAPTURE_SOURCE_PINS)}
+        graphical.capture_source_evidence("graphical-console-capture", dependencies)
+        legacy = dict(dependencies)
+        for space in ("console", "display"):
+            legacy["kernel/" + space + "-session.hpp"] = dependencies["kernel/" + space + "-session.hpp"].replace(guard, "")
+        graphical.capture_source_evidence("graphical-console-capture", legacy)
+        for space in ("console", "display"):
+            mixed = dict(dependencies)
+            mixed["kernel/" + space + "-session.hpp"] = legacy["kernel/" + space + "-session.hpp"]
+            with self.assertRaises(ValueError):
+                graphical.capture_source_evidence("graphical-console-capture", mixed)
+            text = (ROOT / "kernel" / (space + "-session.hpp")).read_text()
+            check(text)
+            for changed in (text.replace(guard, ""), text.replace("gnu::noipa", "gnu::noinline"),
+                            text.replace("#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE", "#if 1"),
+                            text.replace("#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE", "#ifdef AURORA_UEFI_CONSOLE"),
+                            text.replace(guard, guard + guard)):
+                with self.subTest(space=space), self.assertRaises(ValueError):
+                    check(changed)
 
     def test_exact_generated_signed_division_pairs(self):
         owner = "__au_v_m1_24kernel_graphical_console_n0__d9draw_cell"
@@ -6026,11 +6061,19 @@ class CaptureLinkedControls(unittest.TestCase):
             "source_sha256": graphical.common.hashes(graphical.source_files()),
             "tools": {},
         }
+        # This historical image tuple belongs to the pre-attribute headers.
+        # A current build with changed headers must not inherit its applicability.
+        current_sources = dict(build["source_sha256"])
+        build["source_sha256"].update({'kernel/console-session.hpp': 'a5428035b05b6b44dc449b28c1987e98ea05a02a78094c8851850f24d439b400', 'kernel/display-session.hpp': 'fc415dc9bf56c3c75f379ec89fc0c6216eada3037711179fefa26d0f4971588d'})
         for name, digest in graphical.CAPTURE_LIBCALL_TOOL_SHA256.items():
             target = build if name in ("compiler", "cxx", "pe_linker") else build["tools"]
             target[name] = {"path": "/synthetic/" + name, "sha256": digest}
         graphical.require_capture_linked_proof("graphical-console-capture", old)
         graphical.require_capture_linked_proof("graphical-console-capture", projected, build)
+        changed = deepcopy(build)
+        changed["source_sha256"] = current_sources
+        with self.assertRaises(ValueError):
+            graphical.require_capture_linked_proof("graphical-console-capture", projected, changed)
         with self.assertRaises(ValueError):
             graphical.require_capture_linked_proof("graphical-console-capture", projected)
         for name in graphical.CAPTURE_LIBCALL_TOOL_SHA256:

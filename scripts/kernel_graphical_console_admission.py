@@ -115,7 +115,7 @@ def read_json(path):
 # Freeze complete token streams, plus each conditional region and its insertion
 # point, so a matching fragment cannot hide a second writer or bypassing path.
 # Whitespace/comments are irrelevant; strings, operators and all other tokens
-# remain exact. All three Session headers are unchanged reviewed dependencies.
+# remain exact. The two exact source tuples distinguish the guarded validator emission boundary.
 CAPTURE_NATIVE = "kernel/uefi/graphical-console.cpp"
 CAPTURE_POLICY = "kernel/uefi/graphical-capture-policy.hpp"
 CAPTURE_SOURCE_PINS = {
@@ -124,6 +124,10 @@ CAPTURE_SOURCE_PINS = {
     "kernel/console-session.hpp": "8dcf227c5283735ffa02bc41f40509f907a980f56877189cb04d345b082af21f",
     "kernel/display-session.hpp": "a087a8e34438ff75c373b7015133db274c18ddd8f5a8c92b750f20893bd9117d",
 }
+CAPTURE_SEPARATE_VALIDATOR_SOURCE_PINS = dict(CAPTURE_SOURCE_PINS, **{
+    "kernel/console-session.hpp": "30cf84c768b235063531e1ca84807c29f913ad8c8d727ed23264bce7abe082f3",
+    "kernel/display-session.hpp": "398fe742918df4fe76208ac2fb056c2b2fc67283ef9f12f59dfd1065d3b9c965",
+})
 CAPTURE_REGIONS = (
     ("policy include", "ifdef", 3, "864f5fcd25a82700a95438723b30f9e7e3302661c8f1b58e32503c18adb94f01"),
     ("private state", "ifdef", 143, "594d1f1292f5a429620ca1e3eb9a6da93deb0634a375da90b5277660d1c1aea7"),
@@ -234,8 +238,9 @@ def capture_source_evidence(mode, sources=None):
     if sources is None:
         sources = {name: (ROOT / name).read_text() for name in paths}
     need(set(sources) == paths, "Changed capture source dependency inventory")
-    for name, expected in CAPTURE_SOURCE_PINS.items():
-        need(capture_source_digest(sources[name]) == expected, "Unreviewed capture source dependency: " + name)
+    observed = {name: capture_source_digest(sources[name]) for name in CAPTURE_SOURCE_PINS}
+    need(observed in (CAPTURE_SOURCE_PINS, CAPTURE_SEPARATE_VALIDATOR_SOURCE_PINS),
+         "Unreviewed or mixed capture source dependency tuple")
     production, capture, regions = capture_source_projection(sources[CAPTURE_NATIVE])
     need(len(regions) == len(CAPTURE_REGIONS), "Changed capture conditional region inventory")
     for actual, (name, kind, position, expected) in zip(regions, CAPTURE_REGIONS):
@@ -3670,6 +3675,9 @@ def verify_session_frames(frames, associations):
         need(symbol in frames and symbol in associations, "Missing distinct Session validator frame")
         need(
             len(associations[symbol]) == 1
+            and type(frames[symbol]) is int and frames[symbol] > 0
+            and associations[symbol][0].get("compiler_symbol") == symbol
+            and associations[symbol][0].get("bytes") == frames[symbol]
             and associations[symbol][0]["object"] == "graphical-console.o"
             and (ROOT / associations[symbol][0]["source"]).resolve() == (ROOT / source).resolve(),
             "Session validator frame has foreign or duplicated ownership/source",
