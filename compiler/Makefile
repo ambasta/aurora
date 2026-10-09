@@ -1,5 +1,5 @@
-# Test goals enter one controlled compiler run. Ordinary builds and compiler-free
-# focused gates retain their existing behavior. A dry run only prints this route.
+# Aggregate tests enter the canonical incremental Meson graph. Explicit pinned
+# acceptance and focused legacy goals retain their separate routes.
 override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
@@ -9,7 +9,7 @@ override _AURORA_DISPATCH :=
 
 # Export supplied controls before defaults are introduced in the inner graph.
 # In particular, default path aliases must not select a different compiler.
-override _AURORA_USER_CONTROLS := CXX CXXFLAGS IR_TEST_CXXFLAGS IR_TEST_BUILD_PREFIX OUT AURORAC \
+override _AURORA_USER_CONTROLS := MESON_BUILD_DIR AURORA_BUILD_JOBS AURORA_TEST_JOBS CXX CXXFLAGS IR_TEST_CXXFLAGS IR_TEST_BUILD_PREFIX OUT AURORAC \
     ACCEPTANCE_COMPILER ACCEPTANCE_COMPILER_SHA256 PACKAGE_IDENTITY_COMPILER \
     PACKAGE_IDENTITY_COMPILER_SHA256 PACKAGE_IDENTITY_TEST_FLAGS PACKAGE_IDENTITY_CAP_MIB \
     PACKAGE_MANIFEST_COMPILER PACKAGE_MANIFEST_COMPILER_SHA256 PACKAGE_MANIFEST_TEST_FLAGS \
@@ -33,7 +33,7 @@ $(error unsupported raw flag syntax in controls: $(_AURORA_BAD_RAW_FLAGS))
 endif
 
 # Inspect raw cap data before export can expand a Make expression. Never echo it.
-override _AURORA_CAP_CONTROLS := PACKAGE_IDENTITY_CAP_MIB PACKAGE_MANIFEST_CAP_MIB PACKAGE_GRAPH_CAP_MIB KERNEL_BUDGET_CAP_MIB ROUND_ROBIN_TEST_CAP_MIB IPC_TRANSACTION_CAP_MIB
+override _AURORA_CAP_CONTROLS := AURORA_BUILD_JOBS AURORA_TEST_JOBS PACKAGE_IDENTITY_CAP_MIB PACKAGE_MANIFEST_CAP_MIB PACKAGE_GRAPH_CAP_MIB KERNEL_BUDGET_CAP_MIB ROUND_ROBIN_TEST_CAP_MIB IPC_TRANSACTION_CAP_MIB
 override _AURORA_CAP_EMPTY :=
 override _AURORA_CAP_SPACE := $(_AURORA_CAP_EMPTY) $(_AURORA_CAP_EMPTY)
 override _AURORA_CAP_TAB := $(_AURORA_CAP_EMPTY)	$(_AURORA_CAP_EMPTY)
@@ -87,8 +87,13 @@ endif
 
 ifeq ($(_AURORA_DISPATCH),yes)
 .PHONY: $(_AURORA_TEST_GOALS)
+ifeq ($(MAKECMDGOALS),test)
+test:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --suite compiler
+else
 $(_AURORA_TEST_GOALS):
 	python3 -B ../scripts/compiler_contract.py run --repo-root "$(abspath ..)" --entry compiler --goal "$@"
+endif
 else
 # The validated receipt, not a boolean flag, authorizes the sealed inner graph.
 # Declare this prerequisite first, including on host-only aggregate prerequisites,

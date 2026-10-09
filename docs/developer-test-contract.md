@@ -1,5 +1,17 @@
 # Developer test-build and explicit acceptance contract
 
+## Canonical Meson migration candidate — 2026-10-09
+
+Normal `make test` and compiler-only aliases now select the incremental Meson
+native graph described in [the build guide](meson-bootstrap.md). This source-only
+migration is unqualified until its final full graph passes separately with GCC 14
+and GCC 16. Meson logs, final source/tool identities and independent coverage review
+are required; observed compiler identity does not claim a fresh bootstrap build.
+The explicit pinned `make test-acceptance` route and historical fresh-build
+contract below remain for their distinct compatibility/provenance checks. They
+are not a second mandatory execution of the canonical native graph.
+
+
 ## IPC integration qualification — 2026-10-07
 
 The 608-file 851f288 checkpoint completed both full public native workflows with

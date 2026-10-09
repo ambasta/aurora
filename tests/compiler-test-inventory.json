@@ -1,541 +1,79 @@
 {
-  "binary_buffer.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "block_io.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "borrowed_objects.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "borrowed_objects_abi.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "byte_buffer.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "byte_codec.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "byte_literals.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "classes.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "composed_values.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "console_service.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "decimal_values.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "diagnostics.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "display_service.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete sealed Display service source and private ABI runner; retains Console controls separately.",
-    "root_make": true
-  },
-  "enum_composition.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "equivalence.py": {
-    "kind": "supplemental-runner",
-    "make": false,
-    "meson": false,
-    "reason": "Requires a separate baseline compiler; differential evidence, not a semantics oracle.",
-    "root_make": false
-  },
-  "fixed_containers.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "format.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Focused Make formatter/linter gate, outside the root native aggregate; separate tools required.",
-    "root_make": false
-  },
-  "function_overloads.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "function_overloads_independent.py": {
-    "kind": "supplemental-runner",
-    "make": false,
-    "meson": false,
-    "reason": "Independent standalone overload qualification runner.",
-    "root_make": false
-  },
-  "function_templates.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "integer_oracle.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "integers.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "ir_exhaustive.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "json_codecs.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "json_codecs_owned.py": {
-    "kind": "supplemental-runner",
-    "make": false,
-    "meson": false,
-    "reason": "Supplemental historical independently pinned owner join.",
-    "root_make": false
-  },
-  "json_integers.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "json_lookup.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "json_owned.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "json_profile.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "json_string_write.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "lint.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Focused Make formatter/linter gate, outside the root native aggregate; separate tools required.",
-    "root_make": false
-  },
-  "logical_spans_abi.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "method_spans.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "method_spans_abi.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "method_values.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "method_values_abi.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "nested_values.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "owned_bytes.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "owned_mutation.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "owned_mutation_abi.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "owned_spans.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "owned_spans_kernel.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "owned_spans_source.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "owning_classes.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "owning_classes_abi.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "package_graph.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "package_identity.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "package_manifest.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "packed_values.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "readonly_spans.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "readonly_windows.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "readonly_windows_ir_native.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "run.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "sector.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "sector_values.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "sector_values_abi.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "sector_window.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "short_circuit.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "short_circuit_ir_native.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "source_overlays.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "storage_binary.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "templates.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "token_scan.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "u8_numeric.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "unsigned.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "unsigned_oracle.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "utf8.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "utf8_encoding.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "utf8_lines.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "utf8_range.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "value_calls.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "xfs_file.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  },
-  "xfs_geometry.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "xfs_root.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "xfs_root_api.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "xfs_root_entry.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": false,
-    "reason": "Make runner awaiting Meson fixture/build-artifact integration; full Make remains required.",
-    "root_make": true
-  },
-  "xfs_sector.py": {
-    "kind": "runner",
-    "make": true,
-    "meson": true,
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
-    "root_make": true
-  }
+  "binary_buffer.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"binary-buffer": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/binary_buffer.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "block_io.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"block-io": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/block_io.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "borrowed_objects.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"borrowed-objects": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/borrowed_objects.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "full", "slow"]}, "borrowed-objects-smoke": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/borrowed_objects.py", "@BUILD@/aurorac", "--smoke"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "borrowed_objects_abi.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"borrowed-objects-abi": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/borrowed_objects_abi.py", "borrowed-objects-abi"], "suites": ["bytes", "compiler", "core", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "byte_buffer.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"byte-buffer": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/byte_buffer.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "byte_codec.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"byte-codec": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/byte_codec.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "byte_literals.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"byte-literals": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/byte_literals.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "classes.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"classes": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/classes.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "composed_values.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"composed-values": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/composed_values.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "console_service.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"console-service-source-native": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/console_service.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "decimal_values.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"decimal-values": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/decimal_values.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "diagnostics.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"diagnostics": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/diagnostics.py", "@BUILD@/aurorac", "diagnostics-fixture"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "display_service.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"display-service-source-native": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/display_service.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "full", "slow"]}}, "reason": "Complete sealed Display service source and private ABI runner; retains Console controls separately.", "root_make": true},
+  "enum_composition.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"enum-composition": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/enum_composition.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "equivalence.py": {"kind": "supplemental-runner", "make": false, "meson": false, "meson_commands": {}, "reason": "Requires a separate baseline compiler; differential evidence, not a semantics oracle.", "root_make": false},
+  "fixed_containers.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"fixed-containers": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/fixed_containers.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "format.py": {"kind": "runner", "make": true, "meson": false, "meson_commands": {}, "reason": "Focused Make formatter/linter gate, outside the root native aggregate; separate tools required.", "root_make": false},
+  "function_overloads.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"function-overloads": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/function_overloads.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "function_overloads_independent.py": {"kind": "supplemental-runner", "make": false, "meson": false, "meson_commands": {}, "reason": "Independent standalone overload qualification runner.", "root_make": false},
+  "function_templates.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"function-templates": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/function_templates.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "integer_oracle.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"integer-oracle": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/integer_oracle.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "integers.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"signed-integers": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/integers.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "ir_exhaustive.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"ir-exhaustive": {"arguments": ["-B", "@SOURCE@/tests/compiler/ir_exhaustive.py", "ir-tests-fixture"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "json_codecs.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"json-codecs": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/json_codecs.py", "@BUILD@/aurorac", "--developer-selected-compiler"], "suites": ["bytes", "compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "json_codecs_owned.py": {"kind": "supplemental-runner", "make": false, "meson": false, "meson_commands": {}, "reason": "Supplemental historical independently pinned owner join.", "root_make": false},
+  "json_integers.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"json-integers": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/json_integers.py", "@BUILD@/aurorac", "--developer-selected-compiler"], "suites": ["bytes", "compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "json_lookup.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"json-lookup": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/json_lookup.py", "@BUILD@/aurorac", "--developer-selected-compiler"], "suites": ["bytes", "compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "json_owned.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"json-owned": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/json_owned.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "json_profile.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"json-profile": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/json_profile.py", "@BUILD@/aurorac", "--developer-selected-compiler"], "suites": ["bytes", "compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "json_string_write.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"json-string-write": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/json_string_write.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "full", "slow"]}, "json-string-write-smoke": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/json_string_write.py", "@BUILD@/aurorac", "--smoke"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "lint.py": {"kind": "runner", "make": true, "meson": false, "meson_commands": {}, "reason": "Focused Make formatter/linter gate, outside the root native aggregate; separate tools required.", "root_make": false},
+  "logical_spans_abi.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"logical-spans-abi": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/logical_spans_abi.py", "logical-spans-abi"], "suites": ["bytes", "compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "method_spans.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"method-spans": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/method_spans.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "method_spans_abi.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"method-spans-abi": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/method_spans_abi.py", "method-spans-abi"], "suites": ["bytes", "compiler", "core", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "method_values.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"method-values": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/method_values.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "method_values_abi.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"method-values-abi": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/method_values_abi.py", "method-values-ir-fixture", "--work-dir", "@ARTIFACTS@"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "nested_values.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"nested-values": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/nested_values.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "owned_bytes.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"owned-bytes": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/owned_bytes.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "owned_mutation.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"owned-mutation": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/owned_mutation.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "owned_mutation_abi.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"owned-mutation-abi": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/owned_mutation_abi.py", "owned-mutation-ir"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "owned_spans.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"owned-spans": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/owned_spans.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "owned_spans_kernel.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"owned-spans-kernel-receiver": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/owned_spans_kernel.py", "@BUILD@/aurorac", "--receiver-bound"], "suites": ["bytes", "compiler", "dev", "full"]}, "owned-spans-kernel-standalone": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/owned_spans_kernel.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "owned_spans_source.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"owned-spans-source": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/owned_spans_source.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "owning_classes.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"owning-classes": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/owning_classes.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "owning_classes_abi.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"owning-classes-abi": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/owning_classes_abi.py", "owning-classes-ir"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "package_graph.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"package-graph": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/package_graph.py", "@BUILD@/aurorac", "--profile", "dev", "--developer-selected-compiler"], "suites": ["dev", "full", "packages"]}, "package-graph-full": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/package_graph.py", "@BUILD@/aurorac", "--profile", "full", "--meson-selected-compiler", "--candidate-cap-mib", "1024", "--artifact-root", "@ARTIFACTS@"], "suites": ["full", "integration", "packages", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "package_identity.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"package-identity": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/package_identity.py", "@BUILD@/aurorac", "--profile", "dev", "--developer-selected-compiler"], "suites": ["dev", "full", "packages"]}, "package-identity-full": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/package_identity.py", "@BUILD@/aurorac", "--profile", "full", "--meson-selected-compiler", "--candidate-cap-mib", "1024", "--artifact-root", "@ARTIFACTS@"], "suites": ["full", "integration", "packages", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "package_manifest.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"package-manifest": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/package_manifest.py", "@BUILD@/aurorac", "--profile", "dev", "--developer-selected-compiler"], "suites": ["dev", "full", "packages"]}, "package-manifest-full": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/package_manifest.py", "@BUILD@/aurorac", "--profile", "full", "--meson-selected-compiler", "--candidate-cap-mib", "1024", "--artifact-root", "@ARTIFACTS@"], "suites": ["full", "integration", "packages", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "packed_values.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"packed-values": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/packed_values.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "readonly_spans.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"readonly-spans": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/readonly_spans.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "readonly_windows.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"readonly-windows": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/readonly_windows.py", "@BUILD@/aurorac", "--artifacts", "@ARTIFACTS@"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "readonly_windows_ir_native.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"readonly-windows-ir-native": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/readonly_windows_ir_native.py", "readonly-windows-ir-fixture", "--artifacts", "@ARTIFACTS@"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "run.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"frontend": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/run.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "sector.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"owned-sector": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/sector.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "sector_values.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"sector-values": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/sector_values.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "sector_values_abi.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"sector-values-abi": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/sector_values_abi.py", "sector-values-ir"], "suites": ["bytes", "compiler", "dev", "full"]}, "stack-guards": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/sector_values_abi.py", "stack-probes-fixture", "--stack-guards"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "sector_window.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"sector-window": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/sector_window.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "short_circuit.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"short-circuit": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/short_circuit.py", "@BUILD@/aurorac", "--artifacts", "@ARTIFACTS@"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "short_circuit_ir_native.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"short-circuit-ir-native": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/short_circuit_ir_native.py", "short-circuit-ir-fixture", "--artifacts", "@ARTIFACTS@"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "source_overlays.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"source-overlays": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/source_overlays.py", "source-overlays-fixture"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "storage_binary.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"storage-binary": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/storage_binary.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "templates.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"templates": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/templates.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "token_scan.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"token-scan": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/token_scan.py", "--compiler", "@BUILD@/aurorac", "--meson-selected-compiler", "--artifacts", "@ARTIFACTS@"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "u8_numeric.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"u8-numeric": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/u8_numeric.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "unsigned.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"unsigned-integers": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/unsigned.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "unsigned_oracle.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"unsigned-oracle": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/unsigned_oracle.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "utf8.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"utf8": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/utf8.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "utf8_encoding.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"utf8-encoding": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/utf8_encoding.py", "@BUILD@/aurorac"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "utf8_lines.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"utf8-lines": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/utf8_lines.py", "--compiler", "@BUILD@/aurorac", "--meson-selected-compiler", "--artifacts", "@ARTIFACTS@"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "utf8_range.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"utf8-range": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/utf8_range.py", "--compiler", "@BUILD@/aurorac", "--meson-selected-compiler", "--artifacts", "@ARTIFACTS@"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "value_calls.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"value-calls": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/value_calls.py", "@BUILD@/aurorac"], "suites": ["compiler", "core", "dev", "full"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "xfs_file.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"xfs-file": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/xfs_file.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true},
+  "xfs_geometry.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"xfs-geometry": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/xfs_geometry.py", "@BUILD@/aurorac", "--meson-selected-compiler", "--mutation-controls", "--artifacts", "@ARTIFACTS@"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "xfs_root.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"xfs-root": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/xfs_root.py", "--repo-root", "@SOURCE@", "--fixture-root", "@SOURCE@/fixtures/xfs-root", "--artifact-root", "@ARTIFACTS@", "--compiler", "@BUILD@/aurorac", "--meson-selected-compiler"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "xfs_root_api.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"xfs-root-api": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/xfs_root_api.py", "--repo-root", "@SOURCE@", "--fixture-root", "@SOURCE@/fixtures/xfs-root", "--artifact-root", "@ARTIFACTS@", "--compiler", "@BUILD@/aurorac", "--meson-selected-compiler"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "xfs_root_entry.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"xfs-root-entry": {"arguments": ["-B", "@SOURCE@/tests/meson_artifacts.py", "@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/xfs_root_entry.py", "--repo-root", "@SOURCE@", "--fixture-root", "@SOURCE@/fixtures/xfs-root", "--artifact-root", "@ARTIFACTS@", "--compiler", "@BUILD@/aurorac", "--meson-selected-compiler"], "suites": ["compiler", "full", "slow"]}}, "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.", "root_make": true},
+  "xfs_sector.py": {"kind": "runner", "make": true, "meson": true, "meson_commands": {"xfs-sector": {"arguments": ["-B", "-O", "@SOURCE@/tests/compiler/xfs_sector.py", "@BUILD@/aurorac"], "suites": ["bytes", "compiler", "full", "slow"]}}, "reason": "Complete executable runner; also imported as a helper where applicable.", "root_make": true}
 }

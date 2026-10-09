@@ -107,7 +107,7 @@ def check_files(records):
 
 def source_inventory(root):
     root = Path(root).resolve(strict=True)
-    paths = {root / name for name in ('.gitignore', 'AGENTS.md', 'Makefile', 'README.md')}
+    paths = {root / name for name in ('.gitignore', 'AGENTS.md', 'Makefile', 'README.md', 'meson.build', 'meson_options.txt')}
     for name in SOURCE_DIRS:
         directory = root / name
         if not directory.exists():
@@ -142,15 +142,22 @@ def add_identity_arguments(parser):
     group.add_argument('--compiler-sha256', help='explicit expected compiler SHA256; no default')
     group.add_argument('--developer-build-receipt', type=Path,
                        help='checked local fresh-build receipt; not external approval')
+    group.add_argument('--meson-selected-compiler', action='store_true',
+                       help='observe the Meson-built artifact; no external pin or fresh-build claim')
 
 
 def validate_identity_selection(args, preflight=False):
     expected = getattr(args, 'compiler_sha256', None)
     receipt = getattr(args, 'developer_build_receipt', None)
-    require(not (expected is not None and receipt is not None), 'choose exactly one compiler identity mode')
+    selected = getattr(args, 'meson_selected_compiler', False)
+    count = int(expected is not None) + int(receipt is not None) + int(selected)
+    require(count <= 1, 'choose exactly one compiler identity mode')
     if not preflight:
-        require((expected is not None) != (receipt is not None),
-                'provide exactly one of --compiler-sha256 or --developer-build-receipt')
+        require(count == 1,
+                'provide one of --compiler-sha256, --developer-build-receipt, or --meson-selected-compiler')
+    if selected:
+        require(not os.environ.get('AURORA_TEST_CONTEXT'),
+                'Meson artifact selection cannot enter a legacy sealed Make context')
     if expected is not None:
         pin(expected)
 
@@ -239,6 +246,32 @@ class Identity:
                         'explicit pin conflicts with active test context')
 
 
+@dataclass
+class MesonIdentity:
+    """Artifact stability, not a historical pin or a controlled fresh build."""
+    compiler: Path
+    root: Path
+    before: dict
+    expected: None = None
+    receipt: None = None
+    receipt_hash: None = None
+
+    @property
+    def sha256(self):
+        return self.before['sha256']
+
+    def verify(self):
+        require(not os.environ.get('AURORA_TEST_CONTEXT'),
+                'Meson artifact selection cannot enter a legacy sealed Make context')
+        require(file_record(self.compiler) == self.before, 'Meson compiler changed during gate')
+
+    def record(self):
+        return dict(mode='meson-selected', origin='meson-selected-artifact',
+                    observed_compiler_sha256=self.sha256, external_expected_sha256=None,
+                    compiler_before=self.before,
+                    assurance='Observed artifact stability; aggregate source/build qualification is separate')
+
+
 def resolve_identity(args, compiler, repo_root):
     validate_identity_selection(args)
     compiler = Path(compiler).resolve(strict=True)
@@ -247,6 +280,10 @@ def resolve_identity(args, compiler, repo_root):
     receipt = getattr(args, 'developer_build_receipt', None)
     root = Path(repo_root).resolve(strict=True)
     actual = digest(compiler)
+    if getattr(args, 'meson_selected_compiler', False):
+        result = MesonIdentity(compiler, root, file_record(compiler))
+        result.verify()
+        return result
     if receipt is not None:
         receipt = Path(receipt).resolve(strict=True)
         read_context(receipt, root, compiler, developer=True)
