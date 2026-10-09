@@ -15,7 +15,7 @@
 #endif
 #endif
 #include "acpi-policy.hpp"
-#ifdef AURORA_UEFI_BAR_CAPTURE
+#if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)
 #include "bar-loader.hpp"
 #endif
 #include "../console.hpp"
@@ -93,12 +93,16 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         fail("owned arena allocation");
     for (auto &byte : span(arena, Handoff::arena_bytes))
         byte = std::byte{0};
-#ifdef AURORA_UEFI_BAR_CAPTURE
+#if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)
     std::uint32_t capture_a, capture_b, capture_c, capture_d;
     asm volatile("cpuid"
                  : "=a"(capture_a), "=b"(capture_b), "=c"(capture_c), "=d"(capture_d)
                  : "a"(0x80000008U), "c"(0));
+#ifdef AURORA_UEFI_IOMMU_EVENT
+    if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture_event())
+#else
     if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture())
+#endif
         fail("bounded BAR firmware capture");
 #endif
 #if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
@@ -199,7 +203,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
                                     peer_probe_offset});
 #endif
 #endif
-#ifdef AURORA_UEFI_BAR_CAPTURE
+#if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)
     put(handoff, 8, 4, 4);
     put(handoff, 120, arena + Handoff::bar_record_offset);
 #endif

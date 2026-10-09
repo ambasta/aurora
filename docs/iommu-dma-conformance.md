@@ -27,20 +27,34 @@ may have advanced the head; it conveys no retry or rollback guarantee. Entry
 return revokes both grants. Event backing has a boot-lifetime owner and cannot
 enter the existing CPU-only pin cancellation/reclamation paths.
 
-The current implementation is exercised through hosted transports and generated
-Aurora code. A live Aurora guest is not yet qualified. Concrete MMIO ordering,
-physical-base-to-backing proof, producer quiescence and boot-lifetime ownership of
-DTEs, translation/data/sink/guard/command memory remain obligations of that future
-fixture. The hosted transport's identity and quiet-state observations are trusted
-inputs, not independent hardware evidence. No mapping API, invalidation completion,
-page release, concurrent producer or physical-device support follows.
+The hosted implementation passes generated-source, real wrapper/session composition,
+closed-result and hostile-IR controls. The opt-in UEFI adapter now retains its
+DTE, mode-1 table, command, data and event pages for the whole boot; verifies actual
+writable NX mappings; and opens operation-local MMIO windows. It requires exact
+default-model IVRS/IOAPIC bytes, complete pre/post-firmware PCI facts, EDU BAR
+ownership, other endpoint bus mastering disabled, and AHCI engines idle. It does
+not stop or reset an unsuitable firmware controller to force admission.
 
-The planned first guest retains the exact qualified diagnostic QEMU model and a
-finite producer-ready batch. It needs separately admitted firmware, actual
-EDU/IOMMU topology (including the default IOAPIC IVRS special entry), a disposable
-writable raw ESP copy with immutable master, and serial/QMP result and cleanup
-checks. Existing NVMe/read-only IVRS admission and `fat:ro` launchers cannot be
-silently reused. No new guest execution is part of the hosted source gate.
+The denial image passes independent linked-image and stack review: 11,776 bytes
+including its exception reserve fit the 15,360-byte admission cap within the
+unchanged 16 KiB stack. The first rejected stack attempt remains retained; the
+Event-only build uses fixed outgoing argument slots. The image invokes the real
+Aurora loop after a finite producer batch and preserves all raw ring slots and
+protected data before and after intake. Command-only diagnostics leave EDU bus
+mastering disabled. Overflow at initial admission remains a pre-entry refusal.
+No new Aurora guest has run yet; hosted and image checks do not establish live
+transport behavior, firmware quiescence, physical isolation or completion.
+
+Build-only modes are `iommu-event-denial`, `iommu-event-success`,
+`iommu-event-overflow` and `iommu-event-command-error`, selected through
+`UEFI_MODE` for `scripts/kernel-uefi-build.sh`. Only the denial image currently has
+linked-image qualification. Execution requires the exact retained model, verified
+split firmware, an admitted raw ESP and a separately reviewed supervised plan.
+The FAT helper uses pinned mtools, reconstructs a second identical image and
+checks every allocation and loader byte; each guest receives a fresh writable
+copy. Serial/QMP evidence and verified process cleanup are required. No mapping
+API, invalidation completion, page release, concurrent producer or physical-device
+support follows. Historical NVMe/IVRS policies and guest results stay separate.
 
 ## Mechanism and trust boundary
 
@@ -215,10 +229,9 @@ supervisor, binary download or hidden target substitution. A new build or path/p
 cannot borrow historical acceptance. The model README describes reconstruction,
 build instructions and target preparation without embedding private paths.
 
-Before merge, independently review this additive result update and complete
-final-source Meson `dev` and `slow` per AGENTS.md. Complete root native and affected emulator
-qualification remain separate gates; no old receipt qualifies the changed test
-routing. Future model qualification still needs actual cache-hit observations,
+New compiler/kernel integration requires final-source GCC 14 and GCC 16 Meson
+`full`, normal BIOS/UEFI images and relevant emulator qualification per AGENTS.md.
+No historical receipt qualifies changed code or routing. Future model qualification still needs actual cache-hit observations,
 requester/bus boundaries, excluded-path regressions, broader permissions, command
 read/malformed-command corrections and controls, full-capacity/event-memory-error,
 W1C/overflow recovery and IRQ/ATS work. Production DMA additionally needs its own

@@ -24,7 +24,9 @@ using U64 = std::uint64_t;
 auto payload_entry() -> void asm("uefi_payload_entry") __attribute__((visibility("hidden")));
 auto generic_fault() -> void asm("uefi_payload_fault") __attribute__((visibility("hidden")));
 auto page_fault() -> void asm("uefi_payload_page_fault") __attribute__((visibility("hidden")));
-#if defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_IOMMU_EVENT)
+auto language_value() -> long long asm("__au_runtime_iommu_event_value");
+#elif defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
 auto language_value() -> long long asm("__au_runtime_graphical_value");
 #elif defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE)
 auto language_value() -> long long asm("__au_runtime_display_value");
@@ -175,6 +177,11 @@ auto payload_main(U64 arena, U64 size) -> void {
 #ifdef AURORA_UEFI_OWNED_BYTES
     if (!aurora::uefi::run_owned_bytes(arena, pool))
         fail("owned byte allocation profile");
+#endif
+#ifdef AURORA_UEFI_IOMMU_EVENT
+    if (language_value() != 42)
+        fail("compiled event language result");
+    Serial::text("AURORA_UEFI_LANGUAGE_OK: value=42\r\n");
 #endif
 #ifdef AURORA_UEFI_ACPI
     if (!aurora::uefi::discover_acpi(arena, h, pool))

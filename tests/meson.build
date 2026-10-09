@@ -301,6 +301,17 @@ test('iommu-event-source-native', python,
      workdir: meson.current_build_dir(), timeout: 300)
 iommu_event_session = executable('iommu-event-session', 'kernel-iommu-event-session.cpp', native: true, install: false)
 test('iommu-event-session', iommu_event_session, suite: ['full', 'dev'], timeout: 120)
+iommu_event_profile = executable('iommu-event-profile', 'kernel-uefi-event-profile.cpp', native: true, install: false)
+test('iommu-event-profile', iommu_event_profile, suite: ['full', 'dev'], timeout: 120)
+iommu_event_backing = executable('iommu-event-backing', 'kernel-uefi-event-backing.cpp', native: true, install: false)
+test('iommu-event-backing', iommu_event_backing, suite: ['full', 'dev'], timeout: 120)
+test('iommu-event-admission-controls', python,
+     args: ['-B', files('kernel-uefi-event-admission.py')], suite: ['full', 'dev'], timeout: 120)
+test('iommu-event-admission-controls-optimized', python,
+     args: ['-B', '-O', files('kernel-uefi-event-admission.py')], suite: ['full', 'dev'], timeout: 120)
+
+
+
 
 # Output-only framebuffer boundary and its actual Aurora software renderer.
 foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'framebuffer-pixels']
@@ -511,3 +522,9 @@ foreach mode : ['ordinary', 'optimized']
 endforeach
 
 subdir('native')
+
+# Raw ESP preparation is filesystem-only; these controls never launch a guest.
+test('iommu-event-esp-controls', python,
+     args: ['-B', files('kernel-uefi-event-esp.py')], suite: ['full', 'dev'], timeout: 120)
+test('iommu-event-esp-controls-optimized', python,
+     args: ['-B', '-O', files('kernel-uefi-event-esp.py')], suite: ['full', 'dev'], timeout: 120)

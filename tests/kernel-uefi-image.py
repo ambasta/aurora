@@ -214,16 +214,31 @@ GRAPHICAL_BRIDGES = frozenset(("__au_runtime_graphical_entry", "__au_runtime_gra
 GRAPHICAL_IMPORTS = frozenset(("__au_runtime_console_next", "__au_runtime_display_pixel"))
 GRAPHICAL_HOST = GRAPHICAL_IMPORTS | {"__au_runtime_console_put"}
 GRAPHICAL_ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
+EVENT_OBJECTS = (GRAPHICAL_OBJECTS - {"graphical-console", "console-entry"}) | {"event-intake"}
+EVENT_BRIDGES = frozenset(("__au_runtime_iommu_event_entry", "__au_runtime_iommu_event_value"))
+EVENT_IMPORTS = frozenset(
+    ("__au_runtime_iommu_event_poll", "__au_runtime_iommu_event_acknowledge", "__au_runtime_console_put")
+)
+EVENT_ENTRY = "__au_v_m1_26kernel_iommu_event_service_n0__d18iommu_event_intake"
+EVENT_MODES = ("iommu-event-denial", "iommu-event-success", "iommu-event-overflow", "iommu-event-command-error")
 
 
 def image_options(arguments):
-    allowed = ([], ["--ipc-policy"], ["--owned-bytes"], ["--ipc-policy", "--disposal-policy"], ["--graphical-console"])
+    allowed = (
+        [],
+        ["--ipc-policy"],
+        ["--owned-bytes"],
+        ["--ipc-policy", "--disposal-policy"],
+        ["--graphical-console"],
+        ["--iommu-event"],
+    )
     need(arguments in allowed, "Expected one exact supported image-policy flag combination")
     return dict(
         require_ipc="--ipc-policy" in arguments,
         require_owned_bytes="--owned-bytes" in arguments,
         require_disposal="--disposal-policy" in arguments,
         require_graphical_console="--graphical-console" in arguments,
+        require_iommu_event="--iommu-event" in arguments,
     )
 
 
@@ -246,11 +261,11 @@ def nm_entries(text):
     return result
 
 
-def profile_selection(symbols, object_names, graphical):
+def profile_selection(symbols, object_names, graphical, event=False):
     # Do not impose the paired duplicate-symbol policy on historical profiles.
     names = (
         nm_entries(symbols)
-        if graphical
+        if graphical or event
         else {fields[-1]: fields[-2] for line in symbols.splitlines() if len(fields := line.split()) in (2, 3)}
     )
     paired = (
@@ -258,6 +273,60 @@ def profile_selection(symbols, object_names, graphical):
         or "graphical-console" in object_names
     )
     need(graphical or not paired, "Paired image requires explicit --graphical-console")
+    event_present = (
+        any(name.startswith("__au_runtime_iommu_event_") or "kernel_iommu_event_service" in name for name in names)
+        or "event-intake" in object_names
+    )
+    need(event or not event_present, "Event image requires explicit --iommu-event")
+    need(not (event and graphical), "Event and graphical image policies cannot combine")
+    if event:
+        need(set(object_names) == EVENT_OBJECTS, "Exact Event object inventory required")
+        need(
+            {name for name in names if name.startswith("__au_runtime_")} == EVENT_BRIDGES | EVENT_IMPORTS,
+            "Crossed or incomplete Event authority inventory",
+        )
+        need(
+            all(names.get(name) in ("t", "T") for name in EVENT_BRIDGES | EVENT_IMPORTS),
+            "Event authorities must be linked code",
+        )
+        need(
+            names.get(EVENT_ENTRY) == "t" and names.get("aurora_kernel_value") == "t",
+            "Event source/value entries must stay local",
+        )
+        need(
+            {name for name in names if name.startswith("aurora_reflect_")} == REFLECTION_HELPERS
+            and all(names.get(name) == "T" for name in REFLECTION_HELPERS),
+            "Event reflection helper inventory/type mismatch",
+        )
+        need(
+            not any(
+                name.startswith(
+                    (
+                        "uefi_runtime_",
+                        "aurora_user_",
+                        "aurora_kernel_budget_",
+                        "uefi_console_",
+                        "uefi_service_",
+                        "uefi_program_",
+                        "aurora_exception_",
+                    )
+                )
+                or name
+                in (
+                    "aurora_kernel_ipc_transition",
+                    "aurora_kernel_terminal_event",
+                    "aurora_kernel_client_disposal",
+                    "malloc",
+                    "calloc",
+                    "realloc",
+                    "free",
+                    "abort",
+                )
+                or name.startswith(("__cxa_", "_GLOBAL__sub_I", "_Zn", "_Zd"))
+                for name in names
+            ),
+            "Event image acquired an IRQ, timer, user runtime, heap or host authority",
+        )
     if graphical:
         need(set(object_names) == GRAPHICAL_OBJECTS, "Exact graphical object inventory required")
         need("uefi_console_interrupt" in names, "Graphical profile requires its console IRQ")
@@ -282,7 +351,125 @@ def profile_selection(symbols, object_names, graphical):
             not any(name.startswith(("uefi_runtime_", "aurora_user_", "aurora_kernel_budget_")) for name in names),
             "Graphical profile linked a protected runtime or budget fixture",
         )
-    return "graphical" if graphical else ("console" if "uefi_console_interrupt" in names else "ordinary")
+    return (
+        "event"
+        if event
+        else "graphical"
+        if graphical
+        else ("console" if "uefi_console_interrupt" in names else "ordinary")
+    )
+
+
+def event_object_policy(symbols, object_symbols, calls, language_bindings, mode):
+    """Exact finite Event authority ownership; machine CFG admission is separate."""
+    profile_selection(symbols, object_symbols, False, True)
+    need(mode in EVENT_MODES, "Unknown Event image mode")
+    parsed = {name: nm_entries(value) for name, value in object_symbols.items()}
+    language = parsed["language"]
+    need(
+        {name for name, kind in language.items() if kind in ("U", "w", "v")} == EVENT_IMPORTS,
+        "Generated Event imports must be exactly poll, acknowledge and console output",
+    )
+    need(
+        {name for name, kind in language.items() if kind.isupper() and kind != "U"}
+        == EVENT_BRIDGES | REFLECTION_HELPERS
+        and all(language.get(name) == "T" for name in EVENT_BRIDGES | REFLECTION_HELPERS),
+        "Event globals must be exactly private bridges and reflection helpers",
+    )
+    need(
+        language.get(EVENT_ENTRY) == "t" and language.get("aurora_kernel_value") == "t",
+        "Event source/value entries escaped private object binding",
+    )
+    need(
+        set(language_bindings) == {name for name, kind in language.items() if kind in ("t", "T")},
+        "Event ELF function/binding inventory mismatch",
+    )
+    for name, binding in language_bindings.items():
+        expected = (
+            ("GLOBAL", "HIDDEN")
+            if name in EVENT_BRIDGES
+            else ("GLOBAL", "DEFAULT")
+            if name in REFLECTION_HELPERS
+            else ("LOCAL", "DEFAULT")
+        )
+        need(binding == expected, "Event function escaped private ELF binding: " + name)
+    expected = {
+        "language": (EVENT_BRIDGES, EVENT_IMPORTS),
+        "event-intake": (
+            EVENT_IMPORTS,
+            set() if mode == "iommu-event-overflow" else {"__au_runtime_iommu_event_entry"},
+        ),
+        "payload": (set(), {"__au_runtime_iommu_event_value"}),
+    }
+    for owner, entries in parsed.items():
+        defined, imported = expected.get(owner, (set(), set()))
+        authority = {name: kind for name, kind in entries.items() if name.startswith("__au_runtime_")}
+        need(
+            all(kind in ("T", "U") for kind in authority.values())
+            and {name for name, kind in authority.items() if kind != "U"} == defined
+            and {name for name, kind in authority.items() if kind == "U"} == imported,
+            "Wrong Event authority owner/importer: " + owner,
+        )
+        reflection = {name for name in entries if name.startswith("aurora_reflect_")}
+        need(
+            reflection == (REFLECTION_HELPERS if owner == "language" else set())
+            and all(entries[name] == "T" for name in reflection),
+            "Wrong Event reflection owner: " + owner,
+        )
+        if owner != "language":
+            need(
+                not any(name.startswith("__au_v_") or name == "aurora_kernel_value" for name in entries),
+                "Event source entry escaped language object: " + owner,
+            )
+    for owner, targets in (
+        ("event-intake", () if mode == "iommu-event-overflow" else ("__au_runtime_iommu_event_entry",)),
+        ("payload", ("__au_runtime_iommu_event_value",)),
+        ("language", tuple(sorted(EVENT_IMPORTS))),
+    ):
+        for target in targets:
+            need(
+                policy_call_present(calls[owner], target),
+                "Missing direct Event authority call: " + owner + ": " + target,
+            )
+
+
+def event_image_policy(directory, symbols=None, mode=None):
+    directory = Path(directory)
+    if mode is None:
+        manifest = json.loads((directory / "iommu-event-build-start.json").read_text())
+        mode = manifest["mode"]
+        need(
+            mode in EVENT_MODES
+            and manifest["schema"] == "aurora-iommu-event-build-v1"
+            and {flag for flag in manifest["flags"] if flag.startswith("-DAURORA_IOMMU_EVENT_CASE")}
+            == {"-DAURORA_IOMMU_EVENT_CASE=" + str(EVENT_MODES.index(mode))},
+            "Event image lacks exact build selector",
+        )
+    if symbols is None:
+        symbols = subprocess.check_output(["nm", "-a", str(directory / "payload.elf")], text=True)
+    profile_selection(symbols, {path.stem for path in directory.glob("*.o")}, False, True)
+    objects = {
+        name: subprocess.check_output(["nm", "-a", str(directory / (name + ".o"))], text=True)
+        for name in sorted(EVENT_OBJECTS)
+    }
+    calls = {
+        name: subprocess.check_output(["objdump", "-drwC", str(directory / (name + ".o"))], text=True)
+        for name in ("payload", "event-intake", "language")
+    }
+    bindings = subprocess.check_output(["readelf", "-sW", str(directory / "language.o")], text=True)
+    event_object_policy(symbols, objects, calls, elf_function_bindings(bindings), mode)
+    sections = subprocess.check_output(["readelf", "-SW", str(directory / "payload.elf")], text=True)
+    need(
+        not any(name in sections for name in (".init_array", ".fini_array", ".ctors", ".dtors")),
+        "Event image must not register constructors/destructors",
+    )
+    return dict(
+        mode=mode,
+        objects=sorted(EVENT_OBJECTS),
+        language_imports=sorted(EVENT_IMPORTS),
+        language_bridges=sorted(EVENT_BRIDGES),
+        reflection_helpers=sorted(REFLECTION_HELPERS),
+    )
 
 
 def graphical_object_policy(symbols, object_symbols, calls, language_bindings):
@@ -456,10 +643,21 @@ def graphical_image_policy(directory, symbols=None):
     )
 
 
-def main(require_ipc=False, require_owned_bytes=False, require_disposal=False, require_graphical_console=False):
+def main(
+    require_ipc=False,
+    require_owned_bytes=False,
+    require_disposal=False,
+    require_graphical_console=False,
+    require_iommu_event=False,
+):
     need(
         not require_graphical_console or not (require_ipc or require_owned_bytes or require_disposal),
         "Graphical profile cannot combine with another image-policy flag",
+    )
+    need(
+        not require_iommu_event
+        or not (require_ipc or require_owned_bytes or require_disposal or require_graphical_console),
+        "Event profile cannot combine with another image-policy flag",
     )
     pe_path = BUILD / "esp/EFI/BOOT/BOOTX64.EFI"
     data = pe_path.read_bytes()
@@ -469,7 +667,12 @@ def main(require_ipc=False, require_owned_bytes=False, require_disposal=False, r
     elf_validate(elf, binary)
     names = ["payload", "payload-entry", "language", "acpi", "pci", "runtime", "memory"]
     symbols = subprocess.check_output(["nm", "-a", str(BUILD / "payload.elf")], text=True)
-    profile = profile_selection(symbols, {path.stem for path in BUILD.glob("*.o")}, require_graphical_console)
+    profile = profile_selection(
+        symbols, {path.stem for path in BUILD.glob("*.o")}, require_graphical_console, require_iommu_event
+    )
+    if require_iommu_event:
+        event_image_policy(BUILD, symbols)
+        names += ["event-intake"]
     if require_graphical_console:
         graphical_image_policy(BUILD, symbols)
     if require_owned_bytes:

@@ -1,8 +1,11 @@
 #include "acpi.hpp"
 #include "acpi-policy.hpp"
 #include "tables.hpp"
-#ifdef AURORA_UEFI_IVRS
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
 #include "ivrs-policy.hpp"
+#ifdef AURORA_UEFI_IOMMU_EVENT
+#include "event-profile-policy.hpp"
+#endif
 #endif
 #ifdef AURORA_UEFI_PCI
 #include "pci.hpp"
@@ -128,7 +131,7 @@ public:
 #if defined(AURORA_UEFI_TABLES)
 [[gnu::noinline]] auto
 prepare_table_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
-#elif defined(AURORA_UEFI_IVRS)
+#elif defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
 [[gnu::noinline]] auto
 prepare_ivrs_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
 #elif defined(AURORA_UEFI_BAR_CAPTURE)
@@ -192,7 +195,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     if (!xsdt || !Acpi::xsdt(*xsdt, *xsdt_address))
         return false;
     U64 madt_address = 0;
-#ifdef AURORA_UEFI_IVRS
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
     U64 ivrs_address = 0;
 #endif
 #ifdef AURORA_UEFI_PCI
@@ -215,7 +218,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
             mcfg_address = candidate;
         }
 #endif
-#ifdef AURORA_UEFI_IVRS
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
         if (Acpi::signature(header, "IVRS")) {
             if (ivrs_address)
                 return false;
@@ -275,7 +278,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     const auto topology = Topology::parse(*madt, physical_bits);
     if (!topology || !window.closed() || !tables.verify(arena, handoff))
         return false;
-#ifdef AURORA_UEFI_IVRS
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
     if (topology->apic() != 0xfee00000)
         return false; // Explicit q35 profile; no unverified APIC alias.
 #endif
@@ -311,7 +314,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     if (!mcfg || !window.closed() || !tables.verify(arena, handoff))
         return false;
 #endif
-#ifdef AURORA_UEFI_IVRS
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
     if (!ivrs_address) {
         Serial::text("AURORA_IVRS_REJECTED: reason=missing-table\r\n");
         return false;
@@ -366,7 +369,11 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
         Serial::put(digits[byte & 15]);
     }
     Serial::text("\r\n");
+#ifdef AURORA_UEFI_IOMMU_EVENT
+    const auto facts = EventIvrs::parse_qemu_default(*ivrs, physical_bits);
+#else
     const auto facts = Ivrs::parse_qemu_10_0_13(*ivrs, physical_bits);
+#endif
     if (!facts) {
         Serial::text("AURORA_IVRS_REJECTED: reason=table-profile\r\n");
         return false;
@@ -381,7 +388,8 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     Serial::number(window.copies());
     Serial::text("\r\n");
 #ifdef AURORA_UEFI_PCI
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_BAR_CAPTURE)
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_TABLES) ||                    \
+    defined(AURORA_UEFI_BAR_CAPTURE)
     copied_bits = physical_bits;
     copied_mcfg_size = mcfg->size();
 #else
@@ -394,14 +402,15 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
 #endif
     return true;
 }
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_BAR_CAPTURE)
+#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_TABLES) ||                    \
+    defined(AURORA_UEFI_BAR_CAPTURE)
 auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
     unsigned physical_bits = 0;
     std::size_t mcfg_size = 0;
 #ifdef AURORA_UEFI_TABLES
     if (!prepare_table_acpi(arena, handoff, physical_bits, mcfg_size))
         return false;
-#elif defined(AURORA_UEFI_IVRS)
+#elif defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
     if (!prepare_ivrs_acpi(arena, handoff, physical_bits, mcfg_size))
         return false;
 #else

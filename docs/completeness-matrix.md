@@ -51,22 +51,15 @@ Four further preserved-image windows passed 64-byte capacity, 65th-byte overflow
 recovery, 80-event termination and native 4096-wake idle fail-stop, with 22 additional
 physical/PPM pairs and their own normal restorations. The linked contract records
 the independent review and exact scope.
-The earlier 67 hosted cases retain their original scope. A joined capture-only
-seven-selector failure candidate adds a required 68th hosted case; its focused
-run, new exact image/stack admission, denial/pixel-failure guests and
-final integrated dev/slow/full Make remain pending. The 96-sample guard remains
-hosted-only. Preserved-image receipts do not qualify this changed source.
-The checker distinguishes the exact GCC14 alias-pair and GCC16 single-definition
-paired-verifier layouts, with separate machine/storage/recursion contracts and
-unchanged budgets. Source controls do not replace either toolchain's fresh image
-admission, affected guests or final aggregate gates.
-
-This isolated next-language checkpoint adds an unqualified explicit leading group
-of distinct ConsoleSession/DisplaySession borrows for the planned graphical line
-editor. Both formal orders and singleton/pair forwarding retain separate sealed
-authority. Focused release build, source/private-ABI and 146 cumulative hostile-IR
-checks passed; final integrated dev/slow/full Make acceptance remains pending. The [service contract](../compiler/SERVICES.md#distinct-group-checkpoint-status)
-records the compiler-only scope and remaining combined native admission boundary.
+The merged graphical and distinct-service implementation is covered by the
+final PR100 qualification stated above. Earlier 67-case hosted and preserved-image
+receipts retain their original scope. The 96-sample guard remains hosted-only.
+The checker admits the recorded GCC14 alias-pair and GCC16 single-definition
+verifier layouts under separate machine, storage and recursion contracts.
+The [service contract](../compiler/SERVICES.md) records distinct Console/Display
+borrows and the new hosted Event capability. PR104's Event consumer and real
+hosted wrapper composition are a draft checkpoint; live transport, linked image
+admission, guests and final-source dual-toolchain aggregates remain pending.
 
 The simple-UEFI console owns its complete Line64 editor, command parser and
 presentation in one Aurora frame. The [sealed service contract](../compiler/SERVICES.md)

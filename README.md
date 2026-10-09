@@ -86,8 +86,7 @@ See [local development](docs/local-development.md) for dependencies, compiler an
 firmware options, build-only commands and troubleshooting. `make help` lists the
 entrypoints. Host/toolchain qualification is recorded with each tested result.
 Use the [canonical Meson/Ninja graph](docs/meson-bootstrap.md) for incremental
-compiler/fixture builds and complete parallel native tests. The graph-completion
-change is a source-only candidate until fresh GCC 14 and GCC 16 runs pass.
+compiler/fixture builds and complete parallel native tests. New changes require fresh final-source qualification on both recorded toolchains.
 
 ## Explore the project
 

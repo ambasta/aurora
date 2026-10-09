@@ -27,6 +27,15 @@ flags=(-std=c++23 -O2 -fstack-usage -fcallgraph-info=su -Wall -Wextra -Werror -f
 extra=()
 case "${UEFI_MODE:-normal}" in
  normal) ;;
+ iommu-event-denial|iommu-event-success|iommu-event-overflow|iommu-event-command-error)
+   extra+=(-maccumulate-outgoing-args -DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_IOMMU_EVENT)
+   case "$UEFI_MODE" in
+     iommu-event-denial) event_case=0 ;;
+     iommu-event-success) event_case=1 ;;
+     iommu-event-overflow) event_case=2 ;;
+     iommu-event-command-error) event_case=3 ;;
+   esac
+   extra+=("-DAURORA_IOMMU_EVENT_CASE=$event_case") ;;
  graphical-console|graphical-console-capture)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_GRAPHICAL_CONSOLE -DAURORA_UEFI_GRAPHICAL_FIXTURE)
    if [[ "$UEFI_MODE" == graphical-console-capture ]]; then extra+=(-DAURORA_UEFI_GRAPHICAL_CAPTURE); fi ;;
@@ -118,6 +127,12 @@ if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == g
  python3 -B scripts/kernel_graphical_console_admission.py begin --mode "$UEFI_MODE" \
    --compiler "$compiler" --cxx "$cxx" --linker "$UEFI_LINKER" "${provenance_flags[@]}"
 fi
+if [[ "${UEFI_MODE:-normal}" == iommu-event-* ]]; then
+ provenance_flags=()
+ for flag in "${flags[@]}" "${extra[@]}"; do provenance_flags+=("--flag=$flag"); done
+ python3 -B scripts/kernel_iommu_event_admission.py begin-build --mode "$UEFI_MODE" \
+   --compiler "$compiler" --cxx "$cxx" --pe-linker "$UEFI_LINKER" "${provenance_flags[@]}"
+fi
 runtime_objects=()
 if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* || "${UEFI_MODE:-normal}" == dispatch* || "${UEFI_MODE:-normal}" == user-* || "${UEFI_MODE:-normal}" == program-* ]]; then
  mode="${UEFI_MODE#runtime-}"
@@ -155,8 +170,14 @@ if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "$
  as --64 --defsym AURORA_RELATIVE_ONLY=1 kernel/exceptions.S -o build/uefi/runtime-exceptions.o
  runtime_objects+=(build/uefi/runtime-entry.o build/uefi/runtime-exceptions.o)
 fi
+event_objects=()
+if [[ "${UEFI_MODE:-normal}" == iommu-event-* ]]; then
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/event-intake.cpp -o build/uefi/event-intake.o
+    event_objects+=(build/uefi/event-intake.o)
+fi
 console_objects=()
 language_entry=examples/kernel.au
+if [[ "${UEFI_MODE:-normal}" == iommu-event-* ]]; then language_entry=examples/kernel-iommu-event-service.au; fi
 framebuffer_objects=()
 if [[ "${UEFI_MODE:-normal}" == framebuffer || "${UEFI_MODE:-normal}" == framebuffer-record || "${UEFI_MODE:-normal}" == framebuffer-permissions || "${UEFI_MODE:-normal}" == framebuffer-stale ]]; then
     language_entry=examples/kernel-display-service.au
@@ -178,7 +199,9 @@ if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == g
     console_objects+=(build/uefi/console-entry.o build/uefi/graphical-console.o)
 fi
 "$compiler" --module-root kernel/policies "$language_entry" -o build/uefi/language.s
-if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
+if [[ "${UEFI_MODE:-normal}" == iommu-event-* ]]; then
+    as --64 build/uefi/language.s kernel/uefi/event-service-entry.S -o build/uefi/language.o
+elif [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
     as --64 build/uefi/language.s kernel/uefi/graphical-console-entry.S -o build/uefi/language.o
 elif (( ${#framebuffer_objects[@]} )); then
     as --64 build/uefi/language.s kernel/uefi/display-service-entry.S -o build/uefi/language.o
@@ -205,7 +228,7 @@ fi
 ld -nostdlib -T kernel/uefi/payload.ld -z max-page-size=0x1000 \
     build/uefi/payload-entry.o build/uefi/memory.o build/uefi/payload.o build/uefi/acpi.o \
     build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" "${console_objects[@]}" \
-    build/uefi/language.o "${owned_bytes_objects[@]}" "${framebuffer_objects[@]}" -o build/uefi/payload.elf
+    build/uefi/language.o "${owned_bytes_objects[@]}" "${framebuffer_objects[@]}" "${event_objects[@]}" -o build/uefi/payload.elf
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     python3 tests/kernel-uefi-owned-bytes-stack.py build/uefi build/uefi/owned-bytes-stack.json
 fi
@@ -282,6 +305,7 @@ case "${UEFI_MODE:-normal}" in
     ipc*|budget*|dispatch*|user-*|program-*) image_policy+=(--ipc-policy) ;;
     owned-bytes) image_policy+=(--owned-bytes) ;;
     graphical-console|graphical-console-capture) image_policy+=(--graphical-console) ;;
+    iommu-event-*) image_policy+=(--iommu-event) ;;
 esac
 case "${UEFI_MODE:-normal}" in
     user-request-*|user-completion-*|user-retire-pending|user-stale-grant|user-disposal-*) image_policy+=(--disposal-policy) ;;
@@ -313,4 +337,9 @@ esac
 if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
     python3 -B scripts/kernel_graphical_console_admission.py end --mode "$UEFI_MODE"
     python3 -B scripts/kernel_graphical_console_admission.py emit --mode "$UEFI_MODE"
+fi
+
+if [[ "${UEFI_MODE:-normal}" == iommu-event-* ]]; then
+    python3 -B scripts/kernel_iommu_event_admission.py end-build --mode "$UEFI_MODE"
+    python3 -B scripts/kernel_iommu_event_admission.py emit --mode "$UEFI_MODE"
 fi
