@@ -65,32 +65,7 @@ def verify_stack_budget(normal, fault):
 def stack_evidence(directory):
     decoder = load("framebuffer_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     decoder.CPP_OBJECTS = ("payload", "acpi", "pci", "runtime", "framebuffer")
-    # Exact ordinary scalar forms already reviewed by the console profile,
-    # plus MFENCE: no operands, no stack effect, flags preserved.
-    decoder.NEUTRAL |= frozenset(
-        (
-            "sar",
-            "movswl",
-            "movzwl",
-            "movw",
-            "sal",
-            "sidt",
-            "setg",
-            "setge",
-            "cmovb",
-            "cmovg",
-            "cmovge",
-            "testb",
-            "testl",
-            "testw",
-            "cmovs",
-            "bswap",
-            "mfence",
-            "pause",
-        )
-    )
-    decoder.READ_ONLY |= frozenset(("testb", "testl", "testw"))
-    decoder.PRESERVE_FLAGS |= frozenset(("mfence", "pause"))
+    decoder.configure_console("framebuffer")
     original_rows = decoder.stack_rows
     original_bounded_rows = []
 

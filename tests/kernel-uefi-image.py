@@ -209,12 +209,16 @@ GRAPHICAL_OBJECTS = frozenset(
         "memory-pe",
     )
 )
-REFLECTION_HELPERS = frozenset(("aurora_reflect_size", "aurora_reflect_field_count"))
+REFLECTION_HELPERS = frozenset(
+    ("aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s1_field_count")
+)
 GRAPHICAL_BRIDGES = frozenset(("__au_runtime_graphical_entry", "__au_runtime_graphical_value"))
 GRAPHICAL_IMPORTS = frozenset(("__au_runtime_console_next", "__au_runtime_display_pixel"))
 GRAPHICAL_HOST = GRAPHICAL_IMPORTS | {"__au_runtime_console_put"}
 GRAPHICAL_ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
 EVENT_OBJECTS = (GRAPHICAL_OBJECTS - {"graphical-console", "console-entry"}) | {"event-intake"}
+# Event has no imported module scope; graphical also reflects its font module.
+EVENT_REFLECTION_HELPERS = frozenset(("aurora_reflect_size", "aurora_reflect_field_count"))
 EVENT_BRIDGES = frozenset(("__au_runtime_iommu_event_entry", "__au_runtime_iommu_event_value"))
 EVENT_IMPORTS = frozenset(
     ("__au_runtime_iommu_event_poll", "__au_runtime_iommu_event_acknowledge", "__au_runtime_console_put")
@@ -294,8 +298,9 @@ def profile_selection(symbols, object_names, graphical, event=False):
             "Event source/value entries must stay local",
         )
         need(
-            {name for name in names if name.startswith("aurora_reflect_")} == REFLECTION_HELPERS
-            and all(names.get(name) == "T" for name in REFLECTION_HELPERS),
+            {name for name in names if name.startswith(("aurora_reflect_", "__au_reflect_"))}
+            == EVENT_REFLECTION_HELPERS
+            and all(names.get(name) == "T" for name in EVENT_REFLECTION_HELPERS),
             "Event reflection helper inventory/type mismatch",
         )
         need(
@@ -339,7 +344,7 @@ def profile_selection(symbols, object_names, graphical, event=False):
             "Graphical runtime authority must be linked code",
         )
         need(
-            {name for name in names if name.startswith("aurora_reflect_")} == REFLECTION_HELPERS
+            {name for name in names if name.startswith(("aurora_reflect_", "__au_reflect_"))} == REFLECTION_HELPERS
             and all(names[name] == "T" for name in REFLECTION_HELPERS),
             "Graphical reflection helper inventory/type mismatch",
         )
@@ -372,8 +377,8 @@ def event_object_policy(symbols, object_symbols, calls, language_bindings, mode)
     )
     need(
         {name for name, kind in language.items() if kind.isupper() and kind != "U"}
-        == EVENT_BRIDGES | REFLECTION_HELPERS
-        and all(language.get(name) == "T" for name in EVENT_BRIDGES | REFLECTION_HELPERS),
+        == EVENT_BRIDGES | EVENT_REFLECTION_HELPERS
+        and all(language.get(name) == "T" for name in EVENT_BRIDGES | EVENT_REFLECTION_HELPERS),
         "Event globals must be exactly private bridges and reflection helpers",
     )
     need(
@@ -389,7 +394,7 @@ def event_object_policy(symbols, object_symbols, calls, language_bindings, mode)
             ("GLOBAL", "HIDDEN")
             if name in EVENT_BRIDGES
             else ("GLOBAL", "DEFAULT")
-            if name in REFLECTION_HELPERS
+            if name in EVENT_REFLECTION_HELPERS
             else ("LOCAL", "DEFAULT")
         )
         need(binding == expected, "Event function escaped private ELF binding: " + name)
@@ -410,9 +415,9 @@ def event_object_policy(symbols, object_symbols, calls, language_bindings, mode)
             and {name for name, kind in authority.items() if kind == "U"} == imported,
             "Wrong Event authority owner/importer: " + owner,
         )
-        reflection = {name for name in entries if name.startswith("aurora_reflect_")}
+        reflection = {name for name in entries if name.startswith(("aurora_reflect_", "__au_reflect_"))}
         need(
-            reflection == (REFLECTION_HELPERS if owner == "language" else set())
+            reflection == (EVENT_REFLECTION_HELPERS if owner == "language" else set())
             and all(entries[name] == "T" for name in reflection),
             "Wrong Event reflection owner: " + owner,
         )
@@ -468,7 +473,7 @@ def event_image_policy(directory, symbols=None, mode=None):
         objects=sorted(EVENT_OBJECTS),
         language_imports=sorted(EVENT_IMPORTS),
         language_bridges=sorted(EVENT_BRIDGES),
-        reflection_helpers=sorted(REFLECTION_HELPERS),
+        reflection_helpers=sorted(EVENT_REFLECTION_HELPERS),
     )
 
 
@@ -513,7 +518,7 @@ def graphical_object_policy(symbols, object_symbols, calls, language_bindings):
         "payload": (set(), {"__au_runtime_graphical_value"}),
     }
     for object_name, entries in parsed.items():
-        reflection = {name for name in entries if name.startswith("aurora_reflect_")}
+        reflection = {name for name in entries if name.startswith(("aurora_reflect_", "__au_reflect_"))}
         need(
             reflection == (REFLECTION_HELPERS if object_name == "language" else set())
             and all(entries[name] == "T" for name in reflection),

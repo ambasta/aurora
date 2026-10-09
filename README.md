@@ -28,8 +28,9 @@ and general terminal/window services remain unqualified.
 
 ## Try it
 
-Use an x86-64 Linux host with a C++23-capable GNU C++ compiler, GNU Make and
-binutils, Python 3 and Bash. The native tests also use coreutils and ripgrep.
+Use an x86-64 Linux host with GCC 16 (C++23), GNU Make and
+binutils, Python 3 and Bash. The native tests also use Meson 1.12.1+, Ninja,
+coreutils and ripgrep.
 Run commands from the repository root, in a path without whitespace, one build
 or test command at a time.
 
@@ -82,11 +83,17 @@ For the output-only graphical status page, `make capture-framebuffer` builds and
 saves a PNG under `build/`. This [developer preview](docs/framebuffer-console.md#developer-preview)
 needs no independent review receipts and does not establish qualification.
 
+For the bounded serial-input graphical console, `make smoke-graphical-console`
+builds fresh images, exercises production and capture profiles, saves physical/PPM
+evidence and boots ordinary normal UEFI afterward. See the
+[graphical smoke scope](docs/framebuffer-console.md#current-source-graphical-smoke).
+
 See [local development](docs/local-development.md) for dependencies, compiler and
 firmware options, build-only commands and troubleshooting. `make help` lists the
 entrypoints. Host/toolchain qualification is recorded with each tested result.
 Use the [canonical Meson/Ninja graph](docs/meson-bootstrap.md) for incremental
-compiler/fixture builds and complete parallel native tests. New changes require fresh final-source qualification on both recorded toolchains.
+compiler/fixture builds and complete parallel native tests. GCC 16 is the required
+merge/release toolchain; GCC 14 checks are optional targeted compatibility evidence.
 
 ## Explore the project
 
@@ -114,25 +121,29 @@ formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
 
 ```sh
-meson compile -C build/gcc14 -j 3
-meson test -C build/gcc14 --suite dev --no-rebuild --num-processes 4
-meson test -C build/gcc14 --suite full --no-rebuild --num-processes 4
+meson compile -C build/gcc16 -j 3
+meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4
+meson test -C build/gcc16 --suite full --no-rebuild --num-processes 4
 ./scripts/compiler-test.sh    # compiler-only Meson selection
-make test                    # same complete Meson graph; no QEMU
+make test                    # alternative to direct Meson full above; no QEMU
 make smoke-all               # separate emulator matrix; QEMU and firmware required
 ```
 
-Configure a separate [Meson build](docs/meson-bootstrap.md) for each toolchain,
-with matching `gcc`/`g++` on PATH. `dev` is quick feedback; `full` includes all
+For direct Meson commands, configure a separate [build](docs/meson-bootstrap.md)
+for each toolchain, with matching `gcc`/`g++` on PATH. `make test` and the
+compiler-only shortcuts configure a fresh build directory automatically and reuse
+it incrementally. `dev` is quick feedback; `full` includes all
 native compiler, full-package and kernel/boot-image gates. Named `slow`,
 `integration`, `boot`, `core` and `bytes` suites support focused work. A merge
-requires the final-source gates in [AGENTS.md](AGENTS.md), including both GCC 14
-and GCC 16 for compiler/kernel changes and separate affected emulator profiles.
+requires the final-source GCC 16 gates in [AGENTS.md](AGENTS.md), including the
+complete `full` suite and separate normal BIOS/UEFI and affected emulator profiles.
 
 Normal development reuses dependency-tracked compiler and C++ fixture builds.
 Changing source reruns affected build commands; changing toolchain/configuration
 requires another directory. Make is a convenience entrypoint to the same graph,
-with `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` controls. Explicit
+with `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` controls. Omit
+`MESON_BUILD_DIR` for a stable toolchain/flags-keyed directory, or set it to a
+fresh or matching configured directory. Explicit
 pinned legacy compatibility remains in the [developer-test contract](docs/developer-test-contract.md).
 Selected artifact identity, a focused pass or registration alone does not establish
 full native, sanitizer, emulator or hardware qualification.

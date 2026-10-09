@@ -1,5 +1,6 @@
 // UNQUALIFIED SOURCE-ONLY DRAFT. Not connected to any native boot profile.
 module kernel_graphical_console;
+import graphics.font5x7;
 
 // The exact accepted Line64 policy is reused below; a source gate must keep it
 // identical to kernel-console-service.au until shared-module extraction is reviewed.
@@ -94,127 +95,6 @@ public:
     }
 };
 
-auto glyph_bits(u8 byte) -> u64 {
-    if (byte == 'A') {
-        return 0b10001'10001'10001'11111'10001'10001'01110u64;
-    }
-    if (byte == 'B') {
-        return 0b01111'10001'10001'01111'10001'10001'01111u64;
-    }
-    if (byte == 'C') {
-        return 0b11110'00001'00001'00001'00001'00001'11110u64;
-    }
-    if (byte == 'D') {
-        return 0b01111'10001'10001'10001'10001'10001'01111u64;
-    }
-    if (byte == 'E') {
-        return 0b11111'00001'00001'01111'00001'00001'11111u64;
-    }
-    if (byte == 'F') {
-        return 0b00001'00001'00001'01111'00001'00001'11111u64;
-    }
-    if (byte == 'G') {
-        return 0b11110'10001'10001'11101'00001'00001'11110u64;
-    }
-    if (byte == 'H') {
-        return 0b10001'10001'10001'11111'10001'10001'10001u64;
-    }
-    if (byte == 'I') {
-        return 0b11111'00100'00100'00100'00100'00100'11111u64;
-    }
-    if (byte == 'J') {
-        return 0b00110'01001'01001'01000'01000'01000'11100u64;
-    }
-    if (byte == 'K') {
-        return 0b10001'01001'00101'00011'00101'01001'10001u64;
-    }
-    if (byte == 'L') {
-        return 0b11111'00001'00001'00001'00001'00001'00001u64;
-    }
-    if (byte == 'M') {
-        return 0b10001'10001'10001'10101'10101'11011'10001u64;
-    }
-    if (byte == 'N') {
-        return 0b10001'11001'11001'10101'10011'10011'10001u64;
-    }
-    if (byte == 'O') {
-        return 0b01110'10001'10001'10001'10001'10001'01110u64;
-    }
-    if (byte == 'P') {
-        return 0b00001'00001'00001'01111'10001'10001'01111u64;
-    }
-    if (byte == 'Q') {
-        return 0b10110'01001'10101'10001'10001'10001'01110u64;
-    }
-    if (byte == 'R') {
-        return 0b10001'01001'00101'01111'10001'10001'01111u64;
-    }
-    if (byte == 'S') {
-        return 0b01111'10000'10000'01110'00001'00001'11110u64;
-    }
-    if (byte == 'T') {
-        return 0b00100'00100'00100'00100'00100'00100'11111u64;
-    }
-    if (byte == 'U') {
-        return 0b01110'10001'10001'10001'10001'10001'10001u64;
-    }
-    if (byte == 'V') {
-        return 0b00100'01010'10001'10001'10001'10001'10001u64;
-    }
-    if (byte == 'W') {
-        return 0b10001'11011'10101'10101'10001'10001'10001u64;
-    }
-    if (byte == 'X') {
-        return 0b10001'10001'01010'00100'01010'10001'10001u64;
-    }
-    if (byte == 'Y') {
-        return 0b00100'00100'00100'00100'01010'10001'10001u64;
-    }
-    if (byte == 'Z') {
-        return 0b11111'00001'00010'00100'01000'10000'11111u64;
-    }
-    if (byte == '0') {
-        return 0b01110'10001'10011'10101'11001'10001'01110u64;
-    }
-    if (byte == '1') {
-        return 0b01110'00100'00100'00100'00100'00110'00100u64;
-    }
-    if (byte == '2') {
-        return 0b11111'00010'00100'01000'10000'10001'01110u64;
-    }
-    if (byte == '3') {
-        return 0b01111'10000'10000'01110'10000'10000'01111u64;
-    }
-    if (byte == '4') {
-        return 0b01000'01000'11111'01001'01010'01100'01000u64;
-    }
-    if (byte == '5') {
-        return 0b01111'10000'10000'01111'00001'00001'11111u64;
-    }
-    if (byte == '6') {
-        return 0b01110'10001'10001'01111'00001'00001'01110u64;
-    }
-    if (byte == '7') {
-        return 0b00010'00010'00010'00100'01000'10000'11111u64;
-    }
-    if (byte == '8') {
-        return 0b01110'10001'10001'01110'10001'10001'01110u64;
-    }
-    if (byte == '9') {
-        return 0b01110'10000'10000'11110'10001'10001'01110u64;
-    }
-    if (byte == ' ') {
-        return 0b00000'00000'00000'00000'00000'00000'00000u64;
-    }
-    if (byte == ':') {
-        return 0b00000'00100'00100'00000'00100'00100'00000u64;
-    }
-    if (byte == '-') {
-        return 0b00000'00000'00000'11111'00000'00000'00000u64;
-    }
-    return 0b11111'01011'10001'00001'00001'00001'11111u64;
-}
-
 auto graphical_glyph_bits(u8 byte) -> u64 {
     if (byte == 'a') { return 0b11110'10001'11110'10000'01110'00000'00000u64; }
     if (byte == 'b') { return 0b01111'10001'10001'10001'01111'00001'00001u64; }
@@ -272,7 +152,7 @@ auto graphical_glyph_bits(u8 byte) -> u64 {
     if (byte == '|') { return 0b00100'00100'00100'00100'00100'00100'00100u64; }
     if (byte == '}') { return 0b00010'00100'00100'01000'00100'00100'00010u64; }
     if (byte == '~') { return 0b00000'00000'00000'01101'10010'00000'00000u64; }
-    return glyph_bits(byte);
+    return graphics::glyph_bits(byte);
 }
 
 // Desired and committed cells are ordinary private byte storage, never authority.
@@ -364,15 +244,12 @@ public:
     }
 };
 
-// Same checked glyph pipeline as the status page, with unit scale for this view.
-auto text_scale(u64 y) -> u64 { return 1u64; }
-
+// This view draws the shared 5x7 font at one pixel per glyph bit.
 auto draw_glyph(builtin::DisplaySession& session, u64 width, u64 height, u64 x, u64 y, u8 byte) -> bool {
     if (x >= width || y >= height) {
         return true;
     }
     const u64 bits = graphical_glyph_bits(byte);
-    const u64 scale = text_scale(y);
     u8 red = 204u8;
     u8 green = 226u8;
     u8 blue = 235u8;
@@ -391,21 +268,13 @@ auto draw_glyph(builtin::DisplaySession& session, u64 width, u64 height, u64 x, 
         u64 column = 0u64;
         while (column < 5u64) {
             if (((bits >> i64(row * 5u64 + column)) & 1u64) != 0u64) {
-                u64 dy = 0u64;
-                while (dy < scale) {
-                    u64 dx = 0u64;
-                    while (dx < scale) {
-                        const u64 target_x = x + column * scale + dx;
-                        const u64 target_y = y + row * scale + dy;
-                        if (target_x < width && target_y < height) {
-                            if (session.pixel(target_x, target_y, red, green, blue)
-                                != builtin::DisplayPutResult::success) {
-                                return false;
-                            }
-                        }
-                        dx = dx + 1u64;
+                const u64 target_x = x + column;
+                const u64 target_y = y + row;
+                if (target_x < width && target_y < height) {
+                    if (session.pixel(target_x, target_y, red, green, blue)
+                        != builtin::DisplayPutResult::success) {
+                        return false;
                     }
-                    dy = dy + 1u64;
                 }
             }
             column = column + 1u64;

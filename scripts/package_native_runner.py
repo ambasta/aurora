@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import resource
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -18,6 +19,11 @@ import time
 from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
 
 FLOOR, RESERVE, SOURCE_CAP = 1 << 30, 24 << 20, 64 << 10
+# Batches share fixed runaway guards; small host-tool/rejection commands keep
+# their tighter limits. These ceilings are not performance expectations.
+MAX_BATCH_CASES = 128
+BATCH_CPU_SECONDS, BATCH_WALL_SECONDS = 120, 360
+COMMAND_CPU_SECONDS, COMMAND_WALL_SECONDS = 10, 30
 
 
 def require(ok, message):
@@ -69,7 +75,9 @@ class PackageRunner:
             if include_host_tools or path == self.compiler or path not in self.host_tools:
                 require(sha(path) == wanted, "input/tool changed during execution: " + str(path))
 
-    def command(self, args, directory, name, *, compiler=False, allow_rejection=False):
+    def command(self, args, directory, name, *, compiler=False, allow_rejection=False, batch=False):
+        cpu_seconds = BATCH_CPU_SECONDS if batch else COMMAND_CPU_SECONDS
+        wall_seconds = BATCH_WALL_SECONDS if batch else COMMAND_WALL_SECONDS
         args = list(args)
         if str(args[0]) in self.tools:
             args[0] = self.tools[str(args[0])]
@@ -79,7 +87,7 @@ class PackageRunner:
 
         def limits():
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-            resource.setrlimit(resource.RLIMIT_CPU, (10, 11))
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
             resource.setrlimit(resource.RLIMIT_FSIZE, (8 << 20, 8 << 20))
             resource.setrlimit(resource.RLIMIT_AS, ((512 if compiler else 128) << 20,) * 2)
 
@@ -88,8 +96,9 @@ class PackageRunner:
         require(not host_scope or executable in self.pins, "trusted host tool lacks suite baseline")
         record = dict(
             command=list(map(str, args)),
-            wall_seconds=30,
-            cpu_soft_hard_seconds=[10, 11],
+            resource_policy="fixed command watchdog; not a performance assertion",
+            wall_seconds=wall_seconds,
+            cpu_soft_hard_seconds=[cpu_seconds, cpu_seconds + 1],
             address_space_bytes=(512 if compiler else 128) << 20,
             regular_file_cap=8 << 20,
             total_growth_reserve=24 << 20,
@@ -98,16 +107,40 @@ class PackageRunner:
         )
         try:
             with (directory / (name + ".stdout")).open("wb") as out, (directory / (name + ".stderr")).open("wb") as err:
-                result = subprocess.run(
-                    list(map(str, args)),
-                    stdout=out,
-                    stderr=err,
-                    timeout=30,
-                    preexec_fn=limits,
-                    env=temporary_environment(self.artifacts),
-                )
+                # Commands are serial in this process, so the reaped-child usage
+                # delta belongs to this command (including on timeout or signal).
+                usage_before = resource.getrusage(resource.RUSAGE_CHILDREN)
+                started = time.monotonic()
+                try:
+                    result = subprocess.run(
+                        list(map(str, args)),
+                        stdout=out,
+                        stderr=err,
+                        timeout=wall_seconds,
+                        preexec_fn=limits,
+                        env=temporary_environment(self.artifacts),
+                    )
+                finally:
+                    usage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
+                    user = usage_after.ru_utime - usage_before.ru_utime
+                    system = usage_after.ru_stime - usage_before.ru_stime
+                    record.update(
+                        elapsed_wall_seconds=time.monotonic() - started,
+                        child_user_seconds=user,
+                        child_system_seconds=system,
+                        child_cpu_seconds=user + system,
+                    )
             record["returncode"] = result.returncode
             stderr = (directory / (name + ".stderr")).read_bytes()
+            if result.returncode < 0:
+                signum = -result.returncode
+                record.update(termination="signal", signal_number=signum, signal_name=signal.Signals(signum).name)
+                if signum in (signal.SIGXCPU, signal.SIGXFSZ):
+                    guard = "CPU" if signum == signal.SIGXCPU else "file-size"
+                    record["resource_limit"] = guard
+                    raise AssertionError(f"{name} {guard} resource limit ({record['signal_name']}); no semantic result")
+                raise AssertionError(f"{name} terminated by {record['signal_name']} (exit {result.returncode})")
+            record["termination"] = "exit"
             allowed = (0, 1) if allow_rejection else (0,)
             require(result.returncode in allowed, f"{name} exit {result.returncode}: {stderr[:4096]!r}")
             if result.returncode == 0:
@@ -116,8 +149,8 @@ class PackageRunner:
             self.budget()
             return result.returncode, (directory / (name + ".stdout")).read_bytes(), stderr
         except subprocess.TimeoutExpired:
-            record["timeout"] = True
-            raise AssertionError(name + " wall-clock timeout")
+            record.update(termination="wall-timeout", timeout=True, resource_limit="wall-clock")
+            raise AssertionError(name + " wall-clock resource limit; no semantic result") from None
         finally:
             safe_receipt(directory / (name + ".command.json"), record)
 
@@ -155,6 +188,7 @@ class PackageRunner:
         self.budget()
 
     def batch(self, number, cases):
+        require(1 <= len(cases) <= MAX_BATCH_CASES, "package batch case count out of bounds")
         self.budget(RESERVE)
         directory = self.artifacts / f"batch-{number:03d}"
         directory.mkdir()
@@ -186,6 +220,7 @@ class PackageRunner:
                 directory,
                 "compiler",
                 compiler=True,
+                batch=True,
             )
             expected = tuple(value for case in cases for value in case.expected)
             asm = [".text", ".globl _start", "_start:"]
@@ -231,7 +266,7 @@ class PackageRunner:
             require(not undefined.strip(), "freestanding binary must have no unresolved symbols")
             _, elf, _ = self.command(["readelf", "-l", "-d", directory / "program"], directory, "elf-linkage")
             require(b"INTERP" not in elf and b"NEEDED" not in elf, "no ELF interpreter or runtime library dependencies")
-            code, output, _ = self.command([directory / "program"], directory, "native")
+            code, output, _ = self.command([directory / "program"], directory, "native", batch=True)
             observed = self.validate(output, expected, code)
             require((directory / "input.au").read_text() == source, "compiler must preserve source")
             offset = 0

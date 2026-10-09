@@ -116,7 +116,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
     program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream capture-framebuffer \
     test-developer-commands test-inventory test-graphical-console test-graphical-paging \
-    test-graphical-controls test-iommu-diagnostics test-artifact-budget: aurora-test-context
+    smoke-graphical-console test-graphical-controls test-iommu-diagnostics test-artifact-budget: aurora-test-context
 aurora-test-context:
 	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
 endif
@@ -133,7 +133,7 @@ all: compiler kernel
 # Export these selectors so both environment and make NAME=value syntax work.
 export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
-.PHONY: capture-framebuffer help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream
+.PHONY: smoke-graphical-console capture-framebuffer help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream
 help:
 	@printf '%s\n' \
 	  'make                  Build the compiler and BIOS kernel image' \
@@ -147,10 +147,11 @@ help:
 	  'make qualify-program-console-uefi  Qualify an independently reviewed prebuilt protected console' \
 	  'make test-program-stream  Run copied-stream and two-role authority host tests' \
 	  'make capture-framebuffer  Build/check and save a local PNG preview under build/' \
+	  'make smoke-graphical-console  Build/check graphical guests, capture pixels and restore normal UEFI' \
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
 	  'make test-compiler    Run the incremental Meson compiler suite' \
-	  'make test             Run the complete Meson native graph' \
+	  'make test             Configure/build and run the complete Meson native graph' \
 	  'make smoke-all        Run the full emulator suite, including both consoles' \
 	  'make test-developer-commands  Check shortcuts with fake tools only' \
 	  '' \
@@ -178,6 +179,9 @@ smoke-program-console-uefi:
 
 qualify-program-console-uefi:
 	./scripts/kernel-program-console-smoke.sh --qualification
+
+smoke-graphical-console:
+	./scripts/kernel-graphical-smoke.sh
 
 capture-framebuffer:
 	./scripts/kernel-framebuffer-preview.sh
@@ -557,6 +561,8 @@ test-graphical-paging:
 test-graphical-controls:
 	python3 -B tests/kernel-graphical-admission-controls.py
 	python3 -B -O tests/kernel-graphical-admission-controls.py
+	python3 -B tests/kernel-graphical-smoke.py
+	python3 -B -O tests/kernel-graphical-smoke.py
 
 test: test-graphical-console
 

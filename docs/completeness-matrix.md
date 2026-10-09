@@ -3,20 +3,19 @@
 ## Current project state
 
 This is the canonical project-level status and contract index. Update this section
-in place; the checkpoint summaries below are historical, not an accumulating
-list of current limitations. Merged PR100/102/103 integrate distinct service
-borrows, the bounded Aurora graphical console, canonical Meson routing and native
-artifact-accounting improvements. The final PR100 tree passed 249/249 canonical
-Meson tests on each recorded GCC 14 and GCC 16 toolchain, six image admissions and
-28 graphical emulator cases with ordinary restorations. Its two final-source
-normal BIOS smokes passed after the merge on 2026-10-09; they were not pre-merge
-evidence. Earlier snapshot receipts retain their original scope.
-Compiler- and kernel-affecting merges require final integrated GCC 14 and GCC 16
-`full` Meson and relevant image/smoke gates. Make selects the same canonical graph;
-a duplicate full Make run adds no qualification. The checked
-inventory preserves full package profiles, fixtures, negative controls and
-explicit non-root style/supplemental exclusions. Public protected-console commands build and check local artifacts; separately
-pinned first-image qualification remains an explicit opt-in gate.
+in place; the checkpoint summaries below are historical. The implementation
+includes a bounded Aurora-owned graphical console, distinct sealed service
+borrows, readable glyph literals, host-toolchain portability and a complete
+canonical Meson graph. Every merge or release requires final integrated GCC 16
+`full` tests plus normal BIOS/UEFI and applicable image/actual guest checks.
+GCC 14 is optional targeted compatibility evidence, not a routine gate.
+Make is a convenience entrypoint to the same incremental graph; a second full
+Make aggregate is not required. Fresh explicit build directories configure
+automatically, and existing directories must match their toolchain and flags.
+Package Manifest/Graph command receipts distinguish actual compiler and native
+CPU/wall cost under fixed watchdogs; see the [test contract](developer-test-contract.md).
+Public protected-console commands build and check local artifacts; separately
+pinned first-image qualification remains an explicit opt-in workflow.
 Kernel host portability pins freestanding CET/string-operation policy and binds
 stack metadata through complete source locations and exact object symbols; see
 the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
@@ -38,28 +37,37 @@ hardware support.
 | Ideal filesystem and XFS compatibility | Host crash model, runtime-capacity RAM sector device, offline XFS geometry/root/inline-extent readers | Real transport, mounted file services, persistence/recovery/GC and XFS read-write; no target filesystem is usable yet |
 | Framework Laptop 13 AMD system | Emulator boot/discovery, owned page/pin preparation, test-only AMD references and bounded emulator model diagnostics | Actual DMA conformance/isolation, active drivers, device power/recovery and complete-machine physical qualification; no supported physical tuple |
 | Native binutils/glibc/Mesa alternatives | Host-bootstrap compiler, Aurora core/byte/text/JSON modules and bounded package metadata tools | Native assembler/linker/toolchain, complete platform runtime and standard library, graphics stack and reproducible native rebuilds; no C/POSIX/ABI compatibility promise |
-| Useful apps, terminal and tiling desktop | Aurora-owned simple-UEFI serial editor/presentation; BIOS diagnostic prompt and scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
+| Useful apps, terminal and tiling desktop | Aurora-owned simple-UEFI serial editor/presentation and bounded serial-input graphical console; BIOS diagnostic prompt and scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
 
 ### Current contract map
 
-A separate [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)
+The separate Event-intake draft adds a compiler-sealed Event session, a bounded
+Aurora poll/decode/report/acknowledge loop and an opt-in UEFI transport. Its
+[published checkpoint](iommu-dma-conformance.md) documents earlier focused hosted
+and denial-image results. This integration has no fresh final-source GCC 16, image
+or guest qualification; firmware ownership handoff remains unresolved.
+
+The current-source `make smoke-graphical-console` runner now retains fresh
+production/capture pixel evidence and an actual final normal restoration. Its
+compiler-free controls are registered in ordinary/optimized Meson `dev`/`full`;
+implementation and registration alone do not establish fresh guest or aggregate passes.
+
+The [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)
 combines Aurora-owned Line64 editing and dirty cells under distinct Console/Display
-borrows. Its original 988-file image snapshots passed the independently reviewed
-positive three-boot window 004: real PTY editing/help/status/rejection/exit,
-17 physical/PPM capture pairs and ordinary normal restoration with exit 33.
-Four further preserved-image windows passed 64-byte capacity, 65th-byte overflow
-recovery, 80-event termination and native 4096-wake idle fail-stop, with 22 additional
-physical/PPM pairs and their own normal restorations. The linked contract records
-the independent review and exact scope.
-The merged graphical and distinct-service implementation is covered by the
-final PR100 qualification stated above. Earlier 67-case hosted and preserved-image
-receipts retain their original scope. The 96-sample guard remains hosted-only.
-The checker admits the recorded GCC14 alias-pair and GCC16 single-definition
-verifier layouts under separate machine, storage and recursion contracts.
-The [service contract](../compiler/SERVICES.md) records distinct Console/Display
-borrows and the new hosted Event capability. PR104's Event consumer and real
-hosted wrapper composition are a draft checkpoint; live transport, linked image
-admission, guests and final-source dual-toolchain aggregates remain pending.
+borrows. Image admission checks current build provenance, ELF/PE layout, the private
+ABI, stack budgets and disjoint capture state. Capture receipt version 3 is
+structural evidence: selector, grant, pixel and diagnostic behavior require hosted
+and actual guest tests. Whole-build snapshots and historical object/compiler hash
+allowlists are no longer capture acceptance criteria. The paired page-table walker
+still has its separately documented narrow machine/storage assumptions.
+
+An explicit leading group of distinct ConsoleSession/DisplaySession borrows keeps
+both authorities separate through either formal order and singleton/pair forwarding.
+See the [service contract](../compiler/SERVICES.md#distinct-group-checkpoint-status)
+for the compiler boundary and the graphical contract for native/runtime obligations.
+Historical receipts remain scoped to their exact source and toolchain; they do not
+qualify a later change. Each reviewed PR records its final-source native, image
+and guest results; structural admission alone never establishes that qualification.
 
 The simple-UEFI console owns its complete Line64 editor, command parser and
 presentation in one Aurora frame. The [sealed service contract](../compiler/SERVICES.md)
@@ -76,9 +84,11 @@ ASCII byte character literals provide a bounded compiler/JSON increment: single-
 Binary integer expression literals now have `0b`/`0B` prefixes and C++ apostrophe
 separators between digits, retaining exact i64/u64/u8 types and checked ranges.
 The [source contract](../compiler/UNSIGNED.md#source-contract) keeps capacities
-decimal-only. Readable five-bit font groups preserve packed values and dispatch;
-no table storage or stack change is introduced. Compiler-wide final integrated
-qualification remains required; historical guest evidence is not a new run.
+decimal-only. Both display consumers now import the shared base 5x7 font;
+readable five-bit groups preserve every glyph and fallback. The graphical view
+uses direct unit-scale drawing, while the status page retains its scale selection.
+This source cleanup needs final integrated image/stack and guest qualification;
+historical guest evidence is not a new run.
 
 The two JSON append reports normalize invalid success counts once at construction
 and expose plain status reads while preserving failure-count masking and public
@@ -140,15 +150,16 @@ Those bounded results do not establish a general process API or whole kernel.
 The byte-character-literal increment passes its native, lexical, formatter and
 JSON spelling gates; 38 kernel-root assemblies remain byte-identical to the
 console predecessor. This preserves compiled behavior without claiming another
-guest run. Final integrated developer/slow gates and independent review are
-required before merge, as for every source change.
+guest run. Complete final integrated GCC 16 `full` coverage and independent
+review are required before merge, as for every source change.
 
 PR91's recorded final join passed 41 Meson developer and 12 slow tests, plus its
 focused return/IR checks. That is not a new full-root-native, sanitizer, all-mode
 emulator or physical-hardware qualification. For each capability, retain its
 source-specific evidence and exclusions in the [verification history](verification.md)
-and linked results. Run both `dev` and `slow` on every final integrated merge
-candidate, including documentation changes; this index itself records no new run.
+and linked results. Run complete GCC 16 `full` on every final integrated merge
+candidate, including documentation changes; it includes `dev` and `slow` without
+requiring duplicate runs. This index itself records no new execution.
 
 ## Historical checkpoint summaries
 

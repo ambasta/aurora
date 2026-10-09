@@ -40,11 +40,13 @@
     "test-inventory": ["compiler-test-inventory"],
     "test-iommu-diagnostics": ["iommu-diagnostics-ordinary", "iommu-diagnostics-optimized"],
     "test-artifact-budget": ["artifact-budget-ordinary", "artifact-budget-optimized"],
-    "test-graphical-console": ["graphical-console-native", "graphical-paging", "graphical-admission-controls", "graphical-admission-controls-optimized"],
+    "test-graphical-console": ["graphical-console-native", "graphical-paging", "graphical-admission-controls", "graphical-admission-controls-optimized", "graphical-smoke-controls", "graphical-smoke-controls-optimized"],
     "test-graphical-paging": ["graphical-paging"],
-    "test-graphical-controls": ["graphical-admission-controls", "graphical-admission-controls-optimized"]
+    "test-graphical-controls": ["graphical-admission-controls", "graphical-admission-controls-optimized", "graphical-smoke-controls", "graphical-smoke-controls-optimized"]
   },
   "registrations": {
+    "graphical-smoke-controls-optimized": {"optimized": true, "source": "tests/kernel-graphical-smoke.py"},
+    "graphical-smoke-controls": {"optimized": false, "source": "tests/kernel-graphical-smoke.py"},
     "native-kernel-pages": {"source": "tests/kernel-pages.cpp"},
     "native-kernel-protection": {"source": "tests/kernel-protection.cpp"},
     "native-kernel-program": {"source": "tests/kernel-program.cpp"},
@@ -208,6 +210,7 @@
     "tests/compiler/iommu_event_service_ir.cpp": {"kind": "native-fixture", "reason": "Independent cumulative hostile service IR and emitted private-ABI execution.", "tests": ["iommu-event-source-native"]},
     "tests/kernel-iommu-event-composition.cpp": {"kind": "native-fixture", "reason": "Actual compiled Aurora intake through real Event/Console sessions, with finite hosted transport.", "tests": ["iommu-event-source-native"]},
     "tests/kernel-iommu-event-session.cpp": {"kind": "existing-registration", "reason": "Hosted bootstrap Event grant, pending record, one-shot acknowledgement and retained backing boundary.", "tests": ["iommu-event-session"]},
+    "tests/kernel-graphical-smoke.py": {"kind": "direct-registration", "reason": "Compiler-free graphical marker, pixel, choreography and cleanup controls; no guest evidence.", "tests": ["graphical-smoke-controls", "graphical-smoke-controls-optimized"]},
     "scripts/kernel-acpi-tests.sh": {"kind": "retained-wrapper", "reason": "Retained exact wrapper, or reference for its decomposed canonical commands; content changes require inventory review.", "tests": []},
     "scripts/kernel-console-tests.sh": {"kind": "retained-wrapper", "reason": "Retained exact wrapper, or reference for its decomposed canonical commands; content changes require inventory review.", "tests": []},
     "scripts/kernel-division-tests.sh": {"kind": "retained-wrapper", "reason": "Retained exact wrapper, or reference for its decomposed canonical commands; content changes require inventory review.", "tests": []},
@@ -422,6 +425,8 @@
     "iommu-event-esp-controls": {"command": ["@PYTHON@", "-B", "@SOURCE@/tests/kernel-uefi-event-esp.py"], "depends": [], "environment": {}, "is_parallel": true, "protocol": "exitcode", "suites": ["dev", "full"], "workdir": null},
     "iommu-event-admission-controls-optimized": {"command": ["@PYTHON@", "-B", "-O", "@SOURCE@/tests/kernel-uefi-event-admission.py"], "depends": [], "environment": {}, "is_parallel": true, "protocol": "exitcode", "suites": ["dev", "full"], "workdir": null},
     "iommu-event-esp-controls-optimized": {"command": ["@PYTHON@", "-B", "-O", "@SOURCE@/tests/kernel-uefi-event-esp.py"], "depends": [], "environment": {}, "is_parallel": true, "protocol": "exitcode", "suites": ["dev", "full"], "workdir": null},
+    "graphical-smoke-controls-optimized": {"command": ["@PYTHON@", "-B", "-O", "@SOURCE@/tests/kernel-graphical-smoke.py"], "depends": [], "environment": {"CXX": "@CXX@", "PYTHONDONTWRITEBYTECODE": "1", "TEMP": "@BUILD@/tests", "TMP": "@BUILD@/tests", "TMPDIR": "@BUILD@/tests"}, "is_parallel": true, "protocol": "exitcode", "suites": ["dev", "full"], "workdir": null},
+    "graphical-smoke-controls": {"command": ["@PYTHON@", "-B", "@SOURCE@/tests/kernel-graphical-smoke.py"], "depends": [], "environment": {"CXX": "@CXX@", "PYTHONDONTWRITEBYTECODE": "1", "TEMP": "@BUILD@/tests", "TMP": "@BUILD@/tests", "TMPDIR": "@BUILD@/tests"}, "is_parallel": true, "protocol": "exitcode", "suites": ["dev", "full"], "workdir": null},
     "artifact-budget-optimized": {"command": ["@PYTHON@", "-B", "-O", "@SOURCE@/tests/test_artifact_budget.py"], "depends": [], "environment": {"CXX": "@CXX@", "PYTHONDONTWRITEBYTECODE": "1", "TEMP": "@BUILD@/tests", "TMP": "@BUILD@/tests", "TMPDIR": "@BUILD@/tests"}, "is_parallel": true, "protocol": "exitcode", "suites": ["dev", "full"], "workdir": null},
     "artifact-budget-ordinary": {"command": ["@PYTHON@", "-B", "@SOURCE@/tests/test_artifact_budget.py"], "depends": [], "environment": {"CXX": "@CXX@", "PYTHONDONTWRITEBYTECODE": "1", "TEMP": "@BUILD@/tests", "TMP": "@BUILD@/tests", "TMPDIR": "@BUILD@/tests"}, "is_parallel": true, "protocol": "exitcode", "suites": ["dev", "full"], "workdir": null},
     "borrowed-objects-abi": {"command": ["@PYTHON@", "-B", "-O", "@SOURCE@/tests/compiler/borrowed_objects_abi.py", "@BUILD@/tests/borrowed-objects-abi"], "depends": ["borrowed-objects-abi"], "environment": {"CXX": "@CXX@", "PYTHONDONTWRITEBYTECODE": "1", "TEMP": "@BUILD@/tests", "TMP": "@BUILD@/tests", "TMPDIR": "@BUILD@/tests"}, "is_parallel": true, "protocol": "exitcode", "suites": ["bytes", "compiler", "core", "full", "slow"], "workdir": "@BUILD@/tests"},

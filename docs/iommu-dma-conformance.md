@@ -229,9 +229,10 @@ supervisor, binary download or hidden target substitution. A new build or path/p
 cannot borrow historical acceptance. The model README describes reconstruction,
 build instructions and target preparation without embedding private paths.
 
-New compiler/kernel integration requires final-source GCC 14 and GCC 16 Meson
-`full`, normal BIOS/UEFI images and relevant emulator qualification per AGENTS.md.
-No historical receipt qualifies changed code or routing. Future model qualification still needs actual cache-hit observations,
+Before merge, independently review this additive result update and complete the
+[canonical final-source native gate](../AGENTS.md#workflow). Actual affected emulator
+qualification remains separate; no old receipt qualifies the changed test
+routing. Future model qualification still needs actual cache-hit observations,
 requester/bus boundaries, excluded-path regressions, broader permissions, command
 read/malformed-command corrections and controls, full-capacity/event-memory-error,
 W1C/overflow recovery and IRQ/ATS work. Production DMA additionally needs its own

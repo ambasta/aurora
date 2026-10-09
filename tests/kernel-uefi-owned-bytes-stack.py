@@ -333,10 +333,11 @@ BRANCHES = frozenset("ja jae jb jbe je jne jge jg jl jle jns js jo jno jp jnp jz
 # instruction semantics, implicit stack operations, calls and returns fail shut.
 NEUTRAL = frozenset(
     (
-        "add addl addq and bt cld cli cmova cmovae cmovbe cmove cmovne cmovns cmp cmpb cmpl cmpq cmpw cpuid cs data16 "
-        "dec div hlt imul in inc invlpg lea mov movabs movb movl movq movslq movzbl movzbq movzwl "
+        "add addl addq and andq bt cld cli cmova cmovae cmovbe cmove cmovne cmovns cmp cmpb cmpl cmpq cmpw cpuid "
+        "cs data16 dec div hlt imul in inc invlpg lea mov movabs movb movl movq movslq movzbl movzbq movzwl "
         "mul neg nop nopl nopw "
-        "not or orq out rdmsr rep sbb seta setae setb setbe sete setl setle setne shl shr sub subq test ud2 xchg xor"
+        "not or orb orq out rdmsr rep sbb seta setae setb setbe sete setl setle setne "
+        "shl shr sub subq test ud2 xchg xor"
     ).split()
 )
 READ_ONLY = frozenset("cmp cmpb cmpl cmpq cmpw test bt out invlpg".split())
@@ -346,6 +347,29 @@ PRESERVE_FLAGS = frozenset(
         "cld cli hlt in out invlpg rep not"
     ).split()
 )
+
+
+# One scalar vocabulary for every console admission profile. These operations
+# still pass through the operand-aware stack/carrier checks in analyze_function;
+# membership is a stack-effect contract, not a memory-safety or device-I/O proof.
+CONSOLE_SCALAR = frozenset(
+    "sar movswl movzwl movw sal setg setge cmovb cmovg cmovge testb testl testw cmovs bswap".split()
+)
+CONSOLE_EXTRA = {
+    "program": frozenset("sti wrmsr lgdt lidt ltr".split()),
+    "service": frozenset("sti wrmsr sidt".split()),
+    "framebuffer": frozenset("sidt mfence pause".split()),
+    "graphical": frozenset("sti wrmsr sidt mfence pause cqto idiv".split()),
+}
+
+
+def configure_console(profile):
+    global NEUTRAL, READ_ONLY, PRESERVE_FLAGS
+    require(profile in CONSOLE_EXTRA, "Unknown console stack profile")
+    extra = CONSOLE_EXTRA[profile]
+    NEUTRAL |= CONSOLE_SCALAR | extra
+    READ_ONLY |= frozenset(("testb", "testl", "testw"))
+    PRESERVE_FLAGS |= extra & frozenset(("sti", "wrmsr", "mfence", "pause", "cqto"))
 
 
 def target_of(insn):
@@ -383,19 +407,28 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
     begin, end = symbol.address, symbol.address + symbol.size
     authorized_pushes = {}
     if memory_pushes is not None:
-        require(type(memory_pushes) is dict and set(memory_pushes) == {"owner", "sites"}
-                and memory_pushes["owner"] == symbol.name,
-                "Foreign or malformed memory-push authorization")
+        require(
+            type(memory_pushes) is dict
+            and set(memory_pushes) == {"owner", "sites"}
+            and memory_pushes["owner"] == symbol.name,
+            "Foreign or malformed memory-push authorization",
+        )
         authorized_pushes = memory_pushes["sites"]
-        require(type(authorized_pushes) is dict and authorized_pushes,
-                "Empty or malformed memory-push site inventory")
+        require(type(authorized_pushes) is dict and authorized_pushes, "Empty or malformed memory-push site inventory")
         for address, displacement in authorized_pushes.items():
-            require(type(address) is int and type(displacement) is int and displacement in (8, 24, 40)
-                    and begin <= address < end and address in instructions,
-                    "Unproved memory-push address or displacement")
+            require(
+                type(address) is int
+                and type(displacement) is int
+                and displacement in (8, 24, 40)
+                and begin <= address < end
+                and address in instructions,
+                "Unproved memory-push address or displacement",
+            )
             row = instructions[address]
-            require(row.op == "push" and row.size == 4 and row.args == hex(displacement) + "(%rsp)" and row.next <= end,
-                    "Memory-push authorization does not match the original instruction")
+            require(
+                row.op == "push" and row.size == 4 and row.args == hex(displacement) + "(%rsp)" and row.next <= end,
+                "Memory-push authorization does not match the original instruction",
+            )
     observed_pushes = {}
     wide_level_registers = ("%rcx", "%ecx", *CALLEE_SAVED_REGISTERS[carrier][:2])
     # State: consumed bytes, saved frame-pointer depth, ecx, r14, known ZF.
@@ -494,11 +527,17 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
                 displacement = authorized_pushes[address]
                 # x86 PUSH reads its source using the old RSP. Check the entire
                 # qword before decrementing RSP; caller return bytes are excluded.
-                require(op == "push" and insn.args == hex(displacement) + "(%rsp)"
-                        and displacement + 8 <= depth,
-                        "Memory push reads outside the pre-push live frame")
-                observed_pushes[address] = dict(address=address, source_old_rsp=displacement,
-                                                source_bytes=8, depth_before=depth, depth_after=depth + 8)
+                require(
+                    op == "push" and insn.args == hex(displacement) + "(%rsp)" and displacement + 8 <= depth,
+                    "Memory push reads outside the pre-push live frame",
+                )
+                observed_pushes[address] = dict(
+                    address=address,
+                    source_old_rsp=displacement,
+                    source_bytes=8,
+                    depth_before=depth,
+                    depth_after=depth + 8,
+                )
             else:
                 require(
                     op == "pushf" or re.fullmatch(r"%r(?:ax|bx|cx|dx|si|di|bp|[89]|1[0-5])", insn.args),
@@ -1201,6 +1240,82 @@ def self_test():
     repeated, *_ = fixture({"root": [("rep", "movsl %ds:(%rsi),%es:(%rdi)"), ("ret", "")]})
     require(calculate(repeated, {}, {}, "root")["peak"] == 8, "Repeated dword copy changed stack")
     positives += 1
+    # Qword AND shares scalar AND's stack effect, regardless of a compiler's
+    # choice of local slot. This does not prove the stored value's provenance
+    # or memory authority; the operand, flag and carrier checks still apply.
+    for offset in (0x18, 0x40, 0x58):
+        qword_and, *_ = fixture(
+            {
+                "root": [
+                    ("sub", "$0x60,%rsp"),
+                    ("andq", f"$0xfffffffffffffdff,{hex(offset)}(%rsp)"),
+                    ("add", "$0x60,%rsp"),
+                    ("ret", ""),
+                ]
+            }
+        )
+        require(qword_and["root"]["local_peak"] == 104, "Qword AND changed stack depth")
+        positives += 1
+    for operand in ("%rsp", "%esp", "%sp", "%spl", "-0x8(%rsp)"):
+        rejects(
+            "qword AND stack-pointer write or below-stack destination",
+            lambda operand=operand: fixture({"root": [("andq", "$0xfffffffffffffdff," + operand), ("ret", "")]}),
+        )
+    rejects(
+        "qword AND invalidates frame-pointer restoration",
+        lambda: fixture(
+            {
+                "root": [
+                    ("push", "%rbp"),
+                    ("mov", "%rsp,%rbp"),
+                    ("andq", "$0xfffffffffffffdff,%rbp"),
+                    ("leave", ""),
+                    ("ret", ""),
+                ]
+            }
+        ),
+    )
+    for operand in ("%rcx", "%r14"):
+        rows = [("mov", "$0x2,%ecx"), ("mov", "%ecx,%r14d"), ("andq", "$0xfffffffffffffdff," + operand)]
+        if operand == "%r14":
+            rows.append(("mov", "%r14d,%ecx"))
+        rows += [("call", "@leaf"), ("ret", "")]
+        changed, *_ = fixture({"root": rows, "leaf": leaf})
+        require(changed["root"]["calls"][0]["level"] is None, "Qword AND retained level fact")
+        positives += 1
+    flags, *_ = fixture(
+        {
+            "root": [
+                ("mov", "$0x0,%ecx"),
+                ("test", "%ecx,%ecx"),
+                ("andq", "$0xff,%rax"),
+                ("je", "@root+5"),
+                ("call", "@leaf"),
+                ("ret", ""),
+            ],
+            "leaf": leaf,
+        }
+    )
+    require(len(flags["root"]["calls"]) == 1, "Qword AND retained stale zero-flag proof")
+    positives += 1
+    # GCC16 emits a byte OR into the PCI discovery result. It changes flags and
+    # memory, but not the stack depth. Its register form must invalidate facts.
+    byte_or, *_ = fixture({"root": [("orb", "$0x1,(%rax)"), ("ret", "")]})
+    require(byte_or["root"]["local_peak"] == 8, "Byte OR changed stack depth")
+    positives += 1
+    for operand in ("%rsp", "%esp", "%sp", "%spl"):
+        rejects(
+            "byte OR stack-pointer write",
+            lambda operand=operand: fixture({"root": [("orb", "$0x1," + operand), ("ret", "")]}),
+        )
+    for operand in ("%cl", "%r14b"):
+        rows = [("mov", "$0x2,%ecx"), ("mov", "%ecx,%r14d"), ("orb", "$0x1," + operand)]
+        if operand == "%r14b":
+            rows.append(("mov", "%r14d,%ecx"))
+        rows += [("call", "@leaf"), ("ret", "")]
+        changed, *_ = fixture({"root": rows, "leaf": leaf})
+        require(changed["root"]["calls"][0]["level"] is None, "Byte OR retained level fact")
+        positives += 1
     tail, *_ = fixture({"root": [("jmp", "@leaf")], "leaf": leaf})
     require(calculate(tail, {}, {}, "root")["peak"] == 8, "Tail return address counted twice")
     positives += 1
@@ -1363,6 +1478,13 @@ def self_test():
     disjoint[5] = ("movb", "$0x0,0xf(%rsp)")
     require(check_spill(disjoint)["peak"] == 136, "Disjoint byte store changed saved carrier")
     positives += 1
+    for operand in ("0x10(%rsp)", "%r15", "(%rdi)"):
+        changed = list(spill_walk)
+        changed[5] = ("andq", "$0xfffffffffffffdff," + operand)
+        rejects(
+            "qword AND cannot authorize a carrier spill, carrier write or nonlocal store",
+            lambda changed=changed: check_spill(changed),
+        )
     relocated = list(spill_walk)
     relocated[2] = ("je", "@" + WALK + "+14")
     relocated[10:13] = [

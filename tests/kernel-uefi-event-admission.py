@@ -39,10 +39,12 @@ def call(name, address=0):
 
 
 def fixture(mode=admission.MODES[0]):
-    symbols = "".join(defined(name) for name in policy.EVENT_BRIDGES | policy.EVENT_IMPORTS | policy.REFLECTION_HELPERS)
+    symbols = "".join(
+        defined(name) for name in policy.EVENT_BRIDGES | policy.EVENT_IMPORTS | policy.EVENT_REFLECTION_HELPERS
+    )
     symbols += defined(admission.ENTRY, "t") + defined("aurora_kernel_value", "t")
     objects = {name: "" for name in policy.EVENT_OBJECTS}
-    objects["language"] = "".join(defined(name) for name in policy.EVENT_BRIDGES | policy.REFLECTION_HELPERS)
+    objects["language"] = "".join(defined(name) for name in policy.EVENT_BRIDGES | policy.EVENT_REFLECTION_HELPERS)
     objects["language"] += defined(admission.ENTRY, "t") + defined("aurora_kernel_value", "t")
     objects["language"] += "".join(imported(name) for name in policy.EVENT_IMPORTS)
     objects["event-intake"] = "".join(defined(name) for name in policy.EVENT_IMPORTS)
@@ -55,7 +57,7 @@ def fixture(mode=admission.MODES[0]):
         "language": "".join(call(name, 16 * index) for index, name in enumerate(sorted(policy.EVENT_IMPORTS))),
     }
     bindings = {name: ("GLOBAL", "HIDDEN") for name in policy.EVENT_BRIDGES}
-    bindings.update({name: ("GLOBAL", "DEFAULT") for name in policy.REFLECTION_HELPERS})
+    bindings.update({name: ("GLOBAL", "DEFAULT") for name in policy.EVENT_REFLECTION_HELPERS})
     bindings.update({admission.ENTRY: ("LOCAL", "DEFAULT"), "aurora_kernel_value": ("LOCAL", "DEFAULT")})
     return dict(symbols=symbols, object_symbols=objects, calls=calls, language_bindings=bindings, mode=mode)
 
@@ -131,6 +133,38 @@ class EventAdmission(unittest.TestCase):
         for changed in mutations:
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 policy.event_object_policy(**changed)
+
+    def test_event_reflection_helpers_are_profile_specific(self):
+        self.assertEqual(policy.EVENT_REFLECTION_HELPERS, {"aurora_reflect_size", "aurora_reflect_field_count"})
+        valid = fixture()
+        policy.event_object_policy(**valid)
+        for name in policy.EVENT_REFLECTION_HELPERS:
+            for location in ("linked", "language"):
+                changed = copy.deepcopy(valid)
+                if location == "linked":
+                    changed["symbols"] = changed["symbols"].replace(defined(name), "")
+                else:
+                    changed["object_symbols"]["language"] = changed["object_symbols"]["language"].replace(
+                        defined(name), ""
+                    )
+                with self.subTest(missing=name, location=location), self.assertRaises(ValueError):
+                    policy.event_object_policy(**changed)
+        for name in (
+            "__au_reflect_s1_size",
+            "__au_reflect_s1_field_count",
+            "__au_reflect_s2_size",
+            "aurora_reflect_extra",
+        ):
+            changed = copy.deepcopy(valid)
+            changed["symbols"] += defined(name)
+            with self.subTest(foreign=name, location="linked"), self.assertRaises(ValueError):
+                policy.event_object_policy(**changed)
+            for owner in policy.EVENT_OBJECTS:
+                changed = copy.deepcopy(valid)
+                changed["object_symbols"][owner] += defined(name, "t")
+                changed["language_bindings"].update({name: ("LOCAL", "DEFAULT")} if owner == "language" else {})
+                with self.subTest(foreign=name, owner=owner), self.assertRaises(ValueError):
+                    policy.event_object_policy(**changed)
 
     def test_event_requires_explicit_flag_and_excludes_foreign_authority(self):
         valid = fixture()

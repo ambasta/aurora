@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import json
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -415,6 +416,98 @@ def host_tool_checks(out):
     return serial
 
 
+def package_time_checks(out):
+    """Check watchdog policy and termination without host-speed assertions."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import package_native_runner as transport
+
+    directory = out / "package-time-controls"
+    directory.mkdir()
+    compiler = Path(sys.executable).resolve()
+    runner = transport.PackageRunner(
+        compiler,
+        directory,
+        256 << 20,
+        root=ROOT,
+        prefix="",
+        shared=lambda: "",
+        validate=mock.Mock(side_effect=lambda output, expected, code: expected),
+        function_prefix="control",
+        sentinel=b"preserve",
+    )
+    # Storage and hash boundaries have separate real-filesystem controls above.
+    runner.budget = mock.Mock(return_value=0)
+    runner.pins = {path: transport.sha(path) for path in runner.host_tools}
+
+    def receipt(name):
+        return json.loads((directory / (name + ".command.json")).read_text())
+
+    # Observe the installed CPU guard and real child usage, not mocked setters.
+    source = "import json, resource; print(json.dumps(resource.getrlimit(resource.RLIMIT_CPU)))"
+    for batch, cpu, wall in ((False, 10, 30), (True, 120, 360)):
+        name = "success-" + str(batch)
+        code, output, diagnostic = runner.command([compiler, "-c", source], directory, name, batch=batch)
+        require(code == 0 and not diagnostic, "ordinary command result changed")
+        require(json.loads(output) == [cpu, cpu + 1], "CPU guard not installed in child")
+        record = receipt(name)
+        require(record["wall_seconds"] == wall, "wrong wall watchdog receipt")
+        require(record["termination"] == "exit" and record["returncode"] == 0, "normal exit misclassified")
+        require(record["child_user_seconds"] >= 0 and record["child_system_seconds"] >= 0, "negative child CPU usage")
+        require(
+            record["child_cpu_seconds"] == record["child_user_seconds"] + record["child_system_seconds"] > 0,
+            "actual child CPU usage missing",
+        )
+        require(record["elapsed_wall_seconds"] > 0, "actual wall time missing")
+
+    # A signal is never an accepted compiler rejection. Real self-signals test
+    # subprocess return codes without consuming a CPU budget or racing a timer.
+    for signum, kind, diagnostic in (
+        (signal.SIGXCPU, "CPU", "CPU resource limit"),
+        (signal.SIGXFSZ, "file-size", "file-size resource limit"),
+        (signal.SIGTERM, None, "terminated by SIGTERM"),
+        (signal.SIGKILL, None, "terminated by SIGKILL"),
+    ):
+        name = "signal-" + str(signum)
+        source = (
+            "import os, signal; print('retained partial output', flush=True); "
+            f"signal.signal({int(signum)}, signal.SIG_DFL); os.kill(os.getpid(), {int(signum)})"
+            if signum != signal.SIGKILL
+            else "import os; print('retained partial output', flush=True); os.kill(os.getpid(), 9)"
+        )
+        rejected(lambda: runner.command([compiler, "-c", source], directory, name, allow_rejection=True), diagnostic)
+        record = receipt(name)
+        require(record["termination"] == "signal" and record["returncode"] == -signum, "signal misclassified")
+        require(record["signal_number"] == signum and record.get("resource_limit") == kind, "wrong signal cause")
+        require((directory / (name + ".stdout")).read_bytes() == b"retained partial output\n", "signal output lost")
+
+    # Shorten only the test watchdog; subprocess.run must actually kill/reap the
+    # child and preserve its partial output, even in allowed-rejection mode.
+    with mock.patch.object(transport, "COMMAND_WALL_SECONDS", 1):
+        rejected(
+            lambda: runner.command(
+                [compiler, "-c", "import time; print('incomplete', flush=True); time.sleep(30)"],
+                directory,
+                "timeout",
+                allow_rejection=True,
+            ),
+            "wall-clock resource limit",
+        )
+    record = receipt("timeout")
+    require(record["termination"] == "wall-timeout" and record["timeout"], "timeout misclassified")
+    require(record["resource_limit"] == "wall-clock" and "returncode" not in record, "timeout fabricated an exit")
+    require((directory / "timeout.stdout").read_bytes() == b"incomplete\n", "timeout output lost")
+    require(record["child_cpu_seconds"] > 0, "timed-out child CPU usage missing")
+    for allow in (False, True):
+        name = "rejection-" + str(allow)
+        command = [compiler, "-c", "import sys; print('ordinary rejection', file=sys.stderr); sys.exit(1)"]
+        if allow:
+            require(runner.command(command, directory, name, allow_rejection=True)[0] == 1, "rejection lost")
+        else:
+            rejected(lambda: runner.command(command, directory, name), "exit 1")
+        require(receipt(name)["termination"] == "exit", "normal rejection classified as a resource failure")
+    return dict(normal_exit=2, signals=4, wall_timeout=1, ordinary_rejections=2)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts", type=Path)
@@ -431,6 +524,7 @@ def main():
     out.mkdir(parents=True)
     owned_scope_consumers = owned_output_checks(out)
     host_scope_controls = host_tool_checks(out)
+    package_time_controls = package_time_checks(out)
     rows = []
     for index, (name, minimum, native) in enumerate(CONSUMERS):
         spec = importlib.util.spec_from_file_location("cap_subject_" + str(index), ROOT / name)
@@ -518,6 +612,7 @@ def main():
         native_executed=False,
         cli_cases=len(rows),
         host_scope_controls=host_scope_controls,
+        package_time_controls=package_time_controls,
         consumers=len(CONSUMERS),
         optimization_modes=[0, 1],
         owned_scope_consumers=owned_scope_consumers,
