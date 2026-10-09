@@ -1303,21 +1303,46 @@ class Admission(unittest.TestCase):
                 patch.object(decoder, "Elf", return_value=obj),
                 patch.object(decoder, "associate_object", wraps=decoder.associate_object) as associate,
             ):
-                frames, receipts, aliases = graphical.graphical_cpp_frames(decoder, root, linked)
-                self.assertEqual(frames, {graphical.PAIRED_WALK: 128})
-                self.assertEqual(receipts[graphical.PAIRED_WALK][0]["source"], "kernel/uefi/tables.hpp")
-                self.assertEqual(len(aliases), 1)
-                self.assertEqual({call.args[2].name for call in associate.call_args_list},
-                                 {graphical.PAIRED_WALK, graphical.PAIRED_ALIAS})
-                self.assertIn(graphical.PAIRED_ALIAS, linked.functions)
-                for changed in ("", graph.replace(graphical.PAIRED_WALK, graphical.PAIRED_ALIAS)):
+                for raw_symbol in (graphical.PAIRED_WALK, graphical.PAIRED_ALIAS):
+                    (root / "graphical-console.ci").write_text(graph.replace(graphical.PAIRED_WALK, raw_symbol))
+                    frames, receipts, aliases = graphical.graphical_cpp_frames(decoder, root, linked)
+                    self.assertEqual(frames, {graphical.PAIRED_WALK: 128})
+                    self.assertEqual(receipts[graphical.PAIRED_WALK][0]["source"], "kernel/uefi/tables.hpp")
+                    self.assertEqual(receipts[graphical.PAIRED_WALK][0]["compiler_symbol"], raw_symbol)
+                    self.assertEqual(len(aliases), 1)
+                    self.assertEqual({call.args[2].name for call in associate.call_args_list},
+                                     {graphical.PAIRED_WALK, graphical.PAIRED_ALIAS})
+                    self.assertIn(graphical.PAIRED_ALIAS, linked.functions)
+                node = graph.splitlines()[1]
+                for changed in (
+                    "", graph.replace(graphical.PAIRED_WALK, "unproved_alias"),
+                    graph.replace(node, node + "\n" + node.replace(graphical.PAIRED_WALK, graphical.PAIRED_ALIAS)),
+                    graph.replace(node, node + "\n" + node),
+                    graph.replace(' label:', '.clone" label:', 1),
+                    graph.replace(' }\n}', ' shape : ellipse }\n}'),
+                    graph.replace("128 bytes", "136 bytes"),
+                    graph.replace("tables.hpp:1:1", "tables.hpp:2:1"),
+                ):
                     (root / "graphical-console.ci").write_text(changed)
-                    with self.assertRaises(ValueError):
+                    with self.subTest(changed=changed), self.assertRaises(ValueError):
                         graphical.graphical_cpp_frames(decoder, root, linked)
-                (root / "graphical-console.ci").write_text(graph)
-                linked.function_bytes = lambda symbol: b"\xcc" * symbol.size
-                with self.assertRaisesRegex(ValueError, "instruction mismatch"):
-                    graphical.graphical_cpp_frames(decoder, root, linked)
+                (root / "graphical-console.ci").write_text(graph.replace(graphical.PAIRED_WALK, graphical.PAIRED_ALIAS))
+                # Metadata must not let an unproved or nonidentical alias reach
+                # the shared frame join. The actual raw .ci spelling is valid.
+                original = obj.functions.pop(graphical.PAIRED_ALIAS)
+                with patch.object(decoder, "object_stack_rows", side_effect=AssertionError("unproved alias reached join")):
+                    with self.assertRaisesRegex(ValueError, "Missing exact"):
+                        graphical.graphical_cpp_frames(decoder, root, linked)
+                    obj.functions[graphical.PAIRED_ALIAS] = decoder.Symbol(
+                        original.name, original.address + 1, original.size, original.section, original.kind)
+                    with self.assertRaisesRegex(ValueError, "Diverged"):
+                        graphical.graphical_cpp_frames(decoder, root, linked)
+                obj.functions[graphical.PAIRED_ALIAS] = original
+                old_bytes = linked.function_bytes
+                linked.function_bytes = lambda symbol: b"\xcc" * symbol.size if symbol.name == graphical.PAIRED_ALIAS else old_bytes(symbol)
+                with patch.object(decoder, "object_stack_rows", side_effect=AssertionError("nonidentical alias reached join")):
+                    with self.assertRaisesRegex(ValueError, "instruction mismatch"):
+                        graphical.graphical_cpp_frames(decoder, root, linked)
 
     def test_session_frames_require_distinct_source_and_object_ownership(self):
         frames = {symbol: 16 for symbol in graphical.SESSION_VALIDATORS}

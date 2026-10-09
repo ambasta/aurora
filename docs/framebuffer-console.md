@@ -7,7 +7,9 @@ remain pending; this is not a claim of whole-system readiness.
 The current source join adds the reviewed GCC 14/GCC 16 portability machinery
 and readable binary glyph spellings. Graphical compiler frames now bind exact
 assembler symbols through `.ci` and complete `.su` source records, retaining
-object/linked-byte checks and the separately proved paired alias. The unchanged
+object/linked-byte checks and the separately proved paired alias. The raw
+compiler alias name is retained through metadata joining; only the already proved
+same-body pair is canonicalized afterward. The unchanged
 legacy verifier's local visited-array invariant has a separately reviewed source
 applicability check for the joined headers. This is source integration only:
 changed-output image admission, failure-fixture guests and both toolchains'

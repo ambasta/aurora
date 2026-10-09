@@ -2782,6 +2782,25 @@ def paired_alias_evidence(obj):
     )
 
 
+def paired_metadata_symbol(text):
+    """Select one raw compiler name from the separately proved exact alias pair.
+
+    This is only inventory selection. The shared .ci parser subsequently checks
+    every complete node, source record and exact object-symbol association.
+    No display signature or other assembler spelling participates in selection.
+    """
+    quoted = r'"(?:[^"\\]|\\["\\n])*"'
+    names = []
+    for line in text.splitlines():
+        node = re.fullmatch(r"node: \{ title: (" + quoted + r") label: (" + quoted + r")( shape : ellipse)? \}", line)
+        if node and not node[3]:
+            name = json.loads(node[1]).removeprefix("kernel/uefi/graphical-console.cpp:").removeprefix("*")
+            if name in (PAIRED_WALK, PAIRED_ALIAS):
+                names.append(name)
+    need(len(names) == 1, "Paired alias requires exactly one raw compiler frame definition")
+    return names[0]
+
+
 def graphical_cpp_frames(decoder, directory, linked):
     # Keep the shared decoder untouched. Both alias names cross its exact
     # object/link byte-and-relocation association before one frame is counted.
@@ -2798,13 +2817,19 @@ def graphical_cpp_frames(decoder, directory, linked):
             )
         else:
             need(not {PAIRED_WALK, PAIRED_ALIAS} & set(obj.functions), "Paired walker outside exact graphical object")
-        # Only the independently proved same-body alias is excluded. The
-        # mandatory .ci/.su join still rejects every extra/missing compiler node.
-        symbols = {key: value for key, value in obj.functions.items() if key != PAIRED_ALIAS}
+        # Select the actual raw compiler definition only after proving both
+        # ELF aliases and their linked bytes. Join that name without rewriting
+        # metadata; canonicalize the one already-proved pair after the join.
+        omitted = None
+        if name == "graphical-console":
+            raw_alias = paired_metadata_symbol((directory / (name + ".ci")).read_text())
+            omitted = PAIRED_ALIAS if raw_alias == PAIRED_WALK else PAIRED_WALK
+        symbols = {key: value for key, value in obj.functions.items() if key != omitted}
         rows = decoder.object_stack_rows(directory, name, symbols)
-        for symbol, row in rows.items():
+        for raw_symbol, row in rows.items():
+            symbol = PAIRED_WALK if raw_symbol == PAIRED_ALIAS else raw_symbol
             need(symbol in linked.functions, "Object function omitted from linked profile")
-            decoder.associate_object(linked, obj, obj.functions[symbol])
+            decoder.associate_object(linked, obj, obj.functions[raw_symbol])
             if symbol in associated:
                 need(associated[symbol] == row.size, "Conflicting COMDAT compiler frames")
             associated[symbol] = row.size
@@ -2814,7 +2839,7 @@ def graphical_cpp_frames(decoder, directory, linked):
             lines = contents.decode().splitlines()
             need(row.line <= len(lines) and row.column <= len(lines[row.line - 1]) + 1, "Invalid frame location")
             receipts.setdefault(symbol, []).append(dict(
-                object=name + ".o", callgraph=name + ".ci", source=row.source,
+                object=name + ".o", callgraph=name + ".ci", compiler_symbol=raw_symbol, source=row.source,
                 source_sha256=hashlib.sha256(contents).hexdigest(), line=row.line,
                 column=row.column, record=row.signature, bytes=row.size, kind=row.kind,
             ))
