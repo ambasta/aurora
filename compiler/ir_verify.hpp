@@ -279,8 +279,7 @@ inline void verifyFunction(Function &function,
         if (scalarValueType(type, enumCases))
             return;
         if (type.isService()) {
-            require(parameter && serviceFunction,
-                    "service capability cannot cross an ordinary boundary or return");
+            require(parameter && serviceFunction, "service capability cannot cross an ordinary boundary or return");
             return;
         }
         if (type.isResource()) {
@@ -443,7 +442,7 @@ inline void verifyFunction(Function &function,
     std::set<int> byteParameterSlots;
     std::optional<int> regionParameterSlot;
     std::map<int, int> serviceParameterSlots; // source index -> distinct root spill
-    std::map<int, int> spanParameterOrigins; // source position -> root spill
+    std::map<int, int> spanParameterOrigins;  // source position -> root spill
     for (std::size_t index = 0; index < function.code.size(); ++index) {
         const auto *serviceBinding = std::get_if<BindServiceParameter>(&function.code[index]);
         const auto *binding = std::get_if<BindParameter>(&function.code[index]);
@@ -2031,8 +2030,11 @@ inline void verifyFunction(Function &function,
                         state.activeServices.emplace(operation.offset, ServiceIdentity{index, operation.kind});
                     } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
                         require(operation.loanId > 0 && !state.serviceLoans.contains(operation.loanId) &&
-                                    std::none_of(state.serviceLoans.begin(), state.serviceLoans.end(),
-                                                 [&](const auto &loan) { return loan.second.offset == operation.offset; }) &&
+                                    std::none_of(state.serviceLoans.begin(),
+                                                 state.serviceLoans.end(),
+                                                 [&](const auto &loan) {
+                                                     return loan.second.offset == operation.offset;
+                                                 }) &&
                                     state.activeServices.contains(operation.offset) &&
                                     state.activeServices.at(operation.offset).kind == operation.kind,
                                 "service loan requires unsuspended parameter authority");
@@ -2047,8 +2049,11 @@ inline void verifyFunction(Function &function,
                         state.serviceLoans.erase(operation.loanId);
                     } else if constexpr (std::is_same_v<Op, ServiceOperation>) {
                         require(state.activeServices.contains(operation.offset) &&
-                                    std::none_of(state.serviceLoans.begin(), state.serviceLoans.end(),
-                                                 [&](const auto &loan) { return loan.second.offset == operation.offset; }),
+                                    std::none_of(state.serviceLoans.begin(),
+                                                 state.serviceLoans.end(),
+                                                 [&](const auto &loan) {
+                                                     return loan.second.offset == operation.offset;
+                                                 }),
                                 "service operation requires active unsuspended capability provenance");
                         require(state.activeServices.at(operation.offset).kind == operation.kind &&
                                     service::description(operation.operation).kind == operation.kind,
@@ -2086,10 +2091,10 @@ inline void verifyFunction(Function &function,
                         require(serviceSignature(target) && !target.receiver,
                                 "service helper requires service target and acquired loans");
                         std::vector<ServiceArgument> arguments{{operation.loanId, operation.kind}};
-                        arguments.insert(arguments.end(), operation.additionalServices.begin(),
-                                         operation.additionalServices.end());
-                        const auto count = static_cast<std::size_t>(std::count_if(
-                            target.parameters.begin(), target.parameters.end(), [](const Type &type) {
+                        arguments.insert(
+                            arguments.end(), operation.additionalServices.begin(), operation.additionalServices.end());
+                        const auto count = static_cast<std::size_t>(
+                            std::count_if(target.parameters.begin(), target.parameters.end(), [](const Type &type) {
                                 return type.isService();
                             }));
                         require(arguments.size() == count && count <= 2 &&

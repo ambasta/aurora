@@ -151,32 +151,7 @@ def switch_envelope(rows):
 def stack_evidence(directory):
     decoder = load("program_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     decoder.CPP_OBJECTS = ("payload", "acpi", "pci", "runtime")
-    decoder.NEUTRAL |= frozenset(
-        (
-            "sti",
-            "wrmsr",
-            "sar",
-            "movswl",
-            "movzwl",
-            "movw",
-            "sal",
-            "setg",
-            "setge",
-            "cmovb",
-            "cmovg",
-            "cmovge",
-            "testb",
-            "testl",
-            "testw",
-            "cmovs",
-            "bswap",
-            "lgdt",
-            "lidt",
-            "ltr",
-        )
-    )
-    decoder.READ_ONLY |= frozenset(("testb", "testl", "testw"))
-    decoder.PRESERVE_FLAGS |= frozenset(("sti", "wrmsr"))
+    decoder.configure_console("program")
     original_rows = decoder.stack_rows
     # The CFG decoder independently accounts for every stack adjustment below.
     # GCC dynamic,bounded here denotes call arguments, not an unbounded VLA.

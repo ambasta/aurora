@@ -3,19 +3,16 @@
 ## Current project state
 
 This is the canonical project-level status and contract index. Update this section
-in place; the checkpoint summaries below are historical, not an accumulating
-list of current limitations. This candidate joins the bounded graphical console,
-distinct service borrows, host-toolchain portability, readable glyph literals and
-the canonical Meson graph. Final joined-source native and guest qualification is
-pending; earlier snapshot results retain their original scope. The persistent
-simple-UEFI Aurora console service has the bounded qualification noted below.
-Compiler- and kernel-affecting merges require final integrated GCC 14 and GCC 16
-`full` Meson and relevant image/smoke gates. The source-only graph-completion
-candidate maps the former root Make graph into Meson, with Make as a convenience
-entrypoint; it remains unqualified until both new toolchain runs pass. The checked
-inventory preserves full package profiles, fixtures, negative controls and
-explicit non-root style/supplemental exclusions. Public protected-console commands build and check local artifacts; separately
-pinned first-image qualification remains an explicit opt-in gate.
+in place; the checkpoint summaries below are historical. The implementation
+includes a bounded Aurora-owned graphical console, distinct sealed service
+borrows, readable glyph literals, host-toolchain portability and a complete
+canonical Meson graph. Compiler- and kernel-affecting merges require final
+integrated GCC 14 and GCC 16 full tests plus applicable image and boot checks.
+Make is a convenience entrypoint to the same incremental graph; a second full
+Make aggregate is not required. Fresh explicit build directories configure
+automatically, and existing directories must match their toolchain and flags.
+Public protected-console commands build and check local artifacts; separately
+pinned first-image qualification remains an explicit opt-in workflow.
 Kernel host portability pins freestanding CET/string-operation policy and binds
 stack metadata through complete source locations and exact object symbols; see
 the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
@@ -37,35 +34,26 @@ hardware support.
 | Ideal filesystem and XFS compatibility | Host crash model, runtime-capacity RAM sector device, offline XFS geometry/root/inline-extent readers | Real transport, mounted file services, persistence/recovery/GC and XFS read-write; no target filesystem is usable yet |
 | Framework Laptop 13 AMD system | Emulator boot/discovery, owned page/pin preparation, test-only AMD references and bounded emulator model diagnostics | Actual DMA conformance/isolation, active drivers, device power/recovery and complete-machine physical qualification; no supported physical tuple |
 | Native binutils/glibc/Mesa alternatives | Host-bootstrap compiler, Aurora core/byte/text/JSON modules and bounded package metadata tools | Native assembler/linker/toolchain, complete platform runtime and standard library, graphics stack and reproducible native rebuilds; no C/POSIX/ABI compatibility promise |
-| Useful apps, terminal and tiling desktop | Aurora-owned simple-UEFI serial editor/presentation; BIOS diagnostic prompt and scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
+| Useful apps, terminal and tiling desktop | Aurora-owned simple-UEFI serial editor/presentation and bounded serial-input graphical console; BIOS diagnostic prompt and scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
 
 ### Current contract map
 
-A separate [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)
+The [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)
 combines Aurora-owned Line64 editing and dirty cells under distinct Console/Display
-borrows. Its original 988-file image snapshots passed the independently reviewed
-positive three-boot window 004: real PTY editing/help/status/rejection/exit,
-17 physical/PPM capture pairs and ordinary normal restoration with exit 33.
-Four further preserved-image windows passed 64-byte capacity, 65th-byte overflow
-recovery, 80-event termination and native 4096-wake idle fail-stop, with 22 additional
-physical/PPM pairs and their own normal restorations. The linked contract records
-the independent review and exact scope.
-The earlier 67 hosted cases retain their original scope. A joined capture-only
-seven-selector failure candidate adds a required 68th hosted case; its focused
-run, new exact image/stack admission, denial/pixel-failure guests and
-final integrated dev/slow/full Make remain pending. The 96-sample guard remains
-hosted-only. Preserved-image receipts do not qualify this changed source.
-The checker distinguishes the exact GCC14 alias-pair and GCC16 single-definition
-paired-verifier layouts, with separate machine/storage/recursion contracts and
-unchanged budgets. Source controls do not replace either toolchain's fresh image
-admission, affected guests or final aggregate gates.
+borrows. Image admission checks current build provenance, ELF/PE layout, the private
+ABI, stack budgets and disjoint capture state. Capture receipt version 3 is
+structural evidence: selector, grant, pixel and diagnostic behavior require hosted
+and actual guest tests. Whole-build snapshots and historical object/compiler hash
+allowlists are no longer capture acceptance criteria. The paired page-table walker
+still has its separately documented narrow machine/storage assumptions.
 
-This isolated next-language checkpoint adds an unqualified explicit leading group
-of distinct ConsoleSession/DisplaySession borrows for the planned graphical line
-editor. Both formal orders and singleton/pair forwarding retain separate sealed
-authority. Focused release build, source/private-ABI and 146 cumulative hostile-IR
-checks passed; final integrated dev/slow/full Make acceptance remains pending. The [service contract](../compiler/SERVICES.md#distinct-group-checkpoint-status)
-records the compiler-only scope and remaining combined native admission boundary.
+An explicit leading group of distinct ConsoleSession/DisplaySession borrows keeps
+both authorities separate through either formal order and singleton/pair forwarding.
+See the [service contract](../compiler/SERVICES.md#distinct-group-checkpoint-status)
+for the compiler boundary and the graphical contract for native/runtime obligations.
+Historical receipts remain scoped to their exact source and toolchain; they do not
+qualify a later change. Each reviewed PR records its final-source native, image
+and guest results; structural admission alone never establishes that qualification.
 
 The simple-UEFI console owns its complete Line64 editor, command parser and
 presentation in one Aurora frame. The [sealed service contract](../compiler/SERVICES.md)

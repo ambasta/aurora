@@ -462,12 +462,12 @@ class ImagePolicy(unittest.TestCase):
         baseline["graphical-console.o"]["symbols"] += b"FramebufferPayload::restore_graphical_fixture\n"
         capture_policy.capture_artifact_evidence("graphical-console", baseline)
 
-    def test_capture_fixture_ownership_is_closed_and_does_not_admit_linked_forms(self):
+    def test_capture_fixture_ownership_does_not_replace_state_layout_or_behavior_gates(self):
         baseline = fixture_artifacts(capture=True)
         evidence = capture_policy.capture_artifact_evidence("graphical-console-capture", baseline)
-        self.assertEqual(evidence["status"], "requires-actual-linked-fixture-proof")
-        with self.assertRaisesRegex(ValueError, "Capture fixture linked proof pending"):
-            capture_policy.require_capture_linked_proof(evidence["mode"])
+        self.assertEqual(evidence["status"], "structure-only-behavior-qualification-pending")
+        with self.assertRaisesRegex(ValueError, "Missing current capture structure evidence"):
+            capture_policy.require_capture_structure(evidence["mode"])
         containers = {"payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "embed.o", "embed-pe.o"}
         for name in baseline:
             for field in ("contents", "symbols", "relocations"):

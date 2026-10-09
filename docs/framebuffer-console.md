@@ -13,13 +13,12 @@ same-body pair is canonicalized afterward. The unchanged
 legacy verifier's local visited-array invariant has a separately reviewed source
 applicability check for the joined headers. This is source integration only:
 changed-output image admission, failure-fixture guests and both toolchains'
-final integrated gates remain pending. Historical exact-image contracts continue
-to reject changed images until their own admission is reviewed. A second closed
-GCC 14 capture file tuple records the reviewed libcall-emission delta and exact
-compiler/tool/compiled-source applicability; mixed tuples reject. Its unchanged
-14-function capture semantics do not replace fresh complete image/stack admission,
-including added memory calls in interrupt and wait closure. No new capture guest
-or whole-image acceptance is implied by that source update.
+final integrated gates remain pending. Capture admission now checks current
+build provenance and bounded image/stack/state structure instead of replaying
+historical compiler/object tuples or absolute capture instruction inventories.
+This deliberately retires those capture machine-behavior proof claims; hosted
+and actual guest behavior gates remain required. Historical receipts retain
+only their original source/image scope and confer no new acceptance.
 Firmware `SetMode` can clear its display before the controlled capture boundary.
 No GPU driver, desktop, physical Framework display support, DMA or IOMMU claim
 follows from this work.
@@ -234,10 +233,11 @@ require their own combined linked-stack/image begin/end/emit admission;
 every new attempt invalidates prior combined receipts before build work. Missing
 or failed checks reject. Automatic evidence still requires independent exact-image
 review and cannot authorize a guest or borrow a legacy profile's qualification.
-Version-2 image receipts separate capture-fixture source/artifact evidence by
-mode. The checker's `source --mode graphical-console-capture` action checks only
-the source contract; capture admission deliberately rejects until the newly
-constructed linked fixture paths receive independent exact-byte review.
+Version-3 image receipts separate capture source/artifact and measured state
+structure by mode. Capture state evidence says `structure-only` and
+`behavior_qualification: pending-hosted-and-guest-gates`; emitting or checking a
+receipt does not mark those gates passed. The
+`source --mode graphical-console-capture` action checks only the source contract.
 The capture profile separates its bounded pre-store selector from editor input,
 emits completed-sample/store markers, and leaves terminal or failed scanout intact
 for external physical capture and ordinary normal-image restoration.
@@ -358,12 +358,22 @@ adding eight bytes of stack consumption; stale or unused sites and unbalanced
 paths reject. This proves bounded stack effects, not copied-value initialization
 or authority. Existing save/return checks and whole-image budgets remain in force.
 
-Capture qualification retains complete toolchain-specific file, instruction and
-private-state tuples. The separate-validator GCC14 path composes real validator
-calls with selector, crossed/stale grant, fixed pixel-failure and diagnostic
-proofs. The GCC16 variant also proves its emitted inline UART/text/decimal loops
-and separately binds its seven-file tuple including callgraph metadata. Both
-variants reject fixed error cases before the MMIO effect; GCC14 increments the
-successful-store counter before that effect, while GCC16 increments it after. Mixed tuples and unknown emitted forms reject. An analysis of retained
-failed bytes leaves the failed attempt intact and does not constitute a new
-build receipt, guest result or completed integrated qualification.
+Current capture admission retains PE/ELF/PIC checks, `.su`/`.ci` associations,
+object/linked-byte binding, bounded stack/control-flow and private-ABI checks,
+source capture-policy controls, and production fixture absence. Fourteen named
+BSS fields must have the expected type, size, alignment, containment and disjoint
+storage: nine counters/state fields, Console and Display grants and generations,
+and the graphical entry's active flag. Addresses and section indexes are measured;
+current source/tool/output hashes bind the local build rather than select an
+allowlisted historical machine.
+
+The removed capture checker replayed exact instruction/file/tool tuples to claim
+selector, authority, pixel-failure, diagnostic and inline UART/text/decimal
+behavior. The replacement does not establish those semantics or validate every
+historical GCC16 state global. Hosted grant/state/failure tests and actual guest
+capture, denial, pixel-failure and normal-restoration gates remain required.
+Compiler-free controls use small hand-authored structural/negative fixtures;
+complete encoded build snapshots are no longer repository test inputs.
+The separate paired-walker exact-body/storage/recursion fixtures and narrow
+memory-push assumptions above remain unchanged. This is bounded stack/layout
+evidence, not arbitrary machine safety or complete compiler independence.

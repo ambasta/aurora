@@ -2030,7 +2030,8 @@ public:
                     const auto &parameter = candidate.params[serviceCount];
                     if (!parameter.borrowed || parameter.borrowConst)
                         fail(candidate.token,
-                             "service functions require one leading exclusive sealed service reference and copied result");
+                             "service functions require one leading exclusive sealed service reference and copied "
+                             "result");
                     if (!kinds.insert(service::kind(parameter.type)).second)
                         fail(candidate.token, "service group requires distinct leading exclusive sealed references");
                     ++serviceCount;
@@ -2038,8 +2039,8 @@ public:
                 if (serviceCount > 2 || static_cast<std::size_t>(borrowedCount) != serviceCount ||
                     !candidate.receiverClass.empty() || candidate.constructor || !candidate.templateArguments.empty() ||
                     !candidate.templateParameters.empty() ||
-                    (!scalarValue(candidate.result) && !(kinds.contains(service::Kind::Console) &&
-                                                         candidate.result == service::sampleType())))
+                    (!scalarValue(candidate.result) &&
+                     !(kinds.contains(service::Kind::Console) && candidate.result == service::sampleType())))
                     fail(candidate.token,
                          "service functions require a leading exclusive sealed service group and copied result");
                 for (std::size_t index = serviceCount; index < candidate.params.size(); ++index)

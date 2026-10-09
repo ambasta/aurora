@@ -131,32 +131,7 @@ def verify_stack_budgets(normal_peak, wait_peak, irq_peak, boot_fault):
 def stack_evidence(directory):
     decoder = load("console_service_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     decoder.CPP_OBJECTS = ("payload", "acpi", "pci", "runtime", "console")
-    # Reviewed ordinary scalar opcodes. All writes to RSP/RBP still cross the
-    # decoder's explicit stack-effect checks before neutral opcode admission.
-    decoder.NEUTRAL |= frozenset(
-        (
-            "sti",
-            "wrmsr",
-            "sar",
-            "movswl",
-            "movzwl",
-            "movw",
-            "sal",
-            "sidt",
-            "setg",
-            "setge",
-            "cmovb",
-            "cmovg",
-            "cmovge",
-            "testb",
-            "testl",
-            "testw",
-            "cmovs",
-            "bswap",
-        )
-    )
-    decoder.READ_ONLY |= frozenset(("testb", "testl", "testw"))
-    decoder.PRESERVE_FLAGS |= frozenset(("sti", "wrmsr"))
+    decoder.configure_console("service")
     old_rows = decoder.stack_rows
     decoder.stack_rows = lambda text: old_rows(
         text, allow_bounded=lambda signature: "aurora::uefi::run_console(" in signature
