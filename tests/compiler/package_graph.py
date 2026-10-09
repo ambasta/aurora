@@ -1282,7 +1282,7 @@ def main():
         return
     artifacts = (
         developer_artifacts(args, "graph")
-        if args.profile == "dev"
+        if args.profile == "dev" or args.meson_selected_compiler
         else artifact_path(args.artifact_root or ROOT / f"build/package-graph-{os.getpid()}")
     )
     require(artifacts.parent.is_dir() and not artifacts.exists(), "fresh artifact root with existing parent required")

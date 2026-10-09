@@ -111,7 +111,7 @@ class ConsoleRouting(unittest.TestCase):
             '    exit "${PTY_STATUS:-0}" ;;\n'
             '  "-B tests/kernel-boot-capacity.py --qemu")\n'
             '    printf "existing|kernel-boot-capacity.py --qemu\\n" >> "$CALLS"; exit 0 ;;\n'
-            '  "-B scripts/compiler_contract.py "*)\n'
+            '  "-B scripts/compiler_contract.py "*|"-B scripts/meson_test.py "*)\n'
             '    printf "native-dispatch|%s\\n" "$*" >> "$CALLS"\n'
             '    exit "${CONTEXT_STATUS:-0}" ;;\n'
             '  *) printf "unexpected-python|%s\\n" "$*" >> "$CALLS"; exit 93 ;;\n'
@@ -489,10 +489,11 @@ class ConsoleRouting(unittest.TestCase):
                         pid_file.unlink()
                 self.clear_calls()
 
-    def test_make_test_still_dispatches_only_native_contract(self):
+    def test_make_test_dispatches_only_canonical_native_graph(self):
         self.run_make("test")
         self.assertEqual(len(self.calls()), 1)
-        self.assertIn("--entry root --goal test", self.calls()[0])
+        self.assertIn("scripts/meson_test.py --repo-root", self.calls()[0])
+        self.assertTrue(self.calls()[0].endswith("--suite full"))
         source = (self.repo / "Makefile").read_text()
         prerequisites = target_prerequisites(source, "test")
         self.assertIn("test-console", prerequisites)
