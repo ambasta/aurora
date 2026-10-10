@@ -104,7 +104,12 @@ and guest results; structural admission alone never establishes that qualificati
 The simple-UEFI and graphical consoles share an Aurora `console.session_note`
 policy for one invocation-local RAM-only `note`. `write note <text>`
 and `cat note` use at most 53 content bytes, disappear at session exit, and add no
-persistent filesystem or device authority. Graphical readback uses ordinary
+persistent filesystem or device authority. A separate `console.session_files`
+policy adds four session-local named files through `write NAME TEXT`, `cat NAME`,
+`rm NAME` and `ls`, with 1–8-byte restricted ASCII names and at most 49 content bytes.
+`note` remains separate and reserved. Full/invalid/missing commands preserve state;
+replacement, zeroed deletion and deterministic slot reuse use private fixed values.
+This is no persistent filesystem or shared cross-profile storage. Graphical readback uses ordinary
 response cells under the unchanged input/pixel budgets; the addition requires
 fresh final-source qualification. The [sealed service contract](../compiler/SERVICES.md)
 keeps copied reports separate from authority; the [kernel contract](native-console-service.md)

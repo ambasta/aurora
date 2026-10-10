@@ -130,6 +130,17 @@ invocation starts missing. The hosted transcript oracle additionally covers
 UART damage, invalid bytes and same-process session reset. These source changes
 require fresh qualification; this paragraph records no new execution.
 
+The same session now owns four named RAM files through `console.session_files`.
+`write NAME TEXT`, `cat NAME`, `rm NAME` and `ls` use the [shared grammar and
+failure rules](native-console-service.md#session-local-named-files). `note` stays
+separate. Copied `FileReply` values supply ordinary response cells; the workspace
+never crosses into `TextCells`. Listing is deterministic and fits one response row.
+A two-file todo/ideas demonstration plus exit fits 75 input bytes. An eight-byte
+name with 49 content bytes fills one 64-byte command; writing, reading and exiting
+that combination needs 83 input bytes, so clean-exit maximum-name and maximum-content
+cases are separate. The combined case retains the existing bounded-end behavior.
+These additions require fresh final-source qualification.
+
 The existing 68 response cells, 80 input events, 96 copied samples and pixel,
 stack and image limits are unchanged. Maximum-length write/read/exit with LF
 uses 79 events; extra editing or CRLF bytes can exhaust that budget. Input is
@@ -408,8 +419,8 @@ instead. The ten-million-iteration gate and UART-error rejection are unchanged.
 No later byte selects a scenario.
 The hosted observer independently checks all 256 selector values, literal numeric
 codes, exact names and fixed failure predicates. The complete hosted runner now
-requires 108 cases: 75 transcript/geometry cases, one same-process session
-reset, ten output-failure cases (including ordinal 55) and 22 pre-entry denials.
+requires 145 cases: 108 transcript/geometry cases, two same-process session
+resets, 13 output-failure cases (including ordinal 55) and 22 pre-entry denials.
 This inventory is prepared, not a claim of a new hosted pass.
 
 Failure lines retain their original fields and append capture-only

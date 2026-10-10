@@ -53,6 +53,12 @@ CASES = [
     ("note-empty-edit", b"G", b"write notf\be oldX\x7f\r\ncat note\nwrite note \ncat note\nexit\n!"),
     ("note-preserve", b"G", b"write note saved\nwrite notes x\nwrite note bad\x01\ncat note\nexit\n!"),
     ("note-maximum", b"G", b"write note " + b"Ab9 !" * 10 + b"xyz\ncat note\nexit\n!"),
+    ("files-demo", b"G", b"write todo Ship Aurora\nwrite ideas Safer drivers\nls\ncat todo\nrm ideas\nexit\n!"),
+    (
+        "files-capacity",
+        b"G",
+        b"write a \nwrite b \nwrite c \nwrite d \nwrite e E\nwrite b X\nrm a\nwrite e E\nls\nexit\n!",
+    ),
     ("capacity64", b"G", b"x" * 64 + b"\nexit\r!"),
     ("overflow65", b"G", b"x" * 65 + b"\b\x7fhelp\nexit\r!"),
     ("event80", b"G", b"a" * 80 + b"!"),
@@ -60,8 +66,18 @@ CASES = [
     ("fixture-G", b"G", b"exit\r!"),
     *[("selector-" + byte, byte.encode(), b"") for byte in ("?", "C", "D", "c", "d", "F", "I")],
 ]
-PRODUCTION = (b"help\r", b"status\r", b"write note hello\r", b"cat note\r", b"exX\b", b"it\r")
-
+PRODUCTION = (
+    b"help\r",
+    b"status\r",
+    b"write note hello\r",
+    b"cat note\r",
+    b"write a hi\r",
+    b"cat a\r",
+    b"rm a\r",
+    b"ls\r",
+    b"exX\b",
+    b"it\r",
+)
 
 def child_limits():
     resource.setrlimit(resource.RLIMIT_FSIZE, (4 * 1024 * 1024, 4 * 1024 * 1024))

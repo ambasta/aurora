@@ -24,7 +24,7 @@ MODES = ("graphical-console", "graphical-console-capture")
 ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
 REFLECTION_HELPERS = frozenset(
     ("aurora_reflect_size", "aurora_reflect_field_count")
-    + tuple(f"__au_reflect_s{module}_{field}" for module in range(1, 6) for field in ("size", "field_count"))
+    + tuple(f"__au_reflect_s{module}_{field}" for module in range(1, 7) for field in ("size", "field_count"))
 )
 BRIDGE = "__au_runtime_graphical_entry"
 VALUE_BRIDGE = "__au_runtime_graphical_value"
@@ -2713,6 +2713,7 @@ def expected_language_functions():
             "show_unknown",
             "show_rejected",
             "show_note",
+            "show_files",
             "show_exit",
             "show_empty",
             "show_bounded",
@@ -2725,6 +2726,8 @@ def expected_language_functions():
     # This admits no additional runtime service, allocator or device authority.
     classes = {
         ("console.session_note", "console", "SessionNote"): ("size", "at", "submit"),
+        ("console.session_files", "console", "FileReply"): ("status", "size", "at", "append", "text", "select"),
+        ("console.session_files", "console", "SessionFiles"): ("byte_at", "commit", "submit"),
         ("std.binary", "std", "ByteReadResult"): ("status", "value_or"),
         ("std.binary_buffer", "std", "BinaryBuffer64"): (
             "size",

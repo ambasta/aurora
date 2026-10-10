@@ -18,6 +18,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import kernel_graphical_smoke as smoke
+from kernel_graphical_oracle import file_response
 
 
 def transcript(rows):
@@ -498,7 +499,7 @@ if action == 'guest':
             self.assertTrue(all(row["status"] == "failed" for row in rows))
 
     def test_matrix_and_mutations(self):
-        self.assertEqual(len(smoke.CASES), 17)
+        self.assertEqual(len(smoke.CASES), 19)
         for case in smoke.CASES:
             model, rows = expected(case)
             raw = transcript(rows)
@@ -532,6 +533,69 @@ if action == 'guest':
         model = smoke.reference(smoke.byte_samples(b"".join(smoke.PRODUCTION)))
         rows = [("CONSOLE_COMPLETE", dict(completion=0, wakes=4, stores=len(model["stores"])))]
         smoke.validate(smoke.markers(transcript(rows), production=True, final=True), b"G", model, production=True)
+
+    def test_named_file_reference_state(self):
+        slots = [None] * 4
+        written = "files: RAM-only; lost when session exits."
+        self.assertEqual(file_response(b"ls", slots), "files: empty (RAM-only).")
+        for name in (b"a", b"b", b"c", b"d"):
+            self.assertEqual(file_response(b"write " + name + b" old suffix", slots), written)
+        saved = slots.copy()
+        for command, response in (
+            (b"write e x", "files: full (4 files)."),
+            (b"rm note", "files: note is reserved."),
+            (b"write note", "files: invalid name or content."),
+            (b"cat note x", "files: invalid name or content."),
+            (b"write a " + b"x" * 50, "files: invalid name or content."),
+            (b"write a bad\x01", "files: invalid name or content."),
+            (b"write a bad\xff", "files: invalid name or content."),
+            (b"write 123456789 x", "files: invalid name or content."),
+            (b"write . x", "files: invalid name or content."),
+            (b"write .. x", "files: invalid name or content."),
+            (b"rm a/b", "files: invalid name or content."),
+            (b"ls a", "files: invalid name or content."),
+            (b"cat A", "files: not found (RAM-only)."),
+            (b"rm e", "files: not found (RAM-only)."),
+            (b"writeX a x", "Unknown command. Type help."),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(file_response(command, slots), response)
+                self.assertEqual(slots, saved)
+        self.assertEqual(file_response(b"write b X", slots), written)
+        self.assertEqual(file_response(b"cat b", slots), "X")
+        self.assertEqual(file_response(b"write b ", slots), written)
+        self.assertEqual(file_response(b"cat b", slots), "")
+        self.assertEqual(file_response(b"rm a", slots), "files: removed (RAM-only).")
+        self.assertEqual(file_response(b"write A._-0123 " + b"x" * 49, slots), written)
+        self.assertEqual(file_response(b"cat A._-0123", slots), "x" * 49)
+        self.assertEqual(file_response(b"ls", slots), "files: A._-0123 b c d")
+
+    def test_named_file_guest_bounds_and_semantic_pixel_mutations(self):
+        baseline = b"\xa5" * smoke.SIZE
+        for name, consumed, before, after, observed in (
+            ("files-demo", 75, b"cat todo\n", b"cat ideas\n", b"cat todo\n"),
+            ("files-capacity", 79, b"rm a\n", b"rm c\n", b"ls\n"),
+        ):
+            case = next(case for case in smoke.CASES if case[0] == name)
+            model, _ = expected(case)
+            self.assertEqual(model["completion"], 0)
+            self.assertEqual(model["consumed"], consumed)
+            self.assertEqual(case[2][consumed:], b"!")
+            prefix = case[2][: case[2].index(observed) + len(observed)]
+            changed = prefix.replace(before, after)
+            self.assertNotEqual(prefix, changed)
+            original = smoke.reference(smoke.byte_samples(prefix + b"exit\n"))
+            mutant = smoke.reference(smoke.byte_samples(changed + b"exit\n"))
+            frame = original["frames"][len(prefix)]
+            wrong_frame = mutant["frames"][len(changed)]
+            self.assertNotEqual(frame, wrong_frame)
+            raw = bytearray(baseline)
+            for row, y in enumerate(range(128, 146)):
+                raw[(y * smoke.PITCH + 32) * 4 : (y * smoke.PITCH + 440) * 4] = frame[row * 1632 : (row + 1) * 1632]
+            ppm = b"P6\n800 600\n255\n" + smoke.ppm_rgb(800, 600, 800, 1, raw)
+            smoke.compare(baseline, raw, ppm, frame=frame)
+            with self.assertRaisesRegex(ValueError, "pixels differ"):
+                smoke.compare(baseline, raw, ppm, frame=wrong_frame)
 
     def test_real_baseline_and_pixel_prefix(self):
         baseline = bytes(range(256)) * (smoke.SIZE // 256)

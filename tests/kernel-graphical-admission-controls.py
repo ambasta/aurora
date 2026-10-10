@@ -30,7 +30,7 @@ decoder = graphical.load("graphical_controls_decoder", ROOT / "tests/kernel-uefi
 REFLECTION = (
     "aurora_reflect_size",
     "aurora_reflect_field_count",
-    *(f"__au_reflect_s{module}_{field}" for module in (1, 2, 3, 4, 5) for field in ("size", "field_count")),
+    *(f"__au_reflect_s{module}_{field}" for module in (1, 2, 3, 4, 5, 6) for field in ("size", "field_count")),
 )
 
 # Independent frozen image006 fixtures: original bytes and objdump operands.
@@ -2601,7 +2601,9 @@ class Admission(unittest.TestCase):
                     (root / "objects/graphical-console.ci").write_text(changed)
                     with self.subTest(changed=changed), self.assertRaises(ValueError):
                         graphical.graphical_cpp_frames(decoder, root, linked)
-                (root / "objects/graphical-console.ci").write_text(graph.replace(graphical.PAIRED_WALK, graphical.PAIRED_ALIAS))
+                (root / "objects/graphical-console.ci").write_text(
+                    graph.replace(graphical.PAIRED_WALK, graphical.PAIRED_ALIAS)
+                )
                 # Metadata must not let an unproved or nonidentical alias reach
                 # the shared frame join. The actual raw .ci spelling is valid.
                 original = obj.functions.pop(graphical.PAIRED_ALIAS)
@@ -3092,7 +3094,7 @@ class Admission(unittest.TestCase):
                 verify(symbols=imports + [decoder.Symbol(name, 0, 0, 0, 0)])
             with self.assertRaises(ValueError):
                 verify(functions=names - {name})
-        for extra in ("aurora_reflect_address", "__au_reflect_s6_size", "__au_reflect_s1_address"):
+        for extra in ("aurora_reflect_address", "__au_reflect_s7_size", "__au_reflect_s1_address"):
             with self.assertRaises(ValueError):
                 verify(functions=names | {extra})
 

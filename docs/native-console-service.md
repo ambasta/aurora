@@ -4,7 +4,7 @@ The simple-UEFI console profile migrates the complete 64-byte editor,
 command parsing and human-facing presentation into one persistent Aurora entry
 frame. `examples/kernel-console-service.au` owns `Line64` for the entire session:
 private bytes, length, sticky rejection and CRLF state. It implements exact
-`help`, `status` and `exit`, one session-local RAM note, echo, erase,
+`help`, `status` and `exit`, one session-local RAM note, four named RAM files, echo, erase,
 empty/unknown/rejected lines and prompts.
 The [sealed language service contract](../compiler/SERVICES.md) supplies only
 copied input observations and checked single-byte output.
@@ -24,6 +24,37 @@ starts missing. This adds no disk access, persistence, heap or runtime authority
 and claims no secure RAM erasure. The graphical view renders the same content
 through its ordinary response row and dirty-cell painter. Fresh
 final-source qualification is required; historical results below do not cover it.
+
+## Session-local named files
+
+The simple UEFI and graphical consumers also share `console.session_files`:
+`write NAME TEXT`, `cat NAME`, `rm NAME` and exact `ls`. The four named slots are
+separate from `note`; existing note commands run first and keep their 53-byte limit.
+The name `note` is reserved, `rm note` reports that reservation, and `ls` lists only
+named files. The profiles share policy, not live storage between sessions.
+
+Names are case-sensitive, 1–8 ASCII letters, digits, dots, underscores or hyphens;
+`.` and `..`, paths and whitespace are rejected. Content is 0–49 printable ASCII
+bytes. The space after the name is required for `write`, even for empty content.
+Spaces in content are preserved. There is no truncation or name normalization.
+Malformed commands, missing reads/removals and full-directory creation preserve
+all files. Replacement succeeds when all four slots are occupied. Listing follows
+slot order; deletion clears the complete record and the first free slot is reused.
+
+Each workspace owns four 64-byte records and an occupancy mask (264 bytes total).
+A record holds one-byte name/content lengths, eight name bytes, 49 content bytes,
+and zero padding. A complete zeroed replacement is staged before a direct record
+commit. The constructor reuses one supplied zero buffer; occupancy starts empty.
+A bounded 80-byte `FileReply` owns the closed outcome and display bytes. Neither
+consumer passes the workspace by value into presentation; graphical `show_files`
+receives only the reply. Method receivers remain synchronously borrowed.
+
+These are invocation-local values with no disk, allocator or additional service
+capability. Exit or output failure loses the workspace. A write committed before
+output failure is not rolled back. No secure erasure, concurrent transaction,
+persistent storage or general filesystem is claimed. The existing 16 KiB stack,
+15,360-byte mixed-stack cap and 4,096-byte IRQ/fault reserve are unchanged. Fresh
+final-source native, linked image/stack and guest qualification remains required.
 
 ## Trusted boundary
 

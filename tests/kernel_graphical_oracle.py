@@ -106,7 +106,7 @@ FONT = {
 }
 
 RESPONSES = {
-    b"help": "help; status; write note <text> (RAM, max 53); cat note; exit",
+    b"help": "write N TEXT; cat N; ls; rm N; help status exit; RAM; note separate",
     b"status": "Boot self-tests passed; UEFI; timer polling; line capacity=64",
     b"exit": "AURORA_CONSOLE_EXIT",
     b"": " ",
@@ -119,6 +119,52 @@ BOUNDED = "INPUT BUDGET EXHAUSTED"
 
 def byte_samples(data):
     return [(1, byte, 0) for byte in data]
+
+
+def file_response(command, slots):
+    """Model the named-file commands with four optional (name, contents) pairs.
+
+    The legacy note is dispatched separately by the console. Validation finishes
+    before any directory change, and replacement preserves its existing slot.
+    """
+    if command == b"ls":
+        names = [entry[0].decode("ascii") for entry in slots if entry is not None]
+        return "files:" + "".join(" " + name for name in names) if names else "files: empty (RAM-only)."
+    operation, separated, argument = command.partition(b" ")
+    if operation not in (b"write", b"cat", b"rm", b"ls"):
+        return UNKNOWN
+    if not separated or operation == b"ls":
+        return "files: invalid name or content."
+    name = argument
+    contents = b""
+    if operation == b"write":
+        name, separated, contents = argument.partition(b" ")
+    allowed = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-"
+    if (
+        not separated
+        or not 1 <= len(name) <= 8
+        or name in (b".", b"..")
+        or any(byte not in allowed for byte in name)
+        or len(contents) > 49
+        or any(not 32 <= byte <= 126 for byte in contents)
+    ):
+        return "files: invalid name or content."
+    if name == b"note":
+        return "files: note is reserved."
+    found = next((index for index, entry in enumerate(slots) if entry is not None and entry[0] == name), None)
+    if operation == b"write":
+        if found is None:
+            found = next((index for index, entry in enumerate(slots) if entry is None), None)
+        if found is None:
+            return "files: full (4 files)."
+        slots[found] = (name, contents)
+        return "files: RAM-only; lost when session exits."
+    if found is None:
+        return "files: not found (RAM-only)."
+    if operation == b"cat":
+        return slots[found][1].decode("ascii")
+    slots[found] = None
+    return "files: removed (RAM-only)."
 
 
 def reference(
@@ -213,6 +259,7 @@ def reference(
     event_count = 0
     terminal = None
     note = None
+    files = [None] * 4
 
     def respond(text):
         nonlocal desired, cursor
@@ -267,6 +314,8 @@ def reference(
                 elif command.startswith(b"write note "):
                     note = command[11:]
                     response = "note: RAM-only; lost when session exits."
+                elif command not in RESPONSES:
+                    response = file_response(command, files)
             respond(response)
             if not rejected and command == b"exit":
                 cursor, terminal = -1, 0

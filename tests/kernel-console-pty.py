@@ -223,6 +223,26 @@ def main():
                 # delimiter must reject the affected line before command recovery.
                 exchange(b"z" * 256, b"Line rejected:", burst=True, recovery=b"\n")
                 exchange(b"\nstatus\n", b"status: boot self-tests passed;")
+                # The named workspace and the legacy note belong only to the
+                # Aurora UEFI consumer, not the BIOS diagnostic adapter.
+                exchange(b"ls\n", b"\r\nfiles: empty (RAM-only).\r\n")
+                exchange(b"write note separate\n", b"note: RAM-only; lost when session exits.")
+                exchange(b"write todo Ship Aurora\n", b"files: RAM-only; lost when session exits.")
+                exchange(b"write ideas Safer drivers\n", b"files: RAM-only; lost when session exits.")
+                exchange(b"cat todo\n", b"\r\nShip Aurora\r\n")
+                exchange(b"write todo Done\n", b"files: RAM-only; lost when session exits.")
+                exchange(b"cat todo\n", b"\r\nDone\r\n")
+                exchange(b"write a \n", b"files: RAM-only; lost when session exits.")
+                exchange(b"write b \n", b"files: RAM-only; lost when session exits.")
+                exchange(b"write c full\n", b"files: full (4 files).")
+                exchange(b"cat todo\n", b"\r\nDone\r\n")
+                exchange(b"rm ideas\n", b"files: removed (RAM-only).")
+                exchange(b"write c reused\n", b"files: RAM-only; lost when session exits.")
+                exchange(b"ls\n", b"\r\nfiles: todo c a b\r\n")
+                exchange(b"rm note\n", b"files: note is reserved.")
+                exchange(b"cat note\n", b"\r\nseparate\r\n")
+                exchange(b"rm todo\n", b"files: removed (RAM-only).")
+                exchange(b"cat todo\n", b"files: not found (RAM-only).")
             # Linux host check: idle QEMU should sleep, rather than spend a CPU
             # polling the UART. This is a bounded emulator observation only.
             stat = Path(f"/proc/{process.pid}/stat")

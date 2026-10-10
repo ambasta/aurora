@@ -73,6 +73,11 @@ the protected-program console retain their explicitly scoped legacy adapters.
 The simple UEFI and graphical prompts also support `write note <text>` and `cat note`: one
 RAM-only note, at most 53 ASCII bytes, lost when the session exits. This is not
 a persistent filesystem; see its [scope](docs/native-console-service.md#session-local-ram-note).
+The same two prompts also offer four separate named RAM files: `write NAME TEXT`,
+`cat NAME`, `rm NAME` and `ls`. Names use 1–8 ASCII letters, digits, `.`, `_` or `-`
+(excluding `.` and `..`); each file holds up to 49 printable ASCII bytes. `note`
+remains reserved. All files disappear at session exit; see the
+[named-file rules](docs/native-console-service.md#session-local-named-files).
 For automated console acceptance, use `make smoke-console` (BIOS) or
 `make smoke-console-uefi`. Both are included in `make smoke-all`; `make test`
 remains native-only.

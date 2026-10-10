@@ -3,6 +3,7 @@ import graphics.font5x7;
 import std.binary_buffer;
 import std.binary;
 import console.session_note;
+import console.session_files;
 
 // The exact accepted Line64 policy is reused below; a source gate must keep it
 // identical to kernel-console-service.au until shared-module extraction is reviewed.
@@ -243,7 +244,7 @@ public:
         return response(borrow_bytes(text));
     }
     auto show_help() -> bool {
-        array<u8, 61> text = "help; status; write note <text> (RAM, max 53); cat note; exit";
+        array<u8, 67> text = "write N TEXT; cat N; ls; rm N; help status exit; RAM; note separate";
         return response(borrow_bytes(text));
     }
     auto show_status() -> bool {
@@ -277,6 +278,16 @@ public:
             return response(borrow_bytes(text));
         }
         return show_unknown();
+    }
+    auto show_files(console::FileReply reply) -> bool {
+        if (reply.status() == console::FileEvent::unknown) { return show_unknown(); }
+        array<u8, 64> text = "                                                                ";
+        i64 index = 0;
+        while (index < reply.size()) {
+            text[index] = reply.at(index);
+            index = index + 1;
+        }
+        return response(borrow_bytes(text));
     }
     auto show_exit() -> bool {
         array<u8, 19> text = {'A', 'U', 'R', 'O', 'R', 'A', '_', 'C', 'O', 'N', 'S', 'O', 'L', 'E', '_', 'E', 'X', 'I', 'T'};
@@ -382,6 +393,7 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
     Line64 line = Line64();
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
     console::SessionNote note = console::SessionNote(empty);
+    console::SessionFiles files = console::SessionFiles(empty);
     TextCells cells = TextCells();
     cells.initialize();
     if (!cells.show_ready()) { return GraphicalCompletion::state_failure; }
@@ -435,7 +447,12 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
                                             copied = copied + 1;
                                         }
                                         const console::NoteEvent action = note.submit(command, count);
-                                        okay = cells.show_note(action, note);
+                                        if (action == console::NoteEvent::unknown) {
+                                            const console::FileReply reply = files.submit(command, count);
+                                            okay = cells.show_files(reply);
+                                        } else {
+                                            okay = cells.show_note(action, note);
+                                        }
                                     }
                                     else {
                                         if (event == ConsoleEvent::rejected) { okay = cells.show_rejected(); }
