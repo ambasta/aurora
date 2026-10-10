@@ -95,7 +95,7 @@ needs no independent review receipts and does not establish qualification.
 
 For the bounded serial-input graphical console, `make smoke-graphical-console`
 builds fresh images, exercises production and capture profiles, and boots ordinary
-normal UEFI afterward. Successful runs retain capture hashes and logs; failures or
+normal UEFI afterward. Successful runs retain summaries and logs; failures or
 explicitly kept runs retain full physical/PPM evidence. See the
 [graphical smoke scope](docs/framebuffer-console.md#current-source-graphical-smoke).
 

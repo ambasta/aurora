@@ -2,7 +2,7 @@
 """Fresh graphical-console smoke/captures; no historical approval or guest claim."""
 
 import argparse
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import fcntl
 import json
 import os
@@ -78,6 +78,7 @@ PRODUCTION = (
     b"exX\b",
     b"it\r",
 )
+
 
 def child_limits():
     resource.setrlimit(resource.RLIMIT_FSIZE, (4 * 1024 * 1024, 4 * 1024 * 1024))
@@ -439,11 +440,18 @@ def stage(mode, destination):
     build = ROOT / "build/uefi"
     files = admission.build_files(mode)
     if mode != "normal":
-        files += [admission.RECEIPT, build / "graphical-console-build.json", build / "graphical-console-build-start.json"]
+        files += [
+            admission.RECEIPT,
+            build / "graphical-console-build.json",
+            build / "graphical-console-build-start.json",
+        ]
     for path in files:
-        need(path.is_file() and not path.is_symlink()
-             and not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(build)),
-             "missing artifact or symlink in image build: " + str(path))
+        need(
+            path.is_file()
+            and not path.is_symlink()
+            and not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(build)),
+            "missing artifact or symlink in image build: " + str(path),
+        )
     target.mkdir(parents=True)
     for path in files:
         copied = target / path.relative_to(build)
@@ -485,8 +493,7 @@ RUN_SCHEMA = "aurora-graphical-smoke-run-v1"
 
 def retained_runs():
     value = os.environ.get("AURORA_GRAPHICAL_KEEP_RUNS", "2")
-    need(value == "all" or re.fullmatch(r"[1-9][0-9]{0,2}", value),
-         "AURORA_GRAPHICAL_KEEP_RUNS must be 1..999 or all")
+    need(value == "all" or re.fullmatch(r"[1-9][0-9]{0,2}", value), "AURORA_GRAPHICAL_KEEP_RUNS must be 1..999 or all")
     return None if value == "all" else int(value)
 
 
@@ -520,70 +527,69 @@ def save_failure(destination):
         need(not objects.is_symlink(), "symlink in failed object directory")
         # Same-filesystem rename preserves bulky failed inputs even under disk pressure.
         objects.rename(destination / "objects")
-    files = admission.build_files() + [admission.RECEIPT, admission.BUILD / "graphical-console-build.json",
-                                      admission.BUILD / "graphical-console-build-start.json"]
+    files = admission.build_files() + [
+        admission.RECEIPT,
+        admission.BUILD / "graphical-console-build.json",
+        admission.BUILD / "graphical-console-build-start.json",
+    ]
     for artifact in files:
         relative = artifact.relative_to(admission.BUILD)
         if relative.parts[0] == "objects":
             continue
         path = source / relative
         if path.exists() or path.is_symlink():
-            need(not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(source)),
-                 "symlink in failed image path")
+            need(
+                not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(source)),
+                "symlink in failed image path",
+            )
             copied = destination / relative
             copied.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, copied, follow_symlinks=False)
 
 
-def compact_captures(directory):
-    """Discard only this successful owned run's screen dumps, after hashing them."""
-    guests = directory / "guests"
-    need(not guests.is_symlink(), "symlink in smoke capture directory")
-    if not guests.exists():
-        return  # Build-only windows have no guest captures.
-    files = {}
-    for name in ("production", *(case[0] for case in CASES)):
-        case = guests / name
-        need(not case.is_symlink(), "symlink in smoke capture case")
-        if not case.is_dir():
-            continue
-        for path in sorted(case.iterdir()):
-            if not re.fullmatch(
-                r"(?:(?:baseline|terminal|sample-[0-9]{2}|state-[0-9]{2})\.(?:bin|ppm)"
-                r"|probe-[0-9]{2}-[0-9]{2}\.bin)",
-                path.name,
-            ):
+def discard_captures(directory):
+    """Discard only known owned dumps through held, no-follow directory handles."""
+    with ExitStack() as opened:
+
+        def enter(name, parent=None):
+            fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            opened.callback(os.close, fd)
+            return fd
+
+        run = enter(ROOT)
+        for part in directory.relative_to(ROOT).parts:
+            run = enter(part, run)
+        try:
+            guests = enter("guests", run)
+        except FileNotFoundError:
+            return  # Build-only windows have no guest captures.
+        files = []
+        for case in ("production", *(case[0] for case in CASES)):
+            try:
+                folder = enter(case, guests)
+            except FileNotFoundError:
                 continue
-            need(stat.S_ISREG(path.lstat().st_mode), "nonregular smoke capture")
-            files[str(path.relative_to(guests))] = dict(bytes=path.stat().st_size, sha256=capture.digest(path))
-    if not files:
-        return
-    # Finish the complete hash receipt before removing any bytes. Unknown names,
-    # logs, summaries, images and separately supplied runner output stay untouched.
-    receipt = guests / "screen-captures.json"
-    record = dict(schema="aurora-graphical-screen-captures-v1", retention="compacting", files=files)
-    with receipt.open("x") as output:
-        json.dump(record, output, indent=2, sort_keys=True)
-        output.write("\n")
-    try:
-        for name in files:
-            pin = directory / ".keep"
-            if pin.exists() or pin.is_symlink():
-                break  # Recheck after hashing; a late pin stops further removal.
-            (guests / name).unlink()
-    finally:
-        record["retained_files"] = [name for name in files if (guests / name).exists()]
-        record["retention"] = "partial" if record["retained_files"] else "compacted"
-        if len(record["retained_files"]) == len(files):
-            record["retention"] = "retained"
-        # Atomic replacement preserves the complete hashes even if this update
-        # fails. A surviving "compacting" receipt makes no raw-availability claim.
-        pending = guests / ".screen-captures.json.tmp"
-        with pending.open("x") as output:
-            json.dump(record, output, indent=2, sort_keys=True)
-            output.write("\n")
-        pending.replace(receipt)
-    print(f"Screen dump retention: {record['retention']}; hashes: {receipt}", flush=True)
+            for name in sorted(os.listdir(folder)):
+                if not re.fullmatch(
+                    r"(?:(?:baseline|terminal|sample-[0-9]{2}|state-[0-9]{2})\.(?:bin|ppm)"
+                    r"|probe-[0-9]{2}-[0-9]{2}\.bin)",
+                    name,
+                ):
+                    continue
+                need(
+                    stat.S_ISREG(os.stat(name, dir_fd=folder, follow_symlinks=False).st_mode),
+                    "nonregular smoke capture",
+                )
+                files.append((folder, name))
+        # Validate all candidates first. Held directories keep a later path swap
+        # from redirecting deletion; unknown names, logs and old receipts remain.
+        for folder, name in files:
+            try:
+                os.stat(".keep", dir_fd=run, follow_symlinks=False)
+                break
+            except FileNotFoundError:
+                pass
+            os.unlink(name, dir_fd=folder)
 
 
 def finish_run(directory, status):
@@ -596,23 +602,32 @@ def finish_run(directory, status):
         need(not marker.is_symlink(), "symlink in smoke ownership marker")
         need(admission.read_json(marker) == dict(schema=RUN_SCHEMA, status="running"), "missing active smoke marker")
         # The build/guest/restoration outcome is complete before optional cleanup.
-        marker.write_text(json.dumps(dict(schema=RUN_SCHEMA, status="passed" if status == 0 else "failed",
-                                          finished_ns=time.time_ns())) + "\n")
+        marker.write_text(
+            json.dumps(
+                dict(schema=RUN_SCHEMA, status="passed" if status == 0 else "failed", finished_ns=time.time_ns())
+            )
+            + "\n"
+        )
         pin = directory / ".keep"
         if status == 0 and keep is not None and not (pin.exists() or pin.is_symlink()):
             try:
-                compact_captures(directory)
+                discard_captures(directory)
             except (OSError, ValueError) as error:
-                print("WARN: could not compact successful screen dumps: " + str(error), file=sys.stderr)
+                print("WARN: could not discard successful screen dumps: " + str(error), file=sys.stderr)
             except KeyboardInterrupt:
-                print("WARN: successful-run compaction interrupted; remaining dumps preserved", file=sys.stderr)
+                print("WARN: successful-run cleanup interrupted; remaining dumps preserved", file=sys.stderr)
                 return
         if keep is None:
             return
         groups = {"passed": [], "failed": []}
         for folder in directory.parent.glob("run-*"):
             record = folder / RUN_MARKER
-            if folder.is_symlink() or not folder.is_dir() or (folder / ".keep").exists() or (folder / ".keep").is_symlink():
+            if (
+                folder.is_symlink()
+                or not folder.is_dir()
+                or (folder / ".keep").exists()
+                or (folder / ".keep").is_symlink()
+            ):
                 continue
             if record.is_symlink() or not record.is_file():
                 continue
@@ -620,9 +635,14 @@ def finish_run(directory, status):
                 item = admission.read_json(record)
             except (ValueError, OSError):
                 continue  # Unknown or incomplete evidence is never adopted for deletion.
-            if (type(item) is not dict or set(item) != {"schema", "status", "finished_ns"}
-                    or item["schema"] != RUN_SCHEMA or type(item["status"]) is not str or item["status"] not in groups
-                    or type(item["finished_ns"]) is not int):
+            if (
+                type(item) is not dict
+                or set(item) != {"schema", "status", "finished_ns"}
+                or item["schema"] != RUN_SCHEMA
+                or type(item["status"]) is not str
+                or item["status"] not in groups
+                or type(item["finished_ns"]) is not int
+            ):
                 continue
             groups[item["status"]].append((item["finished_ns"], folder.name, folder))
         for runs in groups.values():
@@ -643,21 +663,34 @@ def pin_reused_images(images):
     if directory.parent != ROOT / "build/graphical-smoke":
         # A foreign checkout owns its lock and retention policy. Do not mutate it.
         marker = directory / RUN_MARKER
-        if (directory.parent.name != "graphical-smoke" or directory.parent.parent.name != "build"
-                or not directory.name.startswith("run-") or not (marker.exists() or marker.is_symlink())):
+        if (
+            directory.parent.name != "graphical-smoke"
+            or directory.parent.parent.name != "build"
+            or not directory.name.startswith("run-")
+            or not (marker.exists() or marker.is_symlink())
+        ):
             return  # Unmanaged external images retain their read-only behavior.
         need(not marker.is_symlink() and marker.is_file(), "invalid foreign smoke ownership marker")
         record = admission.read_json(marker)
-        need(record == dict(schema=RUN_SCHEMA, status="running") or
-             (type(record) is dict and set(record) == {"schema", "status", "finished_ns"}
-              and record["schema"] == RUN_SCHEMA and record["status"] in ("passed", "failed")
-              and type(record["finished_ns"]) is int), "invalid foreign smoke marker")
+        need(
+            record == dict(schema=RUN_SCHEMA, status="running")
+            or (
+                type(record) is dict
+                and set(record) == {"schema", "status", "finished_ns"}
+                and record["schema"] == RUN_SCHEMA
+                and record["status"] in ("passed", "failed")
+                and type(record["finished_ns"]) is int
+            ),
+            "invalid foreign smoke marker",
+        )
         try:
             pinned = stat.S_ISREG((directory / ".keep").lstat().st_mode)
         except FileNotFoundError:
             pinned = False
-        need(pinned, "Pin foreign managed images with a regular .keep file in the owning checkout before use: "
-             + str(directory))
+        need(
+            pinned,
+            "Pin foreign managed images with a regular .keep file in the owning checkout before use: " + str(directory),
+        )
         return
     lock_path = directory.parent / ".retention.lock"
     with os.fdopen(os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), "r+") as lock:
@@ -670,8 +703,12 @@ def pin_reused_images(images):
         record = admission.read_json(marker)
         if record == dict(schema=RUN_SCHEMA, status="running"):
             return  # The invoking shell owns this active window until the child exits.
-        need(type(record) is dict and record.get("schema") == RUN_SCHEMA
-             and record.get("status") in ("passed", "failed"), "invalid completed smoke marker")
+        need(
+            type(record) is dict
+            and record.get("schema") == RUN_SCHEMA
+            and record.get("status") in ("passed", "failed"),
+            "invalid completed smoke marker",
+        )
         pin = directory / ".keep"
         if not pin.exists() and not pin.is_symlink():
             with pin.open("x"):

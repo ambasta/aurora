@@ -167,22 +167,15 @@ objects are rebuilt on each invocation; compiler caches, logs and unrelated file
 outside the namespace stay in place. Legacy top-level objects from older builders
 are left untouched and are no longer link/admission inputs.
 
-Graphical smoke also leaves the shared UEFI tree in place and stages only required
-current image/admission artifacts. After every guest and the shared normal-image
-restoration succeed, it replaces that run's full physical/PPM screen dumps and
-viewport probes with `guests/screen-captures.json` (relative names, byte sizes and
-SHA256 hashes, compaction status and an explicit remaining-raw-file list).
-Hashes identify validated bytes; they do not claim those raw files remain.
-Summaries, serial/QMP/stderr logs, build logs and staged images
-remain. Build, guest or restoration failures and handled interruptions retain all
-captures; no older run's dumps are compacted. `AURORA_GRAPHICAL_KEEP_RUNS=all`, or
-a `.keep` present before dump removal starts, also preserves successful dumps.
-Pins are rechecked after hashing and before each removal; a late pin stops further
-removals but cannot recover already discarded dumps. The passed run marker is
-written before this optional housekeeping. An interruption during hashing keeps
-all dumps; one during removal keeps the remaining dumps and complete hash receipt,
-without relabeling the passed guest/restoration result. Compaction errors warn.
-The hash receipt is written before any dump is removed.
+Graphical smoke stages only required current image/admission artifacts. Once all
+guests and shared normal-image restoration pass, it discards that run's known
+physical/PPM dumps and viewport probes. Summaries, logs, staged images and unknown
+files remain. Failures and explicit keep-all/`.keep` preserve raw captures.
+All cleanup paths are checked first; held no-follow directory handles anchor
+deletion, and pins are rechecked before each removal.
+A late pin or interruption preserves remaining dumps, but cannot recover deleted
+ones. Cleanup errors only warn; no screen-hash receipt or availability state is
+maintained. Standalone output and historical windows are not adopted for cleanup.
 By default it retains the latest two successful and two failed run directories;
 a failed build's available objects/artifacts are
 moved within the same filesystem before normal restoration; small image/receipt
@@ -219,36 +212,63 @@ UEFI success, and neither establishes physical AMD/Framework support.
 
 ## Reclaiming old local output explicitly
 
-Stop builds, tests, guests and separate image readers before cleanup. Inspect the
-exact directories with `du -sh` and keep any required review evidence first.
-There is no automatic sweep of historical Meson output. To remove generated
-native build products while retaining a configured build and its Meson logs:
+Stop builds, tests, guests and separate image readers before cleanup; do not start
+another command while it runs. Preview the exact products and byte counts first:
 
 ```sh
-meson compile -C build/gcc16 --clean
+make clean-dry-run
+make clean
+# Select one older configuration instead of the ordinary defaults:
+make clean-dry-run MESON_BUILD_DIR=build/gcc16-retired
+make clean MESON_BUILD_DIR=build/gcc16-retired
 ```
 
-Substitute the one configured Meson build you intend to clean. This removes
-Ninja-tracked products, not failed/kept runner scratch or unrelated review output;
-subsequent tests rebuild their dependencies. To retire an entire old build or
-one completed smoke window, choose its exact directory and inspect it first:
+Without a selector, these targets visit only ordinary `build/meson-<16 hex digits>`
+configurations whose Meson source/build metadata matches this checkout. There is
+no compiler/toolchain hashing, configuration, compilation or test execution.
+An explicit `MESON_BUILD_DIR` may select an external configured build belonging to
+this checkout; another checkout's build, source-tree directories outside `build/`,
+symlink paths and unknown ownership are refused. Default discovery reports and
+skips rejected builds; an explicit rejected selection exits nonzero.
+
+The command previews with `ninja -n -t clean`, validates every removal stays inside
+the selected build, then invokes `ninja -t clean` without generator cleanup.
+This removes tracked objects, depfiles, executables and native test binaries;
+subsequent builds regenerate them. Counts include logical and allocated file
+bytes, not a guarantee of freed disk blocks when files are shared or hardlinked.
+Configuration, raw Meson logs, all untracked test scratch and outside output stay
+in place. In particular, historical `aurora-meson-*` scratch has no durable
+success/keep marker: cleanup cannot safely distinguish it from failed or explicitly
+retained runs, so it does not delete it. Root bootstrap `build/aurorac`, BIOS/UEFI
+output and user-supplied runner output are also outside this Meson product scope.
+
+Cleanup honors `.keep` markers, the existing Aurora test lock and Meson configure
+lock, and rejects observed direct processes using the selected output. The Linux
+process check is best-effort: it inspects same-UID cwd/argv, not open file
+descriptors or all users. It can spot direct Meson/Ninja commands that do not take
+the Make wrapper lock, but cannot prevent a new command starting afterward; these
+commands retain the repository's one-command-at-a-time requirement.
+The generated Ninja graph is trusted and must remain unchanged between preview
+and cleanup; these checks do not protect against concurrent graph mutation.
+
+The scratch target currently retires older successful managed graphical smoke
+windows. It does not classify or remove unmarked historical Meson scratch:
 
 ```sh
-# Examples only: replace each name with the one retired directory you reviewed.
-du -sh -- build/gcc16-retired build/graphical-smoke/run-ABC123
-rm -ri -- build/gcc16-retired
-rm -ri -- build/graphical-smoke/run-ABC123
+make clean-scratch-dry-run
+make clean-scratch
 ```
 
-The interactive removals include that selected directory's logs and receipts.
-Never use a wildcard or remove the whole `build` tree: it can contain active
-outputs, retained failures, `.keep` pins and user-owned review directories.
-For graphical runs, inspect `.graphical-smoke-run.json`; leave `running`, missing
-or malformed records alone until their ownership is understood. Leave `.keep`
-windows alone until review and all readers have finished. Explicit external
-runner output and Event evidence are not covered by these paths; delete such a
-directory only after separately identifying its owner, completion and review needs.
-Nothing here authorizes cleanup of another checkout or a reviewer's directory.
+This removes complete older successful windows, including their logs and receipts,
+while keeping the newest two eligible successes. It uses the existing ownership
+marker and retention lock, preserving every failed, running, unknown, malformed or
+`.keep` window. Symlinks, nonregular files, nested keep markers and observed active
+readers prevent removal. It does not touch Event evidence or other output roots.
+The preview prints selected directories and their logical byte totals. These are
+intentional local deletions: preserve any successful-run evidence needed for review
+with `.keep` before cleanup. Neither target sweeps the whole `build` tree or adopts
+unmarked historical output; retiring that evidence requires a separate explicit
+ownership/review decision.
 
 ## Choosing tests
 
@@ -274,9 +294,11 @@ make smoke-iommu-event EVENT_BUILD_RECEIPT=/absolute/BUILD-RECEIPT.json \
 This requires the [supported custom model and initial firmware bytes](../tools/qemu-amdvi/README.md#developer-event-runtime),
 GNU mtools 4.0.48 with no system config, and ordinary QEMU/OVMF for normal
 restoration. `MTOOLS_DIR` selects an installed tool directory; `EVENT_ESP_DIR`
-is a validated raw-ESP alternative on unsupported mtools hosts. Missing or invalid
-local prerequisites report `BLOCKED` (exit 2), before building or allocating a run;
-actual build, image-admission and guest defects report `FAIL` (exit 1 from the runner).
+is a validated raw-ESP alternative on unsupported mtools hosts. Missing tools,
+files or required configuration and insufficient reserved space report `BLOCKED`
+(exit 2), before building or allocating a run. Present but malformed, unsupported
+or mismatched runtime inputs report `FAIL` (runner exit 1), as do actual build,
+image-admission and guest defects.
 GNU Make itself returns 2 for an unsuccessful recipe, so use the diagnostic label
 when interpreting `make smoke-iommu-event`. Evidence is
 retained outside source under `EVENT_OUTPUT_PARENT` (default system temporary
