@@ -14,7 +14,10 @@ fi
 firmware=()
 if [[ ${1:-} != --build-only ]]; then
     source scripts/uefi-firmware.sh
-    uefi_firmware_select
+    uefi_firmware_select || {
+        echo 'BLOCKED: Event developer smoke requires ordinary OVMF for normal restoration.' >&2
+        exit 2
+    }
     firmware=(--normal-firmware "$UEFI_FIRMWARE_COMBINED" --normal-code "$UEFI_FIRMWARE_CODE" --normal-vars "$UEFI_FIRMWARE_VARS")
 fi
 exec python3 -B scripts/kernel_iommu_event_smoke.py "$@" "${firmware[@]}"

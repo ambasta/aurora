@@ -7,7 +7,8 @@ if [[ ${1:-} == --help ]]; then
     echo 'Build/check three current images, then smoke graphical guests and restore normal UEFI.'
     echo 'Build-only prints retained images for independent review before a separate runner invocation.'
     echo 'Retains the latest 2 successful and 2 failed runs; AURORA_GRAPHICAL_KEEP_RUNS=N or all overrides this.'
-    echo 'Create RUN/.keep to preserve a specific review window.'
+    echo 'Successful runs keep screen hashes and logs; full dumps remain on failure or explicit keep.'
+    echo 'Set AURORA_GRAPHICAL_KEEP_RUNS=all or create RUN/.keep before dump removal to keep successful dumps.'
     exit 0
 fi
 [[ $# == 0 || ( $# == 1 && $1 == --build-only ) ]] || { echo 'Invalid graphical smoke arguments' >&2; exit 2; }

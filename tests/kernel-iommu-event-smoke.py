@@ -2,6 +2,7 @@
 """Compiler-free real-pipe/fake-child controls. These do not exercise QEMU."""
 
 import json
+import io
 import os
 import subprocess
 from pathlib import Path
@@ -456,6 +457,10 @@ class Controls(unittest.TestCase):
         self.assertEqual(environment["EVENT_OUTPUT_PARENT"], "")
         source, run = self.root / "source", self.root / "run"
         source.mkdir()
+        (source / "scripts").mkdir()
+        (source / "scripts/uefi-linker.sh").write_bytes((smoke.ROOT / "scripts/uefi-linker.sh").read_bytes())
+        for mode in smoke.MODES:
+            (self.root / (mode + ".raw")).write_bytes(b"fake ESP")
         run.mkdir()
         with (
             patch.dict(os.environ, environment, clear=True),
@@ -471,6 +476,129 @@ class Controls(unittest.TestCase):
         args = window.call_args.args[0]
         self.assertEqual(args.normal_qemu, "qemu-system-x86_64")
         self.assertEqual(args.output_parent, str(self.root))
+
+    def test_missing_prerequisites_are_blocked_before_build_or_evidence(self):
+        for arguments, message in (
+            ([], "Set EVENT_BUILD_RECEIPT"),
+            (["--build-only"], "Install supported GNU mtools"),
+            (["--build-only", "--esp-dir", str(self.root / "missing")], "missing"),
+        ):
+            with (
+                self.subTest(arguments=arguments),
+                patch.dict(os.environ, {}, clear=True),
+                patch.object(sys, "argv", ["event-smoke", *arguments]),
+                patch.object(smoke.shutil, "which", return_value=None),
+                patch.object(smoke.tempfile, "mkdtemp") as allocate,
+                patch.object(smoke, "window") as window,
+                patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                self.assertEqual(smoke.cli(), 2)
+                self.assertIn("BLOCKED: Event developer smoke: ", stderr.getvalue())
+                self.assertIn(message, stderr.getvalue())
+                self.assertNotIn("FAIL:", stderr.getvalue())
+                allocate.assert_not_called()
+                window.assert_not_called()
+
+    def test_public_make_reports_missing_event_inputs_and_firmware_as_blocked(self):
+        for firmware, message in (
+            (self.root / "code", "Set EVENT_BUILD_RECEIPT"),
+            (self.root / "missing", "requires ordinary OVMF"),
+        ):
+            with self.subTest(firmware=firmware):
+                result = subprocess.run(
+                    ["make", "--no-print-directory", "-s", "smoke-iommu-event"],
+                    cwd=smoke.ROOT,
+                    env={"PATH": os.defpath, "OVMF": str(firmware), "EVENT_OUTPUT_PARENT": str(self.root)},
+                    text=True,
+                    capture_output=True,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("BLOCKED: Event developer smoke", result.stderr)
+                self.assertIn(message, result.stderr)
+                self.assertNotIn("FAIL:", result.stderr)
+                self.assertFalse(list(self.root.glob("aurora-event-smoke-*")))
+
+    def test_missing_linker_esp_data_and_malformed_receipts_are_prerequisite_blocks(self):
+        from types import SimpleNamespace
+
+        esps = self.root / "esps"
+        esps.mkdir()
+        for mode in smoke.MODES:
+            (esps / (mode + ".raw")).write_bytes(b"fake ESP")
+        missing = esps / (smoke.MODES[-1] + ".raw")
+        receipt = self.root / "receipt.json"
+        for kind, message in (
+            ("esp", missing.name),
+            ("linker", "Missing UEFI PE linker"),
+            ("data", "missing-data"),
+            ("receipt-key", "Invalid custom runtime receipt"),
+            ("receipt-type", "Invalid custom runtime receipt"),
+        ):
+            with self.subTest(kind=kind):
+                if kind == "esp":
+                    missing.unlink()
+                else:
+                    missing.write_bytes(b"fake ESP")
+                receipt.write_text("{}" if kind == "receipt-key" else '{"source_path": null}')
+                args = ["event-smoke", "--esp-dir", str(esps), "--output-parent", str(self.root)]
+                if kind in ("esp", "linker"):
+                    args += ["--build-only"]
+                else:
+                    args += [
+                        "--build-receipt",
+                        str(receipt),
+                        "--code",
+                        str(self.root / "code"),
+                        "--vars",
+                        str(self.root / "vars"),
+                        "--data",
+                        str(self.root / "data"),
+                        "--normal-qemu",
+                        sys.executable,
+                        "--normal-firmware",
+                        str(self.root / "code"),
+                    ]
+                if kind == "data":
+                    args += ["--normal-data", str(self.root / "missing-data")]
+                with (
+                    patch.dict(
+                        os.environ,
+                        {"PATH": os.defpath, "UEFI_LD": str(self.root / "missing-ld")}
+                        if kind == "linker"
+                        else {"PATH": os.defpath},
+                        clear=True,
+                    ),
+                    patch.object(sys, "argv", args),
+                    patch.object(smoke.shutil, "disk_usage", return_value=SimpleNamespace(free=4 * 1024**3)),
+                    patch.object(smoke.tempfile, "mkdtemp") as allocate,
+                    patch.object(smoke, "window") as window,
+                    patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                ):
+                    self.assertEqual(smoke.cli(), 2, stderr.getvalue())
+                    self.assertIn("BLOCKED: Event developer smoke: ", stderr.getvalue())
+                    self.assertIn(message, stderr.getvalue())
+                    allocate.assert_not_called()
+                    window.assert_not_called()
+
+    def test_post_preflight_build_guest_and_interruption_defects_remain_failed(self):
+        for error in (
+            ValueError("build admission failed"),
+            FileNotFoundError("missing guest output"),
+            KeyboardInterrupt("guest interrupted"),
+        ):
+            with (
+                self.subTest(error=error),
+                patch.object(sys, "argv", ["event-smoke"]),
+                patch.object(smoke, "ROOT", self.root),
+                patch.object(smoke, "prerequisites", return_value=(self.root, None)),
+                patch.object(smoke.signal, "signal"),
+                patch.object(smoke, "window", side_effect=error),
+                patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                self.assertEqual(smoke.cli(), 1)
+                self.assertIn("FAIL: Event developer smoke: " + str(error), stderr.getvalue())
+                self.assertNotIn("BLOCKED:", stderr.getvalue())
 
     def test_build_only_checks_four_profiles_restores_once_and_never_launches(self):
         from types import SimpleNamespace

@@ -107,6 +107,25 @@ small image/receipt artifacts are copied. A failed restoration also retains its
 own inputs. Capture failure is reported and restoration still runs, so inputs
 that could not be retained may be replaced. Successful runs avoid both whole-tree
 moves/copies.
+After the guest window and shared normal-image restoration both succeed, the
+managed shell run writes `guests/screen-captures.json` with relative names, sizes
+and SHA256 hashes, then discards only its generated physical/PPM dumps and small
+viewport probes. Summaries, input/terminal records, serial/QMP/stderr and build
+logs, and staged images remain. A build, guest or restoration failure or handled
+interruption retains raw captures. Explicit keep-all or a `.keep` created before
+dump removal starts retains successful dumps too. Pins are rechecked after
+hashing and before each removal; a later pin stops further removal but cannot
+restore removed captures. Standalone
+runner evidence and historical windows are never compacted. Receipt generation
+finishes before deletion; its `retention` is `compacted` with no `retained_files`
+after success, `retained` if no files were removed, or `partial` with an explicit
+list of raw files still available.
+If final receipt replacement is interrupted, `compacting` makes no availability
+claim and readers must inspect the paths. Compaction errors warn and leave
+remaining files without changing the build/guest result. The completed run marker
+precedes optional compaction. An interruption before deletion preserves all dumps;
+once deletion starts, interruptions preserve the remaining dumps and complete
+hash receipt, and do not relabel the already-passed build/guest/restoration result.
 Default retention keeps the latest two successful and two failed windows. Set
 `AURORA_GRAPHICAL_KEEP_RUNS=N` (1..999) to change both limits, or `all` to skip
 pruning and pin the new run. A `.keep` file pins an individual window. A separate
@@ -117,6 +136,8 @@ files are never changed by this reader. Pruning errors emit a warning without
 changing the build/guest result. Unmarked,
 malformed and unfinished windows remain untouched for manual review/cleanup; this
 exceptional evidence and explicit pins are outside the automatic count bound.
+See [explicit local cleanup](local-development.md#reclaiming-old-local-output-explicitly)
+for retiring selected old builds/windows without sweeping review directories.
 This rebuild does not replace the staged-normal boot validation. This isolated
 window leaves no persistent guest state, so one final boot suffices.
 Ordinary/optimized compiler-free runner

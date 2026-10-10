@@ -535,6 +535,57 @@ def save_failure(destination):
             shutil.copy2(path, copied, follow_symlinks=False)
 
 
+def compact_captures(directory):
+    """Discard only this successful owned run's screen dumps, after hashing them."""
+    guests = directory / "guests"
+    need(not guests.is_symlink(), "symlink in smoke capture directory")
+    if not guests.exists():
+        return  # Build-only windows have no guest captures.
+    files = {}
+    for name in ("production", *(case[0] for case in CASES)):
+        case = guests / name
+        need(not case.is_symlink(), "symlink in smoke capture case")
+        if not case.is_dir():
+            continue
+        for path in sorted(case.iterdir()):
+            if not re.fullmatch(
+                r"(?:(?:baseline|terminal|sample-[0-9]{2}|state-[0-9]{2})\.(?:bin|ppm)"
+                r"|probe-[0-9]{2}-[0-9]{2}\.bin)",
+                path.name,
+            ):
+                continue
+            need(stat.S_ISREG(path.lstat().st_mode), "nonregular smoke capture")
+            files[str(path.relative_to(guests))] = dict(bytes=path.stat().st_size, sha256=capture.digest(path))
+    if not files:
+        return
+    # Finish the complete hash receipt before removing any bytes. Unknown names,
+    # logs, summaries, images and separately supplied runner output stay untouched.
+    receipt = guests / "screen-captures.json"
+    record = dict(schema="aurora-graphical-screen-captures-v1", retention="compacting", files=files)
+    with receipt.open("x") as output:
+        json.dump(record, output, indent=2, sort_keys=True)
+        output.write("\n")
+    try:
+        for name in files:
+            pin = directory / ".keep"
+            if pin.exists() or pin.is_symlink():
+                break  # Recheck after hashing; a late pin stops further removal.
+            (guests / name).unlink()
+    finally:
+        record["retained_files"] = [name for name in files if (guests / name).exists()]
+        record["retention"] = "partial" if record["retained_files"] else "compacted"
+        if len(record["retained_files"]) == len(files):
+            record["retention"] = "retained"
+        # Atomic replacement preserves the complete hashes even if this update
+        # fails. A surviving "compacting" receipt makes no raw-availability claim.
+        pending = guests / ".screen-captures.json.tmp"
+        with pending.open("x") as output:
+            json.dump(record, output, indent=2, sort_keys=True)
+            output.write("\n")
+        pending.replace(receipt)
+    print(f"Screen dump retention: {record['retention']}; hashes: {receipt}", flush=True)
+
+
 def finish_run(directory, status):
     keep = retained_runs()
     directory = run_directory(directory)
@@ -544,8 +595,18 @@ def finish_run(directory, status):
         marker = directory / RUN_MARKER
         need(not marker.is_symlink(), "symlink in smoke ownership marker")
         need(admission.read_json(marker) == dict(schema=RUN_SCHEMA, status="running"), "missing active smoke marker")
+        # The build/guest/restoration outcome is complete before optional cleanup.
         marker.write_text(json.dumps(dict(schema=RUN_SCHEMA, status="passed" if status == 0 else "failed",
                                           finished_ns=time.time_ns())) + "\n")
+        pin = directory / ".keep"
+        if status == 0 and keep is not None and not (pin.exists() or pin.is_symlink()):
+            try:
+                compact_captures(directory)
+            except (OSError, ValueError) as error:
+                print("WARN: could not compact successful screen dumps: " + str(error), file=sys.stderr)
+            except KeyboardInterrupt:
+                print("WARN: successful-run compaction interrupted; remaining dumps preserved", file=sys.stderr)
+                return
         if keep is None:
             return
         groups = {"passed": [], "failed": []}
@@ -630,6 +691,7 @@ def main():
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("inputs", nargs="*")
     args = parser.parse_args()
+    signal.signal(signal.SIGTERM, lambda signum, frame: (_ for _ in ()).throw(KeyboardInterrupt("SIGTERM")))
     if args.start_run:
         start_run(args.start_run)
         return
@@ -655,7 +717,6 @@ def main():
     args.qemu, firmware, code, variables, args.data = args.inputs
     args.firmware = expected_firmware_argv(firmware, code, variables)
     verify_images(args)
-    signal.signal(signal.SIGTERM, lambda signum, frame: (_ for _ in ()).throw(KeyboardInterrupt("SIGTERM")))
     window(args)
 
 

@@ -45,6 +45,10 @@ signalled, interrupted or unlaunched runs remain; cleanup errors are reported
 without changing the test result. The adapter prints the path before the child
 and the cleanup outcome afterward. Raw Meson logs, historical evidence, sibling
 directories and explicit artifact paths passed directly to a runner are untouched.
+For disk reclamation, `meson compile -C build/gcc16 --clean` removes tracked
+build products while keeping configuration/logs. Retire whole directories only
+through the [explicit per-directory cleanup steps](local-development.md#reclaiming-old-local-output-explicitly);
+never sweep historical, failed, kept or user-owned review output automatically.
 
 `make test` invokes the same `full` graph. `make test-compiler`, `make -C compiler
 test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
