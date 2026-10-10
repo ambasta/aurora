@@ -254,7 +254,7 @@ if action == 'guest':
                     for suffix in ("bin", "ppm"):
                         self.assertEqual((window / f"guests/production/state-00.{suffix}").exists(), bool(kept))
                     self.assertEqual((window / "guests/production/serial.log").read_bytes(), b"guest serial")
-                    self.assertEqual((window / "guests/screen-captures.json").exists(), not kept)
+                    self.assertFalse((window / "guests/screen-captures.json").exists())
                 self.assertFalse((window / "previous-build").exists())
                 self.assertFalse((window / "last-build").exists())
                 self.assertEqual(
@@ -268,7 +268,7 @@ if action == 'guest':
                     self.assertEqual((window / "failed-build/objects").exists(), overrides["FAIL_CAPTURE"] == "copy")
                     self.assertTrue((window / "build-graphical-console-capture.log").is_file())
 
-    def test_successful_capture_compaction_is_scoped_and_hashes_before_removal(self):
+    def test_successful_capture_cleanup_is_scoped(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "2"}):
             root = Path(tmp)
             window = root / "build/graphical-smoke/run-current"
@@ -289,6 +289,7 @@ if action == 'guest':
                 "production/review.bin",
                 "review/baseline.bin",
                 "production/review/terminal.bin",
+                "screen-captures.json",
             )
             for name in (*dumps, *preserved):
                 path = guests / name
@@ -296,33 +297,16 @@ if action == 'guest':
                 path.write_bytes(name.encode())
             (window / "images").mkdir()
             (window / "images/payload.bin").write_bytes(b"staged image")
-            expected = {
-                name: dict(bytes=(guests / name).stat().st_size, sha256=smoke.capture.digest(guests / name))
-                for name in dumps
-            }
-            original_unlink = Path.unlink
-
-            def checked_unlink(path, *args, **kwargs):
-                receipt = json.loads((guests / "screen-captures.json").read_text())
-                self.assertEqual(
-                    receipt, dict(schema="aurora-graphical-screen-captures-v1", retention="compacting", files=expected)
-                )
-                return original_unlink(path, *args, **kwargs)
-
             with patch.object(smoke, "ROOT", root), patch("builtins.print"):
                 smoke.start_run(window)
-                with patch.object(Path, "unlink", checked_unlink):
-                    smoke.finish_run(window, 0)
+                smoke.finish_run(window, 0)
             self.assertFalse(any((guests / name).exists() for name in dumps))
-            receipt = json.loads((guests / "screen-captures.json").read_text())
-            self.assertEqual(receipt["retention"], "compacted")
-            self.assertEqual(receipt["retained_files"], [])
             for name in preserved:
                 self.assertEqual((guests / name).read_bytes(), name.encode())
             self.assertEqual((window / "images/payload.bin").read_bytes(), b"staged image")
 
-    def test_capture_compaction_rejects_links_and_preserves_receipt_on_cleanup_error(self):
-        for failure in ("guests-link", "case-link", "dump-link", "receipt-exists", "unlink", "receipt-update"):
+    def test_cleanup_validates_paths_before_deletion_and_preserves_errors(self):
+        for failure in ("guests-link", "case-link", "dump-link", "unlink"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 window = root / "build/graphical-smoke/run-current"
@@ -330,8 +314,9 @@ if action == 'guest':
                 case.mkdir(parents=True)
                 outside = root / "review"
                 outside.mkdir()
-                (outside / "state-00.bin").write_bytes(b"review evidence")
-                raw = case / "state-00.bin"
+                (outside / "state-01.bin").write_bytes(b"review evidence")
+                (case / "state-00.bin").write_bytes(b"owned capture")
+                raw = case / "state-01.bin"
                 if failure == "dump-link":
                     raw.symlink_to(outside / raw.name)
                 else:
@@ -340,42 +325,23 @@ if action == 'guest':
                     target = window / "guests" if failure == "guests-link" else case
                     target.rename(root / "owned")
                     target.symlink_to(outside, target_is_directory=True)
-                if failure == "receipt-exists":
-                    (window / "guests/screen-captures.json").write_bytes(b"review receipt")
-                with (
-                    patch.object(smoke, "ROOT", root),
-                    patch("builtins.print") as output,
-                    patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "2"}),
-                ):
+                with patch.object(smoke, "ROOT", root), patch("builtins.print") as output:
                     smoke.start_run(window)
                     if failure == "unlink":
-                        with patch.object(Path, "unlink", side_effect=PermissionError("read-only capture")):
+                        with patch.object(smoke.os, "unlink", side_effect=PermissionError("read-only capture")):
                             smoke.finish_run(window, 0)
-                        receipt = json.loads((window / "guests/screen-captures.json").read_text())
-                        self.assertEqual(
-                            receipt["files"]["production/state-00.bin"]["sha256"], smoke.capture.digest(raw)
-                        )
-                        self.assertEqual(receipt["retention"], "retained")
-                        self.assertEqual(receipt["retained_files"], ["production/state-00.bin"])
-                    elif failure == "receipt-update":
-                        with patch.object(Path, "replace", side_effect=PermissionError("read-only receipt")):
-                            smoke.finish_run(window, 0)
-                        receipt = json.loads((window / "guests/screen-captures.json").read_text())
-                        self.assertEqual(receipt["retention"], "compacting")
-                        self.assertNotIn("retained_files", receipt)
-                        self.assertFalse(raw.exists())
                     else:
                         smoke.finish_run(window, 0)
                     self.assertEqual(json.loads((window / smoke.RUN_MARKER).read_text())["status"], "passed")
                     self.assertTrue(
-                        any(str(call.args[0]).startswith("WARN: could not compact") for call in output.call_args_list)
+                        any(str(call.args[0]).startswith("WARN: could not discard") for call in output.call_args_list)
                     )
-                self.assertEqual((outside / "state-00.bin").read_bytes(), b"review evidence")
-                if failure not in ("guests-link", "case-link", "receipt-update"):
-                    self.assertTrue(raw.exists())
+                self.assertEqual((outside / "state-01.bin").read_bytes(), b"review evidence")
+                if failure in ("dump-link", "unlink"):
+                    self.assertEqual((case / "state-00.bin").read_bytes(), b"owned capture")
 
-    def test_pins_and_interruptions_during_successful_compaction(self):
-        for action in ("pin-hash", "pin-delete", "interrupt-hash", "SIGINT", "SIGTERM"):
+    def test_late_pins_and_cleanup_interruptions_preserve_remaining_dumps(self):
+        for action in ("pin-before", "pin-delete", "interrupt-before", "SIGINT", "SIGTERM"):
             with self.subTest(action=action), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 window = root / "build/graphical-smoke/run-current"
@@ -383,17 +349,12 @@ if action == 'guest':
                 case.mkdir(parents=True)
                 for suffix in ("bin", "ppm"):
                     (case / ("state-00." + suffix)).write_bytes(b"capture")
-                digest, unlink = smoke.capture.digest, Path.unlink
+                unlink = smoke.os.unlink
 
-                def during_hash(path):
-                    if action == "pin-hash":
-                        (window / ".keep").touch()
-                    if action == "interrupt-hash":
-                        raise KeyboardInterrupt("while hashing")
-                    return digest(path)
-
-                def during_delete(path):
-                    unlink(path)
+                def during_delete(path, *, dir_fd=None):
+                    if action == "interrupt-before":
+                        raise KeyboardInterrupt("before removal")
+                    unlink(path, dir_fd=dir_fd)
                     if action == "pin-delete":
                         (window / ".keep").touch()
                     if action.startswith("SIG"):
@@ -401,30 +362,46 @@ if action == 'guest':
 
                 previous = signal.getsignal(signal.SIGTERM)
                 try:
-                    with (
-                        patch.object(smoke, "ROOT", root),
-                        patch("builtins.print"),
-                        patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "2"}),
-                    ):
+                    with patch.object(smoke, "ROOT", root), patch("builtins.print"):
                         smoke.start_run(window)
+                        if action == "pin-before":
+                            (window / ".keep").touch()
                         with (
-                            patch.object(smoke.capture, "digest", side_effect=during_hash),
-                            patch.object(Path, "unlink", during_delete),
+                            patch.object(smoke.os, "unlink", during_delete),
                             patch.object(sys, "argv", ["runner", "--finish-run", str(window), "--status", "0"]),
                         ):
                             smoke.main()
                 finally:
                     signal.signal(signal.SIGTERM, previous)
                 self.assertEqual(json.loads((window / smoke.RUN_MARKER).read_text())["status"], "passed")
-                retained = sorted(str(p.relative_to(window / "guests")) for p in case.iterdir())
-                if action == "interrupt-hash":
-                    self.assertEqual(len(retained), 2)
-                    self.assertFalse((window / "guests/screen-captures.json").exists())
-                else:
-                    receipt = json.loads((window / "guests/screen-captures.json").read_text())
-                    self.assertEqual(receipt["retained_files"], retained)
-                    self.assertEqual(receipt["retention"], "retained" if action == "pin-hash" else "partial")
-                    self.assertEqual(len(retained), 2 if action == "pin-hash" else 1)
+                self.assertEqual(len(list(case.iterdir())), 2 if action in ("pin-before", "interrupt-before") else 1)
+                self.assertFalse((window / "guests/screen-captures.json").exists())
+
+    def test_cleanup_ancestor_swap_cannot_delete_outside_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            window = root / "build/graphical-smoke/run-current"
+            case = window / "guests/production"
+            outside = root / "outside"
+            case.mkdir(parents=True)
+            outside.mkdir()
+            (case / "state-00.bin").write_bytes(b"owned capture")
+            (outside / "state-00.bin").write_bytes(b"outside sentinel")
+            original = root / "original-production"
+            unlink = smoke.os.unlink
+
+            def swap_then_unlink(name, *, dir_fd=None):
+                case.rename(original)
+                case.symlink_to(outside, target_is_directory=True)
+                return unlink(name, dir_fd=dir_fd)
+
+            with patch.object(smoke, "ROOT", root), patch("builtins.print"):
+                smoke.start_run(window)
+                with patch.object(smoke.os, "unlink", side_effect=swap_then_unlink):
+                    smoke.finish_run(window, 0)
+            self.assertEqual((outside / "state-00.bin").read_bytes(), b"outside sentinel")
+            self.assertFalse((original / "state-00.bin").exists())
+            self.assertEqual(json.loads((window / smoke.RUN_MARKER).read_text())["status"], "passed")
 
     def test_retention_bounds_and_preserves_unowned_evidence(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "2"}):

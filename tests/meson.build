@@ -544,6 +544,9 @@ foreach mode : ['ordinary', 'optimized']
     test('meson-identity-' + mode, python,
          args: identity_args + [files('test_meson_identity.py')],
          suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+    test('clean-controls-' + mode, python,
+         args: identity_args + [files('test_clean.py')],
+         suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 endforeach
 
 subdir('native')

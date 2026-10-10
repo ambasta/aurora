@@ -331,6 +331,50 @@ class Controls(unittest.TestCase):
             data=str(self.root / "data"),
         )
         firmware = {role: tuple(smoke.identity(getattr(args, role)).values()) for role in ("code", "vars")}
+        esps = self.root / "esps"
+        esps.mkdir()
+        for mode in smoke.MODES:
+            (esps / (mode + ".raw")).write_bytes(b"fake ESP")
+        argv = [
+            "event-smoke",
+            "--build-receipt",
+            str(manifest),
+            "--code",
+            args.code,
+            "--vars",
+            args.vars,
+            "--data",
+            args.data,
+            "--esp-dir",
+            str(esps),
+            "--output-parent",
+            str(self.root),
+            "--normal-qemu",
+            sys.executable,
+            "--normal-firmware",
+            args.code,
+        ]
+
+        def reject(message):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    smoke.runtime_inputs(args)
+                with (
+                    patch.dict(os.environ, {"PATH": os.defpath}, clear=True),
+                    patch.object(sys, "argv", argv),
+                    patch.object(smoke.shutil, "which", return_value=sys.executable),
+                    patch.object(smoke.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")),
+                    patch.object(smoke.shutil, "disk_usage", return_value=SimpleNamespace(free=4 * 1024**3)),
+                    patch.object(smoke.tempfile, "mkdtemp") as allocate,
+                    patch.object(smoke, "window") as window,
+                    patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                ):
+                    self.assertEqual(smoke.cli(), 1, stderr.getvalue())
+                    self.assertIn("FAIL: Event developer smoke: " + message, stderr.getvalue())
+                    self.assertNotIn("BLOCKED:", stderr.getvalue())
+                    allocate.assert_not_called()
+                    window.assert_not_called()
+
         with (
             patch.object(smoke, "MODEL", model),
             patch.object(smoke, "FIRMWARE", firmware),
@@ -341,22 +385,18 @@ class Controls(unittest.TestCase):
             broken = copy.deepcopy(record)
             broken["binary_sha256"] = "0" * 64
             smoke.write_json(manifest, broken)
-            with self.assertRaises(ValueError):
-                smoke.runtime_inputs(args)
+            reject("Custom QEMU binary/build record mismatch")
             smoke.write_json(manifest, record)
             for path in [source / name for name in model] + [config]:
                 original = path.read_bytes()
                 path.write_bytes(b"unsupported source/configuration")
-                with self.assertRaises(ValueError):
-                    smoke.runtime_inputs(args)
+                reject("Custom model device configuration changed" if path == config else "Custom model source changed")
                 path.write_bytes(original)
             library.write_bytes(b"drift")
-            with self.assertRaisesRegex(ValueError, "Dependency bytes changed"):
-                smoke.runtime_inputs(args)
+            reject("Dependency bytes changed")
             library.write_bytes(b"fake library")
             (self.root / "code").write_bytes(b"wrong firmware")
-            with self.assertRaisesRegex(ValueError, "Unsupported default split"):
-                smoke.runtime_inputs(args)
+            reject("Unsupported default split")
             (self.root / "code").write_bytes(b"small owned fixture")
             runtime = smoke.runtime_inputs(args)
             (self.root / "data/new.bin").write_bytes(b"added")
@@ -478,10 +518,14 @@ class Controls(unittest.TestCase):
         self.assertEqual(args.output_parent, str(self.root))
 
     def test_missing_prerequisites_are_blocked_before_build_or_evidence(self):
+        for mode in smoke.MODES:
+            (self.root / (mode + ".raw")).write_bytes(b"fake ESP")
         for arguments, message in (
             ([], "Set EVENT_BUILD_RECEIPT"),
             (["--build-only"], "Install supported GNU mtools"),
             (["--build-only", "--esp-dir", str(self.root / "missing")], "missing"),
+            (["--build-only", "--mtools-dir", str(self.root / "missing-mtools")], "missing-mtools"),
+            (["--build-only", "--esp-dir", str(self.root)], "Missing dependency: g++"),
         ):
             with (
                 self.subTest(arguments=arguments),
@@ -519,7 +563,7 @@ class Controls(unittest.TestCase):
                 self.assertNotIn("FAIL:", result.stderr)
                 self.assertFalse(list(self.root.glob("aurora-event-smoke-*")))
 
-    def test_missing_linker_esp_data_and_malformed_receipts_are_prerequisite_blocks(self):
+    def test_missing_inputs_block_but_malformed_receipts_fail_before_allocation(self):
         from types import SimpleNamespace
 
         esps = self.root / "esps"
@@ -532,8 +576,12 @@ class Controls(unittest.TestCase):
             ("esp", missing.name),
             ("linker", "Missing UEFI PE linker"),
             ("data", "missing-data"),
+            ("normal-firmware", "Supply ordinary OVMF"),
+            ("space", "Event run requires 1 GiB reservation"),
             ("receipt-key", "Invalid custom runtime receipt"),
             ("receipt-type", "Invalid custom runtime receipt"),
+            ("receipt-json", "Expecting property name"),
+            ("receipt-missing", "receipt.json"),
         ):
             with self.subTest(kind=kind):
                 if kind == "esp":
@@ -541,8 +589,12 @@ class Controls(unittest.TestCase):
                 else:
                     missing.write_bytes(b"fake ESP")
                 receipt.write_text("{}" if kind == "receipt-key" else '{"source_path": null}')
+                if kind == "receipt-json":
+                    receipt.write_text("{")
+                if kind == "receipt-missing":
+                    receipt.unlink()
                 args = ["event-smoke", "--esp-dir", str(esps), "--output-parent", str(self.root)]
-                if kind in ("esp", "linker"):
+                if kind in ("esp", "linker", "space"):
                     args += ["--build-only"]
                 else:
                     args += [
@@ -561,6 +613,8 @@ class Controls(unittest.TestCase):
                     ]
                 if kind == "data":
                     args += ["--normal-data", str(self.root / "missing-data")]
+                if kind == "normal-firmware":
+                    args = args[:-2]
                 with (
                     patch.dict(
                         os.environ,
@@ -570,13 +624,19 @@ class Controls(unittest.TestCase):
                         clear=True,
                     ),
                     patch.object(sys, "argv", args),
-                    patch.object(smoke.shutil, "disk_usage", return_value=SimpleNamespace(free=4 * 1024**3)),
+                    patch.object(
+                        smoke.shutil,
+                        "disk_usage",
+                        return_value=SimpleNamespace(free=1 if kind == "space" else 4 * 1024**3),
+                    ),
                     patch.object(smoke.tempfile, "mkdtemp") as allocate,
                     patch.object(smoke, "window") as window,
                     patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
                 ):
-                    self.assertEqual(smoke.cli(), 2, stderr.getvalue())
-                    self.assertIn("BLOCKED: Event developer smoke: ", stderr.getvalue())
+                    malformed = kind in ("receipt-key", "receipt-type", "receipt-json")
+                    self.assertEqual(smoke.cli(), 1 if malformed else 2, stderr.getvalue())
+                    self.assertIn(("FAIL" if malformed else "BLOCKED") + ": Event developer smoke: ", stderr.getvalue())
+                    self.assertNotIn("BLOCKED:" if malformed else "FAIL:", stderr.getvalue())
                     self.assertIn(message, stderr.getvalue())
                     allocate.assert_not_called()
                     window.assert_not_called()

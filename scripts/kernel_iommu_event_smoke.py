@@ -858,31 +858,38 @@ def prerequisites(args):
             ),
             "Unset conflicting control: " + name,
         )
-    need(
-        args.build_only or all((args.build_receipt, args.code, args.vars, args.data)),
-        "Set EVENT_BUILD_RECEIPT, EVENT_CODE, EVENT_VARS and EVENT_DATA for the supported custom QEMU tuple",
-    )
+    if not args.build_only and not all((args.build_receipt, args.code, args.vars, args.data)):
+        raise PrerequisiteBlocked(
+            "Set EVENT_BUILD_RECEIPT, EVENT_CODE, EVENT_VARS and EVENT_DATA for the supported custom QEMU tuple"
+        )
     if not args.esp_dir:
         tool = shutil.which("mformat")
-        need(args.mtools_dir or tool, "Install supported GNU mtools 4.0.48 or supply EVENT_ESP_DIR")
+        if not (args.mtools_dir or tool):
+            raise PrerequisiteBlocked("Install supported GNU mtools 4.0.48 or supply EVENT_ESP_DIR")
         args.mtools_dir = args.mtools_dir or str(Path(tool).parent)
+        Path(args.mtools_dir).resolve(strict=True)
         esp.developer_tool_identity(args.mtools_dir)
     else:
         directory = safe_path(args.esp_dir, directory=True)
         for mode in MODES:
             safe_path(directory / (mode + ".raw"))
     for tool in (os.environ.get("CXX") or "g++", "bash", "make", "as", "ld", "objcopy", "objdump", "nm", "readelf"):
-        need(shutil.which(tool), "Missing dependency: " + tool)
+        if not shutil.which(tool):
+            raise PrerequisiteBlocked("Missing dependency: " + tool)
     linker = subprocess.run(
         ["bash", "-c", 'source "$1"; uefi_linker_select', "event-linker-check", str(ROOT / "scripts/uefi-linker.sh")],
         capture_output=True,
         text=True,
         timeout=10,
     )
-    need(linker.returncode == 0, linker.stderr.strip() or "Missing UEFI PE linker")
+    if linker.returncode == 2:
+        raise PrerequisiteBlocked(linker.stderr.strip() or "Missing UEFI PE linker")
+    need(linker.returncode == 0, linker.stderr.strip() or "UEFI PE linker check failed")
     if not args.build_only:
         qemu = safe_path(Path(shutil.which(args.normal_qemu) or args.normal_qemu).resolve())
         need(os.access(qemu, os.X_OK), "Normal QEMU is not executable")
+        if not args.normal_firmware and not (args.normal_code and args.normal_vars):
+            raise PrerequisiteBlocked("Supply ordinary OVMF or both CODE/VARS paths for normal restoration")
         for value in (args.normal_firmware, args.normal_code, args.normal_vars):
             if value:
                 safe_path(value)
@@ -893,10 +900,8 @@ def prerequisites(args):
             data_files(args.normal_data)
     parent = safe_path(args.output_parent, directory=True)
     need(parent != ROOT and ROOT not in parent.parents, "Event output must be outside the source tree")
-    need(
-        shutil.disk_usage(parent).free >= FREE_FLOOR + EVIDENCE_LIMIT,
-        "Event run requires 1 GiB reservation plus 1 GiB free floor",
-    )
+    if shutil.disk_usage(parent).free < FREE_FLOOR + EVIDENCE_LIMIT:
+        raise PrerequisiteBlocked("Event run requires 1 GiB reservation plus 1 GiB free floor")
     try:
         runtime = None if args.build_only else runtime_inputs(args)
     except (KeyError, TypeError) as error:
@@ -922,7 +927,7 @@ def main():
     args = parser.parse_args()
     try:
         parent, runtime = prerequisites(args)
-    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+    except FileNotFoundError as error:
         raise PrerequisiteBlocked(str(error)) from error
 
     def interrupted(signum, _frame):

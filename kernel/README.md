@@ -88,7 +88,7 @@ GCC's byte `orb` form; stack-pointer writes, frame balance and unknown instructi
 still pass through the same operand/control-flow guards. Shared qword `testq`
 reads preserve register/carrier facts and invalidate tracked flags, with plain
 64-bit registers or base/displacement memory operands; other forms fail closed.
-Register-only qword `bts` invalidates destination/flag facts; memory bit-set forms
+Register-only qword `bts`/`btr` invalidate destination/flag facts; memory bit-update forms
 remain unsupported. This models stack effects, not memory authority or copied-field
 provenance.
 A PE/ELF layout check alone does not establish those stack guarantees.

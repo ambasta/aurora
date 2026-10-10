@@ -2,6 +2,7 @@
   "schema": 2,
   "scope": "Root native Make prerequisite equivalence; native-only, never emulator or physical qualification.",
   "goals": {
+    "test-clean": ["clean-controls-ordinary", "clean-controls-optimized"],
     "test-kernel": ["native-kernel-pages", "native-kernel-protection", "native-kernel-program", "native-kernel-program-layout", "native-kernel-domain", "native-kernel-schedule", "native-kernel-owned-bytes", "native-uefi-framebuffer", "native-uefi-framebuffer-tables", "native-uefi-framebuffer-loader", "native-uefi-framebuffer-pixels", "native-display-session", "kernel_framebuffer_probe_oracle.py", "kernel-framebuffer-admission.py", "test_framebuffer_capture.py", "display-renderer-native", "native-kernel-smoke-controls", "native-kernel-schedule-controls"],
     "test-division": ["native-kernel-program", "native-division-image", "native-division-smoke-controls", "native-division-image-optimized", "native-division-smoke-controls-optimized"],
     "test-unsigned": ["native-kernel-program", "native-unsigned-image", "native-unsigned-smoke-controls", "native-unsigned-image-optimized", "native-unsigned-smoke-controls-optimized", "native-unsigned-source"],
@@ -45,6 +46,8 @@
     "test-graphical-controls": ["graphical-admission-controls", "graphical-admission-controls-optimized", "graphical-smoke-controls", "graphical-smoke-controls-optimized"]
   },
   "registrations": {
+    "clean-controls-ordinary": {"source": "tests/test_clean.py", "optimized": false},
+    "clean-controls-optimized": {"source": "tests/test_clean.py", "optimized": true},
     "iommu-event-oracle-controls": {"source": "tests/kernel-iommu-event-oracle.py", "optimized": false},
     "iommu-event-oracle-controls-optimized": {"source": "tests/kernel-iommu-event-oracle.py", "optimized": true},
     "iommu-event-smoke-controls": {"source": "tests/kernel-iommu-event-smoke.py", "optimized": false},
@@ -211,6 +214,7 @@
     "scripts/kernel-uefi-tables-tests.sh": "7333b3a65606c98b3631843d693e95af2ba1aba3fa6162d670d37c15642a394e"
   },
   "files": {
+    "tests/test_clean.py": {"kind": "direct-registration", "reason": "Compiler-free real Ninja and managed-smoke cleanup on tiny temporary fixtures only.", "tests": ["clean-controls-ordinary", "clean-controls-optimized"]},
     "tests/compiler/hosted_lexer_invalid.cpp": {"kind": "native-fixture", "reason": "Dependency-tracked hosted Aurora lexer C++ fixture; exact registration and target source/output mappings are checked below.", "tests": ["hosted-lexer-invalid"]},
     "tests/compiler/hosted_lexer.cpp": {"kind": "native-fixture", "reason": "Dependency-tracked hosted Aurora lexer C++ fixture; exact registration and target source/output mappings are checked below.", "tests": ["hosted-lexer"]},
     "tests/kernel-iommu-event-oracle.py": {"kind": "direct-registration", "reason": "Compiler-free current Event byte oracles and owned fake-child lifecycle; never guest qualification.", "tests": ["iommu-event-oracle-controls", "iommu-event-oracle-controls-optimized"]},

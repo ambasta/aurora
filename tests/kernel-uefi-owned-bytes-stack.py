@@ -358,6 +358,7 @@ def cpp_frames(directory, linked, objects=None, edges=None):
                 {
                     "object": name + ".o",
                     "callgraph": name + ".ci",
+                    "compiler_symbol": symbol_name,
                     "source": row.source,
                     "source_sha256": hashlib.sha256(contents).hexdigest(),
                     "line": row.line,
@@ -375,8 +376,8 @@ BRANCHES = frozenset("ja jae jb jbe je jne jge jg jl jle jns js jo jno jp jnp jz
 # instruction semantics, implicit stack operations, calls and returns fail shut.
 NEUTRAL = frozenset(
     (
-        "add addl addq and andq bt bts cld cli cmova cmovae cmovbe cmove cmovne cmovns cmp cmpb cmpl cmpq cmpw cpuid "
-        "cs data16 dec div hlt imul in inc invlpg lea mov movabs movb movl movq movslq movzbl movzbq movzwl "
+        "add addl addq and andq bt bts btr cld cli cmova cmovae cmovbe cmove cmovne cmovns cmp cmpb cmpl cmpq cmpw "
+        "cpuid cs data16 dec div hlt imul in inc invlpg lea mov movabs movb movl movq movslq movzbl movzbq movzwl "
         "mul neg nop nopl nopw "
         "not or orb orq out rdmsr rep sbb seta setae setb setbe sete setl setle setne "
         "shl shr sub subq test testq ud2 xchg xor"
@@ -474,16 +475,17 @@ def verify_testq_operands(args):
         require(-(1 << 31) <= int(memory[1] or "0", 0) < (1 << 31), "Unsupported TESTQ displacement")
 
 
-def verify_bts_operands(args):
-    """Register-only qword bit set; no memory-write authority is admitted."""
-    require(len(args) == 2, "Unsupported BTS operand count")
+def verify_bit_update_operands(op, args):
+    """Register-only qword bit set/reset; no memory-write authority is admitted."""
+    name = op.upper()
+    require(len(args) == 2, f"Unsupported {name} operand count")
     source, target = args
-    require(re.fullmatch(QWORD_REGISTER, target), "Unsupported BTS register destination")
+    require(re.fullmatch(QWORD_REGISTER, target), f"Unsupported {name} register destination")
     immediate = re.fullmatch(r"\$(0x[0-9a-f]+|[0-9]+)", source)
     if immediate:
-        require(0 <= int(immediate[1], 0) <= 255, "BTS immediate is not imm8")
+        require(0 <= int(immediate[1], 0) <= 255, f"{name} immediate is not imm8")
     else:
-        require(re.fullmatch(QWORD_REGISTER, source), "Unsupported BTS bit source")
+        require(re.fullmatch(QWORD_REGISTER, source), f"Unsupported {name} bit source")
 
 
 def analyze_function(symbol, instructions, starts, seed=None, fault=False, carrier="%r14", memory_pushes=None):
@@ -553,8 +555,8 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
         op, args = insn.op, arguments(insn.args)
         if op == "testq":
             verify_testq_operands(args)
-        elif op == "bts":
-            verify_bts_operands(args)
+        elif op in ("bts", "btr"):
+            verify_bit_update_operands(op, args)
         for operand in args:
             if "%rsp" in operand and "(" in operand:
                 require(not re.search(r"-[^()]*\(%rsp", operand), "Unproven below-stack access")
@@ -794,8 +796,8 @@ def prove_carrier_preserved(symbol, instructions, starts, carrier, trusted_marke
         op, args = row.op, arguments(row.args)
         if op == "testq":
             verify_testq_operands(args)
-        elif op == "bts":
-            verify_bts_operands(args)
+        elif op in ("bts", "btr"):
+            verify_bit_update_operands(op, args)
         require(row.next <= end, "Verifier preservation instruction crosses extent")
         require(op != "rep", "Unmodeled implicit verifier memory write")
         require(not (op == "cpuid" and carrier == "%rbx"), "Implicit write to recursive level carrier")
@@ -896,7 +898,7 @@ def prove_carrier_preserved(symbol, instructions, starts, carrier, trusted_marke
 
 
 VERIFIER_SOURCE_PINS = {
-    "kernel/uefi/tables.hpp": "eb19107f06a1d09e84f05ac928801011f529a599f7ae130cf6ba629969e41f10",
+    "kernel/uefi/tables.hpp": "244703af5a427c8c7362d3d669e99cda863b77a6a4980100a66334f9267745cf",
     "kernel/uefi/handoff.hpp": "b5a753a311a1408e5b8368acebb8bdd5b55d2681b186b9bffa63a350815e0f33",
 }
 # Full compiler display signatures remain unmodified receipt data. cpp_frames
@@ -2176,69 +2178,70 @@ def self_test():
                 "TESTQ read does not authorize actual carrier/stack/nonlocal writes",
                 lambda changed=changed: prove_carrier_preserved(syms["root"], changed, addrs, "%r14"),
             )
-    # Register BTS writes its destination, conservatively invalidates flags,
-    # and never admits a memory bit-set operation.
-    for operands in ("$0x0,%rax", "$0x3b,%rsi", "$0xff,%r9", "%rcx,%r10"):
-        bit_set, syms, insns, addrs = fixture({"root": [("bts", operands), ("ret", "")]})
-        require(bit_set["root"]["local_peak"] == 8, "Register BTS changed stack depth")
-        prove_carrier_preserved(syms["root"], insns, addrs, "%r14")
+    # Register bit set/reset writes its destination and conservatively invalidates
+    # flags; neither operation admits a memory destination.
+    for op in ("bts", "btr"):
+        for operands in ("$0x0,%rax", "$0x2c,%rdi", "$0x3b,%rsi", "$0xff,%r9", "%rcx,%r10"):
+            updated, syms, insns, addrs = fixture({"root": [(op, operands), ("ret", "")]})
+            require(updated["root"]["local_peak"] == 8, f"Register {op.upper()} changed stack depth")
+            prove_carrier_preserved(syms["root"], insns, addrs, "%r14")
+            positives += 1
+        for target in ("%rcx", "%r14"):
+            rows = [("mov", "$0x2,%ecx"), ("mov", "%ecx,%r14d"), (op, "$0x1," + target)]
+            if target == "%r14":
+                rows.append(("mov", "%r14d,%ecx"))
+            rows += [("call", "@leaf"), ("ret", "")]
+            changed, *_ = fixture({"root": rows, "leaf": leaf})
+            require(changed["root"]["calls"][0]["level"] is None, f"{op.upper()} retained a destination level fact")
+            positives += 1
+        flags, *_ = fixture(
+            {
+                "root": [
+                    ("mov", "$0x0,%ecx"),
+                    ("test", "%ecx,%ecx"),
+                    (op, "$0x1,%rsi"),
+                    ("je", "@root+5"),
+                    ("call", "@leaf"),
+                    ("ret", ""),
+                ],
+                "leaf": leaf,
+            }
+        )
+        require(len(flags["root"]["calls"]) == 1, f"{op.upper()} retained stale zero-flag proof")
         positives += 1
-    for target in ("%rcx", "%r14"):
-        rows = [("mov", "$0x2,%ecx"), ("mov", "%ecx,%r14d"), ("bts", "$0x1," + target)]
-        if target == "%r14":
-            rows.append(("mov", "%r14d,%ecx"))
-        rows += [("call", "@leaf"), ("ret", "")]
-        changed, *_ = fixture({"root": rows, "leaf": leaf})
-        require(changed["root"]["calls"][0]["level"] is None, "BTS retained a destination level fact")
-        positives += 1
-    flags, *_ = fixture(
-        {
-            "root": [
-                ("mov", "$0x0,%ecx"),
-                ("test", "%ecx,%ecx"),
-                ("bts", "$0x1,%rsi"),
-                ("je", "@root+5"),
-                ("call", "@leaf"),
-                ("ret", ""),
-            ],
-            "leaf": leaf,
-        }
-    )
-    require(len(flags["root"]["calls"]) == 1, "BTS retained stale zero-flag proof")
-    positives += 1
-    for target in ("%rsp", "%esp", "%sp", "%spl", "(%rsp)", "0x18(%rdi)"):
+        for target in ("%rsp", "%esp", "%sp", "%spl", "(%rsp)", "0x18(%rdi)"):
+            rejects(
+                f"{op.upper()} stack-pointer or memory destination",
+                lambda target=target: fixture({"root": [(op, "$0x1," + target), ("ret", "")]}),
+            )
+        for operands in (
+            "",
+            "$0x1",
+            "$0x1,%rax,%rbx",
+            "$0x100,%rax",
+            "$-0x1,%rax",
+            "%eax,%rax",
+            "$0x1,%eax",
+            "(%rax),%rbx",
+            "%fs:(%rax),%rbx",
+        ):
+            rejects(
+                f"unsupported {op.upper()} operands",
+                lambda operands=operands: fixture({"root": [(op, operands), ("ret", "")]}),
+            )
         rejects(
-            "BTS stack-pointer or memory destination",
-            lambda target=target: fixture({"root": [("bts", "$0x1," + target), ("ret", "")]}),
+            f"{op.upper()} invalidates frame pointer",
+            lambda: fixture(
+                {"root": [("push", "%rbp"), ("mov", "%rsp,%rbp"), (op, "$0x1,%rbp"), ("leave", ""), ("ret", "")]}
+            ),
         )
-    for operands in (
-        "",
-        "$0x1",
-        "$0x1,%rax,%rbx",
-        "$0x100,%rax",
-        "$-0x1,%rax",
-        "%eax,%rax",
-        "$0x1,%eax",
-        "(%rax),%rbx",
-        "%fs:(%rax),%rbx",
-    ):
-        rejects(
-            "unsupported BTS operands",
-            lambda operands=operands: fixture({"root": [("bts", operands), ("ret", "")]}),
-        )
-    rejects(
-        "BTS invalidates frame pointer",
-        lambda: fixture(
-            {"root": [("push", "%rbp"), ("mov", "%rsp,%rbp"), ("bts", "$0x1,%rbp"), ("leave", ""), ("ret", "")]}
-        ),
-    )
-    for target in ("%r14", "(%rsp)", "0x18(%rdi)"):
-        _, syms, insns, addrs = fixture({"root": [("push", "%r14"), ("nop", ""), ("pop", "%r14"), ("ret", "")]})
-        insns[1] = Instruction(1, 1, "bts", "$0x1," + target)
-        rejects(
-            "BTS carrier clobber or memory write",
-            lambda: prove_carrier_preserved(syms["root"], insns, addrs, "%r14"),
-        )
+        for target in ("%r14", "(%rsp)", "0x18(%rdi)"):
+            _, syms, insns, addrs = fixture({"root": [("push", "%r14"), ("nop", ""), ("pop", "%r14"), ("ret", "")]})
+            insns[1] = Instruction(1, 1, op, "$0x1," + target)
+            rejects(
+                f"{op.upper()} carrier clobber or memory write",
+                lambda: prove_carrier_preserved(syms["root"], insns, addrs, "%r14"),
+            )
     # GCC16 emits a byte OR into the PCI discovery result. It changes flags and
     # memory, but not the stack depth. Its register form must invalidate facts.
     byte_or, *_ = fixture({"root": [("orb", "$0x1,(%rax)"), ("ret", "")]})

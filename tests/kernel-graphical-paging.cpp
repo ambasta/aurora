@@ -192,6 +192,33 @@ int main() {
         need(!valid(), "header authority binding mutation");
         put(h, offset, saved, offset == 12 || offset == 48 ? 4 : 8);
     }
+    const std::vector<std::array<U64, 2>> invalid_header{
+        {32, 0},
+        {32, MemoryMap::max_bytes + 1},
+        {40, 39},
+        {40, 257},
+        {52, 0},
+        {52, 4},
+        {56, 0},
+        {56, Handoff::payload_limit + 1},
+        {56, 12289},
+        {64, 0},
+        {64, 4097},
+        {64, 12288},
+        {72, 8193},
+        {72, 0},
+        {80, 12289},
+        {80, 4096},
+        {80, Handoff::payload_limit + 4096},
+    };
+    for (const auto &bad : invalid_header) {
+        const unsigned width = bad[0] == 52 ? 4 : 8;
+        const auto saved = Bytes{h}.get(bad[0], width);
+        put(h, bad[0], bad[1], width);
+        need(!valid(), "header range, extent, alignment or order rejected");
+        put(h, bad[0], saved, width);
+        need(valid(), "header mutation restores exact valid model");
+    }
     need(!PageTables{root, 0}.verify_graphical(arena, Bytes{h}, &*apic, &*graphics), "zero table inventory");
     need(!PageTables{root, 17}.verify_graphical(arena, Bytes{h}, &*apic, &*graphics), "excess table inventory");
     for (U64 bad_root : {U64{0}, root - 1, root + 4096, ~U64{0}})
@@ -199,7 +226,8 @@ int main() {
              "captured base must match the bounded owned table arena before dereference");
     need(!tables.verify_graphical(arena + 4096, Bytes{h}, &*apic, &*graphics), "wrong caller arena");
     constexpr U64 first = 0xffffa00000001000ULL, end = first + 0x300000;
-    for (U64 address : {U64{0xffff900000000000ULL}, first, first + 511 * 4096, end - 4096, arena + 0x22000}) {
+    for (U64 address :
+         {U64{0xffff900000000000ULL}, first, first + 510 * 4096, first + 511 * 4096, end - 4096, arena + 0x22000}) {
         auto &entry = slot(root, address);
         const auto saved = entry;
         for (unsigned bit = 0; bit < 64; ++bit) {
@@ -225,13 +253,44 @@ int main() {
     for (unsigned level : {1U, 2U, 3U}) {
         auto &entry = slot(root, first, level);
         const auto saved = entry;
-        for (U64 bad : {root | 3, (root + tables.used() * 4096) | 3, saved | 4, saved | 0x80, saved | (U64{1} << 63)}) {
+        entry = saved | 0x60;
+        need(valid(), "present intermediate hardware A/D bits are ignored");
+        for (U64 bad : {root | 3,
+                        (root - 4096) | 3,
+                        (root + tables.used() * 4096) | 3,
+                        saved | 4,
+                        saved | 0x80,
+                        saved | (U64{1} << 63),
+                        U64{0x20},
+                        U64{0x40}}) {
             entry = bad;
             need(!valid(), "cycle, out-of-pool, user, huge or NX intermediate");
         }
         entry = saved;
     }
+    // Both PT paths are required: rejection must reach visited-table detection,
+    // rather than reject an unrelated virtual aperture before following the link.
+    auto &second_pt = slot(root, first + 511 * 4096, 1);
+    const auto second_saved = second_pt;
+    second_pt = slot(root, first, 1);
+    need(!valid(), "duplicate table on two required framebuffer paths");
+    second_pt = second_saved;
+    auto &window_path = slot(root, PageTables::window_address, 3);
+    const auto window_saved = window_path;
+    window_path = 0;
+    need(!valid(), "missing required ACPI window path");
+    window_path = window_saved;
+    need(tables.used() < Handoff::table_pages, "one spare model table for inventory controls");
+    const auto spare = root + tables.used() * 4096;
+    PageTables counted{root, tables.used() + 1};
+    put(h, 96, counted.used());
+    need(!counted.verify_graphical(arena, Bytes{h}, &*apic, &*graphics), "disconnected counted table");
     auto &extra = slot(root, 0xffffb00000000000ULL, 3);
+    need(extra == 0, "unrequired root aperture starts empty");
+    extra = spare | 3;
+    need(!counted.verify_graphical(arena, Bytes{h}, &*apic, &*graphics), "counted empty unrequired subtree");
+    extra = 0;
+    put(h, 96, tables.used());
     need(extra == 0, "unused high root slot");
     extra = slot(root, first, 3);
     need(!valid(), "shared subtree alias");
