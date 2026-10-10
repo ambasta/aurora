@@ -16,12 +16,12 @@ syscall ABI, filesystem, terminal emulator, or hardware qualification.
 
 ## Session-local protected note
 
-The current source also accepts `write note <text>` and `cat note`. One RAM-only
+The current source also accepts `write note <text>`, `cat note` and `upper note`. One RAM-only
 note holds at most 53 printable ASCII bytes and is cleared on exit. It is a
-copied value, not a RamSectorDevice, filesystem, persistent file or protected
-writer. The existing `console::SessionNote` Aurora library owns exact command
+copied value, not a RamSectorDevice, filesystem or persistent file. The existing `console::SessionNote` Aurora library owns exact command
 matching, validation before replacement, missing/empty semantics and suffix
-clearing. The native adapter never parses those commands or computes note bytes.
+clearing. The supervisor-level Aurora wrapper classifies `upper note`; the native
+adapter never computes the uppercase transformation.
 
 An ordinary `update_note(SessionNote, BinaryBuffer64, i64) -> NoteUpdate` returns
 a closed 72-byte note plus an explicitly mapped 8-byte event. The native bridge
@@ -51,13 +51,33 @@ used. Native output staging validates order, closed encoding and exact client
 acknowledgment, then releases output only after Mailbox revocation and both domain
 retirements. Missing is reported after the same authenticated retirement boundary.
 
+`write note Hello, Aurora`, `upper note`, `cat note` produces `HELLO, AURORA`.
+For an existing note, Aurora selects a non-mutating upper action. Its copied
+projection becomes the existing uppercase stream's input before domains are
+created; no new program, mailbox phase or capability is introduced. A missing
+note uses the authenticated missing-read path and remains missing. An empty
+note completes the existing zero-byte stream lifecycle and remains valid empty.
+
+Only a completely acknowledged stream, successful quiescent retirement of both
+domains and successful whole-output extraction may reach replacement. Native
+preparation bounds the completed output to 53 bytes and forms a `write note `
+command for the same Aurora update bridge and `SessionNote.submit` policy. The
+commit boundary rechecks no command owner, Mailbox, frames, bound projection or
+active runtime. Partial faults, budgets, bad output and cleanup failures cannot
+replace the original note. The completed output is acknowledged with `Note saved.`;
+`cat note` performs the separate protected readback. There is no general protected
+file-write API. Scratch records have separate lifetimes outside domain creation
+and retirement; stack/image limits are unchanged.
+
 Recoverable request/service/completion faults or budgets discard partial output,
 release the frozen projection and return to the prompt. The saved note survives,
-and another read uses fresh domains and grants. Invalid authority still fails
-stop. Normal PTY coverage checks missing, repeated reads, short/empty replacement,
-53-byte limits and damaged replacement preservation; each existing recovery
-profile exercises a failed note read followed by a fresh successful read and the
-retained upper cases. This avoids repeating every note boundary under every fault.
+and a healthy retry uses fresh domains and grants. Invalid authority still fails
+stop. Current PTY coverage adds missing, repeated, empty and 53-byte uppercase
+saves/readbacks. Each recovery profile first interrupts `upper note` after partial
+progress, verifies the original via `cat note`, then saves and reads the successful
+retry before the retained upper cases. Hosted cancellation controls retain the
+read-recovery cases. These additions require final-source linked/image, actual
+guest and full qualification; the historical results below do not cover them.
 
 The preguest gates add exact aggregate/bridge/inventory checks and source-native
 Mailbox lifecycle tests to the existing admission and transcript controls. The

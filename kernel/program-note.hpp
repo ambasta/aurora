@@ -1,5 +1,6 @@
 #pragma once
 #include "ipc-policy.hpp"
+#include "program-stream.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -50,7 +51,7 @@ public:
     }
     [[nodiscard]] auto commit(const Update &update) -> std::optional<std::uint64_t> {
         const auto event = word(update, 72);
-        if (bound() || event > 3 || !closed(update))
+        if (bound() || event > 4 || !closed(update))
             return std::nullopt;
         if (event != 1) {
             for (std::size_t i = 0; i < saved_.size(); ++i)
@@ -60,6 +61,36 @@ public:
         for (std::size_t i = 0; i < saved_.size(); ++i)
             saved_[i] = update[i];
         return event;
+    }
+    // Only copied data preparation. The supervisor separately requires a fully
+    // retired command before calling Aurora and committing a replacement.
+    [[nodiscard]] auto begin_upper(const Value &projection, Stream &stream) const -> bool {
+        const auto length = word(projection, 64);
+        if (bound() || length > 53)
+            return false;
+        StreamBytes input{};
+        for (std::size_t i = 0; i < length; ++i)
+            input[i] = std::to_integer<std::uint8_t>(projection[i]);
+        return stream.begin(input, length);
+    }
+    [[nodiscard]] auto replacement(const Output &output, UpdateInput &input) const -> bool {
+        if (bound() || output.missing() || output.length() > 53)
+            return false;
+        input = {};
+        for (std::size_t i = 0; i < saved_.size(); ++i)
+            input[i] = saved_[i];
+        constexpr char prefix[] = "write note ";
+        for (std::size_t i = 0; i < sizeof(prefix) - 1; ++i)
+            input[72 + i] = std::byte(prefix[i]);
+        for (std::size_t i = 0; i < output.length(); ++i) {
+            const auto byte = output.byte(i);
+            if (!byte)
+                return false;
+            input[83 + i] = std::byte(*byte);
+        }
+        for (unsigned i = 0; i < 8; ++i)
+            input[136 + i] = std::byte((output.length() + 11) >> (8 * i));
+        return true;
     }
     [[nodiscard]] auto bind(const Value &projection, ipc::Endpoint service) -> bool {
         if (bound() || !closed(projection) || service.slot() != 1 || service.generation() == 0)
