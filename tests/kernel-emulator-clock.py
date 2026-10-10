@@ -429,10 +429,35 @@ class ClockContractTests(unittest.TestCase):
             result = shell_plan("budget", root=root, extra_env=split)
             self.assertEqual(result.returncode, 0, result.stderr)
             for plan in (False, True):
-                for modes in (("",), ("future",), ("normal", "extra")):
+                for modes in (("",), ("future",), ("iommu-event-future",), ("normal", "extra")):
                     result = shell_plan(*modes, root=root, extra_env=env, plan=plan)
                     self.assertEqual(result.returncode, 2, result.stderr)
                     self.assertEqual(result.stdout, "")
+                    self.assertNotIn("is build-only", result.stderr)
+                for mode in (
+                    "iommu-event-denial",
+                    "iommu-event-success",
+                    "iommu-event-overflow",
+                    "iommu-event-command-error",
+                    "iommu-event-observe",
+                ):
+                    result = shell_plan(mode, root=root, extra_env=env, plan=plan)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn(f"UEFI mode '{mode}' is build-only", result.stderr)
+                    self.assertIn("generic smoke launcher cannot run Event profiles", result.stderr)
+                    self.assertIn(f"UEFI_MODE={mode} ./scripts/kernel-uefi-build.sh", result.stderr)
+                    self.assertIn("hosted Event behavior (synthetic transport, no guest DMA)", result.stderr)
+                    self.assertIn(
+                        "meson test -C <configured-build> iommu-event-source-native --print-errorlogs", result.stderr
+                    )
+                    self.assertIn("reviewed model/firmware, admitted raw ESP and supervised plan", result.stderr)
+                    self.assertIn("docs/iommu-dma-conformance.md", result.stderr)
+                    self.assertNotIn("Unknown or ambiguous", result.stderr)
+                    # Better guidance must not admit an Event clock or emit a
+                    # successful command receipt for this unsupported route.
+                    with self.assertRaises(ValueError):
+                        CLOCK.uefi_family(mode)
             self.assertEqual(snapshot(), before)
 
     def test_snapshot_launcher_restores_normal_after_success_and_failure(self):

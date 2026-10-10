@@ -91,6 +91,8 @@ their existing rules. A string spelling cannot itself be borrowed, returned,
 passed as a value, assigned to an existing array or used to initialize a scalar,
 non-`u8` array, class field or span. It creates no temporary backing object,
 heap string type, pointer conversion or new lifetime rule.
+Length mismatches report both the expected capacity and actual decoded byte
+count, including UTF-8 bytes and decoded escapes, at the literal's source span.
 
 Raw printable ASCII is copied exactly, except that double quote and backslash
 need escapes. Raw non-ASCII text must be valid UTF-8 and contributes its original

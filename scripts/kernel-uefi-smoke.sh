@@ -5,6 +5,14 @@ clock_plan=false
 if [[ "${1-}" == --clock-plan ]]; then clock_plan=true; shift; fi
 if (( $# > 1 )); then echo 'Expected one exact UEFI mode' >&2; exit 2; fi
 mode="${1-normal}"
+case "$mode" in
+ iommu-event-denial|iommu-event-success|iommu-event-overflow|iommu-event-command-error|iommu-event-observe)
+    echo "UEFI mode '$mode' is build-only; the generic smoke launcher cannot run Event profiles." >&2
+    echo "Build with: UEFI_MODE=$mode ./scripts/kernel-uefi-build.sh" >&2
+    echo 'Run hosted Event behavior (synthetic transport, no guest DMA): meson test -C <configured-build> iommu-event-source-native --print-errorlogs' >&2
+    echo 'Event guest execution requires the reviewed model/firmware, admitted raw ESP and supervised plan described in docs/iommu-dma-conformance.md.' >&2
+    exit 2 ;;
+esac
 clock_profile="$(python3 scripts/kernel_emulator_clock.py profile "$mode")"
 source ./scripts/uefi-firmware.sh
 if [[ "$clock_plan" == true ]]; then

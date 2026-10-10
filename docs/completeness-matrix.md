@@ -62,6 +62,8 @@ The implementation passed GCC 16 full tests and independent image/guest review
 for all four active emulator profiles; the [contract](iommu-dma-conformance.md)
 records source, toolchain and runtime scope. Read-only observation cannot grant
 admission; physical isolation, drain and reclamation remain unqualified.
+The generic UEFI smoke launcher points Event profiles to build-only and hosted
+test routes; it does not admit an Event guest clock or bypass supervised execution.
 
 The current-source `make smoke-graphical-console` runner now retains fresh
 production/capture pixel evidence and an actual final normal restoration. The
@@ -115,6 +117,7 @@ now fill named fixed `u8` arrays at their exact decoded byte length, with UTF-8
 source text and explicit byte escapes. Event/native serial-console messages use
 them; existing storage, borrows, IR and authority remain unchanged. Final-source
 qualification is separate from the predecessor's recorded results.
+Length mismatch diagnostics include both expected capacity and decoded byte count.
 
 Binary integer expression literals now have `0b`/`0B` prefixes and C++ apostrophe
 separators between digits, retaining exact i64/u64/u8 types and checked ranges.
