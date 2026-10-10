@@ -443,6 +443,7 @@ foreach fixture : [
 ]
     compiler_fixtures += {fixture: executable(
         fixture.replace('_', '-') + '-fixture', 'compiler/' + fixture + '.cpp',
+        dependencies: hosted_lexer,
         include_directories: include_directories('../compiler'), native: true, install: false,
     )}
 endforeach
@@ -561,3 +562,38 @@ foreach mode : ['', '-O']
          suite: ['full', 'dev'], timeout: 120)
   endforeach
 endforeach
+
+# This fixture always links the Aurora phase; the C++ scanner is only its oracle.
+hosted_lexer_abi = custom_target(
+    'hosted-lexer-abi-object', input: 'compiler/hosted_lexer_abi.S', output: 'hosted-lexer-abi.o',
+    command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
+)
+hosted_lexer_test = executable(
+    'hosted-lexer-test', ['compiler/hosted_lexer.cpp', hosted_lexer_abi],
+    dependencies: hosted_lexer, include_directories: include_directories('../compiler'),
+    native: true, install: false,
+)
+test('hosted-lexer', python,
+     args: ['-B', files('meson_lexer_inputs.py'), hosted_lexer_test, meson.project_source_root(), '--all'],
+     depends: hosted_lexer_test, suite: ['full', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 180)
+test('hosted-lexer-bootstrap', python,
+     args: ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), aurorac_stage0, aurorac,
+            meson.project_source_root()],
+     depends: [aurorac_stage0, aurorac], suite: ['full', 'dev', 'core', 'compiler'],
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
+
+format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_lexer,
+                            include_directories: include_directories('../compiler'), native: true, install: false)
+test('hosted-lexer-format', python,
+     args: ['-B', files('meson_lexer_inputs.py'), format_fixture, meson.project_source_root(), '--all'],
+     depends: format_fixture, suite: ['full', 'dev', 'compiler'], env: oracle_env, timeout: 180)
+test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/format.py'), aurora_fmt],
+     depends: aurora_fmt, suite: ['full', 'dev', 'compiler'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 180)
+
+hosted_lexer_invalid = executable(
+    'hosted-lexer-invalid', ['compiler/hosted_lexer_invalid.cpp', '../compiler/hosted_lexer.cpp'],
+    cpp_args: ['-DAURORA_HOSTED_LEXER'], include_directories: include_directories('../compiler'),
+    native: true, install: false,
+)
+test('hosted-lexer-invalid', hosted_lexer_invalid, suite: ['full', 'dev', 'core', 'compiler'], timeout: 30)

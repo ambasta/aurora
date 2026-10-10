@@ -571,8 +571,7 @@ namespace std {
         i64 index = start + 1;
         while (index < end) {
             if (bytes.at(index) == 34u8) {
-                return json_success(JsonTokenKind::string, start, index - start + 1, index
-                    - request + 1);
+                return json_success(JsonTokenKind::string, start, index - start + 1, index - request + 1);
             }
             const JsonScalarResult decoded = json_scalar(bytes, index, end);
             if (decoded.status() != JsonStatus::success) {
@@ -1181,8 +1180,7 @@ namespace std {
                 return json_walk_failure(token.status(), token.error_offset(), tokens, peak);
             }
             if (tokens == 1024) {
-                return json_walk_failure(JsonStatus::token_limit, token.byte_offset(), tokens,
-                    peak);
+                return json_walk_failure(JsonStatus::token_limit, token.byte_offset(), tokens, peak);
             }
             tokens = tokens + 1;
             index = index + token.consumed_bytes();
@@ -1277,8 +1275,7 @@ namespace std {
             if (value) {
                 if (kind == JsonTokenKind::left_brace || kind == JsonTokenKind::left_bracket) {
                     if (depth == 32) {
-                        return json_walk_failure(JsonStatus::depth_limit, token.byte_offset(),
-                            tokens, peak);
+                        return json_walk_failure(JsonStatus::depth_limit, token.byte_offset(), tokens, peak);
                     }
                     u8 state = 1u8;
                     if (kind == JsonTokenKind::left_brace) {
@@ -1298,8 +1295,7 @@ namespace std {
                 }
             }
             if (!valid) {
-                return json_walk_failure(JsonStatus::invalid_structure, token.byte_offset(),
-                    tokens, peak);
+                return json_walk_failure(JsonStatus::invalid_structure, token.byte_offset(), tokens, peak);
             }
             if (selected_open && before_depth == 2 && depth == 1) {
                 selected_count = index - selected_start;

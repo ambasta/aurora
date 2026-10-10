@@ -1,6 +1,11 @@
 # Aurora safe C++ dialect bootstrap
 
-Aurora is a deliberately incompatible, safe-by-default C++ dialect under development. This is a small executable subset, not a complete C++ implementation or a production safety guarantee. The C++23 bootstrap compiler has its own lexer, AST, type/lifetime checks and x86-64 assembly emitter. It does not translate Aurora into C. Host standard-library headers and the isolated Linux descriptor-I/O adapter are temporary implementation machinery; the language has no C header, macro, raw-pointer, unsafe-block or foreign-C-ABI feature.
+The hosted compiler now stages an Aurora-written [lexical phase](LEXER.md#hosted-aurora-lexer-checkpoint)
+from a C++ seed. `make` and Meson build the seed, compile `lexer.au`, and link
+hosted stage 1. The remaining frontend/backend stays C++; direct compilation of
+`main.cpp` without the hosted dependency is the seed/reference route.
+
+Aurora is a deliberately incompatible, safe-by-default C++ dialect under development. This is a small executable subset, not a complete C++ implementation or a production safety guarantee. The hosted bootstrap combines an Aurora lexer with a C++23 AST, type/lifetime checks and x86-64 assembly emitter; the C++ lexer remains its seed/reference. It does not translate Aurora into C. Host standard-library headers and the isolated Linux descriptor-I/O adapter are temporary implementation machinery; the language has no C header, macro, raw-pointer, unsafe-block or foreign-C-ABI feature.
 
 ```sh
 make -C compiler

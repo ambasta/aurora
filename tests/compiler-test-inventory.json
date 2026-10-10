@@ -418,9 +418,23 @@
   "format.py": {
     "kind": "runner",
     "make": true,
-    "meson": false,
-    "meson_commands": {},
-    "reason": "Focused Make formatter/linter gate, outside the root native aggregate; separate tools required.",
+    "meson": true,
+    "meson_commands": {
+      "hosted-lexer-format-cli": {
+        "arguments": [
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/format.py",
+          "@BUILD@/aurora-fmt"
+        ],
+        "suites": [
+          "compiler",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Complete formatter CLI runner; canonical Meson coverage uses the hosted Aurora lexer.",
     "root_make": false
   },
   "function_overloads.py": {
@@ -474,6 +488,31 @@
     },
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
+  },
+  "hosted_lexer_bootstrap.py": {
+    "kind": "runner",
+    "make": false,
+    "meson": true,
+    "meson_commands": {
+      "hosted-lexer-bootstrap": {
+        "arguments": [
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/hosted_lexer_bootstrap.py",
+          "@BUILD@/aurorac-stage0",
+          "@BUILD@/aurorac",
+          "@SOURCE@"
+        ],
+        "suites": [
+          "compiler",
+          "core",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Canonical hosted bootstrap runner compares stage 0 and stage 1 diagnostics, assembly and output preservation.",
+    "root_make": false
   },
   "integer_oracle.py": {
     "kind": "runner",
