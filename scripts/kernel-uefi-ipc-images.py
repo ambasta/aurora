@@ -97,12 +97,13 @@ def build(
     )
     need(not user_budget or dispatcher or program_console, "User budgets require dispatcher profile")
     need(not dispatcher or service_budget, "Dispatcher requires service timer profile")
-    out.mkdir(parents=True, exist_ok=True)
+    (out / "objects").mkdir(parents=True, exist_ok=True)
     run = lambda args: subprocess.run([str(x) for x in args], cwd=ROOT, check=True)
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
     for index, name in enumerate(("clean", "bounds", "peer") if dispatcher else ("clean", "bounds")):
         prefix = out / f"user-{name}"
+        obj = out / "objects" / f"user-{name}.o"
         fixture = "budget-service" if service_budget and index == 1 else "ipc-client" if index == 0 else "ipc-service"
         if program_console:
             fixture = "program-upper-client" if index == 0 else "program-stream-service"
@@ -123,7 +124,7 @@ def build(
                 prefix.with_suffix(".s"),
             ]
         )
-        adapter = out / f"user-{name}-entry.o"
+        adapter = out / "objects" / f"user-{name}-entry.o"
         hostile = (index == 0 and mode in ("owner", "stale", "version", "phase", "site", "unknown", "ordinal")) or (
             index == 1 and mode in ("transaction", "mmio", "softint", "fpu", "context")
         )
@@ -147,14 +148,14 @@ def build(
                     prefix.with_suffix(".s"),
                     ROOT / "kernel/uefi/ipc-user-entry.S",
                     "-o",
-                    prefix.with_suffix(".o"),
+                    obj,
                 ]
             )
-            inputs = [prefix.with_suffix(".o")]
+            inputs = [obj]
         else:
-            run(["as", "--64", "-L", prefix.with_suffix(".s"), "-o", prefix.with_suffix(".o")])
+            run(["as", "--64", "-L", prefix.with_suffix(".s"), "-o", obj])
             run(["as", "--64", *flags, ROOT / "kernel/uefi/ipc-user-entry.S", "-o", adapter])
-            inputs = [adapter, prefix.with_suffix(".o")]
+            inputs = [adapter, obj]
         elf = prefix.with_suffix(".elf")
         binary = prefix.with_suffix(".bin")
         base = BASE + index * 4096

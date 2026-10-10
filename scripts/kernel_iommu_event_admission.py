@@ -143,7 +143,7 @@ def build_files(mode):
     names = ["payload.ld", "payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "uefi-payload.hpp", "language.s"]
     names += [name + ".o" for name in sorted(image.event_objects(mode))]
     names += [name + suffix for name in cpp_objects(mode) + ("loader",) for suffix in (".su", ".ci")]
-    return [BUILD / name for name in names]
+    return [BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci")) else name) for name in names]
 
 
 def verify_flags(mode, flags):
@@ -197,7 +197,7 @@ def end_build(mode):
     manifest = read_json(BUILD / "iommu-event-build-start.json")
     verify_inputs(manifest, mode)
     need(
-        {path.stem for path in BUILD.glob("*.o")} == image.event_objects(mode), "Foreign or missing Event build object"
+        {path.stem for path in (BUILD / "objects").glob("*.o")} == image.event_objects(mode), "Foreign or missing Event build object"
     )
     manifest["output_sha256"] = common.hashes(build_files(mode))
     (BUILD / "iommu-event-build.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -208,7 +208,7 @@ def provenance(mode):
     verify_inputs(manifest, mode)
     need(manifest["output_sha256"] == common.hashes(build_files(mode)), "Event build output changed")
     need(
-        {path.stem for path in BUILD.glob("*.o")} == image.event_objects(mode), "Foreign or missing Event build object"
+        {path.stem for path in (BUILD / "objects").glob("*.o")} == image.event_objects(mode), "Foreign or missing Event build object"
     )
     return manifest
 
@@ -256,7 +256,7 @@ def backing_evidence(linked, directory):
     begin, end = symbols["__payload_read_end"].address, symbols["__payload_memory_end"].address
     need(0 < begin < end <= 0x20000 and begin % 4096 == end % 4096 == 0, "Invalid retained payload RW bound")
     owner = load("iommu_event_backing_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py").Elf(
-        directory / "event-intake.o"
+        directory / "objects" / "event-intake.o"
     )
     result = {}
     for role, (name, size, alignment) in RETAINED.items():
@@ -332,7 +332,7 @@ def stack_evidence(directory, mode):
         )
         verify_scalar_instruction(row)
     frames, associations = decoder.cpp_frames(directory, linked)
-    language, memory = (decoder.Elf(directory / (name + ".o")) for name in ("language", "memory"))
+    language, memory = (decoder.Elf(directory / "objects" / (name + ".o")) for name in ("language", "memory"))
     for obj in (language, memory):
         for symbol in obj.functions.values():
             decoder.associate_object(linked, obj, symbol)
@@ -423,7 +423,7 @@ def image_evidence(directory, mode):
     image.elf_validate(elf, binary)
     result = image.event_image_policy(directory, mode=mode)
     for name in cpp_objects(mode) + ASSEMBLY_OBJECTS:
-        relocations = subprocess.check_output(["readelf", "-rW", directory / (name + ".o")], text=True)
+        relocations = subprocess.check_output(["readelf", "-rW", directory / "objects" / (name + ".o")], text=True)
         kinds = set(re.findall(r"R_X86_64_\w+", relocations))
         need(kinds <= {"R_X86_64_PC32", "R_X86_64_PLT32"}, "Non-PIC Event object: " + name)
         need(name != "memory" or not kinds, "Memory primitives acquired a helper/relocation")

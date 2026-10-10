@@ -92,9 +92,9 @@ class Controls(unittest.TestCase):
         builder = """#!/usr/bin/env bash
 set -eu
 echo "build:$UEFI_MODE" >> events
-mkdir -p build/uefi/esp/EFI/BOOT
-[[ $UEFI_MODE != normal || ! -f build/uefi/graphical-console.o ]] || exit 19
-[[ $UEFI_MODE == normal ]] || touch build/uefi/graphical-console.o
+mkdir -p build/uefi/esp/EFI/BOOT build/uefi/objects
+rm -f build/uefi/objects/*.{o,su,ci}
+[[ $UEFI_MODE == normal ]] || touch build/uefi/objects/graphical-console.o
 restoring=0
 if [[ $UEFI_MODE == normal && -f first-normal ]]; then
     restoring=1
@@ -113,6 +113,19 @@ fi
         runner = """import os, pathlib, signal, sys, time
 p = pathlib.Path
 args = sys.argv
+if any(flag in args for flag in ('--start-run', '--save-failure', '--finish-run')):
+    sys.path.insert(0, REAL_SCRIPTS)
+    import kernel_graphical_smoke as real
+    real.ROOT = p.cwd()
+    from unittest.mock import patch
+    if '--save-failure' in args and os.environ.get('FAIL_CAPTURE'):
+        if os.environ['FAIL_CAPTURE'] == 'rename':
+            with patch.object(p, 'rename', side_effect=OSError('cross-device rename')): real.main()
+        else:
+            with patch.object(real.shutil, 'copy2', side_effect=OSError('no space left')): real.main()
+    else:
+        real.main()
+    sys.exit()
 if '--stage' in args:
     mode = args[args.index('--stage') + 1]
     out = p(args[args.index('--images') + 1]) / mode
@@ -133,6 +146,7 @@ if action == 'guest':
     with open('events', 'a') as f: f.write('staged-normal-boot\\n')
     sys.exit(int(os.environ.get('GUEST_STATUS', '0')))
 """
+        runner = runner.replace("REAL_SCRIPTS", repr(str(ROOT / "scripts")))
         cases = [
             ([], {}, 0),
             (["--build-only"], {}, 0),
@@ -140,11 +154,11 @@ if action == 'guest':
             ([], {"FAIL_BUILD": "graphical-console-capture"}, 17),
             ([], {"FAIL_STAGE": "stage:graphical-console"}, 23),
             ([], {"GUEST_STATUS": "31"}, 31),
+            ([], {"GUEST_STATUS": "31", "FAIL_CAPTURE": "rename"}, 31),
+            ([], {"GUEST_STATUS": "31", "FAIL_CAPTURE": "copy"}, 31),
             ([], {"FAIL_RESTORE": "1"}, 29),
             ([], {"GUEST_STATUS": "31", "FAIL_RESTORE": "1"}, 31),
             (["--build-only"], {"FAIL_RESTORE": "1"}, 29),
-            ([], {"FAIL_MOVE": "1"}, 37),
-            ([], {"GUEST_STATUS": "31", "FAIL_MOVE": "1"}, 31),
             (["--invalid"], {}, 2),
         ]
         for path in ("build", "build/uefi", "build/graphical-smoke"):
@@ -165,7 +179,7 @@ if action == 'guest':
                 elif arguments != ["--invalid"]:
                     (root / "build/uefi/esp/EFI/BOOT").mkdir(parents=True)
                     (root / "build/uefi/esp/EFI/BOOT/BOOTX64.EFI").write_bytes(b"previous")
-                    (root / "build/uefi/graphical-console.o").touch()
+                    (root / "build/uefi/legacy.o").write_bytes(b"evidence")
                 shutil.copy(ROOT / "scripts/kernel-graphical-smoke.sh", root / "scripts")
                 (root / "scripts/kernel-uefi-build.sh").write_text(builder)
                 (root / "scripts/kernel-uefi-build.sh").chmod(0o755)
@@ -178,12 +192,6 @@ if action == 'guest':
                 for name in ("make", "as", "ld", "objcopy", "objdump", "nm", "readelf"):
                     (root / "bin" / name).symlink_to("/bin/true")
                 (root / "bin/python3").symlink_to(sys.executable)
-                (root / "bin/mv").write_text(
-                    "#!/usr/bin/env bash\n"
-                    "if [[ ${FAIL_MOVE:-0} == 1 && ${@: -1} == */last-build ]]; then exit 37; fi\n"
-                    'exec /bin/mv "$@"\n'
-                )
-                (root / "bin/mv").chmod(0o755)
                 env = {k: v for k, v in os.environ.items() if not k.startswith("KERNEL_TEST_")}
                 for name in (
                     "AURORA_TEST_CONTEXT",
@@ -191,6 +199,7 @@ if action == 'guest':
                     "KERNEL_CONSOLE",
                     "UEFI_MODE",
                     "UEFI_CONSOLE_HANDOFF",
+                    "AURORA_GRAPHICAL_KEEP_RUNS",
                 ):
                     env.pop(name, None)
                 env.update(
@@ -214,20 +223,265 @@ if action == 'guest':
                     self.assertFalse((root / "build").exists())
                     continue
                 events = (root / "events").read_text().splitlines()
-                move_failed = overrides.get("FAIL_MOVE") == "1"
-                self.assertEqual(events[-1], "staged-normal-boot" if move_failed else "build:normal")
-                self.assertEqual(events.count("build:normal"), 1 if move_failed else 2)
-                restored = overrides.get("FAIL_RESTORE") != "1" and not move_failed
+                self.assertEqual(events[-1], "build:normal")
+                self.assertEqual(events.count("build:normal"), 2)
+                restored = overrides.get("FAIL_RESTORE") != "1"
                 shared = root / "build/uefi/esp/EFI/BOOT/BOOTX64.EFI"
                 self.assertEqual(shared.exists() and shared.read_bytes() == b"normal\n", restored)
-                self.assertEqual((root / "build/uefi/graphical-console.o").exists(), move_failed)
+                self.assertFalse((root / "build/uefi/objects/graphical-console.o").exists())
+                self.assertEqual((root / "build/uefi/legacy.o").read_bytes(), b"evidence")
                 self.assertEqual("PASS: shared normal" in result.stdout, restored)
                 self.assertEqual("restoration exited" in result.stderr, not restored)
                 self.assertEqual("staged-normal-boot" in events, "guest" in events)
                 self.assertEqual(len(list((root / "build/graphical-smoke").glob("*/build-normal-restoration.log"))), 1)
-                window = next((root / "build/graphical-smoke").iterdir())
-                self.assertEqual((window / "previous-build/esp/EFI/BOOT/BOOTX64.EFI").read_bytes(), b"previous")
-                self.assertEqual((window / "last-build/esp/EFI/BOOT/BOOTX64.EFI").is_file(), not move_failed)
+                window = next((root / "build/graphical-smoke").glob("run-*"))
+                self.assertFalse((window / "previous-build").exists())
+                self.assertFalse((window / "last-build").exists())
+                self.assertEqual(json.loads((window / smoke.RUN_MARKER).read_text())["status"],
+                                 "passed" if status == 0 else "failed")
+                primary_failed = status != 0 and (status != 29 or overrides.get("GUEST_STATUS") == "31")
+                self.assertEqual((window / "failed-build").exists(), primary_failed)
+                self.assertEqual((window / "failed-restoration").exists(), not restored)
+                if overrides.get("FAIL_CAPTURE"):
+                    self.assertIn("could not retain failed build", result.stderr)
+                    self.assertEqual((window / "failed-build/objects").exists(), overrides["FAIL_CAPTURE"] == "copy")
+                    self.assertTrue((window / "build-graphical-console-capture.log").is_file())
+
+    def test_retention_bounds_and_preserves_unowned_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "2"}):
+            root = Path(tmp)
+            base = root / "build/graphical-smoke"
+            base.mkdir(parents=True)
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "evidence").write_text("unchanged")
+            (base / "run-link").symlink_to(outside, target_is_directory=True)
+            protected = ("run-legacy", "run-invalid", "run-active", "run-pinned", "run-markerlink", "run-duplicate")
+            for name in protected:
+                (base / name).mkdir()
+                (base / name / "evidence").write_text("unchanged")
+            (base / "run-invalid" / smoke.RUN_MARKER).write_text('{"status": []}')
+            (base / "run-duplicate" / smoke.RUN_MARKER).write_text(
+                '{"schema": "' + smoke.RUN_SCHEMA + '", "status": "running", "status": "passed", "finished_ns": 1}')
+            (base / "run-markerlink" / smoke.RUN_MARKER).symlink_to(outside / "evidence")
+            with patch.object(smoke, "ROOT", root), patch("builtins.print"):
+                smoke.start_run(base / "run-active")
+                smoke.start_run(base / "run-pinned")
+                (base / "run-pinned/.keep").touch()
+                smoke.finish_run(base / "run-pinned", 31)
+                windows = []
+                for index, status in enumerate((0, 31, 0, 31, 0, 31, 0, 31)):
+                    folder = base / f"run-{index}"
+                    folder.mkdir()
+                    smoke.start_run(folder)
+                    smoke.finish_run(folder, status)
+                    self.assertTrue(folder.is_dir(), "the current run must survive")
+                    windows.append(folder)
+                self.assertEqual([p.name for p in windows if p.exists()], ["run-4", "run-5", "run-6", "run-7"])
+                for name in protected:
+                    self.assertEqual((base / name / "evidence").read_text(), "unchanged")
+                self.assertEqual((outside / "evidence").read_text(), "unchanged")
+                self.assertTrue((base / "run-link").is_symlink())
+
+    def test_concurrent_retention_keeps_active_windows(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "2"}):
+            root = Path(tmp)
+            base = root / "build/graphical-smoke"
+            base.mkdir(parents=True)
+            with patch.object(smoke, "ROOT", root):
+                for name in ("active", *map(str, range(8))):
+                    folder = base / ("run-" + name)
+                    folder.mkdir()
+                    smoke.start_run(folder)
+            command = ("import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
+                       "import kernel_graphical_smoke as s; s.ROOT=Path(sys.argv[2]); "
+                       "s.finish_run(Path(sys.argv[3]), int(sys.argv[4]))")
+            children = [subprocess.Popen([sys.executable, "-B", "-c", command, str(ROOT / "scripts"),
+                                         str(root), str(base / f"run-{i}"), str(i % 2)],
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE) for i in range(8)]
+            for child in children:
+                stdout, stderr = child.communicate(timeout=20)
+                self.assertEqual(child.returncode, 0, stdout + stderr)
+            statuses = [json.loads(path.read_text())["status"] for path in base.glob("run-*/" + smoke.RUN_MARKER)]
+            self.assertCountEqual(statuses, ["running", "passed", "passed", "failed", "failed"])
+            self.assertTrue((base / "run-active").exists())
+
+    def test_standalone_reader_pins_before_checks_and_concurrent_prune(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "1"}):
+            root = Path(tmp)
+            base = root / "build/graphical-smoke"
+            base.mkdir(parents=True)
+            old = base / "run-old"
+            (old / "images").mkdir(parents=True)
+            with patch.object(smoke, "ROOT", root), patch("builtins.print"):
+                smoke.start_run(old)
+                smoke.finish_run(old, 0)
+                argv = ["runner", "--images", str(old / "images"), "--evidence", str(old / "guests"),
+                        "qemu", "firmware", "", "", ""]
+
+                def concurrent_completion(*args):
+                    new = base / "run-new"
+                    new.mkdir()
+                    smoke.start_run(new)
+                    smoke.finish_run(new, 0)
+                    self.assertTrue((old / "images").exists())
+                    self.assertTrue((old / "guests").exists())
+
+                with (patch.object(sys, "argv", argv), patch.object(smoke, "expected_firmware_argv", return_value=[]),
+                      patch.object(smoke, "verify_images", side_effect=lambda *a: self.assertTrue((old / ".keep").exists())),
+                      patch.object(smoke.signal, "signal"), patch.object(smoke, "CASES", []),
+                      patch.object(smoke, "production_case", side_effect=concurrent_completion),
+                      patch.object(smoke, "restoration")):
+                    smoke.main()
+                self.assertTrue((old / ".keep").exists())
+                self.assertTrue((old / "guests/summary.json").exists())
+                old.joinpath(".keep").unlink()  # Simulate deliberate release of this fixture's pin.
+                later = base / "run-later"
+                later.mkdir()
+                smoke.start_run(later)
+                smoke.finish_run(later, 0)
+                self.assertFalse(old.exists())
+                with patch.object(sys, "argv", argv), patch.object(smoke, "verify_images") as check:
+                    with self.assertRaisesRegex(ValueError, "missing smoke run directory"):
+                        smoke.main()
+                    check.assert_not_called()
+
+    def test_foreign_managed_images_require_an_existing_regular_pin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            current = root / "current"
+            current.mkdir()
+            foreign = root / "foreign/build/graphical-smoke/run-review"
+            (foreign / "images").mkdir(parents=True)
+            marker = foreign / smoke.RUN_MARKER
+            contents = json.dumps(dict(schema=smoke.RUN_SCHEMA, status="passed", finished_ns=1))
+            marker.write_text(contents)
+            pin = foreign / ".keep"
+            with patch.object(smoke, "ROOT", current):
+                with self.assertRaisesRegex(ValueError, "owning checkout"):
+                    smoke.pin_reused_images(foreign / "images")
+                self.assertFalse(pin.exists())
+                self.assertFalse((foreign.parent / ".retention.lock").exists())
+                target = root / "ordinary-file"
+                target.touch()
+                pin.symlink_to(target)
+                with self.assertRaisesRegex(ValueError, "owning checkout"):
+                    smoke.pin_reused_images(foreign / "images")
+                pin.unlink()
+                pin.mkdir()
+                with self.assertRaisesRegex(ValueError, "owning checkout"):
+                    smoke.pin_reused_images(foreign / "images")
+                pin.rmdir()
+                pin.touch()
+                smoke.pin_reused_images(foreign / "images")
+                self.assertEqual(marker.read_text(), contents)
+                self.assertFalse((foreign.parent / ".retention.lock").exists())
+                marker.write_text('{"schema": "' + smoke.RUN_SCHEMA + '", "status": "running", '
+                                  '"status": "passed", "finished_ns": 1}')
+                with self.assertRaisesRegex(ValueError, "Duplicate JSON key"):
+                    smoke.pin_reused_images(foreign / "images")
+                unmanaged = root / "unmanaged/images"
+                unmanaged.mkdir(parents=True)
+                smoke.pin_reused_images(unmanaged)
+                self.assertFalse((unmanaged.parent / ".keep").exists())
+
+    def test_pruning_failure_warns_without_changing_execution_result(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "1"}):
+            root = Path(tmp)
+            base = root / "build/graphical-smoke"
+            base.mkdir(parents=True)
+            with patch.object(smoke, "ROOT", root), patch("builtins.print") as output:
+                old = base / "run-old"
+                old.mkdir()
+                smoke.start_run(old)
+                smoke.finish_run(old, 0)
+                current = base / "run-current"
+                current.mkdir()
+                smoke.start_run(current)
+                with patch.object(smoke.shutil, "rmtree", side_effect=PermissionError("read-only evidence")):
+                    smoke.finish_run(current, 0)
+                self.assertTrue(old.exists())
+                self.assertTrue(current.exists())
+                self.assertEqual(json.loads((current / smoke.RUN_MARKER).read_text())["status"], "passed")
+                self.assertTrue(any(str(call.args[0]).startswith("WARN: could not prune") for call in output.call_args_list))
+
+    def test_retention_controls_and_failure_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp, patch("builtins.print"):
+            root = Path(tmp)
+            base = root / "build/graphical-smoke"
+            base.mkdir(parents=True)
+            folder = base / "run-review"
+            folder.mkdir()
+            source = root / "build/uefi"
+            (source / "objects").mkdir(parents=True)
+            (source / "objects/future.o").write_text("partial object")
+            (source / "payload.elf").write_text("partial link")
+            (source / "unrelated.log").write_text("old evidence")
+            outside = root / "outside"
+            outside.write_text("unchanged")
+            (source / "objects/alias.o").symlink_to(outside)
+            object_inode = (source / "objects").stat().st_ino
+            with patch.object(smoke, "ROOT", root), patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "all"}):
+                smoke.start_run(folder)
+                smoke.save_failure(folder / "failed-build")
+                smoke.finish_run(folder, 31)
+                self.assertTrue((folder / ".keep").is_file())
+            saved = folder / "failed-build"
+            self.assertFalse((source / "objects").exists())
+            self.assertEqual((saved / "objects").stat().st_ino, object_inode)
+            self.assertEqual((saved / "objects/future.o").read_text(), "partial object")
+            self.assertEqual((saved / "payload.elf").read_text(), "partial link")
+            self.assertTrue((saved / "objects/alias.o").is_symlink())
+            self.assertFalse((saved / "unrelated.log").exists())
+            self.assertEqual(outside.read_text(), "unchanged")
+            with patch.object(smoke, "ROOT", root), patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "1"}):
+                for index in range(3):
+                    current = base / f"run-new{index}"
+                    current.mkdir()
+                    smoke.start_run(current)
+                    smoke.finish_run(current, 31)
+                self.assertTrue(folder.exists())
+                self.assertFalse((base / "run-new0").exists())
+                self.assertFalse((base / "run-new1").exists())
+                self.assertTrue((base / "run-new2").exists())
+            for value in ("0", "-1", "1.5", "1000", "", "ALL"):
+                with patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": value}), self.assertRaises(ValueError):
+                    smoke.retained_runs()
+
+    def test_stage_copies_only_required_current_artifacts(self):
+        for mode in ("normal", *smoke.admission.MODES):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                build = root / "build/uefi"
+                with (patch.object(smoke, "ROOT", root), patch.object(smoke.admission, "BUILD", build),
+                      patch.object(smoke.admission, "RECEIPT", build / "graphical-console-admission.json"),
+                      patch.object(smoke.admission, "checked"), patch.object(smoke.admission, "source_files", return_value=[])):
+                    files = smoke.admission.build_files(mode)
+                    if mode != "normal":
+                        files += [build / name for name in ("graphical-console-admission.json", "graphical-console-build.json",
+                                                           "graphical-console-build-start.json")]
+                    for path in files:
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text("current")
+                    (build / "legacy.o").write_text("unrelated")
+                    (build / "historical.log").write_text("unrelated")
+                    (build / "old-captures").mkdir()
+                    (build / "old-captures/evidence").write_text("unrelated")
+                    images = root / "images"
+                    smoke.stage(mode, images)
+                    args = SimpleNamespace(images=images)
+                    smoke.verify_images(args, mode)
+                    saved = {str(p.relative_to(images / mode)) for p in (images / mode).rglob("*") if p.is_file()}
+                    self.assertEqual(saved, {str(p.relative_to(build)) for p in files} | {"smoke-image.json"})
+                    (images / mode / "payload.bin").write_text("changed")
+                    with self.assertRaisesRegex(ValueError, "staged image drift"):
+                        smoke.verify_images(args, mode)
+                    files[0].unlink()
+                    with self.assertRaisesRegex(ValueError, "missing artifact"):
+                        smoke.stage(mode, root / "missing")
+                    files[0].symlink_to(build / "historical.log")
+                    with self.assertRaisesRegex(ValueError, "symlink"):
+                        smoke.stage(mode, root / "symlink")
 
     def test_primary_and_restoration_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

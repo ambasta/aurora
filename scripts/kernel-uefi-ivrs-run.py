@@ -23,7 +23,7 @@ def run(mode,out):
         subprocess.run([ROOT/'scripts/kernel-uefi-build.sh'],cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,check=True)
     shutil.copytree(ROOT/'build/uefi/esp',out/'esp')
     shutil.copy2(ROOT/'build/uefi/ivrs-stack.json',out/'stack-usage.json')
-    for name in ('pci','acpi','payload'):shutil.copy2(ROOT/'build/uefi'/(name+'.su'),out/(name+'.su'))
+    for name in ('pci','acpi','payload'):shutil.copy2(ROOT/'build/uefi/objects'/(name+'.su'),out/(name+'.su'))
     files={name:record(path) for name,path in [('qemu',qemu),('events',events),('compiler',compiler),('coverage',coverage_path)]}
     for key,name in [('payload','payload.bin'),('payload_elf','payload.elf'),('payload_metadata','ivrs-metadata.json')]:
         shutil.copy2(ROOT/'build/uefi'/name,out/name);files[key]=record(out/name)

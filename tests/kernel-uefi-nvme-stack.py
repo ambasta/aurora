@@ -59,7 +59,7 @@ def queue_bound(directory, linked, records, edges):
     frames = {name: row["bytes"] for name, row in records.items()}
     # These existing assembly primitives are independently checked with the
     # existing decoder, not assigned a guessed external leaf allowance.
-    memory = shared.Elf(directory / "memory.o")
+    memory = shared.Elf(directory / "objects" / "memory.o")
     require(memory.type == 1 and set(memory.functions) == MEMORY, "Unexpected memory primitive inventory")
     for name, function in memory.functions.items():
         require(name in linked.functions, "Missing linked memory primitive")
@@ -314,7 +314,7 @@ def emission_check(directory):
     offset = section[4] + function.address - section[3]
     mutated = bytearray(linked.data)
     mutated[offset] ^= 1
-    su = directory / "pci.su"
+    su = directory / "objects" / "pci.su"
     for path, contents in ((su, b"\n".join(su.read_bytes().splitlines()[1:])), (directory / "payload.elf", mutated)):
         original = path.read_bytes()
         try:
@@ -345,11 +345,12 @@ def emission_test():
     flags += ["-DAURORA_UEFI_" + name for name in ("ACPI", "PCI", "BAR_CAPTURE", "BAR_EDK2", "NVME_PREPARE")]
     with tempfile.TemporaryDirectory(prefix="aurora-nvme-stack-") as temporary:
         directory = Path(temporary)
+        (directory / "objects").mkdir(exist_ok=True)
         subprocess.run(
-            cxx + flags + ["-c", "kernel/uefi/pci.cpp", "-o", str(directory / "pci.o")], cwd=root, check=True
+            cxx + flags + ["-c", "kernel/uefi/pci.cpp", "-o", str(directory / "objects" / "pci.o")], cwd=root, check=True
         )
-        subprocess.run(["as", "--64", "kernel/uefi/memory.S", "-o", str(directory / "memory.o")], cwd=root, check=True)
-        objects = [str(directory / name) for name in ("pci.o", "memory.o")]
+        subprocess.run(["as", "--64", "kernel/uefi/memory.S", "-o", str(directory / "objects" / "memory.o")], cwd=root, check=True)
+        objects = [str(directory / "objects" / name) for name in ("pci.o", "memory.o")]
         subprocess.run(["ld", "-e", "0", "-o", str(directory / "payload.elf"), *objects], check=True)
         emission_check(directory)
         subprocess.run([sys.executable, "-B", "-O", __file__, "--emission-check", temporary], check=True)

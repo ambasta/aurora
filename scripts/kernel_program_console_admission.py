@@ -150,7 +150,7 @@ def verify_reflection_body(decoder, symbol, rows, payload):
 def verify_reflection_image(directory):
     """Reuse closed lookup validation for imported modules, never a name-only allowance."""
     decoder = load("reflection_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
-    language, linked = (decoder.Elf(directory / name) for name in ("language.o", "payload.elf"))
+    language, linked = decoder.Elf(directory / "objects/language.o"), decoder.Elf(directory / "payload.elf")
     names = {name for name in language.functions if name.startswith(("aurora_reflect_", "__au_reflect_"))}
     need({"aurora_reflect_size", "aurora_reflect_field_count"} <= names, "Missing root reflection helpers")
     for obj in (language, linked):
@@ -194,7 +194,7 @@ def symbols(path):
 
 def linked_assembly(stack, linked, directory, name):
     """Check whole executable sections, allowing only the actual rel32 slots."""
-    obj = stack.Elf(directory / (name + ".o"))
+    obj = stack.Elf(directory / "objects" / (name + ".o"))
     names = {symbol.name: symbol for symbol in linked.symbols if symbol.section}
     evidence = []
     for index, section in enumerate(obj.sections):
@@ -343,7 +343,7 @@ def stack_evidence(directory, *, snapshot=False):
     named = {symbol.name: symbol for symbol in linked.symbols if symbol.section}
     enter, leave, handler = [named[key] for key in ("uefi_runtime_enter", "aurora_leave_user", "uefi_runtime_handler")]
     # Bound the assembly handler by the original object's exact text extent.
-    entry_object = decoder.Elf(directory / "runtime-entry.o")
+    entry_object = decoder.Elf(directory / "objects" / "runtime-entry.o")
     object_handler = next(row for row in entry_object.symbols if row.name == handler.name)
     handler_size = entry_object.sections[object_handler.section][5] - object_handler.address
     linked.functions[enter.name] = decoder.Symbol(
@@ -358,7 +358,7 @@ def stack_evidence(directory, *, snapshot=False):
     if snapshot:
         decoder.NORETURN |= decoder.OWNED_NORETURN
     for object_name in ("language", "memory"):
-        obj = decoder.Elf(directory / (object_name + ".o"))
+        obj = decoder.Elf(directory / "objects" / (object_name + ".o"))
         for symbol in obj.functions.values():
             decoder.associate_object(linked, obj, symbol)
     assembly = []
@@ -529,7 +529,7 @@ def note_evidence(directory, mode="program-console"):
     decoder = load("note_bridge_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     abi = load("note_record_abi", ROOT / "tests/kernel-snapshot-abi.py")
     linked = decoder.Elf(directory / "payload.elf")
-    generated = decoder.Elf(directory / "language.o")
+    generated = decoder.Elf(directory / "objects" / "language.o")
     code, _ = decoder.disassemble(directory / "payload.elf")
     names = {row.name: row for row in linked.symbols if row.section}
     bridges = {"__au_runtime_note_update", "__au_runtime_note_project"}
@@ -539,7 +539,7 @@ def note_evidence(directory, mode="program-console"):
         "Note acquired constructor or heap machinery",
     )
     need(
-        not subprocess.check_output(["nm", "-u", directory / "language.o"], text=True), "Note graph acquired authority"
+        not subprocess.check_output(["nm", "-u", directory / "objects" / "language.o"], text=True), "Note graph acquired authority"
     )
     expected_objects = {
         "payload",
@@ -562,11 +562,11 @@ def note_evidence(directory, mode="program-console"):
         "transition-pe",
         "memory-pe",
     }
-    need({path.stem for path in directory.glob("*.o")} == expected_objects, "Exact protected-note object composition")
+    need({path.stem for path in (directory / "objects").glob("*.o")} == expected_objects, "Exact protected-note object composition")
     public = {
         row.split()[2]
         for row in subprocess.check_output(
-            ["nm", "-g", "--defined-only", directory / "language.o"], text=True
+            ["nm", "-g", "--defined-only", directory / "objects" / "language.o"], text=True
         ).splitlines()
         if len(row.split()) == 3
     }
@@ -704,7 +704,7 @@ def build_files():
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
     names += ["user-" + name + suffix for name in ("clean", "bounds") for suffix in (".s", ".o", ".elf", ".bin")]
     names += ["user-clean-entry.o"]
-    return [BUILD / name for name in names]
+    return [BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci")) else name) for name in names]
 
 
 def hashes(paths):

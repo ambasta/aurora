@@ -3,6 +3,7 @@
 
 import argparse
 from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import resource
 import select
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -418,8 +420,19 @@ def stage(mode, destination):
     if mode != "normal":
         admission.checked(mode)
     target = destination / mode
-    need(not any(p.is_symlink() for p in (ROOT / "build/uefi").rglob("*")), "symlink in image build")
-    shutil.copytree(ROOT / "build/uefi", target)
+    build = ROOT / "build/uefi"
+    files = admission.build_files(mode)
+    if mode != "normal":
+        files += [admission.RECEIPT, build / "graphical-console-build.json", build / "graphical-console-build-start.json"]
+    for path in files:
+        need(path.is_file() and not path.is_symlink()
+             and not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(build)),
+             "missing artifact or symlink in image build: " + str(path))
+    target.mkdir(parents=True)
+    for path in files:
+        copied = target / path.relative_to(build)
+        copied.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, copied)
     record = dict(
         mode=mode,
         source=source,
@@ -450,17 +463,173 @@ def verify_images(args, mode=None, source=True):
         )
 
 
+RUN_MARKER = ".graphical-smoke-run.json"
+RUN_SCHEMA = "aurora-graphical-smoke-run-v1"
+
+
+def retained_runs():
+    value = os.environ.get("AURORA_GRAPHICAL_KEEP_RUNS", "2")
+    need(value == "all" or re.fullmatch(r"[1-9][0-9]{0,2}", value),
+         "AURORA_GRAPHICAL_KEEP_RUNS must be 1..999 or all")
+    return None if value == "all" else int(value)
+
+
+def run_directory(directory):
+    base = ROOT / "build/graphical-smoke"
+    need(directory.parent == base and re.fullmatch(r"run-[A-Za-z0-9]+", directory.name), "not a smoke run directory")
+    need(all(not path.is_symlink() for path in (ROOT / "build", base, directory)), "symlink in smoke run path")
+    need(directory.is_dir(), "missing smoke run directory")
+    return directory
+
+
+def start_run(directory):
+    keep = retained_runs()
+    directory = run_directory(directory)
+    with (directory / RUN_MARKER).open("x") as output:
+        json.dump(dict(schema=RUN_SCHEMA, status="running"), output)
+    if keep is None:
+        (directory / ".keep").touch(exist_ok=False)
+
+
+def save_failure(destination):
+    run_directory(destination.parent)
+    need(destination.name in ("failed-build", "failed-restoration"), "unknown failure snapshot")
+    source = ROOT / "build/uefi"
+    need(not source.is_symlink(), "symlink in failed build path")
+    destination.mkdir()
+    # Only current inputs and admission artifacts belong to this snapshot.
+    # Incomplete builds deliberately keep whatever exists, without claiming admission.
+    objects = source / "objects"
+    if objects.exists() or objects.is_symlink():
+        need(not objects.is_symlink(), "symlink in failed object directory")
+        # Same-filesystem rename preserves bulky failed inputs even under disk pressure.
+        objects.rename(destination / "objects")
+    files = admission.build_files() + [admission.RECEIPT, admission.BUILD / "graphical-console-build.json",
+                                      admission.BUILD / "graphical-console-build-start.json"]
+    for artifact in files:
+        relative = artifact.relative_to(admission.BUILD)
+        if relative.parts[0] == "objects":
+            continue
+        path = source / relative
+        if path.exists() or path.is_symlink():
+            need(not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(source)),
+                 "symlink in failed image path")
+            copied = destination / relative
+            copied.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, copied, follow_symlinks=False)
+
+
+def finish_run(directory, status):
+    keep = retained_runs()
+    directory = run_directory(directory)
+    lock_path = directory.parent / ".retention.lock"
+    with os.fdopen(os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), "r+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        marker = directory / RUN_MARKER
+        need(not marker.is_symlink(), "symlink in smoke ownership marker")
+        need(admission.read_json(marker) == dict(schema=RUN_SCHEMA, status="running"), "missing active smoke marker")
+        marker.write_text(json.dumps(dict(schema=RUN_SCHEMA, status="passed" if status == 0 else "failed",
+                                          finished_ns=time.time_ns())) + "\n")
+        if keep is None:
+            return
+        groups = {"passed": [], "failed": []}
+        for folder in directory.parent.glob("run-*"):
+            record = folder / RUN_MARKER
+            if folder.is_symlink() or not folder.is_dir() or (folder / ".keep").exists() or (folder / ".keep").is_symlink():
+                continue
+            if record.is_symlink() or not record.is_file():
+                continue
+            try:
+                item = admission.read_json(record)
+            except (ValueError, OSError):
+                continue  # Unknown or incomplete evidence is never adopted for deletion.
+            if (type(item) is not dict or set(item) != {"schema", "status", "finished_ns"}
+                    or item["schema"] != RUN_SCHEMA or type(item["status"]) is not str or item["status"] not in groups
+                    or type(item["finished_ns"]) is not int):
+                continue
+            groups[item["status"]].append((item["finished_ns"], folder.name, folder))
+        for runs in groups.values():
+            for _, _, folder in sorted(runs, reverse=True)[keep:]:
+                if folder != directory:
+                    try:
+                        shutil.rmtree(folder)
+                    except OSError as error:
+                        print("WARN: could not prune " + str(folder) + ": " + str(error), file=sys.stderr)
+                    else:
+                        print("Pruned older graphical smoke files: " + str(folder), flush=True)
+
+
+def pin_reused_images(images):
+    directory = images.parent
+    if images.name != "images":
+        return
+    if directory.parent != ROOT / "build/graphical-smoke":
+        # A foreign checkout owns its lock and retention policy. Do not mutate it.
+        marker = directory / RUN_MARKER
+        if (directory.parent.name != "graphical-smoke" or directory.parent.parent.name != "build"
+                or not directory.name.startswith("run-") or not (marker.exists() or marker.is_symlink())):
+            return  # Unmanaged external images retain their read-only behavior.
+        need(not marker.is_symlink() and marker.is_file(), "invalid foreign smoke ownership marker")
+        record = admission.read_json(marker)
+        need(record == dict(schema=RUN_SCHEMA, status="running") or
+             (type(record) is dict and set(record) == {"schema", "status", "finished_ns"}
+              and record["schema"] == RUN_SCHEMA and record["status"] in ("passed", "failed")
+              and type(record["finished_ns"]) is int), "invalid foreign smoke marker")
+        try:
+            pinned = stat.S_ISREG((directory / ".keep").lstat().st_mode)
+        except FileNotFoundError:
+            pinned = False
+        need(pinned, "Pin foreign managed images with a regular .keep file in the owning checkout before use: "
+             + str(directory))
+        return
+    lock_path = directory.parent / ".retention.lock"
+    with os.fdopen(os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), "r+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        run_directory(directory)  # A pruner that won the lock may already have removed it.
+        marker = directory / RUN_MARKER
+        if not marker.exists():
+            return
+        need(not marker.is_symlink(), "symlink in smoke ownership marker")
+        record = admission.read_json(marker)
+        if record == dict(schema=RUN_SCHEMA, status="running"):
+            return  # The invoking shell owns this active window until the child exits.
+        need(type(record) is dict and record.get("schema") == RUN_SCHEMA
+             and record.get("status") in ("passed", "failed"), "invalid completed smoke marker")
+        pin = directory / ".keep"
+        if not pin.exists() and not pin.is_symlink():
+            with pin.open("x"):
+                pass
+            print("Pinned reused graphical images until manual removal: " + str(directory), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", choices=("normal", *admission.MODES))
-    parser.add_argument("--images", type=Path, required=True)
+    parser.add_argument("--images", type=Path)
+    lifecycle = parser.add_mutually_exclusive_group()
+    lifecycle.add_argument("--start-run", type=Path)
+    lifecycle.add_argument("--save-failure", type=Path)
+    lifecycle.add_argument("--finish-run", type=Path)
+    parser.add_argument("--status", type=int)
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("inputs", nargs="*")
     args = parser.parse_args()
+    if args.start_run:
+        start_run(args.start_run)
+        return
+    if args.save_failure:
+        save_failure(args.save_failure)
+        return
+    if args.finish_run:
+        need(args.status is not None, "run exit status required")
+        finish_run(args.finish_run, args.status)
+        return
+    need(args.images is not None, "images required")
     args.images = args.images.resolve()
     if args.stage:
         stage(args.stage, args.images)
         return
+    pin_reused_images(args.images)
     need(
         args.evidence and not args.evidence.exists() and len(args.inputs) == 5,
         "fresh evidence and QEMU OVMF CODE VARS DATA required",

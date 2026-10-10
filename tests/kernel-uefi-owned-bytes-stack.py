@@ -319,8 +319,8 @@ def object_stack_rows(directory, name, symbols, edges=None):
         "owned-bytes-runtime": "kernel/owned-bytes.cpp",
         "owned-bytes-profile": "kernel/uefi/owned-bytes.cpp",
     }.get(name, "kernel/uefi/" + name + ".cpp")
-    rows = stack_rows((directory / (name + ".su")).read_text())
-    return callgraph_frames((directory / (name + ".ci")).read_text(), rows, symbols, source, edges)
+    rows = stack_rows((directory / "objects" / (name + ".su")).read_text())
+    return callgraph_frames((directory / "objects" / (name + ".ci")).read_text(), rows, symbols, source, edges)
 
 
 def source_frame_symbol(associations, object_name, source, signature):
@@ -340,7 +340,7 @@ def cpp_frames(directory, linked, objects=None, edges=None):
     receipts = {}
     root = Path(__file__).resolve().parents[1]
     for name in CPP_OBJECTS if objects is None else objects:
-        obj = Elf(directory / (name + ".o"))
+        obj = Elf(directory / "objects" / (name + ".o"))
         require(obj.type == 1, "Expected relocatable C++ object")
         rows = object_stack_rows(directory, name, obj.functions, edges)
         for symbol_name, row in rows.items():
@@ -1494,7 +1494,7 @@ def validate(directory):
     elf = Elf(directory / "payload.elf")
     require(elf.type == 2, "Expected linked executable payload")
     require(not command("nm", "-u", str(directory / "payload.elf")).strip(), "Unresolved linked payload symbol")
-    admission = load_admission().validate_symbols(command("nm", "-a", str(directory / "language.o")))
+    admission = load_admission().validate_symbols(command("nm", "-a", str(directory / "objects" / "language.o")))
     instructions, disassembly = disassemble(directory / "payload.elf")
     starts = {symbol.address: name for name, symbol in elf.functions.items()}
     require(len(starts) == len(elf.functions), "Ambiguous linked function aliases")
@@ -1503,10 +1503,10 @@ def validate(directory):
         associations, "payload.o", "kernel/uefi/payload.cpp", "void {anonymous}::fail(std::string_view)"
     )
     NORETURN = OWNED_NORETURN | {diagnostic}
-    language = Elf(directory / "language.o")
+    language = Elf(directory / "objects" / "language.o")
     for symbol in language.functions.values():
         associate_object(elf, language, symbol)
-    memory = Elf(directory / "memory.o")
+    memory = Elf(directory / "objects" / "memory.o")
     for symbol in memory.functions.values():
         associate_object(elf, memory, symbol)
     assembly = {
@@ -1600,6 +1600,7 @@ def validate(directory):
     require(peak <= STACK_CAP, "Unchanged 16 KiB stack admission cap exceeded")
     files = ["payload.elf", "language.s", "language.o", "memory.o", "payload-entry.o"]
     files += [name + suffix for name in CPP_OBJECTS for suffix in (".o", ".su", ".ci")]
+    files = ["objects/" + name if name.endswith((".o", ".su", ".ci")) else name for name in files]
     return {
         "schema": 1,
         "stack_bytes": STACK_BYTES,

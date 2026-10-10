@@ -331,8 +331,8 @@ def snapshot_image_policy(directory, symbols):
         "transition-pe",
         "memory-pe",
     }
-    need({path.stem for path in directory.glob("*.o")} == expected_objects, "Exact snapshot object composition")
-    entries = nm_entries(subprocess.check_output(["nm", "-a", str(directory / "language.o")], text=True))
+    need({path.stem for path in (directory / "objects").glob("*.o")} == expected_objects, "Exact snapshot object composition")
+    entries = nm_entries(subprocess.check_output(["nm", "-a", str(directory / "objects" / "language.o")], text=True))
     need(
         {name for name, kind in entries.items() if kind == "U"}
         == {"__au_runtime_bytes_" + name for name in ("allocate", "at", "set", "drop")},
@@ -410,7 +410,7 @@ def snapshot_image_policy(directory, symbols):
         ],
         "Exact copied producer bridge",
     )
-    calls = subprocess.check_output(["objdump", "-drwC", str(directory / "snapshot.o")], text=True)
+    calls = subprocess.check_output(["objdump", "-drwC", str(directory / "objects" / "snapshot.o")], text=True)
     need(policy_call_present(calls, "__au_runtime_snapshot_produce"), "Snapshot adapter must call actual producer")
 
 
@@ -609,19 +609,19 @@ def event_image_policy(directory, symbols=None, mode=None):
     if symbols is None:
         symbols = subprocess.check_output(["nm", "-a", str(directory / "payload.elf")], text=True)
     profile_selection(
-        symbols, {path.stem for path in directory.glob("*.o")}, False, True, mode == "iommu-event-observe"
+        symbols, {path.stem for path in (directory / "objects").glob("*.o")}, False, True, mode == "iommu-event-observe"
     )
     objects = {
-        name: subprocess.check_output(["nm", "-a", str(directory / (name + ".o"))], text=True)
+        name: subprocess.check_output(["nm", "-a", str(directory / "objects" / (name + ".o"))], text=True)
         for name in sorted(event_objects(mode))
     }
     calls = {
-        name: subprocess.check_output(["objdump", "-drwC", str(directory / (name + ".o"))], text=True)
+        name: subprocess.check_output(["objdump", "-drwC", str(directory / "objects" / (name + ".o"))], text=True)
         for name in (
             ("payload", "language") if mode == "iommu-event-observe" else ("payload", "event-intake", "language")
         )
     }
-    bindings = subprocess.check_output(["readelf", "-sW", str(directory / "language.o")], text=True)
+    bindings = subprocess.check_output(["readelf", "-sW", str(directory / "objects" / "language.o")], text=True)
     event_object_policy(symbols, objects, calls, elf_function_bindings(bindings), mode)
     sections = subprocess.check_output(["readelf", "-SW", str(directory / "payload.elf")], text=True)
     need(
@@ -790,19 +790,19 @@ def graphical_image_policy(directory, symbols=None):
     directory = Path(directory)
     if symbols is None:
         symbols = subprocess.check_output(["nm", "-a", str(directory / "payload.elf")], text=True)
-    profile_selection(symbols, {path.stem for path in directory.glob("*.o")}, True)
+    profile_selection(symbols, {path.stem for path in (directory / "objects").glob("*.o")}, True)
     object_symbols = {
-        name: subprocess.check_output(["nm", "-a", str(directory / (name + ".o"))], text=True)
+        name: subprocess.check_output(["nm", "-a", str(directory / "objects" / (name + ".o"))], text=True)
         for name in sorted(GRAPHICAL_OBJECTS)
     }
     host_names = ("payload", "acpi", "pci", "runtime", "graphical-console", "loader")
     calls = {
-        name: subprocess.check_output(["objdump", "-drwC", str(directory / (name + ".o"))], text=True)
+        name: subprocess.check_output(["objdump", "-drwC", str(directory / "objects" / (name + ".o"))], text=True)
         for name in (*host_names, "language")
     }
-    bindings = subprocess.check_output(["readelf", "-sW", str(directory / "language.o")], text=True)
+    bindings = subprocess.check_output(["readelf", "-sW", str(directory / "objects" / "language.o")], text=True)
     graphical_object_policy(symbols, object_symbols, calls, elf_function_bindings(bindings))
-    contents = {name: (directory / (name + ".o")).read_bytes() for name in host_names}
+    contents = {name: (directory / "objects" / (name + ".o")).read_bytes() for name in host_names}
     console_service_policy(symbols, object_symbols["language"], calls, contents, graphical=True)
     return dict(
         objects=sorted(GRAPHICAL_OBJECTS),
@@ -847,7 +847,7 @@ def main(
     symbols = subprocess.check_output(["nm", "-a", str(BUILD / "payload.elf")], text=True)
     profile = profile_selection(
         symbols,
-        {path.stem for path in BUILD.glob("*.o")},
+        {path.stem for path in (BUILD / "objects").glob("*.o")},
         require_graphical_console,
         require_iommu_event,
         require_iommu_observe,
@@ -870,9 +870,9 @@ def main(
             not any(name in sections_text for name in (".init_array", ".fini_array", ".ctors", ".dtors")),
             "Owned-byte profile must not register constructors/destructors",
         )
-        language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "language.o")], text=True)
+        language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "objects" / "language.o")], text=True)
         need("aurora_kernel_value" not in language_symbols, "Owned-byte profile included ordinary scalar graph")
-        profile_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "owned-bytes-profile.o")], text=True)
+        profile_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / "owned-bytes-profile.o")], text=True)
         need(
             all(
                 policy_call_present(profile_calls, name)
@@ -885,7 +885,7 @@ def main(
 
     if "uefi_runtime_enter" in symbols:
         names += ["runtime-entry", "runtime-exceptions"]
-        terminal_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
+        terminal_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True)
         need(
             policy_call_present(terminal_calls, "aurora_kernel_terminal_event"),
             "Runtime must call the actual Aurora terminal-event producer",
@@ -903,15 +903,15 @@ def main(
         if not require_graphical_console:
             host_names = ("payload", "acpi", "pci", "runtime", engine, "loader")
             calls = {
-                name: subprocess.check_output(["objdump", "-drwC", str(BUILD / (name + ".o"))], text=True)
+                name: subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / (name + ".o"))], text=True)
                 for name in (*host_names, "language")
             }
-            contents = {name: (BUILD / (name + ".o")).read_bytes() for name in host_names}
-            language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "language.o")], text=True)
+            contents = {name: (BUILD / "objects" / (name + ".o")).read_bytes() for name in host_names}
+            language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "objects" / "language.o")], text=True)
             common.verify_reflection_image(BUILD)
             console_service_policy(symbols, language_symbols, calls, contents, require_graphical_console)
     if "uefi_service_drain_begin" in symbols:
-        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
+        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True)
         need(budget_call_present(policy_relocations), "Service timer does not call the actual Aurora budget entry")
         policy_symbols = {
             row.split()[2]: int(row.split()[0], 16) for row in symbols.splitlines() if len(row.split()) == 3
@@ -921,7 +921,7 @@ def main(
             "Aurora budget entry outside owned payload RX",
         )
     if require_ipc:
-        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
+        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True)
         need(ipc_call_present(policy_relocations), "Mailbox runtime does not call the actual Aurora transaction entry")
         policy_symbols = {
             row.split()[2]: int(row.split()[0], 16) for row in symbols.splitlines() if len(row.split()) == 3
@@ -934,7 +934,7 @@ def main(
         need(require_ipc, "Disposal profile requires the IPC authority graph")
         # User-run recovery must contain a genuine copied-plan call. Other
         # dispatcher profiles do not necessarily instantiate dispose_client.
-        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "runtime.o")], text=True)
+        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True)
         need(
             policy_call_present(policy_relocations, "aurora_kernel_client_disposal"),
             "User recovery does not call the actual Aurora disposal entry",
@@ -947,7 +947,7 @@ def main(
             "Aurora disposal entry outside owned payload RX",
         )
     for name in names:
-        relocations = subprocess.check_output(["readelf", "-rW", str(BUILD / f"{name}.o")], text=True)
+        relocations = subprocess.check_output(["readelf", "-rW", str(BUILD / "objects" / f"{name}.o")], text=True)
         types = set(re.findall(r"R_X86_64_\w+", relocations))
         need(types <= {"R_X86_64_PC32", "R_X86_64_PLT32"}, f"Non-PIC object relocation in {name}: {types}")
         if name == "memory":

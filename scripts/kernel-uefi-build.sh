@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+[[ ! -L build && ! -L build/uefi && ! -L build/uefi/objects ]] || {
+    echo 'FAIL: symlink in UEFI build paths' >&2; exit 2;
+}
 # The combined profile must use its own fail-closed admission path. Building
 # creates evidence requiring independent review; no receipt here permits a guest.
 if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
@@ -106,14 +109,11 @@ case "${UEFI_MODE:-normal}" in
  nx) extra+=(-DAURORA_UEFI_NX) ;;
  *) echo 'Unknown UEFI build mode' >&2; exit 2 ;;
 esac
-# Profiles share this directory. Retire only owned profile objects and their
-# compiler sidecars before rebuilding; keep common outputs, caches and evidence.
-profile_objects=(console console-entry graphical-console framebuffer event-intake
-    owned-bytes-runtime owned-bytes-profile snapshot runtime-entry runtime-exceptions
-    user-{clean,bounds,peer}{,-entry})
-for name in "${profile_objects[@]}"; do
-    rm -f -- "build/uefi/$name.o" "build/uefi/$name.su" "build/uefi/$name.ci"
-done
+# This namespace contains only disposable compiler/linker inputs. Every future
+# profile object and its sidecars are retired automatically, without a name list.
+# Keep published images, logs, caches and legacy top-level evidence untouched.
+mkdir -p build/uefi/objects
+rm -f -- build/uefi/objects/*.{o,su,ci}
 case "${UEFI_MODE:-normal}" in
  framebuffer|framebuffer-record|framebuffer-permissions|framebuffer-stale)
     framebuffer_provenance=()
@@ -154,45 +154,45 @@ if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "$
    case "$UEFI_MODE" in snapshot-owner|snapshot-reply-reserved|snapshot-reply-byte) mode="${UEFI_MODE#snapshot-}" ;; esac
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode" --snapshot
    python3 -B tests/kernel-snapshot-abi.py build/uefi --uefi-mode "$mode"
-   as --64 --defsym AURORA_IPC=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+   as --64 --defsym AURORA_IPC=1 kernel/uefi/runtime-entry.S -o build/uefi/objects/runtime-entry.o
  elif [[ "$UEFI_MODE" == program-* ]]; then
    program_image_mode=normal
    case "$UEFI_MODE" in program-owner|program-ordinal|program-unknown|program-transaction) program_image_mode="${UEFI_MODE#program-}" ;; esac
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$program_image_mode" --service-budget --user-budget --program-console
    python3 -B tests/kernel-snapshot-abi.py build/uefi --uefi-mode "$program_image_mode" --note
-   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/objects/runtime-entry.o
  elif [[ "$UEFI_MODE" == user-* ]]; then
    mode=normal
    if [[ "$UEFI_MODE" == user-unknown ]]; then mode=unknown; fi
    if [[ "$UEFI_MODE" == user-context ]]; then mode=context; fi
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode" --service-budget --dispatcher --user-budget
-   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/objects/runtime-entry.o
  elif [[ "$UEFI_MODE" == dispatch* ]]; then
    mode=normal
    if [[ "$UEFI_MODE" == dispatch-peer-code ]]; then mode=peer-code; fi
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode" --service-budget --dispatcher
-   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/objects/runtime-entry.o
  elif [[ "$UEFI_MODE" == budget* ]]; then
    mode="${UEFI_MODE#budget-}"
    case "$mode" in mmio|softint|fpu|context) ;; *) mode=normal ;; esac
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode" --service-budget
-   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+   as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/objects/runtime-entry.o
  elif [[ "$UEFI_MODE" == ipc* ]]; then
    mode="${UEFI_MODE#ipc-}"
    case "$mode" in owner|version|phase|transaction|site|unknown) ;; *) mode=normal ;; esac
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode"
-   as --64 --defsym AURORA_IPC=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+   as --64 --defsym AURORA_IPC=1 kernel/uefi/runtime-entry.S -o build/uefi/objects/runtime-entry.o
  else
    python3 scripts/kernel-uefi-user-images.py --compiler "$compiler" --mode "$mode"
-   as --64 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+   as --64 kernel/uefi/runtime-entry.S -o build/uefi/objects/runtime-entry.o
  fi
- as --64 --defsym AURORA_RELATIVE_ONLY=1 kernel/exceptions.S -o build/uefi/runtime-exceptions.o
- runtime_objects+=(build/uefi/runtime-entry.o build/uefi/runtime-exceptions.o)
+ as --64 --defsym AURORA_RELATIVE_ONLY=1 kernel/exceptions.S -o build/uefi/objects/runtime-exceptions.o
+ runtime_objects+=(build/uefi/objects/runtime-entry.o build/uefi/objects/runtime-exceptions.o)
 fi
 event_objects=()
 if [[ "${UEFI_MODE:-normal}" == iommu-event-* && "$UEFI_MODE" != iommu-event-observe ]]; then
-    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/event-intake.cpp -o build/uefi/event-intake.o
-    event_objects+=(build/uefi/event-intake.o)
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/event-intake.cpp -o build/uefi/objects/event-intake.o
+    event_objects+=(build/uefi/objects/event-intake.o)
 fi
 console_objects=()
 language_entry=examples/kernel.au
@@ -200,65 +200,65 @@ if [[ "${UEFI_MODE:-normal}" == iommu-event-* && "$UEFI_MODE" != iommu-event-obs
 framebuffer_objects=()
 if [[ "${UEFI_MODE:-normal}" == framebuffer || "${UEFI_MODE:-normal}" == framebuffer-record || "${UEFI_MODE:-normal}" == framebuffer-permissions || "${UEFI_MODE:-normal}" == framebuffer-stale ]]; then
     language_entry=examples/kernel-display-service.au
-    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/framebuffer.cpp -o build/uefi/framebuffer.o
-    framebuffer_objects+=(build/uefi/framebuffer.o)
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/framebuffer.cpp -o build/uefi/objects/framebuffer.o
+    framebuffer_objects+=(build/uefi/objects/framebuffer.o)
 fi
 if [[ "${UEFI_MODE:-normal}" == program-* ]]; then language_entry=examples/kernel-program-console.au; fi
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then language_entry=examples/kernel-owned-bytes.au; fi
 if [[ "${UEFI_MODE:-normal}" == snapshot* ]]; then language_entry=examples/kernel-snapshot.au; fi
 if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
     language_entry=examples/kernel-console-service.au
-    as --64 kernel/uefi/console-entry.S -o build/uefi/console-entry.o
-    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/console.cpp -o build/uefi/console.o
-    console_objects+=(build/uefi/console-entry.o build/uefi/console.o)
+    as --64 kernel/uefi/console-entry.S -o build/uefi/objects/console-entry.o
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/console.cpp -o build/uefi/objects/console.o
+    console_objects+=(build/uefi/objects/console-entry.o build/uefi/objects/console.o)
 fi
 if [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
     language_entry=examples/kernel-graphical-console.au
-    as --64 kernel/uefi/console-entry.S -o build/uefi/console-entry.o
-    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/graphical-console.cpp -o build/uefi/graphical-console.o
-    console_objects+=(build/uefi/console-entry.o build/uefi/graphical-console.o)
+    as --64 kernel/uefi/console-entry.S -o build/uefi/objects/console-entry.o
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/graphical-console.cpp -o build/uefi/objects/graphical-console.o
+    console_objects+=(build/uefi/objects/console-entry.o build/uefi/objects/graphical-console.o)
 fi
 "$compiler" --module-root kernel/policies --module-root library "$language_entry" -o build/uefi/language.s
 if [[ "${UEFI_MODE:-normal}" == iommu-event-* && "$UEFI_MODE" != iommu-event-observe ]]; then
-    as --64 build/uefi/language.s kernel/uefi/event-service-entry.S -o build/uefi/language.o
+    as --64 build/uefi/language.s kernel/uefi/event-service-entry.S -o build/uefi/objects/language.o
 elif [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" == graphical-console-capture ]]; then
-    as --64 build/uefi/language.s kernel/uefi/graphical-console-entry.S -o build/uefi/language.o
+    as --64 build/uefi/language.s kernel/uefi/graphical-console-entry.S -o build/uefi/objects/language.o
 elif (( ${#framebuffer_objects[@]} )); then
-    as --64 build/uefi/language.s kernel/uefi/display-service-entry.S -o build/uefi/language.o
+    as --64 build/uefi/language.s kernel/uefi/display-service-entry.S -o build/uefi/objects/language.o
 elif [[ "${UEFI_MODE:-normal}" == program-* ]]; then
-    as --64 build/uefi/language.s kernel/uefi/program-note-entry.S -o build/uefi/language.o
+    as --64 build/uefi/language.s kernel/uefi/program-note-entry.S -o build/uefi/objects/language.o
 elif [[ "${UEFI_MODE:-normal}" == snapshot* ]]; then
-    as --64 build/uefi/language.s kernel/uefi/snapshot-entry.S -o build/uefi/language.o
+    as --64 build/uefi/language.s kernel/uefi/snapshot-entry.S -o build/uefi/objects/language.o
 elif [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
-    as --64 build/uefi/language.s kernel/uefi/owned-bytes-entry.S -o build/uefi/language.o
-    python3 tests/kernel-uefi-owned-bytes-admission.py build/uefi/language.o
+    as --64 build/uefi/language.s kernel/uefi/owned-bytes-entry.S -o build/uefi/objects/language.o
+    python3 tests/kernel-uefi-owned-bytes-admission.py build/uefi/objects/language.o
 elif [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
-    as --64 build/uefi/language.s kernel/uefi/console-service-entry.S -o build/uefi/language.o
+    as --64 build/uefi/language.s kernel/uefi/console-service-entry.S -o build/uefi/objects/language.o
 else
-    as --64 build/uefi/language.s -o build/uefi/language.o
+    as --64 build/uefi/language.s -o build/uefi/objects/language.o
 fi
-as --64 kernel/uefi/payload-entry.S -o build/uefi/payload-entry.o
-as --64 kernel/uefi/memory.S -o build/uefi/memory.o
-"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/payload.cpp -o build/uefi/payload.o
-"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/acpi.cpp -o build/uefi/acpi.o
-"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/pci.cpp -o build/uefi/pci.o
-"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -Ibuild/uefi -c kernel/uefi/runtime.cpp -o build/uefi/runtime.o
+as --64 kernel/uefi/payload-entry.S -o build/uefi/objects/payload-entry.o
+as --64 kernel/uefi/memory.S -o build/uefi/objects/memory.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/payload.cpp -o build/uefi/objects/payload.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/acpi.cpp -o build/uefi/objects/acpi.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/pci.cpp -o build/uefi/objects/pci.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -Ibuild/uefi -c kernel/uefi/runtime.cpp -o build/uefi/objects/runtime.o
 owned_bytes_objects=()
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
-    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/owned-bytes.cpp -o build/uefi/owned-bytes-runtime.o
-    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/owned-bytes.cpp -o build/uefi/owned-bytes-profile.o
-    owned_bytes_objects+=(build/uefi/owned-bytes-runtime.o build/uefi/owned-bytes-profile.o)
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/owned-bytes.cpp -o build/uefi/objects/owned-bytes-runtime.o
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/owned-bytes.cpp -o build/uefi/objects/owned-bytes-profile.o
+    owned_bytes_objects+=(build/uefi/objects/owned-bytes-runtime.o build/uefi/objects/owned-bytes-profile.o)
 elif [[ "${UEFI_MODE:-normal}" == snapshot* ]]; then
-    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/owned-bytes.cpp -o build/uefi/owned-bytes-runtime.o
-    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/snapshot.cpp -o build/uefi/snapshot.o
-    owned_bytes_objects+=(build/uefi/owned-bytes-runtime.o build/uefi/snapshot.o)
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/owned-bytes.cpp -o build/uefi/objects/owned-bytes-runtime.o
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/snapshot.cpp -o build/uefi/objects/snapshot.o
+    owned_bytes_objects+=(build/uefi/objects/owned-bytes-runtime.o build/uefi/objects/snapshot.o)
 fi
 # One layout source; only Event profiles opt into alignment-ordered BSS.
 "$cxx" -E -P -x c "${extra[@]}" kernel/uefi/payload.ld -o build/uefi/payload.ld
 ld -nostdlib -T build/uefi/payload.ld -z max-page-size=0x1000 \
-    build/uefi/payload-entry.o build/uefi/memory.o build/uefi/payload.o build/uefi/acpi.o \
-    build/uefi/pci.o build/uefi/runtime.o "${runtime_objects[@]}" "${console_objects[@]}" \
-    build/uefi/language.o "${owned_bytes_objects[@]}" "${framebuffer_objects[@]}" "${event_objects[@]}" -o build/uefi/payload.elf
+    build/uefi/objects/payload-entry.o build/uefi/objects/memory.o build/uefi/objects/payload.o build/uefi/objects/acpi.o \
+    build/uefi/objects/pci.o build/uefi/objects/runtime.o "${runtime_objects[@]}" "${console_objects[@]}" \
+    build/uefi/objects/language.o "${owned_bytes_objects[@]}" "${framebuffer_objects[@]}" "${event_objects[@]}" -o build/uefi/payload.elf
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     python3 tests/kernel-uefi-owned-bytes-stack.py build/uefi build/uefi/owned-bytes-stack.json
 fi
@@ -326,11 +326,11 @@ if 'uefi_service_drain_begin' in symbols:
  Path('build/uefi/service-timer-metadata.json').write_text(json.dumps(dict(drain_begin=drain_begin,drain_end=drain_end,text_end=symbols['__payload_text_end'],forged_pc=symbols.get('uefi_service_forged_pc',0))))
 Path('build/uefi/embed.S').write_text('.section .rodata.payload,"a"\n.global uefi_embedded_payload\nuefi_embedded_payload:\n.incbin "build/uefi/payload.bin"\n.global uefi_embedded_payload_end\nuefi_embedded_payload_end:\n.section .note.GNU-stack,"",@progbits\n')
 PY
-as --64 build/uefi/embed.S -o build/uefi/embed.o
-as --64 kernel/uefi/transition.S -o build/uefi/transition.o
-"$cxx" "${flags[@]}" "${extra[@]}" -fpie -maccumulate-outgoing-args -Ibuild/uefi -c kernel/uefi/loader.cpp -o build/uefi/loader.o
-for name in loader embed transition memory; do objcopy --remove-section=.comment --remove-section=.note.GNU-stack "build/uefi/$name.o" "build/uefi/$name-pe.o"; done
-"$UEFI_LINKER" -mi386pep --subsystem 10 --entry=aurora_efi_entry --image-base=0x100000 --enable-reloc-section --dynamicbase --nxcompat --no-insert-timestamp build/uefi/loader-pe.o build/uefi/embed-pe.o build/uefi/transition-pe.o build/uefi/memory-pe.o -o build/uefi/esp/EFI/BOOT/BOOTX64.EFI
+as --64 build/uefi/embed.S -o build/uefi/objects/embed.o
+as --64 kernel/uefi/transition.S -o build/uefi/objects/transition.o
+"$cxx" "${flags[@]}" "${extra[@]}" -fpie -maccumulate-outgoing-args -Ibuild/uefi -c kernel/uefi/loader.cpp -o build/uefi/objects/loader.o
+for name in loader embed transition memory; do objcopy --remove-section=.comment --remove-section=.note.GNU-stack "build/uefi/objects/$name.o" "build/uefi/objects/$name-pe.o"; done
+"$UEFI_LINKER" -mi386pep --subsystem 10 --entry=aurora_efi_entry --image-base=0x100000 --enable-reloc-section --dynamicbase --nxcompat --no-insert-timestamp build/uefi/objects/loader-pe.o build/uefi/objects/embed-pe.o build/uefi/objects/transition-pe.o build/uefi/objects/memory-pe.o -o build/uefi/esp/EFI/BOOT/BOOTX64.EFI
 printf 'Built UEFI PE32+ loader and independent payload\n'
 
 image_policy=()

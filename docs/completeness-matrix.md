@@ -20,9 +20,10 @@ every independent expected word and scalar ownership control; this reduces test
 repetition, without changing package APIs, compiler semantics or qualification.
 Public protected-console commands build and check local artifacts; separately
 pinned first-image qualification remains an explicit opt-in workflow.
-Ordinary UEFI profile switches retire named profile-only objects and compiler
-sidecars while preserving caches and unrelated evidence; exact image admission
-remains unchanged. See the [build behavior](local-development.md#what-the-run-commands-do).
+Ordinary UEFI profile switches clear a dedicated disposable object/sidecar
+namespace without per-profile cleanup lists, while preserving outside caches and
+evidence. Link/image/stack admission uses that namespace; artifact paths remain
+stable. See the [build behavior](local-development.md#what-the-run-commands-do).
 Kernel host portability pins freestanding CET/string-operation policy and binds
 stack metadata through complete source locations and exact object symbols; see
 the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
@@ -69,16 +70,21 @@ The current-source `make smoke-graphical-console` runner now retains fresh
 production/capture pixel evidence and an actual final normal restoration. The
 shell also restores the shared `build/uefi` normal image after build-only,
 success, failure and handled interruption, preserving failure status and logs.
+It stages only current required artifacts and bounds default retention to two
+successful and two failed windows, with explicit keep-all/pins and conservative
+preservation of unmarked or unfinished evidence. Whole shared-tree moves are gone.
 Its compiler-free controls are registered in ordinary/optimized Meson `dev`/`full`;
 implementation and registration alone do not establish fresh guest or aggregate passes.
 
 The [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)
 combines Aurora-owned Line64 editing and dirty cells under distinct Console/Display
 borrows. Image admission checks current build provenance, ELF/PE layout, the private
-ABI, stack budgets and disjoint capture state. Capture receipt version 3 is
+ABI, stack budgets and disjoint capture state. Capture receipt version 4 is
 structural evidence: selector, grant, pixel and diagnostic behavior require hosted
-and actual guest tests. Whole-build snapshots and historical object/compiler hash
-allowlists are no longer capture acceptance criteria. The paired page-table walker
+and actual guest tests. Current build provenance binds complete source/tool/output
+identity without historical source-token, object or compiler allowlists; earlier
+receipt schemas cannot satisfy current admission. Removing source-identity tests
+adds no proof of arbitrary adapter behavior. The paired page-table walker
 still has its separately documented narrow machine/storage assumptions.
 
 An explicit leading group of distinct ConsoleSession/DisplaySession borrows keeps

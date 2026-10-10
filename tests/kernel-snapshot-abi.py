@@ -146,12 +146,13 @@ def main(directory, uefi_mode=None, note=False):
             pass
         else:
             raise ValueError("Malformed copied binding admitted")
-    nm = subprocess.check_output(["nm", "-a", str(service.with_suffix(".o"))], text=True)
+    service_object = directory / "objects" / service.with_suffix(".o").name if uefi_mode else service.with_suffix(".o")
+    nm = subprocess.check_output(["nm", "-a", str(service_object)], text=True)
     stack.require(
         any(line.split()[1:] == ["t", entry] for line in nm.splitlines()), "Aggregate entry escaped local linkage"
     )
     stack.require(
-        not subprocess.check_output(["nm", "-u", str(service.with_suffix(".o"))], text=True),
+        not subprocess.check_output(["nm", "-u", str(service_object)], text=True),
         "Protected service acquired an external import",
     )
     result = {

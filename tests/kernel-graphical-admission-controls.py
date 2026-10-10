@@ -2445,9 +2445,10 @@ class Admission(unittest.TestCase):
                 graphical.paired_walker_evidence(changed)
         with tempfile.TemporaryDirectory(prefix="gcc16-frame-controls-") as directory:
             root = Path(directory)
+            (root / "objects").mkdir()
             location = "kernel/uefi/tables.hpp:1:1"
             signature = "exact single walker signature"
-            (root / "graphical-console.su").write_text(location + ":" + signature + "\t128\tstatic\n")
+            (root / "objects/graphical-console.su").write_text(location + ":" + signature + "\t128\tstatic\n")
             label = signature + "\n" + location + "\n128 bytes (static)"
             graph = (
                 'graph: { title: "kernel/uefi/graphical-console.cpp"\nnode: { title: '
@@ -2461,7 +2462,7 @@ class Admission(unittest.TestCase):
                 patch.object(graphical, "CPP_OBJECTS", ("graphical-console",)),
                 patch.object(decoder, "Elf", return_value=obj),
             ):
-                (root / "graphical-console.ci").write_text(graph)
+                (root / "objects/graphical-console.ci").write_text(graph)
                 frames, receipts, proof = graphical.graphical_cpp_frames(decoder, root, linked, graphical.PAIRED_ALIAS)
                 self.assertEqual(frames, {graphical.PAIRED_ALIAS: 128})
                 self.assertEqual(receipts[graphical.PAIRED_ALIAS][0]["compiler_symbol"], graphical.PAIRED_ALIAS)
@@ -2472,7 +2473,7 @@ class Admission(unittest.TestCase):
                     graph.replace("tables.hpp:1:1", "tables.hpp:2:1"),
                     graph.replace(" }\n}", " }\n" + graph.splitlines()[1] + "\n}"),
                 ):
-                    (root / "graphical-console.ci").write_text(changed)
+                    (root / "objects/graphical-console.ci").write_text(changed)
                     with self.subTest(metadata=changed), self.assertRaises(ValueError):
                         graphical.graphical_cpp_frames(decoder, root, linked, graphical.PAIRED_ALIAS)
 
@@ -2553,10 +2554,11 @@ class Admission(unittest.TestCase):
     def test_paired_aliases_both_associate_but_have_one_compiler_frame(self):
         with tempfile.TemporaryDirectory(prefix="paired-frame-controls-") as directory:
             root = Path(directory)
+            (root / "objects").mkdir()
             signature = "paired walker exact source signature"
             location = "kernel/uefi/tables.hpp:1:1"
             line = location + ":" + signature + "\t128\tstatic\n"
-            (root / "graphical-console.su").write_text(line)
+            (root / "objects/graphical-console.su").write_text(line)
             label = signature + "\n" + location + "\n128 bytes (static)"
             graph = (
                 'graph: { title: "kernel/uefi/graphical-console.cpp"\n'
@@ -2566,7 +2568,7 @@ class Admission(unittest.TestCase):
                 + json.dumps(label)
                 + " }\n}"
             )
-            (root / "graphical-console.ci").write_text(graph)
+            (root / "objects/graphical-console.ci").write_text(graph)
             obj, linked = self.paired_object(), self.paired_object(linked=True)
             with (
                 patch.object(graphical, "CPP_OBJECTS", ("graphical-console",)),
@@ -2574,7 +2576,7 @@ class Admission(unittest.TestCase):
                 patch.object(decoder, "associate_object", wraps=decoder.associate_object) as associate,
             ):
                 for raw_symbol in (graphical.PAIRED_WALK, graphical.PAIRED_ALIAS):
-                    (root / "graphical-console.ci").write_text(graph.replace(graphical.PAIRED_WALK, raw_symbol))
+                    (root / "objects/graphical-console.ci").write_text(graph.replace(graphical.PAIRED_WALK, raw_symbol))
                     frames, receipts, aliases = graphical.graphical_cpp_frames(decoder, root, linked)
                     self.assertEqual(frames, {graphical.PAIRED_WALK: 128})
                     self.assertEqual(receipts[graphical.PAIRED_WALK][0]["source"], "kernel/uefi/tables.hpp")
@@ -2596,10 +2598,10 @@ class Admission(unittest.TestCase):
                     graph.replace("128 bytes", "136 bytes"),
                     graph.replace("tables.hpp:1:1", "tables.hpp:2:1"),
                 ):
-                    (root / "graphical-console.ci").write_text(changed)
+                    (root / "objects/graphical-console.ci").write_text(changed)
                     with self.subTest(changed=changed), self.assertRaises(ValueError):
                         graphical.graphical_cpp_frames(decoder, root, linked)
-                (root / "graphical-console.ci").write_text(graph.replace(graphical.PAIRED_WALK, graphical.PAIRED_ALIAS))
+                (root / "objects/graphical-console.ci").write_text(graph.replace(graphical.PAIRED_WALK, graphical.PAIRED_ALIAS))
                 # Metadata must not let an unproved or nonidentical alias reach
                 # the shared frame join. The actual raw .ci spelling is valid.
                 original = obj.functions.pop(graphical.PAIRED_ALIAS)
@@ -2676,21 +2678,7 @@ class Admission(unittest.TestCase):
             if text.count("gnu::noipa") != 1:
                 raise ValueError("Ambiguous validator emission attributes")
 
-        dependencies = {
-            name: (ROOT / name).read_text() for name in (graphical.CAPTURE_NATIVE, *graphical.CAPTURE_SOURCE_PINS)
-        }
-        graphical.capture_source_evidence("graphical-console-capture", dependencies)
-        legacy = dict(dependencies)
         for space in ("console", "display"):
-            legacy["kernel/" + space + "-session.hpp"] = dependencies["kernel/" + space + "-session.hpp"].replace(
-                guard, ""
-            )
-        graphical.capture_source_evidence("graphical-console-capture", legacy)
-        for space in ("console", "display"):
-            mixed = dict(dependencies)
-            mixed["kernel/" + space + "-session.hpp"] = legacy["kernel/" + space + "-session.hpp"]
-            with self.assertRaises(ValueError):
-                graphical.capture_source_evidence("graphical-console-capture", mixed)
             text = (ROOT / "kernel" / (space + "-session.hpp")).read_text()
             check(text)
             for changed in (
@@ -3821,11 +3809,27 @@ class Admission(unittest.TestCase):
                 pe_linker=dict(path=str(paths["pe_linker"]), sha256=graphical.digest(paths["pe_linker"])),
                 output_sha256=hashes([paths["payload.bin"]]),
             )
+            # The actual shared-session header changes in an isolated source tree.
+            # Reintroducing the old five-file token gate must reject this control.
+            for name in (
+                "kernel/graphical-session.hpp",
+                "kernel/console-session.hpp",
+                "kernel/display-session.hpp",
+                "kernel/uefi/graphical-console.cpp",
+                "kernel/uefi/graphical-capture-policy.hpp",
+            ):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ROOT / name).read_bytes())
+            for name in ("scripts", "tests"):
+                (root / name).symlink_to(ROOT / name, target_is_directory=True)
+            paths["source"] = root / "kernel/graphical-session.hpp"
+            record["source_sha256"] = hashes([paths["source"]])
             build = root / "graphical-console-build.json"
             build.write_text(json.dumps(record))
             receipt = root / "graphical-console-admission.json"
             data = dict(
-                schema="aurora-graphical-console-admission-v3",
+                schema="aurora-graphical-console-admission-v4",
                 mode="graphical-console",
                 status="requires-independent-review",
                 clock="tcg-original-clock",
@@ -3835,7 +3839,9 @@ class Admission(unittest.TestCase):
                 sha256=hashes([paths["source"], paths["payload.bin"], build]),
             )
             receipt.write_text(json.dumps(data))
+            real_image_evidence = graphical.image_evidence
             with (
+                patch.object(graphical, "ROOT", root),
                 patch.object(graphical, "BUILD", root),
                 patch.object(graphical, "RECEIPT", receipt),
                 patch.object(graphical, "build_files", return_value=[paths["payload.bin"]]),
@@ -3887,6 +3893,15 @@ class Admission(unittest.TestCase):
                         self.assertRaises(ValueError),
                     ):
                         graphical.reviewed("graphical-console")
+                for version in (1, 2, 3):
+                    old = dict(data, schema=f"aurora-graphical-console-admission-v{version}")
+                    receipt.write_text(json.dumps(old))
+                    with patch.dict(os.environ, {"GRAPHICAL_CONSOLE_REVIEW_SHA256": graphical.digest(receipt)}):
+                        for check in (graphical.checked, graphical.reviewed):
+                            with self.subTest(version=version, check=check.__name__):
+                                with self.assertRaisesRegex(ValueError, "Unexpected graphical receipt"):
+                                    check("graphical-console")
+                receipt.write_text(json.dumps(data))
                 # A caller cannot relabel automatic evidence as independent acceptance.
                 changed = deepcopy(data)
                 changed["status"] = "accepted"
@@ -3926,6 +3941,32 @@ class Admission(unittest.TestCase):
                 build.write_text(json.dumps(dict(record, objects=["payload.bin", "console.o"])))
                 with self.assertRaises(ValueError):
                     graphical.checked("graphical-console")
+                build.write_text(json.dumps(record))
+                original = paths["source"].read_text()
+                changed = original.replace(
+                    "if (active_ || incoming != &trusted)", "if (!incoming || active_ || incoming != &trusted)"
+                )
+                self.assertNotEqual(changed, original, "Exercise a real shared-session implementation edit")
+                paths["source"].write_text(changed)
+                with self.assertRaisesRegex(ValueError, "Graphical source changed since begin"):
+                    graphical.provenance("graphical-console")
+                # Re-enter the real image reader after fresh provenance. Invalid ELF
+                # must fail there, not at a source-token gate; no compiler/guest runs.
+                (root / "payload.elf").write_bytes(b"invalid ELF")
+                pe = root / "esp/EFI/BOOT/BOOTX64.EFI"
+                pe.parent.mkdir(parents=True)
+                pe.write_bytes(b"invalid PE")
+                for mode in ("graphical-console", "graphical-console-capture"):
+                    fresh = dict(
+                        record, mode=mode, flags=graphical.expected_flags(mode), source_sha256=hashes([paths["source"]])
+                    )
+                    build.write_text(json.dumps(fresh))
+                    graphical.provenance(mode)
+                    receipt.write_text(json.dumps(data))
+                    with patch.object(graphical, "image_evidence", side_effect=real_image_evidence):
+                        with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, "Payload ELF architecture"):
+                            graphical.emit(mode)
+                    self.assertFalse(receipt.exists(), "Failed fresh image checks must remove stale PASS")
 
     @staticmethod
     def paired_linked_fixture(shift=0):
@@ -4519,250 +4560,8 @@ class Admission(unittest.TestCase):
             verify(changed)
 
 
-class CaptureFixtureSource(unittest.TestCase):
-    """Mutate real source contracts; these controls make no emitted-code claim."""
-
-    def setUp(self):
-        self.sources = {
-            name: (ROOT / name).read_text()
-            for name in (
-                "kernel/uefi/graphical-console.cpp",
-                "kernel/uefi/graphical-capture-policy.hpp",
-                "kernel/graphical-session.hpp",
-                "kernel/console-session.hpp",
-                "kernel/display-session.hpp",
-            )
-        }
-        self.native = "kernel/uefi/graphical-console.cpp"
-        self.policy = "kernel/uefi/graphical-capture-policy.hpp"
-        self.capture = "graphical-console-capture"
-        self.no_tools = patch.object(
-            graphical.subprocess, "check_output", side_effect=AssertionError("No external tools")
-        )
-        self.no_tools.start()
-        self.addCleanup(self.no_tools.stop)
-        graphical.capture_source_evidence(self.capture, self.sources)
-
-    def reject(self, path, old, new):
-        changed = dict(self.sources)
-        self.assertIn(old, changed[path], "Mutation must exercise actual source")
-        changed[path] = changed[path].replace(old, new, 1)
-        with self.assertRaises(ValueError):
-            graphical.capture_source_evidence(self.capture, changed)
-
-    def test_exact_source_only_modes_and_dependency_inventory(self):
-        expected = {
-            "G": "normal",
-            "C": "cross-console",
-            "D": "cross-display",
-            "c": "stale-console",
-            "d": "stale-display",
-            "F": "first-pixel-error",
-            "I": "interior-pixel-error",
-        }
-        capture = graphical.capture_source_evidence(self.capture, self.sources)
-        production = graphical.capture_source_evidence("graphical-console", self.sources)
-        self.assertEqual(capture["selectors"], expected)
-        self.assertEqual(capture["schema"], "aurora-graphical-capture-source-v2")
-        self.assertEqual(
-            capture["release"],
-            dict(
-                prefix="AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=",
-                codes={"G": 1, "C": 2, "D": 3, "c": 4, "d": 5, "F": 6, "I": 7},
-                invalid=0,
-            ),
-        )
-        self.assertIsNone(production["release"])
-        self.assertEqual(capture["invalid_selectors"], 249)
-        self.assertEqual(capture["failure_successful_store_ordinals"], [0, 55])
-        self.assertEqual(capture["status"], "source-contract-only")
-        self.assertEqual(production["selectors"], {})
-        self.assertEqual(production["failure_successful_store_ordinals"], [])
-        self.assertEqual(len(capture["remaining_behavior_checks"]), 6)
-        self.assertIn(ROOT / self.policy, graphical.source_files())
-        for path in self.sources:
-            changed = dict(self.sources)
-            del changed[path]
-            with self.subTest(missing=path), self.assertRaises(ValueError):
-                graphical.capture_source_evidence(self.capture, changed)
-        with self.assertRaises(ValueError):
-            graphical.capture_source_evidence(self.capture, dict(self.sources, extra="unreviewed"))
-        for mode in ("console", "framebuffer", "capture", "graphical-console-C"):
-            with self.subTest(mode=mode), self.assertRaises(ValueError):
-                graphical.capture_source_evidence(mode, self.sources)
-
-    def test_all_249_unmapped_selectors_and_each_valid_mapping_name(self):
-        for value in set(range(256)) - set(map(ord, "GCDcdFI")):
-            with self.subTest(invalid=value):
-                self.reject(
-                    self.policy,
-                    "return Scenario::invalid;",
-                    f"if (byte == 0x{value:02x}) return Scenario::normal; return Scenario::invalid;",
-                )
-        for selector in "GCDcdFI":
-            with self.subTest(selector=selector):
-                self.reject(self.policy, "'" + selector + "'", "'Z'")
-        for name in (
-            "normal",
-            "cross-console",
-            "cross-display",
-            "stale-console",
-            "stale-display",
-            "first-pixel-error",
-            "interior-pixel-error",
-            "invalid",
-        ):
-            with self.subTest(name=name):
-                self.reject(self.policy, '"' + name + '"', '"wrong-scenario"')
-
-    def test_fixed_failure_ordinals_and_closed_predicate(self):
-        for old, new in (
-            ("successful_stores == 0", "successful_stores == 1"),
-            ("successful_stores == 55", "successful_stores == 54"),
-            ("successful_stores == 55", "successful_stores >= 55"),
-            ("Scenario::first_pixel_error &&", "Scenario::normal &&"),
-            ("std::uint64_t successful_stores", "std::uint64_t successful_stores, std::uint64_t ordinal"),
-            ("return Scenario::invalid;", "return static_cast<Scenario>(byte);"),
-        ):
-            with self.subTest(change=new):
-                self.reject(self.policy, old, new)
-
-    def test_release_uses_only_validated_closed_numeric_code(self):
-        self.reject(
-            self.native, "Serial::number(static_cast<U64>(selected));", "Serial::text(Capture::name(selected));"
-        )
-        for value in (0, 8, 255, 256, 18446744073709551615):
-            with self.subTest(value=value):
-                self.reject(self.native, "Serial::number(static_cast<U64>(selected));", f"Serial::number({value});")
-        self.reject(self.native, "static_cast<U64>(selected)", "static_cast<U64>(selected) + 1")
-        self.reject(self.policy, "invalid,\n    normal,", "invalid,\n    normal = 8,")
-        self.reject(
-            self.native, "AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=", "AURORA_GRAPHICAL_CAPTURE_RELEASED: scenario="
-        )
-
-    def test_gate_rejects_parser_writer_and_boundary_drift(self):
-        for old, new in (
-            ("capture_scenario = selected;", "capture_scenario = Capture::Scenario::normal;"),
-            ("capture_scenario = selected;", "capture_scenario = selected; capture_scenario = selected;"),
-            (
-                "Serial::number(static_cast<U64>(selected));",
-                "Serial::number(static_cast<U64>(selected)); capture_scenario = selected;",
-            ),
-            ('require(selected != Capture::Scenario::invalid, "capture selector");', ""),
-            ('require((status & 0x1e) == 0, "capture UART status");', ""),
-            ("Capture::select(Io::read(0x3f8))", "Capture::select(Io::read(0x3f8) & 0x7f)"),
-            ("remaining = 10000000", "remaining = 10000001"),
-            ("    capture_gate();", "    capture_gate(); capture_gate();"),
-            ("    capture_gate();", "    Service::open(); capture_gate();"),
-            ('Serial::text("AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=");', 'Serial::text("RELEASED");'),
-        ):
-            with self.subTest(change=new):
-                self.reject(self.native, old, new)
-
-    def test_local_crossed_records_and_genuine_stale_generation(self):
-        for old, new in (
-            ("argument.console_grant = display_argument.grant;", "argument.console_grant = console_argument.grant;"),
-            ("argument.display_grant = console_argument.grant;", "argument.display_grant = display_argument.grant;"),
-            (
-                "argument.console_grant = display_argument.grant;",
-                "argument.console_generation = display_argument.generation;",
-            ),
-            ("static_cast<void>(Service::close(console_argument, 0));", ""),
-            ("static_cast<void>(Display::close(display_argument, 0));", ""),
-            ("console_argument = Service::open();\n    }", "console_argument = console_argument;\n    }"),
-            ("display_argument = Display::open();\n    }", "display_argument = display_argument;\n    }"),
-            (
-                "console_argument = Service::open();\n    }",
-                "console_argument = Service::open(); argument.console_generation = console_argument.generation;\n    }",
-            ),
-            (
-                "display_argument = Display::open();\n    }",
-                "display_argument = Display::open(); argument.display_generation = display_argument.generation;\n    }",
-            ),
-            ("display_argument.height};", "display_argument.width};"),
-        ):
-            with self.subTest(change=new):
-                self.reject(self.native, old, new)
-        self.reject("kernel/console-session.hpp", "++generation_;", "generation_ = 1;")
-        self.reject("kernel/display-session.hpp", "generation_ = next;", "generation_ = 1;")
-
-    def test_both_preflights_record_identity_and_single_consumer_entry(self):
-        entry = "kernel/graphical-session.hpp"
-        for old, new in (
-            ("incoming != &trusted", "false"),
-            ("ConsoleSession::preflight(trusted.console_grant, trusted.console_generation);", ""),
-            (
-                "DisplaySession::preflight(trusted.display_grant, trusted.display_generation, "
-                "trusted.width, trusted.height);",
-                "",
-            ),
-            ("const auto result = call(incoming);", "const auto result = call(&trusted);"),
-        ):
-            with self.subTest(change=old):
-                self.reject(entry, old, new)
-        self.reject(self.native, "Entry::invoke(&argument, argument,", "Entry::invoke(nullptr, argument,")
-        self.reject(
-            self.native, "return service_entry(record);", "service_entry(record); return service_entry(record);"
-        )
-        self.reject(self.native, "++consumer_entries;", "")
-
-    def test_pixel_counter_admission_failure_and_sole_store_order(self):
-        for old, new in (
-            ('require(pixel_attempts != UINT64_MAX, "pixel attempt counter overflow");', ""),
-            ("++pixel_attempts;", ""),
-            ("++pixel_attempts;", "++pixel_attempts; ++pixel_attempts;"),
-            ("Capture::fail_pixel(capture_scenario, stores)", "Capture::fail_pixel(capture_scenario, pixel_attempts)"),
-            (
-                "return static_cast<U64>(FramebufferPixelResult::out_of_bounds);",
-                "return static_cast<U64>(FramebufferPixelResult::success);",
-            ),
-            ('require(offset.has_value(), "pixel coordinates");', ""),
-            ('require(stores < 1000000, "pixel lifetime budget");', ""),
-            ("++stores;", "stores += 2;"),
-        ):
-            with self.subTest(change=new):
-                self.reject(self.native, old, new)
-        native = self.sources[self.native]
-        end = native.index("#endif", native.index("require(pixel_attempts")) + len("#endif\n")
-        begin = native.rfind("#ifdef", 0, end)
-        block = native[begin:end]
-        store = (
-            "        const auto result = FramebufferPixels<FramebufferMmio>::pixel"
-            "(*graphics, x, y, red, green, blue);\n"
-        )
-        for anchor in (store, '        require(offset.has_value(), "pixel coordinates");\n'):
-            changed = dict(self.sources)
-            changed[self.native] = native.replace(block, "", 1).replace(anchor, anchor + block, 1)
-            with self.subTest(moved_after=anchor), self.assertRaises(ValueError):
-                graphical.capture_source_evidence(self.capture, changed)
-        self.reject(self.native, store, store + store.replace("const auto result = ", ""))
-
-    def test_exact_diagnostic_counter_sources(self):
-        for old, new in (
-            ('Serial::text(" completed=");', 'Serial::text(" completed_samples=");'),
-            ("Serial::number(pixel_attempts);", "Serial::number(stores);"),
-            ("Serial::number(completed_samples);", "Serial::number(sample_calls);"),
-            ("Serial::number(wakes);", "Serial::number(expected_wake);"),
-            ("Serial::number(output_attempts);", "Serial::number(consumer_entries);"),
-        ):
-            with self.subTest(change=new):
-                self.reject(self.native, old, new)
-
-    def test_capture_condition_scope_and_token_identity(self):
-        for old, new in (
-            ("#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE", "#ifdef AURORA_UEFI_GRAPHICAL_FIXTURE"),
-            ("#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE", "#if defined(AURORA_UEFI_GRAPHICAL_CAPTURE)"),
-            ("#endif", "#else\nU64 pixel_attempts{};\n#endif"),
-            ("#endif", ""),
-            ("++pixel_attempts", "+ +pixel_attempts"),
-        ):
-            with self.subTest(change=new):
-                self.reject(self.native, old, new)
-        changed = dict(self.sources)
-        changed[self.native] += "\n// A comment is not a second capture_scenario writer.\n"
-        graphical.capture_source_evidence(self.capture, changed)
-        self.reject(self.native, "#endif", "#endif\\\n")
-        self.reject(self.native, "#endif", "#endif??/\n")
+class CaptureAdmission(unittest.TestCase):
+    capture = "graphical-console-capture"
 
     def test_capture_structure_gate_cannot_be_cleared_by_source_or_pin(self):
         graphical.require_capture_structure("graphical-console")
@@ -4782,7 +4581,7 @@ class CaptureFixtureSource(unittest.TestCase):
                     graphical.emit(self.capture)
                 self.assertFalse(receipt.exists(), "A source check cannot leave a capture admission receipt")
                 data = dict(
-                    schema="aurora-graphical-console-admission-v3",
+                    schema="aurora-graphical-console-admission-v4",
                     mode=self.capture,
                     status="requires-independent-review",
                     clock="tcg-original-clock",
