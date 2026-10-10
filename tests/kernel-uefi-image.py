@@ -216,7 +216,7 @@ GRAPHICAL_OBJECTS = frozenset(
 )
 REFLECTION_HELPERS = frozenset(
     ("aurora_reflect_size", "aurora_reflect_field_count")
-    + tuple(f"__au_reflect_s{module}_{field}" for module in range(1, 6) for field in ("size", "field_count"))
+    + tuple(f"__au_reflect_s{module}_{field}" for module in range(1, 7) for field in ("size", "field_count"))
 )
 GRAPHICAL_BRIDGES = frozenset(("__au_runtime_graphical_entry", "__au_runtime_graphical_value"))
 GRAPHICAL_IMPORTS = frozenset(("__au_runtime_console_next", "__au_runtime_display_pixel"))
@@ -331,7 +331,10 @@ def snapshot_image_policy(directory, symbols):
         "transition-pe",
         "memory-pe",
     }
-    need({path.stem for path in (directory / "objects").glob("*.o")} == expected_objects, "Exact snapshot object composition")
+    need(
+        {path.stem for path in (directory / "objects").glob("*.o")} == expected_objects,
+        "Exact snapshot object composition",
+    )
     entries = nm_entries(subprocess.check_output(["nm", "-a", str(directory / "objects" / "language.o")], text=True))
     need(
         {name for name, kind in entries.items() if kind == "U"}
@@ -872,7 +875,9 @@ def main(
         )
         language_symbols = subprocess.check_output(["nm", "-a", str(BUILD / "objects" / "language.o")], text=True)
         need("aurora_kernel_value" not in language_symbols, "Owned-byte profile included ordinary scalar graph")
-        profile_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / "owned-bytes-profile.o")], text=True)
+        profile_calls = subprocess.check_output(
+            ["objdump", "-drwC", str(BUILD / "objects" / "owned-bytes-profile.o")], text=True
+        )
         need(
             all(
                 policy_call_present(profile_calls, name)
@@ -911,7 +916,9 @@ def main(
             common.verify_reflection_image(BUILD)
             console_service_policy(symbols, language_symbols, calls, contents, require_graphical_console)
     if "uefi_service_drain_begin" in symbols:
-        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True)
+        policy_relocations = subprocess.check_output(
+            ["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True
+        )
         need(budget_call_present(policy_relocations), "Service timer does not call the actual Aurora budget entry")
         policy_symbols = {
             row.split()[2]: int(row.split()[0], 16) for row in symbols.splitlines() if len(row.split()) == 3
@@ -921,7 +928,9 @@ def main(
             "Aurora budget entry outside owned payload RX",
         )
     if require_ipc:
-        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True)
+        policy_relocations = subprocess.check_output(
+            ["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True
+        )
         need(ipc_call_present(policy_relocations), "Mailbox runtime does not call the actual Aurora transaction entry")
         policy_symbols = {
             row.split()[2]: int(row.split()[0], 16) for row in symbols.splitlines() if len(row.split()) == 3
@@ -934,7 +943,9 @@ def main(
         need(require_ipc, "Disposal profile requires the IPC authority graph")
         # User-run recovery must contain a genuine copied-plan call. Other
         # dispatcher profiles do not necessarily instantiate dispose_client.
-        policy_relocations = subprocess.check_output(["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True)
+        policy_relocations = subprocess.check_output(
+            ["objdump", "-drwC", str(BUILD / "objects" / "runtime.o")], text=True
+        )
         need(
             policy_call_present(policy_relocations, "aurora_kernel_client_disposal"),
             "User recovery does not call the actual Aurora disposal entry",

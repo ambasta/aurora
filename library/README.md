@@ -64,6 +64,17 @@ the unused backing suffix; `at(index)` retains checked BinaryBuffer64 indexing.
 This is pure fixed-value policy with no allocation, service or storage authority;
 it is not a filesystem or a secure-erasure facility.
 
+## Session-local named files
+
+`import console.session_files;` supplies `SessionFiles`, `FileReply` and the closed
+`FileEvent` enum. Four private BinaryBuffer64 records plus an occupancy mask occupy
+264 bytes; construct from one zero buffer. `submit` takes a copied command/count
+and returns an 80-byte owned reply with `status()`, `size()` and guarded `at()`.
+The [console contract](../docs/native-console-service.md#session-local-named-files)
+defines exact `write`, `cat`, `rm`, `ls`, name/content bounds, note reservation,
+state-preserving failures and session lifetime. The module has no device authority,
+allocator or persistence. Presentation receives a reply, never a workspace copy.
+
 ## Deliberately absent
 
 There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, general heap ownership and general interprocedural borrowing remain deferred; the original milestone014 candidate added synchronous readonly local-byte-array spans, now extended by the bounded owned-view contract. Ordinary inline class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.

@@ -1,0 +1,260 @@
+export module console.session_files;
+import std.binary_buffer;
+import std.binary;
+
+export namespace console {
+    enum class FileEvent { unknown, written, read, removed, listed, missing, invalid, full, reserved };
+
+    // Copied response bytes only: no workspace view or session authority escapes.
+    class FileReply {
+        array<u8, 64> bytes;
+        i64 length;
+        FileEvent event;
+    public:
+        FileReply() : bytes{}, length(0), event(FileEvent::unknown) {}
+        auto status() const -> FileEvent { return event; }
+        auto size() const -> i64 { return length; }
+        auto at(i64 index) const -> u8 {
+            if (index < 0 || index >= length) { return '\0'; }
+            return bytes[index];
+        }
+        auto append(u8 byte) -> bool {
+            if (length == 64) { return false; }
+            bytes[length] = byte;
+            length = length + 1;
+            return true;
+        }
+        auto text(builtin::span<const u8> value) -> bool {
+            if (value.size() > 64 - length) { return false; }
+            i64 index = 0;
+            while (index < value.size()) {
+                append(value.at(index));
+                index = index + 1;
+            }
+            return true;
+        }
+        auto select(FileEvent value) -> bool {
+            event = value;
+            if (value == FileEvent::written) {
+                array<u8, 41> message = "files: RAM-only; lost when session exits.";
+                return text(borrow_bytes(message));
+            }
+            if (value == FileEvent::removed) {
+                array<u8, 26> message = "files: removed (RAM-only).";
+                return text(borrow_bytes(message));
+            }
+            if (value == FileEvent::missing) {
+                array<u8, 28> message = "files: not found (RAM-only).";
+                return text(borrow_bytes(message));
+            }
+            if (value == FileEvent::invalid) {
+                array<u8, 31> message = "files: invalid name or content.";
+                return text(borrow_bytes(message));
+            }
+            if (value == FileEvent::full) {
+                array<u8, 22> message = "files: full (4 files).";
+                return text(borrow_bytes(message));
+            }
+            if (value == FileEvent::reserved) {
+                array<u8, 24> message = "files: note is reserved.";
+                return text(borrow_bytes(message));
+            }
+            return true;
+        }
+    };
+
+    // Four session-local records: name length, content length, name[8],
+    // content[49], zero suffix. Occupancy and all records die with the session.
+    class SessionFiles {
+        std::BinaryBuffer64 first;
+        std::BinaryBuffer64 second;
+        std::BinaryBuffer64 third;
+        std::BinaryBuffer64 fourth;
+        u64 occupied;
+
+        auto byte_at(i64 slot, i64 index) const -> u8 {
+            if (slot == 0) { return first.at(index); }
+            if (slot == 1) { return second.at(index); }
+            if (slot == 2) { return third.at(index); }
+            return fourth.at(index);
+        }
+        auto commit(i64 slot, std::BinaryBuffer64 record) -> bool {
+            if (slot == 0) { first = record; }
+            else {
+                if (slot == 1) { second = record; }
+                else {
+                    if (slot == 2) { third = record; }
+                    else { fourth = record; }
+                }
+            }
+            return true;
+        }
+    public:
+        SessionFiles(std::BinaryBuffer64 empty)
+            : first(empty), second(empty), third(empty), fourth(empty), occupied(0u64) {}
+
+        auto submit(std::BinaryBuffer64 command, i64 count) -> FileReply {
+            FileReply reply = FileReply();
+            if (count < 0 || count > 64) {
+                reply.select(FileEvent::invalid);
+                return reply;
+            }
+            if (count == 2 && command.at(0) == 'l' && command.at(1) == 's') {
+                reply.select(FileEvent::listed);
+                array<u8, 6> prefix = "files:";
+                reply.text(borrow_bytes(prefix));
+                i64 slot = 0;
+                while (slot < 4) {
+                    const i64 length = i64(byte_at(slot, 0));
+                    if ((occupied & (1u64 << slot)) != 0u64) {
+                        reply.append(' ');
+                        i64 index = 0;
+                        while (index < length) {
+                            reply.append(byte_at(slot, 2 + index));
+                            index = index + 1;
+                        }
+                    }
+                    slot = slot + 1;
+                }
+                if (occupied == 0u64) {
+                    array<u8, 18> empty = " empty (RAM-only).";
+                    reply.text(borrow_bytes(empty));
+                }
+                return reply;
+            }
+            i64 start = 0;
+            FileEvent action = FileEvent::unknown;
+            if (count >= 6 && command.at(0) == 'w' && command.at(1) == 'r' && command.at(2) == 'i'
+                && command.at(3) == 't' && command.at(4) == 'e' && command.at(5) == ' ') {
+                start = 6;
+                action = FileEvent::written;
+            }
+            if (count >= 4 && command.at(0) == 'c' && command.at(1) == 'a'
+                && command.at(2) == 't' && command.at(3) == ' ') {
+                start = 4;
+                action = FileEvent::read;
+            }
+            if (count >= 3 && command.at(0) == 'r' && command.at(1) == 'm' && command.at(2) == ' ') {
+                start = 3;
+                action = FileEvent::removed;
+            }
+            if (action == FileEvent::unknown) {
+                // Exact verbs and malformed ls are recognized, without accepting prefixes.
+                if ((count == 5 && command.at(0) == 'w' && command.at(1) == 'r'
+                    && command.at(2) == 'i' && command.at(3) == 't' && command.at(4) == 'e')
+                    || (count == 3 && command.at(0) == 'c' && command.at(1) == 'a' && command.at(2) == 't')
+                    || (count == 2 && command.at(0) == 'r' && command.at(1) == 'm')
+                    || (count > 2 && command.at(0) == 'l' && command.at(1) == 's' && command.at(2) == ' ')) {
+                    reply.select(FileEvent::invalid);
+                }
+                return reply;
+            }
+            i64 end = start;
+            while (end < count && command.at(end) != ' ') { end = end + 1; }
+            const i64 name_size = end - start;
+            if (name_size < 1 || name_size > 8
+                || (action == FileEvent::written && end == count)
+                || (action != FileEvent::written && end != count)) {
+                reply.select(FileEvent::invalid);
+                return reply;
+            }
+            i64 index = start;
+            while (index < end) {
+                const u8 byte = command.at(index);
+                if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z')
+                    || (byte >= '0' && byte <= '9') || byte == '.' || byte == '_' || byte == '-')) {
+                    reply.select(FileEvent::invalid);
+                    return reply;
+                }
+                index = index + 1;
+            }
+            if ((name_size == 1 && command.at(start) == '.')
+                || (name_size == 2 && command.at(start) == '.' && command.at(start + 1) == '.')) {
+                reply.select(FileEvent::invalid);
+                return reply;
+            }
+            i64 content_size = 0;
+            if (action == FileEvent::written) {
+                content_size = count - end - 1;
+                if (content_size > 49) {
+                    reply.select(FileEvent::invalid);
+                    return reply;
+                }
+                index = end + 1;
+                while (index < count) {
+                    const u8 byte = command.at(index);
+                    if (byte < ' ' || byte > '~') {
+                        reply.select(FileEvent::invalid);
+                        return reply;
+                    }
+                    index = index + 1;
+                }
+            }
+            if (name_size == 4 && command.at(start) == 'n' && command.at(start + 1) == 'o'
+                && command.at(start + 2) == 't' && command.at(start + 3) == 'e') {
+                reply.select(FileEvent::reserved);
+                return reply;
+            }
+            i64 found = -1;
+            i64 free_slot = -1;
+            i64 slot = 0;
+            while (slot < 4) {
+                const i64 length = i64(byte_at(slot, 0));
+                const bool present = (occupied & (1u64 << slot)) != 0u64;
+                if (!present && free_slot == -1) { free_slot = slot; }
+                if (present && length == name_size) {
+                    bool matches = true;
+                    index = 0;
+                    while (index < name_size) {
+                        if (byte_at(slot, 2 + index) != command.at(start + index)) { matches = false; }
+                        index = index + 1;
+                    }
+                    if (matches) { found = slot; }
+                }
+                slot = slot + 1;
+            }
+            if (action == FileEvent::read) {
+                if (found == -1) { reply.select(FileEvent::missing); return reply; }
+                reply.select(FileEvent::read);
+                index = 0;
+                while (index < i64(byte_at(found, 1))) {
+                    reply.append(byte_at(found, 10 + index));
+                    index = index + 1;
+                }
+                return reply;
+            }
+            if (action == FileEvent::removed && found == -1) {
+                reply.select(FileEvent::missing);
+                return reply;
+            }
+            if (action == FileEvent::written && found == -1 && free_slot == -1) {
+                reply.select(FileEvent::full);
+                return reply;
+            }
+            // Stage a complete zeroed record before committing any workspace field.
+            std::BinaryBuffer64 record = std::BinaryBuffer64();
+            if (action == FileEvent::removed) {
+                commit(found, record);
+                occupied = occupied & ~(1u64 << found);
+            } else {
+                record.write_u8(0, u8(name_size));
+                record.write_u8(1, u8(content_size));
+                index = 0;
+                while (index < name_size) {
+                    record.write_u8(2 + index, command.at(start + index));
+                    index = index + 1;
+                }
+                index = 0;
+                while (index < content_size) {
+                    record.write_u8(10 + index, command.at(end + 1 + index));
+                    index = index + 1;
+                }
+                if (found == -1) { found = free_slot; }
+                commit(found, record);
+                occupied = occupied | (1u64 << found);
+            }
+            reply.select(action);
+            return reply;
+        }
+    };
+}

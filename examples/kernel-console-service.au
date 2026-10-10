@@ -2,6 +2,7 @@ module kernel_console_service;
 import std.binary_buffer;
 import std.binary;
 import console.session_note;
+import console.session_files;
 
 // The editor, command policy and presentation live for one Aurora invocation.
 // Only the leading sealed borrow can perform console transport operations.
@@ -153,7 +154,7 @@ auto show_erased(builtin::ConsoleSession& session) -> bool {
 }
 
 auto show_help(builtin::ConsoleSession& session) -> bool {
-    array<u8, 190> text = "help    Show commands\r\nstatus  Show boot state\r\nwrite note <text>  Replace RAM-only note (max 53 bytes)\r\ncat note          Read RAM-only note\r\nexit    Close this QEMU session; note is lost\r\n";
+    array<u8, 289> text = "help    Show commands\r\nstatus  Show boot state\r\nwrite NAME TEXT   Replace RAM-only file (4 files; name 1-8; text max 49)\r\ncat NAME; rm NAME; ls   Read, remove, list session files\r\nwrite note TEXT; cat note   Separate RAM-only note (max 53)\r\nexit    Close session; note and files are lost\r\n";
     return emit_text(session, borrow_bytes(text));
 }
 
@@ -191,6 +192,7 @@ auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleComple
     Line64 line = Line64();
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
     console::SessionNote note = console::SessionNote(empty);
+    console::SessionFiles files = console::SessionFiles(empty);
     if (!show_ready(session)) {
         return builtin::ConsoleCompletion::output_failure;
     }
@@ -243,7 +245,17 @@ auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleComple
                                                         okay = show_newline(session);
                                                     }
                                                 } else {
-                                                    okay = show_unknown(session);
+                                                    const console::FileReply reply = files.submit(command, count);
+                                                    if (reply.status() == console::FileEvent::unknown) {
+                                                        okay = show_unknown(session);
+                                                    } else {
+                                                        i64 index = 0;
+                                                        while (okay && index < reply.size()) {
+                                                            okay = session.put(reply.at(index)) == builtin::ConsolePutResult::success;
+                                                            index = index + 1;
+                                                        }
+                                                        if (okay) { okay = show_newline(session); }
+                                                    }
                                                 }
                                             }
                                         }

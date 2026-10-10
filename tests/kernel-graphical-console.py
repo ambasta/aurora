@@ -35,6 +35,7 @@ SOURCE_INPUTS = (
     "examples/kernel-display-service.au",
     "library/graphics/font5x7.au",
     "library/console/session_note.au",
+    "library/console/session_files.au",
     "library/std/binary.au",
     "library/std/binary_buffer.au",
     "library/std/bytes.au",
@@ -172,6 +173,36 @@ def cases():
     )
     yield "note-maximum", samples("write note " + "Ab9 !" * 10 + "xyz" + "\ncat note\nexit\n")
     yield "note-overlong", samples("write note " + "x" * 54 + "\ncat note\nexit\n")
+    yield "files-demo", samples("write todo Ship Aurora\nwrite ideas Safer drivers\nls\ncat todo\nrm ideas\nexit\n!")
+    yield (
+        "files-capacity",
+        samples("write a \nwrite b \nwrite c \nwrite d \nwrite e E\nwrite b X\nrm a\nwrite e E\nls\nexit\n!"),
+    )
+    yield "files-replace-empty", samples("write a old suffix\ncat a\nwrite a x\ncat a\nwrite a \ncat a\n") + exit_tail
+    yield "files-missing", samples("ls\ncat a\nrm a\nwrite a x\nrm a\nls\ncat a\n") + exit_tail
+    yield (
+        "files-grammar",
+        samples("write a x\nwrite a\ncat a x\nrm a x\nls a\nrm note\nrm .\ncat ..\ncat a\n") + exit_tail,
+    )
+    yield (
+        "files-names",
+        samples("write A._-09 y\ncat a._-09\ncat A._-09\nwrite a/b x\nwrite 123456789 x\nls\n") + exit_tail,
+    )
+    yield "files-maximum-content", samples("write a " + "Ab9 !" * 9 + "xyz!\ncat a\nexit\n!")
+    yield "files-maximum-name", samples("write A1234567 " + "x" * 45 + "\ncat A1234567\nexit\n!")
+    yield "files-overlong-content", samples("write a x\nwrite a " + "y" * 50 + "\ncat a\nexit\n!")
+    yield (
+        "files-rejected",
+        samples("write a keep\nwrite a bad\x01\nwrite a bad")
+        + [(1, 255, 0)]
+        + samples("\nwrite a bad")
+        + [(0, 0, 1)]
+        + samples("\ncat a\n")
+        + exit_tail,
+    )
+    # The combined limits take 83 bytes through exit, so this must exhaust the
+    # unchanged 80-event budget after the successful read, before exit completes.
+    yield "files-combined-budget", samples("write A1234567 " + "x" * 49 + "\ncat A1234567\nexit\n!")
     yield "capacity64", samples("x" * 64 + "\n") + exit_tail
     yield "overflow65", samples("x" * 65 + "\b\n") + exit_tail
     yield "bad-control", samples("abc") + [(1, 1, 0), (1, 255, 0)] + samples("help\n") + exit_tail
@@ -293,10 +324,20 @@ def execute_cases(compiler, work, records):
         (440, 146, 443, 1),
         sessions=2,
     )
+    check_case(
+        binary,
+        work,
+        records,
+        "files-reset",
+        samples("write a secret\nexit\ncat a\nls\nexit\n"),
+        (440, 146, 443, 1),
+        sessions=2,
+    )
     geometry = (440, 146, 443, 1)
     for name, script in (
         ("failure", samples("hez\blp\nstatus\nexit\nUNCONSUMED")),
         ("note-failure", samples("write note saved\ncat note\nwrite note \ncat note\nexit\nUNCONSUMED")),
+        ("files-failure", samples("write a saved\ncat a\nrm a\nls\nexit\nUNCONSUMED")),
     ):
         total = check_case(binary, work, records, name + "-baseline", script, geometry)
         positions = (0, 1, 53, 55, total // 2, total - 1) if name == "failure" else (total // 2, total - 1)
@@ -392,7 +433,7 @@ def run_gate(args):
     primary = None
     try:
         execute_cases(compiler, work, records)
-        require(len(records) == 108, "incomplete hosted graphical case inventory")
+        require(len(records) == 145, "incomplete hosted graphical case inventory")
     except BaseException as error:
         primary = error
         report.update(error=str(error), exception_type=type(error).__name__)
@@ -411,7 +452,7 @@ def run_gate(args):
         status="failed" if primary else "passed",
         compiler_identity=identity.record(),
         case_count=len(records),
-        expected_cases=dict(transcript_geometry=75, session_reset=1, output_failure=10, denial=22),
+        expected_cases=dict(transcript_geometry=108, session_reset=2, output_failure=13, denial=22),
         generated_sha256={
             name: digest(work / name) for name in ("consumer.s", "consumer.o", "consumer") if (work / name).is_file()
         },
@@ -419,7 +460,7 @@ def run_gate(args):
     write_json(work / "run.json", report)
     if primary is not None:
         raise primary
-    print("PASS: 108 hosted generated-consumer cases; no native image or guest qualification")
+    print("PASS: 145 hosted generated-consumer cases; no native image or guest qualification")
     return work
 
 
