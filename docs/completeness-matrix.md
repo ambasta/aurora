@@ -125,6 +125,14 @@ result-only bindings; ownership, snapshots and synchronous loan cleanup remain
 unchanged. This convenience adds no copy elision or general class expressions;
 final-source qualification remains separate from prior results.
 
+Copied-value x86 lowering now coalesces verified contiguous groups of eight u8
+payload leaves into existing RAX-only qword load/store pairs, retaining exact byte
+tails and separate padding handling. The [byte representation contract](../compiler/BYTES.md#physical-representation-gate)
+keeps IR order, private ABI, ownership, scalar widths, snapshots and stack extents
+unchanged. This is bounded copy transport, not copy elision, a new target storage
+service or a general performance claim. Final-source native/image/guest qualification
+remains separate.
+
 The two JSON append reports normalize invalid success counts once at construction
 and expose plain status reads while preserving failure-count masking and public
 constructor behavior. See the [invariant proof and bounded oracle](json-string-write.md#copied-append-report-invariants).

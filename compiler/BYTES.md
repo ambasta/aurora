@@ -140,8 +140,13 @@ for another field.
 
 Byte loads zero-extend and byte stores require an exact initialized u8 value.
 Checks retain the declared length, exact element type, stride and storage provenance
-before addressing. Copies traverse complete typed fields, and representation padding
-is zeroed; no source expression can address padding. Stack-reservation slack outside
+before addressing. Copies traverse complete typed fields. The x86 backend coalesces
+exact groups of eight initialized u8 leaves only when both canonical source and
+destination byte offsets are consecutive within the selected copied range. Each
+group uses one unaligned-capable qword load/store pair with RAX alone; remaining
+bytes retain exact byte operations. No group includes padding, a non-u8 leaf or an
+owning descriptor. Representation padding is zeroed separately; no source expression
+can address it. Stack-reservation slack outside
 an object's representation is not a source field or copied payload. Scalar private
 calls carry canonical values in registers; aggregate records/results remain distinct
 from receiver storage. This is an internal native convention, not a C ABI or an
