@@ -15,8 +15,10 @@ fi
 qemu="${QEMU:-qemu-system-x86_64}"
 if [[ "$clock_plan" == false ]]; then
     command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing' >&2; exit 2; }
+    # Snapshot failures must also restore a normal image if its image gate fails.
+    if [[ "$mode" == snapshot* ]]; then trap 'UEFI_MODE=normal ./scripts/kernel-uefi-build.sh >/dev/null' EXIT; fi
     UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh
-    if [[ "$mode" != normal ]]; then trap './scripts/kernel-uefi-build.sh >/dev/null' EXIT; fi
+    if [[ "$mode" != normal ]]; then trap 'UEFI_MODE=normal ./scripts/kernel-uefi-build.sh >/dev/null' EXIT; fi
 fi
 cpus=1
 cpu=qemu64
@@ -69,6 +71,9 @@ PYMETA
     else
         python3 tests/kernel-uefi-budget-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
     fi
+elif [[ "$mode" == snapshot* ]]; then
+    cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
+    python3 tests/kernel-snapshot-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"
 elif [[ "$mode" == ipc* ]]; then
     cp build/uefi/user-images.json "build/uefi/$mode.metadata.json"
     python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "build/uefi/$mode.metadata.json"

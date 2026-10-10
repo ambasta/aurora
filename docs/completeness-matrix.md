@@ -129,7 +129,8 @@ final-source qualification remains separate from prior results.
 bounded pointer-free copied classes through named typed initializers. The real
 RAM-sector producer can return an independent 64-byte record/status after closing
 its owners; copied results carry no region authority. Resource copied parameters,
-direct resource-call returns and protected snapshot services remain separate.
+direct resource-call returns remain separate; the protected snapshot composition
+is described below.
 Focused source/IR/private-ABI checks do not replace final integrated qualification.
 
 The existing CPU-only owned-bytes profile adds a [target copied producer handoff](kernel-owned-bytes.md#copied-producer-handoff).
@@ -138,7 +139,22 @@ a private result bridge. The native adapter closes the region, reacquires and
 poisons released backing, then checks all 64 bytes, exact accounting and canaries;
 quota/page exhaustion returns actual zero payloads. Existing caps and runtime
 authority are unchanged. Final-source image/guest/full qualification is separate;
-protected readers, IPC integration and persistent file services remain unimplemented.
+the protected reader composition below has separate qualification gates, and
+persistent file services remain unimplemented.
+
+The optional [protected snapshot profile](../kernel/uefi/ipc.md#protected-snapshot-profile)
+composes the closed-region producer, immutable 64-byte copied value, finite
+stateless client and aggregate service with focused native Mailbox controls.
+The real compiled service selects bytes and bounds-faults on the directed probe.
+Authenticated receive now stages the fixed record through a verified stack lease;
+publication binds to one endpoint generation and restart requires fresh production.
+All eleven finite linked variants pass exact image/ABI and combined stack gates
+with unchanged caps: 14,768 + 512 reserved bytes leaves 80 bytes of admission
+headroom. Native and strict transcript controls have canonical registrations.
+All eleven actual QEMU/OVMF modes passed with exact launched-image captures and
+normal restoration, followed by fresh normal UEFI and BIOS smokes. Final integrated
+`full` and independent outcome review remain release gates; no physical hardware
+qualification follows.
 
 Copied-value x86 lowering now coalesces verified contiguous groups of eight u8
 payload leaves into existing RAX-only qword load/store pairs, retaining exact byte

@@ -105,11 +105,28 @@ class ClockContractTests(unittest.TestCase):
                 inventory += [(family, mode) for mode in wrapper_modes(wrapper)]
         self.assertEqual(len(inventory), 183)
         self.assertEqual(len(set(inventory)), 183)
-        self.assertEqual(set(inventory) | {("uefi", "owned-bytes")}, set(CLOCK.MODE_CLOCKS))
+        snapshots = {
+            ("uefi", mode)
+            for mode in (
+                "snapshot",
+                "snapshot-fault",
+                "snapshot-cancel",
+                "snapshot-owner",
+                "snapshot-stale",
+                "snapshot-revoked",
+                "snapshot-producer-selector",
+                "snapshot-producer-quota",
+                "snapshot-producer-pages",
+                "snapshot-reply-reserved",
+                "snapshot-reply-byte",
+            )
+        }
+        self.assertEqual(set(inventory) | {("uefi", "owned-bytes")} | snapshots, set(CLOCK.MODE_CLOCKS))
+        self.assertTrue(all(CLOCK.clock_profile(*key) == CLOCK.ORIGINAL for key in snapshots))
         self.assertEqual(CLOCK.clock_profile("uefi", "owned-bytes"), CLOCK.ORIGINAL)
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
         self.assertEqual(len(selected), 53)
-        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 131)
+        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 142)
         self.assertEqual(
             hashlib.sha256(("\n".join(sorted(selected)) + "\n").encode()).hexdigest(), SELECTED_NAMES_SHA256
         )
@@ -117,10 +134,18 @@ class ClockContractTests(unittest.TestCase):
         # Protected-console profiles share the budget machinery but run through
         # the separate original-clock PTY route, not the fixed-clock smoke map.
         protected_modes = {
-            "program-console", "program-request-fault", "program-service-fault",
-            "program-completion-fault", "program-request-budget", "program-service-budget",
-            "program-completion-budget", "program-pending", "program-owner",
-            "program-ordinal", "program-unknown", "program-transaction",
+            "program-console",
+            "program-request-fault",
+            "program-service-fault",
+            "program-completion-fault",
+            "program-request-budget",
+            "program-service-budget",
+            "program-completion-budget",
+            "program-pending",
+            "program-owner",
+            "program-ordinal",
+            "program-unknown",
+            "program-transaction",
         }
         admitted = []
         protected = []
@@ -143,7 +168,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 189)
+        self.assertEqual(len(cases), 200)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -199,7 +224,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 145)
+        self.assertEqual(len(modes), 156)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):
@@ -410,6 +435,57 @@ class ClockContractTests(unittest.TestCase):
                     self.assertEqual(result.stdout, "")
             self.assertEqual(snapshot(), before)
 
+    def test_snapshot_launcher_restores_normal_after_success_and_failure(self):
+        # Execute the real launcher with bounded compiler-free stand-ins. This
+        # checks EXIT routing only; no firmware, image compiler or guest runs.
+        with tempfile.TemporaryDirectory(prefix="aurora-snapshot-restore-") as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            (root / "tests").mkdir()
+            for name in ("kernel-uefi-smoke.sh", "kernel_emulator_clock.py"):
+                shutil.copy2(ROOT / "scripts" / name, root / "scripts" / name)
+            (root / "scripts/uefi-firmware.sh").write_text(
+                'uefi_firmware_select() { UEFI_FIRMWARE_COMBINED="$OVMF"; '
+                'UEFI_FIRMWARE_CODE=""; UEFI_FIRMWARE_VARS=""; UEFI_FIRMWARE_ARGS=(-bios "$OVMF"); }\n'
+            )
+            (root / "scripts/kernel-uefi-build.sh").write_text(
+                '#!/usr/bin/env bash\nset -eu\nmode="${UEFI_MODE:-normal}"\n'
+                'echo "$mode" >> builds\nmkdir -p build/uefi\necho "$mode" > build/uefi/current-image\n'
+                'if [[ "$mode" == snapshot* && "${FAIL_BUILD:-0}" == 1 ]]; then exit 7; fi\n'
+                'echo "{}" > build/uefi/user-images.json\n'
+            )
+            (root / "scripts/kernel-uefi-build.sh").chmod(0o755)
+            (root / "qemu").write_text('#!/usr/bin/env bash\necho guest >> executions\nexit "$GUEST_STATUS"\n')
+            (root / "qemu").chmod(0o755)
+            (root / "tests/kernel-snapshot-smoke.py").write_text(
+                'import os\nraise SystemExit(int(os.environ["VALIDATOR_STATUS"]))\n'
+            )
+            for mode, build_fails, guest, validator, wanted in (
+                ("snapshot", 0, 33, 0, 0),
+                ("snapshot-owner", 0, 35, 0, 0),
+                ("snapshot", 0, 33, 9, 9),
+                ("snapshot", 1, 33, 0, 7),
+            ):
+                (root / "builds").write_text("")
+                (root / "executions").write_text("")
+                result = shell_plan(
+                    mode,
+                    root=root,
+                    plan=False,
+                    extra_env={
+                        "QEMU": str(root / "qemu"),
+                        "OVMF": str(root / "firmware.fd"),
+                        "FAIL_BUILD": str(build_fails),
+                        "GUEST_STATUS": str(guest),
+                        "VALIDATOR_STATUS": str(validator),
+                        "UEFI_MODE": "snapshot",
+                    },
+                )
+                self.assertEqual(result.returncode, wanted, result.stdout + result.stderr)
+                self.assertEqual((root / "builds").read_text().splitlines(), [mode, "normal"])
+                self.assertEqual((root / "build/uefi/current-image").read_text(), "normal\n")
+                self.assertEqual((root / "executions").read_text().splitlines(), [] if build_fails else ["guest"])
+
     def test_plan_firmware_selector_errors_and_unresolved_directory(self):
         with tempfile.TemporaryDirectory(prefix="aurora-clock-firmware-") as directory:
             for extra in (
@@ -545,9 +621,9 @@ class ClockContractTests(unittest.TestCase):
         tail = source[source.index("status=$?") :]
         self.assertEqual(
             hashlib.sha256(tail.encode()).hexdigest(),
-            "e2957842c79b5c1f6e6f4399aa8b94d82cc824cc0c11948627a0144f8603695c",
+            "7aebac189112cc5f9ada3dc59962c3bd99b21e91e723f58885cbe02d99b0f718",
         )
-        self.assertIn("trap './scripts/kernel-uefi-build.sh >/dev/null' EXIT", source)
+        self.assertIn("trap 'UEFI_MODE=normal ./scripts/kernel-uefi-build.sh >/dev/null' EXIT", source)
         self.assertEqual(source.count("\ncpus=1\n"), 1)
         self.assertIn('python3 tests/kernel-uefi-budget-smoke.py "$status"', source)
         self.assertIn('python3 tests/kernel-uefi-dispatch-smoke.py "$status"', source)

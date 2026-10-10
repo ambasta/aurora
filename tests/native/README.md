@@ -27,6 +27,12 @@ their unique existing source/build directories; temporary subprocess files are
 private to each invocation. Shared fixed-output pin/NVMe/BIOS wrappers take one
 source-local kernel lock. Other tests remain parallel.
 
+The copied snapshot fixture adds one selected-compiler native runner with a
+private Meson output directory. It executes the real producer/client/service,
+Mailbox controls and linked copied-record ABI checks; an optimized ordered
+transcript self-test is separate. Neither registration executes a guest. The
+composed image builder separately invokes the existing linked stack analysis.
+
 All added gates belong to `full` and `slow`; `integration`, `boot`, `storage` and
 `semantics` permit narrower selection. Existing `dev` coverage is not expanded.
 No QEMU guest or hardware action is included. The BIOS native gate still runs

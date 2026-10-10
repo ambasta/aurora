@@ -14,6 +14,9 @@
 #include "../console.hpp"
 #ifdef AURORA_UEFI_IPC
 #include "../ipc-policy.hpp"
+#ifdef AURORA_UEFI_SNAPSHOT
+#include "snapshot.hpp"
+#endif
 #ifdef AURORA_UEFI_DISPATCH
 #include "../dispatch-policy.hpp"
 #endif
@@ -47,7 +50,20 @@ auto enter(std::uint64_t, std::uint64_t) -> std::uint64_t asm("uefi_runtime_ente
 auto handler(unsigned) -> std::uint64_t asm("uefi_runtime_handler") __attribute__((visibility("hidden")));
 namespace {
 using U64 = std::uint64_t;
-#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+#ifdef AURORA_UEFI_SNAPSHOT
+// Keep repeated bootstrap diagnostics shared in this bounded combined image.
+// The underlying serial behavior is unchanged; neither helper carries authority.
+class SnapshotDiagnostics final {
+public:
+    [[gnu::noinline]] static void text(std::string_view value) {
+        hardware::Serial::text(value);
+    }
+    [[gnu::noinline]] static void number(unsigned long long value) {
+        hardware::Serial::number(value);
+    }
+};
+using Serial = SnapshotDiagnostics;
+#elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
 // Runtime diagnostics and input share the same sticky LSR error latch. A raw
 // hardware::Serial read during a protected command would otherwise erase OE.
 using Serial = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;
@@ -73,6 +89,9 @@ constinit user::ProgramRun program;
 constinit std::optional<ipc::Dispatcher> dispatcher;
 #else
 constinit std::optional<ipc::Mailbox> mailbox;
+#ifdef AURORA_UEFI_SNAPSHOT
+constinit ipc::SnapshotSlot snapshot_slot;
+#endif
 #endif
 #if defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_PROGRAM_CONSOLE)
 unsigned selected_client = 2;
@@ -431,9 +450,17 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #include "program-console.inc"
 #else
 #include "ipc-runtime.inc"
+#ifdef AURORA_UEFI_SNAPSHOT
+#include "snapshot-runtime.inc"
+#endif
 #endif
 #endif
 } // namespace
+#ifdef AURORA_UEFI_SNAPSHOT
+extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64) noexcept {
+    stop("snapshot producer ownership fault");
+}
+#endif
 auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("aurora_exception_dispatch")
     __attribute__((visibility("hidden")));
 auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U64 {
@@ -565,6 +592,10 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
             transaction = *ticket;
             ipc_record("SUBMIT", result, captured.get(48));
         } else if (selected_phase == ipc::Phase::service) {
+#ifdef AURORA_UEFI_SNAPSHOT
+            require(snapshot_slot.matches(endpoint) && ipc::snapshot_reply_valid(result),
+                    "snapshot reply encoding/binding");
+#endif
             require(mailbox->reply(actor, selected_phase, endpoint, captured.get(56), result),
                     "IPC reply capability/transaction/state");
             ipc_record("REPLY", result, 0);
@@ -587,7 +618,11 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     active = L::domain_count;
     return 1;
 }
+#ifdef AURORA_UEFI_SNAPSHOT
+auto run_protected(U64 owned_arena, const Bytes &h, memory::PhysicalPages &producer_pool) -> bool {
+#else
 auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
+#endif
     if (h.get(8, 4) != 3 || !L::valid(owned_arena) || root() != h.get(88))
         return false;
     arena = owned_arena;
@@ -610,6 +645,8 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #endif
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
     run_program_console();
+#elif defined(AURORA_UEFI_SNAPSHOT)
+    run_snapshot(producer_pool);
 #else
     run_ipc();
 #endif

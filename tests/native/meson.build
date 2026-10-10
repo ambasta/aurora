@@ -409,6 +409,15 @@ test('native-semantics-harness', python, args: ['-B', files('../../tests/semanti
 test('native-semantics', python, args: native_adapter_args + ['--compiler', aurorac] + ['--', python] + ['-B', files('../../tests/semantics/run.py'), aurorac],
      suite: ['full', 'slow', 'semantics'], env: native_test_env,
      workdir: native_root, timeout: 1200, depends: aurorac)
+test('native-protected-snapshot', python,
+     args: native_adapter_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
+                                 files('../../scripts/kernel-snapshot-tests.sh'), native_output / 'snapshot'],
+     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
+     workdir: native_root, timeout: 900)
+test('native-snapshot-smoke-controls', python,
+     args: ['-B', '-O', files('../../tests/kernel-snapshot-smoke.py'), '--self-test'],
+     suite: ['full', 'slow', 'integration'], env: native_test_env,
+     workdir: native_root, timeout: 180)
 test('native-policy-budget', python, args: native_adapter_args + ['--compiler', aurorac, '--', python, '-B', '-O', native_root / 'tests/kernel-budget-native.py', '--compiler', aurorac, '--meson-selected-compiler', '--candidate-cap-mib', '1024'],
      depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 900)

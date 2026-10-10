@@ -14,6 +14,11 @@ aurora_program_entry:
     jnz bad_entry
     cmpq $0,-8(%rsp)
     jne bad_entry
+.ifdef SNAPSHOT_SERVICE
+    # Fixed record at S-112, 96 initialized bytes plus a 16-byte sentinel gap.
+    # Reserve before the envelope: calls and locals must grow below the record.
+    sub $112,%rsp
+.endif
     push %rdi
     push %rdx
     push %rcx
@@ -117,13 +122,28 @@ aurora_budget_context_end:
     pop %rdi
 skip_context_probe:
 .endif
+.ifdef SNAPSHOT_SERVICE
+    lea 48(%rsp),%r11
+    call __au_v_m1_16snapshot_service_n0__d16aurora_user_main
+.else
     call aurora_user_main
+.endif
     add $8,%rsp
     pop %r9
     pop %r8
     pop %rcx
     pop %rdx
     pop %rdi
+.ifdef SNAPSHOT_SERVICE
+    add $112,%rsp
+.ifdef SNAPSHOT_REPLY_RESERVED
+    movabs $0x8000000000000000,%r10
+    or %r10,%rax
+.endif
+.ifdef SNAPSHOT_REPLY_BYTE
+    xor $0x100,%rax
+.endif
+.endif
     mov $1,%esi
 .ifdef IPC_OWNER
     xor $1,%edx
@@ -159,4 +179,6 @@ aurora_program_return_pc:
     ud2
 bad_entry:
     ud2
+.ifndef SNAPSHOT_SERVICE
 .section .note.GNU-stack,"",@progbits
+.endif
