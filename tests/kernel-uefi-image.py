@@ -217,7 +217,8 @@ GRAPHICAL_OBJECTS = frozenset(
     )
 )
 REFLECTION_HELPERS = frozenset(
-    ("aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s1_field_count")
+    ("aurora_reflect_size", "aurora_reflect_field_count")
+    + tuple(f"__au_reflect_s{module}_{field}" for module in range(1, 6) for field in ("size", "field_count"))
 )
 GRAPHICAL_BRIDGES = frozenset(("__au_runtime_graphical_entry", "__au_runtime_graphical_value"))
 GRAPHICAL_IMPORTS = frozenset(("__au_runtime_console_next", "__au_runtime_display_pixel"))

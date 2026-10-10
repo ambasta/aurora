@@ -23,7 +23,8 @@ RECEIPT = BUILD / "graphical-console-admission.json"
 MODES = ("graphical-console", "graphical-console-capture")
 ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
 REFLECTION_HELPERS = frozenset(
-    ("aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s1_field_count")
+    ("aurora_reflect_size", "aurora_reflect_field_count")
+    + tuple(f"__au_reflect_s{module}_{field}" for module in range(1, 6) for field in ("size", "field_count"))
 )
 BRIDGE = "__au_runtime_graphical_entry"
 VALUE_BRIDGE = "__au_runtime_graphical_value"
@@ -2804,9 +2805,21 @@ def verify_wait_closure(code, named, functions, language_functions, payload, lin
 def expected_language_functions():
     # Exact current source declarations, using compiler/modules.hpp's reviewed
     # private naming. Root scalar helpers retain leaf names in the sealed graph.
-    def mangle(kind, scope, name):
-        namespace = "0_" if not scope else "1_" + str(len(scope)) + scope
-        return "__au_" + kind + "_m1_24kernel_graphical_console_n" + namespace + "_d" + str(len(name)) + name
+    def mangle(kind, scope, name, module="kernel_graphical_console"):
+        def components(parts):
+            return str(len(parts)) + "_" + "".join(str(len(part)) + part for part in parts)
+
+        return (
+            "__au_"
+            + kind
+            + "_m"
+            + components(module.split("."))
+            + "_n"
+            + components(scope.split("::") if scope else [])
+            + "_d"
+            + str(len(name))
+            + name
+        )
 
     names = {
         BRIDGE,
@@ -2834,6 +2847,7 @@ def expected_language_functions():
             "show_status",
             "show_unknown",
             "show_rejected",
+            "show_note",
             "show_exit",
             "show_empty",
             "show_bounded",
@@ -2842,6 +2856,35 @@ def expected_language_functions():
     for scope, items in methods.items():
         names.add(mangle("k", scope, scope))
         names.update(mangle("m", scope, name) for name in items)
+    # Complete declaration closure of the shared note and its fixed byte storage.
+    # This admits no additional runtime service, allocator or device authority.
+    classes = {
+        ("console.session_note", "console", "SessionNote"): ("size", "at", "submit"),
+        ("std.binary", "std", "ByteReadResult"): ("status", "value_or"),
+        ("std.binary_buffer", "std", "BinaryBuffer64"): (
+            "size",
+            "at",
+            "read_u8",
+            "write_u8",
+            "write_le16",
+            "write_be16",
+            "write_le32",
+            "write_be32",
+            "write_le64",
+            "write_be64",
+        ),
+    }
+    classes.update({("std.bytes", "std", "Bytes" + str(n)): ("at", "set") for n in (2, 4, 8)})
+    classes.update({("std.bytes", "std", "Encode" + str(n) + "Result"): ("status", "bytes_or_zero") for n in (16, 32)})
+    for (module, namespace, name), items in classes.items():
+        scope = namespace + "::" + name
+        names.add(mangle("k", scope, name, module))
+        names.update(mangle("m", scope, item, module) for item in items)
+    for bits in (16, 32, 64):
+        for order in ("le", "be"):
+            names.add(mangle("v", "std", "read_" + order + str(bits), "std.binary"))
+            names.add(mangle("v", "std", "encode_" + order + str(bits), "std.bytes"))
+            names.add(mangle("v", "std", "decode_" + order + str(bits), "std.bytes"))
     return names
 
 

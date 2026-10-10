@@ -156,6 +156,49 @@ def main():
     for malformed in range(1, 6):
         result = execute(samples(b"exit\n"), malformed=malformed)
         require(result.returncode < 0, f"noncanonical report {malformed} accepted")
+    # Exercise the reusable note policy without trusting the line editor to
+    # sanitize its public copied-buffer/count input or preserve copied values.
+    policy = work / "note-policy.au"
+    policy.write_text("""module note_policy;
+import console.session_note;
+import std.binary_buffer;
+import std.binary;
+auto note_contract() -> i64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    console::SessionNote note = console::SessionNote(empty);
+    if (note.size() != -1) { return 1; }
+    std::BinaryBuffer64 command = std::BinaryBuffer64();
+    array<u8, 13> text = "write note xy";
+    i64 index = 0;
+    while (index < 13) { command.write_u8(index, text[index]); index = index + 1; }
+    if (note.submit(command, 13) != console::NoteEvent::written) { return 2; }
+    const console::SessionNote copy = note;
+    if (note.submit(command, -1) != console::NoteEvent::unknown
+        || note.submit(command, 65) != console::NoteEvent::unknown) { return 3; }
+    i64 byte = 0;
+    while (byte < 256) {
+        if (byte < 32 || byte > 126) {
+            command.write_u8(12, u8(byte));
+            if (note.submit(command, 13) != console::NoteEvent::unknown
+                || note.size() != 2 || note.at(1) != 'y') { return 4; }
+        }
+        byte = byte + 1;
+    }
+    if (note.submit(command, 12) != console::NoteEvent::written
+        || note.size() != 1 || note.at(0) != 'x' || copy.size() != 2 || copy.at(1) != 'y') { return 5; }
+    index = 1;
+    while (index < 64) { if (note.at(index) != '\\0') { return 6; } index = index + 1; }
+    return 0;
+}
+""")
+    policy_assembly, policy_host, policy_binary = (work / ("note-policy" + suffix) for suffix in (".s", ".cpp", ""))
+    policy_host.write_text('extern "C" long note_contract();\nint main() { return int(note_contract()); }\n')
+    result = run([compiler, "--module-root", ROOT / "library", policy, "-o", policy_assembly])
+    require(result.returncode == 0, result.stderr.decode())
+    result = run([os.environ.get("CXX", "g++"), policy_host, policy_assembly, "-o", policy_binary])
+    require(result.returncode == 0, result.stderr.decode())
+    result = run([policy_binary])
+    require(result.returncode == 0, "shared note policy count/content/copy/suffix contract")
     # Separate positive ABI graph: a copied report crosses two service calls,
     # five mixed value/span positions follow the capability, and a host put runs
     # with an odd outstanding scalar-expression depth.

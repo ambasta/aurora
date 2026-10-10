@@ -1,6 +1,7 @@
 module kernel_console_service;
 import std.binary_buffer;
 import std.binary;
+import console.session_note;
 
 // The editor, command policy and presentation live for one Aurora invocation.
 // Only the leading sealed borrow can perform console transport operations.
@@ -120,59 +121,6 @@ public:
     }
 };
 
-// One file, owned by this invocation only. No device, disk or allocator access.
-enum class NoteEvent { unknown, written, read, missing };
-
-class SessionNote {
-    std::BinaryBuffer64 bytes;
-    i64 length;
-public:
-    SessionNote(std::BinaryBuffer64 empty) : bytes(empty), length(-1) {
-    }
-
-    auto size() const -> i64 {
-        return length;
-    }
-    auto at(i64 index) const -> u8 {
-        return bytes.at(index);
-    }
-    auto submit(std::BinaryBuffer64 command, i64 count) -> NoteEvent {
-        if (count == 8) {
-            if (command.at(0) == 'c' && command.at(1) == 'a' && command.at(2) == 't'
-                && command.at(3) == ' ' && command.at(4) == 'n' && command.at(5) == 'o'
-                && command.at(6) == 't' && command.at(7) == 'e') {
-                if (length < 0) {
-                    return NoteEvent::missing;
-                }
-                return NoteEvent::read;
-            }
-        }
-        if (count < 11 || count > 64) {
-            return NoteEvent::unknown;
-        }
-        if (command.at(0) != 'w' || command.at(1) != 'r' || command.at(2) != 'i'
-            || command.at(3) != 't' || command.at(4) != 'e' || command.at(5) != ' '
-            || command.at(6) != 'n' || command.at(7) != 'o' || command.at(8) != 't'
-            || command.at(9) != 'e' || command.at(10) != ' ') {
-            return NoteEvent::unknown;
-        }
-        // Rejected input never reaches here. Replace all bytes, including the
-        // unused suffix, only after the complete command has been accepted.
-        const i64 content_size = count - 11;
-        i64 index = 0;
-        while (index < 64) {
-            u8 byte = '\0';
-            if (index < content_size) {
-                byte = command.at(index + 11);
-            }
-            bytes.write_u8(index, byte);
-            index = index + 1;
-        }
-        length = content_size;
-        return NoteEvent::written;
-    }
-};
-
 auto emit_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
     i64 index = 0;
     while (index < text.size()) {
@@ -242,7 +190,7 @@ auto show_exit(builtin::ConsoleSession& session) -> bool {
 auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
     Line64 line = Line64();
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
-    SessionNote note = SessionNote(empty);
+    console::SessionNote note = console::SessionNote(empty);
     if (!show_ready(session)) {
         return builtin::ConsoleCompletion::output_failure;
     }
@@ -277,14 +225,14 @@ auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleComple
                                             command.write_u8(copied, line.submission_byte(copied));
                                             copied = copied + 1;
                                         }
-                                        const NoteEvent action = note.submit(command, count);
-                                        if (action == NoteEvent::written) {
+                                        const console::NoteEvent action = note.submit(command, count);
+                                        if (action == console::NoteEvent::written) {
                                             okay = show_note_written(session);
                                         } else {
-                                            if (action == NoteEvent::missing) {
+                                            if (action == console::NoteEvent::missing) {
                                                 okay = show_note_missing(session);
                                             } else {
-                                                if (action == NoteEvent::read) {
+                                                if (action == console::NoteEvent::read) {
                                                     i64 index = 0;
                                                     while (okay && index < note.size()) {
                                                         const u8 byte = note.at(index);

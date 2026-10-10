@@ -11,7 +11,8 @@ copied input observations and checked single-byte output.
 
 ## Session-local RAM note
 
-Only simple UEFI supports `write note <text>` and `cat note`. The exact prefix
+Simple UEFI and the graphical console share `console.session_note` for
+`write note <text>` and `cat note`. The exact prefix
 `write note ` leaves at most 53 printable ASCII content bytes in a 64-byte line;
 its trailing space alone writes an empty note. `cat note` reports missing or
 prints the content and a newline. Accepted writes replace and clear the old
@@ -20,7 +21,8 @@ suffix; malformed, overlong or UART-damaged input preserves the previous note.
 One invocation-local `BinaryBuffer64` owns the RAM-only note across idle waits
 and other commands. Exit or output failure ends its lifetime; a new invocation
 starts missing. This adds no disk access, persistence, heap or runtime authority,
-and claims no secure RAM erasure. Graphical commands stay unchanged. Fresh
+and claims no secure RAM erasure. The graphical view renders the same content
+through its ordinary response row and dirty-cell painter. Fresh
 final-source qualification is required; historical results below do not cover it.
 
 ## Trusted boundary

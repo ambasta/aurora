@@ -47,8 +47,7 @@ BRIDGE, VALUE = "__au_runtime_graphical_entry", "__au_runtime_graphical_value"
 REFLECTION = (
     "aurora_reflect_size",
     "aurora_reflect_field_count",
-    "__au_reflect_s1_size",
-    "__au_reflect_s1_field_count",
+    *(f"__au_reflect_s{module}_{field}" for module in (1, 2, 3, 4, 5) for field in ("size", "field_count")),
 )
 NEXT, PUT, PIXEL = "__au_runtime_console_next", "__au_runtime_console_put", "__au_runtime_display_pixel"
 
@@ -300,7 +299,7 @@ class ImagePolicy(unittest.TestCase):
         for extra in (
             "aurora_reflect_address",
             "aurora_reflect_size_extra",
-            "__au_reflect_s2_size",
+            "__au_reflect_s6_size",
             "__au_reflect_s1_address",
             "unrelated_global",
         ):

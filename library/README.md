@@ -52,6 +52,18 @@ builtin or replacement for fixed BinaryBuffer64 and Sector512 records. The
 [readonly owner-view extension](../compiler/READONLY-OWNED-SPANS.md) adds
 `bytes() const`, exposing the logical prefix with receiver-bound lifetime checks.
 
+## Session-local console note
+
+`import console.session_note;` supplies `console::SessionNote` and `NoteEvent`
+for the serial and graphical consoles. Construct it from an empty
+`std::BinaryBuffer64`; `size()` is -1 when missing, otherwise 0..53. `submit`
+takes a copied BinaryBuffer64 and accepted line length, recognizes exact
+`cat note` or `write note ` plus printable ASCII, and returns missing/read/written
+or unknown. Invalid counts, prefixes or content preserve the note. Writes clear
+the unused backing suffix; `at(index)` retains checked BinaryBuffer64 indexing.
+This is pure fixed-value policy with no allocation, service or storage authority;
+it is not a filesystem or a secure-erasure facility.
+
 ## Deliberately absent
 
 There are no placeholder implementations of allocator, memory-copy, string, vector, streams, threading, filesystem, locale or process services. General templates, general heap ownership and general interprocedural borrowing remain deferred; the original milestone014 candidate added synchronous readonly local-byte-array spans, now extended by the bounded owned-view contract. Ordinary inline class arguments/results have a bounded implemented value contract. Those mechanisms must precede the corresponding library contracts.

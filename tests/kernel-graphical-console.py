@@ -34,6 +34,10 @@ SOURCE_INPUTS = (
     "examples/kernel-console-service.au",
     "examples/kernel-display-service.au",
     "library/graphics/font5x7.au",
+    "library/console/session_note.au",
+    "library/std/binary.au",
+    "library/std/binary_buffer.au",
+    "library/std/bytes.au",
     "kernel/uefi/graphical-console-entry.S",
     "scripts/compiler_contract.py",
     "scripts/package_profiles.py",
@@ -148,6 +152,26 @@ def cases():
     yield "exit", exit_tail
     yield "editing", samples("hez\blp\r\nstatus\nx\x7fy\n\b\x7f\n") + exit_tail
     yield "commands", samples("help\nstatus\runknown\r\n\nwrite note x\ncat note\n") + exit_tail
+    yield "note-replace", samples("cat note\nwrite note old suffix\ncat note\nwrite note x\ncat note\n") + exit_tail
+    yield "note-empty", samples("write note old suffix\ncat note\nwrite note \ncat note\n") + exit_tail
+    yield "note-edit-crlf", samples("write notf\be fixX\x7f! \r\ncat note\r\n") + exit_tail
+    yield "note-malformed", samples("write note saved\nwrite notes x\nwrite note\ncat note\n") + exit_tail
+    yield "note-control", samples("write note saved\nwrite note bad\x01\ncat note\n") + exit_tail
+    yield (
+        "note-nonascii",
+        samples("write note saved\nwrite note bad") + [(1, 255, 0)] + samples("\ncat note\n") + exit_tail,
+    )
+    for name, damage in (("absent", (0, 0, 1)), ("byte", (1, ord("x"), 1)), ("enter", (1, 13, 1))):
+        yield (
+            "note-damage-" + name,
+            samples("write note saved\nwrite note bad") + [damage] + samples("\ncat note\n") + exit_tail,
+        )
+    yield (
+        "note-damaged-crlf",
+        samples("write note saved\r") + [(1, 10, 1)] + samples("write note bad\ncat note\n") + exit_tail,
+    )
+    yield "note-maximum", samples("write note " + "Ab9 !" * 10 + "xyz" + "\ncat note\nexit\n")
+    yield "note-overlong", samples("write note " + "x" * 54 + "\ncat note\nexit\n")
     yield "capacity64", samples("x" * 64 + "\n") + exit_tail
     yield "overflow65", samples("x" * 65 + "\b\n") + exit_tail
     yield "bad-control", samples("abc") + [(1, 1, 0), (1, 255, 0)] + samples("help\n") + exit_tail
@@ -161,7 +185,7 @@ def cases():
         yield f"printable-{number}", samples(text + "\n") + exit_tail
 
 
-def check_case(binary, work, records, name, script, geometry, fail_after=None):
+def check_case(binary, work, records, name, script, geometry, fail_after=None, sessions=1):
     from kernel_graphical_oracle import reference
 
     width, height, pitch, fmt = geometry
@@ -169,14 +193,16 @@ def check_case(binary, work, records, name, script, geometry, fail_after=None):
     source = work / "script.txt"
     source.write_text("".join(f"{a} {b} {c}\n" for a, b, c in script))
     limit = (1 << 64) - 1 if fail_after is None else fail_after
-    command([binary, *geometry, out, source, limit, "normal"], work, f"case-{len(records):03}")
-    expected = reference(script, width=width, height=height, pitch=pitch, pixel_format=fmt, fail_after=fail_after)
+    command([binary, *geometry, out, source, limit, "normal", sessions], work, f"case-{len(records):03}")
+    expected = reference(
+        script, width=width, height=height, pitch=pitch, pixel_format=fmt, fail_after=fail_after, sessions=sessions
+    )
     report = json.loads((out / "report.json").read_text())
     require(report["completion"] == expected["completion"], (name, report))
     require(report["consumed"] == expected["consumed"], (name, report))
-    require(report["entries"] == 1 and report["put_calls"] == 0, (name, report))
+    require(report["entries"] == sessions and report["put_calls"] == 0, (name, report))
     require(report["next_calls"] == report["consumed"], (name, report))
-    require(report["frames"] == len(expected["frames"]) == report["next_calls"] + 1, (name, report))
+    require(report["frames"] == len(expected["frames"]) == report["next_calls"] + sessions, (name, report))
     actual_stores = list(struct.iter_unpack("<QI", (out / "stores.bin").read_bytes()))
     require(actual_stores == expected["stores"], f"{name}: exact store sequence mismatch")
     require(report["stores"] == len(actual_stores), (name, report))
@@ -187,7 +213,15 @@ def check_case(binary, work, records, name, script, geometry, fail_after=None):
     require((out / "pixels.bin").read_bytes() == expected["pixels"], f"{name}: terminal framebuffer mismatch")
     count = len(actual_stores)
     retain_case(
-        work, records, name=name, script=script, geometry=geometry, fail_after=fail_after, report=report, output=out
+        work,
+        records,
+        name=name,
+        script=script,
+        geometry=geometry,
+        fail_after=fail_after,
+        sessions=sessions,
+        report=report,
+        output=out,
     )
     shutil.rmtree(out)  # Successful raw buffers are compacted only after complete comparisons.
     print(f"PASS {name}: completion={report['completion']} samples={report['consumed']} stores={count}")
@@ -250,11 +284,24 @@ def execute_cases(compiler, work, records):
     for geometry in [(440, 146, 443, 0), (800, 600, 803, 1), (1024, 768, 1024, 0)]:
         for name, script in cases():
             check_case(binary, work, records, name, script, geometry)
-    script = samples("hez\blp\nstatus\nexit\nUNCONSUMED")
+    check_case(
+        binary,
+        work,
+        records,
+        "note-reset",
+        samples("write note secret\nexit\ncat note\nexit\n"),
+        (440, 146, 443, 1),
+        sessions=2,
+    )
     geometry = (440, 146, 443, 1)
-    total = check_case(binary, work, records, "failure-baseline", script, geometry)
-    for index in (0, 1, 53, 55, total // 2, total - 1):
-        check_case(binary, work, records, f"failure-{index}", script, geometry, index)
+    for name, script in (
+        ("failure", samples("hez\blp\nstatus\nexit\nUNCONSUMED")),
+        ("note-failure", samples("write note saved\ncat note\nwrite note \ncat note\nexit\nUNCONSUMED")),
+    ):
+        total = check_case(binary, work, records, name + "-baseline", script, geometry)
+        positions = (0, 1, 53, 55, total // 2, total - 1) if name == "failure" else (total // 2, total - 1)
+        for index in positions:
+            check_case(binary, work, records, f"{name}-{index}", script, geometry, index)
     modes = [
         "null-record",
         "copied-record",
@@ -345,7 +392,7 @@ def run_gate(args):
     primary = None
     try:
         execute_cases(compiler, work, records)
-        require(len(records) == 68, "incomplete hosted graphical case inventory")
+        require(len(records) == 108, "incomplete hosted graphical case inventory")
     except BaseException as error:
         primary = error
         report.update(error=str(error), exception_type=type(error).__name__)
@@ -364,7 +411,7 @@ def run_gate(args):
         status="failed" if primary else "passed",
         compiler_identity=identity.record(),
         case_count=len(records),
-        expected_cases=dict(transcript_geometry=39, output_failure=7, denial=22),
+        expected_cases=dict(transcript_geometry=75, session_reset=1, output_failure=10, denial=22),
         generated_sha256={
             name: digest(work / name) for name in ("consumer.s", "consumer.o", "consumer") if (work / name).is_file()
         },
@@ -372,7 +419,7 @@ def run_gate(args):
     write_json(work / "run.json", report)
     if primary is not None:
         raise primary
-    print("PASS: 68 hosted generated-consumer cases; no native image or guest qualification")
+    print("PASS: 108 hosted generated-consumer cases; no native image or guest qualification")
     return work
 
 
