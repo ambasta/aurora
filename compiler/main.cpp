@@ -8,7 +8,7 @@ int main(int argc, char **argv) {
     // earlier option is invalid. Values of path-taking options are not flags.
     for (int index = 1; index < argc; ++index) {
         const std::string option = argv[index];
-        if (option == "--module-root" || option == "-o")
+        if (option == "--module-root" || option == "-o" || option == "--stack-facts")
             ++index;
         else if (option == "--diagnostics=json")
             jsonDiagnostics = true;
@@ -16,10 +16,13 @@ int main(int argc, char **argv) {
     try {
         std::filesystem::path inputPath;
         std::filesystem::path outputPath;
+        std::filesystem::path stackFactsPath;
         std::vector<std::filesystem::path> roots;
         bool checkOnly = false;
+        bool localSymbols = false;
         bool inputSpecified = false;
         bool outputSpecified = false;
+        bool stackFactsSpecified = false;
         bool formatSpecified = false;
         const auto argumentError = [](const std::string &message) {
             return aurora::Error(aurora::DiagnosticCode::CommandLine, message);
@@ -35,6 +38,15 @@ int main(int argc, char **argv) {
                     throw argumentError("exactly one -o OUTPUT.s is required");
                 outputSpecified = true;
                 outputPath = argv[index];
+            } else if (option == "--stack-facts") {
+                if (++index >= argc || stackFactsSpecified)
+                    throw argumentError("--stack-facts requires exactly one output path");
+                stackFactsSpecified = true;
+                stackFactsPath = argv[index];
+            } else if (option == "--local-symbols") {
+                if (localSymbols)
+                    throw argumentError("duplicate --local-symbols option");
+                localSymbols = true;
             } else if (option == "--check") {
                 if (checkOnly)
                     throw argumentError("duplicate --check option");
@@ -51,12 +63,19 @@ int main(int argc, char **argv) {
             }
         }
         if (inputPath.empty() || (!checkOnly && outputPath.empty())) {
-            const std::string usage = "usage: aurorac [--module-root DIR] INPUT.au -o OUTPUT.s\n"
+            const std::string usage = "usage: aurorac [--local-symbols] [--module-root DIR] INPUT.au -o OUTPUT.s "
+                                      "[--stack-facts OUTPUT.json]\n"
                                       "       aurorac --check [--diagnostics=text|json] [--module-root DIR] INPUT.au";
             throw argumentError(usage);
         }
         if (checkOnly && outputSpecified)
             throw argumentError("--check does not accept -o");
+        if (checkOnly && stackFactsSpecified)
+            throw argumentError("--check does not accept --stack-facts");
+        if (stackFactsSpecified && stackFactsPath.empty())
+            throw argumentError("--stack-facts requires a nonempty output path");
+        if (checkOnly && localSymbols)
+            throw argumentError("--check does not accept --local-symbols");
         if (jsonDiagnostics && !checkOnly)
             throw argumentError("--diagnostics=json requires --check");
         auto checked = aurora::checkSource(inputPath, roots);
@@ -65,9 +84,20 @@ int main(int argc, char **argv) {
                 aurora::writeDiagnosticsJson(std::cout, {});
             return 0;
         }
-        auto result = aurora::X86Emitter{}.emit(checked.module);
-        aurora::host::ArtifactWriter output(outputPath, std::move(checked.sourceIdentities));
+        aurora::X86Emitter emitter;
+        auto result =
+            emitter.emit(checked.module, localSymbols ? aurora::SymbolBinding::Local : aurora::SymbolBinding::Default);
+        aurora::host::ArtifactWriter output(outputPath, checked.sourceIdentities);
+        std::optional<aurora::host::ArtifactWriter> stackFacts;
+        if (stackFactsSpecified) {
+            stackFacts.emplace(stackFactsPath, std::move(checked.sourceIdentities));
+            if (output.sameDestination(*stackFacts))
+                throw argumentError("assembly and stack facts require different output paths");
+            stackFacts->write(emitter.stackFactsJson());
+        }
         output.write(result);
+        if (stackFacts)
+            stackFacts->commit();
         output.commit();
         return 0;
     } catch (const aurora::Error &error) {

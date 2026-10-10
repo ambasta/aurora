@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build the two pointer-free staged IPC user programs."""
+"""Validate staged IPC images and emit their bounded metadata/header."""
 
 from pathlib import Path
-import argparse, json, struct, subprocess
+import argparse, json, subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE = 0x10000000000
@@ -71,9 +71,7 @@ def service_metadata(meta, blob, symbols, function_size, compiled="aurora_user_m
     return dict(meta, compiled_begin=begin, compiled_end=end, context_begin=probe_begin, context_end=probe_end)
 
 
-def build(
-    compiler,
-    out,
+def validate_composition(
     mode,
     service_budget=False,
     dispatcher=False,
@@ -97,85 +95,19 @@ def build(
     )
     need(not user_budget or dispatcher or program_console, "User budgets require dispatcher profile")
     need(not dispatcher or service_budget, "Dispatcher requires service timer profile")
-    (out / "objects").mkdir(parents=True, exist_ok=True)
-    run = lambda args: subprocess.run([str(x) for x in args], cwd=ROOT, check=True)
+
+
+def emit_metadata(
+    out, mode, service_budget=False, dispatcher=False, user_budget=False, program_console=False, snapshot=False
+):
+    validate_composition(mode, service_budget, dispatcher, user_budget, program_console, snapshot)
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
     for index, name in enumerate(("clean", "bounds", "peer") if dispatcher else ("clean", "bounds")):
         prefix = out / f"user-{name}"
-        obj = out / "objects" / f"user-{name}.o"
-        fixture = "budget-service" if service_budget and index == 1 else "ipc-client" if index == 0 else "ipc-service"
-        if program_console:
-            fixture = "program-upper-client" if index == 0 else "program-stream-service"
-        if dispatcher:
-            fixture = "dispatch-service" if index == 1 else "dispatch-client-a" if index == 0 else "dispatch-client-b"
-        if user_budget and not program_console and index != 1:
-            fixture = "user-budget-client-a" if index == 0 else "user-budget-client-b"
-        if snapshot:
-            fixture = "snapshot-client" if index == 0 else "snapshot-service"
-        run(
-            [
-                compiler,
-                ROOT / f"tests/kernel-programs/{fixture}.au",
-                "--module-root",
-                ROOT / "library",
-                *(["--module-root", ROOT / "kernel/policies"] if snapshot or program_console else []),
-                "-o",
-                prefix.with_suffix(".s"),
-            ]
-        )
-        adapter = out / "objects" / f"user-{name}-entry.o"
-        hostile = (index == 0 and mode in ("owner", "stale", "version", "phase", "site", "unknown", "ordinal")) or (
-            index == 1 and mode in ("transaction", "mmio", "softint", "fpu", "context")
-        )
-        if dispatcher and index == 2 and mode == "peer-code":
-            hostile = True
-        if user_budget and mode == "context":
-            hostile = index == 0
-        flags = ["--defsym", f"IPC_{mode.upper().replace(chr(45), chr(95))}=1"] if hostile else []
-        if user_budget and mode == "context" and index == 0:
-            flags += ["--defsym", "IPC_CLIENT_CONTEXT=1"]
-        if (snapshot or program_console) and index == 1:
-            flags += ["--defsym", "SNAPSHOT_SERVICE=1" if snapshot else "PROGRAM_NOTE_SERVICE=1"]
-            if mode in ("reply-reserved", "reply-byte"):
-                flags += ["--defsym", f"SNAPSHOT_{mode.upper().replace(chr(45), chr(95))}=1"]
-            run(
-                [
-                    "as",
-                    "--64",
-                    "-L",
-                    *flags,
-                    prefix.with_suffix(".s"),
-                    ROOT / "kernel/uefi/ipc-user-entry.S",
-                    "-o",
-                    obj,
-                ]
-            )
-            inputs = [obj]
-        else:
-            run(["as", "--64", "-L", prefix.with_suffix(".s"), "-o", obj])
-            run(["as", "--64", *flags, ROOT / "kernel/uefi/ipc-user-entry.S", "-o", adapter])
-            inputs = [adapter, obj]
         elf = prefix.with_suffix(".elf")
         binary = prefix.with_suffix(".bin")
         base = BASE + index * 4096
-        run(
-            [
-                "ld",
-                "-nostdlib",
-                "--discard-none",
-                "-T",
-                ROOT / "kernel/program.ld",
-                "--defsym",
-                f"USER_BASE={base}",
-                "-z",
-                "max-page-size=0x1000",
-                *inputs,
-                "-o",
-                elf,
-            ]
-        )
-        run(["objcopy", "-O", "binary", elf, binary])
         need(
             "There are no relocations" in subprocess.check_output(["readelf", "-rW", elf], text=True),
             "Unresolved image relocations",
@@ -229,7 +161,6 @@ def build(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--compiler", required=True)
     parser.add_argument("--output", default="build/uefi")
     parser.add_argument(
         "--mode",
@@ -259,8 +190,7 @@ if __name__ == "__main__":
     parser.add_argument("--program-console", action="store_true")
     parser.add_argument("--snapshot", action="store_true")
     args = parser.parse_args()
-    build(
-        Path(args.compiler).resolve(),
+    emit_metadata(
         Path(args.output).resolve(),
         args.mode,
         args.service_budget,

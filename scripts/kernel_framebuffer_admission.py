@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import importlib.util
 import json
-import re
 import subprocess
 import sys
 
@@ -33,6 +32,13 @@ def load(name, path):
 common = load("framebuffer_common", ROOT / "scripts/kernel_program_console_admission.py")
 console = load("framebuffer_decoder_controls", ROOT / "scripts/kernel_console_service_admission.py")
 console.ENTRY, console.BRIDGE = ENTRY, BRIDGE
+
+
+def configure_paths(build_dir, source_root=None):
+    global ROOT, BUILD
+    common.configure_paths(build_dir, source_root or ROOT)
+    ROOT, BUILD = common.ROOT, common.BUILD
+    console.configure_paths(BUILD, ROOT)
 
 
 def normalize_instruction(decoder, row, payload):
@@ -86,8 +92,11 @@ def stack_evidence(directory):
             normalized.append(receipt)
     starts = {symbol.address: name for name, symbol in linked.functions.items()}
     need(len(starts) == len(linked.functions), "Ambiguous function starts")
-    frames, associations = decoder.cpp_frames(directory, linked)
-    language, memory = decoder.Elf(directory / "objects" / "language.o"), decoder.Elf(directory / "objects" / "memory.o")
+    frames, associations = decoder.cpp_frames(directory, linked, source_root=ROOT)
+    language, memory = (
+        decoder.Elf(directory / "objects" / "language.o"),
+        decoder.Elf(directory / "objects" / "memory.o"),
+    )
     for obj in (language, memory):
         for symbol in obj.functions.values():
             decoder.associate_object(linked, obj, symbol)
@@ -127,15 +136,12 @@ def stack_evidence(directory):
     bridge = linked.functions[BRIDGE]
     body = [row for address, row in sorted(code.items()) if bridge.address <= address < bridge.address + bridge.size]
     console.verify_bridge_body(decoder, body, starts)
-    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts, associations)
-    recursive = {decoder.WALK}
     for name in functions:
-        common.graph_peak(functions, frames, name, recursive)
-    normal = common.graph_peak(functions, frames, "uefi_payload_entry", recursive)
-    session = common.graph_peak(functions, frames, ENTRY, recursive)
+        common.graph_peak(functions, frames, name)
+    normal = common.graph_peak(functions, frames, "uefi_payload_entry")
+    session = common.graph_peak(functions, frames, ENTRY)
     fault = 48 + max(
-        common.graph_peak(functions, frames, name, recursive)["peak"]
-        for name in ("uefi_payload_fault", "uefi_payload_page_fault")
+        common.graph_peak(functions, frames, name)["peak"] for name in ("uefi_payload_fault", "uefi_payload_page_fault")
     )
     verify_stack_budget(normal["peak"], fault)
     return dict(
@@ -151,7 +157,7 @@ def stack_evidence(directory):
         linked_functions=functions,
         assembly_objects=assembly,
         normalized_stack_immediates=normalized,
-        page_verifier=dict(roots=roots, levels=levels, maximum_live_frames=4),
+        page_verifier=dict(traversal_slots=4, recursion="rejected"),
         disassembly_sha256=hashlib.sha256(disassembly.encode()).hexdigest(),
     )
 
@@ -180,7 +186,7 @@ def build_files():
         for suffix in (".su", ".ci")
     ]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
-    return [BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci")) else name) for name in names]
+    return common.build_artifacts(names)
 
 
 def begin(mode, compiler, cxx, flags):
@@ -229,6 +235,7 @@ def inputs(record, mode):
 def end(mode):
     record = json.loads((BUILD / "framebuffer-build-start.json").read_text())
     inputs(record, mode)
+    common.verify_object_exports(build_files())
     record["output_sha256"] = common.hashes(build_files())
     (BUILD / "framebuffer-build.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 
@@ -236,8 +243,11 @@ def end(mode):
 def emit(mode):
     record = json.loads((BUILD / "framebuffer-build.json").read_text())
     inputs(record, mode)
+    common.verify_object_exports(build_files())
     need(record["output_sha256"] == common.hashes(build_files()), "Build output changed")
-    subprocess.run([sys.executable, "-B", ROOT / "tests/kernel-uefi-image.py"], cwd=ROOT, check=True)
+    subprocess.run(
+        [sys.executable, "-B", ROOT / "tests/kernel-uefi-image.py", "--build-dir", BUILD], cwd=ROOT, check=True
+    )
     result = dict(
         schema="aurora-framebuffer-admission-v1",
         status="requires-independent-review",
@@ -265,6 +275,7 @@ def checked(mode):
     )
     record = json.loads((BUILD / "framebuffer-build.json").read_text())
     inputs(record, mode)
+    common.verify_object_exports(build_files())
     need(record["output_sha256"] == common.hashes(build_files()), "Build output changed")
     need(receipt["build"] == record, "Admitted build provenance changed")
     expected = common.hashes(common.source_files() + build_files() + [BUILD / "framebuffer-build.json"])
@@ -274,14 +285,18 @@ def checked(mode):
 
 def main():
     parser = argparse.ArgumentParser()
+    common.path_arguments(parser)
     parser.add_argument("action", choices=("begin", "end", "emit", "checked"))
     parser.add_argument("--mode", required=True, choices=MODES)
     parser.add_argument("--compiler")
     parser.add_argument("--cxx")
     parser.add_argument("--flag", action="append", default=[])
     args = parser.parse_args()
+    common.check_depfile_options(args)
+    configure_paths(args.build_dir or args.source_root / "build/uefi", args.source_root)
     if args.action == "begin":
         begin(args.mode, args.compiler, args.cxx, args.flag)
+        common.write_build_depfile(args, "framebuffer-build-start.json")
     elif args.action == "end":
         end(args.mode)
     elif args.action == "emit":

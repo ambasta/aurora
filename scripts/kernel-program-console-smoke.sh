@@ -17,31 +17,17 @@ if [[ "$qualification" == true ]]; then
     python3 -B scripts/kernel_program_console_admission.py reviewed --mode "$mode"
 fi
 program_console_preflight
-restore() {
-    local status=$? restored
-    trap - EXIT INT TERM
-    set +e
-    UEFI_MODE=normal MAKEFLAGS=-j1 ./scripts/kernel-uefi-build.sh >build/program-console-restoration.log 2>&1
-    restored=$?
-    if (( restored != 0 )); then
-        cat build/program-console-restoration.log >&2
-        echo 'FAIL: normal-image restoration failed' >&2
-        if (( status == 0 )); then status=$restored; fi
-    fi
-    exit "$status"
-}
-# Synchronous builds finish before handled interruption can restore their outputs.
-# Preflight rejection above never modifies images or triggers restoration.
-trap restore EXIT
+# Isolated local builds and reviewed prebuilt images need no destructive rebuild.
 trap 'exit 130' INT
 trap 'exit 143' TERM
 args=(--mode "$mode")
 if [[ "$qualification" == true ]]; then
     args+=(--qualification)
 else
-    if UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh; then :; else
+    if image_dir="$(UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh --print-image-dir)"; then :; else
         status=$?; echo "FAIL: protected-console image build/admission exited $status" >&2; exit "$status"
     fi
+    args+=(--build-dir "$image_dir")
 fi
 if python3 -B tests/kernel-program-console-pty.py "${args[@]}"; then :; else
     status=$?; echo "FAIL: protected-console PTY exited $status" >&2; exit "$status"

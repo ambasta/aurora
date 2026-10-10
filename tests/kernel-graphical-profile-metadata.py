@@ -55,9 +55,10 @@ class ProfileMetadata(unittest.TestCase):
             "kernel_program_console_admission.py",
         ):
             self.assertTrue(set(combined).isdisjoint(literal("scripts/" + checker, "MODES")))
-        build = (ROOT / "scripts/kernel-uefi-build.sh").read_text()
-        self.assertIn(" graphical-console|graphical-console-capture)", build)
-        self.assertNotIn("graphical-console|framebuffer", build)
+        catalog = load("metadata_profiles", "scripts/kernel_profiles.py").profiles()
+        for mode in combined:
+            self.assertEqual(catalog["uefi/" + mode]["admission"], "graphical")
+            self.assertEqual(catalog["uefi/" + mode]["bridge"], "kernel/uefi/graphical-console-entry.S")
 
     def test_no_legacy_clock_admission_or_inherited_receipt(self):
         clock = load("graphical_metadata_clock", "scripts/kernel_emulator_clock.py")
@@ -77,38 +78,17 @@ class ProfileMetadata(unittest.TestCase):
         self.assertTrue(set(combined).isdisjoint(mode for family, mode in clock.AUXILIARY_CLOCKS))
 
     def test_mandatory_combined_checker_routing(self):
-        build = (ROOT / "scripts/kernel-uefi-build.sh").read_text()
-        self.assertIn("set -euo pipefail", build)
-        invalidation = build.index("    rm -f -- build/uefi/graphical-console-admission.json")
-        guard = build.index("    if [[ ! -f scripts/kernel_graphical_console_admission.py ]]")
-        self.assertLess(invalidation, guard)
-        self.assertLess(guard, build.index('cxx="'))
-        prefix = build[invalidation:guard]
-        self.assertIn("build/uefi/graphical-console-build.json", prefix)
-        self.assertIn("build/uefi/graphical-console-build-start.json", prefix)
-        self.assertNotIn("||", prefix)
-        self.assertNotIn("payload", prefix)
-        commands = re.findall(
-            r'^\s*python3 -B scripts/kernel_graphical_console_admission.py (\w+) --mode "\$UEFI_MODE"',
-            build,
-            re.MULTILINE,
-        )
-        self.assertEqual(commands, ["begin", "end", "emit"])
-        begin = build.index("scripts/kernel_graphical_console_admission.py begin")
-        compile_at = build.index("-c kernel/uefi/graphical-console.cpp")
-        end = build.index("scripts/kernel_graphical_console_admission.py end")
-        emit = build.index("scripts/kernel_graphical_console_admission.py emit")
-        self.assertLess(begin, compile_at)
-        self.assertLess(compile_at, end)
-        self.assertLess(end, emit)
-        self.assertIn('--linker "$UEFI_LINKER"', build[begin:compile_at])
-        # Exact mode predicates keep legacy admission branches separate. This
-        # intentionally does not pin the temporary source-only refusal guard.
-        for match in re.finditer(
-            r"^\s*python3 -B scripts/kernel_graphical_console_admission.py[^\n]*", build, re.MULTILINE
-        ):
-            self.assertNotIn("||", match[0])
-            self.assertNotIn("&&", match[0])
+        profiles = load("metadata_profile_selection", "scripts/kernel_profiles.py")
+        catalog = profiles.profiles()
+        for mode in ("graphical-console", "graphical-console-capture"):
+            self.assertEqual(profiles.select("uefi", {"UEFI_MODE": mode}), mode)
+            self.assertEqual(profiles.canonical_profile("uefi", mode), mode)
+            self.assertEqual(catalog["uefi/" + mode]["admission"], "graphical")
+            for inherited in ({"KERNEL_CONSOLE": "1"}, {"KERNEL_TEST_SCHEDULE": "1"}):
+                with self.assertRaises(ValueError):
+                    profiles.select("uefi", inherited, mode)
+        for mode in ("console", "framebuffer", "program-console"):
+            self.assertNotEqual(catalog["uefi/" + mode]["admission"], "graphical")
 
     def test_combined_live_source_inventory(self):
         admission = load("graphical_metadata_admission", "scripts/kernel_graphical_console_admission.py")

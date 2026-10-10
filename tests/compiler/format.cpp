@@ -145,6 +145,13 @@ void structuralWrapping() {
                         }),
             "oversized member atom lost its long-line finding");
 }
+void parenthesizedReturns() {
+    golden("module x;auto f()->i64{return(1+2);}", "module x;\nauto f() -> i64 {\n    return (1 + 2);\n}\n");
+    golden("module x;auto f()->bool{return(true)&&(false);}",
+           "module x;\nauto f() -> bool {\n    return (true) && (false);\n}\n");
+    // Function calls keep their tight opening parenthesis.
+    golden("module x;auto f()->i64{return g(1);}", "module x;\nauto f() -> i64 {\n    return g(1);\n}\n");
+}
 void byteLiterals() {
     golden("module x;auto f()->u8{return '[';}", "module x;\nauto f() -> u8 {\n    return '[';\n}\n");
     golden(R"(module x;auto f()->u8{return '~'&('\xff');})",
@@ -318,6 +325,7 @@ void cases() {
 } // namespace
 int main(int argc, char **argv) {
     try {
+        parenthesizedReturns();
         byteLiterals();
         byteStrings();
         cases();

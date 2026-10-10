@@ -15,7 +15,7 @@ import zlib
 
 import kernel_framebuffer_admission as admission
 from framebuffer_capture_oracle import HEIGHT, WIDTH, need, parse_ppm
-from kernel_emulator_clock import expected_firmware_argv
+from qemu_transport import firmware_args as firmware_options
 
 ROOT = Path(__file__).resolve().parents[1]
 capture = admission.load("framebuffer_preview_capture", ROOT / "scripts/kernel-framebuffer-capture.py")
@@ -55,17 +55,18 @@ def png(ppm):
     )
 
 
-def run(qemu, firmware, code, variables, data):
+def run(qemu, firmware, code, variables, data, *, build_dir):
+    admission.configure_paths(build_dir, ROOT)
     preflight()
     admitted = admission.checked("framebuffer")
-    firmware_args = expected_firmware_argv(firmware, code, variables)
+    firmware_args = firmware_options(firmware, code, variables)
     parent = ROOT / "build/framebuffer-preview"
     parent.mkdir(exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="run-", dir=parent))
     # All capture artifacts are fresh, so a failed rerun cannot expose an old
     # screenshot as its successful result. Ordinary preview never mints reviews.
     (directory / "admission.json").write_text(json.dumps(admitted, indent=2) + "\n")
-    manifest = {"cases": {"framebuffer": {"esp": str(ROOT / "build/uefi/esp")}}}
+    manifest = {"cases": {"framebuffer": {"esp": str(admission.BUILD / "esp")}}}
     receipt = dict(schema="aurora-framebuffer-preview-v1", qualified=False, status="failed")
     try:
         result = capture.run_case(
@@ -101,6 +102,7 @@ def interrupted(signum, frame):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--preflight", action="store_true")
+    parser.add_argument("--build-dir", type=Path, help="exact native framebuffer profile directory")
     parser.add_argument("inputs", nargs="*")
     args = parser.parse_args()
     if args.preflight:
@@ -109,7 +111,8 @@ def main():
     else:
         need(len(args.inputs) == 5, "Expected QEMU OVMF CODE VARS DATA from kernel-framebuffer-preview.sh")
         signal.signal(signal.SIGTERM, interrupted)
-        run(*args.inputs)
+        need(args.build_dir is not None, "capture requires --build-dir")
+        run(*args.inputs, build_dir=args.build_dir)
 
 
 if __name__ == "__main__":

@@ -9,16 +9,21 @@ borrows, readable glyph literals, host-toolchain portability and a complete
 canonical Meson graph. Every merge or release requires final integrated GCC 16
 `full` tests plus normal BIOS/UEFI and applicable image/actual guest checks.
 GCC 14 is optional targeted compatibility evidence, not a routine gate.
-A [dependency-only GCC 16 container foundation](local-development.md#pinned-container-foundation)
-is source-prepared for full native, LSP and stock normal BIOS/UEFI CI. No published
-digest or successful container run is claimed yet; existing qualification and
-special patched-emulator fixture requirements remain in force.
 Make is a convenience entrypoint to the same incremental graph; a second full
 Make aggregate is not required. Fresh explicit build directories configure
 automatically; compiler/flag changes select separate defaults, while changed
 backend/runtime identities reject reuse and require a fresh directory.
 The [Meson artifact adapter](meson-bootstrap.md) now removes its own successful
 scratch by default, preserving failures, explicit keeps and raw Meson logs.
+Explicit [cleanup targets](local-development.md#reclaiming-old-local-output-explicitly)
+remove verified Meson products or older successful managed smoke windows, with
+previews and busy/path/keep refusals. They preserve unmarked historical scratch,
+failed/kept smoke runs and raw Meson logs; no whole-build-tree sweep is provided.
+Normal BIOS and UEFI now have [native Meson image targets](meson-bootstrap.md#normal-native-kernel-images)
+with per-profile outputs, real C++ compilation-database entries and explicit
+assembly/link/metadata/image dependencies. Specialized profiles retain their
+legacy paths. Source-only implementation and helper controls do not establish
+fresh image, incremental-build, full-suite or guest qualification.
 Compiler-free behavior controls do not establish a full native pass or measured savings.
 Package Manifest/Graph command receipts distinguish actual compiler and native
 CPU/wall cost under fixed watchdogs; see the [test contract](developer-test-contract.md).
@@ -37,8 +42,8 @@ the [host-toolchain contract](../kernel/README.md#host-toolchain-boot-layout).
 This mechanism does not transfer qualification between compiler or distro builds.
 BAR preparation now accounts for compiler-absorbed queue helpers using the
 [bounded metadata contract](../kernel/README.md#host-toolchain-boot-layout).
-Shared read-only `testq` and register-only `bts` stack effects replace Event-specific
-mask/offset/register guards; memory bit-set forms remain unsupported, and
+Shared read-only `testq` and register-only `bts`/`btr` stack effects replace Event-specific
+mask/offset/register guards; memory bit-update forms remain unsupported, and
 operand, flag and carrier controls do not establish field provenance or fresh
 image/guest qualification.
 The shared native harness retains complete per-command artifact accounting with
@@ -51,7 +56,11 @@ The private hosted-lexer candidate implements all lexical events in Aurora,
 including lossless trivia and literal validation, behind one trusted immutable
 source import. Its stage 1 rebuilds the lexer with identical assembly; the
 parser, semantics and backend remain C++. The [lexer checkpoint](../compiler/LEXER.md#hosted-aurora-lexer-checkpoint)
-identifies production and seed/reference build routes. Focused evidence is not
+identifies production and seed/reference build routes. Named host event values
+are checked against generated results, and the bootstrap requests local backend
+symbol binding rather than rewriting assembly. Its checks compare actual ELF
+exports, symbol layouts and linked code/data while retaining the private ABI.
+Focused evidence is not
 final integrated full/image/guest qualification or whole-compiler self-hosting.
 None of the six destination goals is complete. A bounded feature or passing test
 suite does not establish production safety, whole-system readiness or physical
@@ -89,26 +98,33 @@ success, failure and handled interruption, preserving failure status and logs.
 It stages only current required artifacts and bounds default retention to two
 successful and two failed windows, with explicit keep-all/pins and conservative
 preservation of unmarked or unfinished evidence. Whole shared-tree moves are gone.
-Only the current managed run's successful screen dumps/probes are compacted to
-hash/size receipts after shared restoration; logs, summaries and images remain.
+Only the current managed run's successful screen dumps/probes are discarded
+after shared restoration; logs, summaries and images remain.
 Build/guest/restoration failure or interruption and explicit-keep dumps remain
 under the existing window policy. Post-success cleanup interruptions retain the
-remaining dumps and hash receipt. Old Meson/smoke output has an explicit per-directory cleanup procedure;
+remaining dumps. Old Meson/smoke output has an explicit per-directory cleanup procedure;
 there is no new historical sweep. Missing Event prerequisites are `BLOCKED` before
-build/evidence allocation, while build and guest defects remain `FAIL`.
+build/evidence allocation; present but malformed or integrity-mismatched inputs,
+including custom model, binary and dependency bytes, remain `FAIL` alongside build
+and guest defects.
 Its compiler-free controls are registered in ordinary/optimized Meson `dev`/`full`;
 implementation and registration alone do not establish fresh guest or aggregate passes.
 
 The [bounded graphical-console profile](framebuffer-console.md#bounded-serial-input-graphical-session)
 combines Aurora-owned Line64 editing and dirty cells under distinct Console/Display
 borrows. Image admission checks current build provenance, ELF/PE layout, the private
-ABI, stack budgets and disjoint capture state. Capture receipt version 4 is
+ABI, stack budgets and disjoint capture state. Capture receipt version 5 is
 structural evidence: selector, grant, pixel and diagnostic behavior require hosted
 and actual guest tests. Current build provenance binds complete source/tool/output
 identity without historical source-token, object or compiler allowlists; earlier
 receipt schemas cannot satisfy current admission. Removing source-identity tests
-adds no proof of arbitrary adapter behavior. The paired page-table walker
-still has its separately documented narrow machine/storage assumptions.
+adds no proof of arbitrary adapter behavior. The paired graphical page-table
+traversal now uses four fixed local slots and the common acyclic stack analysis;
+its compiler-specific recursive recognizers and frozen fixtures are removed.
+Snapshot ordering, local-storage independence and traversal semantics now rely
+on reviewed C++ and trusted compilation, plus hostile hosted/guest checks. The
+candidate remains unqualified pending fresh source/image and behavioral gates;
+prior paired-machine receipts cannot establish the new version-5 boundary.
 
 An explicit leading group of distinct ConsoleSession/DisplaySession borrows keeps
 both authorities separate through either formal order and singleton/pair forwarding.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build, exercise the real bounded PTY acceptance gate, then restore a normal image.
+# Build an isolated console image and exercise the bounded PTY acceptance gate.
 set -euo pipefail
 usage() {
     echo 'Usage: scripts/kernel-console-smoke.sh [bios|uefi] (automated 30-second PTY acceptance)'
@@ -20,7 +20,7 @@ for name in "${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE 
         exit 2
     fi
 done
-# Check both emulator and builder dependencies before arming image restoration.
+# Check emulator and builder dependencies before creating profile outputs.
 # The PTY test owns its deadline; no timeout wrapper or alternate QEMU recipe is used.
 qemu="${QEMU:-qemu-system-x86_64}"
 export QEMU="$qemu"
@@ -41,34 +41,13 @@ if [[ "$mode" == uefi ]]; then
     source ./scripts/uefi-linker.sh
     uefi_linker_select
 fi
-restore_normal_image() {
-    local status=$? restore_status
-    trap - EXIT INT TERM
-    set +e
-    if [[ "$mode" == uefi ]]; then
-        UEFI_MODE=normal ./scripts/kernel-uefi-build.sh
-    else
-        KERNEL_CONSOLE=0 ./scripts/kernel-build.sh
-    fi
-    restore_status=$?
-    if (( restore_status != 0 )); then
-        echo "FAIL: normal $mode image restoration exited $restore_status" >&2
-        if (( status == 0 )); then status=$restore_status; fi
-    fi
-    exit "$status"
-}
-# Only a started console-image build can need restoration. Preflight failures
-# above do not build or alter either image, including through this exit trap.
-trap restore_normal_image EXIT
+# Native profile outputs do not overwrite the normal image.
 trap 'exit 130' INT
 trap 'exit 143' TERM
-# Keep builds synchronous: Bash defers these traps until the foreground build
-# completes, including when INT/TERM is sent only to this wrapper. Do not use
-# an interruptible background wait that could restore over a surviving build.
 if [[ "$mode" == uefi ]]; then
-    UEFI_MODE=console ./scripts/kernel-uefi-build.sh
-    python3 -B tests/kernel-console-pty.py --uefi
+    image_dir="$(UEFI_MODE=console ./scripts/kernel-uefi-build.sh --print-image-dir)"
+    python3 -B tests/kernel-console-pty.py --uefi --build-dir "$image_dir"
 else
-    KERNEL_CONSOLE=1 ./scripts/kernel-build.sh
-    python3 -B tests/kernel-console-pty.py
+    image_dir="$(KERNEL_CONSOLE=1 ./scripts/kernel-build.sh --print-image-dir)"
+    python3 -B tests/kernel-console-pty.py --build-dir "$image_dir"
 fi

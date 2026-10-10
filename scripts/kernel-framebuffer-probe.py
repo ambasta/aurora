@@ -11,7 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import subprocess
+import qemu_transport as transport
 import sys
 import time
 
@@ -21,19 +21,21 @@ def digest(path):
 
 
 def verify_manifest(filename, expected, root, source=False):
+    transport.input_path(filename, "reviewed manifest")
     if digest(filename) != expected:
-        raise SystemExit("Manifest digest mismatch")
+        raise ValueError("Manifest digest mismatch")
     rows = json.loads(Path(filename).read_text())
     actual = []
     for path in sorted(root.rglob("*")):
         if path.is_file() and not (source and any(part in {"build", ".git", "__pycache__"} for part in path.parts)):
             actual.append(dict(path=path.relative_to(root).as_posix(), sha256=digest(path)))
     if rows != actual:
-        raise SystemExit("Manifest content mismatch: " + str(root))
+        raise ValueError("Manifest content mismatch: " + str(root))
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--build-dir", required=True, type=Path, help="reviewed native framebuffer probe profile")
     parser.add_argument("--qemu", required=True)
     parser.add_argument("--qemu-sha256", required=True)
     parser.add_argument("--data", required=True)
@@ -49,17 +51,19 @@ def main():
     parser.add_argument("--data-manifest-sha256", required=True)
     parser.add_argument("--evidence", required=True)
     args = parser.parse_args()
-    image = Path("build/uefi/esp/EFI/BOOT/BOOTX64.EFI")
+    build = transport.input_path(args.build_dir, "reviewed image directory", directory=True)
+    image = build / "esp/EFI/BOOT/BOOTX64.EFI"
     for path, expected in (
         (args.qemu, args.qemu_sha256),
         (args.firmware, args.firmware_sha256),
         (image, args.image_sha256),
-        ("build/uefi/payload.elf", args.payload_sha256),
+        (build / "payload.elf", args.payload_sha256),
         (args.compiler, args.compiler_sha256),
     ):
+        transport.input_path(path, "reviewed input")
         if not re.fullmatch(r"[0-9a-f]{64}", expected) or digest(path) != expected:
-            raise SystemExit("Reviewed input digest mismatch: " + str(path))
-    data = Path(args.data).resolve(strict=True)
+            raise ValueError("Reviewed input digest mismatch: " + str(path))
+    data = transport.input_path(args.data, "QEMU data", directory=True)
     verify_manifest(args.source_manifest, args.source_manifest_sha256, Path("."), source=True)
     verify_manifest(args.data_manifest, args.data_manifest_sha256, data)
     sys.path.insert(0, str(Path("tests").resolve()))
@@ -67,38 +71,13 @@ def main():
 
     evidence = Path(args.evidence)
     evidence.mkdir(parents=True, exist_ok=False)
-    command = [
-        str(Path(args.qemu).resolve()),
-        "-L",
-        str(data),
-        "-machine",
-        "q35",
-        "-accel",
-        "tcg",
-        "-cpu",
-        "qemu64",
-        "-smp",
-        "1",
-        "-m",
-        "128M",
-        "-bios",
-        str(Path(args.firmware).resolve()),
-        "-drive",
-        "format=raw,file=fat:ro:build/uefi/esp,snapshot=on",
-        "-vga",
-        "std",
-        "-nic",
-        "none",
-        "-display",
-        "none",
-        "-serial",
-        "stdio",
-        "-monitor",
-        "none",
-        "-no-reboot",
-        "-device",
-        "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    ]
+    command = transport.command(
+        Path(args.qemu).resolve(),
+        data,
+        firmware=["-bios", str(Path(args.firmware).resolve())],
+        boot=transport.fat_boot(build / "esp"),
+        peripherals=["-vga", "std"],
+    )
     receipt = dict(
         command=command,
         clock="tcg-original-clock",
@@ -114,16 +93,8 @@ def main():
     )
     (evidence / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     start = time.monotonic()
-    try:
-        result = subprocess.run(
-            command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30, check=False
-        )
-        output = result.stdout
-        status = result.returncode
-    except subprocess.TimeoutExpired as error:
-        output = error.stdout or b""
-        status = 124
-    (evidence / "serial.log").write_bytes(output)
+    status = transport.run_logged(command, evidence / "serial.log", timeout=30)
+    output = (evidence / "serial.log").read_bytes()
     text = output.decode("ascii", errors="replace")
     try:
         observation = validate(status, text)
@@ -148,4 +119,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (Exception, KeyboardInterrupt) as error:
+        print(transport.failure_label(error) + ": framebuffer probe: " + str(error), file=sys.stderr)
+        raise SystemExit(2 if isinstance(error, transport.MissingPrerequisite) else 1) from error

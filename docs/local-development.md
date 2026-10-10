@@ -2,8 +2,9 @@
 
 These commands run on an x86-64 Linux development host. They build disposable
 emulator images; they do not install Aurora or change the host bootloader.
-Run only one build/test command at a time in a checkout: the existing scripts
-share `build/`. Use a checkout path without whitespace: the inherited Make/test
+Run only one legacy build/test command at a time in a checkout: specialized
+scripts still share `build/`. The normal BIOS/UEFI Meson targets have isolated
+profile outputs and may build together in one Ninja invocation. Use a checkout path without whitespace: the inherited Make/test
 recipes do not consistently quote every repository/output path. Invoking a script
 from another working directory does not remove that checkout-path limitation.
 Never write the images to a physical disk or attach user data.
@@ -55,62 +56,6 @@ run. When a context is present, Make validates it before the `run`, `run-uefi`
 or `kernel-uefi` recipe can proceed. The wrappers still reject an inherited context after that check.
 No shortcut promises unsupervised execution using an active sealed compiler.
 
-## Pinned container foundation
-
-The dependency-only [Containerfile](../ci/Containerfile) and
-[toolchain workflow](../.github/workflows/toolchain.yml) prepare one GCC 16
-image for CI and developers. This is a bootstrap foundation: no published image
-digest or successful container qualification is claimed yet. The existing release
-gates and host commands still apply until the real image passes them.
-
-The image fixes a Debian base digest, the 2026-10-09 Debian package snapshot,
-GCC 16.2.0, binutils 2.47, Meson 1.12.1, Ninja 1.13.2, the GNU PE linker,
-nlohmann-json 3.11.3, clang-format 22.1.8 and Ruff 0.16.7. It retains the existing
-stock QEMU 10.0.13 and combined OVMF bytes. It contains dependencies only; the
-checkout is mounted at runtime. The immutable snapshot still requires valid
-Debian signatures; only its expiration check is disabled for later rebuilds.
-
-The initial workflow is restricted to pushes to `ci/gcc16-container`, with one
-90-minute standard Linux job and two compile/test workers. Before the first
-triggering push, confirm available included Actions capacity or explicit bounded
-spending approval. It does not enable billing, create credentials, change package
-visibility or start a larger runner. It uses GitHub's short-lived workflow token
-and publishes a private package only after complete Meson `full`, separate LSP,
-and real normal BIOS/UEFI boots succeed. The private digest is pulled back and
-checked against the tested image before being reported in the run summary.
-Commands and complete test/smoke output go to the GitHub job logs. Failed runs
-also print the remaining Meson diagnostics. This disposable CI job uploads no
-Actions artifacts; existing local failure evidence remains untouched.
-
-After that successful run, commit its exact `ghcr.io/ambasta/aurora-toolchain@sha256:`
-reference as the only line in `ci/image`. Never invent a digest or pin a mutable
-tag. Until this file exists, `scripts/container.sh` fails with a clear prerequisite
-message. Add ordinary PR/main CI against this same proven digest, then remove
-the temporary bootstrap push trigger; keep manual image rebuilds explicit.
-
-With a verified pin, Docker and an existing authorized private-registry login:
-
-```sh
-./scripts/container.sh                              # development shell
-./scripts/container.sh bash ci/test.sh               # clean full/LSP/normal boots
-./scripts/container.sh meson test -C build/container --suite dev --num-processes 2
-```
-
-`ci/test.sh` expects a fresh `build/container` directory. Ordinary incremental
-Meson commands can reuse it; when using explicit cleanup, select
-`MESON_BUILD_DIR=build/container`. The launcher uses the caller's UID/GID, no
-network, a read-only image filesystem and a disposable writable `/tmp`. It does
-not pass host credentials or inherited toolchain settings into the container.
-Private pulls require existing registry access; the launcher does not create a
-token, change visibility or export large image archives.
-
-The first image covers stock normal boots. The patched AMD-IOMMU Event model,
-clean BAR firmware and their special control artifacts remain separate fixtures.
-This workflow does not run or claim `make smoke-all`, all affected-profile
-qualification, physical hardware, or equivalence of those fixtures. Keep their
-existing gates when the corresponding code changes. Remove host discovery and
-per-run toolchain hashing only after the supported image is actually verified.
-
 ## Dependencies and overrides
 
 Install dependencies using your normal host package-management workflow:
@@ -121,10 +66,21 @@ QEMU system x86-64 and its matching PC firmware/data files. UEFI needs a
 readable x86-64 OVMF firmware: a combined ROM or a matching CODE/VARS pair.
 The canonical native tests require Meson 1.12.1+ and Ninja as well.
 
+Normal `make kernel`, `make kernel-uefi` and standalone normal run commands use
+the [native Meson image graph](meson-bootstrap.md#normal-native-kernel-images).
+Select its directory with `MESON_BUILD_DIR`. Images and normal serial logs live
+under `<build>/kernel-images/{bios,uefi}/normal`; specialized and pinned/prebuilt
+shell routes retain their existing paths. Default `make` builds the compiler once
+through the BIOS graph and atomically copies that compiler to `build/aurorac`
+for compatibility. Explicit `make compiler` retains its legacy compiler recipe.
+For hosted-only custom compiler/sanitizer flags, use a separate Meson setup with
+`-Dkernel_images=false`; this does not qualify `full`/`boot` image coverage.
+
 The scripts do not download or install tools. Missing dependencies fail with a
 nonzero status. The run wrapper checks QEMU, timeout and requested firmware
 paths before building; both image builders check their required tools before
-creating output directories. UEFI also checks PE-linker support before compiling. A tool being present does not establish that its
+creating output directories. Meson validates its compiler and PE-linker support
+at setup before building image targets. A tool being present does not establish that its
 version or configuration is qualified.
 
 ```sh
@@ -144,6 +100,8 @@ GNU binutils are selected through `PATH`. See the [host-toolchain boot contract]
 for required capabilities. UEFI needs GNU `ld`'s `i386pep` PE/COFF backend in
 addition to the native ELF linker. `UEFI_LD` selects that PE linker explicitly;
 otherwise the builder checks native `ld`, then `x86_64-w64-mingw32-ld`.
+For direct Meson setup use `-Duefi_ld=/path/to/linker`; keep the same selection
+when reusing a configured directory.
 On Gentoo, `sys-devel/binutils[multitarget]` or `dev-util/mingw64-toolchain`
 provides the additional target. Missing support fails with a dependency error,
 not a request to replace the system compiler. For example:
@@ -223,22 +181,15 @@ objects are rebuilt on each invocation; compiler caches, logs and unrelated file
 outside the namespace stay in place. Legacy top-level objects from older builders
 are left untouched and are no longer link/admission inputs.
 
-Graphical smoke also leaves the shared UEFI tree in place and stages only required
-current image/admission artifacts. After every guest and the shared normal-image
-restoration succeed, it replaces that run's full physical/PPM screen dumps and
-viewport probes with `guests/screen-captures.json` (relative names, byte sizes and
-SHA256 hashes, compaction status and an explicit remaining-raw-file list).
-Hashes identify validated bytes; they do not claim those raw files remain.
-Summaries, serial/QMP/stderr logs, build logs and staged images
-remain. Build, guest or restoration failures and handled interruptions retain all
-captures; no older run's dumps are compacted. `AURORA_GRAPHICAL_KEEP_RUNS=all`, or
-a `.keep` present before dump removal starts, also preserves successful dumps.
-Pins are rechecked after hashing and before each removal; a late pin stops further
-removals but cannot recover already discarded dumps. The passed run marker is
-written before this optional housekeeping. An interruption during hashing keeps
-all dumps; one during removal keeps the remaining dumps and complete hash receipt,
-without relabeling the passed guest/restoration result. Compaction errors warn.
-The hash receipt is written before any dump is removed.
+Graphical smoke stages only required current image/admission artifacts. Once all
+guests and shared normal-image restoration pass, it discards that run's known
+physical/PPM dumps and viewport probes. Summaries, logs, staged images and unknown
+files remain. Failures and explicit keep-all/`.keep` preserve raw captures.
+All cleanup paths are checked first; held no-follow directory handles anchor
+deletion, and pins are rechecked before each removal.
+A late pin or interruption preserves remaining dumps, but cannot recover deleted
+ones. Cleanup errors only warn; no screen-hash receipt or availability state is
+maintained. Standalone output and historical windows are not adopted for cleanup.
 By default it retains the latest two successful and two failed run directories;
 a failed build's available objects/artifacts are
 moved within the same filesystem before normal restoration; small image/receipt
@@ -275,36 +226,63 @@ UEFI success, and neither establishes physical AMD/Framework support.
 
 ## Reclaiming old local output explicitly
 
-Stop builds, tests, guests and separate image readers before cleanup. Inspect the
-exact directories with `du -sh` and keep any required review evidence first.
-There is no automatic sweep of historical Meson output. To remove generated
-native build products while retaining a configured build and its Meson logs:
+Stop builds, tests, guests and separate image readers before cleanup; do not start
+another command while it runs. Preview the exact products and byte counts first:
 
 ```sh
-meson compile -C build/gcc16 --clean
+make clean-dry-run
+make clean
+# Select one older configuration instead of the ordinary defaults:
+make clean-dry-run MESON_BUILD_DIR=build/gcc16-retired
+make clean MESON_BUILD_DIR=build/gcc16-retired
 ```
 
-Substitute the one configured Meson build you intend to clean. This removes
-Ninja-tracked products, not failed/kept runner scratch or unrelated review output;
-subsequent tests rebuild their dependencies. To retire an entire old build or
-one completed smoke window, choose its exact directory and inspect it first:
+Without a selector, these targets visit only ordinary `build/meson-<16 hex digits>`
+configurations whose Meson source/build metadata matches this checkout. There is
+no compiler/toolchain hashing, configuration, compilation or test execution.
+An explicit `MESON_BUILD_DIR` may select an external configured build belonging to
+this checkout; another checkout's build, source-tree directories outside `build/`,
+symlink paths and unknown ownership are refused. Default discovery reports and
+skips rejected builds; an explicit rejected selection exits nonzero.
+
+The command previews with `ninja -n -t clean`, validates every removal stays inside
+the selected build, then invokes `ninja -t clean` without generator cleanup.
+This removes tracked objects, depfiles, executables and native test binaries;
+subsequent builds regenerate them. Counts include logical and allocated file
+bytes, not a guarantee of freed disk blocks when files are shared or hardlinked.
+Configuration, raw Meson logs, all untracked test scratch and outside output stay
+in place. In particular, historical `aurora-meson-*` scratch has no durable
+success/keep marker: cleanup cannot safely distinguish it from failed or explicitly
+retained runs, so it does not delete it. Root bootstrap `build/aurorac`, BIOS/UEFI
+output and user-supplied runner output are also outside this Meson product scope.
+
+Cleanup honors `.keep` markers, the existing Aurora test lock and Meson configure
+lock, and rejects observed direct processes using the selected output. The Linux
+process check is best-effort: it inspects same-UID cwd/argv, not open file
+descriptors or all users. It can spot direct Meson/Ninja commands that do not take
+the Make wrapper lock, but cannot prevent a new command starting afterward; these
+commands retain the repository's one-command-at-a-time requirement.
+The generated Ninja graph is trusted and must remain unchanged between preview
+and cleanup; these checks do not protect against concurrent graph mutation.
+
+The scratch target currently retires older successful managed graphical smoke
+windows. It does not classify or remove unmarked historical Meson scratch:
 
 ```sh
-# Examples only: replace each name with the one retired directory you reviewed.
-du -sh -- build/gcc16-retired build/graphical-smoke/run-ABC123
-rm -ri -- build/gcc16-retired
-rm -ri -- build/graphical-smoke/run-ABC123
+make clean-scratch-dry-run
+make clean-scratch
 ```
 
-The interactive removals include that selected directory's logs and receipts.
-Never use a wildcard or remove the whole `build` tree: it can contain active
-outputs, retained failures, `.keep` pins and user-owned review directories.
-For graphical runs, inspect `.graphical-smoke-run.json`; leave `running`, missing
-or malformed records alone until their ownership is understood. Leave `.keep`
-windows alone until review and all readers have finished. Explicit external
-runner output and Event evidence are not covered by these paths; delete such a
-directory only after separately identifying its owner, completion and review needs.
-Nothing here authorizes cleanup of another checkout or a reviewer's directory.
+This removes complete older successful windows, including their logs and receipts,
+while keeping the newest two eligible successes. It uses the existing ownership
+marker and retention lock, preserving every failed, running, unknown, malformed or
+`.keep` window. Symlinks, nonregular files, nested keep markers and observed active
+readers prevent removal. It does not touch Event evidence or other output roots.
+The preview prints selected directories and their logical byte totals. These are
+intentional local deletions: preserve any successful-run evidence needed for review
+with `.keep` before cleanup. Neither target sweeps the whole `build` tree or adopts
+unmarked historical output; retiring that evidence requires a separate explicit
+ownership/review decision.
 
 ## Choosing tests
 
@@ -330,9 +308,11 @@ make smoke-iommu-event EVENT_BUILD_RECEIPT=/absolute/BUILD-RECEIPT.json \
 This requires the [supported custom model and initial firmware bytes](../tools/qemu-amdvi/README.md#developer-event-runtime),
 GNU mtools 4.0.48 with no system config, and ordinary QEMU/OVMF for normal
 restoration. `MTOOLS_DIR` selects an installed tool directory; `EVENT_ESP_DIR`
-is a validated raw-ESP alternative on unsupported mtools hosts. Missing or invalid
-local prerequisites report `BLOCKED` (exit 2), before building or allocating a run;
-actual build, image-admission and guest defects report `FAIL` (exit 1 from the runner).
+is a validated raw-ESP alternative on unsupported mtools hosts. Missing tools,
+files or required configuration and insufficient reserved space report `BLOCKED`
+(exit 2), before building or allocating a run. Present but malformed, unsupported
+or mismatched runtime inputs report `FAIL` (runner exit 1), as do actual build,
+image-admission and guest defects.
 GNU Make itself returns 2 for an unsuccessful recipe, so use the diagnostic label
 when interpreting `make smoke-iommu-event`. Evidence is
 retained outside source under `EVENT_OUTPUT_PARENT` (default system temporary
@@ -415,7 +395,7 @@ actual compiler-only and normal BIOS/UEFI checks, preserved failures and limits.
 
 `make console` opens an opt-in QEMU serial prompt after the boot self-tests.
 Commands are `help`, `status` and `exit`; the session has a five-minute limit.
-The [console contract](kernel-console-contract.md) explains its 64-byte ASCII
+The [console contract](native-console-service.md#bios-transport) explains its 64-byte ASCII
 editor, interrupt-driven idle wait and emulator-only limits. `make run` and
 `make run-uefi` still complete automatically as before.
 

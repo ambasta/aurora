@@ -515,14 +515,14 @@ void returnTests() {
         [](F &f) {
             f.receiverSpanField = 1;
         },
-        "exact direct owned byte field");
+        "exact direct byte-storage field");
     for (int field : {-1, 3, 2147483647})
         bad(
             "bad summary ordinal " + std::to_string(field),
             [=](F &f) {
                 f.receiverSpanField = field;
             },
-            "exact direct owned byte field");
+            "exact direct byte-storage field");
     bad(
         "wrong returned field rejected",
         [](F &f) {
@@ -656,9 +656,201 @@ void returnTests() {
                                 Return{}};
     accept("bound receiver sibling field remains independent", freeze);
 }
+
+Module fixedFieldModule() {
+    Module m;
+    m.classLayouts["Fixed"] = {Type::I64, Type::U8, Type::U8, Type::U8, Type::U8};
+    m.classFields["Fixed"] = {{Type::I64, 0, 1, false}, {Type::U8, 1, 2, true}, {Type::U8, 3, 2, true}};
+    F view;
+    view.name = "fixed_view";
+    view.receiver = Receiver{"Fixed", false, false};
+    view.result = Type::ByteSpan;
+    view.receiverSpanField = 1;
+    view.frameBytes = 112;
+    view.spanSlots = {56, 112};
+    view.code = {BorrowReceiverArraySpan{1, 56}, ReborrowSpan{56, 112}, ReturnSpan{112}};
+    F caller;
+    caller.name = "fixed_caller";
+    caller.result = Type::I64;
+    caller.parameters = {Type("Fixed")};
+    caller.frameBytes = 128;
+    caller.objectSlots = {{16, {"Fixed", false}}};
+    caller.slots = {{16, Type::I64}, {8, Type::U8}, {7, Type::U8}, {6, Type::U8}, {5, Type::U8}};
+    caller.spanSlots = {72, 128};
+    caller.code = {BindObjectParameter{0, 16, "Fixed"},
+                   MethodCall{"fixed_view", 16, {}, 72},
+                   ReborrowSpan{72, 128},
+                   SpanLength{128},
+                   EndSpan{128},
+                   EndSpan{72},
+                   EndObject{16},
+                   Return{}};
+    m.functions = {view, caller};
+    return m;
+}
+void fixedFieldTests() {
+    accept("fixed field view uses exact copied receiver lifetime", fixedFieldModule());
+    reject(
+        "fixed field wrong summary",
+        fixedFieldModule(),
+        [](Module &m) {
+            m.functions[0].receiverSpanField = 2;
+        },
+        "does not match receiver field summary");
+    reject(
+        "fixed field scalar origin",
+        fixedFieldModule(),
+        [](Module &m) {
+            op<BorrowReceiverArraySpan>(m.functions[0]).fieldIndex = 0;
+        },
+        "requires direct u8 array field");
+    reject(
+        "fixed field outside shape",
+        fixedFieldModule(),
+        [](Module &m) {
+            op<BorrowReceiverArraySpan>(m.functions[0]).fieldIndex = 3;
+        },
+        "receiver field type/layout mismatch");
+    reject(
+        "fixed field spill interior",
+        fixedFieldModule(),
+        [](Module &m) {
+            op<BorrowReceiverArraySpan>(m.functions[0]).resultOffset = 48;
+        },
+        "exact typed spill");
+    reject(
+        "fixed field parent ends first",
+        fixedFieldModule(),
+        [](Module &m) {
+            before<SpanLength>(m.functions[1], {EndSpan{72}});
+        },
+        "live child reborrow");
+    reject(
+        "fixed field object ends first",
+        fixedFieldModule(),
+        [](Module &m) {
+            before<SpanLength>(m.functions[1], {EndObject{16}});
+        },
+        "live readonly span");
+    reject(
+        "fixed field scalar mutation cannot bypass borrow",
+        fixedFieldModule(),
+        [](Module &m) {
+            before<SpanLength>(m.functions[1], {Constant{1, Type::U8}, Store{8, Type::U8}});
+        },
+        "live readonly span");
+    reject(
+        "fixed field indexed mutation cannot bypass borrow",
+        fixedFieldModule(),
+        [](Module &m) {
+            before<SpanLength>(m.functions[1],
+                               {Constant{0, Type::I64},
+                                BoundsGuard{8, 2, Type::U8},
+                                Push{},
+                                Constant{1, Type::U8},
+                                IndexStore{8, 2, Type::U8}});
+        },
+        "live readonly span");
+    auto local = fixedFieldModule();
+    auto &read = local.functions[0];
+    read.receiverSpanField.reset();
+    read.result = Type::I64;
+    read.receiver->mutableValue = true;
+    read.code = {BorrowReceiverArraySpan{1, 56},
+                 Constant{0, Type::I64},
+                 ReceiverBoundsGuard{1},
+                 Push{},
+                 Constant{1, Type::U8},
+                 ReceiverIndexStore{1},
+                 EndSpan{56},
+                 Constant{0, Type::I64},
+                 Return{}};
+    local.functions.resize(1);
+    reject(
+        "fixed receiver indexed mutation cannot bypass borrow",
+        local,
+        [](Module &) {
+        },
+        "live readonly span");
+    op<ReceiverBoundsGuard>(local.functions[0]).fieldIndex = 2;
+    op<ReceiverIndexStore>(local.functions[0]).fieldIndex = 2;
+    accept("fixed receiver sibling array stays independent", local);
+    auto restart = fixedFieldModule();
+    restart.functions.resize(1);
+    F root;
+    root.name = "fixed_restart";
+    root.result = Type::I64;
+    root.objectSlots = {{16, {"Fixed", true}}};
+    root.slots = {{16, Type::I64}, {8, Type::U8}, {7, Type::U8}, {6, Type::U8}, {5, Type::U8}};
+    root.frameBytes = 80;
+    root.spanSlots = {72};
+    const std::initializer_list<Instruction> initialize = {BeginObject{16},
+                                                           Constant{0, Type::I64},
+                                                           Store{16, Type::I64},
+                                                           Constant{0, Type::U8},
+                                                           Store{8, Type::U8},
+                                                           Store{7, Type::U8},
+                                                           Store{6, Type::U8},
+                                                           Store{5, Type::U8}};
+    append(root, initialize);
+    append(root, {Constant{1, Type::Bool}, BranchFalse{1}, EndObject{16}});
+    append(root, initialize);
+    append(root,
+           {Label{1}, MethodCall{"fixed_view", 16, {}, 72}, SpanLength{72}, EndSpan{72}, EndObject{16}, Return{}});
+    restart.functions.push_back(root);
+    reject(
+        "fixed root restart cannot join retained lifetime",
+        restart,
+        [](Module &) {
+        },
+        "active object lifetimes");
+}
+
+void importReachabilityTests() {
+    auto m = fixedFieldModule();
+    m.descriptorViews[1] = {};
+    m.functions[0].moduleScope = 1;
+    F root;
+    root.name = "unused_private_root";
+    root.result = Type::I64;
+    root.code = {Constant{42, Type::I64}, Return{}};
+    m.functions.push_back(root);
+    F unused = root;
+    unused.name = "unused_import";
+    unused.moduleScope = 1;
+    m.functions.push_back(unused);
+    auto valid = validate(m);
+    std::set<std::string> names;
+    for (const auto &function : valid.get().functions)
+        names.insert(function.name);
+    check(names == std::set<std::string>{"fixed_view", "fixed_caller", "unused_private_root"},
+          "reachable import or root bridge was pruned, or unused import was retained");
+    ++accepted;
+    reject(
+        "unused imported IR still receives complete validation",
+        m,
+        [](Module &module) {
+            module.functions.back().code = {Constant{300, Type::U8}, Return{}};
+        },
+        "noncanonical u8");
+    auto recursive = fixedFieldModule();
+    recursive.descriptorViews[1] = {};
+    recursive.functions[0].moduleScope = 1;
+    recursive.functions[0].code = {MethodCall{"fixed_view", 0, {}, 56}, ReturnSpan{56}};
+    recursive.functions.erase(recursive.functions.begin() + 1);
+    recursive.functions.push_back(root);
+    reject(
+        "unused imported receiver cycles still reject",
+        recursive,
+        [](Module &) {
+        },
+        "recursive receiver call cycle");
+}
 } // namespace
 int main() {
     try {
+        importReachabilityTests();
+        fixedFieldTests();
         storageTests();
         standaloneTests();
         objectTests();

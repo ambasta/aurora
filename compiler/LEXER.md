@@ -58,6 +58,16 @@ before the host reads a returned range. Direct API inputs must fit the existing
 signed line/column representation; file I/O remains limited to 1 MiB.
 Owner-runtime descriptors are never fabricated. Generated helper symbols and
 reflection entries stay local; only the host shim is externally linked.
+`hosted_lexer_abi.hpp` names every private event wire value, matching the Aurora
+`Event` declaration order. A generated-code fixture exercises all eight cases
+through independent raw records and compares them with that host enum, including
+invalid cursors. It does not infer parity from matching source text.
+
+The bootstrap invokes `aurorac --local-symbols`, which emits local binding for
+all generated functions and reflection entries without changing their ABI or
+instructions. It then appends the trusted shim verbatim; no assembly-text symbol
+rewriting is needed. The default binding rules are unchanged. This code-emission
+option is rejected with `--check`, and it adds no source-language foreign ABI.
 
 Build and test routes are intentionally distinct:
 
@@ -73,7 +83,10 @@ Build and test routes are intentionally distinct:
 - `hosted-lexer-bootstrap` has stage 1 rebuild `lexer.au` and requires identical
   emitted assembly, then compares diagnostics, assembly and rejected-output
   preservation over the source corpus. Crashes and internal failures fail the
-  comparison even when both compilers fail alike.
+  comparison even when both compilers fail alike. It also assembles both private
+  stage outputs, checks that the shim is the sole global definition, compares
+  symbol locations/sizes/types and statically linked code/data bytes against
+  ordinary output, and rejects invalid `--local-symbols` option combinations.
 - The historical `compiler_contract.py` `gnu-cxx-main-v1` fresh-build recipe and
   the legacy focused Make aliases entering it remain explicitly labeled C++
   seed/reference compatibility routes. Their one-command receipts are unchanged

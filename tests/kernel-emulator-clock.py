@@ -44,24 +44,15 @@ WRAPPERS = {
     "bar": ("kernel-uefi-bar-all.sh",),
     "ivrs": ("kernel-uefi-ivrs-all.sh",),
 }
-# The BAR launcher is checked by executable argv/validator invariants below;
-# its historical whole-file hash was already stale after NVMe preparation.
-# Other unchanged historical gates retain their separate identity checks.
+# BAR and IVRS launchers have executable argv/validator invariants below.
+# Unchanged historical gates retain their separate identity checks.
 UNCHANGED = {
-    # Reviewed object-directory-only change; guest clock/argv remain unchanged.
-    "scripts/kernel-uefi-ivrs-run.py": "5adc179e32b879591646dc87e0c974dd63b65fe243b35c7beb0eb916a3272ec5",
     "tests/kernel-boot-capacity.py": "a50b6cb2d0bb3b43f50afa3d8d8059c4504dbe633510eb43b8a1ab16c54c257b",
     "tests/kernel-uefi-budget-smoke.py": "51aaa29ba0f28f59576b7bbff451eafd913b306790f72bd1afc6b0839a853e93",
     "tests/kernel-uefi-dispatch-smoke.py": "506ff383b107ad1f4f05297c54e5179a73bcc05978a91f9429a389b5888f97f9",
     # Recovery validator changed only for two disposal-denial profiles; its
     # existing fixtures are compared against the accepted baseline separately.
 }
-
-
-# The BIOS console commit added an early opt-in rejection guard. Its closed
-# whole-file provenance and the unchanged executable smoke body are independent.
-BIOS_SMOKE_SHA256 = "694eaa63266939af88634664e8ecc3be261a066d69f8050fe320cd15f303d4da"
-BIOS_SMOKE_BODY_SHA256 = "e95b28a60111ba61f04ecfb588c42f6a5fc69e69126c519ac34e539119ff0271"
 
 
 def wrapper_modes(name):
@@ -131,7 +122,9 @@ class ClockContractTests(unittest.TestCase):
         self.assertEqual(
             hashlib.sha256(("\n".join(sorted(selected)) + "\n").encode()).hexdigest(), SELECTED_NAMES_SHA256
         )
-        build = (ROOT / "scripts/kernel-uefi-build.sh").read_text()
+        profile_spec = importlib.util.spec_from_file_location("profiles", ROOT / "scripts/kernel_profiles.py")
+        profiles = importlib.util.module_from_spec(profile_spec)
+        profile_spec.loader.exec_module(profiles)
         # Protected-console profiles share the budget machinery but run through
         # the separate original-clock PTY route, not the fixed-clock smoke map.
         protected_modes = {
@@ -150,12 +143,13 @@ class ClockContractTests(unittest.TestCase):
         }
         admitted = []
         protected = []
-        for match in re.finditer(r"^ ([\w|_-]+)\)\n(.*?);;", build, re.MULTILINE | re.DOTALL):
-            if "-DAURORA_UEFI_SERVICE_BUDGET" in match[2]:
-                modes = match[1].split("|")
-                admitted.extend(modes)
-                if "-DAURORA_UEFI_PROGRAM_CONSOLE" in match[2]:
-                    protected.extend(modes)
+        for common, variants in profiles.UEFI_FAMILIES:
+            for mode, extra in variants.items():
+                flags = common + extra
+                if "-DAURORA_UEFI_SERVICE_BUDGET" in flags:
+                    admitted.append(mode)
+                    if "-DAURORA_UEFI_PROGRAM_CONSOLE" in flags:
+                        protected.append(mode)
         self.assertEqual(len(admitted), len(set(admitted)))
         self.assertEqual(len(protected), len(set(protected)))
         self.assertEqual(set(protected), protected_modes)
@@ -403,7 +397,7 @@ class ClockContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="aurora-clock-plan-") as directory:
             root = Path(directory)
             (root / "scripts").mkdir()
-            for name in ("kernel-uefi-smoke.sh", "kernel_emulator_clock.py", "uefi-firmware.sh"):
+            for name in ("kernel-uefi-smoke.sh", "kernel_emulator_clock.py", "uefi-firmware.sh", "qemu_transport.py"):
                 shutil.copy2(ROOT / "scripts" / name, root / "scripts" / name)
             sentinel = "#!/usr/bin/env bash\nprintf reached >> unexpected-execution\nexit 99\n"
             for target in (root / "qemu", root / "scripts/kernel-uefi-build.sh"):
@@ -461,14 +455,14 @@ class ClockContractTests(unittest.TestCase):
                         CLOCK.uefi_family(mode)
             self.assertEqual(snapshot(), before)
 
-    def test_snapshot_launcher_restores_normal_after_success_and_failure(self):
+    def test_snapshot_launcher_preserves_isolated_profiles_after_success_and_failure(self):
         # Execute the real launcher with bounded compiler-free stand-ins. This
         # checks EXIT routing only; no firmware, image compiler or guest runs.
         with tempfile.TemporaryDirectory(prefix="aurora-snapshot-restore-") as directory:
             root = Path(directory)
             (root / "scripts").mkdir()
             (root / "tests").mkdir()
-            for name in ("kernel-uefi-smoke.sh", "kernel_emulator_clock.py"):
+            for name in ("kernel-uefi-smoke.sh", "kernel_emulator_clock.py", "qemu_transport.py"):
                 shutil.copy2(ROOT / "scripts" / name, root / "scripts" / name)
             (root / "scripts/uefi-firmware.sh").write_text(
                 'uefi_firmware_select() { UEFI_FIRMWARE_COMBINED="$OVMF"; '
@@ -476,9 +470,10 @@ class ClockContractTests(unittest.TestCase):
             )
             (root / "scripts/kernel-uefi-build.sh").write_text(
                 '#!/usr/bin/env bash\nset -eu\nmode="${UEFI_MODE:-normal}"\n'
-                'echo "$mode" >> builds\nmkdir -p build/uefi\necho "$mode" > build/uefi/current-image\n'
+                'echo "$mode" >> builds\npath="$PWD/build/native/$mode"\nmkdir -p "$path"\n'
+                'echo "$mode" > "$path/current-image"\n'
                 'if [[ "$mode" == snapshot* && "${FAIL_BUILD:-0}" == 1 ]]; then exit 7; fi\n'
-                'echo "{}" > build/uefi/user-images.json\n'
+                'echo "{}" > "$path/user-images.json"\nprintf "%s\\n" "$path"\n'
             )
             (root / "scripts/kernel-uefi-build.sh").chmod(0o755)
             (root / "qemu").write_text('#!/usr/bin/env bash\necho guest >> executions\nexit "$GUEST_STATUS"\n')
@@ -508,8 +503,9 @@ class ClockContractTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(result.returncode, wanted, result.stdout + result.stderr)
-                self.assertEqual((root / "builds").read_text().splitlines(), [mode, "normal"])
-                self.assertEqual((root / "build/uefi/current-image").read_text(), "normal\n")
+                self.assertEqual((root / "builds").read_text().splitlines(), [mode])
+                self.assertEqual((root / f"build/native/{mode}/current-image").read_text(), mode + "\n")
+                self.assertFalse((root / "build/uefi").exists())
                 self.assertEqual((root / "executions").read_text().splitlines(), [] if build_fails else ["guest"])
 
     def test_plan_firmware_selector_errors_and_unresolved_directory(self):
@@ -540,6 +536,7 @@ class ClockContractTests(unittest.TestCase):
             ("budget", CLOCK.ORIGINAL),
             ("budget", "-icount", "auto"),
             ("--clock-plan",),
+            ("--shared-normal", "budget"),
         ):
             result = shell_plan(*modes)
             self.assertEqual(result.returncode, 2, repr(modes))
@@ -568,6 +565,9 @@ class ClockContractTests(unittest.TestCase):
             builder = scripts / "kernel-build.sh"
             builder.write_text("#!/bin/sh\nprintf called > build-called\nexit 91\n")
             builder.chmod(0o755)
+            (scripts / "meson_test.py").write_text(
+                "from pathlib import Path\nPath('build-called').write_text('native')\nraise SystemExit(91)\n"
+            )
             for value, expected in (("1", 2), ("0", 91), (None, 91)):
                 marker = root / "build-called"
                 marker.unlink(missing_ok=True)
@@ -602,12 +602,12 @@ class ClockContractTests(unittest.TestCase):
         self.assertEqual(explicit.returncode, 0, explicit.stderr)
         self.assertEqual(json.loads(default.stdout), json.loads(explicit.stdout))
         self.assertNotIn("-icount", json.loads(default.stdout)["argv"])
-        # BIOS launcher pin includes only the two copied-policy mode additions;
-        # its default/restoration command bodies and capacity paths are preserved.
-        smoke = (ROOT / "scripts/kernel-smoke.sh").read_bytes()
-        self.assertEqual(hashlib.sha256(smoke).hexdigest(), BIOS_SMOKE_SHA256)
-        body = smoke[smoke.index(b'mode="${1:-normal}"\n') :]
-        self.assertEqual(hashlib.sha256(body).hexdigest(), BIOS_SMOKE_BODY_SHA256)
+        # BIOS modes use the native builder and shared transport while retaining
+        # the independent clock validators and capacity probes.
+        smoke = (ROOT / "scripts/kernel-smoke.sh").read_text()
+        self.assertIn('./scripts/kernel-build.sh --print-image-dir', smoke)
+        self.assertIn('scripts/qemu_transport.py run --timeout 15 --log "$log"', smoke)
+        self.assertNotIn('\ntrap ', smoke)
         for path, digest in UNCHANGED.items():
             self.assertEqual(hashlib.sha256((ROOT / path).read_bytes()).hexdigest(), digest, path)
         capacity = ast.parse((ROOT / "tests/kernel-boot-capacity.py").read_text())
@@ -623,6 +623,37 @@ class ClockContractTests(unittest.TestCase):
             [("full-127", 33), ("old-96-negative", 35), ("last-sector-negative", 35)],
         )
         self.assertNotIn("-icount", ast.get_source_segment((ROOT / "tests/kernel-boot-capacity.py").read_text(), smoke))
+
+    def test_ivrs_commands_against_independent_provenance_oracle(self):
+        spec = importlib.util.spec_from_file_location("ivrs_runner_controls", ROOT / "scripts/kernel-uefi-ivrs-run.py")
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        provenance = runner.module("ivrs-provenance")
+        out = Path("/tmp/synthetic-ivrs")
+        paths = {name: str(out / name) for name in provenance.FILES}
+        paths.update(
+            loader=str(out / "esp/EFI/BOOT/BOOTX64.EFI"),
+            vars_after=str(out / "vars-runtime.fd"),
+            serial=str(out / "serial.log"),
+            trace=str(out / "trace.log"),
+            firmware_log=str(out / "firmware.log"),
+        )
+        for mode in runner.MODES:
+            argv = runner.command(mode, paths["qemu"], "/firmware", paths["firmware_code"], out, paths["events"])
+            CLOCK.validate_clock_options("ivrs", mode, CLOCK.ORIGINAL, argv)
+            receipt = dict(
+                argv=argv,
+                mode=mode,
+                cwd=str(out),
+                boot_root=str(out / "esp"),
+                firmware_profile="clean",
+                environment={"LD_LIBRARY_PATH": "/synthetic-libraries"},
+                stdio={"stdout": paths["serial"], "stderr": "stdout"},
+            )
+            provenance.validate_arguments(receipt, paths)
+            for index in range(len(argv)):
+                with self.subTest(mode=mode, missing=index), self.assertRaises(ValueError):
+                    provenance.validate_arguments(dict(receipt, argv=argv[:index] + argv[index + 1 :]), paths)
 
     def test_bar_executor_preserves_all_launch_arrays_and_validators(self):
         spec = importlib.util.spec_from_file_location("bar_runner_controls", ROOT / "tests/kernel-uefi-bar-runner.py")
@@ -640,20 +671,18 @@ class ClockContractTests(unittest.TestCase):
 
     def test_launcher_executes_validated_array_and_keeps_raw_outcome(self):
         source = (ROOT / "scripts/kernel-uefi-smoke.sh").read_text()
-        self.assertEqual(source.count('timeout 30 "${qemu_argv[@]}"'), 1)
-        self.assertIn('"${QEMU_DATA:-}" -- "${qemu_argv[@]}"', source)
-        self.assertLess(source.index('"${clock_check[@]}" >'), source.index('timeout 30 "${qemu_argv[@]}"'))
+        invocation = 'scripts/qemu_transport.py run --timeout 30 --log "$log" -- "${qemu_argv[@]}"'
+        self.assertEqual(source.count(invocation), 1)
+        self.assertIn('"${QEMU_DATA:-}" --esp "$image_dir/esp" -- "${qemu_argv[@]}"', source)
+        self.assertLess(source.index('"${clock_check[@]}" >'), source.index(invocation))
         self.assertIn('status=$?\nset -e\ncat "$log"', source)
-        tail = source[source.index("status=$?") :]
-        self.assertEqual(
-            hashlib.sha256(tail.encode()).hexdigest(),
-            "7aebac189112cc5f9ada3dc59962c3bd99b21e91e723f58885cbe02d99b0f718",
-        )
-        self.assertIn("trap 'UEFI_MODE=normal ./scripts/kernel-uefi-build.sh >/dev/null' EXIT", source)
-        self.assertEqual(source.count("\ncpus=1\n"), 1)
-        self.assertIn('python3 tests/kernel-uefi-budget-smoke.py "$status"', source)
-        self.assertIn('python3 tests/kernel-uefi-dispatch-smoke.py "$status"', source)
-        self.assertIn('python3 tests/kernel-uefi-user-phases-smoke.py "$status"', source)
+        self.assertNotIn("\ntrap ", source)
+        for validator in ('budget', 'dispatch', 'user-phases', 'ipc', 'tables', 'pin', 'runtime'):
+            self.assertIn(f'python3 tests/kernel-uefi-{validator}-smoke.py '
+                          '"$status" "$log" "$mode" "$image_dir/$mode.metadata.json"', source)
+        self.assertIn('python3 tests/kernel-snapshot-smoke.py "$status" "$log" '
+                      '"$mode" "$image_dir/$mode.metadata.json"', source)
+        self.assertNotIn('build/uefi/user-images.json', source)
 
 
 if __name__ == "__main__":

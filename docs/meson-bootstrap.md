@@ -64,9 +64,105 @@ convenience route; use explicit configured sanitizer builds/separate focused gat
 Explicit pinned `make test-acceptance` remains a distinct legacy compatibility
 workflow, not another mandatory run of the same native cases.
 
+## Normal native kernel images
+
+`kernel-bios-normal` and `kernel-uefi-normal` are real Meson/Ninja image graphs.
+They compile the trusted kernel C++ translation units as native targets, then
+use explicit Aurora, GNU assembler, linker, metadata and image edges. No image
+target calls either shell builder. Their output directories are respectively
+`<build>/kernel-images/bios/normal` and `<build>/kernel-images/uefi/normal`.
+The independent BIOS and UEFI image tests read those outputs without rebuilding
+or rewriting them; all existing negative image controls remain active.
+
+```sh
+meson compile -C build/gcc16 -j 3 kernel-bios-normal kernel-uefi-normal
+meson test -C build/gcc16 native-bios-image native-uefi-normal-image --no-rebuild --print-errorlogs
+# Equivalent standalone convenience routes, sharing the configuration driver:
+MESON_BUILD_DIR=build/gcc16 make kernel
+MESON_BUILD_DIR=build/gcc16 make kernel-uefi
+```
+
+`make` / `make all` builds the Meson compiler once through the BIOS image graph
+and atomically copies it to the compatible `build/aurorac` path. `make kernel`
+keeps all outputs isolated; explicit `make compiler` retains the legacy compiler
+recipe for unmigrated consumers.
+
+Both normal images are also default build products. BIOS and UEFI have distinct
+object/generated-file owners and can build together in one Ninja invocation.
+The legacy shell builders remain for specialized profiles and explicitly selected
+prebuilt/pinned workflows; those still share their old output paths and locks.
+Normal standalone smoke runs select the native images and put their logs beside
+them. The console-service qualifier explicitly requests `--shared-normal` to
+restore and boot its owned `build/uefi` image and retain fresh logs there. Actual
+final normal guest boots remain required after affected fault tests.
+This slice does not migrate specialized image admission or consolidate QEMU code.
+
+Kernel flags remain fixed to the admitted freestanding GCC profile. Global
+`cpp_args`, `CXXFLAGS` or `CPPFLAGS` are rejected in image-enabled configurations rather than silently adding
+hosted instrumentation or profile defines. Native targets disable unity, LTO,
+sanitizers, PGO and debug-STL additions. BIOS stays non-PIE; UEFI payload stays
+PIE/hidden and its loader retains the Microsoft-ABI outgoing-argument option.
+For hosted-only compiler or sanitizer configurations, pass `-Dkernel_images=false`
+to a separate Meson setup. That configuration accepts explicit hosted flags and
+does not probe the PE linker. Fresh compiler-only convenience setups automatically select this option and a
+separate default directory; an explicitly supplied existing image-enabled build
+can still be reused with matching compiler/flags. The two normal
+image tests remain registered and fail clearly in `full`/`boot`, including with
+`--no-rebuild`; disabled images cannot yield a qualified full pass.
+
+With images enabled (the default), a GNU PE linker with `i386pep` is a setup
+requirement, including for BIOS-only target selection. Select it through
+`-Duefi_ld=/path/to/ld` or `UEFI_LD` with Make; its bytes join the existing
+configuration identity check. Changing the selected linker needs a fresh build.
+The default convenience-directory key now includes the PE-linker selection;
+explicit pre-migration directories need a fresh configuration.
+Explicit kernel targets depend on that identity check too, without making an
+unchanged image rebuild.
+
+C++ headers use native compiler depfiles. Aurora generation conservatively tracks
+all `.au` files and directory membership under each supplied module root, so
+adding an ambiguous module also invalidates the target. Source/module paths keep
+their lexical identity for the compiler's no-symlink checks. Linker scripts,
+embedded binaries, generated headers and validators are explicit dependencies.
+Private service bridges, when migrated later, must be assembled with generated
+Aurora assembly in the same invocation to preserve local-symbol access.
+
+The native object export preserves the actual object and its same-compilation
+`.su` (and UEFI `.ci`) bytes under stable logical names. A small `.source.json`
+records the full translation-unit path, compiler working directory and native
+sidecar paths; it does not claim image admission. There is no second metadata
+compile or basename-only matching. Missing native sidecars fail the export:
+remove the affected native object and rebuild it with its sidecars, or use a
+fresh build directory. Deleting an exported declared output reruns its owner.
+Specialized stack validators still need explicit source-location mapping before
+their profiles can migrate.
+
+Meson generates `compile_commands.json` entries for every real kernel C++ unit,
+including the generated include directory and freestanding/profile flags. Run
+clangd in the same container or host environment as the build, with matching
+source/build/toolchain paths:
+
+```sh
+clangd --compile-commands-dir="$PWD/build/gcc16" --query-driver="$(command -v g++)"
+```
+
+Allow only that selected trusted driver. The repository `.clangd` removes four
+GCC-only code-generation options from editor parsing; it does not change build
+flags. Do not copy a container compilation database to unrelated host paths.
+Build the selected image first so generated headers exist. Later multi-profile
+editing needs an explicit compilation-database/profile selection.
+
+This implementation is not fresh-build, incremental, image, guest or full-suite
+qualification. The acceptance gate is a fresh GCC 16 build, exact argv/object
+review, no-op and changed-header/import/membership/linker-script/embedded-binary
+rebuild checks, parallel sibling isolation, declared-output deletion and failed
+build controls, followed by final-source `full`, normal guests and independent
+review. Source-only helper controls establish only their stated boundaries.
+
 ## Coverage and limits
 
-`full` currently contains 240 tests: 67 `dev` and 173 `slow`. `integration` and
+`full` includes all registered non-LSP tests; `dev` selects fast feedback and
+`slow` contains longer cases. `integration` and
 `boot` are additional named selections; native `boot` checks/builds images but
 never starts QEMU. Keep development quick with `dev` or exact test names; full
 package profiles are slow. `packages` selects both partial and full profiles.

@@ -227,7 +227,9 @@ def main():
         env = os.environ.copy()
         env.pop("CONSOLE_SERVICE_REVIEW_SHA256", None)
         try:
-            restored = run_bounded(["bash", ROOT / "scripts/kernel-uefi-smoke.sh", "normal"], env=env, timeout=180)
+            restored = run_bounded(
+                ["bash", ROOT / "scripts/kernel-uefi-smoke.sh", "--shared-normal", "normal"], env=env, timeout=180
+            )
             (work / "restoration.stdout").write_bytes(restored.stdout)
             (work / "restoration.stderr").write_bytes(restored.stderr)
             result["restoration"] = dict(

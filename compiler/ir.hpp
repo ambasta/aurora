@@ -148,8 +148,13 @@ public:
     int arrayOffset;
     int resultOffset;
 };
-// Immutable module data, with no address supplied by the source or by IR clients.
-// The payload length is the logical span length, without a terminator.
+// Direct private u8 array of the invocation receiver; no source address escapes.
+class BorrowReceiverArraySpan {
+public:
+    int fieldIndex;
+    int resultOffset;
+};
+// Immutable module data, with no source/IR-supplied address or terminator.
 class BorrowLiteralSpan {
 public:
     std::vector<unsigned char> bytes;
@@ -535,6 +540,7 @@ using Instruction = std::variant<BindServiceParameter,
                                  BeginArray,
                                  EndArray,
                                  BorrowSpan,
+                                 BorrowReceiverArraySpan,
                                  BorrowLiteralSpan,
                                  BorrowOwnedSpan,
                                  ReturnSpan,

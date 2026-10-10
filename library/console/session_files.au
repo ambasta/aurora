@@ -1,6 +1,8 @@
 export module console.session_files;
 import std.binary_buffer;
 import std.binary;
+import std.decimal;
+import std.array;
 
 export namespace console {
     enum class FileEvent { unknown, written, read, removed, listed, missing, invalid, full, reserved };
@@ -59,11 +61,6 @@ export namespace console {
     class SessionFiles {
         array<std::BinaryBuffer64, 4> records;
         u64 occupied;
-
-        auto commit(i64 slot, std::BinaryBuffer64 record) -> bool {
-            records[slot] = record;
-            return true;
-        }
     public:
         SessionFiles(std::BinaryBuffer64 empty)
             : records{empty, empty, empty, empty}, occupied(0u64) {}
@@ -74,7 +71,7 @@ export namespace console {
                 reply.select(FileEvent::invalid);
                 return reply;
             }
-            if (count == 2 && command.starts_with("ls")) {
+            if (command.equal(0, count, "ls")) {
                 reply.select(FileEvent::listed);
                 reply.text("files:");
                 i64 slot = 0;
@@ -98,24 +95,24 @@ export namespace console {
             }
             i64 start = 0;
             FileEvent action = FileEvent::unknown;
-            if (count >= 6 && command.starts_with("write ")) {
+            if (command.starts_with(count, "write ")) {
                 start = 6;
                 action = FileEvent::written;
             }
-            if (count >= 4 && command.starts_with("cat ")) {
+            if (command.starts_with(count, "cat ")) {
                 start = 4;
                 action = FileEvent::read;
             }
-            if (count >= 3 && command.starts_with("rm ")) {
+            if (command.starts_with(count, "rm ")) {
                 start = 3;
                 action = FileEvent::removed;
             }
             if (action == FileEvent::unknown) {
                 // Exact verbs and malformed ls are recognized, without accepting prefixes.
-                if ((count == 5 && command.starts_with("write"))
-                    || (count == 3 && command.starts_with("cat"))
-                    || (count == 2 && command.starts_with("rm"))
-                    || (count >= 3 && command.starts_with("ls "))) {
+                if (command.equal(0, count, "write")
+                    || command.equal(0, count, "cat")
+                    || command.equal(0, count, "rm")
+                    || command.starts_with(count, "ls ")) {
                     reply.select(FileEvent::invalid);
                 }
                 return reply;
@@ -139,8 +136,7 @@ export namespace console {
                 }
                 index = index + 1;
             }
-            if ((name_size == 1 && command.at(start) == '.')
-                || (name_size == 2 && command.at(start) == '.' && command.at(start + 1) == '.')) {
+            if (command.equal(start, name_size, ".") || command.equal(start, name_size, "..")) {
                 reply.select(FileEvent::invalid);
                 return reply;
             }
@@ -161,8 +157,7 @@ export namespace console {
                     index = index + 1;
                 }
             }
-            if (name_size == 4 && command.at(start) == 'n' && command.at(start + 1) == 'o'
-                && command.at(start + 2) == 't' && command.at(start + 3) == 'e') {
+            if (command.equal(start, name_size, "note")) {
                 reply.select(FileEvent::reserved);
                 return reply;
             }
@@ -174,14 +169,8 @@ export namespace console {
                 const i64 length = i64(record.at(0));
                 const bool present = (occupied & (1u64 << slot)) != 0u64;
                 if (!present && free_slot == -1) { free_slot = slot; }
-                if (present && length == name_size) {
-                    bool matches = true;
-                    index = 0;
-                    while (index < name_size) {
-                        if (record.at(2 + index) != command.at(start + index)) { matches = false; }
-                        index = index + 1;
-                    }
-                    if (matches) { found = slot; }
+                if (present && command.equal(start, name_size, record.bytes(2, length))) {
+                    found = slot;
                 }
                 slot = slot + 1;
             }
@@ -207,7 +196,7 @@ export namespace console {
             // Stage a complete zeroed record before committing any workspace field.
             std::BinaryBuffer64 record = std::BinaryBuffer64();
             if (action == FileEvent::removed) {
-                commit(found, record);
+                records[found] = record;
                 occupied = occupied & ~(1u64 << found);
             } else {
                 record.write_u8(0, u8(name_size));
@@ -223,7 +212,7 @@ export namespace console {
                     index = index + 1;
                 }
                 if (found == -1) { found = free_slot; }
-                commit(found, record);
+                records[found] = record;
                 occupied = occupied | (1u64 << found);
             }
             reply.select(action);
@@ -237,8 +226,12 @@ export namespace console {
                 }
                 reply.append(':');
                 reply.append(' ');
-                if (content_size >= 10) { reply.append(u8(i64('0') + content_size / 10)); }
-                reply.append(u8(i64('0') + content_size % 10));
+                const std::DecimalEncodingResult size = std::format_decimal_i64(content_size);
+                index = 0;
+                while (index < size.size()) {
+                    reply.append(size.byte_or(index, '\0'));
+                    index = index + 1;
+                }
                 reply.text(" byte");
                 if (content_size != 1) { reply.append('s'); }
             }

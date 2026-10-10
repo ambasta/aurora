@@ -20,8 +20,9 @@ import tty
 
 import kernel_graphical_console_admission as admission
 import kernel_uefi_oracle as normal
+import qemu_transport as transport
 from framebuffer_capture_oracle import BASE, SIZE, VISIBLE, WIDTH, HEIGHT, PITCH, need, parse_ppm
-from kernel_emulator_clock import ORIGINAL, expected_firmware_argv, validate_clock_options
+from kernel_emulator_clock import ORIGINAL, validate_clock_options
 
 ROOT = Path(__file__).resolve().parents[1]
 capture = admission.load("graphical_smoke_capture", ROOT / "scripts/kernel-framebuffer-capture.py")
@@ -79,21 +80,9 @@ PRODUCTION = (
     b"it\r",
 )
 
+
 def child_limits():
     resource.setrlimit(resource.RLIMIT_FSIZE, (4 * 1024 * 1024, 4 * 1024 * 1024))
-
-
-class LimitedLog:
-    def __init__(self, stream):
-        self.stream, self.size = stream, 0
-
-    def write(self, data):
-        self.size += len(data)
-        need(self.size <= 4 * 1024 * 1024, "cumulative QMP log limit")
-        return self.stream.write(data)
-
-    def close(self):
-        self.stream.close()
 
 
 def markers(raw, production=False, final=False):
@@ -217,7 +206,7 @@ def wait(channel, predicate, production=False):
         if predicate(rows):
             return rows
         need(not rows or not rows[-1][0].startswith("CONSOLE_"), "unexpected terminal")
-        need(channel.proc.poll() is None, "premature QEMU exit")
+        need(not transport.exited(channel.proc), "premature QEMU exit")
         select.select([channel.serial], [], [], min(0.01, channel.remaining()))
 
 
@@ -247,34 +236,27 @@ def guest(args, mode, directory, record):
         validate_clock_options("uefi", "normal", ORIGINAL, argv)
         record["argv"] = argv
         with open(directory / "qemu.stderr", "xb") as stderr:
-            proc = subprocess.Popen(
+            proc = transport.start(
                 argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, bufsize=0, preexec_fn=child_limits
             )
         channel = capture.Channel(proc, master, directory, time.monotonic() + 90)
-        channel.qlog = LimitedLog(channel.qlog)
-        need("QMP" in channel.receive(), "QMP greeting")
-        channel.command("qmp_capabilities")
         channel.command("cont")
         yield channel
     except (Exception, KeyboardInterrupt) as error:
         record["guest_error"] = str(error)
         raise
     finally:
-        errors = []
-        actions = [lambda: capture.terminate(proc)] if proc else []
-        if channel:
-            actions += [channel.drain_serial, channel.qlog.close, channel.slog.close]
-        actions += [lambda fd=fd: os.close(fd) for fd in (master, slave) if fd is not None]
-        if proc:
-            actions += [proc.stdin.close, proc.stdout.close]
-        for action in actions:
-            try:
-                action()
-            except (Exception, KeyboardInterrupt) as error:
-                errors.append(str(error))
+        errors, _, unsettled = transport.finish(
+            proc,
+            drains=[channel.drain_serial] if channel else [],
+            fds=(master, slave),
+            streams=([channel.qlog, channel.slog] if channel else []) + ([proc.stdin, proc.stdout] if proc else []),
+        )
         if proc:
             record["exit_status"] = proc.returncode
         record["cleanup_errors"] = errors
+        if unsettled:
+            raise transport.ChildNotReaped("; ".join(errors))
         need(not errors, "guest cleanup: " + "; ".join(errors))
 
 
@@ -322,7 +304,7 @@ def capture_case(args, case, directory, record):
             stores=None if idle else model["stores"] if selector in (b"G", b"F", b"I") else [],
         )
         channel.command("quit")
-        need(channel.proc.wait(timeout=5) == 0, "QMP quit status")
+        transport.wait_exit(channel.proc, 5, expected=0)
         channel.drain_serial()
         validate(markers(channel.serial_bytes, final=True), selector, model, idle)
         record.update(termination="qmp-quit", terminal=rows[-1], sent_hex=(selector + data).hex())
@@ -347,7 +329,7 @@ def production_case(args, directory, record):
         while b"AURORA_UEFI_OK\r\n" not in channel.serial_bytes:
             channel.drain_serial()
             markers(channel.serial_bytes, production=True)
-            need(channel.proc.poll() is None, "production boot exited early")
+            need(not transport.exited(channel.proc), "production boot exited early")
             select.select([channel.serial], [], [], min(0.01, channel.remaining()))
         baseline, consumed = None, 0
         for chunk in PRODUCTION:
@@ -367,7 +349,7 @@ def production_case(args, directory, record):
                 time.sleep(0.1)
             else:
                 raise ValueError("production viewport did not reach the expected input boundary")
-        need(channel.proc.wait(timeout=channel.remaining()) == 33, "production native debug-exit status")
+        transport.wait_exit(channel.proc, channel.remaining(), expected=33)
         channel.drain_serial()
         rows = markers(channel.serial_bytes, production=True, final=True)
         validate(rows, b"G", model, production=True)
@@ -382,19 +364,16 @@ def restoration(args, directory, record):
     )
     validate_clock_options("uefi", "normal", ORIGINAL, argv)
     record["argv"] = argv
-    proc = None
-    try:
-        with open(directory / "serial.log", "xb") as log:
-            proc = subprocess.Popen(
-                argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, preexec_fn=child_limits
-            )
-            status = proc.wait(timeout=30)
-        normal.validate(status, (directory / "serial.log").read_text(), "normal")
-        record.update(termination="native-debug-exit", exit_status=status)
-        verify_images(args)
-    finally:
-        if proc:
-            capture.terminate(proc)
+    status = transport.run_logged(
+        argv,
+        directory / "serial.log",
+        timeout=30,
+        preexec_fn=child_limits,
+        limit=4 * 1024 * 1024,
+    )
+    normal.validate(status, (directory / "serial.log").read_text(), "normal")
+    record.update(termination="native-debug-exit", exit_status=status)
+    verify_images(args)
 
 
 def window(args):
@@ -424,6 +403,8 @@ def window(args):
         raise
     finally:
         try:
+            if isinstance(primary, transport.ChildNotReaped):
+                raise primary
             run("normal-restoration", lambda directory, record: restoration(args, directory, record))
         except (Exception, KeyboardInterrupt):
             if primary is None:
@@ -431,24 +412,43 @@ def window(args):
             print("FAIL: normal restoration also failed; see summary.json", file=sys.stderr)
 
 
-def stage(mode, destination):
+def stage(mode, destination, build):
+    admission.configure_paths(build, ROOT)
     source = admission.common.hashes(admission.source_files())
-    if mode != "normal":
-        admission.checked(mode)
+    checked = admission.checked(mode) if mode != "normal" else None
     target = destination / mode
-    build = ROOT / "build/uefi"
+    build = admission.BUILD
     files = admission.build_files(mode)
+    admitted = list(files)
+    if mode == "normal":
+        admission.common.verify_object_exports(files)
     if mode != "normal":
-        files += [admission.RECEIPT, build / "graphical-console-build.json", build / "graphical-console-build-start.json"]
+        files += [
+            admission.RECEIPT,
+            build / "graphical-console-build.json",
+            build / "graphical-console-build-start.json",
+        ]
     for path in files:
-        need(path.is_file() and not path.is_symlink()
-             and not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(build)),
-             "missing artifact or symlink in image build: " + str(path))
+        need(
+            path.is_file()
+            and not path.is_symlink()
+            and not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(build)),
+            "missing artifact or symlink in image build: " + str(path),
+        )
+    expected = admission.common.hashes(files)
+    if checked:
+        for path in admitted:
+            key = "build:" + path.relative_to(build).as_posix()
+            need(expected[key] == checked["sha256"][key], "Admitted image changed before staging")
     target.mkdir(parents=True)
     for path in files:
         copied = target / path.relative_to(build)
         copied.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, copied)
+        need(
+            capture.digest(copied) == expected["build:" + path.relative_to(build).as_posix()],
+            "Image changed during staging",
+        )
     record = dict(
         mode=mode,
         source=source,
@@ -485,8 +485,7 @@ RUN_SCHEMA = "aurora-graphical-smoke-run-v1"
 
 def retained_runs():
     value = os.environ.get("AURORA_GRAPHICAL_KEEP_RUNS", "2")
-    need(value == "all" or re.fullmatch(r"[1-9][0-9]{0,2}", value),
-         "AURORA_GRAPHICAL_KEEP_RUNS must be 1..999 or all")
+    need(value == "all" or re.fullmatch(r"[1-9][0-9]{0,2}", value), "AURORA_GRAPHICAL_KEEP_RUNS must be 1..999 or all")
     return None if value == "all" else int(value)
 
 
@@ -507,83 +506,24 @@ def start_run(directory):
         (directory / ".keep").touch(exist_ok=False)
 
 
-def save_failure(destination):
-    run_directory(destination.parent)
-    need(destination.name in ("failed-build", "failed-restoration"), "unknown failure snapshot")
-    source = ROOT / "build/uefi"
-    need(not source.is_symlink(), "symlink in failed build path")
-    destination.mkdir()
-    # Only current inputs and admission artifacts belong to this snapshot.
-    # Incomplete builds deliberately keep whatever exists, without claiming admission.
-    objects = source / "objects"
-    if objects.exists() or objects.is_symlink():
-        need(not objects.is_symlink(), "symlink in failed object directory")
-        # Same-filesystem rename preserves bulky failed inputs even under disk pressure.
-        objects.rename(destination / "objects")
-    files = admission.build_files() + [admission.RECEIPT, admission.BUILD / "graphical-console-build.json",
-                                      admission.BUILD / "graphical-console-build-start.json"]
-    for artifact in files:
-        relative = artifact.relative_to(admission.BUILD)
-        if relative.parts[0] == "objects":
-            continue
-        path = source / relative
-        if path.exists() or path.is_symlink():
-            need(not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(source)),
-                 "symlink in failed image path")
-            copied = destination / relative
-            copied.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, copied, follow_symlinks=False)
-
-
-def compact_captures(directory):
-    """Discard only this successful owned run's screen dumps, after hashing them."""
+def discard_captures(directory):
+    """Discard known dumps from this successful run; leave logs and review files."""
     guests = directory / "guests"
-    need(not guests.is_symlink(), "symlink in smoke capture directory")
-    if not guests.exists():
-        return  # Build-only windows have no guest captures.
-    files = {}
-    for name in ("production", *(case[0] for case in CASES)):
-        case = guests / name
-        need(not case.is_symlink(), "symlink in smoke capture case")
-        if not case.is_dir():
-            continue
-        for path in sorted(case.iterdir()):
-            if not re.fullmatch(
+    need(not guests.is_symlink(), "symlink in smoke capture path")
+    files = []
+    for case in ("production", *(case[0] for case in CASES)):
+        folder = guests / case
+        need(not folder.is_symlink(), "symlink in smoke capture path")
+        for path in sorted(folder.glob("*")):
+            if re.fullmatch(
                 r"(?:(?:baseline|terminal|sample-[0-9]{2}|state-[0-9]{2})\.(?:bin|ppm)"
                 r"|probe-[0-9]{2}-[0-9]{2}\.bin)",
                 path.name,
             ):
-                continue
-            need(stat.S_ISREG(path.lstat().st_mode), "nonregular smoke capture")
-            files[str(path.relative_to(guests))] = dict(bytes=path.stat().st_size, sha256=capture.digest(path))
-    if not files:
-        return
-    # Finish the complete hash receipt before removing any bytes. Unknown names,
-    # logs, summaries, images and separately supplied runner output stay untouched.
-    receipt = guests / "screen-captures.json"
-    record = dict(schema="aurora-graphical-screen-captures-v1", retention="compacting", files=files)
-    with receipt.open("x") as output:
-        json.dump(record, output, indent=2, sort_keys=True)
-        output.write("\n")
-    try:
-        for name in files:
-            pin = directory / ".keep"
-            if pin.exists() or pin.is_symlink():
-                break  # Recheck after hashing; a late pin stops further removal.
-            (guests / name).unlink()
-    finally:
-        record["retained_files"] = [name for name in files if (guests / name).exists()]
-        record["retention"] = "partial" if record["retained_files"] else "compacted"
-        if len(record["retained_files"]) == len(files):
-            record["retention"] = "retained"
-        # Atomic replacement preserves the complete hashes even if this update
-        # fails. A surviving "compacting" receipt makes no raw-availability claim.
-        pending = guests / ".screen-captures.json.tmp"
-        with pending.open("x") as output:
-            json.dump(record, output, indent=2, sort_keys=True)
-            output.write("\n")
-        pending.replace(receipt)
-    print(f"Screen dump retention: {record['retention']}; hashes: {receipt}", flush=True)
+                need(not path.is_symlink() and path.is_file(), "nonregular smoke capture")
+                files.append(path)
+    for path in files:
+        path.unlink()
 
 
 def finish_run(directory, status):
@@ -596,23 +536,32 @@ def finish_run(directory, status):
         need(not marker.is_symlink(), "symlink in smoke ownership marker")
         need(admission.read_json(marker) == dict(schema=RUN_SCHEMA, status="running"), "missing active smoke marker")
         # The build/guest/restoration outcome is complete before optional cleanup.
-        marker.write_text(json.dumps(dict(schema=RUN_SCHEMA, status="passed" if status == 0 else "failed",
-                                          finished_ns=time.time_ns())) + "\n")
+        marker.write_text(
+            json.dumps(
+                dict(schema=RUN_SCHEMA, status="passed" if status == 0 else "failed", finished_ns=time.time_ns())
+            )
+            + "\n"
+        )
         pin = directory / ".keep"
-        if status == 0 and keep is not None and not (pin.exists() or pin.is_symlink()):
+        if not transport.retain_artifacts(status, keep is None or pin.exists() or pin.is_symlink()):
             try:
-                compact_captures(directory)
+                discard_captures(directory)
             except (OSError, ValueError) as error:
-                print("WARN: could not compact successful screen dumps: " + str(error), file=sys.stderr)
+                print("WARN: could not discard successful screen dumps: " + str(error), file=sys.stderr)
             except KeyboardInterrupt:
-                print("WARN: successful-run compaction interrupted; remaining dumps preserved", file=sys.stderr)
+                print("WARN: successful-run cleanup interrupted; remaining dumps preserved", file=sys.stderr)
                 return
         if keep is None:
             return
         groups = {"passed": [], "failed": []}
         for folder in directory.parent.glob("run-*"):
             record = folder / RUN_MARKER
-            if folder.is_symlink() or not folder.is_dir() or (folder / ".keep").exists() or (folder / ".keep").is_symlink():
+            if (
+                folder.is_symlink()
+                or not folder.is_dir()
+                or (folder / ".keep").exists()
+                or (folder / ".keep").is_symlink()
+            ):
                 continue
             if record.is_symlink() or not record.is_file():
                 continue
@@ -620,9 +569,14 @@ def finish_run(directory, status):
                 item = admission.read_json(record)
             except (ValueError, OSError):
                 continue  # Unknown or incomplete evidence is never adopted for deletion.
-            if (type(item) is not dict or set(item) != {"schema", "status", "finished_ns"}
-                    or item["schema"] != RUN_SCHEMA or type(item["status"]) is not str or item["status"] not in groups
-                    or type(item["finished_ns"]) is not int):
+            if (
+                type(item) is not dict
+                or set(item) != {"schema", "status", "finished_ns"}
+                or item["schema"] != RUN_SCHEMA
+                or type(item["status"]) is not str
+                or item["status"] not in groups
+                or type(item["finished_ns"]) is not int
+            ):
                 continue
             groups[item["status"]].append((item["finished_ns"], folder.name, folder))
         for runs in groups.values():
@@ -643,21 +597,34 @@ def pin_reused_images(images):
     if directory.parent != ROOT / "build/graphical-smoke":
         # A foreign checkout owns its lock and retention policy. Do not mutate it.
         marker = directory / RUN_MARKER
-        if (directory.parent.name != "graphical-smoke" or directory.parent.parent.name != "build"
-                or not directory.name.startswith("run-") or not (marker.exists() or marker.is_symlink())):
+        if (
+            directory.parent.name != "graphical-smoke"
+            or directory.parent.parent.name != "build"
+            or not directory.name.startswith("run-")
+            or not (marker.exists() or marker.is_symlink())
+        ):
             return  # Unmanaged external images retain their read-only behavior.
         need(not marker.is_symlink() and marker.is_file(), "invalid foreign smoke ownership marker")
         record = admission.read_json(marker)
-        need(record == dict(schema=RUN_SCHEMA, status="running") or
-             (type(record) is dict and set(record) == {"schema", "status", "finished_ns"}
-              and record["schema"] == RUN_SCHEMA and record["status"] in ("passed", "failed")
-              and type(record["finished_ns"]) is int), "invalid foreign smoke marker")
+        need(
+            record == dict(schema=RUN_SCHEMA, status="running")
+            or (
+                type(record) is dict
+                and set(record) == {"schema", "status", "finished_ns"}
+                and record["schema"] == RUN_SCHEMA
+                and record["status"] in ("passed", "failed")
+                and type(record["finished_ns"]) is int
+            ),
+            "invalid foreign smoke marker",
+        )
         try:
             pinned = stat.S_ISREG((directory / ".keep").lstat().st_mode)
         except FileNotFoundError:
             pinned = False
-        need(pinned, "Pin foreign managed images with a regular .keep file in the owning checkout before use: "
-             + str(directory))
+        need(
+            pinned,
+            "Pin foreign managed images with a regular .keep file in the owning checkout before use: " + str(directory),
+        )
         return
     lock_path = directory.parent / ".retention.lock"
     with os.fdopen(os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), "r+") as lock:
@@ -670,8 +637,12 @@ def pin_reused_images(images):
         record = admission.read_json(marker)
         if record == dict(schema=RUN_SCHEMA, status="running"):
             return  # The invoking shell owns this active window until the child exits.
-        need(type(record) is dict and record.get("schema") == RUN_SCHEMA
-             and record.get("status") in ("passed", "failed"), "invalid completed smoke marker")
+        need(
+            type(record) is dict
+            and record.get("schema") == RUN_SCHEMA
+            and record.get("status") in ("passed", "failed"),
+            "invalid completed smoke marker",
+        )
         pin = directory / ".keep"
         if not pin.exists() and not pin.is_symlink():
             with pin.open("x"):
@@ -685,18 +656,15 @@ def main():
     parser.add_argument("--images", type=Path)
     lifecycle = parser.add_mutually_exclusive_group()
     lifecycle.add_argument("--start-run", type=Path)
-    lifecycle.add_argument("--save-failure", type=Path)
     lifecycle.add_argument("--finish-run", type=Path)
     parser.add_argument("--status", type=int)
+    parser.add_argument("--build-dir", type=Path, help="exact native profile directory for --stage")
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("inputs", nargs="*")
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, lambda signum, frame: (_ for _ in ()).throw(KeyboardInterrupt("SIGTERM")))
     if args.start_run:
         start_run(args.start_run)
-        return
-    if args.save_failure:
-        save_failure(args.save_failure)
         return
     if args.finish_run:
         need(args.status is not None, "run exit status required")
@@ -705,7 +673,8 @@ def main():
     need(args.images is not None, "images required")
     args.images = args.images.resolve()
     if args.stage:
-        stage(args.stage, args.images)
+        need(args.build_dir is not None, "--stage requires --build-dir")
+        stage(args.stage, args.images, args.build_dir)
         return
     pin_reused_images(args.images)
     need(
@@ -715,7 +684,7 @@ def main():
     args.evidence = args.evidence.resolve()
     need(all(re.fullmatch(r"/[A-Za-z0-9_./+\-]+", str(p)) for p in (args.evidence, args.images)), "unsafe capture path")
     args.qemu, firmware, code, variables, args.data = args.inputs
-    args.firmware = expected_firmware_argv(firmware, code, variables)
+    args.firmware = transport.firmware_args(firmware, code, variables)
     verify_images(args)
     window(args)
 
@@ -724,4 +693,4 @@ if __name__ == "__main__":
     try:
         main()
     except (Exception, KeyboardInterrupt) as error:
-        raise SystemExit("FAIL: graphical smoke: " + str(error)) from error
+        raise SystemExit(transport.failure_label(error) + ": graphical smoke: " + str(error)) from error

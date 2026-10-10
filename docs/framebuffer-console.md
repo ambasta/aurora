@@ -7,9 +7,8 @@ remain pending; this is not a claim of whole-system readiness.
 The current source join adds the reviewed GCC 14/GCC 16 portability machinery
 and readable binary glyph spellings. Graphical compiler frames now bind exact
 assembler symbols through `.ci` and complete `.su` source records, retaining
-object/linked-byte checks and the separately proved paired alias. The raw
-compiler alias name is retained through metadata joining; only the already proved
-same-body pair is canonicalized afterward. The unchanged
+object/linked-byte checks. The fixed-slot graphical traversal needs no paired
+recursive alias recognizer or canonicalization. The unchanged
 legacy verifier's local visited-array invariant has a separately reviewed source
 applicability check for the joined headers. This is source integration only:
 changed-output image admission, failure-fixture guests and the GCC 16
@@ -51,8 +50,8 @@ and rejecting the former test-executable pin without rewriting historical eviden
 ## Current-source graphical smoke
 
 `make smoke-graphical-console` builds and checks normal UEFI, production graphical
-and capture graphical images sequentially, then runs eighteen fresh graphical
-cases and one actual normal restoration. It uses version-4 admission;
+and capture graphical images sequentially, then runs twenty fresh graphical
+cases and one actual normal restoration. It uses version-5 admission;
 that receipt stays structure-only and never grants behavioral qualification.
 No external approval receipts or historical compiler/address allowlists are needed
 for this developer command. Independent review and final GCC 16 `full` remain
@@ -108,24 +107,17 @@ own inputs. Capture failure is reported and restoration still runs, so inputs
 that could not be retained may be replaced. Successful runs avoid both whole-tree
 moves/copies.
 After the guest window and shared normal-image restoration both succeed, the
-managed shell run writes `guests/screen-captures.json` with relative names, sizes
-and SHA256 hashes, then discards only its generated physical/PPM dumps and small
-viewport probes. Summaries, input/terminal records, serial/QMP/stderr and build
-logs, and staged images remain. A build, guest or restoration failure or handled
-interruption retains raw captures. Explicit keep-all or a `.keep` created before
-dump removal starts retains successful dumps too. Pins are rechecked after
-hashing and before each removal; a later pin stops further removal but cannot
-restore removed captures. Standalone
-runner evidence and historical windows are never compacted. Receipt generation
-finishes before deletion; its `retention` is `compacted` with no `retained_files`
-after success, `retained` if no files were removed, or `partial` with an explicit
-list of raw files still available.
-If final receipt replacement is interrupted, `compacting` makes no availability
-claim and readers must inspect the paths. Compaction errors warn and leave
-remaining files without changing the build/guest result. The completed run marker
-precedes optional compaction. An interruption before deletion preserves all dumps;
-once deletion starts, interruptions preserve the remaining dumps and complete
-hash receipt, and do not relabel the already-passed build/guest/restoration result.
+managed shell run discards only known physical/PPM dumps and viewport probes in
+that run. Summaries, serial/QMP/stderr and build logs, staged images and unknown
+files remain. Build, guest or restoration failures retain raw captures. Explicit
+keep-all or a `.keep` before removal preserves successful dumps too. Every path
+is checked before cleanup, held no-follow directory handles anchor deletion, and
+pins are checked before each removal. A later pin
+or cleanup interruption preserves the remaining dumps; deleted captures cannot
+be recovered. Errors warn without changing the completed build/guest result.
+Standalone runner outputs and historical windows are never adopted for this
+cleanup. No screen-hash receipt is produced or required; retained logs record the
+actual comparisons, while discarded screenshots are no longer available.
 Default retention keeps the latest two successful and two failed windows. Set
 `AURORA_GRAPHICAL_KEEP_RUNS=N` (1..999) to change both limits, or `all` to skip
 pruning and pin the new run. A `.keep` file pins an individual window. A separate
@@ -359,7 +351,7 @@ require their own combined linked-stack/image begin/end/emit admission;
 every new attempt invalidates prior combined receipts before build work. Missing
 or failed checks reject. Automatic evidence still requires independent exact-image
 review and cannot authorize a guest or borrow a legacy profile's qualification.
-Version-4 image receipts retain measured capture artifact/state structure by
+Version-5 image receipts retain measured capture artifact/state structure by
 mode. Current build provenance binds the complete source, tools, exact flags and
 output bytes at begin/end/admission; it does not require a historical source-token
 allowlist. A fresh implementation edit proceeds to the actual image/stack checks.
@@ -467,14 +459,21 @@ the new joined source. Partial/null-pair denials and deterministic synchronous f
 remain separate from the seven selectors; no new keyboard, desktop or physical
 hardware qualification follows.
 
-The paired verifier also has a separate, closed GCC16 emission proof. Its actual
-single walker definition remains bound through raw `.ci`/`.su`, object and linked
-bytes; no second alias is synthesized. The eight exact bodies require distinct
-root and walker save-slot, snapshot, six-guard, indexed bitmap and decreasing-level
-proofs. Unknown or mixed layouts reject, and existing stack/IRQ/wait budgets stay
-unchanged. Source controls and retained-body analysis do not qualify a fresh
-image or guest; complete current-source admission and independent review remain
-required for each toolchain.
+The paired graphical verifier now traverses four paging levels with a fixed
+four-slot local array. The common linked decoder measures its stack effects and
+rejects call-graph cycles; only the unchanged legacy page walker retains a
+bounded recursion exception. Raw compiler frame/source associations, object/link
+byte binding, private ABI, IRQ/wait and complete stack budgets remain checked.
+
+This removes the graphical GCC14/GCC16 exact-body recognizers and their frozen
+machine fixtures. It deliberately stops claiming an independent machine proof
+of snapshot ordering, local-storage disjointness, bitmap bounds or helper memory
+effects. Those semantics depend on the reviewed C++ implementation and trusted
+compilation, with hostile hosted paging and actual guest behavior gates. Generic
+stack analysis does not establish traversal termination or arbitrary memory safety.
+Version-5 receipts cannot reuse the earlier paired machine proof. This source
+change remains unqualified until fresh current-source image/stack, hosted paging,
+applicable production/capture/fault guests, restoration and final full tests pass.
 
 Only the graphical profile requires the private Console and Display validators
 to remain separate non-inlined, non-cloned bootstrap functions. Their raw compiler
@@ -509,9 +508,9 @@ historical GCC16 state global. Hosted grant/state/failure tests and actual guest
 capture, denial, pixel-failure and normal-restoration gates remain required.
 Compiler-free controls use small hand-authored structural/negative fixtures;
 complete encoded build snapshots are no longer repository test inputs.
-The separate paired-walker exact-body/storage/recursion fixtures and narrow
-memory-push assumptions above remain unchanged. This is bounded stack/layout
-evidence, not arbitrary machine safety or complete compiler independence.
+The narrow memory-push assumptions above remain unchanged. Graphical paging
+semantics now use the explicit trusted-C++ boundary described above; linked stack
+evidence is not arbitrary machine safety or complete compiler independence.
 
 The removed five-file token allowlist and source-projection mutation tests proved
 only a match to historical source tokens. Their behavioral requirements remain assigned to the

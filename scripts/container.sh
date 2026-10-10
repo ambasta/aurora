@@ -4,7 +4,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ ${1:-} == --help ]]; then
     echo 'Usage: scripts/container.sh [command [arguments...]]'
     echo 'Run in the published linux/amd64 image pinned by ci/image; default: bash.'
-    echo 'Requires Docker and an existing authorized login for private ghcr.io pulls.'
+    echo 'Requires Docker; the public dependency image supports anonymous pulls.'
     exit 0
 fi
 if [[ ! -f "$root/ci/image" ]]; then

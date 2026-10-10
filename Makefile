@@ -127,7 +127,12 @@ AURORAC ?= build/aurorac
 .NOTPARALLEL:
 .PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-scheduling smoke-uefi test-uefi test-acpi test-division smoke-acpi smoke-division test-pci test-unsigned smoke-pci smoke-unsigned test-uefi-runtime smoke-uefi-runtime test-uefi-ipc smoke-uefi-ipc test-uefi-budget smoke-uefi-budget test-uefi-dispatch smoke-uefi-dispatch test-uefi-user-phases smoke-uefi-user-phases smoke-all
 
+ifeq ($(strip $(AURORA_TEST_CONTEXT)),)
+all:
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios --publish-compiler
+else
 all: compiler kernel
+endif
 
 # Developer shortcuts reuse the existing build and validated smoke mechanisms.
 # Export these selectors so both environment and make NAME=value syntax work.
@@ -156,10 +161,28 @@ help:
 	  'make test             Configure/build and run the complete Meson native graph' \
 	  'make smoke-all        Run the full emulator suite, including both consoles' \
 	  'make test-developer-commands  Check shortcuts with fake tools only' \
+	  'make clean-dry-run    Show Meson product cleanup commands; MESON_BUILD_DIR selects one build' \
+	  'make clean            Meson clean for default builds; preserve configuration/logs/test scratch' \
+	  'make clean-scratch-dry-run / clean-scratch CLEAN_PATHS="build/..."  Select reviewed scratch' \
 	  '' \
 	  'run/run-uefi are bounded boot self-tests; console is an experimental serial prompt.' \
 	  'Overrides: CXX, UEFI_LD, QEMU, QEMU_DATA, OVMF or OVMF_CODE/OVMF_VARS, OVMF_DIR.' \
 	  'See docs/local-development.md for dependencies, scripts and test scope.'
+
+# Cleanup does not select a compiler, configure a build, or run test gates.
+# Stop other work first. Default selection is build/meson-<hash>; scratch requires explicit paths.
+export CLEAN_PATHS
+.PHONY: clean clean-dry-run clean-scratch clean-scratch-dry-run test-clean
+clean clean-dry-run:
+	python3 -B scripts/clean.py $(if $(filter clean-dry-run,$@),--dry-run,)
+
+clean-scratch clean-scratch-dry-run:
+	python3 -B scripts/clean.py --scratch $(if $(filter clean-scratch-dry-run,$@),--dry-run,)
+
+test: test-clean
+
+test-clean:
+	python3 -B tests/test_clean.py
 
 run:
 	./scripts/kernel-run.sh bios
@@ -203,7 +226,11 @@ smoke-console-uefi:
 	./scripts/kernel-console-smoke.sh uefi
 
 kernel-uefi:
+ifeq ($(strip $(AURORA_TEST_CONTEXT)),)
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel uefi
+else
 	./scripts/kernel-uefi-build.sh
+endif
 
 # Synthetic shortcut checks also run in the native aggregate.
 test-developer-commands:
@@ -230,8 +257,13 @@ compiler:
 	$(MAKE) -C compiler
 endif
 
+ifeq ($(strip $(AURORA_TEST_CONTEXT)),)
+kernel:
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios
+else
 kernel: compiler
 	./scripts/kernel-build.sh
+endif
 
 test-compiler: compiler
 	$(MAKE) -C compiler test

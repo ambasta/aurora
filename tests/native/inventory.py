@@ -100,7 +100,7 @@ def check_exact(expected, actual, label):
             raise ValueError(label + ' drift: ' + name + ': ' + ', '.join(changed))
 
 
-def check_manifest(manifest, actual_files, tests=None, root_targets=None):
+def check_manifest(manifest, actual_files, tests=None, root_targets=None, kernel_images=True):
     listed = set(manifest['files'])
     if actual_files != listed:
         raise ValueError('native source inventory drift: added=' + repr(sorted(actual_files - listed))
@@ -129,6 +129,8 @@ def check_manifest(manifest, actual_files, tests=None, root_targets=None):
         if not any(suite.split(':')[-1] == 'full' for suite in by_name[name]['suite']):
             raise ValueError('native gate omitted from full suite: ' + name)
     for name, expected in manifest['registrations'].items():
+        if not kernel_images and name in ('native-bios-image', 'native-uefi-normal-image', 'native-uefi-span-integration'):
+            continue  # Exact failure commands are checked against the actual configured option.
         argv = by_name[name]['cmd']
         source = expected.get('source', '')
         if source.endswith(('.py', '.sh')) and not any(str(arg).endswith('/' + source) for arg in argv):
@@ -207,7 +209,6 @@ def check(root, registered_tests=None, root_targets=None):
     root = Path(root)
     self_test()
     manifest = json.loads((root / 'tests/native/inventory.json').read_text())
-    check_manifest(manifest, discovered_files(root), registered_tests, root_targets)
     if registered_tests is not None:
         anchor = next(record for record in registered_tests if record['name'] == 'compiler-test-inventory')
         arguments = anchor['cmd']
@@ -215,10 +216,20 @@ def check(root, registered_tests=None, root_targets=None):
         if not info.is_absolute():
             info = Path(anchor.get('workdir') or root) / info
         build = info.resolve().parents[1]
+        options = json.loads((build / 'meson-info/intro-buildoptions.json').read_text())
+        kernel_images = next(option['value'] for option in options if option['name'] == 'kernel_images')
         targets = json.loads((build / 'meson-info/intro-targets.json').read_text())
         observed_tests, observed_targets = contracts(registered_tests, targets, root, build)
-        check_exact(manifest['exact_tests'], observed_tests, 'Meson test contract')
+        expected_tests = dict(manifest['exact_tests'])
+        if not kernel_images:
+            for name in ('native-bios-image', 'native-uefi-normal-image', 'native-uefi-span-integration'):
+                expected_tests[name] = dict(expected_tests[name], depends=[], command=[
+                    '@PYTHON@', '-c', 'raise SystemExit("Kernel images disabled: configure '
+                    '-Dkernel_images=true for full/boot qualification")'])
+        check_exact(expected_tests, observed_tests, 'Meson test contract')
         check_exact(manifest['fixture_targets'], observed_targets, 'Meson fixture target')
+    check_manifest(manifest, discovered_files(root), registered_tests, root_targets,
+                   kernel_images if registered_tests is not None else True)
     for name, expected in manifest['wrapper_sha256'].items():
         if hashlib.sha256((root / name).read_bytes()).hexdigest() != expected:
             raise ValueError('native shell command inventory needs review after wrapper change: ' + name)

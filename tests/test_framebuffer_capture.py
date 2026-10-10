@@ -252,16 +252,14 @@ class CaptureControls(unittest.TestCase):
         cases += [(33, good, ValueError("input digest mismatch"), "failed")]
         for status, transcript, drift, expected in cases:
             with self.subTest(status=status, transcript=transcript, drift=drift), tempfile.TemporaryDirectory() as d:
-                proc = Mock(returncode=status)
-                proc.wait.return_value = proc.poll.return_value = status
 
-                def launch(*args, **kwargs):
-                    kwargs["stdout"].write(transcript.encode())
-                    return proc
+                def launch(argv, log, **kwargs):
+                    log.write_text(transcript)
+                    return status
 
                 with (
                     patch.object(runner, "verify", side_effect=drift) as verify,
-                    patch.object(runner.subprocess, "Popen", side_effect=launch) as popen,
+                    patch.object(runner.transport, "run_logged", side_effect=launch) as popen,
                     patch.object(
                         importlib.util, "spec_from_file_location", wraps=importlib.util.spec_from_file_location
                     ) as load,
@@ -300,6 +298,9 @@ class CaptureControls(unittest.TestCase):
                 with (
                     patch.object(runner.subprocess, "Popen", return_value=proc),
                     patch.object(runner.Channel, "receive", side_effect=error),
+                    patch.object(
+                        runner.transport, "cleanup", side_effect=lambda child: setattr(child, "returncode", -15)
+                    ) as reap,
                 ):
                     receipt = runner.run_case(
                         "framebuffer",
@@ -311,14 +312,14 @@ class CaptureControls(unittest.TestCase):
                     )
                 self.assertEqual(receipt["status"], "failed")
                 self.assertIn(str(error), receipt["error"])
-                proc.terminate.assert_called_once()
-                proc.wait.assert_called_once_with(timeout=2)
+                reap.assert_called_once_with(proc)
                 self.assertTrue(proc.stdin.closed and proc.stdout.closed)
                 self.assertEqual(receipt["exit_status"], -15)
 
     def test_bounded_clock(self):
         obj = runner.Channel.__new__(runner.Channel)
         obj.deadline = time.monotonic() - 1
+        obj.timeout = 5
         with self.assertRaises(ValueError):
             obj.remaining()
 

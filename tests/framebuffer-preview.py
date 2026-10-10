@@ -34,7 +34,8 @@ class Routing(unittest.TestCase):
         shutil.copy2(ROOT / "scripts/kernel-framebuffer-preview.sh", self.fixture.scripts)
         self.fixture.script(
             self.fixture.scripts / "kernel-uefi-build.sh",
-            'printf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\nexit "${BUILD_STATUS:-0}"\n',
+            'printf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\n'
+            'printf "%s\\n" "$PWD/build/native framebuffer"\nexit "${BUILD_STATUS:-0}"\n',
         )
         self.fixture.tool(
             "python3",
@@ -61,7 +62,9 @@ class Routing(unittest.TestCase):
         self.assertEqual(
             calls[:2], ["python|-B scripts/kernel_framebuffer_preview.py --preflight", "build|framebuffer"]
         )
-        self.assertTrue(calls[2].startswith("python|-B scripts/kernel_framebuffer_preview.py qemu-system-x86_64 "))
+        self.assertTrue(calls[2].startswith("python|-B scripts/kernel_framebuffer_preview.py --build-dir "
+                                           + str(self.fixture.repo / "build/native framebuffer")
+                                           + " qemu-system-x86_64 "))
         self.assertNotIn("receipt", calls[2])
         self.assertNotIn("manifest", calls[2])
 
@@ -123,6 +126,7 @@ class Routing(unittest.TestCase):
             self.fixture.calls()[-4:],
             ["python-arg|", "python-arg|" + str(code), "python-arg|" + str(variables), "python-arg|" + str(data)],
         )
+        self.assertIn("python-arg|" + str(self.fixture.repo / "build/native framebuffer"), self.fixture.calls())
         self.assertEqual(variables.read_bytes(), b"variables")
 
 
@@ -167,7 +171,7 @@ class PreviewControls(unittest.TestCase):
                 preview.preflight()
 
     def test_command_is_bounded_local_tcg_without_device_passthrough(self):
-        firmware = preview.expected_firmware_argv("", "/code.fd", "/vars.fd")
+        firmware = preview.firmware_options("", "/code.fd", "/vars.fd")
         argv = preview.capture.command({"qemu": "qemu"}, {}, "/esp", "/dev/pts/7", True, firmware)
         self.assertIn("tcg", argv)
         self.assertNotIn("-L", argv)
@@ -197,12 +201,13 @@ class PreviewControls(unittest.TestCase):
 
             with (
                 patch.object(preview, "ROOT", root),
+                patch.object(preview.admission, "configure_paths"),
                 patch.object(preview, "preflight"),
                 patch.object(preview.admission, "checked", return_value={}) as checked,
                 patch.object(preview.capture, "run_case", side_effect=synthetic),
             ):
-                first = preview.run("qemu", "firmware", "", "", "")
-                second = preview.run("qemu", "firmware", "", "", "")
+                first = preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
+                second = preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
                 self.assertFalse(first["qualified"])
                 self.assertNotEqual(first["image"], second["image"])
                 self.assertEqual(checked.call_count, 4)
@@ -210,7 +215,7 @@ class PreviewControls(unittest.TestCase):
                     preview.capture, "run_case", return_value={"status": "failed", "error": "guest failed"}
                 ):
                     with self.assertRaisesRegex(ValueError, "guest failed"):
-                        preview.run("qemu", "firmware", "", "", "")
+                        preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
                 records = [json.loads(p.read_text()) for p in root.glob("build/framebuffer-preview/*/preview.json")]
                 self.assertEqual(sorted(row["status"] for row in records), ["failed", "passed", "passed"])
                 self.assertEqual(len(list(root.glob("build/framebuffer-preview/*/framebuffer.png"))), 2)
@@ -222,12 +227,13 @@ class PreviewControls(unittest.TestCase):
             (root / "build").mkdir()
             with (
                 patch.object(preview, "ROOT", root),
+                patch.object(preview.admission, "configure_paths"),
                 patch.object(preview, "preflight"),
                 patch.object(preview.admission, "checked", side_effect=[{}, ValueError("changed image")]),
                 patch.object(preview.capture, "run_case", return_value={"status": "passed"}),
             ):
                 with self.assertRaisesRegex(ValueError, "changed image"):
-                    preview.run("qemu", "firmware", "", "", "")
+                    preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
                 self.assertEqual(list(root.glob("build/framebuffer-preview/*/framebuffer.png")), [])
                 record = next(root.glob("build/framebuffer-preview/*/preview.json"))
                 self.assertEqual(json.loads(record.read_text())["status"], "failed")
@@ -237,12 +243,13 @@ class PreviewControls(unittest.TestCase):
             root = Path(temporary)
             with (
                 patch.object(preview, "ROOT", root),
+                patch.object(preview.admission, "configure_paths"),
                 patch.object(preview, "preflight"),
                 patch.object(preview.admission, "checked", side_effect=ValueError("changed image")),
                 patch.object(preview.capture, "run_case") as guest,
             ):
                 with self.assertRaisesRegex(ValueError, "changed image"):
-                    preview.run("qemu", "firmware", "", "", "")
+                    preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
                 guest.assert_not_called()
                 self.assertFalse((root / "build").exists())
 

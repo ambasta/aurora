@@ -2,7 +2,6 @@
 """Opt-in current-source Event developer smoke; never independent qualification."""
 
 import argparse
-from contextlib import contextmanager
 import copy
 import hashlib
 import json
@@ -10,7 +9,6 @@ import os
 from pathlib import Path
 import re
 import resource
-import select
 import selectors
 import shutil
 import signal
@@ -25,10 +23,13 @@ import kernel_iommu_event_esp as esp
 import kernel_iommu_event_oracle as oracle
 import kernel_uefi_oracle as normal
 from kernel_emulator_clock import expected_uefi_argv
+import qemu_transport as transport
+from qemu_transport import ChildNotReaped, Qmp, cleanup, exited, reap_completed
+from qemu_transport import MissingPrerequisite as PrerequisiteBlocked
 from owned_outputs import allocated_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = ROOT / "build/uefi"
+BUILD = None
 MODES = admission.MODES[:4]
 STREAM_LIMIT = 1024 * 1024
 EVIDENCE_LIMIT = 1024**3
@@ -182,185 +183,42 @@ def command(runtime, directory, serial_fd):
         safe_path(runtime[key], directory=key == "data")
     for name in ("vars.fd", "esp.raw"):
         safe_path(directory / name)
-    return [
+    return transport.command(
         runtime["qemu"],
-        "-L",
         runtime["data"],
-        "-machine",
-        "q35",
-        "-accel",
-        "tcg",
-        "-cpu",
-        "qemu64",
-        "-smp",
-        "1",
-        "-m",
-        "128M",
-        "-nodefaults",
-        "-no-user-config",
-        "-display",
-        "none",
-        "-nic",
-        "none",
-        "-monitor",
-        "none",
-        "-serial",
-        "chardev:guestserial",
-        "-no-reboot",
-        "-drive",
-        "if=pflash,format=raw,unit=0,readonly=on,file=" + runtime["code"],
-        "-drive",
-        "if=pflash,format=raw,unit=1,file=" + str(directory / "vars.fd"),
-        "-drive",
-        "if=none,id=boot,format=raw,file=" + str(directory / "esp.raw"),
-        "-device",
-        "ide-hd,drive=boot,bus=ide.0",
-        "-device",
-        "amd-iommu",
-        "-device",
-        "edu,addr=04.0",
-        "-device",
-        "isa-debug-exit,iobase=0xf4,iosize=0x04",
-        "-boot",
-        "order=c",
-        "-qmp",
-        "stdio",
-        "-add-fd",
-        f"fd={serial_fd},set=1,opaque=owned-serial-pipe",
-        "-chardev",
-        "file,id=guestserial,path=/dev/fdset/1,append=on",
-    ]
+        firmware=[
+            "-drive",
+            "if=pflash,format=raw,unit=0,readonly=on,file=" + runtime["code"],
+            "-drive",
+            "if=pflash,format=raw,unit=1,file=" + str(directory / "vars.fd"),
+        ],
+        boot=["-drive", "if=none,id=boot,format=raw,file=" + str(directory / "esp.raw")],
+        peripherals=[
+            "-nodefaults",
+            "-no-user-config",
+            "-device",
+            "ide-hd,drive=boot,bus=ide.0",
+            "-device",
+            "amd-iommu",
+            "-device",
+            "edu,addr=04.0",
+        ],
+        serial="chardev:guestserial",
+        extra=[
+            "-boot",
+            "order=c",
+            "-qmp",
+            "stdio",
+            "-add-fd",
+            f"fd={serial_fd},set=1,opaque=owned-serial-pipe",
+            "-chardev",
+            "file,id=guestserial,path=/dev/fdset/1,append=on",
+        ],
+    )
 
 
 def child_limits():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-
-
-class ChildNotReaped(RuntimeError):
-    """Restoration must not race an owned child whose exit cannot be established."""
-
-
-def exited(process):
-    return os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
-
-
-def reap_completed(process, deadline):
-    while not exited(process):
-        need(time.monotonic() < deadline, "Child exit deadline expired")
-        time.sleep(0.01)
-    # Keep the zombie leader unreaped while checking this Linux session's group.
-    # A successful wrapper must not leave a background compiler/helper running.
-    need(os.getpgid(process.pid) == os.getsid(process.pid) == process.pid, "Owned child session changed")
-    for path in Path("/proc").iterdir():
-        need(time.monotonic() < deadline, "Child group check deadline expired")
-        if not path.name.isdecimal() or int(path.name) == process.pid:
-            continue
-        try:
-            raw = (path / "stat").read_text()
-        except (FileNotFoundError, ProcessLookupError):
-            continue
-        fields = raw[raw.rfind(")") + 2 :].split()
-        need(len(fields) >= 4, "Malformed process group observation")
-        need((int(fields[2]), int(fields[3])) != (process.pid, process.pid), "Owned child left descendants")
-    return process.wait(timeout=max(0.001, deadline - time.monotonic()))
-
-
-def cleanup(process):
-    """Hold an unreaped session leader until all forced signals are sent.
-
-    WNOWAIT avoids reusing a numeric group ID after reaping its leader. Builds
-    may have compiler children; TERM/KILL applies only to this owned session.
-    """
-    forced = process.returncode is None
-    if not forced:
-        return False
-    need(os.getpgid(process.pid) == process.pid, "Owned child process group changed")
-    os.killpg(process.pid, signal.SIGTERM)
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline:
-        if os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
-            break
-        time.sleep(0.01)
-    # The unreaped leader still binds this group, even if it exited after TERM.
-    need(os.getpgid(process.pid) == process.pid, "Owned child process group changed")
-    os.killpg(process.pid, signal.SIGKILL)
-    deadline = time.monotonic() + 2
-    process.wait(timeout=2)
-    while True:
-        try:
-            os.killpg(process.pid, 0)  # Probe only; never signal a reaped numeric ID.
-        except ProcessLookupError:
-            return True
-        if time.monotonic() >= deadline:
-            raise ChildNotReaped("Owned process group has not settled")
-        time.sleep(0.01)
-
-
-@contextmanager
-def defer_interrupts():
-    old = {sig: signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGINT, signal.SIGTERM)}
-    try:
-        yield
-    finally:
-        for sig, handler in old.items():
-            signal.signal(sig, handler)
-
-
-class Qmp:
-    def __init__(self, process, deadline, log):
-        self.deadline, self.log = deadline, log
-        self.buffer, self.total, self.sequence = b"", 0, 0
-        self.reader, self.writer = process.stdout, process.stdin
-        os.set_blocking(self.reader.fileno(), False)
-        os.set_blocking(self.writer.fileno(), False)
-        greeting = self.receive()
-        need(set(greeting) == {"QMP"} and type(greeting["QMP"]) is dict, "Missing QMP greeting")
-        self.command("qmp_capabilities")
-
-    def remaining(self, response_deadline):
-        left = min(self.deadline, response_deadline) - time.monotonic()
-        need(left > 0, "QMP/global deadline expired")
-        return left
-
-    def record(self, data):
-        self.total += len(data)
-        need(self.total <= 65536, "QMP transcript limit")
-        self.log.write(data)
-
-    def receive(self):
-        deadline = time.monotonic() + 2
-        while b"\n" not in self.buffer:
-            need(select.select([self.reader], [], [], self.remaining(deadline))[0], "QMP response timeout")
-            chunk = os.read(self.reader.fileno(), 4096)
-            need(chunk, "QMP connection closed")
-            self.record(chunk)
-            self.buffer += chunk
-        line, self.buffer = self.buffer.split(b"\n", 1)
-        return json_object(line)
-
-    def command(self, name, arguments=None):
-        self.sequence += 1
-        request = dict(execute=name, id=self.sequence)
-        if arguments is not None:
-            request["arguments"] = arguments
-        encoded = json.dumps(request).encode() + b"\n"
-        self.record(b"SEND " + encoded)
-        pending, deadline = memoryview(encoded), time.monotonic() + 2
-        while pending:
-            need(select.select([], [self.writer], [], self.remaining(deadline))[1], "QMP request timeout")
-            count = os.write(self.writer.fileno(), pending)
-            need(count > 0, "QMP request pipe closed")
-            pending = pending[count:]
-        while True:
-            response = self.receive()
-            if "event" in response:
-                need("id" not in response and "error" not in response, "Malformed QMP event")
-                continue
-            need(
-                set(response) == {"id", "return"} and type(response["id"]) is int and response["id"] == self.sequence,
-                "QMP command failed: " + repr(response),
-            )
-            return response["return"]
 
 
 def copy_private(source, destination, digest=None):
@@ -405,14 +263,13 @@ def capture_guest(mode, receipt, runtime, master, directory, *, master_sha256):
         write_json(
             directory / "launch.json", dict(argv=argv, environment=environment(directory, runtime), captures=captures)
         )
-        process = subprocess.Popen(
+        process = transport.start(
             argv,
             cwd=directory,
             env=environment(directory, runtime),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            start_new_session=True,
             pass_fds=(serial_write,),
             preexec_fn=child_limits,
         )
@@ -422,7 +279,7 @@ def capture_guest(mode, receipt, runtime, master, directory, *, master_sha256):
             os.set_blocking(stream.fileno(), False)
             selector.register(stream, selectors.EVENT_READ, name)
         while selector.get_map():
-            need(time.monotonic() < deadline, "Event guest deadline expired")
+            transport.remaining(deadline)
             for key, _ in selector.select(min(0.05, deadline - time.monotonic())):
                 chunk = os.read(key.fileobj.fileno(), 65536)
                 if not chunk:
@@ -430,11 +287,13 @@ def capture_guest(mode, receipt, runtime, master, directory, *, master_sha256):
                     continue
                 name = key.data
                 left = STREAM_LIMIT - counts[name]
-                outputs[name].write(chunk[:left])
+                retained = chunk[:left]
                 counts[name] += min(len(chunk), left)
                 if name == "serial":
-                    serial.extend(chunk[:left])
-                need(len(chunk) <= left, name + " size limit")
+                    serial.extend(retained)
+                transport.capture_bytes(
+                    outputs[name], chunk, counts[name] - len(retained), STREAM_LIMIT, name + " size limit"
+                )
             terminal = re.search(rb"AURORA_IOMMU_EVENT_TERMINAL: [^\r\n]*\r\n", serial)
             failure = re.search(rb"AURORA_[^\r\n]*(?:FAIL|EXCEPTION|REJECTED)[^\r\n]*\r\n", serial)
             if reason == "pending" and (terminal or failure):
@@ -469,26 +328,18 @@ def capture_guest(mode, receipt, runtime, master, directory, *, master_sha256):
     except BaseException as error:
         errors.append(type(error).__name__ + ": " + str(error))
     finally:
-        with defer_interrupts():
-            try:
-                if process:
-                    forced = process.returncode is None
-                    cleanup(process)
-                    need(not forced, "Forced child cleanup")
-            except BaseException as error:
-                errors.append("cleanup: " + type(error).__name__ + ": " + str(error))
-                unsettled = isinstance(error, ChildNotReaped)
-            selector.close()
-            for fd in (serial_read, serial_write):
-                if fd is not None:
-                    os.close(fd)
-            for stream in [
+        cleanup_errors, forced, unsettled = transport.finish(
+            process,
+            drains=[selector.close],
+            fds=(serial_read, serial_write),
+            require_natural=True,
+            streams=[
                 serial_stream,
                 *outputs.values(),
                 *([process.stdin, process.stdout, process.stderr] if process else []),
-            ]:
-                if stream:
-                    stream.close()
+            ],
+        )
+        errors.extend(cleanup_errors)
         write_json(
             directory / "result.json",
             dict(
@@ -523,50 +374,17 @@ def budget(directory):
 
 
 def bounded_child(argv, log, *, env=None, timeout=1800, expected=0, limit=32 * STREAM_LIMIT):
-    """Synchronous owned child; drain capped output before bounded wait/reap."""
-    process, errors, status, unsettled = None, [], None, False
-    try:
-        with log.open("xb") as stream:
-            process = subprocess.Popen(
-                argv,
-                cwd=ROOT,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-                preexec_fn=child_limits,
-            )
-            deadline, count = time.monotonic() + timeout, 0
-            os.set_blocking(process.stdout.fileno(), False)
-            while True:
-                remaining = deadline - time.monotonic()
-                need(remaining > 0, "Child deadline expired")
-                need(select.select([process.stdout], [], [], remaining)[0], "Child output deadline expired")
-                data = os.read(process.stdout.fileno(), 65536)
-                if not data:
-                    break
-                stream.write(data[: limit - count])
-                count += len(data)
-                need(count <= limit, "Child output limit")
-            status = reap_completed(process, deadline)
-        need(status == expected, "Child exited " + str(status) + "; see " + str(log))
-    except BaseException as error:
-        errors.append(type(error).__name__ + ": " + str(error))
-    finally:
-        with defer_interrupts():
-            try:
-                if process:
-                    need(not cleanup(process), "Forced child cleanup")
-            except BaseException as error:
-                errors.append("cleanup: " + type(error).__name__ + ": " + str(error))
-                unsettled = isinstance(error, ChildNotReaped)
-            if process and process.stdout:
-                process.stdout.close()
-    if unsettled or (process and process.returncode is None):
-        raise ChildNotReaped("; ".join(errors))
-    need(not errors, "; ".join(errors))
-    return status
+    return transport.run_logged(
+        argv,
+        log,
+        env=env,
+        cwd=ROOT,
+        timeout=timeout,
+        expected=expected,
+        limit=limit,
+        preexec_fn=child_limits,
+        timeout_status=False,
+    )
 
 
 def verify_dependencies(runtime, directory):
@@ -592,14 +410,38 @@ def verify_dependencies(runtime, directory):
 
 
 def build(mode, directory, label=None):
-    safe_path(ROOT / "build", directory=True)
-    if BUILD.exists():
-        safe_path(BUILD, directory=True)
-    bounded_child(
-        ["bash", str(ROOT / "scripts/kernel-uefi-build.sh")],
-        directory / ("build-" + (label or mode) + ".log"),
-        env=dict(os.environ, UEFI_MODE=mode),
+    global BUILD
+    label = label or mode
+    selection = directory / ("image-directory-" + label + ".log")
+    with (directory / ("build-" + label + ".log")).open("xb") as log:
+        transport.run_logged(
+            [
+                sys.executable,
+                "-B",
+                ROOT / "scripts/meson_test.py",
+                "--kernel",
+                "uefi",
+                "--profile",
+                mode,
+                "--print-image-dir",
+            ],
+            selection,
+            cwd=ROOT,
+            env=os.environ.copy(),
+            stderr=log,
+            timeout=1800,
+            expected=0,
+            timeout_status=False,
+            preexec_fn=child_limits,
+        )
+    selected = selection.read_text()
+    BUILD = Path(selected.rstrip("\n"))
+    need(
+        selected == str(BUILD) + "\n" and selected.count("\n") == 1 and BUILD.is_absolute(),
+        "Invalid native image directory handoff",
     )
+    need(BUILD.parts[-3:] == ("kernel-images", "uefi", mode), "Wrong native image profile")
+    admission.configure_paths(BUILD, ROOT)
     budget(directory)
 
 
@@ -613,18 +455,26 @@ def stage(mode, directory):
     # Reuse the complete ordinary build inventory, including PE inputs/sidecars.
     if mode == "normal":
         graphical = admission.load("event_normal_inventory", ROOT / "scripts/kernel_graphical_console_admission.py")
+        graphical.configure_paths(BUILD, ROOT)
         files = graphical.build_files("normal")
+        graphical.common.verify_object_exports(files)
     else:
         files = admission.build_files(mode)
+    admitted = list(files)
     files += [BUILD / name for name in ("bar-metadata.json", "ivrs-metadata.json")]
     if checked:
         files += [admission.RECEIPT, BUILD / "iommu-event-build.json", BUILD / "iommu-event-build-start.json"]
+    expected = admission.common.hashes(files)
+    if checked:
+        for path in admitted:
+            key = "build:" + path.relative_to(BUILD).as_posix()
+            need(expected[key] == checked["sha256"][key], "Admitted Event image changed before staging")
     directory.mkdir(mode=0o700)
     for path in files:
         esp.regular(path)
         target = directory / path.relative_to(BUILD)
         target.parent.mkdir(parents=True, exist_ok=True)
-        copy_private(path, target)
+        copy_private(path, target, expected["build:" + path.relative_to(BUILD).as_posix()])
     result = dict(
         mode=mode,
         source=source,
@@ -674,30 +524,7 @@ def verify_stage(directory, record, *, source=True):
     need(not source or record["source"] == source_identity(), "Source changed since admission")
 
 
-def restore_normal(directory, record):
-    verify_stage(directory, record, source=False)
-    safe_path(BUILD, directory=True)
-    objects = safe_path(BUILD / "objects", directory=True)
-    # This is the builder's dedicated disposable namespace, not all build/uefi.
-    for path in objects.iterdir():
-        if path.suffix in (".o", ".su", ".ci"):
-            esp.regular(path).unlink()
-    for relative in record["files"]:
-        target = BUILD / relative
-        safe_path(target.parent, directory=True)
-        if os.path.lexists(target):
-            esp.regular(target)
-        with (directory / relative).open("rb") as source, target.open("wb") as output:
-            shutil.copyfileobj(source, output)
-        need(identity(target) == record["files"][relative], "Normal restoration bytes differ")
-    expected_objects = {name for name in record["files"] if name.startswith("objects/")}
-    need(
-        {str(p.relative_to(BUILD)) for p in objects.iterdir() if p.suffix in (".o", ".su", ".ci")} == expected_objects,
-        "Normal restoration object inventory differs",
-    )
-
-
-def normal_boot(args, directory):
+def normal_boot(args, directory, image):
     qemu = safe_path(Path(shutil.which(args.normal_qemu) or args.normal_qemu).resolve())
     paths = [qemu]
     for value in (args.normal_firmware, args.normal_code, args.normal_vars):
@@ -706,8 +533,24 @@ def normal_boot(args, directory):
     before = {str(p): identity(p) for p in paths}
     if args.normal_data:
         data_before = data_files(args.normal_data)
-    argv = expected_uefi_argv(
-        "normal", str(qemu), args.normal_firmware, args.normal_data, args.normal_code, args.normal_vars
+    argv = transport.command(
+        qemu,
+        args.normal_data,
+        firmware=transport.firmware_args(args.normal_firmware, args.normal_code, args.normal_vars),
+        boot=transport.fat_boot(image / "esp"),
+    )
+    need(
+        argv
+        == expected_uefi_argv(
+            "normal",
+            str(qemu),
+            args.normal_firmware,
+            args.normal_data,
+            args.normal_code,
+            args.normal_vars,
+            esp=str(image / "esp"),
+        ),
+        "Normal restoration command differs from independent clock contract",
     )
     argv.append("-no-user-config")
     write_json(directory / "normal-launch.json", dict(argv=argv, inputs=before))
@@ -721,9 +564,8 @@ def normal_boot(args, directory):
 
 def window(args, directory, runtime):
     results, normal_image, normal_record, errors = [], directory / "normal-image", None, []
-    mutation, unreaped, mode = False, False, "normal"
+    unreaped = False
     try:
-        mutation = True
         build("normal", directory)
         normal_record = stage("normal", normal_image)
         for mode in MODES:
@@ -776,50 +618,15 @@ def window(args, directory, runtime):
     except BaseException as error:
         errors.append("primary: " + type(error).__name__ + ": " + str(error))
         unreaped = isinstance(error, ChildNotReaped)
-        if not unreaped and BUILD.is_dir():
-            try:
-                safe_path(BUILD, directory=True)
-                failure = directory / "failed-image"
-                failure.mkdir()
-                candidates = [p for p in (BUILD / "objects").glob("*") if p.suffix in (".o", ".su", ".ci")] + [
-                    BUILD / name
-                    for name in (
-                        "payload.elf",
-                        "payload.bin",
-                        "uefi-payload.hpp",
-                        "image-metadata.json",
-                        "iommu-event-admission.json",
-                        "iommu-event-build.json",
-                        "iommu-event-build-start.json",
-                        "esp/EFI/BOOT/BOOTX64.EFI",
-                    )
-                ]
-                for path in candidates:
-                    if path.exists():
-                        target = failure / path.relative_to(BUILD)
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        copy_private(path, target)
-                budget(directory)
-            except BaseException as capture_error:
-                errors.append("failed-image retention: " + str(capture_error))
     finally:
         if unreaped:
             errors.append("restoration blocked: owned child has not been reaped")
-        elif mutation:
+        elif normal_record:
             try:
-                if normal_record:
-                    with defer_interrupts():
-                        restore_normal(normal_image, normal_record)
-                else:
-                    build("normal", directory, label="normal-restoration")
+                verify_stage(normal_image, normal_record, source=False)
                 if not args.build_only:
-                    normal_boot(args, directory)
-                if normal_record:
-                    verify_stage(normal_image, normal_record, source=False)
-                    need(
-                        all(identity(BUILD / name) == row for name, row in normal_record["files"].items()),
-                        "Normal image changed after restoration boot",
-                    )
+                    normal_boot(args, directory, normal_image)
+                verify_stage(normal_image, normal_record, source=False)
                 results.append(dict(mode="normal-restoration", status="passed"))
             except BaseException as error:
                 errors.append("restoration: " + type(error).__name__ + ": " + str(error))
@@ -835,10 +642,6 @@ def window(args, directory, runtime):
         )
     need(not errors, "; ".join(errors))
     budget(directory)
-
-
-class PrerequisiteBlocked(ValueError):
-    """Required local setup is unavailable; no build or guest has started."""
 
 
 def prerequisites(args):
@@ -858,31 +661,49 @@ def prerequisites(args):
             ),
             "Unset conflicting control: " + name,
         )
-    need(
-        args.build_only or all((args.build_receipt, args.code, args.vars, args.data)),
-        "Set EVENT_BUILD_RECEIPT, EVENT_CODE, EVENT_VARS and EVENT_DATA for the supported custom QEMU tuple",
-    )
+    if not args.build_only and not all((args.build_receipt, args.code, args.vars, args.data)):
+        raise PrerequisiteBlocked(
+            "Set EVENT_BUILD_RECEIPT, EVENT_CODE, EVENT_VARS and EVENT_DATA for the supported custom QEMU tuple"
+        )
     if not args.esp_dir:
         tool = shutil.which("mformat")
-        need(args.mtools_dir or tool, "Install supported GNU mtools 4.0.48 or supply EVENT_ESP_DIR")
+        if not (args.mtools_dir or tool):
+            raise PrerequisiteBlocked("Install supported GNU mtools 4.0.48 or supply EVENT_ESP_DIR")
         args.mtools_dir = args.mtools_dir or str(Path(tool).parent)
+        Path(args.mtools_dir).resolve(strict=True)
         esp.developer_tool_identity(args.mtools_dir)
     else:
         directory = safe_path(args.esp_dir, directory=True)
         for mode in MODES:
             safe_path(directory / (mode + ".raw"))
-    for tool in (os.environ.get("CXX") or "g++", "bash", "make", "as", "ld", "objcopy", "objdump", "nm", "readelf"):
-        need(shutil.which(tool), "Missing dependency: " + tool)
+    for tool in (
+        os.environ.get("CXX") or "g++",
+        "bash",
+        "meson",
+        "ninja",
+        "as",
+        "ld",
+        "objcopy",
+        "objdump",
+        "nm",
+        "readelf",
+    ):
+        if not shutil.which(tool):
+            raise PrerequisiteBlocked("Missing dependency: " + tool)
     linker = subprocess.run(
         ["bash", "-c", 'source "$1"; uefi_linker_select', "event-linker-check", str(ROOT / "scripts/uefi-linker.sh")],
         capture_output=True,
         text=True,
         timeout=10,
     )
-    need(linker.returncode == 0, linker.stderr.strip() or "Missing UEFI PE linker")
+    if linker.returncode == 2:
+        raise PrerequisiteBlocked(linker.stderr.strip() or "Missing UEFI PE linker")
+    need(linker.returncode == 0, linker.stderr.strip() or "UEFI PE linker check failed")
     if not args.build_only:
         qemu = safe_path(Path(shutil.which(args.normal_qemu) or args.normal_qemu).resolve())
         need(os.access(qemu, os.X_OK), "Normal QEMU is not executable")
+        if not args.normal_firmware and not (args.normal_code and args.normal_vars):
+            raise PrerequisiteBlocked("Supply ordinary OVMF or both CODE/VARS paths for normal restoration")
         for value in (args.normal_firmware, args.normal_code, args.normal_vars):
             if value:
                 safe_path(value)
@@ -893,10 +714,8 @@ def prerequisites(args):
             data_files(args.normal_data)
     parent = safe_path(args.output_parent, directory=True)
     need(parent != ROOT and ROOT not in parent.parents, "Event output must be outside the source tree")
-    need(
-        shutil.disk_usage(parent).free >= FREE_FLOOR + EVIDENCE_LIMIT,
-        "Event run requires 1 GiB reservation plus 1 GiB free floor",
-    )
+    if shutil.disk_usage(parent).free < FREE_FLOOR + EVIDENCE_LIMIT:
+        raise PrerequisiteBlocked("Event run requires 1 GiB reservation plus 1 GiB free floor")
     try:
         runtime = None if args.build_only else runtime_inputs(args)
     except (KeyError, TypeError) as error:
@@ -922,7 +741,7 @@ def main():
     args = parser.parse_args()
     try:
         parent, runtime = prerequisites(args)
-    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+    except FileNotFoundError as error:
         raise PrerequisiteBlocked(str(error)) from error
 
     def interrupted(signum, _frame):
@@ -934,19 +753,15 @@ def main():
     print("Event smoke evidence: " + str(directory), flush=True)
     if runtime:
         write_json(directory / "runtime.json", runtime)
-    (ROOT / "build").mkdir(exist_ok=True)
     window(args, directory, runtime)
 
 
 def cli():
     try:
         main()
-    except PrerequisiteBlocked as error:
-        print("BLOCKED: Event developer smoke: " + str(error), file=sys.stderr)
-        return 2
     except (Exception, KeyboardInterrupt) as error:
-        print("FAIL: Event developer smoke: " + str(error), file=sys.stderr)
-        return 1
+        print(transport.failure_label(error) + ": Event developer smoke: " + str(error), file=sys.stderr)
+        return 2 if isinstance(error, PrerequisiteBlocked) else 1
     return 0
 
 

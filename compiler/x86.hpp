@@ -7,10 +7,27 @@
 #include <utility>
 
 namespace aurora {
+// Local binding is for trusted bootstrap units linked with a separate adapter.
+// It changes symbol binding only, never signatures or generated instructions.
+enum class SymbolBinding {
+    Default,
+    Local
+};
+// Stack use follows the instructions emitted below, not a second ABI calculator.
+// Like GCC .su, localBytes includes the incoming return address. Call-site bytes
+// stop immediately before CALL; the callee's own incoming slot is counted there.
+class FunctionStackFacts {
+public:
+    int localBytes = 8;
+    std::map<std::string, int> calls;
+};
 // This backend accepts validated typed IR only. It has no AST, scope, borrow or move state.
 class X86Emitter {
     std::ostringstream output;
     int stackDepth = 0;
+    int liveStackBytes = 8;
+    std::map<std::string, FunctionStackFacts> emittedStackFacts;
+    FunctionStackFacts *currentStackFacts = nullptr;
     int functionIndex = 0;
     int divisionIndex = 0;
     int receiverSaveOffset = 0;
@@ -118,7 +135,25 @@ class X86Emitter {
     std::string returnLabel() {
         return ".Lreturn" + std::to_string(functionIndex);
     }
+    void beginStackFacts(const std::string &name) {
+        liveStackBytes = 8;
+        currentStackFacts = &emittedStackFacts.emplace(name, FunctionStackFacts{}).first->second;
+    }
+    void growStack(int bytes) {
+        liveStackBytes += bytes;
+        currentStackFacts->localBytes = std::max(currentStackFacts->localBytes, liveStackBytes);
+    }
+    void releaseStack(int bytes) {
+        line("addq $" + std::to_string(bytes) + ", %rsp");
+        liveStackBytes -= bytes;
+    }
+    void directCall(const std::string &name) {
+        auto &live = currentStackFacts->calls[name];
+        live = std::max(live, liveStackBytes);
+        line("call " + name);
+    }
     void reserveStack(int bytes) {
+        growStack(bytes);
         // Verified frames and call records are nonnegative multiples of 16.
         // Touch every new page and the final remainder before another downward
         // adjustment. The qword is wholly inside this new reservation, at RSP,
@@ -137,18 +172,22 @@ class X86Emitter {
     }
     void push() {
         line("pushq %rax");
+        growStack(8);
         ++stackDepth;
     }
     void pop(const std::string &target) {
         line("popq " + target);
+        liveStackBytes -= 8;
         --stackDepth;
     }
     void call(const std::string &name) {
-        if (stackDepth % 2)
+        if (stackDepth % 2) {
             line("subq $8, %rsp");
-        line("call " + name);
+            growStack(8);
+        }
+        directCall(name);
         if (stackDepth % 2)
-            line("addq $8, %rsp");
+            releaseStack(8);
     }
     std::string querySymbol(ir::Query query, int scope) {
         const std::string name = query == ir::Query::Size ? "size" : "field_count";
@@ -577,7 +616,7 @@ class X86Emitter {
                         line("leaq " + address(operation.resultOffset) + ", %r10");
                     call(operation.callee);
                     if (recordBytes)
-                        line("addq $" + std::to_string(recordBytes) + ", %rsp");
+                        releaseStack(recordBytes);
                 } else if constexpr (std::is_same_v<Op, ir::BeginBytes>) {
                     clearBytesOwner(operation.offset);
                 } else if constexpr (std::is_same_v<Op, ir::AllocateBytes>) {
@@ -629,7 +668,7 @@ class X86Emitter {
                     else if (target.result.isBytes() || target.result.isClass())
                         line("leaq " + address(operation.resultOffset) + ", %r10");
                     call(operation.callee);
-                    line("addq $" + std::to_string(recordBytes) + ", %rsp");
+                    releaseStack(recordBytes);
                 } else if constexpr (std::is_same_v<Op, ir::BindServiceParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     for (int byte = 0; byte < service::capabilityBytes; byte += 8) {
@@ -647,7 +686,7 @@ class X86Emitter {
                     if (target.result.isClass())
                         line("leaq " + address(operation.resultOffset) + ", %r10");
                     call(operation.callee);
-                    line("addq $" + std::to_string(recordBytes) + ", %rsp");
+                    releaseStack(recordBytes);
                 } else if constexpr (std::is_same_v<Op, ir::ServiceOperation>) {
                     line("movq " + address(operation.offset) + ", %rdi");
                     line("movq " + address(operation.offset - 8) + ", %rsi");
@@ -659,9 +698,10 @@ class X86Emitter {
                         pop("%rdx");
                         const int outgoingBytes = stackDepth % 2 ? 8 : 16;
                         line("subq $" + std::to_string(outgoingBytes) + ", %rsp");
+                        growStack(outgoingBytes);
                         line("movq %r10, (%rsp)");
-                        line("call " + std::string(service::description(operation.operation).hostSymbol));
-                        line("addq $" + std::to_string(outgoingBytes) + ", %rsp");
+                        directCall(std::string(service::description(operation.operation).hostSymbol));
+                        releaseStack(outgoingBytes);
                         line("cmpq $1, %rax");
                         line("ja .Laurora_bounds_trap");
                     } else if (operation.operation == service::Operation::Put) {
@@ -748,6 +788,17 @@ class X86Emitter {
                         line("movq $0, " + address(operation.resultOffset - byte));
                     line("movq $" + std::to_string(currentFunction->arraySlots.at(operation.arrayOffset)) + ", " +
                          address(operation.resultOffset - 48));
+                } else if constexpr (std::is_same_v<Op, ir::BorrowReceiverArraySpan>) {
+                    const auto &name = currentFunction->receiver->className;
+                    const auto &field = classFields->at(name).at(operation.fieldIndex);
+                    const int byte = classStorage->at(name).fieldOffsets.at(operation.fieldIndex);
+                    line("movq $0, " + address(operation.resultOffset));
+                    line("movq " + address(receiverSaveOffset) + ", %rcx");
+                    line("leaq " + std::to_string(byte) + "(%rcx), %rcx");
+                    line("movq %rcx, " + address(operation.resultOffset - 8));
+                    for (int padding = 16; padding <= 40; padding += 8)
+                        line("movq $0, " + address(operation.resultOffset - padding));
+                    line("movq $" + std::to_string(field.length) + ", " + address(operation.resultOffset - 48));
                 } else if constexpr (std::is_same_v<Op, ir::BorrowLiteralSpan>) {
                     const std::string label = ".Laurora_literal_" + std::to_string(literalBytes.size());
                     literalBytes.push_back(operation.bytes);
@@ -1054,7 +1105,7 @@ class X86Emitter {
                         line("leaq " + address(operation.resultOffset) + (aggregate ? ", %rax" : ", %r11"));
                     call(operation.callee);
                     if (recordBytes)
-                        line("addq $" + std::to_string(recordBytes) + ", %rsp");
+                        releaseStack(recordBytes);
                 } else if constexpr (std::is_same_v<Op, ir::MetadataQuery>) {
                     line("movq %rax, %rdi");
                     call(querySymbol(operation.query, operation.moduleScope));
@@ -1146,13 +1197,39 @@ class X86Emitter {
     }
 
 public:
-    std::string emit(const ir::ValidatedModule &validated) {
+    const std::map<std::string, FunctionStackFacts> &stackFacts() const {
+        return emittedStackFacts;
+    }
+    std::string stackFactsJson() const {
+        std::ostringstream facts;
+        facts << "{\"version\":1,\"functions\":{";
+        bool firstFunction = true;
+        for (const auto &[symbol, usage] : emittedStackFacts) {
+            if (!std::exchange(firstFunction, false))
+                facts << ',';
+            writeJsonString(facts, symbol);
+            facts << ":{\"local_bytes\":" << usage.localBytes << ",\"calls\":{";
+            bool firstCall = true;
+            for (const auto &[callee, live] : usage.calls) {
+                if (!std::exchange(firstCall, false))
+                    facts << ',';
+                writeJsonString(facts, callee);
+                facts << ':' << live;
+            }
+            facts << "}}";
+        }
+        facts << "}}\n";
+        return facts.str();
+    }
+    std::string emit(const ir::ValidatedModule &validated, SymbolBinding binding = SymbolBinding::Default) {
         const auto &module = validated.get();
         output.str("");
         output.clear();
         argumentCounts.clear();
         functions.clear();
         literalBytes.clear();
+        emittedStackFacts.clear();
+        currentStackFacts = nullptr;
         classLayouts = &module.classLayouts;
         classFields = &module.classFields;
         classStorage = &module.classStorage;
@@ -1200,6 +1277,7 @@ public:
         output << "# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n";
         for (const auto &function : module.functions) {
             stackDepth = 0;
+            beginStackFacts(function.name);
             serviceLoanOffsets.clear();
             for (const auto &operation : function.code)
                 if (const auto *loan = std::get_if<ir::AcquireServiceLoan>(&operation))
@@ -1209,12 +1287,14 @@ public:
             const bool aggregate = aggregateSignature(function);
             // Receiver and aggregate entry points use a private compiler ABI and cannot be
             // exposed as ordinary scalar-callable external symbols.
-            output << (privateGraph || function.receiver || aggregate || function.name.starts_with("__au_o_")
+            output << (binding == SymbolBinding::Local || privateGraph || function.receiver || aggregate ||
+                               function.name.starts_with("__au_o_")
                            ? ".local "
                            : ".globl ")
                    << function.name << "\n.type " << function.name << ", @function\n"
                    << function.name << ":\n";
             line("pushq %rbp");
+            growStack(8);
             line("movq %rsp, %rbp");
             receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
             // Resource constructors always receive a packed record, even when
@@ -1246,8 +1326,13 @@ public:
                       : function.receiver ? "%r11"
                                           : "%r10") +
                      ", " + address(resultSaveOffset));
+            // Validation certifies operand-depth continuity in this exact retained
+            // sequence, including branch joins. Outgoing reservations are balanced
+            // inside each instruction; no instruction-text interpretation is used.
             for (const auto &operation : function.code)
                 instruction(operation);
+            if (stackDepth != 0 || liveStackBytes != frameBytes + 16)
+                throw Error("x86 backend left an unbalanced stack reservation");
             output << returnLabel() << ":\n";
             line("leave");
             line("ret");
@@ -1258,8 +1343,11 @@ public:
             for (const auto query : {ir::Query::Size, ir::Query::PublicFieldCount}) {
                 const std::string name = query == ir::Query::Size ? "size" : "field_count";
                 const auto symbol = querySymbol(query, scope);
+                beginStackFacts(symbol);
                 const std::string labelPrefix = ".Lscope" + std::to_string(scope) + "_" + name;
-                output << ".globl " << symbol << "\n.type " << symbol << ", @function\n" << symbol << ":\n";
+                output << (binding == SymbolBinding::Local ? ".local " : ".globl ") << symbol << "\n.type " << symbol
+                       << ", @function\n"
+                       << symbol << ":\n";
                 for (int id : view) {
                     line("cmpq $" + std::to_string(id) + ", %rdi");
                     line("je " + labelPrefix + std::to_string(id));

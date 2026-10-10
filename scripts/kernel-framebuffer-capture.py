@@ -21,6 +21,8 @@ import sys
 import time
 import tty
 
+import qemu_transport as transport
+
 from framebuffer_capture_oracle import BASE, SIZE, GATE, MODES, need, validate_serial, validate_capture
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +36,10 @@ def digest(path):
 def exact_path(value):
     p = Path(value)
     need(re.fullmatch(r"/[A-Za-z0-9_./+\-]+", str(p)), "unsafe input path")
-    need(p.is_absolute() and p == p.resolve(strict=True), "noncanonical/stale path: " + str(p))
+    try:
+        need(p.is_absolute() and p == p.resolve(strict=True), "noncanonical/stale path: " + str(p))
+    except (FileNotFoundError, PermissionError) as error:
+        raise transport.MissingPrerequisite(str(error)) from error
     return p
 
 
@@ -126,51 +131,17 @@ def review(path, expected, manifest_sha, role):
     return dict(path=str(p), sha256=expected)
 
 
-class Channel:
+class Channel(transport.Qmp):
     def __init__(self, proc, serial, directory, deadline):
         self.proc, self.serial, self.directory, self.deadline = proc, serial, directory, deadline
-        self.buffer = b""
         self.serial_bytes = b""
-        self.seq = 0
         self.qlog = open(directory / "qmp-transcript.log", "xb", buffering=0)
         self.slog = open(directory / "serial.log", "xb", buffering=0)
-
-    def remaining(self):
-        remaining = self.deadline - time.monotonic()
-        need(remaining > 0, "guest wall timeout")
-        return min(remaining, 5)
-
-    def receive(self):
-        while b"\n" not in self.buffer:
-            need(select.select([self.proc.stdout], [], [], self.remaining())[0], "QMP response timeout")
-            part = os.read(self.proc.stdout.fileno(), 65536)
-            need(part, "QMP EOF")
-            self.qlog.write(b"RX " + part)
-            self.buffer += part
-            need(len(self.buffer) <= MAX_IO, "QMP response size")
-        line, self.buffer = self.buffer.split(b"\n", 1)
-        value = json.loads(line)
-        need(isinstance(value, dict), "QMP non-object response")
-        return value
-
-    def command(self, execute, arguments=None):
-        self.seq += 1
-        request = dict(execute=execute, id=self.seq)
-        if arguments is not None:
-            request["arguments"] = arguments
-        data = json.dumps(request).encode() + b"\n"
-        self.qlog.write(b"TX " + data)
-        need(select.select([], [self.proc.stdin], [], self.remaining())[1], "QMP write timeout")
-        need(self.proc.stdin.write(data) == len(data), "short QMP write")
-        self.proc.stdin.flush()
-        while True:
-            row = self.receive()
-            if "event" in row:
-                continue
-            need(
-                row.get("id") == self.seq and "return" in row and "error" not in row, "QMP command failed: " + str(row)
-            )
-            return row["return"]
+        try:
+            super().__init__(proc, deadline, self.qlog, timeout=5, log_limit=4 * MAX_IO)
+        except BaseException:
+            self.close()
+            raise
 
     def stop(self):
         self.command("stop")
@@ -181,9 +152,8 @@ class Channel:
         while select.select([self.serial], [], [], 0)[0]:
             part = os.read(self.serial, 65536)
             need(part, "serial EOF")
+            transport.capture_bytes(self.slog, part, len(self.serial_bytes), MAX_IO, "serial output limit")
             self.serial_bytes += part
-            self.slog.write(part)
-            need(len(self.serial_bytes) <= MAX_IO, "serial output limit")
 
     def wait_marker(self, terminal=False):
         while True:
@@ -195,7 +165,7 @@ class Channel:
                 found = GATE.encode() in lines
             if found:
                 return
-            need(self.proc.poll() is None, "premature guest process exit")
+            need(not transport.exited(self.proc), "premature guest process exit")
             need(not any(b"FAIL" in x or b"EXCEPTION" in x for x in lines), "unexpected guest failure before gate")
             select.select([self.serial], [], [], min(0.1, self.remaining()))
 
@@ -219,53 +189,15 @@ class Channel:
 
 
 def command(pins, roots, esp, serial, qmp=False, firmware_args=None):
-    args = [str(pins["qemu"])]
-    if roots.get("data"):
-        args += ["-L", str(roots["data"])]
-    args += [
-        "-machine",
-        "q35",
-        "-accel",
-        "tcg",
-        "-cpu",
-        "qemu64",
-        "-smp",
-        "1",
-        "-m",
-        "128M",
-    ]
-    args += firmware_args if firmware_args is not None else ["-bios", str(pins["firmware"])]
-    args += [
-        "-drive",
-        "format=raw,file=fat:ro:" + esp + ",snapshot=on",
-        "-vga",
-        "std",
-        "-nic",
-        "none",
-        "-display",
-        "none",
-        "-serial",
-        serial,
-        "-monitor",
-        "none",
-        "-no-reboot",
-        "-device",
-        "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    ]
-    if qmp:
-        args += ["-qmp", "stdio", "-S"]
-    return args
-
-
-def terminate(proc):
-    if proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=2)
-    need(proc.poll() is not None, "QEMU not reaped")
+    return transport.command(
+        pins["qemu"],
+        roots.get("data"),
+        firmware=firmware_args if firmware_args is not None else ["-bios", str(pins["firmware"])],
+        boot=transport.fat_boot(esp),
+        peripherals=["-vga", "std"],
+        serial=serial,
+        extra=["-qmp", "stdio", "-S"] if qmp else [],
+    )
 
 
 def run_case(mode, manifest, pins, roots, env, directory, *, firmware_args=None):
@@ -282,12 +214,10 @@ def run_case(mode, manifest, pins, roots, env, directory, *, firmware_args=None)
         )
         receipt["command"] = argv
         with open(directory / "qemu.stderr", "xb") as stderr:
-            proc = subprocess.Popen(
+            proc = transport.start(
                 argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, env=env, cwd=ROOT, bufsize=0
             )
             channel = Channel(proc, master, directory, start + 90)
-            need("QMP" in channel.receive(), "missing QMP greeting")
-            channel.command("qmp_capabilities")
             channel.command("cont")
             channel.wait_marker()
             channel.stop()
@@ -305,48 +235,35 @@ def run_case(mode, manifest, pins, roots, env, directory, *, firmware_args=None)
             validate_serial(channel.serial_bytes, mode)
             receipt["observation"] = validate_capture(mode, baseline, after, screenshot, baseline_ppm)
             channel.command("quit")
-            need(proc.wait(timeout=5) == 0, "QMP quit process status")
+            transport.wait_exit(proc, 5, expected=0)
             receipt["status"] = "passed"
     except (Exception, KeyboardInterrupt) as error:
         receipt.update(status="failed", error=type(error).__name__ + ": " + str(error))
     finally:
-        cleanup_errors = []
-
-        def cleanup(action):
-            try:
-                action()
-            except (Exception, KeyboardInterrupt) as error:
-                cleanup_errors.append(type(error).__name__ + ": " + str(error))
-
-        if proc:
-            cleanup(lambda: terminate(proc))
-            receipt["exit_status"] = proc.returncode
+        drains = []
         if channel:
-            cleanup(channel.drain_serial)
+            drains.append(channel.drain_serial)
             if receipt["status"] == "passed":
-                cleanup(lambda: validate_serial(channel.serial_bytes, mode))
-            # Preserve any unread QMP tail after the child has been reaped.
-            if proc and proc.poll() is not None:
+                drains.append(lambda: validate_serial(channel.serial_bytes, mode))
 
-                def drain_qmp():
-                    while select.select([proc.stdout], [], [], 0)[0]:
-                        part = os.read(proc.stdout.fileno(), 65536)
-                        if not part:
-                            break
-                        channel.qlog.write(b"RX " + part)
+            def drain_qmp():
+                while select.select([proc.stdout], [], [], 0)[0]:
+                    part = os.read(proc.stdout.fileno(), 65536)
+                    if not part:
+                        break
+                    channel.qlog.write(part)
 
-                cleanup(drain_qmp)
-            cleanup(channel.qlog.close)
-            cleanup(channel.slog.close)
-        for fd in (master, slave):
-            if fd is not None:
-                cleanup(lambda fd=fd: os.close(fd))
+            drains.append(drain_qmp)
+        errors, _, unsettled = transport.finish(
+            proc,
+            drains=drains,
+            fds=(master, slave),
+            streams=([channel.qlog, channel.slog] if channel else []) + ([proc.stdin, proc.stdout] if proc else []),
+        )
         if proc:
-            for stream in (proc.stdin, proc.stdout):
-                if stream:
-                    cleanup(stream.close)
-        if cleanup_errors:
-            receipt.update(status="failed", cleanup_errors=cleanup_errors)
+            receipt["exit_status"] = proc.returncode
+        if errors:
+            receipt.update(status="failed", cleanup_errors=errors, unsettled=unsettled)
         receipt["elapsed_seconds"] = time.monotonic() - start
         receipt["files"] = {p.name: digest(p) for p in directory.iterdir() if p.is_file()}
         (directory / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
@@ -358,14 +275,9 @@ def restore(manifest, pins, roots, env, directory):
     argv = command(pins, roots, manifest["normal"]["esp"], "stdio")
     receipt = dict(command=argv, status="started")
     # Recheck normal and tools; restoration must not execute drifted bytes.
-    proc = None
     try:
         verify(manifest)
-        with open(directory / "serial.log", "xb") as log:
-            proc = subprocess.Popen(
-                argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env, cwd=ROOT
-            )
-            status = proc.wait(timeout=30)
+        status = transport.run_logged(argv, directory / "serial.log", env=env, cwd=ROOT, timeout=30)
         spec = importlib.util.spec_from_file_location("normal_capture_restoration", pins["normal_oracle"])
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -374,11 +286,6 @@ def restore(manifest, pins, roots, env, directory):
     except (Exception, KeyboardInterrupt) as error:
         receipt.update(status="failed", error=type(error).__name__ + ": " + str(error))
     finally:
-        if proc:
-            try:
-                terminate(proc)
-            except Exception as error:
-                receipt.update(status="failed", cleanup_error=str(error))
         receipt["files"] = {p.name: digest(p) for p in directory.iterdir() if p.is_file()}
         (directory / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
@@ -430,7 +337,11 @@ def main():
     except (Exception, KeyboardInterrupt) as error:
         receipt.update(status="failed", error=type(error).__name__ + ": " + str(error))
     finally:
-        receipt["normal_restoration"] = restore(manifest, pins, roots, env, directory / "normal-restoration")
+        receipt["normal_restoration"] = (
+            dict(status="failed", error="unreaped guest blocks restoration")
+            if any(case.get("unsettled") for case in receipt["cases"])
+            else restore(manifest, pins, roots, env, directory / "normal-restoration")
+        )
         if receipt["normal_restoration"]["status"] != "passed":
             receipt["status"] = "failed"
         (directory / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
@@ -439,4 +350,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (Exception, KeyboardInterrupt) as error:
+        print(transport.failure_label(error) + ": framebuffer capture: " + str(error), file=sys.stderr)
+        raise SystemExit(2 if isinstance(error, transport.MissingPrerequisite) else 1) from error

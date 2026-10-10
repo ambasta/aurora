@@ -37,8 +37,8 @@ uefi_firmware_select || blocked 'UEFI firmware unavailable'
 source scripts/uefi-linker.sh
 uefi_linker_select || blocked 'UEFI PE linker unavailable'
 python3 -B scripts/kernel_framebuffer_preview.py --preflight
-if UEFI_MODE=framebuffer ./scripts/kernel-uefi-build.sh; then :; else
+if image_dir="$(UEFI_MODE=framebuffer ./scripts/kernel-uefi-build.sh --print-image-dir)"; then :; else
     status=$?; echo "FAIL: framebuffer preview image build/admission exited $status" >&2; exit "$status"
 fi
-exec python3 -B scripts/kernel_framebuffer_preview.py "$qemu" "$UEFI_FIRMWARE_COMBINED" \
+exec python3 -B scripts/kernel_framebuffer_preview.py --build-dir "$image_dir" "$qemu" "$UEFI_FIRMWARE_COMBINED" \
     "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}"

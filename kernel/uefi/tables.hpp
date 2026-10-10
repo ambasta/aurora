@@ -169,46 +169,64 @@ public:
             (framebuffer && (framebuffer->owned_arena() != arena || h.get(8, 4) != 5 || apic)))
             return false;
         std::array<bool, Handoff::table_pages> visited{};
-        const auto walk = [&](auto &&self, std::uint64_t physical, unsigned level, std::uint64_t prefix)
-                              __attribute__((noinline, noclone)) -> bool {
-            if (physical < base_ || physical >= base_ + used_ * 4096 || physical % 4096)
-                return false;
-            const auto slot = (physical - base_) / 4096;
-            if (visited[slot])
-                return false;
-            visited[slot] = true;
-            for (std::uint64_t i = 0; i < 512; ++i) {
-                const auto value = table(physical)[i] & ~0x60ULL;
-                if (!value)
-                    continue;
-                const auto address = prefix | (i << (12 + 9 * level));
-                if (level != 0) {
-                    if ((value & ~0x000ffffffffff000ULL) != 3 ||
-                        !self(self, value & 0x000ffffffffff000ULL, level - 1, address))
-                        return false;
-                } else {
-                    const auto canonical = (address & (1ULL << 47)) ? address | 0xffff000000000000ULL : address;
-                    if (apic && canonical == LocalApicAdmission::virtual_address) {
-                        if (value != (LocalApicAdmission::physical_address | LocalApicAdmission::leaf_flags))
-                            return false;
-                        continue;
-                    }
-                    if (framebuffer && framebuffer->mapping(canonical)) {
-                        if (value != framebuffer->mapping(canonical))
-                            return false;
-                        continue;
-                    }
-                    if (address < arena || address >= arena + Handoff::arena_bytes)
-                        return false;
-                    const auto flags = expected_flags(address - arena, h);
-                    if (!flags || value != (address | flags))
-                        return false;
-                }
-            }
-            return true;
+        // The same fixed-slot traversal as verify_graphical, preserving this
+        // overload's narrower authority and its historical A/D normalization.
+        // Four levels need four slots; each descent initializes all child state.
+        class Frame final {
+        public:
+            std::uint64_t physical, prefix, next;
         };
-        if (!walk(walk, base_, 3, 0))
-            return false;
+        std::array<Frame, 4> traversal;
+        traversal[0] = {base_, 0, 0};
+        unsigned depth = 0;
+        for (;;) {
+            if (depth >= traversal.size())
+                return false;
+            auto &frame = traversal[depth];
+            const auto physical = frame.physical, prefix = frame.prefix;
+            if (frame.next == 0) {
+                if (physical < base_ || physical >= base_ + used_ * 4096 || physical % 4096)
+                    return false;
+                const auto slot = (physical - base_) / 4096;
+                if (visited[slot])
+                    return false;
+                visited[slot] = true;
+            }
+            if (frame.next == 512) {
+                if (depth == 0)
+                    break;
+                --depth;
+                continue;
+            }
+            const auto index = frame.next++;
+            const auto value = table(physical)[index] & ~0x60ULL;
+            if (!value)
+                continue;
+            const auto level = 3 - depth;
+            const auto address = prefix | (index << (12 + 9 * level));
+            if (level != 0) {
+                if (depth + 1 >= traversal.size() || (value & ~0x000ffffffffff000ULL) != 3)
+                    return false;
+                traversal[++depth] = {value & 0x000ffffffffff000ULL, address, 0};
+            } else {
+                const auto canonical = (address & (1ULL << 47)) ? address | 0xffff000000000000ULL : address;
+                if (apic && canonical == LocalApicAdmission::virtual_address) {
+                    if (value != (LocalApicAdmission::physical_address | LocalApicAdmission::leaf_flags))
+                        return false;
+                    continue;
+                }
+                if (framebuffer && framebuffer->mapping(canonical)) {
+                    if (value != framebuffer->mapping(canonical))
+                        return false;
+                    continue;
+                }
+                if (address < arena || address >= arena + Handoff::arena_bytes)
+                    return false;
+                const auto flags = expected_flags(address - arena, h);
+                if (!flags || value != (address | flags))
+                    return false;
+            }
+        }
         for (std::size_t i = 0; i < used_; ++i)
             if (!visited[i])
                 return false;
@@ -263,8 +281,8 @@ public:
                                         const LocalApicAdmission *apic,
                                         const FramebufferAdmission *framebuffer) const -> bool {
         // Capture every descriptor field before any snapshot construction write.
-        // The linked-image proof must establish that load/store ordering; source
-        // spelling alone does not qualify it. All later fields use snapshot.
+        // This ordering and local storage independence rely on reviewed C++
+        // source and trusted compilation. All later fields use snapshot.
         const PageTables snapshot{base_, used_, framebuffer_};
         if (!apic || !framebuffer || snapshot.framebuffer_ || !RuntimeLayout::valid(arena) || snapshot.used_ == 0 ||
             snapshot.used_ > Handoff::table_pages || snapshot.base_ != arena + Handoff::tables_offset ||
@@ -328,63 +346,74 @@ public:
                     return true;
             return false;
         };
-        // Do not initialize the bitmap until its actual storage has been checked.
+        // Four paging levels need four local traversal slots, never recursive calls.
+        // Each slot is {table address, virtual prefix, next entry}; only active
+        // slots are read, and every push initializes the complete child slot.
         std::array<bool, Handoff::table_pages> visited;
-        const auto walk = [&](auto &&self, std::uint64_t table_address, unsigned level, std::uint64_t prefix)
-                              __attribute__((noinline, noclone)) -> bool {
-            if (table_address < snapshot.base_ || table_address >= snapshot.base_ + snapshot.used_ * 4096 ||
-                table_address % 4096)
-                return false;
-            const auto slot = (table_address - snapshot.base_) / 4096;
-            if (visited[slot])
-                return false;
-            visited[slot] = true;
-            for (std::uint64_t i = 0; i < 512; ++i) {
-                const auto raw = snapshot.table(table_address)[i];
-                // Only present entries may have hardware A/D normalization.
-                // A non-present slot, including a guard, must be exactly zero.
-                if (!raw)
-                    continue;
-                const auto value = raw & ~0x60ULL;
-                const auto address = prefix | (i << (12 + 9 * level));
-                const auto canonical = (address & (1ULL << 47)) ? address | 0xffff000000000000ULL : address;
-                if (level != 0) {
-                    if ((value & ~0x000ffffffffff000ULL) != 3 || !path_required(canonical, level) ||
-                        !self(self, value & 0x000ffffffffff000ULL, level - 1, address))
-                        return false;
-                } else if (canonical == LocalApicAdmission::virtual_address) {
-                    if (value != apic->mapping(canonical))
-                        return false;
-                } else if (const auto mapping = framebuffer->mapping(canonical)) {
-                    if (value != mapping)
-                        return false;
-                } else {
-                    if (address < arena || address >= arena + Handoff::arena_bytes)
-                        return false;
-                    const auto flags = expected_flags(address - arena, h);
-                    if (!flags || value != (address | flags))
-                        return false;
-                }
-            }
-            return true;
-        };
-        // Construct the closure without invoking it, then check the real object
-        // extents. The original descriptor is now used only as an integer range.
-        // No bitmap initialization or traversal write may precede this guard.
+        std::array<std::array<std::uint64_t, 3>, 4> traversal;
         const auto descriptor_begin = reinterpret_cast<std::uint64_t>(this);
         const auto snapshot_begin = reinterpret_cast<std::uint64_t>(&snapshot);
         const auto bitmap_begin = reinterpret_cast<std::uint64_t>(&visited);
-        const auto closure_begin = reinterpret_cast<std::uint64_t>(&walk);
+        const auto traversal_begin = reinterpret_cast<std::uint64_t>(&traversal);
         if (!paired_graphical_storage_disjoint(descriptor_begin, sizeof(*this), bitmap_begin, sizeof(visited)) ||
             !paired_graphical_storage_disjoint(descriptor_begin, sizeof(*this), snapshot_begin, sizeof(snapshot)) ||
-            !paired_graphical_storage_disjoint(descriptor_begin, sizeof(*this), closure_begin, sizeof(walk)) ||
+            !paired_graphical_storage_disjoint(descriptor_begin, sizeof(*this), traversal_begin, sizeof(traversal)) ||
             !paired_graphical_storage_disjoint(snapshot_begin, sizeof(snapshot), bitmap_begin, sizeof(visited)) ||
-            !paired_graphical_storage_disjoint(snapshot_begin, sizeof(snapshot), closure_begin, sizeof(walk)) ||
-            !paired_graphical_storage_disjoint(bitmap_begin, sizeof(visited), closure_begin, sizeof(walk)))
+            !paired_graphical_storage_disjoint(snapshot_begin, sizeof(snapshot), traversal_begin, sizeof(traversal)) ||
+            !paired_graphical_storage_disjoint(bitmap_begin, sizeof(visited), traversal_begin, sizeof(traversal)))
             return false;
         visited.fill(false);
-        if (!walk(walk, snapshot.base_, 3, 0))
-            return false;
+        traversal[0] = {snapshot.base_, 0, 0};
+        unsigned depth = 0;
+        for (;;) {
+            if (depth >= traversal.size())
+                return false;
+            auto &frame = traversal[depth];
+            const auto table_address = frame[0], prefix = frame[1];
+            if (frame[2] == 0) {
+                if (table_address < snapshot.base_ || table_address >= snapshot.base_ + snapshot.used_ * 4096 ||
+                    table_address % 4096)
+                    return false;
+                const auto slot = (table_address - snapshot.base_) / 4096;
+                if (visited[slot])
+                    return false;
+                visited[slot] = true;
+            }
+            if (frame[2] == 512) {
+                if (depth == 0)
+                    break;
+                --depth;
+                continue;
+            }
+            const auto index = frame[2]++;
+            const auto raw = snapshot.table(table_address)[index];
+            // Only present entries may have hardware A/D normalization.
+            // A non-present slot, including a guard, must be exactly zero.
+            if (!raw)
+                continue;
+            const auto level = 3 - depth;
+            const auto value = raw & ~0x60ULL;
+            const auto address = prefix | (index << (12 + 9 * level));
+            const auto canonical = (address & (1ULL << 47)) ? address | 0xffff000000000000ULL : address;
+            if (level != 0) {
+                if (depth + 1 >= traversal.size() || (value & ~0x000ffffffffff000ULL) != 3 ||
+                    !path_required(canonical, level))
+                    return false;
+                traversal[++depth] = {value & 0x000ffffffffff000ULL, address, 0};
+            } else if (canonical == LocalApicAdmission::virtual_address) {
+                if (value != apic->mapping(canonical))
+                    return false;
+            } else if (const auto mapping = framebuffer->mapping(canonical)) {
+                if (value != mapping)
+                    return false;
+            } else {
+                if (address < arena || address >= arena + Handoff::arena_bytes)
+                    return false;
+                const auto flags = expected_flags(address - arena, h);
+                if (!flags || value != (address | flags))
+                    return false;
+            }
+        }
         for (std::size_t index = 0; index < snapshot.used_; ++index)
             if (!visited[index])
                 return false;

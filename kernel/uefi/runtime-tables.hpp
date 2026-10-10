@@ -40,52 +40,79 @@ private:
         const auto flags=value&~(address_mask|accessed_dirty);
         return flags==(present|writable) || flags==(present|writable|user);
     }
-    template<class Expected>
-    [[nodiscard]] auto inspect(Expected&& expected) const -> bool {
-        if (!valid()) return false;
-        std::array<bool,max_pages> visited{};
-        const auto walk=[&](auto&& self,std::size_t table,unsigned level,std::uint64_t prefix,
-                            bool& contains_user,bool& populated) -> bool {
-            if (table>=used_ || visited[table]) return false;
-            visited[table]=true;
-            contains_user=false;
-            populated=false;
-            for (std::uint64_t slot=0;slot<words_per_page;++slot) {
-                const auto raw=storage_[table*words_per_page+slot];
-                if (raw==0) continue;
-                const auto value=raw&~accessed_dirty;
-                const auto address=prefix|(slot<<(12+9*level));
-                if (level!=0) {
-                    std::size_t child=0;
-                    bool child_user=false;
-                    bool child_populated=false;
-                    if (!parent_flags(raw) || !table_index(value&address_mask,child)
-                        || !self(self,child,level-1,address,child_user,child_populated)
-                        || !child_populated
-                        || ((value&user)!=0)!=child_user) return false;
-                    contains_user=contains_user || child_user;
-                    populated=true;
-                } else {
-                    const auto va=(address&(1ULL<<47))!=0 ? address|0xffff000000000000ULL : address;
-                    if (!leaf_flags(value&~address_mask) || !expected(va,value)) return false;
-                    contains_user=contains_user || (value&user)!=0;
-                    populated=true;
-                }
-            }
-            return true;
+    template <class Expected> [[nodiscard]] auto inspect(Expected &&expected) const -> bool {
+        if (!valid())
+            return false;
+        std::array<bool, max_pages> visited{};
+        // Child results are checked and folded into the parent only on return,
+        // preserving the recursive walk's postorder permission/emptiness checks.
+        class Frame final {
+        public:
+            std::size_t table, next;
+            std::uint64_t prefix;
+            bool contains_user, populated, parent_user;
         };
-        bool contains_user=false,populated=false;
-        if (!walk(walk,0,3,0,contains_user,populated)) return false;
-        for (std::size_t i=0;i<used_;++i) if (!visited[i]) return false;
+        std::array<Frame, 4> traversal;
+        traversal[0] = {0, 0, 0, false, false, false};
+        unsigned depth = 0;
+        for (;;) {
+            if (depth >= traversal.size())
+                return false;
+            auto &frame = traversal[depth];
+            const auto table = frame.table, prefix = frame.prefix;
+            if (frame.next == 0) {
+                if (table >= used_ || visited[table])
+                    return false;
+                visited[table] = true;
+            }
+            if (frame.next == words_per_page) {
+                if (depth == 0)
+                    break;
+                if (!frame.populated || frame.parent_user != frame.contains_user)
+                    return false;
+                const auto child_user = frame.contains_user;
+                auto &parent = traversal[--depth];
+                parent.contains_user = parent.contains_user || child_user;
+                parent.populated = true;
+                continue;
+            }
+            const auto slot = frame.next++;
+            const auto raw = storage_[table * words_per_page + slot];
+            if (raw == 0)
+                continue;
+            const auto value = raw & ~accessed_dirty;
+            const auto level = 3 - depth;
+            const auto address = prefix | (slot << (12 + 9 * level));
+            if (level != 0) {
+                std::size_t child = 0;
+                if (depth + 1 >= traversal.size() || !parent_flags(raw) || !table_index(value & address_mask, child))
+                    return false;
+                traversal[++depth] = {child, 0, address, false, false, (value & user) != 0};
+            } else {
+                const auto va = (address & (1ULL << 47)) != 0 ? address | 0xffff000000000000ULL : address;
+                if (!leaf_flags(value & ~address_mask) || !expected(va, value))
+                    return false;
+                frame.contains_user = frame.contains_user || (value & user) != 0;
+                frame.populated = true;
+            }
+        }
+        for (std::size_t i = 0; i < used_; ++i)
+            if (!visited[i])
+                return false;
         // Unallocated storage is scrubbed, including on construction and reuse.
-        for (std::size_t i=used_*words_per_page;i<storage_.size();++i) if (storage_[i]!=0) return false;
+        for (std::size_t i = used_ * words_per_page; i < storage_.size(); ++i)
+            if (storage_[i] != 0)
+                return false;
         return true;
     }
+
 public:
-    RuntimeTables(std::span<std::uint64_t> storage,std::uint64_t physical_base)
-        : storage_(storage),base_(physical_base) { (void)reset(); }
-    RuntimeTables(const RuntimeTables&)=delete;
-    auto operator=(const RuntimeTables&) -> RuntimeTables& = delete;
+    RuntimeTables(std::span<std::uint64_t> storage, std::uint64_t physical_base)
+        : storage_(storage), base_(physical_base) {
+        (void)reset();
+    }
+    RuntimeTables(const RuntimeTables &) = delete;
+    auto operator=(const RuntimeTables &) -> RuntimeTables & = delete;
     RuntimeTables(RuntimeTables&&)=delete;
     auto operator=(RuntimeTables&&) -> RuntimeTables& = delete;
     [[nodiscard]] static constexpr auto canonical(std::uint64_t address) -> bool {

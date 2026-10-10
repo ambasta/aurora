@@ -108,6 +108,16 @@ image = load("iommu_event_image", ROOT / "tests/kernel-uefi-image.py")
 digest = common.digest
 
 
+def configure_paths(build_dir, source_root=None):
+    global ROOT, BUILD, RECEIPT
+    common.configure_paths(build_dir, source_root or ROOT)
+    ROOT, BUILD = common.ROOT, common.BUILD
+    RECEIPT = BUILD / "iommu-event-admission.json"
+    console.configure_paths(BUILD, ROOT)
+    for flags in TU_FLAGS.values():
+        flags[:] = [common.include_directory() if flag.startswith("-I") else flag for flag in flags]
+
+
 def read_json(path):
     def unique(pairs):
         result = {}
@@ -143,7 +153,7 @@ def build_files(mode):
     names = ["payload.ld", "payload.elf", "payload.bin", "esp/EFI/BOOT/BOOTX64.EFI", "uefi-payload.hpp", "language.s"]
     names += [name + ".o" for name in sorted(image.event_objects(mode))]
     names += [name + suffix for name in cpp_objects(mode) + ("loader",) for suffix in (".su", ".ci")]
-    return [BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci")) else name) for name in names]
+    return common.build_artifacts(names)
 
 
 def verify_flags(mode, flags):
@@ -197,8 +207,10 @@ def end_build(mode):
     manifest = read_json(BUILD / "iommu-event-build-start.json")
     verify_inputs(manifest, mode)
     need(
-        {path.stem for path in (BUILD / "objects").glob("*.o")} == image.event_objects(mode), "Foreign or missing Event build object"
+        {path.stem for path in (BUILD / "objects").glob("*.o")} == image.event_objects(mode),
+        "Foreign or missing Event build object",
     )
+    common.verify_object_exports(build_files(mode))
     manifest["output_sha256"] = common.hashes(build_files(mode))
     (BUILD / "iommu-event-build.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
@@ -206,9 +218,11 @@ def end_build(mode):
 def provenance(mode):
     manifest = read_json(BUILD / "iommu-event-build.json")
     verify_inputs(manifest, mode)
+    common.verify_object_exports(build_files(mode))
     need(manifest["output_sha256"] == common.hashes(build_files(mode)), "Event build output changed")
     need(
-        {path.stem for path in (BUILD / "objects").glob("*.o")} == image.event_objects(mode), "Foreign or missing Event build object"
+        {path.stem for path in (BUILD / "objects").glob("*.o")} == image.event_objects(mode),
+        "Foreign or missing Event build object",
     )
     return manifest
 
@@ -317,7 +331,6 @@ def stack_evidence(directory, mode):
         ).split()
     )
     decoder.READ_ONLY |= frozenset(("testb", "testl", "testw"))
-    decoder.PRESERVE_FLAGS |= frozenset(("lfence", "mfence", "pause"))
     linked = decoder.Elf(directory / "payload.elf")
     need(linked.type == 2, "Expected linked Event executable")
     need(
@@ -331,7 +344,7 @@ def stack_evidence(directory, mode):
             "Event image enables IRQs or crosses a user/interrupt boundary",
         )
         verify_scalar_instruction(row)
-    frames, associations = decoder.cpp_frames(directory, linked)
+    frames, associations = decoder.cpp_frames(directory, linked, source_root=ROOT)
     language, memory = (decoder.Elf(directory / "objects" / (name + ".o")) for name in ("language", "memory"))
     for obj in (language, memory):
         for symbol in obj.functions.values():
@@ -371,20 +384,15 @@ def stack_evidence(directory, mode):
     if mode != "iommu-event-observe":
         verify_bridge(decoder, body(BRIDGE), starts)
         verify_value_bridge(decoder, body(VALUE_BRIDGE), starts)
-    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts, associations)
     for name in functions:
-        if name != decoder.WALK:
-            decoder.calculate(functions, frames, levels, name)
-    normal = decoder.calculate(functions, frames, levels, "uefi_payload_entry")
-    consumer = decoder.calculate(
-        functions, frames, levels, "aurora_kernel_value" if mode == "iommu-event-observe" else ENTRY
-    )
+        decoder.calculate(functions, frames, name)
+    normal = decoder.calculate(functions, frames, "uefi_payload_entry")
+    consumer = decoder.calculate(functions, frames, "aurora_kernel_value" if mode == "iommu-event-observe" else ENTRY)
     bootstrap = decoder.calculate(
-        functions, frames, levels, "uefi_event_observation" if mode == "iommu-event-observe" else BOOTSTRAP
+        functions, frames, "uefi_event_observation" if mode == "iommu-event-observe" else BOOTSTRAP
     )
     fault = 48 + max(
-        decoder.calculate(functions, frames, levels, name)["peak"]
-        for name in ("uefi_payload_fault", "uefi_payload_page_fault")
+        decoder.calculate(functions, frames, name)["peak"] for name in ("uefi_payload_fault", "uefi_payload_page_fault")
     )
     reserve = verify_stack_budgets(normal["peak"], consumer["peak"], fault)
     if mode == "iommu-event-observe":
@@ -411,7 +419,7 @@ def stack_evidence(directory, mode):
         compiler_frames=associations,
         linked_functions=functions,
         assembly_objects=assembly,
-        page_verifier=dict(roots=roots, levels=levels, maximum_live_frames=4),
+        page_verifier=dict(traversal_slots=4, recursion="rejected"),
         disassembly_sha256=hashlib.sha256(disassembly.encode()).hexdigest(),
     )
 
@@ -485,6 +493,7 @@ def reviewed(mode):
 
 def main():
     parser = argparse.ArgumentParser()
+    common.path_arguments(parser)
     parser.add_argument("action", choices=("begin-build", "end-build", "emit", "checked", "reviewed", "diagnose"))
     parser.add_argument("--mode", choices=MODES, default=MODES[0])
     parser.add_argument("--compiler")
@@ -492,8 +501,11 @@ def main():
     parser.add_argument("--pe-linker")
     parser.add_argument("--flag", action="append", default=[])
     args = parser.parse_args()
+    common.check_depfile_options(args)
+    configure_paths(args.build_dir or args.source_root / "build/uefi", args.source_root)
     if args.action == "begin-build":
         begin_build(args.mode, args.compiler, args.cxx, args.flag, args.pe_linker)
+        common.write_build_depfile(args, "iommu-event-build-start.json")
     elif args.action == "end-build":
         end_build(args.mode)
     elif args.action == "emit":

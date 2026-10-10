@@ -442,6 +442,7 @@ class SemanticAnalyzer {
             return destination;
         }
         int parent = -1, origin = -1, fieldIndex = -1;
+        bool receiverArray = false;
         bool temporaryParent = false;
         const bool subspan = value->op == "method_call" && value->token.text == "subspan";
         if (subspan) {
@@ -486,8 +487,10 @@ class SemanticAnalyzer {
                      "borrow_bytes requires a named local byte array, a named owned-byte value or a direct private "
                      "owned-byte field");
             if (member) {
-                if (!member->type.isBytes())
-                    fail(value->token, "borrow_bytes fields require direct private owned-byte storage");
+                receiverArray = origin == -2 && byteArray(member->type);
+                if (!member->type.isBytes() && !receiverArray)
+                    fail(value->token,
+                         "borrow_bytes fields require private owned bytes or an implicit receiver u8 array");
                 fieldIndex = member->index;
             } else if (!byteArray(locals[origin].type) && !locals[origin].type.isBytes())
                 fail(value->token, "borrow_bytes requires a named local byte array or owned bytes");
@@ -518,7 +521,9 @@ class SemanticAnalyzer {
                 emit(ir::Subspan{offset(parent), offset(destination)});
             else
                 emit(ir::ReborrowSpan{offset(parent), offset(destination)});
-        } else if (fieldIndex >= 0 || locals[origin].type.isBytes())
+        } else if (receiverArray)
+            emit(ir::BorrowReceiverArraySpan{fieldIndex, offset(destination)});
+        else if (fieldIndex >= 0 || locals[origin].type.isBytes())
             emit(ir::BorrowOwnedSpan{origin == -2 ? 0 : offset(origin), fieldIndex, offset(destination)});
         else
             emit(ir::BorrowSpan{offset(origin), offset(destination)});
@@ -938,8 +943,8 @@ class SemanticAnalyzer {
         if (callee.result.isSpan()) {
             if (result.isSpan())
                 fail(value->token, "span-result methods cannot forward another method's returned view");
-            if (receiverFieldIndex >= 0 || !owningClass(type))
-                fail(value->token, "returned span requires a named owning receiver or the implicit receiver");
+            if (receiverFieldIndex >= 0)
+                fail(value->token, "returned span requires a named receiver or the implicit receiver");
             if (!receiverSpanFields.contains(callee.name))
                 fail(value->token, "span-result method requires a verified receiver-field summary");
         }
@@ -1868,10 +1873,10 @@ class SemanticAnalyzer {
             if (result.isSpan()) {
                 const int local = s->expr->op == "name" ? source(s->expr) : acquireSpan(s->expr);
                 if (!locals[local].type.isSpan() || locals[local].spanOrigin != -2 || locals[local].spanField < 0)
-                    fail(s->token, "returned span must derive directly from one private receiver owned-byte field");
+                    fail(s->token, "returned span must derive directly from one private receiver byte-storage field");
                 const int fieldIndex = locals[local].spanField;
                 if (lowered.receiverSpanField && *lowered.receiverSpanField != fieldIndex)
-                    fail(s->token, "all returned spans must derive from the same receiver owned-byte field");
+                    fail(s->token, "all returned spans must derive from the same receiver byte-storage field");
                 lowered.receiverSpanField = fieldIndex;
                 endReturnBorrows(local);
                 endReturnBytes();
@@ -1998,6 +2003,7 @@ class SemanticAnalyzer {
             if (storage.member) {
                 if (currentFunction->receiverConst)
                     fail(s->token, "const method cannot write receiver arrays");
+                requireUnborrowed(-2, storage.member->index, s->token);
             } else {
                 if (!locals[storage.local].mut)
                     fail(s->token, "index assignment requires a mutable array local");
@@ -2312,9 +2318,8 @@ public:
             }
             if (candidate.result.isSpan() &&
                 (candidate.receiverClass.empty() || candidate.constructor || !candidate.receiverConst ||
-                 !owningClass(Type(candidate.receiverClass)) || !candidate.templateArguments.empty() ||
-                 !candidate.templateParameters.empty()))
-                fail(candidate.token, "span results require a const non-template owning-class method");
+                 !candidate.templateArguments.empty() || !candidate.templateParameters.empty()))
+                fail(candidate.token, "span results require a const non-template class method");
             if (!candidate.receiverClass.empty() && !resourceConstructor) {
                 if ((!scalarValue(candidate.result) && !candidate.result.isClass() && !candidate.result.isSpan()) ||
                     owningClass(candidate.result))

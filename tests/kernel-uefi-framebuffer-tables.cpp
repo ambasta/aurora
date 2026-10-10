@@ -1,3 +1,4 @@
+#include "kernel-table-recursive-reference.hpp"
 #include "../kernel/uefi/tables.hpp"
 #include <array>
 #include <cstdlib>
@@ -116,5 +117,45 @@ int main() {
     need(!tables.verify(arena, Bytes{h}, nullptr, &*grant));
     alias = 0;
     need(tables.verify(arena, Bytes{h}, nullptr, &*grant));
+    // Compare the old recursive reference with the fixed-slot production walk
+    // over exact/absent authority, every allocated table and hostile link/leaf bits.
+    unsigned accepted = 0, rejected = 0;
+    const auto compare = [&](const FramebufferAdmission *authority) {
+        const auto expected = table_reference::page_verify(root, tables.used(), arena, Bytes{h}, nullptr, authority);
+        need(tables.verify(arena, Bytes{h}, nullptr, authority) == expected);
+        (expected ? accepted : rejected)++;
+    };
+    compare(&*grant);
+    compare(nullptr);
+    auto words = std::span{reinterpret_cast<U64 *>(root), tables.used() * 512};
+    for (std::size_t page = 0; page < tables.used(); ++page) {
+        // Exercise first/last entries and an actually populated entry at each level.
+        std::array<std::size_t, 3> indices{page * 512, page * 512 + 511, page * 512};
+        for (std::size_t i = page * 512; i < (page + 1) * 512; ++i)
+            if (words[i]) {
+                indices[2] = i;
+                break;
+            }
+        for (auto index : indices) {
+            const auto saved = words[index];
+            for (auto changed : std::array<U64, 10>{0,
+                                                    0x20,
+                                                    0x40,
+                                                    0x60,
+                                                    root | 3,
+                                                    (root + tables.used() * 4096) | 3,
+                                                    saved ^ 4,
+                                                    saved ^ 0x80,
+                                                    saved ^ PageTables::nx,
+                                                    saved ^ 0x1000}) {
+                words[index] = changed;
+                compare(&*grant);
+                compare(nullptr);
+            }
+            words[index] = saved;
+        }
+    }
+    compare(&*grant);
+    need(accepted && rejected);
     std::cout << "PASS: framebuffer guarded complete-tree model " << checks << " checks\n";
 }

@@ -84,16 +84,14 @@ class Admission(unittest.TestCase):
 
         evidence = verify({owner: symbol}, code, payload)
         self.assertEqual([row["owner"] for row in evidence], [owner, owner])
-        original = decoder.NEUTRAL, decoder.READ_ONLY, decoder.PRESERVE_FLAGS
+        original = decoder.NEUTRAL, decoder.READ_ONLY
         try:
             decoder.configure_console("service")
             self.assertTrue({"cqto", "idiv"} <= decoder.NEUTRAL)
-            self.assertIn("cqto", decoder.PRESERVE_FLAGS)
-            self.assertNotIn("idiv", decoder.PRESERVE_FLAGS)
             result = decoder.analyze_function(symbol, code, {0: owner})
             self.assertEqual((result["local_peak"], result["returns"]), (8, 1))
         finally:
-            decoder.NEUTRAL, decoder.READ_ONLY, decoder.PRESERVE_FLAGS = original
+            decoder.NEUTRAL, decoder.READ_ONLY = original
         for index in range(10):
             raw = bytearray(payload)
             raw[index] ^= 1
@@ -263,18 +261,22 @@ class Admission(unittest.TestCase):
                 compiler=dict(path=str(compiler), sha256=service.digest(compiler)),
                 cxx=dict(path=str(cxx), sha256=service.digest(cxx)),
             )
+            build = root / "console-service-build.json"
+            build.write_text(json.dumps(manifest))
             receipt = root / "receipt.json"
             data = dict(
                 schema="aurora-console-service-admission-v1",
                 mode="console",
                 build=manifest,
-                sha256=hashes([source, output]),
+                sha256=hashes([source, output, build]),
             )
             receipt.write_text(json.dumps(data))
             with (
                 patch.object(service.common, "source_files", return_value=[source]),
                 patch.object(service.common, "hashes", side_effect=hashes),
                 patch.object(service, "ROOT", root),
+                patch.object(service, "BUILD", root),
+                patch.object(service, "build_files", return_value=[output]),
                 patch.object(service, "RECEIPT", receipt),
                 patch.object(service, "provenance", return_value=manifest),
                 patch.dict(os.environ, {"CONSOLE_SERVICE_REVIEW_SHA256": service.digest(receipt)}),

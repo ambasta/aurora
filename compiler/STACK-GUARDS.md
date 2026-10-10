@@ -151,3 +151,45 @@ native cases/nine rejections and block-I/O's 38 native cases/13 rejections in
 both Python modes, including their examples, plus complete optimized block-value,
 binary-writer, byte-codec, RAM-block and storage-binary runners. This adds hosted
 consumer compatibility, not a full aggregate, kernel or device qualification.
+
+## Compiler-emitted stack/call facts
+
+`aurorac INPUT.au -o OUTPUT.s --stack-facts OUTPUT.stack.json` writes compact
+version-1 facts from the same emission that produces the assembly. The optional
+output uses the normal source-alias and no-symlink artifact protections; it must
+be distinct from the assembly destination and is rejected with `--check`.
+Each file is atomically replaced. The pair is valid only after a successful
+compiler invocation; this is not a multi-file atomic transaction or an attestation.
+The build graph declares both outputs on that one invocation.
+
+The JSON object contains `version: 1` and a `functions` object keyed by exact
+emitted symbol. Each entry contains `local_bytes` and `calls`, the latter mapping
+callee symbols to their maximum live caller bytes immediately before `call`.
+Repeated call sites to the same callee are combined by maximum. Like GCC `.su`,
+`local_bytes` includes the function's incoming eight-byte return slot. Call-site
+bytes include that caller slot, but exclude the callee's incoming return slot.
+For an acyclic, closed graph, a bound is therefore the maximum of `local_bytes`
+and each `calls[callee] + bound(callee)`. Roots, budgets, external edges, recursion
+rejection, trusted assembly contracts and interrupt/fault allowances belong to
+the admission checker, not this compiler metadata format.
+
+The counters share the real emission paths: saved RBP, probed frame reservations,
+private ABI saves (16 or 32 bytes), operand pushes/pops, rounded outgoing copied,
+service and resource records, call alignment and the pixel host call's seventh
+argument reservation. They record backend-inserted runtime and reflection calls
+as well as source calls. Reflection helpers are emitted leaf symbols with an
+eight-byte bound. Local `ud2` trap labels have no extra stack use or call edge;
+hardware fault entry remains a separate contract. Full IR validation precedes
+unused-import pruning. The verifier certifies operand-depth continuity through
+the retained linear emission order, including control-flow joins; the emitter
+checks that operand and outgoing reservations balance at each function's end.
+Facts contain only the actual emitted function/reflection symbol set.
+
+`stack_probes.cpp` now also checks literal fact expectations alongside its real
+assembly assertions for page-boundary frames, private ABI modes, even/odd packed
+calls, branches/loops, service records, seventh host arguments, resource runtime
+calls, reflection leaves, pruning and emitter reuse. A malformed unused imported
+body still rejects. The existing diagnostics CLI gate checks JSON shape, ordinary
+assembly equality, option rejection and output protection. These finite checks
+support compiler intent and implementation regression coverage; emitted metadata
+is not independent proof of the compiler or arbitrary-program stack safety.

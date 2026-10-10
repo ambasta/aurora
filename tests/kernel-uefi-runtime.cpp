@@ -1,3 +1,5 @@
+#include "kernel-table-recursive-reference.hpp"
+#include <vector>
 #include "../kernel/uefi/runtime-layout.hpp"
 #include "../kernel/uefi/runtime-tables.hpp"
 #include "../kernel/uefi/tables.hpp"
@@ -87,24 +89,108 @@ auto main() -> int {
     check(domain0.valid() && domain0.used()==1 && domain0.root()==root0);
     check(domain1.valid() && domain1.used()==1 && domain1.root()==root1);
     check(domain0.verify(absent) && domain1.verify(absent));
-    check(std::all_of(backing0.begin(),backing0.end(),[](auto value) { return value==0; }));
-    check(storage0.front()==~std::uint64_t{0} && storage0.back()==~std::uint64_t{0});
-    std::array<std::byte,Handoff::header> header{};
-    put(header,8,3,4); put(header,64,4096); put(header,72,8192); put(header,80,12288);
-    Expected expected0,expected1;
-    const auto build=[&](Tables& tables,Expected& expected,std::size_t domain) {
-        for (std::uint64_t offset=0;offset<Layout::arena_bytes;offset+=4096) {
-            const auto runtime=Layout::kernel_flags(offset);
-            const auto flags=runtime ? runtime : expected_flags(offset,Bytes{header});
-            if (flags) {
-                check(tables.map(arena+offset,arena+offset,flags));
-                expected.add(arena+offset,arena+offset,flags);
+    const auto parity = [&](const Tables &tables, std::span<std::uint64_t> backing, const auto &expected) {
+        unsigned accepted = 0, rejected = 0;
+        const auto compare = [&] {
+            std::vector<std::uint64_t> old_order, new_order;
+            const auto reference = table_reference::runtime_verify(tables, backing, [&](auto address) {
+                old_order.push_back(address);
+                return expected(address);
+            });
+            const auto actual = tables.verify([&](auto address) {
+                new_order.push_back(address);
+                return expected(address);
+            });
+            check(actual == reference && old_order == new_order);
+            (reference ? accepted : rejected)++;
+        };
+        compare();
+        for (std::size_t page = 0; page < tables.used(); ++page) {
+            std::array<std::size_t, 3> indices{page * 512, page * 512 + 511, page * 512};
+            for (std::size_t i = page * 512; i < (page + 1) * 512; ++i)
+                if (backing[i]) {
+                    indices[2] = i;
+                    break;
+                }
+            for (auto index : indices) {
+                const auto saved = backing[index];
+                for (auto changed : std::array<std::uint64_t, 12>{0,
+                                                                  0x20,
+                                                                  0x40,
+                                                                  0x60,
+                                                                  tables.root() | 3,
+                                                                  (tables.root() + tables.used() * 4096) | 3,
+                                                                  saved ^ Tables::user,
+                                                                  saved ^ Tables::nx,
+                                                                  saved ^ Tables::writable,
+                                                                  saved ^ 0x80,
+                                                                  saved ^ 0x1000,
+                                                                  saved | Tables::accessed_dirty}) {
+                    backing[index] = changed;
+                    compare();
+                }
+                backing[index] = saved;
             }
         }
-        const auto code=Layout::user_code+domain*4096;
-        check(tables.map(code,arena+Layout::image_page(domain),Tables::present|Tables::user));
-        expected.add(code,arena+Layout::image_page(domain),Tables::present|Tables::user);
-        for (std::size_t page=0;page<4;++page) {
+        // Dedicated postorder cases: user-bit mismatch after visiting leaves,
+        // empty child, root/shared-table alias, and stale unallocated storage.
+        for (std::size_t slot = 0; slot < 512; ++slot) {
+            if (!backing[slot])
+                continue;
+            const auto parent = backing[slot];
+            backing[slot] ^= Tables::user;
+            compare();
+            backing[slot] = tables.root() | 3;
+            compare();
+            backing[slot] = parent;
+            const auto child = ((parent & Tables::address_mask) - tables.root()) / 4096;
+            std::array<std::uint64_t, 512> saved{};
+            std::copy_n(backing.begin() + child * 512, 512, saved.begin());
+            std::fill_n(backing.begin() + child * 512, 512, 0);
+            compare();
+            std::copy(saved.begin(), saved.end(), backing.begin() + child * 512);
+            const auto other = (slot + 1) % 512;
+            const auto old_other = backing[other];
+            backing[other] = parent;
+            compare();
+            backing[other] = old_other;
+            break;
+        }
+        if (tables.used() * 512 < backing.size()) {
+            const auto index = tables.used() * 512;
+            const auto saved = backing[index];
+            backing[index] = 1;
+            compare();
+            backing[index] = saved;
+        }
+        compare();
+        check(accepted && rejected);
+    };
+    parity(domain0, backing0, absent);
+
+    check(std::all_of(backing0.begin(), backing0.end(), [](auto value) {
+        return value == 0;
+    }));
+    check(storage0.front() == ~std::uint64_t{0} && storage0.back() == ~std::uint64_t{0});
+    std::array<std::byte, Handoff::header> header{};
+    put(header, 8, 3, 4);
+    put(header, 64, 4096);
+    put(header, 72, 8192);
+    put(header, 80, 12288);
+    Expected expected0, expected1;
+    const auto build = [&](Tables &tables, Expected &expected, std::size_t domain) {
+        for (std::uint64_t offset = 0; offset < Layout::arena_bytes; offset += 4096) {
+            const auto runtime = Layout::kernel_flags(offset);
+            const auto flags = runtime ? runtime : expected_flags(offset, Bytes{header});
+            if (flags) {
+                check(tables.map(arena + offset, arena + offset, flags));
+                expected.add(arena + offset, arena + offset, flags);
+            }
+        }
+        const auto code = Layout::user_code + domain * 4096;
+        check(tables.map(code, arena + Layout::image_page(domain), Tables::present | Tables::user));
+        expected.add(code, arena + Layout::image_page(domain), Tables::present | Tables::user);
+        for (std::size_t page = 0; page < 4; ++page) {
             const auto va=Layout::user_stack_begin(domain)+page*4096;
             const auto pa=arena+Layout::stack_frame_offset(domain*4+page);
             check(tables.map(va,pa,Tables::present|Tables::writable|Tables::user|Tables::nx));
@@ -120,6 +206,8 @@ auto main() -> int {
         check(tables.entry(0xffff800000000000ULL)==0);
     };
     build(domain0,expected0,0); build(domain1,expected1,1);
+    parity(domain0, backing0, expected0);
+    parity(domain1, backing1, expected1);
     check(domain0.entry(Layout::user_stack_begin(0))!=domain1.entry(Layout::user_stack_begin(1)));
     check(domain0.used()<=16 && domain1.used()<=16);
     const auto saved0=storage0;

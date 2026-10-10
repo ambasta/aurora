@@ -45,17 +45,23 @@ oracle_cxx = run_command(
   check: true,
 ).stdout().strip()
 
-# Fail on in-place toolchain replacement instead of silently keeping old objects.
-# This small configuration fingerprint is not a test/qualification receipt.
-toolchain_guard = files('scripts/meson_toolchain.py')
-toolchain_args = ['-B', toolchain_guard, '--cxx', oracle_cxx,
-                  '--record', meson.project_build_root() / 'aurora-toolchain.json']
-run_command(python, toolchain_args + ['--configure'], check: true)
-custom_target('toolchain-identity-check', output: 'toolchain-identity.stamp',
-              command: [python] + toolchain_args + ['--stamp', '@OUTPUT@'],
-              build_by_default: true, build_always_stale: true)
-test('toolchain-identity', python, args: toolchain_args,
-     suite: ['full', 'dev', 'compiler'], timeout: 30)
+toolchain_args = []
+kernel_image_compiler = aurorac
+if get_option('kernel_compiler') != ''
+  if not get_option('kernel_compiler').startswith('/')
+    error('kernel_compiler must be an absolute executable path.')
+  endif
+  kernel_image_compiler = find_program(get_option('kernel_compiler'), native: true)
+endif
+if get_option('kernel_images')
+  subdir('kernel-images/tools')
+  toolchain_args += ['--pe-linker', pe_linker.full_path()]
+endif
+
+# The image fixes distributed tools; explicit PATH/CXX also supports comparable
+# local tools. Check versions once at setup; Ninja tracks build inputs thereafter.
+run_command(python, '-B', files('scripts/meson_toolchain.py'),
+            '--cxx', oracle_cxx, toolchain_args, check: true)
 
 # The JSON dependency belongs only to the explicitly enabled language server.
 if get_option('lsp')
@@ -71,5 +77,8 @@ if get_option('lsp')
        depends: aurora_lsp, suite: 'lsp', timeout: 120)
 endif
 
+if get_option('kernel_images')
+  subdir('kernel-images')
+endif
 subdir('tests')
 subdir('library/examples')

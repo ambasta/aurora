@@ -3,6 +3,8 @@ module aurora.compiler.lexer;
 // This module only observes a synchronous readonly span and returns copied
 // coordinates. The hosted bootstrap adapter is the sole foreign input boundary.
 namespace compiler_lexer {
+    // Private bootstrap wire order: keep hosted_lexer_abi.hpp in sync.
+    // The generated-code fixture checks every case against that host mapping.
     enum class Event {
         token,
         whitespace,
@@ -55,10 +57,10 @@ namespace compiler_lexer {
     };
 
     auto space(u8 byte) -> bool {
-        return byte == 32u8 || (byte >= 9u8 && byte <= 13u8);
+        return byte == ' ' || (byte >= '\t' && byte <= '\r');
     }
     auto letter(u8 byte) -> bool {
-        return(byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || byte == '_';
+        return (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || byte == '_';
     }
     auto digit(u8 byte) -> bool {
         return byte >= '0' && byte <= '9';
@@ -80,7 +82,7 @@ namespace compiler_lexer {
             || byte == '^' || byte == '~';
     }
     auto pair(u8 first, u8 second) -> bool {
-        return(first == '-' && second == '>') || (first == '=' && second == '=') || (first == '!' && second == '=')
+        return (first == '-' && second == '>') || (first == '=' && second == '=') || (first == '!' && second == '=')
             || (first == '<' && second == '=') || (first == '>' && second == '=') || (first == ':' && second == ':')
             || (first == '<' && second == '<') || (first == '>' && second == '>') || (first == '&' && second == '&')
             || (first == '|' && second == '|');
@@ -89,7 +91,7 @@ namespace compiler_lexer {
         const i64 count = end - begin;
         if (count == 3) {
             const u8 value = source.at(begin + 1);
-            return value >= 32u8 && value <= 126u8 && value != '\'' && value != '\\';
+            return value >= ' ' && value <= '~' && value != '\'' && value != '\\';
         }
         if (count != 4 && count != 6) {
             return false;
@@ -130,7 +132,7 @@ namespace compiler_lexer {
                 decoded = decoded + 1;
             } else {
                 if (first < 128u8) {
-                    if (first < 32u8 || first == 127u8 || first == '"') {
+                    if (first < ' ' || first == 127u8 || first == '"') {
                         return false;
                     }
                     at = at + 1;

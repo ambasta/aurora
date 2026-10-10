@@ -52,8 +52,6 @@ def check_composition(directory):
     spec = importlib.util.spec_from_file_location("snapshot_images", ROOT / "scripts/kernel-uefi-ipc-images.py")
     images = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(images)
-    rejected = directory / "rejected-composition"
-    stack.require(not rejected.exists(), "Stale composition control output")
     cases = [("reply-reserved", {}), ("reply-byte", {}), ("context", {"snapshot": True})]
     cases += [
         ("normal", {"snapshot": True, field: True})
@@ -67,12 +65,11 @@ def check_composition(directory):
     ]
     for mode, options in cases:
         try:
-            images.build(Path("/nonexistent-snapshot-compiler"), rejected, mode, **options)
+            images.validate_composition(mode, **options)
         except ValueError:
             pass
         else:
             raise ValueError("Unsupported snapshot image composition accepted")
-    stack.require(not rejected.exists(), "Rejected composition started generating artifacts")
 
 
 def main(directory, uefi_mode=None, note=False):
@@ -176,13 +173,19 @@ def main(directory, uefi_mode=None, note=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=Path)
+    parser.add_argument("directory", nargs="?", type=Path)
+    parser.add_argument("--build-dir", type=Path)
+    parser.add_argument("--source-root", type=Path, default=ROOT)
     parser.add_argument(
         "--uefi-mode", choices=("normal", "owner", "ordinal", "unknown", "transaction", "reply-reserved", "reply-byte")
     )
     parser.add_argument("--kernel-stack", action="store_true")
     parser.add_argument("--note", action="store_true")
     args = parser.parse_args()
+    stack.require(bool(args.directory) != bool(args.build_dir), "Select exactly one artifact directory")
+    args.directory = args.build_dir or args.directory
+    ROOT = args.source_root.resolve(strict=True)
+    stack.ROOT = ROOT
     if args.kernel_stack:
         stack.require(args.uefi_mode is None, "Separate linked user ABI and kernel stack checks")
         spec = importlib.util.spec_from_file_location(
@@ -190,6 +193,7 @@ if __name__ == "__main__":
         )
         admission = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(admission)
+        admission.configure_paths(args.directory, ROOT)
         result = admission.stack_evidence(args.directory, snapshot=True)
         (args.directory / "snapshot-stack.json").write_text(json.dumps(result, indent=2) + "\n")
         print(

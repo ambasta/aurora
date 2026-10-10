@@ -53,11 +53,6 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    The Meson artifact adapter removes only its own new scratch after success;
    use `AURORA_MESON_KEEP_ARTIFACTS=1` when successful scratch is needed for review.
    Never sweep historical evidence or explicitly supplied runner output paths.
-   These retention rules apply to local runs. The pinned-container CI bootstrap
-   records source revision, image identity, commands and complete test/smoke output
-   in GitHub job logs. Its disposable build tree is not uploaded as an Actions
-   artifact. Preserve existing local evidence; identify any gate that requires a
-   non-log artifact before running it in this CI scope.
    A selected-compiler digest is artifact stability, not a fresh-build receipt.
    With GCC 16, also build and smoke normal BIOS and UEFI images. Run
    existing image/admission and emulator gates for each affected kernel profile,

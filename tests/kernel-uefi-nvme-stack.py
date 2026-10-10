@@ -9,6 +9,7 @@ linked direct transfers additionally cross-check the finite preparation graph.
 
 from graphlib import TopologicalSorter
 from pathlib import Path
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -29,11 +30,11 @@ shared.stack_rows = lambda text: parse_rows(text, lambda name: any(part in name 
 MEMORY = frozenset(("memcpy", "memmove", "memset", "memcmp"))
 
 
-def load(directory, units=("payload", "acpi", "pci")):
+def load(directory, units=("payload", "acpi", "pci"), source_root=None):
     linked = shared.Elf(directory / "payload.elf")
     require(linked.type == 2, "Expected linked preparation ELF")
     edges = set()
-    _, receipts = shared.cpp_frames(directory, linked, units, edges)
+    _, receipts = shared.cpp_frames(directory, linked, units, edges, source_root)
     identity = ("source", "line", "column", "record", "bytes", "kind")
     require(
         all(len({tuple(row[key] for key in identity) for row in rows}) == 1 for rows in receipts.values()),
@@ -134,12 +135,11 @@ def calculate(rows, queue_bytes):
     bar = size("inspect_bar(", lambda name: "lambda" not in name)
     prepare = size("prepare_nvme_pages(")
     verify = size("PageTables::verify(", lambda name: "lambda" not in name)
-    walk = size("PageTables::verify(", lambda name: "lambda" in name)
     resource = size("PciResources::parse_as(")
     ecam = size("EcamWindow::read(")
     if payload > 512 or wrapper > 128 or acpi > 5120 or topology > 4096 or pci > 11000 or bar > 3072:
         raise ValueError("Reviewed preparation frame limit exceeded")
-    if max(prepare, verify, resource, ecam) > 1024 or walk > 128:
+    if max(prepare, verify, resource, ecam) > 1024:
         raise ValueError("Reviewed preparation helper limit exceeded")
     modeled = (
         "payload_main(",
@@ -162,12 +162,12 @@ def calculate(rows, queue_bytes):
         value < 0 or (value > 512 and not any(fragment in name for fragment in modeled)) for name, value in rows.items()
     ):
         raise ValueError("Unmodeled large preparation frame")
-    # The four-level page-table walk is bounded by the existing verifier. 512
+    # The verifier uses a fixed four-slot local traversal. 512
     # covers subordinate small callees; a separate 512 covers synchronous fault
     # delivery, stack alignment and the existing fail-stop serial diagnostics.
     leaf = 512
     fault = 512
-    verifier = verify + 4 * walk
+    verifier = verify
     require(type(queue_bytes) is int and queue_bytes >= prepare, "Missing finite preparation bound")
     queues = queue_bytes
     paths = {
@@ -220,11 +220,10 @@ def self_test():
                 "inspect_bar(",
                 "prepare_nvme_pages(",
                 "PageTables::verify(",
-                "PageTables::verify(lambda",
                 "PciResources::parse_as(",
                 "EcamWindow::read(",
             ),
-            (240, 48, 3504, 3184, 10592, 2416, 208, 208, 96, 640, 232),
+            (240, 48, 3504, 3184, 10592, 2416, 208, 208, 640, 232),
         )
     )
     if calculate(rows, 456)["peak_with_fault_reserve"] != 14960:
@@ -347,9 +346,13 @@ def emission_test():
         directory = Path(temporary)
         (directory / "objects").mkdir(exist_ok=True)
         subprocess.run(
-            cxx + flags + ["-c", "kernel/uefi/pci.cpp", "-o", str(directory / "objects" / "pci.o")], cwd=root, check=True
+            cxx + flags + ["-c", "kernel/uefi/pci.cpp", "-o", str(directory / "objects" / "pci.o")],
+            cwd=root,
+            check=True,
         )
-        subprocess.run(["as", "--64", "kernel/uefi/memory.S", "-o", str(directory / "objects" / "memory.o")], cwd=root, check=True)
+        subprocess.run(
+            ["as", "--64", "kernel/uefi/memory.S", "-o", str(directory / "objects" / "memory.o")], cwd=root, check=True
+        )
         objects = [str(directory / "objects" / name) for name in ("pci.o", "memory.o")]
         subprocess.run(["ld", "-e", "0", "-o", str(directory / "payload.elf"), *objects], check=True)
         emission_check(directory)
@@ -364,8 +367,15 @@ if __name__ == "__main__":
     elif len(sys.argv) == 3 and sys.argv[1] == "--emission-check":
         emission_check(Path(sys.argv[2]))
     else:
-        directory = Path(sys.argv[1])
-        linked, records, compiler_edges, sources = load(directory)
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("directory", nargs="?", type=Path)
+        parser.add_argument("output", nargs="?", type=Path)
+        parser.add_argument("--build-dir", type=Path)
+        parser.add_argument("--source-root", type=Path, default=Path(__file__).resolve().parents[1])
+        args = parser.parse_args()
+        require(bool(args.directory) != bool(args.build_dir), "Select exactly one artifact directory")
+        directory = args.build_dir or args.directory
+        linked, records, compiler_edges, sources = load(directory, source_root=args.source_root)
         queues = queue_bound(directory, linked, records, compiler_edges)
         result = calculate(
             {
@@ -379,6 +389,6 @@ if __name__ == "__main__":
         disassembly = subprocess.check_output(["objdump", "-drwC", str(elf)], text=True)
         edges = linked_edges(disassembly)
         result.update(payload_sha256=hashlib.sha256(elf.read_bytes()).hexdigest(), linked_edges=len(edges))
-        if len(sys.argv) > 2:
-            Path(sys.argv[2]).write_text(json.dumps(result, indent=2) + "\n")
+        if args.output:
+            args.output.write_text(json.dumps(result, indent=2) + "\n")
         print("PASS: bounded preparation stack paths " + json.dumps(result, sort_keys=True))

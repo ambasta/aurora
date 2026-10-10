@@ -236,8 +236,8 @@ def literal_span_calls(compiler, root, runner):
         Case(
             "mutable receiver accepts literal readonly parameter",
             r"std::BinaryBuffer64 buffer=std::BinaryBuffer64();"
-            r'if(!buffer.starts_with("\0\0") || buffer.starts_with("x")){return 0u64;}'
-            "buffer.write_u8(0,'x');if(!buffer.starts_with(\"x\")){return 0u64;}return 42u64;",
+            r'if(!buffer.starts_with(2, "\0\0") || buffer.starts_with(2, "x")){return 0u64;}'
+            "buffer.write_u8(0,'x');if(!buffer.starts_with(2, \"x\")){return 0u64;}return 42u64;",
             42,
             imports=("std.binary_buffer", "std.binary"),
         ),
@@ -279,6 +279,154 @@ def literal_span_calls(compiler, root, runner):
     require(flags == "A", f"literal section is not readonly allocated data: {section}")
     print(
         f"PASS literal span calls: {len(cases)} native cases, {len(rejected)} rejections, exact readonly object bytes"
+    )
+
+
+def fixed_array_views(compiler, root, runner):
+    span = "builtin::span<const u8>"
+    box = (
+        (
+            "class ViewBox { i64 padding; array<u8,3> data; array<u8,2> other; public:"
+            "ViewBox():padding(17),data{},other{}{}"
+            "auto initialize()->i64{data[0]='a';data[2]='\\xff';other[0]='x';other[1]='y';return 0;}"
+            f"auto bytes(i64 offset,i64 count)const->{span}{{const {span} all=borrow_bytes(data);"
+            "return all.subspan(offset,count);}"
+            "auto set(u8 value)->i64{data[0]=value;return 0;}"
+            "auto first()const->u8{return data[0];}"
+            "};"
+        )
+        .replace("'\\\\0'", "'\\0'")
+        .replace("'\\\\xff'", "'\\xff'")
+    )
+    cases = [
+        Case(
+            "fixed field exact layout and lifetime",
+            "ViewBox box=ViewBox();box.initialize();"
+            f"{{const {span} view=box.bytes(0,3);const {span} child=view.subspan(1,2);"
+            "if(view.size()!=3 || view.at(0)!='a' || child.at(0)!='\\0' || child.at(1)!='\\xff'){return 0u64;}"
+            "const ViewBox copy=box;if(copy.first()!='a'){return 1u64;}}"
+            "box.set('z');return u64(box.first());",
+            122,
+            prelude=box,
+        ),
+        Case(
+            "fixed field independent copied root",
+            "ViewBox box=ViewBox();box.initialize();ViewBox copy=box;"
+            f"const {span} view=box.bytes(0,1);copy.set('z');return u64(view.at(0));",
+            97,
+            prelude=box,
+        ),
+        Case(
+            "fixed empty endpoint window",
+            f"ViewBox box=ViewBox();box.initialize();const {span} view=box.bytes(3,0);return u64(view.size());",
+            0,
+            prelude=box,
+        ),
+        Case(
+            "fixed temporary argument and release",
+            "ViewBox box=ViewBox();box.initialize();"
+            "if(!std::equal(box.bytes(0,1),\"a\")){return 0u64;}box.set('b');return u64(box.first());",
+            98,
+            prelude=box,
+            imports=("std.bytes",),
+        ),
+    ]
+    traps = []
+    for offset, count in [
+        (-1, 0),
+        (0, -1),
+        (4, 0),
+        (3, 1),
+        (1, 3),
+        (-(1 << 63), 0),
+        ((1 << 63) - 1, 0),
+        (0, (1 << 63) - 1),
+    ]:
+        traps.append(
+            Case(
+                "fixed field checked window bounds",
+                "ViewBox box=ViewBox();box.initialize();"
+                f"const {span} view=box.bytes({offset},{count});return u64(view.size());",
+                0,
+                prelude=box,
+            )
+        )
+    traps.append(
+        Case(
+            "fixed empty view cannot load",
+            f"ViewBox box=ViewBox();box.initialize();const {span} view=box.bytes(3,0);return u64(view.at(0));",
+            0,
+            prelude=box,
+        )
+    )
+    for case in cases:
+        runner.cases([case])
+    from types import SimpleNamespace
+    from unsigned_oracle import validate_trap
+
+    for case in traps:
+        source, output = root / "fixed-trap.au", root / "fixed-trap.s"
+        source.write_text("module test;" + case.prelude + "auto test()->u64{" + case.body + "}")
+        command([compiler, source, "-o", output])
+        observed, symbols = runner.assemble(output.read_text(), ["test"])
+        validate_trap(observed, SimpleNamespace(value=".Laurora_bounds_trap"), symbols, case.name)
+    bad = {
+        "named root mutation": "ViewBox box=ViewBox();box.initialize();"
+        + f"const {span} view=box.bytes(0,0);box.set('x');return 0u64;",
+        "descendant root mutation": "ViewBox box=ViewBox();box.initialize();"
+        + f"const {span} view=box.bytes(0,3);const {span} child=view.subspan(0,0);box.set('x');return 0u64;",
+        "later argument mutation": "ViewBox box=ViewBox();box.initialize();"
+        "return inspect(box.bytes(0,1),box.set('x'));",
+        "temporary receiver": f"const {span} view=ViewBox().bytes(0,1);return 0u64;",
+        "private field projection": "ViewBox box=ViewBox();box.initialize();"
+        + f"const {span} view=borrow_bytes(box.data);return 0u64;",
+        "span rebinding": "ViewBox box=ViewBox();box.initialize();"
+        + f"const {span} view=box.bytes(0,1);view=box.bytes(1,1);return 0u64;",
+    }
+    diagnostics = {
+        "named root mutation": "readonly span is live",
+        "descendant root mutation": "readonly span is live",
+        "later argument mutation": "readonly span is live",
+        "temporary receiver": "method receiver requires a class local",
+        "private field projection": "private class field is inaccessible",
+        "span rebinding": "assignment requires a mutable scalar local",
+        "mutable return": "span results require a const",
+        "local return": "returned span must derive directly",
+        "different fields": "same receiver byte-storage field",
+        "in-method mutation": "readonly span is live",
+        "same-class projection": "borrow_bytes fields require",
+    }
+    helpers = box + f"auto inspect({span} bytes,i64 unused)->u64{{return u64(bytes.size());}}"
+    source, output = root / "fixed-invalid.au", root / "fixed-invalid.s"
+    for label, body in bad.items():
+        source.write_text("module bad;" + helpers + "auto test()->u64{" + body + "}")
+        result = subprocess.run([compiler, source, "-o", output], capture_output=True, text=True, timeout=10)
+        require(
+            result.returncode == 1 and diagnostics[label] in result.stderr,
+            "fixed array view rejection mismatch " + label + ": " + result.stderr,
+        )
+    for label, methods in {
+        "mutable return": f"auto bytes()->{span}{{return borrow_bytes(data);}}",
+        "local return": f"auto bytes()const->{span}{{array<u8,1> local={{0u8}};return borrow_bytes(local);}}",
+        "different fields": f"auto bytes(bool choose)const->{span}{{"
+        "if(choose){return borrow_bytes(data);}return borrow_bytes(other);}",
+        "in-method mutation": f"auto mutate()->i64{{const {span} view=borrow_bytes(data);"
+        "data[0]='z';return view.size();}",
+        "same-class projection": f"auto inspect(ViewBox copy)const->i64{{"
+        f"const {span} view=borrow_bytes(copy.data);return view.size();}}",
+    }.items():
+        source.write_text(
+            "module bad;class ViewBox{array<u8,3> data;array<u8,2> other;public:"
+            "ViewBox():data{},other{}{}" + methods + "};auto test()->u64{return 0u64;}"
+        )
+        result = subprocess.run([compiler, source, "-o", output], capture_output=True, text=True, timeout=10)
+        require(
+            result.returncode == 1 and diagnostics[label] in result.stderr,
+            "fixed array view rejection mismatch " + label + ": " + result.stderr,
+        )
+    print(
+        f"PASS fixed array views: {len(cases) + len(traps)} native cases and "
+        f"{len(bad) + 5} non-escape/mutation rejections"
     )
 
 
@@ -358,6 +506,7 @@ def main():
         runner = NativeRunner(root, compiler, 10)
         byte_strings(compiler, root, runner)
         literal_span_calls(compiler, root, runner)
+        fixed_array_views(compiler, root, runner)
         for offset in range(0, len(cases) - 1, 32):
             runner.cases(cases[offset : min(offset + 32, len(cases) - 1)])
         runner.cases([cases[-1]])

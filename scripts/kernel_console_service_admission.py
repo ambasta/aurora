@@ -52,6 +52,13 @@ def load(name, path):
 common = load("console_service_admission_common", ROOT / "scripts/kernel_program_console_admission.py")
 
 
+def configure_paths(build_dir, source_root=None):
+    global ROOT, BUILD, RECEIPT
+    common.configure_paths(build_dir, source_root or ROOT)
+    ROOT, BUILD = common.ROOT, common.BUILD
+    RECEIPT = BUILD / "console-service-admission.json"
+
+
 def verify_noreturn(functions, noreturn):
     returning = {name for name, body in functions.items() if body["returns"]}
     while True:
@@ -219,7 +226,7 @@ def stack_evidence(directory):
     linked.functions[irq.name] = decoder.Symbol(irq.name, irq.address, extent, irq.section, 2)
     starts = {symbol.address: name for name, symbol in linked.functions.items()}
     need(len(starts) == len(linked.functions), "Ambiguous linked function starts")
-    frames, associations = decoder.cpp_frames(directory, linked)
+    frames, associations = decoder.cpp_frames(directory, linked, source_root=ROOT)
     language = decoder.Elf(directory / "objects" / "language.o")
     memory = decoder.Elf(directory / "objects" / "memory.o")
     for obj in (language, memory):
@@ -258,16 +265,13 @@ def stack_evidence(directory):
         row for address, row in sorted(code.items()) if bridge.address <= address < bridge.address + bridge.size
     ]
     verify_bridge_body(decoder, bridge_body, starts)
-    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts, associations)
-    recursive = {decoder.WALK}
     for name in functions:
-        common.graph_peak(functions, frames, name, recursive)
-    normal = common.graph_peak(functions, frames, "uefi_payload_entry", recursive)
-    session_peak = common.graph_peak(functions, frames, ENTRY, recursive)
-    dispatch = common.graph_peak(functions, frames, "uefi_console_interrupt_dispatch", recursive)
+        common.graph_peak(functions, frames, name)
+    normal = common.graph_peak(functions, frames, "uefi_payload_entry")
+    session_peak = common.graph_peak(functions, frames, ENTRY)
+    dispatch = common.graph_peak(functions, frames, "uefi_console_interrupt_dispatch")
     boot_fault = 48 + max(
-        common.graph_peak(functions, frames, name, recursive)["peak"]
-        for name in ("uefi_payload_fault", "uefi_payload_page_fault")
+        common.graph_peak(functions, frames, name)["peak"] for name in ("uefi_payload_fault", "uefi_payload_page_fault")
     )
     irq_peak = 176 + 15 + dispatch["peak"]
     begin, end = named["uefi_console_poll_begin"].address, named["uefi_console_poll_end"].address
@@ -278,7 +282,7 @@ def stack_evidence(directory):
         if symbol.address <= begin < end <= symbol.address + symbol.size
     ]
     need(len(owners) == 1, "Ambiguous wait frame")
-    waiting = common.graph_peak(functions, frames, "uefi_payload_entry", recursive, target=owners[0])
+    waiting = common.graph_peak(functions, frames, "uefi_payload_entry", target=owners[0])
     waiting["peak_with_interrupt"] = waiting["peak"] + irq_peak
     waiting["peak_with_interrupt_and_fault"] = waiting["peak_with_interrupt"] + boot_fault
     verify_stack_budgets(normal["peak"], waiting["peak"], irq_peak, boot_fault)
@@ -306,7 +310,7 @@ def stack_evidence(directory):
         assembly_objects=assembly,
         normalized_stack_immediates=normalized,
         generated_divisions=divisions,
-        page_verifier=dict(roots=roots, levels=levels, maximum_live_frames=4),
+        page_verifier=dict(traversal_slots=4, recursion="rejected"),
         disassembly_sha256=hashlib.sha256(disassembly.encode()).hexdigest(),
     )
 
@@ -336,7 +340,7 @@ def build_files():
         for suffix in (".su", ".ci")
     ]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
-    return [BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci")) else name) for name in names]
+    return common.build_artifacts(names)
 
 
 def begin_build(mode, compiler, cxx, flags):
@@ -352,8 +356,8 @@ def begin_build(mode, compiler, cxx, flags):
         cxx=common.executable(cxx),
         translation_unit_flags={
             "payload/acpi/pci/console": ["-fpie", "-fvisibility=hidden"],
-            "runtime": ["-fpie", "-fvisibility=hidden", "-Ibuild/uefi"],
-            "loader": ["-fpie", "-maccumulate-outgoing-args", "-Ibuild/uefi"],
+            "runtime": ["-fpie", "-fvisibility=hidden", common.include_directory()],
+            "loader": ["-fpie", "-maccumulate-outgoing-args", common.include_directory()],
         },
     )
     (BUILD / "console-service-build-start.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -383,6 +387,7 @@ def verify_inputs(manifest, mode):
 def end_build(mode):
     manifest = json.loads((BUILD / "console-service-build-start.json").read_text())
     verify_inputs(manifest, mode)
+    common.verify_object_exports(build_files())
     manifest["output_sha256"] = common.hashes(build_files())
     (BUILD / "console-service-build.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
@@ -390,6 +395,7 @@ def end_build(mode):
 def provenance(mode):
     manifest = json.loads((BUILD / "console-service-build.json").read_text())
     verify_inputs(manifest, mode)
+    common.verify_object_exports(build_files())
     need(manifest["output_sha256"] == common.hashes(build_files()), "Console build output changed")
     return manifest
 
@@ -397,7 +403,9 @@ def provenance(mode):
 def emit(mode):
     RECEIPT.unlink(missing_ok=True)
     manifest = provenance(mode)
-    subprocess.run([sys.executable, "-B", ROOT / "tests/kernel-uefi-image.py"], cwd=ROOT, check=True)
+    subprocess.run(
+        [sys.executable, "-B", ROOT / "tests/kernel-uefi-image.py", "--build-dir", BUILD], cwd=ROOT, check=True
+    )
     result = dict(
         schema="aurora-console-service-admission-v1",
         status="requires-independent-review",
@@ -427,25 +435,25 @@ def reviewed(mode):
         and receipt["build"] == provenance(mode),
         "Reviewed console profile/provenance changed",
     )
-    for name, sha in receipt["sha256"].items():
-        path = ROOT / name
-        need(
-            path.resolve().is_relative_to(ROOT) and path.is_file() and digest(path) == sha,
-            "Reviewed console input/output changed: " + name,
-        )
+    expected = common.hashes(common.source_files() + build_files() + [BUILD / "console-service-build.json"])
+    need(receipt["sha256"] == expected, "Reviewed console input/output inventory or bytes changed")
     return receipt
 
 
 def main():
     parser = argparse.ArgumentParser()
+    common.path_arguments(parser)
     parser.add_argument("action", choices=("begin-build", "end-build", "emit", "reviewed", "diagnose"))
     parser.add_argument("--mode", choices=MODES, default="console")
     parser.add_argument("--compiler")
     parser.add_argument("--cxx")
     parser.add_argument("--flag", action="append", default=[])
     args = parser.parse_args()
+    common.check_depfile_options(args)
+    configure_paths(args.build_dir or args.source_root / "build/uefi", args.source_root)
     if args.action == "begin-build":
         begin_build(args.mode, args.compiler, args.cxx, args.flag)
+        common.write_build_depfile(args, "console-service-build-start.json")
     elif args.action == "end-build":
         end_build(args.mode)
     elif args.action == "emit":

@@ -4,12 +4,13 @@
 No compilation or guest execution is performed. GNU binutils disassemble the
 retained ELF; every reachable instruction and direct edge is checked. Stack
 usage records are associated with exact object symbols, never a leaf allowance.
-The sole admitted recursion is the page verifier's checked levels 3, 2, 1, 0.
+Page-table traversal uses four local slots; every linked call cycle rejects.
 """
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -18,13 +19,14 @@ import struct
 import subprocess
 import sys
 
+ROOT = Path(__file__).resolve().parents[1]
+
 ENTRY = "__au_v_m1_18kernel_owned_bytes_n0__d24kernel_owned_bytes_entry"
 CONSUMER = "__au_v_m1_18kernel_owned_bytes_n0__d13consume_bytes"
 TRANSFER = "__au_v_m1_18kernel_owned_bytes_n0__d10pass_bytes"
 BRIDGE = "__au_runtime_bytes_kernel_entry"
 PRODUCER = "__au_v_m1_18kernel_owned_bytes_n0__d14produce_record"
 PRODUCER_BRIDGE = "__au_runtime_bytes_kernel_produce"
-WALK = "_ZZNK6aurora4uefi10PageTables6verifyEmRKNS0_5BytesEPKNS0_18LocalApicAdmissionEENKUlOT_mjmE_clIRKSA_EEbS9_mjm"
 CPP_OBJECTS = ("payload", "acpi", "pci", "runtime", "owned-bytes-runtime", "owned-bytes-profile")
 STACK_BYTES = 16384
 STACK_CAP = 15360
@@ -253,7 +255,7 @@ def stack_rows(text, allow_bounded=None):
     return rows
 
 
-def callgraph_frames(text, rows, symbols, source, edges=None):
+def callgraph_frames(text, rows, symbols, source, edges=None, compile_directory=None):
     """Join .su to exact assembler names from GCC's per-object .ci nodes.
 
     This profile does not use VCG edges for stack arithmetic: its linked
@@ -265,11 +267,16 @@ def callgraph_frames(text, rows, symbols, source, edges=None):
     lines = text.splitlines()
     require(len(lines) >= 2 and lines[-1] == "}", "Malformed compiler callgraph")
     header = re.fullmatch(r"graph: \{ title: (" + quoted + r")", lines[0])
-    require(header and json.loads(header[1]) == source, "Compiler callgraph source mismatch")
+    require(header, "Malformed compiler callgraph source")
+    reported_source = json.loads(header[1])
+    actual_source = (
+        str((compile_directory / reported_source).resolve(strict=True)) if compile_directory else reported_source
+    )
+    require(actual_source == source, "Compiler callgraph source mismatch")
     associated, used, titles, calls = {}, set(), set(), set()
 
     def assembler_name(title):
-        return title.removeprefix(source + ":").removeprefix("*")
+        return title.removeprefix(reported_source + ":").removeprefix("*")
 
     for line in lines[1:-1]:
         if line.startswith("edge:"):
@@ -314,13 +321,92 @@ def callgraph_frames(text, rows, symbols, source, edges=None):
     return associated
 
 
-def object_stack_rows(directory, name, symbols, edges=None):
+def object_source(directory, name, source_root=None):
+    """Bind native exports to one compile, never infer ownership by basename."""
+    root = Path(source_root or ROOT).resolve(strict=True)
+    directory = Path(directory).absolute()
+    require(directory.resolve(strict=True) == directory, "Noncanonical or symlinked profile directory")
     source = {
         "owned-bytes-runtime": "kernel/owned-bytes.cpp",
         "owned-bytes-profile": "kernel/uefi/owned-bytes.cpp",
     }.get(name, "kernel/uefi/" + name + ".cpp")
+    record = directory / "objects" / (name + ".source.json")
+    native = directory.parent.name == "uefi" and directory.parent.parent.name == "kernel-images"
+    if not native and not record.exists():
+        return source, root
+    require(native, "Native object association requires its original profile directory")
+    require(record.resolve(strict=True).is_relative_to(directory), "Native source record escaped profile")
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, "Duplicate native source record key")
+            result[key] = value
+        return result
+
+    association = json.loads(record.read_text(), object_pairs_hook=unique)
+    require(
+        type(association) is dict and set(association) == {"source", "compile_directory", "native_object", "sidecars"},
+        "Unexpected native source record",
+    )
+    require(
+        all(type(association[key]) is str for key in ("source", "compile_directory", "native_object")),
+        "Invalid native compile path",
+    )
+    expected = (root / source).resolve(strict=True)
+    require(
+        expected.is_relative_to(root / "kernel") and association["source"] == str(expected),
+        "Native translation unit/source ownership mismatch",
+    )
+    compile_directory = directory.parents[2]
+    require(association["compile_directory"] == str(compile_directory), "Foreign native compiler working directory")
+    original = Path(association["native_object"])
+    require(
+        original.is_absolute()
+        and original.resolve(strict=True) == original
+        and original.is_relative_to(directory / "native")
+        and original.suffix == ".o",
+        "Native object escaped selected profile",
+    )
+    require(
+        type(association["sidecars"]) is dict
+        and association["sidecars"] == {suffix: str(original.with_suffix("." + suffix)) for suffix in ("su", "ci")},
+        "Native metadata is not from the exact object compilation",
+    )
+    for suffix in (".o", ".su", ".ci"):
+        actual = original.with_suffix(suffix)
+        exported = directory / "objects" / (name + suffix)
+        require(
+            actual.resolve(strict=True) == actual and exported.resolve(strict=True) == exported,
+            "Symlinked native object/sidecar",
+        )
+        require(actual.read_bytes() == exported.read_bytes(), "Changed native object/sidecar export: " + name + suffix)
+    return str(expected), compile_directory
+
+
+def object_stack_rows(directory, name, symbols, edges=None, source_root=None):
+    source, compile_directory = object_source(directory, name, source_root)
     rows = stack_rows((directory / "objects" / (name + ".su")).read_text())
-    return callgraph_frames((directory / "objects" / (name + ".ci")).read_text(), rows, symbols, source, edges)
+    native = Path(source).is_absolute()
+    associated = callgraph_frames(
+        (directory / "objects" / (name + ".ci")).read_text(),
+        rows,
+        symbols,
+        source,
+        edges,
+        compile_directory if native else None,
+    )
+    if native:
+        root = Path(source_root or ROOT).resolve(strict=True)
+        normalized, identities = {}, set()
+        for name, row in associated.items():
+            location = (compile_directory / row.source).resolve(strict=True)
+            require(location.is_relative_to(root / "kernel"), "Compiler frame outside selected kernel sources")
+            normalized[name] = replace(row, source=location.relative_to(root).as_posix())
+            require(normalized[name].identity not in identities, "Aliased native compiler source record")
+            identities.add(normalized[name].identity)
+        return normalized
+    return associated
 
 
 def source_frame_symbol(associations, object_name, source, signature):
@@ -335,14 +421,14 @@ def source_frame_symbol(associations, object_name, source, signature):
     return candidates[0]
 
 
-def cpp_frames(directory, linked, objects=None, edges=None):
+def cpp_frames(directory, linked, objects=None, edges=None, source_root=None):
     associated = {}
     receipts = {}
-    root = Path(__file__).resolve().parents[1]
+    root = Path(source_root or ROOT).resolve(strict=True)
     for name in CPP_OBJECTS if objects is None else objects:
         obj = Elf(directory / "objects" / (name + ".o"))
         require(obj.type == 1, "Expected relocatable C++ object")
-        rows = object_stack_rows(directory, name, obj.functions, edges)
+        rows = object_stack_rows(directory, name, obj.functions, edges, root)
         for symbol_name, row in rows.items():
             require(symbol_name in linked.functions, "Object function omitted from linked profile")
             associate_object(linked, obj, obj.functions[symbol_name])
@@ -358,6 +444,7 @@ def cpp_frames(directory, linked, objects=None, edges=None):
                 {
                     "object": name + ".o",
                     "callgraph": name + ".ci",
+                    "compiler_symbol": symbol_name,
                     "source": row.source,
                     "source_sha256": hashlib.sha256(contents).hexdigest(),
                     "line": row.line,
@@ -375,24 +462,16 @@ BRANCHES = frozenset("ja jae jb jbe je jne jge jg jl jle jns js jo jno jp jnp jz
 # instruction semantics, implicit stack operations, calls and returns fail shut.
 NEUTRAL = frozenset(
     (
-        "add addl addq and andq bt bts cld cli cmova cmovae cmovbe cmove cmovne cmovns cmp cmpb cmpl cmpq cmpw cpuid "
-        "cs data16 dec div hlt imul in inc invlpg lea mov movabs movb movl movq movslq movzbl movzbq movzwl "
+        "add addl addq and andq bt bts btr cld cli cmova cmovae cmovbe cmove cmovne cmovns cmp cmpb cmpl cmpq cmpw "
+        "cpuid cs data16 dec div hlt imul in inc invlpg lea mov movabs movb movl movq movslq movzbl movzbq movzwl "
         "mul neg nop nopl nopw "
         "not or orb orq out rdmsr rep sbb seta setae setb setbe sete setl setle setne "
         "shl shr sub subq test testq ud2 xchg xor"
     ).split()
 )
 READ_ONLY = frozenset("cmp cmpb cmpl cmpq cmpw test testq bt out invlpg".split())
-PRESERVE_FLAGS = frozenset(
-    (
-        "mov movabs movb movl movq movslq movzbl movzbq lea push pop pushf nop nopl nopw cs data16 "
-        "cld cli hlt in out invlpg rep not"
-    ).split()
-)
-
-
 # One scalar vocabulary for every console admission profile. These operations
-# still pass through the operand-aware stack/carrier checks in analyze_function;
+# still pass through the operand-aware stack checks in analyze_function;
 # membership is a stack-effect contract, not a memory-safety or device-I/O proof.
 CONSOLE_SCALAR = frozenset(
     "sar movswl movzwl movw sal setg setge cmovb cmovg cmovge testb testl testw cmovs bswap".split()
@@ -406,40 +485,23 @@ CONSOLE_EXTRA = {
 
 
 def configure_console(profile):
-    global NEUTRAL, READ_ONLY, PRESERVE_FLAGS
+    global NEUTRAL, READ_ONLY
     require(profile in CONSOLE_EXTRA, "Unknown console stack profile")
     extra = CONSOLE_EXTRA[profile]
     NEUTRAL |= CONSOLE_SCALAR | extra
     READ_ONLY |= frozenset(("testb", "testl", "testw"))
-    PRESERVE_FLAGS |= extra & frozenset(("sti", "wrmsr", "mfence", "pause", "cqto"))
 
 
 def configure_owned_bytes():
-    global NEUTRAL, PRESERVE_FLAGS
+    global NEUTRAL
     # Reuse only the serializer/device arithmetic, without console/device opcodes.
     NEUTRAL |= (CONSOLE_SCALAR & {"setg", "setge", "movw"}) | (CONSOLE_EXTRA["graphical"] & {"cqto", "idiv"})
-    PRESERVE_FLAGS |= {"cqto"}
 
 
 def target_of(insn):
     match = re.fullmatch(r"([0-9a-f]+) <([^>]+)>", insn.args)
     require(match, "Indirect or unresolved control transfer at " + hex(insn.address))
     return int(match[1], 16)
-
-
-CALLEE_SAVED_REGISTERS = {
-    "%rbx": ("%rbx", "%ebx", "%bx", "%bl", "%bh"),
-    "%rbp": ("%rbp", "%ebp", "%bp", "%bpl"),
-    **{f"%r{i}": (f"%r{i}", f"%r{i}d", f"%r{i}w", f"%r{i}b") for i in range(12, 16)},
-}
-
-
-def tracked_register(operand, carrier="%r14"):
-    if operand in ("%rcx", "%ecx", "%cx", "%cl", "%ch"):
-        return 0
-    if operand in CALLEE_SAVED_REGISTERS[carrier]:
-        return 1
-    return None
 
 
 def arguments(text):
@@ -474,56 +536,24 @@ def verify_testq_operands(args):
         require(-(1 << 31) <= int(memory[1] or "0", 0) < (1 << 31), "Unsupported TESTQ displacement")
 
 
-def verify_bts_operands(args):
-    """Register-only qword bit set; no memory-write authority is admitted."""
-    require(len(args) == 2, "Unsupported BTS operand count")
+def verify_bit_update_operands(op, args):
+    """Register-only qword bit set/reset; no memory-write authority is admitted."""
+    name = op.upper()
+    require(len(args) == 2, f"Unsupported {name} operand count")
     source, target = args
-    require(re.fullmatch(QWORD_REGISTER, target), "Unsupported BTS register destination")
+    require(re.fullmatch(QWORD_REGISTER, target), f"Unsupported {name} register destination")
     immediate = re.fullmatch(r"\$(0x[0-9a-f]+|[0-9]+)", source)
     if immediate:
-        require(0 <= int(immediate[1], 0) <= 255, "BTS immediate is not imm8")
+        require(0 <= int(immediate[1], 0) <= 255, f"{name} immediate is not imm8")
     else:
-        require(re.fullmatch(QWORD_REGISTER, source), "Unsupported BTS bit source")
+        require(re.fullmatch(QWORD_REGISTER, source), f"Unsupported {name} bit source")
 
 
-def analyze_function(symbol, instructions, starts, seed=None, fault=False, carrier="%r14", memory_pushes=None):
-    """CFG fixed point. Different stack depths at a join reject growing loops.
-
-    Tiny constant propagation is deliberately restricted to the verifier level
-    argument (%ecx) and its selected callee-saved carrier. Every unrecognized write
-    kills a fact. Calls kill %ecx. No data-dependent loop trip count is assumed.
-    """
+def analyze_function(symbol, instructions, starts, fault=False):
+    """Conservative CFG fixed point; mismatched stack depths at a join reject."""
     begin, end = symbol.address, symbol.address + symbol.size
-    authorized_pushes = {}
-    if memory_pushes is not None:
-        require(
-            type(memory_pushes) is dict
-            and set(memory_pushes) == {"owner", "sites"}
-            and memory_pushes["owner"] == symbol.name,
-            "Foreign or malformed memory-push authorization",
-        )
-        authorized_pushes = memory_pushes["sites"]
-        require(type(authorized_pushes) is dict and authorized_pushes, "Empty or malformed memory-push site inventory")
-        for address, displacement in authorized_pushes.items():
-            require(
-                type(address) is int
-                and type(displacement) is int
-                and 0 < displacement < 128
-                and displacement % 8 == 0
-                and begin <= address < end
-                and address in instructions,
-                "Unproved memory-push address or displacement",
-            )
-            row = instructions[address]
-            require(
-                row.op == "push" and row.size == 4 and row.args == hex(displacement) + "(%rsp)" and row.next <= end,
-                "Memory-push authorization does not match the original instruction",
-            )
-    observed_pushes = {}
     immediate_pushes = {}
-    wide_level_registers = ("%rcx", "%ecx", *CALLEE_SAVED_REGISTERS[carrier][:2])
-    # State: consumed bytes, saved frame-pointer depth, ecx, r14, known ZF.
-    states = {begin: (0, None, seed, None, None)}
+    states = {begin: (0, None)}  # Consumed bytes and saved frame-pointer depth.
     queue = deque([begin])
     peaks = 8
     push_peak = 8
@@ -536,8 +566,7 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
         require(address in instructions, "Control flow enters non-instruction")
         prior = states.get(address)
         if prior is not None:
-            require(prior[:2] == state[:2], "Inconsistent or unbounded stack at CFG join: " + symbol.name)
-            state = prior[:2] + tuple(a if a == b else None for a, b in zip(prior[2:], state[2:]))
+            require(prior == state, "Inconsistent or unbounded stack at CFG join: " + symbol.name)
             if prior == state:
                 return
         states[address] = state
@@ -549,12 +578,12 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
         insn = instructions[address]
         require(insn.next <= end, "Instruction crosses function extent")
         visited.add(address)
-        depth, bp, cx, r14, zf = states[address]
+        depth, bp = states[address]
         op, args = insn.op, arguments(insn.args)
         if op == "testq":
             verify_testq_operands(args)
-        elif op == "bts":
-            verify_bts_operands(args)
+        elif op in ("bts", "btr"):
+            verify_bit_update_operands(op, args)
         for operand in args:
             if "%rsp" in operand and "(" in operand:
                 require(not re.search(r"-[^()]*\(%rsp", operand), "Unproven below-stack access")
@@ -579,61 +608,10 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
             )
         if op == "xchg":
             require(not any(arg in ("%rsp", "%esp", "%sp", "%spl") for arg in args), "Stack-pointer exchange")
-        next_zf = zf if op in PRESERVE_FLAGS or op in BRANCHES else None
-        old = (cx, r14)
-        values = [cx, r14]
-        if args and op not in READ_ONLY and op not in BRANCHES and op not in ("call", "ret", "ud2"):
-            destination = tracked_register(args[-1], carrier)
-            if destination is not None:
-                value = None
-                if op in ("mov", "movl", "movq", "movabs") and len(args) == 2 and args[1] in wide_level_registers:
-                    source = tracked_register(args[0], carrier)
-                    if source is not None and args[0] in wide_level_registers:
-                        value = old[source]
-                    elif re.fullmatch(r"\$(?:0x[0-9a-f]+|[0-9]+)", args[0]):
-                        immediate = int(args[0][1:], 0)
-                        value = immediate if immediate <= 3 else None
-                if (
-                    op == "lea"
-                    and len(args) == 2
-                    and args[0] == f"-0x1({carrier})"
-                    and args[1] in wide_level_registers
-                    and old[1] is not None
-                ):
-                    value = old[1] - 1
-                values[destination] = value
-        if op in ("cpuid", "rep"):
-            values[0] = None
-        if op == "cpuid" and carrier == "%rbx":
-            values[1] = None
-        if op == "xchg":
-            for operand in args:
-                register = tracked_register(operand, carrier)
-                if register is not None:
-                    values[register] = None
-                if operand in ("%rbp", "%ebp", "%bp", "%bpl"):
-                    bp = None
-        if op == "test" and len(args) == 2 and args[0] == args[1]:
-            register = tracked_register(args[0], carrier)
-            if register is not None and args[0] in wide_level_registers and old[register] is not None:
-                next_zf = old[register] == 0
+        if op == "xchg" and any(operand in ("%rbp", "%ebp", "%bp", "%bpl") for operand in args):
+            bp = None
         if op in ("push", "pushf"):
-            if address in authorized_pushes:
-                displacement = authorized_pushes[address]
-                # x86 PUSH reads its source using the old RSP. Check the entire
-                # qword before decrementing RSP; caller return bytes are excluded.
-                require(
-                    op == "push" and insn.args == hex(displacement) + "(%rsp)" and displacement + 8 <= depth,
-                    "Memory push reads outside the pre-push live frame",
-                )
-                observed_pushes[address] = dict(
-                    address=address,
-                    source_old_rsp=displacement,
-                    source_bytes=8,
-                    depth_before=depth,
-                    depth_after=depth + 8,
-                )
-            elif op == "push" and insn.args == "$0x0":
+            if op == "push" and insn.args == "$0x0":
                 require(insn.size == 2, "Prefixed or unsupported immediate-zero PUSH")
                 immediate_pushes[address] = dict(
                     address=address, depth_before=depth, depth_after=depth + 8, write_bytes=8, initialized_value=0
@@ -676,22 +654,14 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
             bp = None
         require(0 <= depth <= STACK_CAP, "Unbalanced or excessive stack depth")
         peaks = max(peaks, 8 + depth)
-        state = (depth, bp, *values, next_zf)
+        state = (depth, bp)
         if op == "call" or op in BRANCHES:
             target = target_of(insn)
             require(target in instructions, "Transfer to non-instruction")
-            taken = None
-            if op in ("je", "jz"):
-                taken = zf
-            elif op in ("jne", "jnz") and zf is not None:
-                taken = not zf
-            if op != "call" and taken is False:
-                schedule(insn.next, state)
-                continue
             if op != "call" and begin <= target < end:
                 schedule(target, state)
             elif instructions[target].op == "ud2" and op != "call":
-                calls[address] = dict(address=address, target=None, kind="trap", live_bytes=8 + depth, level=values[0])
+                calls[address] = dict(address=address, target=None, kind="trap", live_bytes=8 + depth)
             elif fault and target == 6 and instructions[target].op == "cli":
                 halt = instructions.get(instructions[target].next)
                 loop = instructions.get(halt.next) if halt else None
@@ -708,13 +678,10 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
                     target=starts[target],
                     kind=kind,
                     live_bytes=8 + depth if kind == "call" else 0,
-                    level=values[0],
                 )
             if op == "call" and starts.get(target) in NORETURN:
                 continue
-            if op == "call":
-                state = (depth, bp, None, values[1], None)
-            if op != "jmp" and (op == "call" or taken is not True):
+            if op != "jmp":
                 schedule(insn.next, state)
             continue
         require(op in NEUTRAL or op in ("push", "pushf", "pop", "leave"), "Unknown instruction semantics: " + op)
@@ -722,10 +689,9 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
             continue
         if insn.next == end and symbol.name == "uefi_payload_page_fault":
             require(starts.get(end) == "fault_common", "Unexpected page-fault fallthrough")
-            calls[address] = dict(address=address, target="fault_common", kind="tail", live_bytes=0, level=None)
+            calls[address] = dict(address=address, target="fault_common", kind="tail", live_bytes=0)
         else:
             schedule(insn.next, state)
-    require(set(observed_pushes) == set(authorized_pushes), "Unused memory-push authorization")
     result = dict(
         local_peak=peaks,
         calls=sorted(calls.values(), key=lambda row: row["address"]),
@@ -735,332 +701,28 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
     )
     if immediate_pushes:
         result["immediate_zero_pushes"] = sorted(immediate_pushes.values(), key=lambda row: row["address"])
-    if authorized_pushes:
-        result["stack_memory_pushes"] = sorted(observed_pushes.values(), key=lambda row: row["address"])
     return result
 
 
-def prove_carrier_preserved(symbol, instructions, starts, carrier, trusted_marker_stores=()):
-    """Prove preservation on every return, including shrink-wrapped paths.
-
-    The saved value is represented by its exact eight-byte entry-RSP-relative
-    slot, not by a prologue spelling or assumed ABI preservation. This bounded
-    profile admits register pushes/pops and direct allocated RSP-relative MOV
-    spills. Stack-address escapes, indexed stack accesses and other stores are
-    rejected. Only the separately identified visited-array marker may rely on
-    the existing source/compiler memory-safety contract; its non-aliasing is
-    not claimed to follow from this local machine-stack proof.
-    """
-    begin, end = symbol.address, symbol.address + symbol.size
-    family = CALLEE_SAVED_REGISTERS[carrier]
-    pending = deque([(begin, 0, True, None)])
-    visited = set()
-    depths = {begin: 0}
-
-    def stack_offset(operand):
-        match = re.fullmatch(r"(?:(0x[0-9a-f]+|[0-9]+))?\(%rsp\)", operand)
-        return int(match[1] or "0", 0) if match else None
-
-    def store_width(op, source):
-        if op in ("movb", "movw", "movl", "movq"):
-            return {"movb": 1, "movw": 2, "movl": 4, "movq": 8}[op]
-        require(op == "mov", "Unknown write to verifier stack storage")
-        if re.fullmatch(r"%r(?:ax|bx|cx|dx|si|di|bp|[89]|1[0-5])", source):
-            return 8
-        if re.fullmatch(r"%(?:e(?:ax|bx|cx|dx|si|di|bp)|r(?:[89]|1[0-5])d)", source):
-            return 4
-        if re.fullmatch(r"%(?:ax|bx|cx|dx|si|di|bp|r(?:[89]|1[0-5])w)", source):
-            return 2
-        if re.fullmatch(r"%(?:[abcd][lh]|sil|dil|bpl|r(?:[89]|1[0-5])b)", source):
-            return 1
-        raise ValueError("Unknown verifier stack-store width")
-
-    def enqueue(address, depth, original, slot):
-        require(begin <= address < end and address in instructions, "Unknown verifier preservation edge")
-        require(0 <= depth <= STACK_CAP, "Unbounded verifier preservation stack")
-        require(address not in depths or depths[address] == depth, "Inconsistent verifier preservation stack")
-        depths[address] = depth
-        state = (address, depth, original, slot)
-        if state not in visited:
-            pending.append(state)
-
-    while pending:
-        state = pending.popleft()
-        if state in visited:
-            continue
-        visited.add(state)
-        address, depth, original, slot = state
-        row = instructions[address]
-        op, args = row.op, arguments(row.args)
-        if op == "testq":
-            verify_testq_operands(args)
-        elif op == "bts":
-            verify_bts_operands(args)
-        require(row.next <= end, "Verifier preservation instruction crosses extent")
-        require(op != "rep", "Unmodeled implicit verifier memory write")
-        require(not (op == "cpuid" and carrier == "%rbx"), "Implicit write to recursive level carrier")
-        for operand in args:
-            if re.search(r"%(?:rsp|esp|sp|spl)(?![a-z0-9])", operand):
-                require(
-                    (stack_offset(operand) is not None and op != "lea")
-                    or (operand == "%rsp" and op in ("add", "sub") and args[-1] == operand),
-                    "Verifier stack address escapes direct spill profile",
-                )
-        if (
-            op not in READ_ONLY
-            and op not in BRANCHES
-            and op not in ("lea", "nop", "nopl", "nopw", "cs", "data16", "push", "pop", "ret", "call", "ud2")
-        ):
-            destinations = args if op == "xchg" else args[-1:]
-            require(
-                all(
-                    not operand
-                    or re.fullmatch(r"%[a-z][a-z0-9]*", operand)
-                    or stack_offset(operand) is not None
-                    or row.address in trusted_marker_stores
-                    for operand in destinations
-                ),
-                "Unproven nonlocal write in verifier carrier proof",
-            )
-        if op == "xchg":
-            require(not any(arg in family for arg in args), "Exchange clobbers recursive level carrier")
-            require(not any(stack_offset(arg) is not None for arg in args), "Exchange writes verifier stack storage")
-        if op == "push":
-            require(re.fullmatch(r"%r(?:ax|bx|cx|dx|si|di|bp|[89]|1[0-5])", row.args), "Unknown verifier push")
-            depth += 8
-            require(slot is None or not (-depth < slot + 8 and slot < -depth + 8), "Push overlaps saved carrier")
-            if row.args == carrier:
-                require(original and slot is None, "Carrier save is missing the entry value")
-                slot = -depth
-        elif op == "pop":
-            require(depth >= 8, "Unbalanced verifier pop")
-            if row.args == carrier:
-                require(slot == -depth, "Carrier pop does not restore the saved entry value")
-                original = True
-            elif row.args in family:
-                raise ValueError("Partial carrier pop")
-            depth -= 8
-        elif op in ("add", "sub") and args[-1:] == ["%rsp"]:
-            match = re.fullmatch(r"\$(0x[0-9a-f]+|[0-9]+),%rsp", row.args)
-            require(match and int(match[1], 0) % 8 == 0, "Unknown verifier stack allocation")
-            depth += int(match[1], 0) * (1 if op == "sub" else -1)
-        elif op in ("leave", "pushf"):
-            raise ValueError("Unsupported verifier preservation stack operation")
-        elif args and args[-1] in family and op not in READ_ONLY and op not in BRANCHES:
-            if op == "mov" and row.args == f"%ecx,{family[1]}":
-                require(slot is not None, "Level carrier overwritten before its entry value is saved")
-                original = False
-            else:
-                offset = stack_offset(args[0]) if len(args) == 2 else None
-                require(
-                    op in ("mov", "movq") and args[-1] == carrier and offset is not None and slot == offset - depth,
-                    "Unknown write or restore to recursive level carrier",
-                )
-                require(offset + 8 <= depth, "Carrier restore lies outside allocated stack")
-                original = True
-        elif (
-            args
-            and stack_offset(args[-1]) is not None
-            and op not in READ_ONLY
-            and op not in ("lea", "nop", "nopl", "nopw", "cs", "data16")
-        ):
-            require(len(args) == 2, "Unknown verifier stack store")
-            offset = stack_offset(args[-1])
-            width = store_width(op, args[0])
-            require(offset + width <= depth, "Verifier spill lies outside allocated stack")
-            location = offset - depth
-            require(
-                slot is None or not (location < slot + 8 and slot < location + width), "Write overlaps saved carrier"
-            )
-            if op in ("mov", "movq") and args[0] == carrier:
-                require(original and slot is None and width == 8, "Carrier save is missing the entry value")
-                slot = location
-        if slot is not None and slot < -depth:
-            slot = None  # The backing allocation was popped/deallocated.
-        require(0 <= depth <= STACK_CAP, "Unbalanced verifier preservation stack")
-        if op == "ret":
-            require(depth == 0 and original, "Verifier return does not preserve the entry carrier")
-            continue
-        if op == "ud2":
-            continue
-        if op == "call" or op in BRANCHES:
-            target = target_of(row)
-            if op != "call":
-                if begin <= target < end:
-                    enqueue(target, depth, original, slot)
-                elif instructions[target].op != "ud2":
-                    require(depth == 0 and original, "Verifier tail transfer does not preserve entry carrier")
-            if op == "jmp" or (op == "call" and starts.get(target) in NORETURN):
-                continue
-        enqueue(row.next, depth, original, slot)
-
-
-VERIFIER_SOURCE_PINS = {
-    "kernel/uefi/tables.hpp": "eb19107f06a1d09e84f05ac928801011f529a599f7ae130cf6ba629969e41f10",
-    "kernel/uefi/handoff.hpp": "b5a753a311a1408e5b8368acebb8bdd5b55d2681b186b9bffa63a350815e0f33",
-}
-# Full compiler display signatures remain unmodified receipt data. cpp_frames
-# has already joined each complete .su signature to its matching .ci node and
-# exact WALK assembler symbol; the reviewed source digest and lambda location
-# identify the invariant without a compiler-specific pretty-print allowlist.
-
-
-def verifier_source_contract(associations, source_hashes):
-    """Bind the sole nonlocal marker allowance to independently reviewed source.
-
-    Precondition: associations are the exact .su/.ci/object results returned by
-    cpp_frames, including its full-signature and linked-body association gates.
-    """
-    require(source_hashes == VERIFIER_SOURCE_PINS, "Reviewed verifier memory-source contract changed")
-    records = associations.get(WALK, ()) if associations else ()
-    require(records, "Visited marker lacks exact WALK source/object association")
-    for row in records:
-        require(
-            row["source"] == "kernel/uefi/tables.hpp"
-            and row["source_sha256"] == VERIFIER_SOURCE_PINS["kernel/uefi/tables.hpp"]
-            and (row["line"], row["column"]) == (172, 27)
-            and row["kind"] == "static"
-            and row["object"] in {name + ".o" for name in CPP_OBJECTS}
-            and row["callgraph"] == row["object"][:-2] + ".ci",
-            "Visited marker has an unreviewed WALK source/object identity",
-        )
-    return dict(
-        source_sha256=dict(VERIFIER_SOURCE_PINS),
-        symbol=WALK,
-        source="kernel/uefi/tables.hpp",
-        line=172,
-        column=27,
-        compiler_records=[{key: row[key] for key in ("object", "callgraph", "record")} for row in records],
-        assumption=(
-            "Trusted C++ compilation of the reviewed fresh caller-local visited array, "
-            "bounded slot and closure ownership; non-aliasing is a source contract, "
-            "not an independent machine-pointer proof"
-        ),
-    )
-
-
-def trusted_verifier_marker_stores(body_code):
-    """Narrow the existing trusted-C++ visited-array write; do not prove aliases.
-
-    tables.hpp::PageTables::verify owns a separate caller-local visited array.
-    Its guarded slot and closure ownership, together with trusted compilation
-    and the checked source/object associations, remain the memory-safety
-    boundary. The local carrier proof admits only the existing indexed byte
-    marker with its preceding zero-test, never arbitrary pointer stores.
-    """
-    registers = r"%r(?:ax|bx|cx|dx|si|di|bp|[89]|1[0-5])"
-    marker = re.compile(r"\$0x1,(\(" + registers + "," + registers + r",1\))")
-    admitted = []
-    for index, row in enumerate(body_code):
-        match = marker.fullmatch(row.args) if row.op == "movb" else None
-        if not match:
-            continue
-        destination = match[1]
-        guards = [
-            prior
-            for prior in range(index - 1)
-            if (body_code[prior].op, body_code[prior].args) == ("cmpb", "$0x0," + destination)
-            and body_code[prior + 1].op == "jne"
-            and not body_code[prior + 1].next <= target_of(body_code[prior + 1]) <= row.address
-        ]
-        require(len(guards) == 1, "Visited marker lacks its unique zero-test guard")
-        admitted.append(row.address)
-    require(len(admitted) <= 1, "Multiple nonlocal verifier marker stores")
-    return frozenset(admitted)
-
-
-def recursion_proof(functions, symbols, instructions, starts, associations=None):
-    require(WALK in functions, "Missing four-level page verifier")
-    symbol = symbols[WALK]
-    body_code = [
-        instructions[address]
-        for address in sorted(instructions)
-        if symbol.address <= address < symbol.address + symbol.size
-    ]
-    assignments = [
-        carrier
-        for row in body_code
-        for carrier, family in CALLEE_SAVED_REGISTERS.items()
-        if (row.op, row.args) == ("mov", f"%ecx,{family[1]}")
-    ]
-    require(len(assignments) == 1, "Verifier lacks a unique callee-saved level carrier")
-    carrier = assignments[0]
-    marker_stores = trusted_verifier_marker_stores(body_code)
-    source_contract = None
-    if marker_stores:
-        root = Path(__file__).resolve().parents[1]
-        source_contract = verifier_source_contract(
-            associations,
-            {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in VERIFIER_SOURCE_PINS},
-        )
-    prove_carrier_preserved(symbol, instructions, starts, carrier, marker_stores)
-    for call in functions[WALK]["calls"]:
-        if call["target"] not in (None, WALK):
-            leaf = symbols[call["target"]]
-            require(not functions[call["target"]]["calls"], "Verifier helper is no longer a proven leaf")
-            prove_carrier_preserved(leaf, instructions, starts, carrier)
-            require(
-                not any(
-                    any(register in arguments(row.args) for register in CALLEE_SAVED_REGISTERS[carrier])
-                    or (row.op == "cpuid" and carrier == "%rbx")
-                    for address, row in instructions.items()
-                    if leaf.address <= address < leaf.address + leaf.size
-                ),
-                "Verifier helper clobbers recursive level carrier",
-            )
-    roots = [
-        (name, row)
-        for name, body in functions.items()
-        for row in body["calls"]
-        if row["target"] == WALK and name != WALK
-    ]
-    require(roots, "No concrete page-verifier entry")
-    require(
-        all(row["kind"] == "call" and row["level"] == 3 for _, row in roots),
-        "Page verifier must enter at proven level three",
-    )
-    levels = {}
-    for level in range(4):
-        body = analyze_function(symbols[WALK], instructions, starts, seed=level, carrier=carrier)
-        recursive = [row for row in body["calls"] if row["target"] == WALK]
-        if level == 0:
-            require(not recursive, "Page verifier recurses at level zero")
-        else:
-            require(
-                len(recursive) == 1 and recursive[0]["kind"] == "call" and recursive[0]["level"] == level - 1,
-                "Page verifier lacks strictly decreasing bounded level",
-            )
-        body["level_carrier"] = carrier
-        body["trusted_marker_stores"] = sorted(marker_stores)
-        if source_contract is not None:
-            body["trusted_source_contract"] = source_contract
-        levels[level] = body
-    return levels, [{"caller": name, "address": row["address"], "initial_level": 3} for name, row in roots]
-
-
-def calculate(functions, frames, levels, root):
+def calculate(functions, frames, root):
     visiting = set()
     cache = {}
 
-    def peak(name, level=None):
-        key = (name, level)
+    def peak(name):
+        key = name
         require(key not in visiting, "Unbounded call/control-flow cycle: " + name)
         if key in cache:
             return cache[key]
         require(name in functions, "Unknown direct callee: " + name)
         visiting.add(key)
-        body = levels[level] if name == WALK and level is not None else functions[name]
-        require(name != WALK or level is not None, "Verifier called without a level proof")
+        body = functions[name]
         frame = max(body["local_peak"], frames.get(name, 0))
-        best, path = frame, [name + (f"[level={level}]" if level is not None else "")]
+        best, path = frame, [name]
         for call in body["calls"]:
             if call["target"] is None:
                 continue
             target = call["target"]
-            child_level = call["level"] if target == WALK else None
-            if target == WALK:
-                require(child_level in range(4), "Unknown recursive level")
-            child, child_path = peak(target, child_level)
+            child, child_path = peak(target)
             # A .su record may conservatively exceed decoded stack use. Keep
             # that excess at each call; never replace a larger compiler bound.
             live = call["live_bytes"] + max(0, frame - body["local_peak"])
@@ -1071,7 +733,7 @@ def calculate(functions, frames, levels, root):
         return cache[key]
 
     total, path = peak(root)
-    return {"peak": total, "path": path, "closure": sorted({name for name, _ in cache})}
+    return {"peak": total, "path": path, "closure": sorted(cache)}
 
 
 def generated_frame(body, linked):
@@ -1543,18 +1205,16 @@ def validate(directory):
     require(NORETURN <= functions.keys() and not NORETURN & returning, "Changed non-returning diagnostic")
     bridge = validate_bridge(elf.functions, instructions, functions)
     producer_bridge = validate_bridge(elf.functions, instructions, functions, copied=True)
-    producer_source = Path(__file__).resolve().parents[1] / "examples/kernel-owned-bytes.au"
+    producer_source = ROOT / "examples/kernel-owned-bytes.au"
     producer_contract = producer_source_contract(producer_source.read_text())
     producer_contract["source_sha256"] = hashlib.sha256(producer_source.read_bytes()).hexdigest()
     divisions = generated_divisions(elf.functions, instructions)
     generated = generated_records((directory / "language.s").read_text(), functions, elf.functions, instructions)
-    levels, roots = recursion_proof(functions, elf.functions, instructions, starts, associations)
-    normal = calculate(functions, frames, levels, "uefi_payload_entry")
+    normal = calculate(functions, frames, "uefi_payload_entry")
     # Evaluate every linked function as well: dormant text may not hide unknown
     # call cycles, indirect transfers, or an unsupported recursion entry.
     for name in functions:
-        if name != WALK:
-            calculate(functions, frames, levels, name)
+        calculate(functions, frames, name)
     required = {
         "uefi_payload_main",
         BRIDGE,
@@ -1593,7 +1253,7 @@ def validate(directory):
         ),
         "Non-owned-byte workload reachable in dedicated profile",
     )
-    faults = [calculate(functions, frames, levels, name) for name in ("uefi_payload_fault", "uefi_payload_page_fault")]
+    faults = [calculate(functions, frames, name) for name in ("uefi_payload_fault", "uefi_payload_page_fault")]
     fault_peak = 48 + max(item["peak"] for item in faults)  # CPU frame including possible error code.
     require(fault_peak <= FAULT_RESERVE, "Synchronous fault path exceeds its exact 512-byte reserve")
     peak = normal["peak"] + FAULT_RESERVE
@@ -1619,7 +1279,7 @@ def validate(directory):
         "bridge": bridge,
         "producer_bridge": producer_bridge,
         "producer_contract": producer_contract,
-        "verifier": {"entry_sites": roots, "levels": levels, "maximum_active_frames": 4},
+        "verifier": {"traversal_slots": 4, "recursion": "rejected"},
         "object_admission": admission,
         "sha256": {name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in files},
         "disassembly_sha256": hashlib.sha256(disassembly.encode()).hexdigest(),
@@ -1853,7 +1513,7 @@ def self_test():
         rejects("matched copied ctor layout", lambda b=changed, c=changed_linked: generated_producer(b, c, 96, 0, True))
 
     # The RAM closure adds five existing scalar operations, no graphical I/O.
-    original_neutral, original_flags = NEUTRAL, PRESERVE_FLAGS
+    original_neutral = NEUTRAL
     configure_owned_bytes()
     require(NEUTRAL - original_neutral == {"setg", "setge", "movw", "cqto", "idiv"}, "Owned scalar scope widened")
     for op, operands in (("setg", "%al"), ("setge", "%al"), ("movw", "$0x1,%ax"), ("cqto", ""), ("idiv", "%r11")):
@@ -1864,7 +1524,7 @@ def self_test():
         rejects("unrelated graphical instruction", lambda op=op: fixture({"root": [(op, ""), ("ret", "")]}))
     for op in ("setg", "setge", "movw"):
         rejects("new scalar stack pointer write", lambda op=op: fixture({"root": [(op, "%rsp"), ("ret", "")]}))
-    globals()["NEUTRAL"], globals()["PRESERVE_FLAGS"] = original_neutral, original_flags
+    globals()["NEUTRAL"] = original_neutral
 
     frame_source = [
         "pushq %rbp",
@@ -2021,14 +1681,14 @@ def self_test():
         ("ret", ""),
     ]
     bodies, symbols, code, starts = fixture({"root": root, "leaf": leaf})
-    require(calculate(bodies, {}, {}, "root")["peak"] == 56, "Wrong call/return/temporary stack sum")
+    require(calculate(bodies, {}, "root")["peak"] == 56, "Wrong call/return/temporary stack sum")
     positives += 1
     repeated, *_ = fixture({"root": [("rep", "movsl %ds:(%rsi),%es:(%rdi)"), ("ret", "")]})
-    require(calculate(repeated, {}, {}, "root")["peak"] == 8, "Repeated dword copy changed stack")
+    require(calculate(repeated, {}, "root")["peak"] == 8, "Repeated dword copy changed stack")
     positives += 1
     # Qword AND shares scalar AND's stack effect, regardless of a compiler's
     # choice of local slot. This does not prove the stored value's provenance
-    # or memory authority; the operand, flag and carrier checks still apply.
+    # or memory authority; the operand and stack checks still apply.
     for offset in (0x18, 0x40, 0x58):
         qword_and, *_ = fixture(
             {
@@ -2061,14 +1721,6 @@ def self_test():
             }
         ),
     )
-    for operand in ("%rcx", "%r14"):
-        rows = [("mov", "$0x2,%ecx"), ("mov", "%ecx,%r14d"), ("andq", "$0xfffffffffffffdff," + operand)]
-        if operand == "%r14":
-            rows.append(("mov", "%r14d,%ecx"))
-        rows += [("call", "@leaf"), ("ret", "")]
-        changed, *_ = fixture({"root": rows, "leaf": leaf})
-        require(changed["root"]["calls"][0]["level"] is None, "Qword AND retained level fact")
-        positives += 1
     flags, *_ = fixture(
         {
             "root": [
@@ -2084,8 +1736,8 @@ def self_test():
     )
     require(len(flags["root"]["calls"]) == 1, "Qword AND retained stale zero-flag proof")
     positives += 1
-    # TESTQ reads both operands, preserves register/carrier facts and changes
-    # flags. Vary masks and locations without assigning field provenance.
+    # TESTQ reads both operands without changing stack depth. Vary masks and
+    # locations without assigning field provenance.
     for operands in (
         "$0x1,(%rdi)",
         "$0xfffffffffffff00f,0x38(%rdi)",
@@ -2107,10 +1759,9 @@ def self_test():
             ("ret", ""),
         ]
         if operands.endswith(",%rcx"):
-            rows.pop(4)  # Observe the argument fact without restoring it from the carrier.
+            rows.pop(4)
         qword_test, *_ = fixture({"root": rows, "leaf": leaf})
         require(qword_test["root"]["local_peak"] == 40, "TESTQ changed stack depth")
-        require(qword_test["root"]["calls"][0]["level"] == 2, "TESTQ clobbered a level fact")
         positives += 1
     frame_test, *_ = fixture(
         {"root": [("push", "%rbp"), ("mov", "%rsp,%rbp"), ("testq", "$0x1,%rbp"), ("leave", ""), ("ret", "")]}
@@ -2164,80 +1815,53 @@ def self_test():
             {"root": [("push", "%rbp"), ("mov", "%rsp,%rbp"), ("testq", "$0x1,-0x8(%rbp)"), ("leave", ""), ("ret", "")]}
         ),
     )
-    for operand in ("(%rsp)", "0x58(%rdi)", "%r14"):
-        rows = [("push", "%r14"), ("testq", "$0x1," + operand), ("pop", "%r14"), ("ret", "")]
-        _, syms, insns, addrs = fixture({"root": rows})
-        prove_carrier_preserved(syms["root"], insns, addrs, "%r14")
+    # Register bit set/reset writes its destination and conservatively invalidates
+    # flags; neither operation admits a memory destination.
+    for op in ("bts", "btr"):
+        for operands in ("$0x0,%rax", "$0x2c,%rdi", "$0x3b,%rsi", "$0xff,%r9", "%rcx,%r10"):
+            updated, syms, insns, addrs = fixture({"root": [(op, operands), ("ret", "")]})
+            require(updated["root"]["local_peak"] == 8, f"Register {op.upper()} changed stack depth")
+            positives += 1
+        flags, *_ = fixture(
+            {
+                "root": [
+                    ("mov", "$0x0,%ecx"),
+                    ("test", "%ecx,%ecx"),
+                    (op, "$0x1,%rsi"),
+                    ("je", "@root+5"),
+                    ("call", "@leaf"),
+                    ("ret", ""),
+                ],
+                "leaf": leaf,
+            }
+        )
+        require(len(flags["root"]["calls"]) == 1, f"{op.upper()} retained stale zero-flag proof")
         positives += 1
-        for operation in ("andq", "movq"):
-            changed = dict(insns)
-            changed[1] = Instruction(1, 1, operation, "$0x1," + operand)
+        for target in ("%rsp", "%esp", "%sp", "%spl", "(%rsp)", "0x18(%rdi)"):
             rejects(
-                "TESTQ read does not authorize actual carrier/stack/nonlocal writes",
-                lambda changed=changed: prove_carrier_preserved(syms["root"], changed, addrs, "%r14"),
+                f"{op.upper()} stack-pointer or memory destination",
+                lambda target=target: fixture({"root": [(op, "$0x1," + target), ("ret", "")]}),
             )
-    # Register BTS writes its destination, conservatively invalidates flags,
-    # and never admits a memory bit-set operation.
-    for operands in ("$0x0,%rax", "$0x3b,%rsi", "$0xff,%r9", "%rcx,%r10"):
-        bit_set, syms, insns, addrs = fixture({"root": [("bts", operands), ("ret", "")]})
-        require(bit_set["root"]["local_peak"] == 8, "Register BTS changed stack depth")
-        prove_carrier_preserved(syms["root"], insns, addrs, "%r14")
-        positives += 1
-    for target in ("%rcx", "%r14"):
-        rows = [("mov", "$0x2,%ecx"), ("mov", "%ecx,%r14d"), ("bts", "$0x1," + target)]
-        if target == "%r14":
-            rows.append(("mov", "%r14d,%ecx"))
-        rows += [("call", "@leaf"), ("ret", "")]
-        changed, *_ = fixture({"root": rows, "leaf": leaf})
-        require(changed["root"]["calls"][0]["level"] is None, "BTS retained a destination level fact")
-        positives += 1
-    flags, *_ = fixture(
-        {
-            "root": [
-                ("mov", "$0x0,%ecx"),
-                ("test", "%ecx,%ecx"),
-                ("bts", "$0x1,%rsi"),
-                ("je", "@root+5"),
-                ("call", "@leaf"),
-                ("ret", ""),
-            ],
-            "leaf": leaf,
-        }
-    )
-    require(len(flags["root"]["calls"]) == 1, "BTS retained stale zero-flag proof")
-    positives += 1
-    for target in ("%rsp", "%esp", "%sp", "%spl", "(%rsp)", "0x18(%rdi)"):
+        for operands in (
+            "",
+            "$0x1",
+            "$0x1,%rax,%rbx",
+            "$0x100,%rax",
+            "$-0x1,%rax",
+            "%eax,%rax",
+            "$0x1,%eax",
+            "(%rax),%rbx",
+            "%fs:(%rax),%rbx",
+        ):
+            rejects(
+                f"unsupported {op.upper()} operands",
+                lambda operands=operands: fixture({"root": [(op, operands), ("ret", "")]}),
+            )
         rejects(
-            "BTS stack-pointer or memory destination",
-            lambda target=target: fixture({"root": [("bts", "$0x1," + target), ("ret", "")]}),
-        )
-    for operands in (
-        "",
-        "$0x1",
-        "$0x1,%rax,%rbx",
-        "$0x100,%rax",
-        "$-0x1,%rax",
-        "%eax,%rax",
-        "$0x1,%eax",
-        "(%rax),%rbx",
-        "%fs:(%rax),%rbx",
-    ):
-        rejects(
-            "unsupported BTS operands",
-            lambda operands=operands: fixture({"root": [("bts", operands), ("ret", "")]}),
-        )
-    rejects(
-        "BTS invalidates frame pointer",
-        lambda: fixture(
-            {"root": [("push", "%rbp"), ("mov", "%rsp,%rbp"), ("bts", "$0x1,%rbp"), ("leave", ""), ("ret", "")]}
-        ),
-    )
-    for target in ("%r14", "(%rsp)", "0x18(%rdi)"):
-        _, syms, insns, addrs = fixture({"root": [("push", "%r14"), ("nop", ""), ("pop", "%r14"), ("ret", "")]})
-        insns[1] = Instruction(1, 1, "bts", "$0x1," + target)
-        rejects(
-            "BTS carrier clobber or memory write",
-            lambda: prove_carrier_preserved(syms["root"], insns, addrs, "%r14"),
+            f"{op.upper()} invalidates frame pointer",
+            lambda: fixture(
+                {"root": [("push", "%rbp"), ("mov", "%rsp,%rbp"), (op, "$0x1,%rbp"), ("leave", ""), ("ret", "")]}
+            ),
         )
     # GCC16 emits a byte OR into the PCI discovery result. It changes flags and
     # memory, but not the stack depth. Its register form must invalidate facts.
@@ -2249,16 +1873,8 @@ def self_test():
             "byte OR stack-pointer write",
             lambda operand=operand: fixture({"root": [("orb", "$0x1," + operand), ("ret", "")]}),
         )
-    for operand in ("%cl", "%r14b"):
-        rows = [("mov", "$0x2,%ecx"), ("mov", "%ecx,%r14d"), ("orb", "$0x1," + operand)]
-        if operand == "%r14b":
-            rows.append(("mov", "%r14d,%ecx"))
-        rows += [("call", "@leaf"), ("ret", "")]
-        changed, *_ = fixture({"root": rows, "leaf": leaf})
-        require(changed["root"]["calls"][0]["level"] is None, "Byte OR retained level fact")
-        positives += 1
     tail, *_ = fixture({"root": [("jmp", "@leaf")], "leaf": leaf})
-    require(calculate(tail, {}, {}, "root")["peak"] == 8, "Tail return address counted twice")
+    require(calculate(tail, {}, "root")["peak"] == 8, "Tail return address counted twice")
     positives += 1
     mutations = [
         ("indirect call", 5, "call", "*%rax"),
@@ -2290,303 +1906,13 @@ def self_test():
         ("mutual cycle", {"root": [("call", "@leaf"), ("ret", "")], "leaf": [("jmp", "@root")]}),
     ]:
         mutant, *_ = fixture(graph)
-        rejects(label, lambda mutant=mutant: calculate(mutant, {}, {}, "root"))
-    # Concrete recursive argument proof; the only arithmetic admitted for this
-    # symbolic fact is the exact current machine's lea level-1 into ecx.
-    saved = ["%r15", "%r14", "%r13", "%r12", "%rbp", "%rbx"]
-    walk = [("push", register) for register in saved] + [
-        ("mov", "%ecx,%r14d"),
-        ("test", "%r14d,%r14d"),
-        ("je", "@" + WALK + "+11"),
-        ("lea", "-0x1(%r14),%ecx"),
-        ("call", "@" + WALK),
-    ]
-    walk += [("pop", register) for register in reversed(saved)] + [("ret", "")]
-
-    graph = {"root": [("mov", "$0x3,%ecx"), ("call", "@" + WALK), ("ret", "")], WALK: walk}
-    functions, symbols, code, starts = fixture(graph)
-    levels, roots = recursion_proof(functions, symbols, code, starts)
-    require(
-        calculate(functions, {}, levels, "root")["peak"] == 232 and roots[0]["initial_level"] == 3,
-        "Wrong concrete four-level stack proof",
-    )
-    positives += 1
-    interleaved_walk = list(walk)
-    interleaved_walk.insert(2, interleaved_walk.pop(6))
-    mixed_graph = {"root": graph["root"], WALK: interleaved_walk}
-    mixed_functions, mixed_symbols, mixed_code, mixed_starts = fixture(mixed_graph)
-    mixed_levels, _ = recursion_proof(mixed_functions, mixed_symbols, mixed_code, mixed_starts)
-    require(
-        calculate(mixed_functions, {}, mixed_levels, "root")["peak"] == 232, "Wrong interleaved-save four-level proof"
-    )
-    positives += 1
-    for label, index, op, operands in [
-        ("interleaved move before save", 1, "mov", "%ecx,%r14d"),
-        ("interleaved wrong level source", 2, "mov", "%edx,%r14d"),
-        ("interleaved wrong saved register", 1, "push", "%r13"),
-        ("interleaved changed restore", 15, "pop", "%rax"),
-        ("interleaved increment", 9, "lea", "0x1(%r14),%ecx"),
-    ]:
-        changed_code = dict(mixed_code)
-        changed_code[100 + index] = Instruction(100 + index, 1, op, operands)
-
-        def check_interleaved(changed_code=changed_code):
-            changed_functions = {
-                name: analyze_function(symbol, changed_code, mixed_starts) for name, symbol in mixed_symbols.items()
-            }
-            recursion_proof(changed_functions, mixed_symbols, changed_code, mixed_starts)
-
-        rejects(label, check_interleaved)
-    for label, address, op, operands in [
-        ("entry level four", 0, "mov", "$0x4,%ecx"),
-        ("unknown entry", 0, "mov", "%eax,%ecx"),
-        ("partial entry write", 0, "mov", "$0x3,%cl"),
-        ("no decrement", 109, "mov", "%r14d,%ecx"),
-        ("partial decrement", 109, "lea", "-0x1(%r14),%cx"),
-        ("missing level restore", 115, "pop", "%rax"),
-        ("underflow at zero", 108, "jne", "6f <walk+11>"),
-        ("unknown carrier", 106, "mov", "%ecx,%r14w"),
-        ("no zero guard", 107, "cmp", "$0x1,%r14d"),
-    ]:
-        mutant = dict(code)
-        mutant[address] = Instruction(address, 1, op, operands)
-
-        def check(mutant=mutant):
-            changed = {name: analyze_function(symbol, mutant, starts) for name, symbol in symbols.items()}
-            recursion_proof(changed, symbols, mutant, starts)
-
-        rejects(label, check)
-    # Implicit and first-operand clobbers must kill constants, never prove them.
-    for op, operands in [
-        ("cpuid", ""),
-        ("rep", "movsb %ds:(%rsi),%es:(%rdi)"),
-        ("rep", "movsl %ds:(%rsi),%es:(%rdi)"),
-        ("xchg", "%ecx,%eax"),
-        ("mov", "$0x3,%cl"),
-        ("mov", "$0x3,%cx"),
-    ]:
-
-        def check(op=op, operands=operands):
-            changed, syms, insns, addrs = fixture(
-                {"root": [("mov", "$0x3,%ecx"), (op, operands), ("call", "@" + WALK), ("ret", "")], WALK: walk}
-            )
-            recursion_proof(changed, syms, insns, addrs)
-
-        rejects("level fact clobber " + op + operands, check)
-    for op, operands in (("movzwl", "%ax,%ecx"), ("cmovns", "%eax,%ecx")):
-
-        def check_scalar(op=op, operands=operands):
-            changed, syms, insns, addrs = fixture(
-                {"root": [("mov", "$0x3,%ecx"), (op, operands), ("call", "@" + WALK), ("ret", "")], WALK: walk}
-            )
-            recursion_proof(changed, syms, insns, addrs)
-
-        rejects("scalar level clobber " + op, check_scalar)
-        rejects("scalar stack-pointer write " + op, lambda op=op: fixture({"root": [(op, "%eax,%esp"), ("ret", "")]}))
-    # GCC16 uses a direct stack spill and an untouched shrink-wrapped return.
-    # Prove the carrier value, not a compiler-specific prologue byte sequence.
-    spill_walk = [
-        ("sub", "$0x18,%rsp"),
-        ("test", "%eax,%eax"),
-        ("je", "@" + WALK + "+13"),
-        ("mov", "%r15,0x10(%rsp)"),
-        ("mov", "%ecx,%r15d"),
-        ("nop", ""),
-        ("test", "%r15d,%r15d"),
-        ("je", "@" + WALK + "+10"),
-        ("lea", "-0x1(%r15),%ecx"),
-        ("call", "@" + WALK),
-        ("mov", "0x10(%rsp),%r15"),
-        ("add", "$0x18,%rsp"),
-        ("ret", ""),
-        ("add", "$0x18,%rsp"),
-        ("ret", ""),
-    ]
-
-    def check_spill(rows, helper=None):
-        graph = {"root": [("mov", "$0x3,%ecx"), ("call", "@" + WALK), ("ret", "")], WALK: rows}
-        if helper is not None:
-            graph["helper"] = helper
-        funcs, syms, insns, addrs = fixture(graph)
-        level_bodies, _ = recursion_proof(funcs, syms, insns, addrs)
-        return calculate(funcs, {}, level_bodies, "root")
-
-    for carrier, family in CALLEE_SAVED_REGISTERS.items():
-        changed_rows = [(op, args.replace("%r15d", family[1]).replace("%r15", carrier)) for op, args in spill_walk]
-        require(check_spill(changed_rows)["peak"] == 136, "Wrong shrink-wrapped carrier proof: " + carrier)
-        positives += 1
-    disjoint = list(spill_walk)
-    disjoint[5] = ("movb", "$0x0,0xf(%rsp)")
-    require(check_spill(disjoint)["peak"] == 136, "Disjoint byte store changed saved carrier")
-    positives += 1
-    for operand in ("0x10(%rsp)", "%r15", "(%rdi)"):
-        changed = list(spill_walk)
-        changed[5] = ("andq", "$0xfffffffffffffdff," + operand)
-        rejects(
-            "qword AND cannot authorize a carrier spill, carrier write or nonlocal store",
-            lambda changed=changed: check_spill(changed),
-        )
-    relocated = list(spill_walk)
-    relocated[2] = ("je", "@" + WALK + "+14")
-    relocated[10:13] = [
-        ("sub", "$0x8,%rsp"),
-        ("mov", "0x18(%rsp),%r15"),
-        ("add", "$0x20,%rsp"),
-        ("ret", ""),
-    ]
-    require(check_spill(relocated)["peak"] == 144, "Saved carrier slot was not entry-RSP relative")
-    positives += 1
-    for label, index, op, operands in (
-        ("spill bypasses save", 2, "je", "@" + WALK + "+4"),
-        ("spill bypasses restore", 7, "je", "@" + WALK + "+11"),
-        ("wrong spill source", 3, "mov", "%r14,0x10(%rsp)"),
-        ("partial spill source", 3, "mov", "%r15d,0x10(%rsp)"),
-        ("wrong spill restore", 10, "mov", "0x8(%rsp),%r15"),
-        ("partial spill restore", 10, "mov", "0x10(%rsp),%r15d"),
-        ("partial carrier clobber", 5, "mov", "$0x0,%r15b"),
-        ("carrier exchange source", 5, "xchg", "%r15,%rax"),
-        ("carrier exchange destination", 5, "xchg", "%rax,%r15"),
-        ("conditional carrier clobber", 5, "cmovns", "%rax,%r15"),
-        ("full spill overwrite", 5, "mov", "%rax,0x10(%rsp)"),
-        ("first-byte spill overlap", 5, "mov", "%rax,0x9(%rsp)"),
-        ("last-byte spill overlap", 5, "movb", "$0x0,0x17(%rsp)"),
-        ("unknown-width stack write", 5, "xor", "$0x0,0x10(%rsp)"),
-        ("stack exchange first operand", 5, "xchg", "0x10(%rsp),%rax"),
-        ("stack address LEA escape", 5, "lea", "0x10(%rsp),%rax"),
-        ("stack address MOV escape", 5, "mov", "%rsp,%rdi"),
-        ("indexed stack write", 5, "mov", "%rax,(%rsp,%rcx,1)"),
-        ("out-of-frame spill", 3, "mov", "%r15,0x18(%rsp)"),
-        ("out-of-frame store", 5, "mov", "%rax,0x18(%rsp)"),
-        ("implicit repeated memory write", 5, "rep", "stos %al,%es:(%rdi)"),
-        ("arbitrary nonlocal store", 5, "movq", "$0xff,(%rdi)"),
-        ("arbitrary indexed nonlocal store", 5, "movb", "$0x1,(%rdi,%rax,1)"),
-        ("nonlocal memory exchange", 5, "xchg", "%rax,(%rdi)"),
-        ("nonlocal exchange source", 5, "xchg", "(%rdi),%rax"),
-        ("segment nonlocal store", 5, "movq", "$0x3,%fs:(%rax)"),
-        ("segment memory exchange", 5, "xchg", "%fs:(%rax),%rax"),
-        ("duplicate carrier initialization", 5, "mov", "%ecx,%r15d"),
-        ("ambiguous second level carrier", 5, "mov", "%ecx,%r14d"),
-    ):
-        changed_rows = list(spill_walk)
-        changed_rows[index] = (op, operands)
-        rejects(label, lambda changed_rows=changed_rows: check_spill(changed_rows))
-    calls_helper = list(spill_walk)
-    calls_helper[5] = ("call", "@helper")
-    require(check_spill(calls_helper, [("ret", "")])["peak"] == 144, "Carrier-neutral helper changed spill proof")
-    positives += 1
-    for operands in ("%eax,%r15d", "$0x0,%r15w", "%r15,%rax"):
-        op = "xchg" if operands == "%r15,%rax" else "mov"
-        rejects(
-            "helper carrier clobber " + operands,
-            lambda op=op, operands=operands: check_spill(calls_helper, [(op, operands), ("ret", "")]),
-        )
-    for operands in ("$0x3,0x8(%rsp)", "$0x3,(%rax)", "$0x3,0x12345678", "$0x3,%fs:(%rax)"):
-        rejects(
-            "helper memory clobber " + operands,
-            lambda operands=operands: check_spill(calls_helper, [("movq", operands), ("ret", "")]),
-        )
-    bxcalls = [(op, args.replace("%r15d", "%ebx").replace("%r15", "%rbx")) for op, args in calls_helper]
-    rejects("helper implicit RBX clobber", lambda: check_spill(bxcalls, [("cpuid", ""), ("ret", "")]))
-    bxclobber = [(op, args.replace("%r15d", "%ebx").replace("%r15", "%rbx")) for op, args in spill_walk]
-    bxclobber[5] = ("cpuid", "")
-    rejects("implicit RBX carrier clobber", lambda: check_spill(bxclobber))
-
-    source_signature = "PageTables::verify::<lambda(auto:1&&, uint64_t, unsigned int, uint64_t)>"
-    source_row = dict(
-        object="payload.o",
-        callgraph="payload.ci",
-        source="kernel/uefi/tables.hpp",
-        source_sha256=VERIFIER_SOURCE_PINS["kernel/uefi/tables.hpp"],
-        line=172,
-        column=27,
-        record=source_signature,
-        bytes=96,
-        kind="static",
-    )
-    bound_source = {WALK: [source_row]}
-    verifier_source_contract(bound_source, dict(VERIFIER_SOURCE_PINS))
-    positives += 1
-    runtime_source = dict(
-        source_row, object="runtime.o", callgraph="runtime.ci", record=source_signature.replace("auto:1", "auto:2")
-    )
-    retained = verifier_source_contract({WALK: [source_row, runtime_source]}, dict(VERIFIER_SOURCE_PINS))
-    require(
-        [row["record"] for row in retained["compiler_records"]] == [source_row["record"], runtime_source["record"]],
-        "Source contract normalized the full compiler signatures",
-    )
-    positives += 1
-    for name in VERIFIER_SOURCE_PINS:
-        drifted = dict(VERIFIER_SOURCE_PINS)
-        drifted[name] = "0" * 64
-        rejects(
-            "reviewed source drift " + name, lambda drifted=drifted: verifier_source_contract(bound_source, drifted)
-        )
-    rejects("missing WALK source binding", lambda: verifier_source_contract({}, dict(VERIFIER_SOURCE_PINS)))
-    for field, changed in (
-        ("source", "kernel/uefi/payload.cpp"),
-        ("source_sha256", "0" * 64),
-        ("line", 173),
-        ("column", 28),
-        ("object", "invented.o"),
-        ("callgraph", "other.ci"),
-        ("kind", "dynamic,bounded"),
-    ):
-        row = dict(source_row, **{field: changed})
-        rejects(
-            "marker source identity " + field,
-            lambda row=row: verifier_source_contract({WALK: [row]}, dict(VERIFIER_SOURCE_PINS)),
-        )
-    marker_rows = [
-        ("cmpb", "$0x0,(%rdx,%rax,1)"),
-        ("jne", "@marker+4"),
-        ("movb", "$0x1,(%rdx,%rax,1)"),
-        ("ret", ""),
-        ("ret", ""),
-    ]
-
-    def check_marker(rows, bind=True):
-        _, syms, insns, addrs = fixture({"marker": rows})
-        admitted = trusted_verifier_marker_stores(list(insns.values()))
-        if admitted:
-            verifier_source_contract(bound_source if bind else {}, dict(VERIFIER_SOURCE_PINS))
-        prove_carrier_preserved(syms["marker"], insns, addrs, "%r15", admitted)
-        return admitted
-
-    require(check_marker(marker_rows) == frozenset((2,)), "Source-bound byte marker was not admitted")
-    positives += 1
-    rejects("marker without source contract", lambda: check_marker(marker_rows, bind=False))
-    for label, index, op, operands in (
-        ("wider marker store", 2, "movq", "$0x1,(%rdx,%rax,1)"),
-        ("different marker value", 2, "movb", "$0x2,(%rdx,%rax,1)"),
-        ("missing marker zero test", 0, "test", "%eax,%eax"),
-        ("mismatched marker zero test", 0, "cmpb", "$0x0,(%rdi,%rax,1)"),
-        ("changed marker guard", 1, "je", "@marker+4"),
-        ("guard enters marker", 1, "jne", "@marker+2"),
-        ("extra nonlocal store", 3, "movb", "$0x2,(%rdi)"),
-        ("duplicate marker store", 3, "movb", "$0x1,(%rdx,%rax,1)"),
-        ("marker stack-base destination", 2, "movb", "$0x1,(%rsp,%rax,1)"),
-    ):
-        rows = list(marker_rows)
-        rows[index] = (op, operands)
-        rejects(label, lambda rows=rows: check_marker(rows))
-    # An otherwise matched source-bound marker must not inherit an escaped
-    # address of its own frame. The local proof rejects that escape first.
-    stack_marker = [
-        ("lea", "(%rsp),%rdx"),
-        ("cmpb", "$0x0,(%rdx,%rax,1)"),
-        ("jne", "@marker+5"),
-        ("movb", "$0x1,(%rdx,%rax,1)"),
-        ("ret", ""),
-        ("ret", ""),
-    ]
-    rejects("stack-derived marker destination", lambda: check_marker(stack_marker))
-
+        rejects(label, lambda mutant=mutant: calculate(mutant, {}, "root"))
     # An invented compiler bound must never disappear from path arithmetic.
-    require(calculate(bodies, {"root": 256}, {}, "root")["peak"] == 256, "Compiler frame upper bound was ignored")
+    require(calculate(bodies, {"root": 256}, "root")["peak"] == 256, "Compiler frame upper bound was ignored")
     positives += 1
     unknown = deepcopy(bodies)
     unknown["root"]["calls"][0]["target"] = "missing"
-    rejects("unassociated helper", lambda: calculate(unknown, {}, {}, "root"))
+    rejects("unassociated helper", lambda: calculate(unknown, {}, "root"))
     stack_row = "source.cpp:1:1:void function()\t16\tstatic"
     record = next(iter(stack_rows(stack_row).values()))
     require(record.size == 16 and record.location == "source.cpp:1:1", "Compiler record association failed")
@@ -2792,9 +2118,16 @@ def main():
     if sys.argv[1:] == ["--self-test"]:
         self_test()
         return
-    if len(sys.argv) != 3:
-        raise SystemExit("Expected artifact-directory output.json or --self-test")
-    directory, output = map(Path, sys.argv[1:])
+    global ROOT
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("directory", nargs="?", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--build-dir", type=Path)
+    parser.add_argument("--source-root", type=Path, default=ROOT)
+    args = parser.parse_args()
+    require(bool(args.directory) != bool(args.build_dir), "Select exactly one artifact directory")
+    ROOT = args.source_root.resolve(strict=True)
+    directory, output = args.build_dir or args.directory, args.output
     # Remove a prior receipt before any validation so failure cannot leave a
     # stale PASS. The caller supplies the dedicated build output location.
     output.unlink(missing_ok=True)

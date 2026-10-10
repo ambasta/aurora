@@ -447,13 +447,35 @@ test('native-nvme-queue-integration', python, args: native_adapter_args + ['--sh
 test('native-dormant-integration', python, args: native_adapter_args + ['--', find_program('bash', native: true), files('../../scripts/kernel-dormant-tests.sh')],
      suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root,
      timeout: 1800)
-test('native-uefi-span-integration', python, args: native_adapter_args + ['--compiler', aurorac] + ['--', find_program('bash', native: true), files('../../scripts/kernel-uefi-span-tests.sh')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root,
-     timeout: 1800, depends: aurorac)
-test('native-bios-image', python,
-    args: native_adapter_args + ['--compiler', aurorac, '--shared-output', '--bios-image'],
-    depends: aurorac, suite: ['full', 'slow', 'integration', 'boot'],
-    env: native_test_env, workdir: native_root, timeout: 900)
+if get_option('kernel_images')
+  test('native-uefi-span-integration', python,
+       args: native_adapter_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
+              files('../../scripts/kernel-uefi-span-tests.sh'), '--images',
+              meson.project_build_root() / 'kernel-images/uefi/runtime',
+              meson.project_build_root() / 'kernel-images/uefi/runtime-span'],
+       suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root,
+       timeout: 1800, depends: [aurorac, kernel_profile_users['uefi/runtime'], kernel_profile_users['uefi/runtime-span']])
+  test('native-bios-image', python,
+      args: ['-B', files('../../tests/kernel-image.py'), '--build-dir', bios_image_dir, '--check-only'],
+      depends: bios_image, suite: ['full', 'slow', 'integration', 'boot'],
+      env: native_test_env, workdir: native_root, timeout: 900)
+  test('native-uefi-normal-image', python,
+      args: ['-B', files('../../tests/kernel-uefi-image.py'), '--build-dir', uefi_image_dir, '--check-only'],
+      depends: uefi_image, suite: ['full', 'slow', 'integration', 'boot'],
+      env: native_test_env, workdir: native_root, timeout: 900)
+else
+  test('native-uefi-span-integration', python,
+       args: ['-c', 'raise SystemExit("Kernel images disabled: configure -Dkernel_images=true for full/boot qualification")'],
+       suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root, timeout: 1800)
+  # Retain explicit failing full/boot coverage, even with --no-rebuild and stale
+  # images left by a previous enabled configuration. Hosted compiler/dev is usable.
+  foreach image_name : ['native-bios-image', 'native-uefi-normal-image']
+    test(image_name, python,
+      args: ['-c', 'raise SystemExit("Kernel images disabled: configure -Dkernel_images=true for full/boot qualification")'],
+      suite: ['full', 'slow', 'integration', 'boot'],
+      env: native_test_env, workdir: native_root, timeout: 900)
+  endforeach
+endif
 test('native-framebuffer-preview-optimized', python, args: ['-B', '-O', files('../../tests/framebuffer-preview.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
@@ -472,3 +494,11 @@ test('native-kernel-uefi-bar-runner', python, args: ['-B', files('../../tests/ke
 test('native-kernel-uefi-bar-runner-optimized', python, args: ['-B', '-O', files('../../tests/kernel-uefi-bar-runner.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
+
+# Compiler-free helper controls; image/ABI/guest qualification remains separate.
+foreach optimized : [false, true]
+  suffix = optimized ? '-optimized' : ''
+  test('native-meson-kernel-controls' + suffix, python,
+    args: ['-B'] + (optimized ? ['-O'] : []) + [files('../meson-kernel-images.py')],
+    suite: ['full', 'dev', 'boot'], env: native_test_env, workdir: native_root, timeout: 30)
+endforeach

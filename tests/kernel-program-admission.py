@@ -2,7 +2,6 @@
 """No-guest adversarial checks for local admission and separate external review pins."""
 
 from pathlib import Path
-import hashlib
 import importlib.util
 import json
 import os
@@ -130,13 +129,12 @@ def main():
         "leaf": body(8),
         "unrelated": body(999999),
     }
-    need(admission.graph_peak(graph, {}, "root", set())["peak"] == 64, "Exact live path sum")
-    need(admission.graph_peak(graph, {"worker": 64}, "root", set())["peak"] == 96, "Retained compiler upper bound")
-    need(admission.graph_peak(graph, {}, "root", set(), target="worker")["peak"] == 56, "Exact interruptible path")
-    reject(lambda: admission.graph_peak(graph, {}, "root", set(), target="unrelated"), "unreachable IRQ target")
+    need(admission.graph_peak(graph, {}, "root")["peak"] == 64, "Exact live path sum")
+    need(admission.graph_peak(graph, {"worker": 64}, "root")["peak"] == 96, "Retained compiler upper bound")
+    need(admission.graph_peak(graph, {}, "root", target="worker")["peak"] == 56, "Exact interruptible path")
+    reject(lambda: admission.graph_peak(graph, {}, "root", target="unrelated"), "unreachable IRQ target")
     recursive = {"root": body(8, ("walk", 8)), "walk": body(16, ("walk", 16))}
-    reject(lambda: admission.graph_peak(recursive, {}, "root", set()), "unbounded cycle")
-    need(admission.graph_peak(recursive, {}, "root", {"walk"})["peak"] == 72, "Four-frame reviewed recursion contract")
+    reject(lambda: admission.graph_peak(recursive, {}, "root"), "unbounded cycle")
 
     # Compiler-to-symbol metadata is mandatory in every hosted UEFI admission
     # inventory, including the loader whose output enters the same boot image.
@@ -237,7 +235,7 @@ def main():
     else:
         os.environ["PROGRAM_CONSOLE_REVIEW_SHA256"] = prior_pin
     print(
-        "PASS: exact stack call paths, four-frame contract, local admission, "
+        "PASS: exact acyclic stack call paths, local admission, "
         "build provenance and separate external review pin rejection"
     )
 

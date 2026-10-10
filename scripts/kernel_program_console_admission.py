@@ -15,6 +15,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "program-console-admission.json"
+SOURCE_DIRECTORIES = ("kernel", "kernel-images", "compiler", "library", "examples", "scripts", "tests")
 MODES = (
     "program-console",
     "program-request-fault",
@@ -50,6 +51,83 @@ def load(name, path):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def configure_paths(build_dir, source_root=None):
+    """Select trusted command-line roots; receipts never select their own roots."""
+    global ROOT, BUILD, RECEIPT
+    root = Path(source_root or ROOT).resolve(strict=True)
+    build = Path(build_dir).absolute()
+    need(build.resolve() == build, "Build directory contains a symlink or noncanonical component")
+    need(not root.is_relative_to(build), "Build directory cannot contain the source root")
+    ROOT, BUILD = root, build
+    RECEIPT = BUILD / "program-console-admission.json"
+
+
+def path_arguments(parser):
+    parser.add_argument("--source-root", type=Path, default=ROOT)
+    parser.add_argument("--depfile", type=Path)
+    parser.add_argument("--depfile-target", type=Path)
+    parser.add_argument("--build-dir", type=Path, help="exact profile output directory (default: build/uefi)")
+
+
+def check_depfile_options(args):
+    need(bool(args.depfile) == bool(args.depfile_target), "Both depfile and target are required")
+    need(not args.depfile or args.action in ("begin", "begin-build"), "Depfiles belong only to build-begin actions")
+
+
+def write_build_depfile(args, name):
+    if not args.depfile:
+        return
+    destination, target = args.depfile.absolute(), args.depfile_target.absolute()
+    need(destination.resolve() == destination and destination.is_relative_to(BUILD), "Depfile escaped selected build")
+    need(target == BUILD / name, "Depfile target is not the exact build-begin output")
+    directories = {ROOT}
+    for name in SOURCE_DIRECTORIES:
+        base = ROOT / name
+        if base.is_dir():
+            directories.add(base)
+            directories.update(path for path in base.rglob("*") if path.is_dir())
+    inputs = sorted(set(source_files()) | directories)
+    need(
+        all(path.resolve(strict=True).is_relative_to(ROOT) for path in inputs),
+        "Depfile source escaped selected checkout",
+    )
+    escaped = load("admission_depfile_escape", ROOT / "scripts/meson-native-fixture.py").escaped
+    args.depfile.write_text(escaped(args.depfile_target) + ": " + " ".join(map(escaped, inputs)) + "\n")
+
+
+def native_directory(directory):
+    return directory.parent.name == "uefi" and directory.parent.parent.name == "kernel-images"
+
+
+def include_directory():
+    return "-I" + (
+        BUILD.relative_to(BUILD.parents[2]).as_posix()
+        if native_directory(BUILD)
+        else str(BUILD.relative_to(ROOT))
+        if BUILD.is_relative_to(ROOT)
+        else str(BUILD)
+    )
+
+
+def build_artifacts(names):
+    """Keep exact inventories, including native same-compilation associations."""
+    cpp = [name.removesuffix(".su") for name in names if name.endswith(".su")]
+    if native_directory(BUILD):
+        names += [name + ".source.json" for name in cpp]
+    return [
+        BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci", ".source.json")) else name) for name in names
+    ]
+
+
+def verify_object_exports(paths):
+    """Bind loader as well as payload exports to the selected compile directory."""
+    records = [path for path in paths if path.name.endswith(".source.json")]
+    if records:
+        decoder = load("native_export_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+        for path in records:
+            decoder.object_source(BUILD, path.name.removesuffix(".source.json"), ROOT)
 
 
 def is_reflection_helper(name):
@@ -218,17 +296,11 @@ def linked_assembly(stack, linked, directory, name):
     return evidence
 
 
-def graph_peak(functions, frames, root, recursive, target=None):
-    """Actual live call-site depth, bounded source-recursion contracts only."""
+def graph_peak(functions, frames, root, target=None):
+    """Actual live call-site depth; every call cycle rejects."""
 
-    def visit(name, path, counts):
-        if name in recursive:
-            count = counts.get(name, 0)
-            if count == 4:
-                return None
-            counts = dict(counts, **{name: count + 1})
-        else:
-            need(name not in path, "Unknown call/control-flow cycle: " + name)
+    def visit(name, path):
+        need(name not in path, "Unknown call/control-flow cycle: " + name)
         body = functions[name]
         frame = max(body["local_peak"], frames.get(name, 0))
         best = (frame, [name]) if target is None or name == target else None
@@ -237,7 +309,7 @@ def graph_peak(functions, frames, root, recursive, target=None):
         for call in body["calls"]:
             if call["target"] is None:
                 continue
-            child = visit(call["target"], path + [name], counts)
+            child = visit(call["target"], path + [name])
             if child is None:
                 continue
             value = call["live_bytes"] + max(0, frame - body["local_peak"]) + child[0]
@@ -245,7 +317,7 @@ def graph_peak(functions, frames, root, recursive, target=None):
                 best = value, [name] + child[1]
         return best
 
-    result = visit(root, [], {})
+    result = visit(root, [])
     need(result is not None, "Unreachable stack path: " + str(target))
     return dict(peak=result[0], path=result[1])
 
@@ -280,7 +352,7 @@ def switch_window(rows, decoder):
     for mnemonic in ("jmp", "add", "movslq", "lea", "ja", "cmp"):
         while position >= 0 and rows[position].op != mnemonic:
             row = rows[position]
-            need(row.op == "mov" and row.op in decoder.PRESERVE_FLAGS, "Unsupported switch interleaving")
+            need(row.op == "mov", "Unsupported switch interleaving")
             independent.append(row)
             position -= 1
         need(position >= 0, "Missing switch operation: " + mnemonic)
@@ -339,7 +411,7 @@ def stack_evidence(directory, *, snapshot=False):
             )
             code[address] = replacement
             normalized_stack_immediates.append(dict(address=address, original=row.args, equivalent=replacement.args))
-    frames, associations = decoder.cpp_frames(directory, linked)
+    frames, associations = decoder.cpp_frames(directory, linked, source_root=ROOT)
     named = {symbol.name: symbol for symbol in linked.symbols if symbol.section}
     enter, leave, handler = [named[key] for key in ("uefi_runtime_enter", "aurora_leave_user", "uefi_runtime_handler")]
     # Bound the assembly handler by the original object's exact text extent.
@@ -364,14 +436,6 @@ def stack_evidence(directory, *, snapshot=False):
     assembly = []
     for name in ("runtime-entry", "runtime-exceptions", "payload-entry"):
         assembly += linked_assembly(decoder, linked, directory, name)
-    fixed = {
-        "kernel/uefi/runtime-entry.S": "4eb746286de4390de61e559ad284ba74b0e671e3d59f1a83963874f95867e805",
-        "kernel/exceptions.S": "c375958b8e813dadcf66c4f4113ba91f3ea6d5cc6c8f1cbda1bc480005d6c69f",
-        "kernel/uefi/ipc-user-entry.S": "68c232480ea014a4448675fbe4ce1cf8134ff22bcc7dab7bb5ba0e481d8a8280",
-        "kernel/uefi/runtime-tables.hpp": "c525ca83ff244c556b8196cf90e4ca18af42a5556caf2b298234f8a4a3543521",
-    }
-    for name, sha in fixed.items():
-        need(digest(ROOT / name) == sha, "Changed bounded assembly/recursion contract: " + name)
     entry_ops = [insn for address, insn in sorted(code.items()) if enter.address <= address < leave.address]
     need(
         sum(row.op == "push" for row in entry_ops) == 11
@@ -442,21 +506,14 @@ def stack_evidence(directory, *, snapshot=False):
                 functions[name] = analyze_checked(symbol)
             except ValueError as error:
                 raise ValueError(name + ": " + str(error)) from error
-    # Actual linked graph, not max-frame or sum-of-unrelated-.su estimates.
-    # PageTables recursion additionally has emitted level-register proof. The two
-    # RuntimeTables walkers use the pinned C++ contract: entry 3, recurse only at
-    # nonzero level with level-1, hence no more than four live frames. Their exact
-    # emitted bodies/call sites are retained for mandatory independent review.
-    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts, associations)
-    recursive = {name for name in functions if name == decoder.WALK or ("RuntimeTables7inspect" in name)}
-    need(len(recursive) == 3, "Unexpected bounded walker inventory")
+    # Both reviewed page-table traversals use four local slots. Every linked
+    # call cycle now rejects; compiler metadata does not establish termination.
     for name in functions:
-        graph_peak(functions, frames, name, recursive)
-    normal = graph_peak(functions, frames, "uefi_payload_entry", recursive)
-    dispatch = graph_peak(functions, frames, "aurora_exception_dispatch", recursive)
+        graph_peak(functions, frames, name)
+    normal = graph_peak(functions, frames, "uefi_payload_entry")
+    dispatch = graph_peak(functions, frames, "aurora_exception_dispatch")
     boot_fault = 48 + max(
-        graph_peak(functions, frames, name, recursive)["peak"]
-        for name in ("uefi_payload_fault", "uefi_payload_page_fault")
+        graph_peak(functions, frames, name)["peak"] for name in ("uefi_payload_fault", "uefi_payload_page_fault")
     )
     irq_peak = 176 + 15 + dispatch["peak"]
     points = {}
@@ -466,7 +523,7 @@ def stack_evidence(directory, *, snapshot=False):
             key for key, symbol in linked.functions.items() if symbol.address <= pc < symbol.address + symbol.size
         ]
         need(len(owners) == 1, "Ambiguous interruptible function: " + name)
-        path = graph_peak(functions, frames, "uefi_payload_entry", recursive, target=owners[0])
+        path = graph_peak(functions, frames, "uefi_payload_entry", target=owners[0])
         path["peak_with_interrupt"] = path["peak"] + irq_peak
         points[name] = path
     reserve = decoder.FAULT_RESERVE if snapshot else boot_fault
@@ -494,7 +551,7 @@ def stack_evidence(directory, *, snapshot=False):
             if copied
             else "aurora_user_main"
         )
-        path = graph_peak(bodies, {}, root, set())
+        path = graph_peak(bodies, {}, root)
         path["entry_saved_bytes"] = 160 if copied else 48
         path["peak_with_entry"] = path["peak"] + path["entry_saved_bytes"]
         need(path["peak_with_entry"] <= 15360, "CPL3 stack cap exhausted")
@@ -517,8 +574,7 @@ def stack_evidence(directory, *, snapshot=False):
         normalized_stack_immediates=normalized_stack_immediates,
         compiler_frames=associations,
         linked_functions=functions,
-        recursion_contracts=dict(maximum_live_frames=4, symbols=sorted(recursive), source_sha256=fixed),
-        page_verifier=dict(roots=roots, levels=levels),
+        page_verifier=dict(traversal_slots=4, recursion="rejected"),
         assembly_objects=assembly,
         disassembly_sha256=hashlib.sha256(disassembly.encode()).hexdigest(),
     )
@@ -539,7 +595,8 @@ def note_evidence(directory, mode="program-console"):
         "Note acquired constructor or heap machinery",
     )
     need(
-        not subprocess.check_output(["nm", "-u", directory / "objects" / "language.o"], text=True), "Note graph acquired authority"
+        not subprocess.check_output(["nm", "-u", directory / "objects" / "language.o"], text=True),
+        "Note graph acquired authority",
     )
     expected_objects = {
         "payload",
@@ -562,7 +619,10 @@ def note_evidence(directory, mode="program-console"):
         "transition-pe",
         "memory-pe",
     }
-    need({path.stem for path in (directory / "objects").glob("*.o")} == expected_objects, "Exact protected-note object composition")
+    need(
+        {path.stem for path in (directory / "objects").glob("*.o")} == expected_objects,
+        "Exact protected-note object composition",
+    )
     public = {
         row.split()[2]
         for row in subprocess.check_output(
@@ -671,12 +731,23 @@ def check_note_bridge(actual, private):
 
 
 def source_files():
-    paths = {ROOT / "Makefile"}
-    for directory in ("kernel", "compiler", "library", "examples", "scripts", "tests"):
+    paths = {
+        ROOT / name
+        for name in (
+            "Makefile",
+            "meson.build",
+            "meson_options.txt",
+            "compiler/Makefile",
+            "tests/meson.build",
+            "tests/compiler-test-inventory.json",
+        )
+    }
+    for directory in SOURCE_DIRECTORIES:
         paths.update(
             path
             for path in (ROOT / directory).rglob("*")
-            if path.is_file() and path.suffix in (".cpp", ".hpp", ".h", ".inc", ".S", ".au", ".ld", ".py", ".sh")
+            if path.is_file()
+            and path.suffix in (".cpp", ".hpp", ".h", ".inc", ".S", ".au", ".ld", ".py", ".sh", ".build")
         )
     return sorted(paths)
 
@@ -704,11 +775,22 @@ def build_files():
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
     names += ["user-" + name + suffix for name in ("clean", "bounds") for suffix in (".s", ".o", ".elf", ".bin")]
     names += ["user-clean-entry.o"]
-    return [BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci")) else name) for name in names]
+    return build_artifacts(names)
 
 
 def hashes(paths):
-    return {str(path.relative_to(ROOT)): digest(path) for path in paths}
+    result = {}
+    for path in paths:
+        path = Path(path).absolute()
+        base, prefix = (BUILD, "build:") if path.is_relative_to(BUILD) else (ROOT, "source:")
+        need(
+            path.is_relative_to(base) and path.resolve(strict=True).is_relative_to(base),
+            "Hash input escaped selected root",
+        )
+        key = prefix + path.relative_to(base).as_posix()
+        need(key not in result, "Duplicate hash input: " + key)
+        result[key] = digest(path)
+    return result
 
 
 def executable(path):
@@ -729,8 +811,8 @@ def begin_build(mode, compiler, cxx, flags):
         cxx=executable(cxx),
         translation_unit_flags={
             "payload/acpi/pci": ["-fpie", "-fvisibility=hidden"],
-            "runtime": ["-fpie", "-fvisibility=hidden", "-Ibuild/uefi"],
-            "loader": ["-fpie", "-maccumulate-outgoing-args", "-Ibuild/uefi"],
+            "runtime": ["-fpie", "-fvisibility=hidden", include_directory()],
+            "loader": ["-fpie", "-maccumulate-outgoing-args", include_directory()],
         },
         assembly_runtime_flags=["--64", "--defsym", "AURORA_IPC=1", "--defsym", "AURORA_SERVICE_BUDGET=1"],
     )
@@ -770,6 +852,7 @@ def verify_inputs(manifest, mode):
 def end_build(mode):
     manifest = json.loads((BUILD / "program-build-start.json").read_text())
     verify_inputs(manifest, mode)
+    verify_object_exports(build_files())
     manifest["output_sha256"] = hashes(build_files())
     (BUILD / "program-build.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
@@ -777,6 +860,7 @@ def end_build(mode):
 def provenance(mode):
     manifest = json.loads((BUILD / "program-build.json").read_text())
     verify_inputs(manifest, mode)
+    verify_object_exports(build_files())
     need(manifest["output_sha256"] == hashes(build_files()), "Build output changed after compilation")
     return manifest
 
@@ -785,7 +869,11 @@ def emit(mode):
     need(mode in MODES, "Unsupported program console profile")
     RECEIPT.unlink(missing_ok=True)
     manifest = provenance(mode)
-    subprocess.run([sys.executable, "-B", ROOT / "tests/kernel-uefi-image.py", "--ipc-policy"], cwd=ROOT, check=True)
+    subprocess.run(
+        [sys.executable, "-B", ROOT / "tests/kernel-uefi-image.py", "--build-dir", BUILD, "--ipc-policy"],
+        cwd=ROOT,
+        check=True,
+    )
     metadata = json.loads((BUILD / "user-images.json").read_text())
     need(set(metadata) == {"clean", "bounds"}, "Expected exactly two compiled user images")
     builder = load("program_image_admission", ROOT / "scripts/kernel-uefi-ipc-images.py")
@@ -859,14 +947,18 @@ def reviewed(mode):
 
 def main():
     parser = argparse.ArgumentParser()
+    path_arguments(parser)
     parser.add_argument("action", choices=("emit", "checked", "reviewed", "diagnose", "begin-build", "end-build"))
     parser.add_argument("--mode", choices=MODES, default="program-console")
     parser.add_argument("--compiler")
     parser.add_argument("--cxx")
     parser.add_argument("--flag", action="append", default=[])
     args = parser.parse_args()
+    check_depfile_options(args)
+    configure_paths(args.build_dir or args.source_root / "build/uefi", args.source_root)
     if args.action == "begin-build":
         begin_build(args.mode, args.compiler, args.cxx, args.flag)
+        write_build_depfile(args, "program-build-start.json")
     elif args.action == "end-build":
         end_build(args.mode)
     elif args.action == "emit":

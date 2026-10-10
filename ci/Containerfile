@@ -23,6 +23,7 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* \
        python3-setuptools \
        pkgconf=1.8.1-4 \
        ripgrep=14.1.1-1+b4 \
+       mtools=4.0.48-1 \
        nlohmann-json3-dev=3.11.3-2.1 \
        qemu-system-x86=1:10.0.13+ds-0+deb13u1 \
        qemu-system-common=1:10.0.13+ds-0+deb13u1 \
@@ -42,11 +43,14 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* \
        meson=1.12.1-2 \
        ninja-build=1.13.2-1 \
        clang-format-22=1:22.1.8-1+b2 \
+       clangd-22=1:22.1.8-1+b2 \
     && ln -sf gcc-16 /usr/bin/gcc \
     && ln -sf gcc-16 /usr/bin/cc \
     && ln -sf g++-16 /usr/bin/g++ \
     && ln -sf g++-16 /usr/bin/c++ \
     && ln -sf clang-format-22 /usr/bin/clang-format \
+    && ln -sf clangd-22 /usr/bin/clangd \
+    && rm /etc/mtools.conf \
     && rm -rf /var/lib/apt/lists/*
 
 COPY ruff-requirements.txt /tmp/ruff-requirements.txt
@@ -63,22 +67,32 @@ ENV PATH="/opt/aurora-style/bin:${PATH}" \
     QEMU=/usr/bin/qemu-system-x86_64 \
     QEMU_DATA=/usr/share/qemu \
     OVMF=/usr/share/ovmf/OVMF.fd \
+    MTOOLS_DIR=/usr/bin \
     LC_ALL=C.UTF-8 \
     TZ=UTC \
     PYTHONDONTWRITEBYTECODE=1
 
-# Fail the image build on accidental tool drift, before any Aurora test is run.
+# Build-time dependency integrity only; this does not compile or test Aurora.
 RUN test "$(gcc -dumpfullversion)" = 16.2.0 \
     && test "$(g++ -dumpfullversion)" = 16.2.0 \
     && test "$(meson --version)" = 1.12.1 \
     && test "$(ninja --version)" = 1.13.2 \
     && test "$(ruff --version)" = 'ruff 0.16.7' \
     && clang-format --version | grep -F 'version 22.1.8' \
+    && clangd --version | grep -F 'version 22.1.8' \
+    && mformat --version | grep -Fx 'mformat (GNU mtools) 4.0.48' \
     && "$UEFI_LD" -V | grep -w i386pep \
     && printf '%s\n' \
        'd3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067  /usr/bin/qemu-system-x86_64' \
        '14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db  /usr/share/ovmf/OVMF.fd' \
        | sha256sum --check
+
+# One image-owned package inventory, not a per-project-run identity receipt.
+RUN mkdir -p /usr/local/share/aurora \
+    && dpkg-query -W -f='${binary:Package}\t${Version}\n' \
+       | tee /usr/local/share/aurora/packages.tsv \
+    && /opt/aurora-style/bin/python -m pip freeze --all \
+       | tee /usr/local/share/aurora/python-packages.txt
 
 WORKDIR /workspace
 CMD ["bash"]

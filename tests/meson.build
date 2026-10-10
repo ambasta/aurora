@@ -546,6 +546,10 @@ foreach mode : ['ordinary', 'optimized']
          suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 endforeach
 
+test('clean-controls', python,
+     args: ['-B', files('test_clean.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
+
 subdir('native')
 
 # Raw ESP preparation is filesystem-only; these controls never launch a guest.
