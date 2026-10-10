@@ -29,8 +29,8 @@ def fixture(mode, note=False, value="A", missing=False):
     phases = ["request", "service", "completion"]
     for command in range(2 if failure else 1):
         failing = failure and command == 0
-        length = 8 if note else 2 if failing else 1
-        rounds = len(value) + 1 if note and not missing else 1
+        length = 8 if note else 2 if failing else len(value)
+        rounds = (len(value) + 1 if not missing else 1) if note else len(value)
         kind = "note" if note else "upper"
         lines.append(f"AURORA_PROGRAM_COMMAND_BEGIN: grant={1 + command * 8} length={length} domains=2 kind={kind}")
         stop = phases.index(mode.split("-")[1]) if failing else 2
@@ -165,6 +165,53 @@ for mode, value, missing in [
             checks += 1
         else:
             raise SystemExit("FAIL: note lifecycle/output/EOF oracle accepted drift")
+
+# Saved results use the unchanged upper protocol and acknowledge storage only
+# after the whole command retires. Readback is exercised by the real PTY runner.
+for mode in ["program-console"] + [
+    "program-" + phase + "-" + outcome
+    for phase in ("request", "service", "completion")
+    for outcome in ("fault", "budget")
+]:
+    text, _, commands = fixture(mode)
+    text = text.replace("kind=upper", "kind=upper-note").replace("output> A", "Note saved.")
+    saves = {index: "AA" if index == 0 and commands == 2 else "A" for index in range(commands)}
+    module.validate(text, mode, [], commands, images, timer, {}, saves)
+    checks += 1
+    for changed, plan in (
+        (text.replace("kind=upper-note", "kind=upper", 1), saves),
+        (text, {}),
+        (text, {**saves, commands - 1: "too long"}),
+        (text.replace("used=0 epoch=", "used=1 epoch=", 1), saves),
+        (text.replace("Note saved.", "output> A", 1), saves),
+        (text.replace("Note saved.", "", 1), saves),
+        (text.replace("Note saved.", "Note saved.\r\nNote saved.", 1), saves),
+        (text.replace("AURORA_PROGRAM_COMMAND_END:", "Note saved.\r\nAURORA_PROGRAM_COMMAND_END:", 1), saves),
+        (text.replace("phase=completion", "phase=service", 1), saves),
+        (text + "output> partial\r\n", saves),
+    ):
+        try:
+            module.validate(changed, mode, [], commands, images, timer, {}, plan)
+        except ValueError:
+            checks += 1
+        else:
+            raise SystemExit("FAIL: saved-output lifecycle oracle accepted drift")
+
+# Maximum saved output retains all rounds; empty saves retire with zero rounds.
+text, _, _ = fixture("program-console", value="A" * 53)
+text = text.replace("kind=upper", "kind=upper-note").replace("output> " + "A" * 53, "Note saved.")
+empty = (
+    "AURORA_PROGRAM_COMMAND_BEGIN: grant=9 length=0 domains=2 kind=upper-note\r\n"
+    "AURORA_PROGRAM_COMMAND_END: success=1 used=0 epoch=159\r\nNote saved.\r\n"
+)
+text = text.replace("AURORA_CONSOLE_EXIT", empty + "AURORA_CONSOLE_EXIT")
+module.validate(text, "program-console", [], 2, images, timer, {}, {0: "A" * 53, 1: ""})
+checks += 1
+
+# `upper note` when missing uses the existing authenticated missing read.
+text, expected, commands = fixture("program-console", note=True, value="", missing=True)
+module.validate(text.replace("length=8", "length=10"), "program-console", expected, commands, images, timer, {0: None})
+checks += 1
 
 for mode, reason in module.FAILSTOP_REASONS.items():
     image = images["bounds" if mode == "program-transaction" else "clean"]

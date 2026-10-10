@@ -171,10 +171,34 @@ auto program_cleanup(bool success) -> void {
     ProgramSerial::text("AURORA_PROGRAM_COMMAND_END: success="); ProgramSerial::number(success ? 1 : 0);
     ProgramSerial::text(" used=0 epoch="); ProgramSerial::number(timer_epoch); ProgramSerial::text("\r\n");
 }
-auto program_command(console::Snapshot& input, bool reading=false) -> void {
-    const auto input_length=input.length();
-    require(!command_owned && program_boundary() && !mailbox && frames.used()==0
-        && (reading ? command_stream.begin_read() : command_stream.begin(input.bytes(),input.length())),"program command admission");
+// Keep copied preparation records out of the domain creation/retirement stack.
+__attribute__((noinline)) auto program_begin_upper_note() -> U64 {
+    program::Note::Value projection{};
+    __au_runtime_note_project(command_note.saved().data(),projection.data());
+    require(command_note.begin_upper(projection,command_stream),"note upper input");
+    return Bytes{projection}.get(64);
+}
+[[nodiscard]] __attribute__((noinline)) auto program_note_apply(const program::Note::UpdateInput& copied) -> U64 {
+    require(!command_owned && !mailbox && frames.used()==0 && program_boundary() && !command_note.bound(),
+            "note quiescent update");
+    program::Note::Update update{};
+    __au_runtime_note_update(copied.data(),update.data());
+    const auto event=command_note.commit(update);
+    require(event.has_value(),"note closed update");
+    return *event;
+}
+__attribute__((noinline)) auto program_save_note(program::Output& output) -> void {
+    program::Note::UpdateInput copied{};
+    require(command_note.replacement(output,copied),"note complete replacement input");
+    output.scrub();
+    require(program_note_apply(copied)==1,"note replacement accepted");
+}
+auto program_command(console::Snapshot& input, bool reading=false, bool saving=false) -> void {
+    require(!command_owned && program_boundary() && !mailbox && frames.used()==0 && !(reading && saving),
+        "program command boundary");
+    const auto input_length=saving ? program_begin_upper_note() : input.length();
+    require(saving || (reading ? command_stream.begin_read() : command_stream.begin(input.bytes(),input.length())),
+        "program command admission");
     input={}; // The stream now owns the only retained command-input copy.
     command_owned=true; command_reading=reading; selected_client=0;
     mailbox.emplace(registry);
@@ -188,7 +212,7 @@ auto program_command(console::Snapshot& input, bool reading=false) -> void {
     const auto grant=mailbox->endpoint(*domains[0].handle); require(grant.has_value(),"program command grant");
     ProgramSerial::text("AURORA_PROGRAM_COMMAND_BEGIN: grant="); ProgramSerial::number(grant->generation());
     ProgramSerial::text(" length="); ProgramSerial::number(input_length);
-    ProgramSerial::text(reading ? " domains=2 kind=note\r\n" : " domains=2 kind=upper\r\n");
+    ProgramSerial::text(reading ? " domains=2 kind=note\r\n" : saving ? " domains=2 kind=upper-note\r\n" : " domains=2 kind=upper\r\n");
     bool success=true;
     while (const auto next=command_stream.next_input()) {
         const auto ordinal=next->ordinal();
@@ -215,12 +239,17 @@ auto program_command(console::Snapshot& input, bool reading=false) -> void {
     if (success) {
         auto output=command_stream.finish();
         require(output && command_stream.scrubbed(),"program complete output");
-        ProgramSerial::text(output->missing() ? "Note is missing." : "output> ");
-        for (std::size_t i=0;i<output->length();++i) {
-            const auto byte=output->byte(i); require(byte.has_value(),"program output bounds");
-            ProgramSerial::put(*byte);
+        if (saving) {
+            program_save_note(*output);
+            ProgramSerial::text("Note saved.");
+        } else {
+            ProgramSerial::text(output->missing() ? "Note is missing." : "output> ");
+            for (std::size_t i=0;i<output->length();++i) {
+                const auto byte=output->byte(i); require(byte.has_value(),"program output bounds");
+                ProgramSerial::put(*byte);
+            }
+            output->scrub();
         }
-        output->scrub();
         ProgramSerial::text("\r\n");
     } else {
         require(command_stream.scrubbed(),"program cancelled output scrub");
@@ -235,8 +264,6 @@ auto program_command(console::Snapshot& input, bool reading=false) -> void {
     return true;
 }
 [[nodiscard]] auto program_note_update(const console::Snapshot& input) -> U64 {
-    require(!command_owned && !mailbox && frames.used()==0 && program_boundary() && !command_note.bound(),
-            "note quiescent update");
     program::Note::UpdateInput copied{};
     const auto& saved=command_note.saved();
     for (std::size_t index=0;index<saved.size();++index) {
@@ -248,11 +275,7 @@ auto program_command(console::Snapshot& input, bool reading=false) -> void {
     for (unsigned byte=0;byte<8;++byte) {
         copied[136+byte]=std::byte(input.length()>>(8*byte));
     }
-    program::Note::Update update{};
-    __au_runtime_note_update(copied.data(),update.data());
-    const auto event=command_note.commit(update);
-    require(event.has_value(),"note closed update");
-    return *event;
+    return program_note_apply(copied);
 }
 __attribute__((noinline)) auto run_program_console() -> void {
     require(program_boundary() && !command_owned && L::domain_count==2,"program console initial ownership");
@@ -277,7 +300,7 @@ __attribute__((noinline)) auto run_program_console() -> void {
             if (note_event!=0) {
                 ProgramSerial::text("\r\n");
                 if (note_event==1) ProgramSerial::text("Note saved.\r\naurora> ");
-                else program_command(copied,true);
+                else program_command(copied,note_event!=4,note_event==4);
                 copied={}; continue;
             }
             if (is_upper(copied)) {
@@ -286,7 +309,7 @@ __attribute__((noinline)) auto run_program_console() -> void {
         }
         if (event==console::Event::rejected) text_input=false;
         if (event==console::Event::help) {
-            ProgramSerial::text("\r\nupper   Uppercase a line in a protected Aurora program\r\nwrite note <text>  Replace the RAM note (53 ASCII bytes)\r\ncat note          Read the note in protected Aurora\r\nhelp    Show commands\r\nstatus  Show console state\r\nexit    Close this QEMU session\r\naurora> ");
+            ProgramSerial::text("\r\nupper   Uppercase a line in a protected Aurora program\r\nwrite note <text>  Replace the RAM note (53 ASCII bytes)\r\ncat note          Read the note in protected Aurora\r\nupper note        Replace the note with protected uppercase output\r\nhelp    Show commands\r\nstatus  Show console state\r\nexit    Close this QEMU session\r\naurora> ");
         } else if (event==console::Event::status) {
             ProgramSerial::text("\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> ");
         } else if (!ProgramDisplay::render(event,*byte,console::Platform::uefi)) {

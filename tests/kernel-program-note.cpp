@@ -42,13 +42,7 @@ auto put_word(std::span<std::byte> bytes, std::size_t offset, U64 value) -> void
         bytes[offset + byte] = std::byte(value >> (byte * 8));
 }
 
-auto update(const Note &note, std::string_view command, I64 count) -> Note::Update {
-    Note::UpdateInput input{};
-    require(command.size() <= 64, "bounded test command");
-    std::copy(note.saved().begin(), note.saved().end(), input.begin());
-    for (std::size_t byte = 0; byte < command.size(); ++byte)
-        input[72 + byte] = std::byte(command[byte]);
-    put_word(input, 136, static_cast<U64>(count));
+auto update(const Note::UpdateInput &input) -> Note::Update {
     const auto before = input;
     alignas(16) std::array<std::byte, 112> storage{};
     storage.fill(std::byte{0xa5});
@@ -59,6 +53,16 @@ auto update(const Note &note, std::string_view command, I64 count) -> Note::Upda
     Note::Update output{};
     std::copy_n(storage.begin() + 16, output.size(), output.begin());
     return output;
+}
+
+auto update(const Note &note, std::string_view command, I64 count) -> Note::Update {
+    Note::UpdateInput input{};
+    require(command.size() <= 64, "bounded test command");
+    std::copy(note.saved().begin(), note.saved().end(), input.begin());
+    for (std::size_t byte = 0; byte < command.size(); ++byte)
+        input[72 + byte] = std::byte(command[byte]);
+    put_word(input, 136, static_cast<U64>(count));
+    return update(input);
 }
 
 auto submit(Note &note, std::string_view command, U64 expected) -> void {
@@ -93,7 +97,7 @@ public:
     bool reading = true;
     alignas(16) std::array<std::byte, 128> storage{};
 
-    auto start(bool read = true, std::string_view input = {}) -> void {
+    auto start(bool read = true, std::string_view input = {}, bool upper_note = false) -> void {
         reading = read;
         const auto a = registry.create(), b = registry.create();
         require(a && b, "fresh real participant incarnations");
@@ -101,11 +105,23 @@ public:
         service = *b;
         require(mailbox.bind(client, service), "fresh real mailbox grants");
         Note::Value projection{};
-        if (reading)
+        if (reading || upper_note)
             projection = project(note);
+        require(upper_note ? note.begin_upper(projection, stream)
+                : reading  ? stream.begin_read()
+                           : stream.begin(bytes(input), input.size()),
+                "new buffered command from copied input before publication");
+        if (!reading)
+            projection = {}; // Upper receives only its scalar byte and a zero read placeholder.
         require(note.bind(projection, *mailbox.endpoint(service)), "frozen copied publication");
         projection.fill(std::byte{0xa5});
-        require(reading ? stream.begin_read() : stream.begin(bytes(input), input.size()), "new buffered command");
+    }
+
+    auto start_upper() -> void {
+        const auto saved = note.saved();
+        submit(note, "upper note", 4);
+        require(note.saved() == saved, "uppercase selection preserves the source note");
+        start(false, {}, true);
     }
 
     auto request() -> void {
@@ -128,6 +144,9 @@ public:
         storage.fill(std::byte{0xa5});
         const std::span<std::byte, Note::record_bytes> record{storage.data() + 16, Note::record_bytes};
         require(note.stage(record, grant, phase, *request), "authenticated fixed copied record");
+        if (!reading)
+            for (std::size_t index = 24; index < record.size(); ++index)
+                require(record[index] == std::byte{0}, "upper service receives no saved-note projection");
         const auto before = storage;
         const auto result = note_test_service(record.data());
         require(storage == before, "actual service leaves full copied input immutable");
@@ -204,16 +223,54 @@ public:
                 "retired publication cannot stage and preserves destination");
     }
 
-    auto finish(std::string_view expected, bool missing = false) -> void {
+    auto take(std::string_view expected, bool missing = false) -> program::Output {
         require(stream.ready_to_finish() && !stream.next_input(), "only terminal stream is ready");
         retire();
         auto output = stream.finish();
         require(output && output->length() == expected.size() && output->bytes() == bytes(expected) &&
                     output->missing() == missing && stream.scrubbed() && !stream.finish(),
                 "whole actual result released once after retirement with zero tail");
-        output->scrub();
-        require(output->length() == 0 && !output->missing() && output->bytes() == program::StreamBytes{},
+        return *output;
+    }
+
+    auto finish(std::string_view expected, bool missing = false) -> void {
+        auto output = take(expected, missing);
+        output.scrub();
+        require(output.length() == 0 && !output.missing() && output.bytes() == program::StreamBytes{},
                 "released output scrub");
+    }
+
+    auto save(std::string_view expected) -> void {
+        auto output = take(expected);
+        const auto saved = note.saved();
+        Note::UpdateInput input{};
+        input.fill(std::byte{0xa5});
+        require(note.replacement(output, input) && note.saved() == saved && !note.bound(),
+                "post-retirement replacement preparation alone preserves storage");
+        Note::UpdateInput expected_input{};
+        std::copy(saved.begin(), saved.end(), expected_input.begin());
+        const auto command = "write note " + std::string(expected);
+        for (std::size_t index = 0; index < command.size(); ++index)
+            expected_input[72 + index] = std::byte(command[index]);
+        put_word(expected_input, 136, command.size());
+        require(input == expected_input, "bounded prepared write carries actual output and a zero command tail");
+        const auto result = update(input);
+        require(note.saved() == saved && note.commit(result) == 1, "only actual Aurora replacement commits output");
+        output.scrub();
+        require(output.bytes() == program::StreamBytes{} && output.length() == 0, "saved output scrub");
+    }
+
+    auto upper(std::string_view expected) -> void {
+        const auto saved = note.saved();
+        start_upper();
+        unsigned rounds = 0;
+        while (stream.next_input()) {
+            require(rounds++ < 53, "bounded actual uppercase stream");
+            round();
+            require(note.saved() == saved, "partial uppercase result never changes saved note");
+        }
+        require(rounds == expected.size() && note.saved() == saved, "complete uppercase remains uncommitted");
+        save(expected);
     }
 
     auto read(std::string_view expected, bool missing = false) -> void {
@@ -282,12 +339,12 @@ auto representation_controls() -> void {
         put_word(projection, 64, count);
         require(!note.bind(projection, ipc::Endpoint{1, 17}) && !note.bound(), "non-closed projection refused");
     }
-    for (const auto event : {U64{4}, U64{256}, U64{1} << 63, maximum}) {
+    for (const auto event : {U64{5}, U64{256}, U64{1} << 63, maximum}) {
         auto malformed = valid;
         put_word(malformed, 72, event);
         require(!note.commit(malformed) && note.saved() == saved, "unknown or wide event refused");
     }
-    for (const auto event : {U64{0}, U64{2}, U64{3}}) {
+    for (const auto event : {U64{0}, U64{2}, U64{3}, U64{4}}) {
         auto malformed = valid;
         put_word(malformed, 72, event);
         require(!note.commit(malformed) && note.saved() == saved, "non-write cannot replace saved bytes");
@@ -391,38 +448,176 @@ auto cancellation_cases() -> void {
     }
 }
 
+auto upper_save_cases() -> void {
+    Fixture f;
+    const auto missing = f.note.saved();
+    submit(f.note, "upper note", 3);
+    require(f.note.saved() == missing && !f.note.begin_upper(project(f.note), f.stream) && f.stream.scrubbed(),
+            "missing uppercase never starts a stream or creates a note");
+    f.read("", true);
+    for (const auto text : {std::string_view{"az Az09!? ~"}, std::string_view{}}) {
+        submit(f.note, "write note " + std::string(text), 1);
+        const auto expected = text.empty() ? "" : "AZ AZ09!? ~";
+        f.upper(expected);
+        f.read(expected);
+        f.upper(expected);
+        f.read(expected);
+    }
+    std::string full, upper;
+    for (unsigned index = 0; index < 53; ++index) {
+        full += static_cast<char>('a' + index % 26);
+        upper += static_cast<char>('A' + index % 26);
+    }
+    submit(f.note, "write note " + full, 1);
+    f.upper(upper);
+    f.read(upper);
+    const auto saved = f.note.saved();
+    for (const auto command : {std::string_view{"upper note!"},
+                               std::string_view{"upper note "},
+                               std::string_view{"Upper note"},
+                               std::string_view{"upper Note"},
+                               std::string_view{"upper  note"},
+                               std::string_view{"upper not"},
+                               std::string_view{"upper note\0", 11}}) {
+        submit(f.note, command, 0);
+        require(f.note.saved() == saved, "uppercase classification rejects every nonexact command");
+    }
+    for (const auto count : {I64{-1}, I64{9}, I64{11}, I64{65}, std::numeric_limits<I64>::max()})
+        require(f.note.commit(update(f.note, "upper note", count)) == 0 && f.note.saved() == saved,
+                "uppercase command requires exact bounded length");
+}
+
+auto replacement_controls() -> void {
+    Fixture f;
+    submit(f.note, "write note current", 1);
+    const auto saved = f.note.saved();
+    for (const auto length : {U64{54}, U64{64}, maximum}) {
+        auto projection = project(f.note);
+        put_word(projection, 64, length);
+        require(!f.note.begin_upper(projection, f.stream) && f.stream.scrubbed() && f.note.saved() == saved,
+                "uppercase rejects wide and missing projections without mutation");
+    }
+    auto damaged = project(f.note);
+    damaged[0] = std::byte{0x1f};
+    require(!f.note.begin_upper(damaged, f.stream) && f.stream.scrubbed(),
+            "uppercase rejects nonprintable projected input");
+    f.start(false, "value");
+    while (f.stream.next_input())
+        f.round();
+    auto valid = f.take("VALUE");
+    Note::UpdateInput input{};
+    input.fill(std::byte{0xa5});
+    const auto untouched = input;
+    f.start();
+    require(!f.note.replacement(valid, input) && input == untouched && !f.note.begin_upper(project(f.note), f.stream) &&
+                f.note.saved() == saved,
+            "bound note rejects save preparation and uppercase launch");
+    f.retire(true);
+    for (const auto length : {std::size_t{54}, std::size_t{64}}) {
+        f.start(false, std::string(length, 'a'));
+        while (f.stream.next_input())
+            f.round();
+        auto wide = f.take(std::string(length, 'A'));
+        require(!f.note.replacement(wide, input) && input == untouched && f.note.saved() == saved,
+                "completed over-53 output cannot prepare a note replacement");
+        wide.scrub();
+    }
+    f.note.clear();
+    f.start();
+    f.round();
+    auto absent = f.take("", true);
+    const auto missing = f.note.saved();
+    require(!f.note.replacement(absent, input) && input == untouched && f.note.saved() == missing,
+            "completed missing output cannot create a note");
+    absent.scrub();
+    valid.scrub();
+}
+
+auto upper_cancellation_cases() -> void {
+    Fixture f;
+    // Request, pending, delivered, replied, consumed, acknowledged and complete.
+    // Hosted retirement models cleanup; privileged recovery is a separate gate.
+    for (unsigned stage = 0; stage < 7; ++stage) {
+        submit(f.note, "write note preserved", 1);
+        const auto saved = f.note.saved();
+        f.start_upper();
+        const auto old_client = *f.mailbox.endpoint(f.client), old_service = *f.mailbox.endpoint(f.service);
+        f.round();
+        require(!f.stream.finish(), "partial saved-uppercase output remains private");
+        U64 result = 0;
+        if (stage >= 1)
+            f.request();
+        if (stage >= 2)
+            result = f.receive(1);
+        if (stage >= 3)
+            f.reply(result);
+        if (stage >= 4)
+            result = f.consume();
+        if (stage >= 5)
+            f.acknowledge(result);
+        if (stage == 6) {
+            while (f.stream.next_input())
+                f.round();
+            require(f.stream.ready_to_finish(), "whole uppercase can still be cancelled before retirement");
+        }
+        f.retire(true);
+        require(f.note.saved() == saved && !f.stream.finish(), "every cancelled save preserves original note");
+        f.start_upper();
+        require(f.mailbox.endpoint(f.client)->generation() != old_client.generation() &&
+                    f.mailbox.endpoint(f.service)->generation() != old_service.generation() &&
+                    !f.mailbox.submit(f.client, ipc::Phase::request, old_client, ipc::Request{'P', 0}) &&
+                    !f.note.matches(old_service),
+                "healthy save receives fresh grants and rejects cancelled authority");
+        while (f.stream.next_input())
+            f.round();
+        f.save("PRESERVED");
+        f.read("PRESERVED");
+    }
+}
+
 auto emitted_faults() -> void {
     // These execute actual generated UD2 sites in children. Cleanup below is a
     // separate hosted lifecycle exercise, not a claim of kernel fault recovery.
     Fixture f;
-    submit(f.note, "write note fault-safe", 1);
-    for (const auto phase : {I64{8}, I64{4}, I64{10}}) {
-        f.start();
-        f.round();
-        if (phase != 8)
-            f.request();
-        if (phase == 4)
-            static_cast<void>(f.receive(11));
-        if (phase == 10) {
-            f.reply(f.receive(11));
-            static_cast<void>(f.consume());
-        }
-        std::array<std::byte, Note::record_bytes> record{};
-        require(f.note.stage(record, *f.mailbox.endpoint(f.service), 4, ipc::Request{1, 1}), "actual fault input");
-        const auto child = fork();
-        require(child >= 0, "emitted fault child");
-        if (child == 0) {
-            if (phase == 4)
-                static_cast<void>(note_test_service(record.data()));
+    for (const auto saving : {false, true}) {
+        for (const auto phase : {I64{8}, I64{4}, I64{10}}) {
+            submit(f.note, "write note fault-safe", 1);
+            const auto saved = f.note.saved();
+            if (saving)
+                f.start_upper();
             else
-                static_cast<void>(aurora_user_main(phase, 1, 1));
-            std::_Exit(3);
+                f.start();
+            f.round();
+            if (phase != 8)
+                f.request();
+            if (phase == 4)
+                static_cast<void>(f.receive(saving ? 1 : 11));
+            if (phase == 10) {
+                f.reply(f.receive(saving ? 1 : 11));
+                static_cast<void>(f.consume());
+            }
+            std::array<std::byte, Note::record_bytes> record{};
+            require(f.note.stage(record, *f.mailbox.endpoint(f.service), 4, ipc::Request{1, 1}), "actual fault input");
+            const auto child = fork();
+            require(child >= 0, "emitted fault child");
+            if (child == 0) {
+                if (phase == 4)
+                    static_cast<void>(note_test_service(record.data()));
+                else
+                    static_cast<void>(aurora_user_main(phase, 1, 1));
+                std::_Exit(3);
+            }
+            int status = 0;
+            require(waitpid(child, &status, 0) == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGILL,
+                    "actual emitted client/service bounds fault");
+            f.retire(true);
+            require(f.note.saved() == saved, "hosted cleanup after actual fault preserves original note");
+            f.read("fault-safe");
+            if (saving) {
+                f.upper("FAULT-SAFE");
+                f.read("FAULT-SAFE");
+            }
         }
-        int status = 0;
-        require(waitpid(child, &status, 0) == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGILL,
-                "actual emitted client/service bounds fault");
-        f.retire(true);
-        f.read("fault-safe");
     }
 }
 
@@ -442,9 +637,13 @@ auto main() -> int {
     representation_controls();
     reply_controls();
     cancellation_cases();
+    upper_save_cases();
+    replacement_controls();
+    upper_cancellation_cases();
     emitted_faults();
     upper_regression();
-    std::printf("PASS: %llu source-native note checks; real Mailbox bytes/EOF, retained note, cancellation and upper; "
-                "three emitted SIGILL probes, hosted cleanup separately scoped\n",
-                static_cast<unsigned long long>(checks));
+    std::printf(
+        "PASS: %llu source-native note checks; real Mailbox bytes/EOF, retained note, cancellation and upper save; "
+        "six emitted SIGILL probes, hosted cleanup separately scoped\n",
+        static_cast<unsigned long long>(checks));
 }

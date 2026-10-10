@@ -110,9 +110,11 @@ fresh final-source qualification. The [sealed service contract](../compiler/SERV
 keeps copied reports separate from authority; the [kernel contract](native-console-service.md)
 records exact hosted, linked-stack/image, five-profile PTY and restoration scope.
 The protected-command profile now reuses the same update policy in ordinary
-Aurora and reads a frozen value through authenticated two-domain CPL3 IPC. It
-retains upper, buffers output until complete retirement and preserves the saved
-note on recoverable failures. Its [contract](program-console-contract.md#session-local-protected-note)
+Aurora and reads a frozen value through authenticated two-domain CPL3 IPC. `upper note`
+now routes complete protected uppercase output through the same Aurora replacement
+policy after both domains retire; missing, partial and failed results preserve the
+note. This addition still requires final-source qualification. It retains upper
+and buffers output until complete retirement. Its [contract](program-console-contract.md#session-local-protected-note)
 records independently reviewed copied-record/image admission, all 12 affected
 original-clock guest profiles and fresh normal BIOS/UEFI restoration boots.
 These scoped results do not replace the final-source full aggregate or establish

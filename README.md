@@ -78,7 +78,8 @@ For automated console acceptance, use `make smoke-console` (BIOS) or
 remains native-only.
 
 The protected-command profile offers `upper` and now adds the same volatile note
-commands with authenticated CPL3 reads. Its
+commands with authenticated CPL3 reads. `upper note` replaces an existing note
+with a complete protected uppercase result after both domains retire. Its
 [contract and current qualification](docs/program-console-contract.md) describe
 automatic local build/image/stack checks for public commands, the separate
 review-pinned first-image qualification, scoped guest evidence and final integration gates.

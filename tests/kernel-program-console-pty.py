@@ -28,14 +28,16 @@ def need(okay, message):
         raise ValueError(message)
 
 
-def validate(text, mode, expected_outputs, commands, images, timer, expected_reads=None):
+def validate(text, mode, expected_outputs, commands, images, timer, expected_reads=None, expected_saves=None):
     expected_reads = {} if expected_reads is None else expected_reads
+    expected_saves = {} if expected_saves is None else expected_saves
     need("AURORA_UEFI_RUNTIME_FAIL" not in text and "AURORA_UEFI_FAIL" not in text, "Runtime or payload failed closed")
     need(text.count("AURORA_PROGRAM_CONSOLE_READY:") == 1, "Console restart or missing readiness")
     begins = [
         (int(grant), int(length))
         for grant, length in re.findall(
-            r"AURORA_PROGRAM_COMMAND_BEGIN: grant=(\d+) length=(\d+) domains=2 kind=(?:upper|note)", text
+            r"AURORA_PROGRAM_COMMAND_BEGIN: grant=(\d+) length=(\d+) domains=2 kind=(?:upper-note|upper|note)\r?\n",
+            text,
         )
     ]
     endings = [
@@ -48,22 +50,52 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
     need(all(a[1] <= b[1] for a, b in zip(endings, endings[1:])), "Timer epoch reset")
     epochs = [int(value) for value in re.findall(r"AURORA_UEFI_USER_RUN: epoch=(\d+) ", text)]
     need(epochs and all(a < b for a, b in zip(epochs, epochs[1:])), "Run epoch missing or reused")
-    command_parts = re.findall(
-        r"AURORA_PROGRAM_COMMAND_BEGIN: grant=\d+ length=(\d+) domains=2 kind=(upper|note)(.*?)"
-        r"AURORA_PROGRAM_COMMAND_END: success=([01]) used=0 epoch=(\d+)",
-        text,
-        re.S,
+    command_matches = list(
+        re.finditer(
+            r"AURORA_PROGRAM_COMMAND_BEGIN: grant=\d+ length=(\d+) domains=2 kind=(upper-note|upper|note)\r?\n(.*?)"
+            r"AURORA_PROGRAM_COMMAND_END: success=([01]) used=0 epoch=(\d+)\r?\n([^\r\n]*)",
+            text,
+            re.S,
+        )
     )
+    command_parts = [match.groups() for match in command_matches]
     need(len(command_parts) == commands, "Unmatched command ownership interval")
     need(set(expected_reads) <= set(range(commands)), "Unexpected note command index")
+    need(set(expected_saves) <= set(range(commands)), "Unexpected saved-output command index")
+    saved_count = 0
     missing_count = 0
-    for command_index, (length, kind, part, success, ending_epoch) in enumerate(command_parts):
+    for command_index, (length, kind, part, success, ending_epoch, result) in enumerate(command_parts):
         need((kind == "note") == (command_index in expected_reads), "Unexpected note/upper command")
+        need((kind == "upper-note") == (command_index in expected_saves), "Unexpected saved-output command")
+        if kind == "upper-note":
+            need(int(length) == len(expected_saves[command_index]) <= 53, "Bounded exact saved-output length")
+            saved_count += int(success == "1")
+            need("Note saved." not in part, "Note was saved before retirement")
+            match = command_matches[command_index]
+            response_end = command_matches[command_index + 1].start() if command_index + 1 < commands else len(text)
+            prompt = text.find("aurora> ", match.end())
+            if prompt >= 0:
+                response_end = min(response_end, prompt)
+            response = text[match.start(6) : response_end]
+            need(response.count("Note saved.") == int(success == "1"), "Duplicate or unexpected save acknowledgment")
+            need(
+                result
+                == (
+                    "Note saved."
+                    if success == "1"
+                    else "Program stopped: checked fault or budget exhausted; output discarded."
+                ),
+                "Saved-output terminal response mismatch",
+            )
         rounds = int(length)
         sources = {"request": 0, "service": 1, "completion": 2}
         if kind == "note":
             expected = expected_reads[command_index]
-            need(int(length) == 8 and (expected is None or len(expected) <= 53), "Bounded exact note command")
+            need(
+                (int(length) == 8 or (int(length) == 10 and expected is None))
+                and (expected is None or len(expected) <= 53),
+                "Bounded exact note command",
+            )
             rounds = len(expected or "") + 1
             sources = {"request": 12, "service": 11, "completion": 13}
             missing_count += int(expected is None and success == "1")
@@ -99,6 +131,11 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
         len(re.findall(r"AURORA_PROGRAM_COMMAND_END: success=1 used=0 epoch=\d+\r?\noutput> ", text))
         == len(expected_outputs),
         "Output was exposed before authenticated retirement",
+    )
+    need(
+        len(re.findall(r"AURORA_PROGRAM_COMMAND_END: success=1 used=0 epoch=\d+\r?\nNote saved\.", text))
+        == saved_count,
+        "Saved output lacks complete authenticated retirement",
     )
     need(text.count("Note is missing.") == missing_count, "Missing-note outcome mismatch")
     need(
@@ -231,6 +268,7 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
         runs=len(epochs),
         last_epoch=endings[-1][1],
         completed_outputs=len(actual_outputs),
+        saved_outputs=saved_count,
         recovered=int(failed),
     )
 
@@ -339,6 +377,7 @@ def main():
     deadline = time.monotonic() + 180
     expected_outputs = []
     expected_reads = {}
+    expected_saves = {}
     commands = 0
     metrics = {
         "status": "incomplete",
@@ -427,6 +466,25 @@ def main():
                     need("output> " + expected + "\r\n" in part, "Actual protected note contents differ")
                     expected_outputs.append(expected)
 
+            def note_upper(expected, failure=False):
+                nonlocal commands
+                begin = len(transcript)
+                send(b"upper note\n")
+                receive(b"aurora> ", begin)
+                part = bytes(transcript[begin:]).decode("ascii")
+                if expected is None:
+                    expected_reads[commands] = None
+                else:
+                    expected_saves[commands] = expected
+                commands += 1
+                need("output> " not in part, "Saved-output command exposed a separate stream")
+                if failure:
+                    need("Note saved." not in part and "output discarded." in part, "Failed program replaced the note")
+                elif expected is None:
+                    need("Note is missing.\r\n" in part and "Note saved." not in part, "Missing note was created")
+                else:
+                    need(part.count("Note saved.\r\n") == 1, "Complete protected output was not saved exactly once")
+
             receive(b"aurora> ", 0)
             tty.setraw(master)
             if args.mode in FAILSTOP_REASONS:
@@ -451,13 +509,20 @@ def main():
                 return
 
             if args.mode == "program-console":
+                note_upper(None)
                 note_read(None)
+                note_write(b"Hello, Aurora")
+                note_upper("HELLO, AURORA")
+                note_read("HELLO, AURORA")
+                note_upper("HELLO, AURORA")
+                note_read("HELLO, AURORA")
                 note_write(b"first")
                 note_read("first")
                 note_read("first")
                 note_write(b"x")
                 note_read("x")
                 note_write(b"")
+                note_upper("")
                 note_read("")
                 note_write(b"z" * 53)
                 note_read("z" * 53)
@@ -468,13 +533,18 @@ def main():
                     receive(b"aurora> ", begin)
                     need(b"Line rejected:" in transcript[begin:], "Invalid note replacement accepted")
                 note_read("z" * 53)
+                note_upper("Z" * 53)
+                note_read("Z" * 53)
             elif args.mode == "program-pending":
                 note_write(b"pending note")
-                note_read("pending note")
+                note_upper("PENDING NOTE")
+                note_read("PENDING NOTE")
             else:
                 note_write(b"recover this note")
-                note_read("recover this note", failure=True)
+                note_upper("RECOVER THIS NOTE", failure=True)
                 note_read("recover this note")
+                note_upper("RECOVER THIS NOTE")
+                note_read("RECOVER THIS NOTE")
             command_upper(b"Hello, Aurora 42!\n", "HELLO, AURORA 42!")
             command_upper(b"next command\n", "NEXT COMMAND")
             command_upper(b"\n", "")
@@ -530,6 +600,7 @@ def main():
                     reviewed["user_images"],
                     reviewed["timer"],
                     expected_reads,
+                    expected_saves,
                 ),
                 status="passed",
                 exit_status=process.returncode,
