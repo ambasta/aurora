@@ -85,7 +85,9 @@ public:
     TypeKind kind = TypeKind::I64;
     std::string className;
     std::string displayName;
-    // Resolved class and enum types keep their nominal identity across substitutions.
+    // Resolved class/enum types and class array elements keep their nominal
+    // identity across substitutions. Array types reuse this nominal metadata
+    // for their element; arrayElement() reconstructs its complete type.
     bool resolvedClass = false;
     std::vector<TemplateArgument> templateArguments;
     TypeKind elementKind = TypeKind::I64;
@@ -109,6 +111,22 @@ public:
     }
     bool isArray() const {
         return kind == TypeKind::Array;
+    }
+    Type arrayElement() const {
+        Type element(elementKind);
+        element.className = elementParameter.empty() ? className : elementParameter;
+        element.displayName = displayName;
+        element.resolvedClass = resolvedClass;
+        element.templateArguments = templateArguments;
+        return element;
+    }
+    void setArrayElement(const Type &element) {
+        elementKind = element.kind;
+        elementParameter = element.kind == TypeKind::Parameter ? element.className : "";
+        className = element.kind == TypeKind::Parameter ? "" : element.className;
+        displayName = element.displayName;
+        resolvedClass = element.resolvedClass;
+        templateArguments = element.templateArguments;
     }
     bool isSpan() const {
         return kind == TypeKind::ByteSpan;
@@ -135,6 +153,11 @@ public:
         Type type(TypeKind::Array);
         type.elementKind = element;
         type.length = count;
+        return type;
+    }
+    static Type array(const Type &element, int count) {
+        Type type = array(element.kind, count);
+        type.setArrayElement(element);
         return type;
     }
     static const Type I64, U64, U8, Bool, Own, Ref, MutRef, ByteSpan, ByteRegion, OwnedBytes, ConsoleSession,
@@ -208,8 +231,8 @@ inline std::string typeName(const Type &type) {
         return name;
     }
     case TypeKind::Array:
-        return "array<" + (type.elementParameter.empty() ? typeName(Type(type.elementKind)) : type.elementParameter) +
-               ", " + (type.lengthParameter.empty() ? std::to_string(type.length) : type.lengthParameter) + ">";
+        return "array<" + typeName(type.arrayElement()) + ", " +
+               (type.lengthParameter.empty() ? std::to_string(type.length) : type.lengthParameter) + ">";
     }
     return "?";
 }

@@ -1,6 +1,21 @@
 export module std.bytes;
 
 export namespace std {
+    // Compare byte values only; empty spans are valid and no source view escapes.
+    auto starts_with(builtin::span<const u8> bytes, builtin::span<const u8> prefix) -> bool {
+        if (prefix.size() > bytes.size()) { return false; }
+        i64 index = 0;
+        while (index < prefix.size()) {
+            if (bytes.at(index) != prefix.at(index)) { return false; }
+            index = index + 1;
+        }
+        return true;
+    }
+
+    auto equal(builtin::span<const u8> left, builtin::span<const u8> right) -> bool {
+        return left.size() == right.size() && starts_with(left, right);
+    }
+
     enum class ByteCodecStatus { success, out_of_range };
 
     class Bytes2 {

@@ -138,8 +138,10 @@ def main():
     result = execute(samples(b"write note secret\nexit\ncat note\nexit\n"), sessions=2)
     require(result.returncode == 0 and result.stdout.count(ready) == 2, "second invocation did not run")
     require(result.stdout.count(missing) == 1, "note survived session exit in the same process")
+
     # Named files share this session without changing the separate note policy.
-    file_written = b"files: RAM-only; lost when session exits.\r\n"
+    def file_written(name, count):
+        return b"wrote " + name + b": " + str(count).encode() + (b" byte\r\n" if count == 1 else b" bytes\r\n")
 
     def file_read(name, content):
         return b"cat " + name + b"\r\n" + content + b"\r\naurora> "
@@ -147,11 +149,17 @@ def main():
     script = b"write a first\nwrite b second\nwrite c third\nwrite d fourth\nwrite e fifth\n"
     script += b"write a x\ncat a\nrm b\nwrite e \nls\ncat e\nrm absent\ncat absent\nrm note\nexit\n"
     result = execute(samples(script))
-    require(result.returncode == 0 and result.stdout.count(file_written) == 6, "four-file write/replacement count")
+    require(result.returncode == 0 and result.stdout.count(b"\r\nwrote ") == 6, "four-file write/replacement count")
     for expected in (
         b"files: full (4 files).\r\n",
         b"files: a e c d\r\n",
         b"files: note is reserved.\r\n",
+        file_written(b"a", 5),
+        file_written(b"b", 6),
+        file_written(b"c", 5),
+        file_written(b"d", 6),
+        file_written(b"a", 1),
+        file_written(b"e", 0),
         file_read(b"a", b"x"),
         file_read(b"e", b""),
     ):
@@ -160,8 +168,24 @@ def main():
     for name in (b"x", b"abcdefgh", b"A._-09z", b"notes", b"Note"):
         for content in (b"", b"x", b" " * 49, b"!" * 49, b"space and suffix "):
             result = execute(samples(b"write " + name + b" " + content + b"\ncat " + name + b"\nexit\n"))
-            require(result.returncode == 0 and file_read(name, content) in result.stdout, "name/content boundary")
+            require(
+                result.returncode == 0
+                and file_read(name, content) in result.stdout
+                and file_written(name, len(content)) in result.stdout,
+                "name/content boundary and exact write confirmation",
+            )
     bad_files = (
+        b"w",
+        b"wr",
+        b"wri",
+        b"writ",
+        b"writeX a x",
+        b"ca",
+        b"catX a",
+        b"r",
+        b"rmX a",
+        b"l",
+        b"lsX",
         b"write a",
         b"write  a x",
         b"write abcdefghi x",
@@ -183,7 +207,8 @@ def main():
         result = execute(samples(b"write a saved\n" + command + b"\ncat a\nls\nexit\n"))
         require(result.returncode == 0 and file_read(b"a", b"saved") in result.stdout, "bad file command mutated state")
         require(
-            result.stdout.count(file_written) == 1 and b"files: a\r\n" in result.stdout, "failed command created file"
+            result.stdout.count(file_written(b"a", 5)) == 1 and b"files: a\r\n" in result.stdout,
+            "failed command created file",
         )
     result = execute(samples(b"write a lower\nwrite A upper\nwrite aa prefix\ncat a\ncat A\ncat aa\nexit\n"))
     require(
@@ -280,6 +305,7 @@ auto note_contract() -> i64 {
     # Existing hosted policy fixture also observes complete private copied records.
     files_source = work / "files-policy.au"
     files_source.write_text("""module files_policy;
+import std.bytes;
 import console.session_files;
 import std.binary_buffer;
 import std.binary;
@@ -288,6 +314,46 @@ auto pack(builtin::span<const u8> text) -> std::BinaryBuffer64 {
     i64 index = 0;
     while (index < text.size()) { command.write_u8(index, text.at(index)); index = index + 1; }
     return command;
+}
+auto span_compare_contract() -> i64 {
+    array<u8, 5> source = "a\\0\\xffbc";
+    array<u8, 3> pattern = "a\\0\\xff";
+    const builtin::span<const u8> bytes = borrow_bytes(source);
+    const builtin::span<const u8> prefix = borrow_bytes(pattern);
+    const builtin::span<const u8> empty = bytes.subspan(5, 0);
+    if (!std::starts_with(bytes, prefix) || std::equal(bytes, prefix)
+        || !std::equal(bytes.subspan(0, 3), prefix)
+        || !std::equal(bytes, bytes) || !std::equal(empty, prefix.subspan(1, 0))
+        || !std::starts_with(bytes, empty) || !std::starts_with(empty, empty)
+        || std::starts_with(empty, prefix) || std::starts_with(prefix, bytes)) { return 1; }
+    array<u8, 3> different = "a\\0\\xfe";
+    if (std::equal(prefix, borrow_bytes(different))
+        || std::starts_with(bytes, borrow_bytes(different))) { return 2; }
+    i64 value = 0;
+    while (value < 256) {
+        array<u8, 1> left = {u8(value)};
+        array<u8, 1> same = {u8(value)};
+        array<u8, 1> other = {u8((value + 1) % 256)};
+        if (!std::equal(borrow_bytes(left), borrow_bytes(same))
+            || !std::starts_with(borrow_bytes(left), borrow_bytes(same))
+            || std::equal(borrow_bytes(left), borrow_bytes(other))
+            || std::starts_with(borrow_bytes(left), borrow_bytes(other))) { return 3; }
+        value = value + 1;
+    }
+    std::BinaryBuffer64 buffer = std::BinaryBuffer64();
+    array<u8, 65> full = "                                                                 ";
+    const builtin::span<const u8> all = borrow_bytes(full);
+    i64 index = 0;
+    while (index < 64) { buffer.write_u8(index, ' '); index = index + 1; }
+    if (!buffer.starts_with(all.subspan(0, 64)) || !buffer.starts_with(empty)
+        || buffer.starts_with(all) || buffer.starts_with(prefix)) { return 4; }
+    buffer.write_u8(63, 'x');
+    if (buffer.starts_with(all.subspan(0, 64))) { return 5; }
+    buffer.write_u8(63, ' ');
+    if (!buffer.starts_with(all.subspan(0, 64))) { return 6; }
+    buffer.write_u8(0, 'x');
+    if (buffer.starts_with(all.subspan(0, 64))) { return 7; }
+    return 0;
 }
 auto files_contract() -> i64 {
     if (size_of(console::SessionFiles) != 264 || size_of(console::FileReply) != 80) { return 1; }
@@ -298,7 +364,15 @@ auto files_contract() -> i64 {
     i64 index = 0;
     while (index < 64) { command.write_u8(index, maximum[index]); index = index + 1; }
     const console::FileReply first = files.submit(command, 64);
-    if (first.status() != console::FileEvent::written) { return 2; }
+    if (first.status() != console::FileEvent::written || first.size() != 24) { return 2; }
+    // The backing still contains a complete write; only count defines the command.
+    i64 count = 0;
+    while (count < 8) {
+        const console::FileReply truncated = files.submit(command, count);
+        if ((count < 5 && truncated.status() != console::FileEvent::unknown)
+            || (count >= 5 && truncated.status() != console::FileEvent::invalid)) { return 7; }
+        count = count + 1;
+    }
     console::SessionFiles copy = files;
     const console::FileReply negative = files.submit(command, -1);
     const console::FileReply oversized = files.submit(command, 65);
@@ -387,8 +461,10 @@ checked_files_snapshot:
     files_host.write_text("""#include <array>
 #include <cstdint>
 extern "C" long files_contract();
+extern "C" long span_compare_contract();
 extern "C" void checked_files_snapshot(long, void*);
 int main() {
+    if (const auto result = span_compare_contract()) return 20 + int(result);
     if (const auto result = files_contract()) return int(result);
     for (long stage = 0; stage != 5; ++stage) {
         std::array<unsigned char, 280> storage{};
@@ -439,8 +515,7 @@ int main() {
         return report;
     }
     auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
-        array<u8, 3> text = {'x', 'y', 'z'};
-        const builtin::ConsoleSample report = forward(session, 'A', borrow_bytes(text), 41, true, Marker::okay);
+        const builtin::ConsoleSample report = forward(session, 'A', "xyz", 41, true, Marker::okay);
         if (!report.byte_present || report.byte != 'Q' || report.damaged || odd(session) != 8) {
             session.put('?');
         }
@@ -616,7 +691,8 @@ int main() {
     print(
         f"PASS console service: generated editor, exhaustive rejected bytes, {len(normal.stdout)} timeout prefixes, "
         f"RAM-note lifetime/replacement/rejection and {len(note_normal.stdout)} note timeout prefixes, "
-        f"four-file policy/records/lifetime/rejections and {len(file_normal.stdout)} file timeout prefixes, "
+        "byte-span comparisons, four-file policy/records/lifetime/rejections and "
+        f"{len(file_normal.stdout)} file timeout prefixes, "
         f"canonical host reports and {len(negative)} source rejections; evidence {work}"
     )
 

@@ -20,6 +20,18 @@ VIEW = f"const {SPAN} input = borrow_bytes(data);"
 
 
 def append_cases(suite):
+    literal_body = (
+        CREATE
+        + r"""
+        if (!buffer.try_append_bytes("") || !buffer.try_append_bytes("\0\xffZ")) { return 0; }
+        if (!std::equal(buffer.bytes(), "\0\xffZ") || !std::starts_with(buffer.bytes(), "\0")) { return 0; }
+        if (!buffer.try_truncate(0)) { return 0; }
+        return 42;
+    """
+    )
+    exe = suite.compile("immutable-literal-with-runtime-owner", program(literal_body, "import std.bytes;"))
+    suite.run(exe, 3, 3, 0, 42, 1, 1)
+
     body = CREATE + ARRAY + VIEW
     body += "if (!buffer.try_append_bytes(input)) { return 0; }"
     body += "if (buffer.size() != 3 || buffer.capacity() != flag) { return 0; }"

@@ -106,7 +106,7 @@ FONT = {
 }
 
 RESPONSES = {
-    b"help": "write N TEXT; cat N; ls; rm N; help status exit; RAM; note separate",
+    b"help": "write N TEXT; cat N; ls; rm N; help status exit; files lost on exit",
     b"status": "Boot self-tests passed; UEFI; timer polling; line capacity=64",
     b"exit": "AURORA_CONSOLE_EXIT",
     b"": " ",
@@ -158,7 +158,7 @@ def file_response(command, slots):
         if found is None:
             return "files: full (4 files)."
         slots[found] = (name, contents)
-        return "files: RAM-only; lost when session exits."
+        return f"wrote {name.decode('ascii')}: {len(contents)} byte" + ("s" if len(contents) != 1 else "")
     if found is None:
         return "files: not found (RAM-only)."
     if operation == b"cat":

@@ -63,7 +63,7 @@ class Instruction:
 
 def verify_signed_division_pair(symbol, sign, divide, payload=None):
     # Register-only CQTO/IDIV R11 clobbers RAX/RDX, not stack/RCX/R14. Profiles
-    # retain their own finite owner/count policy; graphical also binds raw bytes.
+    # retain their own finite owner/count policy; console profiles also bind raw bytes.
     require(
         (sign.op, sign.size) == ("cqto", 2)
         and (divide.op, divide.args, divide.size) == ("idiv", "%r11", 3)
@@ -399,7 +399,7 @@ CONSOLE_SCALAR = frozenset(
 )
 CONSOLE_EXTRA = {
     "program": frozenset("sti wrmsr lgdt lidt ltr".split()),
-    "service": frozenset("sti wrmsr sidt".split()),
+    "service": frozenset("sti wrmsr sidt cqto idiv".split()),
     "framebuffer": frozenset("sidt mfence pause".split()),
     "graphical": frozenset("sti wrmsr sidt mfence pause cqto idiv".split()),
 }
@@ -1903,56 +1903,78 @@ def self_test():
     rejects("truncated generated page probe", lambda: generated_frame(frame_source[:3], frame_linked))
     rejects("changed linked page probe", lambda: generated_frame(frame_source, frame_linked[:-1]))
 
-    record_source = ["subq $528, %rsp", "orq $0, (%rsp)", "movq %rsp, %r11", "call callee", "addq $528, %rsp"]
-    record_linked = [
-        Instruction(index, 1, op, args)
-        for index, (op, args) in enumerate(
-            (
-                ("sub", "$0x210,%rsp"),
-                ("orq", "$0x0,(%rsp)"),
-                ("mov", "%rsp,%r11"),
-                ("call", "0 <callee>"),
-                ("add", "$0x210,%rsp"),
+    # Sector values and two readonly spans share the checked private-record ABI.
+    for size in (528, 112):
+        record_source = [
+            f"subq ${size}, %rsp",
+            "orq $0, (%rsp)",
+            "movq %rsp, %r11",
+            "call callee",
+            f"addq ${size}, %rsp",
+        ]
+        record_linked = [
+            Instruction(index, 1, op, args)
+            for index, (op, args) in enumerate(
+                (
+                    ("sub", f"${size:#x},%rsp"),
+                    ("orq", "$0x0,(%rsp)"),
+                    ("mov", "%rsp,%r11"),
+                    ("call", "0 <callee>"),
+                    ("add", f"${size:#x},%rsp"),
+                )
             )
-        )
-    ]
-    generated_argument_record(record_source, 3, {"live_bytes": 592, "address": 3}, 64, 528, record_linked)
-    positives += 1
-    for index, changed in ((0, "subq $520, %rsp"), (2, "movq %rax, %r11"), (4, "addq $520, %rsp")):
-        source = list(record_source)
-        source[index] = changed
+        ]
+        generated_argument_record(record_source, 3, {"live_bytes": 64 + size, "address": 3}, 64, size, record_linked)
+        positives += 1
+        for index, changed in ((0, f"subq ${size - 8}, %rsp"), (2, "movq %rax, %r11"), (4, f"addq ${size - 8}, %rsp")):
+            source = list(record_source)
+            source[index] = changed
+            rejects(
+                "changed private record",
+                lambda source=source: generated_argument_record(
+                    source, 3, {"live_bytes": 64 + size, "address": 3}, 64, size, record_linked
+                ),
+            )
         rejects(
-            "changed private sector record",
-            lambda source=source: generated_argument_record(
-                source, 3, {"live_bytes": 592, "address": 3}, 64, 528, record_linked
+            "changed linked record",
+            lambda: generated_argument_record(
+                record_source, 3, {"live_bytes": 56 + size, "address": 3}, 64, size, record_linked
             ),
         )
-    rejects(
-        "changed linked sector record",
-        lambda: generated_argument_record(record_source, 3, {"live_bytes": 584, "address": 3}, 64, 528, record_linked),
-    )
 
-    for index, op, args in ((0, "sub", "$0x200,%rsp"), (2, "mov", "%rax,%r11"), (4, "add", "$0x200,%rsp")):
-        changed = list(record_linked)
-        changed[index] = Instruction(index, 1, op, args)
-        rejects(
-            "changed linked private record instruction",
-            lambda changed=changed: generated_argument_record(
-                record_source, 3, {"live_bytes": 592, "address": 3}, 64, 528, changed
-            ),
-        )
+        for index, op, args in (
+            (0, "sub", f"${size - 16:#x},%rsp"),
+            (2, "mov", "%rax,%r11"),
+            (4, "add", f"${size - 16:#x},%rsp"),
+        ):
+            changed = list(record_linked)
+            changed[index] = Instruction(index, 1, op, args)
+            rejects(
+                "changed linked private record instruction",
+                lambda changed=changed: generated_argument_record(
+                    record_source, 3, {"live_bytes": 64 + size, "address": 3}, 64, size, changed
+                ),
+            )
 
     admission = load_admission()
-    caller = admission.GENERATED["RamSectorDevice.flush"]
-    callee = admission.GENERATED["RamSectorDevice.status"]
-    generated_calls(caller, [callee], [{"target": callee}], admission)
-    positives += 1
-    rejects("generated source/link edge mismatch", lambda: generated_calls(caller, [callee], [], admission))
-    for changed in ([], [admission.GENERATED["RamSectorDevice.write_sector"]], [callee, ENTRY]):
-        rejects(
-            "finite generated edge mutation",
-            lambda changed=changed: generated_calls(caller, changed, [{"target": name} for name in changed], admission),
-        )
+    require(admission.ARGUMENT_BYTES[admission.GENERATED["starts_with"]] == 112, "Changed two-span record extent")
+    for label, target in (
+        ("RamSectorDevice.flush", admission.GENERATED["RamSectorDevice.status"]),
+        ("BinaryBuffer64.starts_with", "__au_runtime_bytes_at"),
+        ("starts_with", "__au_runtime_bytes_at"),
+        ("equal", admission.GENERATED["starts_with"]),
+    ):
+        caller = admission.GENERATED[label]
+        generated_calls(caller, [target], [{"target": target}], admission)
+        positives += 1
+        rejects("generated source/link edge mismatch", lambda: generated_calls(caller, [target], [], admission))
+        for changed in ([], [admission.GENERATED["RamSectorDevice.write_sector"]], [target, ENTRY]):
+            rejects(
+                "finite generated edge mutation",
+                lambda changed=changed: generated_calls(
+                    caller, changed, [{"target": name} for name in changed], admission
+                ),
+            )
 
     division_symbols, division_code = {}, {}
     for label, count in (

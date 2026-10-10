@@ -28,11 +28,10 @@ class ClassTemplateExpansion {
         if (value.isArray()) {
             if (!value.elementParameter.empty()) {
                 const auto found = substitutions.find(value.elementParameter);
-                if (found == substitutions.end())
-                    throw Error("unknown scalar array element parameter: " +
+                if (found == substitutions.end() || !scalar(found->second))
+                    throw Error("class template array element parameter requires a scalar type: " +
                                 value.elementParameter);
-                value.elementKind = found->second.kind;
-                value.elementParameter.clear();
+                value.setArrayElement(found->second);
             }
             if (!value.lengthParameter.empty()) {
                 const auto found = capacities.find(value.lengthParameter);
@@ -41,8 +40,10 @@ class ClassTemplateExpansion {
                 value.length = static_cast<int>(found->second);
                 value.lengthParameter.clear();
             }
-            if (!scalar(Type(value.elementKind)) || value.length < 1 || value.length > 4096)
-                throw Error("invalid scalar array type after template substitution");
+            const auto element = value.arrayElement();
+            if ((!scalar(element) && !element.isClass()) || value.length < 1 ||
+                value.length > (element.isClass() ? maximumClassScalarArrayLength : 4096))
+                throw Error("invalid array type after template substitution");
         } else if (!value.elementParameter.empty() || !value.lengthParameter.empty())
             throw Error("dependent array metadata requires an array type");
         return value;
@@ -91,7 +92,7 @@ class ClassTemplateExpansion {
         return result;
     }
 
-  public:
+public:
     static Type argumentType(const TemplateArgument &argument) {
         if (!argument.templateArguments.empty())
             throw Error("unresolved nested class template argument");
@@ -103,8 +104,7 @@ class ClassTemplateExpansion {
         }
         return result;
     }
-    static std::string argumentSuffix(const std::vector<TemplateArgument> &arguments,
-                                      bool display = false) {
+    static std::string argumentSuffix(const std::vector<TemplateArgument> &arguments, bool display = false) {
         std::string result = "<";
         for (std::size_t index = 0; index < arguments.size(); ++index) {
             if (index)
@@ -115,8 +115,7 @@ class ClassTemplateExpansion {
             if (argument.kind == TemplateArgumentKind::Value)
                 result += std::to_string(argument.value);
             else if (argument.type == TypeKind::Class || argument.type == TypeKind::Enum)
-                result += display && !argument.displayName.empty() ? argument.displayName
-                                                                   : argument.className;
+                result += display && !argument.displayName.empty() ? argument.displayName : argument.className;
             else
                 result += typeName(Type(argument.type));
         }
@@ -135,8 +134,7 @@ class ClassTemplateExpansion {
                 else if (scalar(Type(argument.type)))
                     result += "_" + typeName(Type(argument.type));
                 else
-                    throw Error(
-                        "class template type arguments require scalar, named class or enum values");
+                    throw Error("class template type arguments require scalar, named class or enum values");
             } else {
                 if (argument.value < 1 || argument.value > 64)
                     throw Error("class template capacity must be between 1 and 64");
@@ -147,8 +145,7 @@ class ClassTemplateExpansion {
     }
     static void validate(const ClassDefinition &definition) {
         if (definition.templateParameters.empty() || definition.templateParameters.size() > 2)
-            throw Error(
-                "class templates require one or two Scalar or Value parameters, or Scalar and i64");
+            throw Error("class templates require one or two Scalar or Value parameters, or Scalar and i64");
         std::set<std::string> parameters;
         std::vector<TemplateArgument> arguments;
         for (std::size_t index = 0; index < definition.templateParameters.size(); ++index) {
@@ -156,8 +153,7 @@ class ClassTemplateExpansion {
             if (!parameters.insert(parameter.name).second)
                 throw Error("duplicate class template parameter: " + parameter.name);
             if (parameter.kind == TemplateParameterKind::Capacity) {
-                if (index != 1 ||
-                    definition.templateParameters[0].kind != TemplateParameterKind::Scalar)
+                if (index != 1 || definition.templateParameters[0].kind != TemplateParameterKind::Scalar)
                     throw Error("capacity templates require Scalar followed by i64");
                 arguments.push_back(TemplateArgument::capacity(1));
             } else
@@ -190,8 +186,7 @@ class ClassTemplateExpansion {
                                 "enum values");
                 expansion.substitutions.emplace(parameter.name, argumentType(argument));
             } else {
-                if (argument.kind != TemplateArgumentKind::Value || argument.value < 1 ||
-                    argument.value > 64)
+                if (argument.kind != TemplateArgumentKind::Value || argument.value < 1 || argument.value > 64)
                     throw Error("class template capacity requires an i64 value between 1 and 64");
                 expansion.capacities.emplace(parameter.name, argument.value);
             }
@@ -225,8 +220,7 @@ class ClassTemplateExpansion {
 // Its only generated requests are statically named class specializations.
 class FunctionTemplateExpansion {
     std::map<std::string, Type> substitutions;
-    std::vector<TemplateArgument> arguments(const std::vector<TemplateArgument> &source,
-                                          bool nested = false) const {
+    std::vector<TemplateArgument> arguments(const std::vector<TemplateArgument> &source, bool nested = false) const {
         auto result = source;
         for (auto &argument : result) {
             name(argument.className);
@@ -258,8 +252,7 @@ class FunctionTemplateExpansion {
             const auto found = substitutions.find(value.elementParameter);
             if (found == substitutions.end() || !scalar(found->second))
                 throw Error("function template array element requires a scalar type");
-            value.elementKind = found->second.kind;
-            value.elementParameter.clear();
+            value.setArrayElement(found->second);
         }
         if (!value.lengthParameter.empty())
             throw Error("function templates do not have capacity parameters");
@@ -276,10 +269,8 @@ class FunctionTemplateExpansion {
         if (!source)
             return nullptr;
         name(source->token.text);
-        if ((source->op == "call" || source->op == "construct") &&
-            substitutions.contains(source->token.text))
-            throw Error("dependent construction or conversion is not supported: " +
-                        source->token.text);
+        if ((source->op == "call" || source->op == "construct") && substitutions.contains(source->token.text))
+            throw Error("dependent construction or conversion is not supported: " + source->token.text);
         auto result = std::make_shared<Expression>(*source);
         result->templateArguments = arguments(source->templateArguments);
         result->reflectedType = type(source->reflectedType);
@@ -303,9 +294,9 @@ class FunctionTemplateExpansion {
             result->other.push_back(statement(child));
         return result;
     }
-  public:
-    static Function instantiate(const Function &source,
-                                const std::vector<TemplateArgument> &arguments) {
+
+public:
+    static Function instantiate(const Function &source, const std::vector<TemplateArgument> &arguments) {
         if (arguments.size() != source.templateParameters.size())
             throw Error("wrong number of function template arguments for " + source.token.text);
         FunctionTemplateExpansion expansion;
@@ -315,8 +306,8 @@ class FunctionTemplateExpansion {
             const auto value = ClassTemplateExpansion::argumentType(argument);
             if (argument.kind != TemplateArgumentKind::Type ||
                 (parameter.kind == TemplateParameterKind::Scalar && !scalar(value)) ||
-                (parameter.kind == TemplateParameterKind::Value && !scalarValue(value) &&
-                 !value.isClass()) || parameter.kind == TemplateParameterKind::Capacity)
+                (parameter.kind == TemplateParameterKind::Value && !scalarValue(value) && !value.isClass()) ||
+                parameter.kind == TemplateParameterKind::Capacity)
                 throw Error("function template argument violates Scalar or Value constraint");
             expansion.substitutions.emplace(parameter.name, value);
         }
@@ -349,8 +340,7 @@ class FunctionTemplateExpansion {
         std::set<std::string> names;
         std::vector<TemplateArgument> arguments;
         for (const auto &parameter : source.templateParameters) {
-            if (parameter.kind == TemplateParameterKind::Capacity ||
-                !names.insert(parameter.name).second)
+            if (parameter.kind == TemplateParameterKind::Capacity || !names.insert(parameter.name).second)
                 throw Error("function templates require distinct Scalar or Value parameters");
             arguments.push_back(TypeKind::I64);
         }

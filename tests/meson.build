@@ -17,6 +17,7 @@ foreach entry : [
     ['classes', 'compiler/classes.py', 'core'],
     ['value-calls', 'compiler/value_calls.py', 'core'],
     ['owned-mutation', 'compiler/owned_mutation.py', 'core'],
+    ['class-arrays', 'compiler/class_arrays.py', 'core'],
     ['owned-bytes', 'compiler/owned_bytes.py', 'core'],
     ['owning-classes', 'compiler/owning_classes.py', 'core'],
     ['signed-integers', 'compiler/integers.py', 'core'],
@@ -70,6 +71,15 @@ test(
     suite: ['full', 'dev', 'core', 'compiler'],
     timeout: 120,
 )
+
+class_arrays_ir = executable(
+    'class-arrays-ir',
+    'compiler/class_arrays_ir.cpp',
+    include_directories: include_directories('../compiler'),
+    native: true,
+    install: false,
+)
+test('class-arrays-ir', class_arrays_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 
 owned_mutation_ir = executable(
     'owned-mutation-ir',

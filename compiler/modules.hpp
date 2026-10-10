@@ -475,6 +475,12 @@ class ModuleResolver {
                              const ModuleLoader::Unit &unit,
                              const std::string &scope,
                              std::vector<TemplateRequest> &requests) {
+        if (type.isArray()) {
+            if (!type.elementParameter.empty() || !type.lengthParameter.empty())
+                throw Error("unsubstituted array element or capacity parameter");
+            collectTemplateType(type.arrayElement(), unit, scope, requests);
+            return;
+        }
         if (type.isService() || service::copiedType(type)) {
             serviceTypesUsed = true;
             return;
@@ -523,6 +529,10 @@ class ModuleResolver {
         collectTemplateStatements(function.body, unit, function.scope, requests);
     }
     void validateTemplateType(const Type &type, const ModuleLoader::Unit &unit, const std::string &scope) {
+        if (type.isArray()) {
+            validateTemplateType(type.arrayElement(), unit, scope);
+            return;
+        }
         if (!type.templateArguments.empty()) {
             const auto *target = lookup(unit, scope, type.className, Kind::Template);
             if (!target)
@@ -717,6 +727,22 @@ class ModuleResolver {
         return &inserted.first->second;
     }
     void resolveType(Type &type, const ModuleLoader::Unit &unit, const std::string &scope) {
+        if (type.isArray()) {
+            if (!type.elementParameter.empty() || !type.lengthParameter.empty())
+                throw Error("unsubstituted array element or capacity parameter");
+            auto element = type.arrayElement();
+            resolveType(element, unit, scope);
+            if (!scalar(element) && !element.isClass())
+                throw Error("array elements require scalar or concrete copied class types: " + typeName(element));
+            if (element.isClass()) {
+                if (!service::copiedType(element) && !classDeclaration(element))
+                    throw Error("unknown nominal array element type: " + typeName(element));
+                if (type.length < 1 || type.length > maximumClassScalarArrayLength)
+                    throw Error("class-element array capacity must be between 1 and 64");
+            }
+            type.setArrayElement(element);
+            return;
+        }
         // Named-field construction spells the builtin class as a source name;
         // typed declarations already carry the canonical compiler identity.
         if (type == Type("builtin::ConsoleSample"))
@@ -780,6 +806,10 @@ class ModuleResolver {
         while (!pending.empty()) {
             const auto current = std::move(pending.back());
             pending.pop_back();
+            if (current.isArray()) {
+                pending.push_back(current.arrayElement());
+                continue;
+            }
             if (service::copiedType(current))
                 continue;
             if ((!current.isClass() && !current.isEnum()) || !visited.insert(current.className).second)
@@ -913,6 +943,10 @@ class ModuleResolver {
     }
     void
     validateFunctionTemplateSignatureType(const Type &type, const ModuleLoader::Unit &unit, const Function &function) {
+        if (type.isArray()) {
+            validateFunctionTemplateSignatureType(type.arrayElement(), unit, function);
+            return;
+        }
         if (!type.isClass() && !type.isEnum())
             return;
         const auto *target = lookup(unit, function.scope, type.className, Kind::Any);

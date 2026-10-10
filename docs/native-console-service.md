@@ -40,6 +40,11 @@ Spaces in content are preserved. There is no truncation or name normalization.
 Malformed commands, missing reads/removals and full-directory creation preserve
 all files. Replacement succeeds when all four slots are occupied. Listing follows
 slot order; deletion clears the complete record and the first free slot is reused.
+Successful writes return `wrote NAME: N bytes`, at most 24 display bytes, including
+empty and maximum-length content. RAM-only lifetime is described by the existing
+help presentation instead of repeated on each successful file write. Literal keyword
+arguments and `BinaryBuffer64::starts_with` replace individual character comparisons;
+logical command-length checks remain separate from the 64-byte backing.
 
 Each workspace owns four 64-byte records and an occupancy mask (264 bytes total).
 A record holds one-byte name/content lengths, eight name bytes, 49 content bytes,

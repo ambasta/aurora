@@ -19,7 +19,7 @@ public:
     std::string name;
     Type type;
     int offset = 0, owner = -1, shared = 0, objectShared = 0;
-    // -1 is an incoming span parameter; -2 is the implicit receiver.
+    // -1 is an incoming span parameter; -2 is the implicit receiver; -3 is immutable literal data.
     int spanOrigin = -1, spanField = -1;
     bool spanTemporaryParent = false;
     bool mut = false, live = true, exclusive = false;
@@ -38,6 +38,7 @@ class SemanticAnalyzer {
     std::map<std::string, ir::ClassStorage> classStorage;
     std::map<std::string, int> layoutStates;
     std::map<std::string, int> classDepths;
+    std::set<std::string> classArrayCarriers;
     static constexpr int maxFrameSlots = 8192;
     std::map<std::string, std::size_t> functions;
     std::map<std::string, int> receiverSpanFields;
@@ -70,9 +71,41 @@ class SemanticAnalyzer {
     bool ownerType(const Type &type) const {
         return type.isBytes() || owningClass(type);
     }
+    static bool classArray(const Type &type) {
+        return type.isArray() && type.elementKind == TypeKind::Class;
+    }
+    std::string classArrayCarrier(const Type &type, const Token &token) {
+        const auto element = type.arrayElement();
+        const auto &definition = classDefinition(element, token);
+        if (!classArray(type) || type.length < 1 || type.length > maximumClassScalarArrayLength ||
+            !type.elementParameter.empty() || !type.lengthParameter.empty() || owningClass(element))
+            fail(token, "class arrays require 1 to 64 concrete copied class elements");
+        if (classDepths.at(definition.name) >= 4)
+            fail(token, "class array containment depth exceeds four");
+        const std::string name = "@array:" + definition.name + ":" + std::to_string(type.length);
+        if (classArrayCarriers.contains(name))
+            return name;
+        const auto &child = classLeaves.at(definition.name);
+        if (child.size() > static_cast<std::size_t>(maximumCopiedClassLeaves / type.length))
+            fail(token, "class array exceeds copied class leaf limits");
+        std::vector<Type> leaves;
+        for (int index = 0; index < type.length; ++index)
+            leaves.insert(leaves.end(), child.begin(), child.end());
+        if (!ir::copiedClassLeavesSupported(leaves))
+            fail(token, "class array exceeds copied class leaf limits");
+        classLeaves[name] = leaves;
+        classShapes[name] = {ir::ClassField{element, 0, static_cast<int>(leaves.size()), true, type.length}};
+        classStorage = ir::computeClassStorageLayouts(classLeaves, classShapes);
+        if (classStorage.at(name).reservedBytes > maximumCopiedClassBytes)
+            fail(token, "class array storage exceeds 520 bytes");
+        classArrayCarriers.insert(name);
+        return name;
+    }
     std::int64_t typeId(const Type &type, const Token &token) {
         if (type.isArray()) {
-            const int id = type.elementKind == TypeKind::U8 ? 3000000 + type.length
+            const int id = classArray(type)
+                               ? 4000000 + classDefinition(type.arrayElement(), token).id * 64 + type.length
+                           : type.elementKind == TypeKind::U8 ? 3000000 + type.length
                            : type.elementKind == TypeKind::U64
                                ? 2000000 + type.length
                                : 1000000 + type.length * 2 + (type.elementKind == TypeKind::Bool ? 1 : 0);
@@ -127,25 +160,38 @@ class SemanticAnalyzer {
                     fail(member.token, "owning class templates are unsupported");
             } else if (member.type.isArray()) {
                 needsConstructor = true;
+                const auto element = member.type.arrayElement();
                 if (member.publicAccess || member.type.length < 1 ||
-                    member.type.length > maximumClassArrayLength(Type(member.type.elementKind)) ||
-                    !scalar(Type(member.type.elementKind)) || !member.type.elementParameter.empty() ||
-                    !member.type.lengthParameter.empty())
+                    member.type.length > maximumClassArrayLength(element) || (!scalar(element) && !element.isClass()) ||
+                    !member.type.elementParameter.empty() || !member.type.lengthParameter.empty())
                     fail(member.token,
-                         "class array fields require private concrete scalar "
+                         "class array fields require private concrete scalar or copied class "
                          "storage of length 1 to 64, or 1 to 512 for u8");
+                if (element.isClass()) {
+                    composed = true;
+                    buildClassLayout(element.className, nesting + 1);
+                    if (owningClass(element))
+                        fail(member.token, "arrays of owning classes are unsupported");
+                    const auto &child = classLeaves.at(element.className);
+                    if (child.size() > static_cast<std::size_t>(maximumCopiedClassLeaves / member.type.length))
+                        fail(member.token, "class array exceeds copied class leaf limits");
+                    for (int index = 0; index < member.type.length; ++index)
+                        leaves.insert(leaves.end(), child.begin(), child.end());
+                    depth = std::max(depth, 1 + classDepths.at(element.className));
+                } else {
+                    leaves.insert(leaves.end(), member.type.length, element);
+                }
                 typeId(member.type, member.token);
-                leaves.insert(leaves.end(), member.type.length, Type(member.type.elementKind));
             } else {
                 if (!scalarValue(member.type))
                     fail(member.token, "class field must be concrete scalar, enum, class or private array");
                 leaves.push_back(member.type);
             }
-            classShapes[name].push_back(
-                ir::ClassField{member.type.isArray() ? Type(member.type.elementKind) : member.type,
-                               firstLeaf,
-                               static_cast<int>(leaves.size()) - firstLeaf,
-                               member.type.isArray()});
+            classShapes[name].push_back(ir::ClassField{member.type.isArray() ? member.type.arrayElement() : member.type,
+                                                       firstLeaf,
+                                                       static_cast<int>(leaves.size()) - firstLeaf,
+                                                       member.type.isArray(),
+                                                       classArray(member.type) ? member.type.length : 1});
             if (leaves.size() > maxFrameSlots)
                 fail(definition.token, "class layout exceeds 65536 bytes");
             if (composed && !ir::copiedClassLeavesSupported(leaves))
@@ -166,7 +212,9 @@ class SemanticAnalyzer {
     std::int64_t typeSize(const Type &type, const Token &token) {
         if (type.isArray()) {
             typeId(type, token);
-            return type.length * ir::storageWidth(Type(type.elementKind));
+            if (classArray(type))
+                return classStorage.at(classArrayCarrier(type, token)).sizeBytes;
+            return type.length * ir::storageWidth(type.arrayElement());
         }
         if (type.isClass())
             return classStorage.at(classDefinition(type, token).name).sizeBytes;
@@ -204,6 +252,10 @@ class SemanticAnalyzer {
         return type == Type::Own ? Type::I64 : type;
     }
     std::int64_t reflectedValue(ExpressionPtr expression) {
+        // A metadata-only query must not bypass the same nominal ownership,
+        // containment and copied-layout limits as actual array storage.
+        if (classArray(expression->reflectedType))
+            classArrayCarrier(expression->reflectedType, expression->token);
         if (expression->reflectedType.isSpan())
             fail(expression->token, "span capabilities are unavailable to reflection");
         if (expression->reflectedType.isResource() || expression->reflectedType.isService())
@@ -302,14 +354,15 @@ class SemanticAnalyzer {
                 emit(ir::BeginBytes{l.offset});
         } else if (t.isSpan()) {
             lowered.spanSlots.insert(l.offset);
-        } else if (t.isClass()) {
+        } else if (t.isClass() || classArray(t)) {
+            const auto name = classArray(t) ? classArrayCarrier(t, tok) : t.className;
             l.resourceActive = owningClass(t);
-            lowered.objectSlots[l.offset] = ir::ObjectSlot{t.className, mut};
+            lowered.objectSlots[l.offset] = ir::ObjectSlot{name, mut};
             if (begin)
                 emit(ir::BeginObject{l.offset});
-            const auto &leaves = classLeaves.at(t.className);
+            const auto &leaves = classLeaves.at(name);
             for (std::size_t index = 0; index < leaves.size(); ++index)
-                lowered.slots[l.offset - classStorage.at(t.className).leafOffsets[index]] = leaves[index];
+                lowered.slots[l.offset - classStorage.at(name).leafOffsets[index]] = leaves[index];
         } else if (t.isArray()) {
             if (t.elementKind == TypeKind::U8) {
                 lowered.arraySlots[l.offset] = t.length;
@@ -344,6 +397,8 @@ class SemanticAnalyzer {
             fail(token, "cannot mutate or move an owner while a readonly span is live");
     }
     bool spanExpression(ExpressionPtr value) {
+        if (value->op == "byte_string")
+            return true;
         if (value->op == "name") {
             const int local = lookupLocal(value->token);
             return local >= 0 && locals[local].type.isSpan();
@@ -375,7 +430,17 @@ class SemanticAnalyzer {
             return false;
         return method(receiver, value->token).result.isSpan();
     }
-    int acquireSpan(ExpressionPtr value, const std::string &name = "", bool bind = false) {
+    int
+    acquireSpan(ExpressionPtr value, const std::string &name = "", bool bind = false, bool literalArgument = false) {
+        if (literalArgument && value->op == "byte_string") {
+            const auto bytes = decodeByteStringLiteral(value->token.text);
+            if (!bytes)
+                fail(value->token, "invalid byte-string literal");
+            const int destination = add("", Type::ByteSpan, false, value->token, false);
+            locals[destination].spanOrigin = -3;
+            emit(ir::BorrowLiteralSpan{*bytes, offset(destination)});
+            return destination;
+        }
         int parent = -1, origin = -1, fieldIndex = -1;
         bool temporaryParent = false;
         const bool subspan = value->op == "method_call" && value->token.text == "subspan";
@@ -497,7 +562,8 @@ class SemanticAnalyzer {
         for (const auto &scope : scopes)
             for (const auto &[name, local] : scope) {
                 (void)name;
-                if (locals[local].live && locals[local].type.isClass() && !owningClass(locals[local].type))
+                if (locals[local].live && (locals[local].type.isClass() || classArray(locals[local].type)) &&
+                    !owningClass(locals[local].type))
                     active.insert(local);
             }
         for (auto local = active.rbegin(); local != active.rend(); ++local)
@@ -646,7 +712,10 @@ class SemanticAnalyzer {
         if (!storage.type.isArray())
             fail(index->token, "indexing requires an array local or receiver field");
         match(expression(index->args[1]), Type::I64, index->token);
-        if (storage.member)
+        if (classArray(storage.type))
+            emit(ir::ClassArrayBoundsGuard{storage.member ? 0 : offset(storage.local),
+                                           storage.member ? storage.member->index : 0});
+        else if (storage.member)
             emit(ir::ReceiverBoundsGuard{storage.member->index});
         else
             emit(ir::BoundsGuard{offset(storage.local), storage.type.length, Type(storage.type.elementKind)});
@@ -891,7 +960,7 @@ class SemanticAnalyzer {
             const auto &argument = value->args[index + first];
             if (parameterType.isSpan()) {
                 packed = true;
-                const int borrowed = acquireSpan(argument);
+                const int borrowed = acquireSpan(argument, "", false, true);
                 spanArguments[index] = offset(borrowed);
                 spanBorrows.push_back(borrowed);
             } else if (parameterType.isClass()) {
@@ -969,7 +1038,7 @@ class SemanticAnalyzer {
             const auto &argument = value->args[index];
             const auto &type = callee.params[index].type;
             if (type.isSpan()) {
-                const int span = acquireSpan(argument);
+                const int span = acquireSpan(argument, "", false, true);
                 spans[index] = offset(span);
                 borrowedSpans.push_back(span);
             } else {
@@ -1040,7 +1109,7 @@ class SemanticAnalyzer {
             const auto &argument = expression->args[index];
             if (type.isSpan()) {
                 aggregate = true;
-                const int borrowed = acquireSpan(argument);
+                const int borrowed = acquireSpan(argument, "", false, true);
                 spanArguments[index - first] = offset(borrowed);
                 spanBorrows.push_back(borrowed);
             } else if (type.isClass()) {
@@ -1118,7 +1187,7 @@ class SemanticAnalyzer {
             const bool span = spanExpression(argument);
             if (span) {
                 aggregate = true;
-                const int borrowed = acquireSpan(argument);
+                const int borrowed = acquireSpan(argument, "", false, true);
                 types.push_back(Type::ByteSpan);
                 spanArguments[index] = offset(borrowed);
                 spanBorrows.push_back(borrowed);
@@ -1216,6 +1285,8 @@ class SemanticAnalyzer {
         }
         if (e->op == "index") {
             const auto storage = checkedIndex(e);
+            if (classArray(storage.type))
+                fail(e->token, "class array element copy requires a typed local initializer");
             if (storage.member)
                 emit(ir::ReceiverIndexLoad{storage.member->index});
             else
@@ -1539,7 +1610,7 @@ class SemanticAnalyzer {
                 --locals[l.owner].shared;
             if (l.type == Type::MutRef)
                 locals[l.owner].exclusive = false;
-            if (l.type.isClass() && !terminal)
+            if ((l.type.isClass() || classArray(l.type)) && !terminal)
                 emit(ir::EndObject{l.offset});
         }
         scopes.pop_back();
@@ -1609,6 +1680,17 @@ class SemanticAnalyzer {
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);
         const auto expression = statement->expr;
+        if (expression->op == "index") {
+            const auto storage = checkedIndex(expression);
+            if (!classArray(storage.type))
+                fail(expression->token, "class projection requires a copied class array");
+            match(storage.type.arrayElement(), statement->type, expression->token);
+            const int destination = add(statement->name, statement->type, statement->mutableValue, statement->token);
+            emit(ir::ClassArrayCopy{storage.member ? 0 : offset(storage.local),
+                                    storage.member ? storage.member->index : 0,
+                                    offset(destination)});
+            return;
+        }
         if (owningClass(statement->type) && expression->op == "call" && expression->token.text == "move") {
             const int original = movedOwner(expression, statement->type);
             const int destination = add(statement->name, statement->type, statement->mutableValue, statement->token);
@@ -1707,9 +1789,36 @@ class SemanticAnalyzer {
             emit(ir::Store{fieldOffset(destination, member), member.type});
         }
     }
+    std::vector<int> classArraySources(ExpressionPtr expression, const Type &type) {
+        if (expression->op != "array_literal" || expression->args.size() != static_cast<std::size_t>(type.length))
+            fail(expression->token, "class array initialization requires exactly one complete named value per element");
+        std::vector<int> sources;
+        for (const auto &value : expression->args) {
+            if (value->op != "name")
+                fail(value->token, "class array initializer elements require complete local names");
+            const int original = source(value);
+            match(locals[original].type, type.arrayElement(), value->token);
+            sources.push_back(offset(original));
+        }
+        return sources;
+    }
     void initializeArray(StatementPtr statement) {
         const auto expression = statement->expr;
         const auto type = statement->type;
+        if (classArray(type)) {
+            classArrayCarrier(type, statement->token);
+            if (expression->op == "name") {
+                const int original = source(expression);
+                match(locals[original].type, type, expression->token);
+                const int destination = add(statement->name, type, statement->mutableValue, statement->token);
+                emit(ir::CopyObject{offset(original), offset(destination)});
+            } else {
+                const auto sources = classArraySources(expression, type);
+                const int destination = add(statement->name, type, statement->mutableValue, statement->token);
+                emit(ir::InitializeClassArray{offset(destination), 0, sources});
+            }
+            return;
+        }
         if (expression->op == "name") {
             const int original = source(expression);
             match(locals[original].type, type, expression->token);
@@ -1894,6 +2003,16 @@ class SemanticAnalyzer {
                     fail(s->token, "index assignment requires a mutable array local");
                 if (locals[storage.local].shared)
                     fail(s->token, "cannot mutate a byte array while a span is live");
+            }
+            if (classArray(storage.type)) {
+                if (s->expr->op != "name")
+                    fail(s->expr->token, "class array replacement requires a complete local name");
+                const int original = source(s->expr);
+                match(locals[original].type, storage.type.arrayElement(), s->expr->token);
+                emit(ir::ClassArrayAssign{storage.member ? 0 : offset(storage.local),
+                                          storage.member ? storage.member->index : 0,
+                                          offset(original)});
+                return false;
             }
             push();
             match(expression(s->expr), Type(storage.type.elementKind), s->token);
@@ -2087,7 +2206,7 @@ public:
             checkTemplateOwners(definition.templateArguments, definition.token);
             const bool composed =
                 std::any_of(definition.fields.begin(), definition.fields.end(), [](const Field &member) {
-                    return member.type.isClass();
+                    return member.type.isClass() || classArray(member.type);
                 });
             if ((composed || owningClass(Type(definition.name))) &&
                 classStorage.at(definition.name).reservedBytes > maximumCopiedClassBytes)
@@ -2324,6 +2443,8 @@ public:
                         const int original = source(initializer);
                         match(locals[original].type, member.type, initializer->token);
                         emit(ir::InitializeObjectField{0, member.index, offset(original)});
+                    } else if (classArray(member.type)) {
+                        emit(ir::InitializeClassArray{0, member.index, classArraySources(initializer, member.type)});
                     } else if (member.type.isArray()) {
                         if (initializer->op != "array_zero")
                             fail(member.token, "array fields require explicit empty-brace zero initialization");
@@ -2368,7 +2489,12 @@ public:
         for (const auto &definition : enums)
             module.descriptors[definition.id] = ir::Descriptor{8, 0};
         for (const auto &[id, type] : arrayTypes)
-            module.descriptors[id] = ir::Descriptor{type.length * ir::storageWidth(Type(type.elementKind)), 0};
+            module.descriptors[id] = ir::Descriptor{typeSize(type, Token("array", 0)), 0};
+        // Local class arrays may have created private carrier layouts while lowering.
+        module.classLayouts = classLeaves;
+        module.classFields = classShapes;
+        module.classStorage = classStorage;
+        module.classArrayCarriers = classArrayCarriers;
         if (reflectionAccess.empty()) {
             auto &own = reflectionAccess[0];
             for (const auto &definition : classes)
@@ -2381,7 +2507,9 @@ public:
             auto &view = module.descriptorViews[scope];
             for (const auto &[id, descriptor] : module.descriptors) {
                 (void)descriptor;
-                if (id <= 5 || id == 8 || id == static_cast<int>(TypeKind::U8) + 1 || id >= 1000000)
+                if (id <= 5 || id == 8 || id == static_cast<int>(TypeKind::U8) + 1 ||
+                    (id >= 1000000 && (!arrayTypes.contains(id) || !classArray(arrayTypes.at(id)) ||
+                                       visible.contains(arrayTypes.at(id).arrayElement().className))))
                     view.insert(id);
             }
             for (const auto &name : visible) {

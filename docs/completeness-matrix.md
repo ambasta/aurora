@@ -116,6 +116,9 @@ policy adds four session-local named files through `write NAME TEXT`, `cat NAME`
 `rm NAME` and `ls`, with 1–8-byte restricted ASCII names and at most 49 content bytes.
 `note` remains separate and reserved. Full/invalid/missing commands preserve state;
 replacement, zeroed deletion and deterministic slot reuse use private fixed values.
+Byte-string keywords now directly call the library's bounded prefix helper; generic
+readonly-span prefix/equality helpers also accept immutable literal call arguments.
+Successful writes report the filename and byte count within the existing reply bound.
 This is no persistent filesystem or shared cross-profile storage. Graphical readback uses ordinary
 response cells under the unchanged input/pixel budgets; the addition requires
 fresh final-source qualification. The [sealed service contract](../compiler/SERVICES.md)
@@ -144,6 +147,15 @@ source text and explicit byte escapes. Event/native serial-console messages use
 them; existing storage, borrows, IR and authority remain unchanged. Final-source
 qualification is separate from the predecessor's recorded results.
 Length mismatch diagnostics include both expected capacity and decoded byte count.
+
+Bounded [copied-class arrays](../compiler/FIXED-CONTAINERS.md#copied-class-storage-arrays)
+add inline local and private fixed storage with complete named-value initialization,
+checked element copies and complete replacement. Existing class layout, depth,
+privacy and copied-value caps remain; indexed references, owning arrays and
+indexed method borrows are excluded. `console.session_files` uses one four-record
+array, selecting a copied record once per listing/search iteration or readback.
+Final-source full, image/stack and actual affected console guests remain required;
+focused compiler results do not transfer earlier qualification.
 
 Binary integer expression literals now have `0b`/`0B` prefixes and C++ apostrophe
 separators between digits, retaining exact i64/u64/u8 types and checked ranges.

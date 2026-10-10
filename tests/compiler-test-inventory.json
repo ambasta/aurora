@@ -204,6 +204,29 @@
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
   },
+  "class_arrays.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "class-arrays": {
+        "arguments": [
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/class_arrays.py",
+          "@BUILD@/aurorac"
+        ],
+        "suites": [
+          "compiler",
+          "core",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
   "classes.py": {
     "kind": "runner",
     "make": true,
