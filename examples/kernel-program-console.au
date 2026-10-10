@@ -5,6 +5,10 @@ import kernel.interrupt_budget;
 import kernel.round_robin;
 import kernel.ipc_transition;
 import kernel.client_disposal;
+import std.binary_buffer;
+import std.binary;
+import console.session_note;
+import kernel.note_read;
 
 auto aurora_kernel_value() -> i64 {
     static_assert(size_of(i64) == 8);
@@ -95,4 +99,33 @@ auto aurora_kernel_terminal_event(u64 vector, u64 matched_sites, u64 stack_top) 
     if (event == kernel::TerminalEvent::division_zero) { return 4u64; }
     if (event == kernel::TerminalEvent::shift_count) { return 5u64; }
     return 0u64;
+}
+
+// Ordinary copied values. The native bridge keeps the result closed until return.
+class NoteUpdate {
+    console::SessionNote note;
+    u64 event;
+public:
+    NoteUpdate(console::SessionNote next, u64 action) : note(next), event(action) {}
+};
+
+auto update_note(console::SessionNote current, std::BinaryBuffer64 command, i64 count) -> NoteUpdate {
+    console::SessionNote next = current;
+    const console::NoteEvent event = next.submit(command, count);
+    u64 action = 0u64;
+    if (event == console::NoteEvent::written) { action = 1u64; }
+    if (event == console::NoteEvent::read) { action = 2u64; }
+    if (event == console::NoteEvent::missing) { action = 3u64; }
+    const NoteUpdate update = NoteUpdate(next, action);
+    return update;
+}
+
+auto project_note(console::SessionNote current) -> kernel::NoteRead64 {
+    kernel::NoteRead64 projection = kernel::NoteRead64(current.size());
+    i64 offset = 0;
+    while (offset < 64) {
+        projection.set(offset, current.at(offset));
+        offset = offset + 1;
+    }
+    return projection;
 }

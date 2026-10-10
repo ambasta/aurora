@@ -161,3 +161,27 @@ positive and 1,732 negative cases; IPC image authority adds four positive and
 26 negative cases to the existing three/64 image controls. These are bounded
 tests and independent review, not a proof of general IPC safety. The parent
 checkpoint records the complete previous-mode preservation run separately.
+
+
+## Protected-console copied note
+
+The two-domain protected console admits one additional explicit typed service
+composition under its existing client/service timer budgets. It does not combine
+the separate snapshot/owned-region profile with Console, Display or other owners.
+The normal scalar upper protocol remains phases 0/1/2. Note reads use phases
+12/11/13 for request/service/completion with byte, EOF and missing replies from
+actual compiled Aurora. See the [program-console contract](../../docs/program-console-contract.md#session-local-protected-note).
+
+`kernel.note_read::NoteRead64` contains 64 bytes and one signed length. Together
+with three scalar launch words it occupies 96 initialized bytes at user S-112;
+its final qword is data, unlike the separate Snapshot64 profile's zero padding.
+The service reserves 112 bytes before saving its 48-byte envelope. Only the
+verified retained last stack lease is used to stage this record after an
+authenticated receive, and only the fresh bound service generation matches.
+No source pointer, endpoint, owner or view crosses the copied-value bridge.
+
+The supervisor's ordinary Aurora update returns an 80-byte closed note/event
+record; its projection returns 72 bytes. Native code retains the saved value and
+per-read generation, checks closed representation and quiescence, and supplies
+no command/content policy. Snapshot publication, byte-region lifetime, general
+file service authority and persistent storage remain separate contracts.

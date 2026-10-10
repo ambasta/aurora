@@ -409,6 +409,11 @@ test('native-semantics-harness', python, args: ['-B', files('../../tests/semanti
 test('native-semantics', python, args: native_adapter_args + ['--compiler', aurorac] + ['--', python] + ['-B', files('../../tests/semantics/run.py'), aurorac],
      suite: ['full', 'slow', 'semantics'], env: native_test_env,
      workdir: native_root, timeout: 1200, depends: aurorac)
+test('native-protected-note', python,
+     args: native_adapter_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
+                                 files('../../scripts/kernel-program-note-tests.sh'), native_output / 'program-note'],
+     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
+     workdir: native_root, timeout: 900)
 test('native-protected-snapshot', python,
      args: native_adapter_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
                                  files('../../scripts/kernel-snapshot-tests.sh'), native_output / 'snapshot'],

@@ -159,6 +159,7 @@ if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "$
    program_image_mode=normal
    case "$UEFI_MODE" in program-owner|program-ordinal|program-unknown|program-transaction) program_image_mode="${UEFI_MODE#program-}" ;; esac
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$program_image_mode" --service-budget --user-budget --program-console
+   python3 -B tests/kernel-snapshot-abi.py build/uefi --uefi-mode "$program_image_mode" --note
    as --64 --defsym AURORA_IPC=1 --defsym AURORA_SERVICE_BUDGET=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
  elif [[ "$UEFI_MODE" == user-* ]]; then
    mode=normal
@@ -224,6 +225,8 @@ elif [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" ==
     as --64 build/uefi/language.s kernel/uefi/graphical-console-entry.S -o build/uefi/language.o
 elif (( ${#framebuffer_objects[@]} )); then
     as --64 build/uefi/language.s kernel/uefi/display-service-entry.S -o build/uefi/language.o
+elif [[ "${UEFI_MODE:-normal}" == program-* ]]; then
+    as --64 build/uefi/language.s kernel/uefi/program-note-entry.S -o build/uefi/language.o
 elif [[ "${UEFI_MODE:-normal}" == snapshot* ]]; then
     as --64 build/uefi/language.s kernel/uefi/snapshot-entry.S -o build/uefi/language.o
 elif [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then

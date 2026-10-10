@@ -28,7 +28,15 @@ def verify(runtime, program, timer):
         r"hardware::Serial::number\(value\);\s*\}\s*\};\s*"
         r"using Serial\s*=\s*SnapshotDiagnostics;\s*"
         r"#elif defined\(AURORA_UEFI_PROGRAM_CONSOLE\))\s*"
-        r"using Serial\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;\s*"
+        r"(?:using Serial\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;|"
+        r"class ProgramSerialAdapter final\s*\{\s*"
+        r"using Uart\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;\s*public:\s*"
+        r"static void initialize_input\(\)\s*\{\s*Uart::initialize_input\(\);\s*\}\s*"
+        r"template\s*<class Editor> static auto poll\(Editor\s*&\s*line\)\s*\{\s*return Uart::poll\(line\);\s*\}\s*"
+        r"static void put\(std::uint8_t byte\)\s*\{\s*Uart::put\(byte\);\s*\}\s*"
+        r"\[\[gnu::noinline\]\] static void text\(std::string_view value\)\s*\{\s*Uart::text\(value\);\s*\}\s*"
+        r"\[\[gnu::noinline\]\] static void number\(U64 value\)\s*\{\s*Uart::number\(value\);\s*\}\s*\};\s*"
+        r"using Serial\s*=\s*ProgramSerialAdapter;)\s*"
         r"#else\s*using hardware::Serial;\s*#endif"
     )
     need(len(route.findall(runtime)) == 1, "Runtime and input must select the same sticky UART specialization")
@@ -77,7 +85,26 @@ using Serial = SnapshotDiagnostics;
     combined = formatted.replace("#ifdef AURORA_UEFI_PROGRAM_CONSOLE", snapshot)
     verify(combined, alias, "")
     verify(combined.replace(" = ", "=").replace(", ", ","), alias, "")
+    adapter = """
+class ProgramSerialAdapter final {
+    using Uart = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;
+public:
+    static void initialize_input() { Uart::initialize_input(); }
+    template<class Editor> static auto poll(Editor& line) { return Uart::poll(line); }
+    static void put(std::uint8_t byte) { Uart::put(byte); }
+    [[gnu::noinline]] static void text(std::string_view value) { Uart::text(value); }
+    [[gnu::noinline]] static void number(U64 value) { Uart::number(value); }
+};
+using Serial = ProgramSerialAdapter;
+"""
+    factored = combined.replace("using Serial = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;", adapter)
+    verify(factored, alias, "")
     invalid = (
+        (factored.replace("Uart::text(value)", "hardware::Serial::text(value)"), alias, ""),
+        (factored.replace("Uart::number(value)", "hardware::Serial::number(value)"), alias, ""),
+        (factored.replace("return Uart::poll(line)", "return Other::poll(line)"), alias, ""),
+        (factored.replace("Uart::put(byte)", "read(0x3fd)"), alias, ""),
+        (factored.replace("FifoTrigger::fourteen", "FifoTrigger::one"), alias, ""),
         (formatted.replace("FifoTrigger::fourteen", "FifoTrigger::one"), alias, ""),
         (formatted.replace("error, pc", "pc, error"), alias, ""),
         (formatted.replace("#ifdef AURORA_UEFI_PROGRAM_CONSOLE", "#ifndef AURORA_UEFI_PROGRAM_CONSOLE"), alias, ""),
@@ -99,7 +126,7 @@ using Serial = SnapshotDiagnostics;
         except ValueError:
             continue
         raise ValueError("Accepted changed UART routing contract")
-    print("PASS: program UART routing, four formatting variants and fourteen negative controls")
+    print("PASS: program UART routing, formatting variants, shared noinline adapter and nineteen negative controls")
 
 
 if __name__ == "__main__":

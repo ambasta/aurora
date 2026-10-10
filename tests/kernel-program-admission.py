@@ -36,6 +36,26 @@ def main():
 
     instruction = namedtuple("Instruction", "address size op args")
 
+    bridge = [
+        ("push", "%rbp"),
+        ("mov", "%rsp,%rbp"),
+        ("mov", "%rdi,%r11"),
+        ("mov", "%rsi,%r10"),
+        ("call", "private"),
+        ("leave", ""),
+        ("ret", ""),
+    ]
+    admission.check_note_bridge(bridge, "private")
+    for index, replacement in (
+        (2, ("mov", "%rsi,%r11")),
+        (3, ("mov", "%rdi,%r10")),
+        (4, ("call", "foreign")),
+        (5, ("add", "$0x8,%rsp")),
+    ):
+        changed = list(bridge)
+        changed[index] = replacement
+        reject(lambda: admission.check_note_bridge(changed, "private"), "copied note bridge binding")
+
     # Scalar AND semantics and hostile destinations are covered by the shared
     # decoder's self-test, not a program-only compiler-layout normalization.
     decoder = admission.load("program_switch_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
@@ -159,6 +179,9 @@ def main():
         source.write_text("original source\n")
         admission.end_build("program-console")
         manifest = admission.provenance("program-console")
+        for foreign in ("SNAPSHOT", "OWNED_BYTES", "DISPATCH", "CONSOLE", "GRAPHICAL_CONSOLE"):
+            mixed = dict(manifest, flags=manifest["flags"] + ["-DAURORA_UEFI_" + foreign])
+            reject(lambda: admission.verify_inputs(mixed, "program-console"), "foreign note profile authority")
         receipt = dict(
             schema="aurora-program-console-admission-v1",
             mode="program-console",

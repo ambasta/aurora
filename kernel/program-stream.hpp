@@ -28,10 +28,15 @@ class Output final {
     friend class Stream;
     StreamBytes bytes_{};
     std::size_t length_{};
-    Output(StreamBytes bytes, std::size_t length) : bytes_(bytes), length_(length) {
+    bool missing_{};
+    Output(StreamBytes bytes, std::size_t length, bool missing = false)
+        : bytes_(bytes), length_(length), missing_(missing) {
     }
 
 public:
+    [[nodiscard]] auto missing() const -> bool {
+        return missing_;
+    }
     [[nodiscard]] auto bytes() const -> StreamBytes {
         return bytes_;
     }
@@ -46,6 +51,7 @@ public:
     auto scrub() -> void {
         bytes_.fill(0);
         length_ = 0;
+        missing_ = false;
     }
 };
 
@@ -55,6 +61,10 @@ public:
 // completion client each return that same byte with the original ordinal. This
 // adapter validates only printable ASCII, order and equality across those three
 // results. It must never compute the transformation or compare it with input.
+// A note read instead requests successive offsets, retains each actual encoded
+// service reply, and stages a byte or terminal marker only when the compiled
+// client acknowledges that exact reply. EOF is an extra round, including for an
+// empty note; missing is a distinct terminal marker. No native payload oracle.
 // The runtime may release finish()'s copied output only after both participants
 // are quiescent and retired. No partial output is exposed by this class.
 class Stream final {
@@ -70,7 +80,8 @@ class Stream final {
     StreamBytes output_{};
     std::size_t length_{};
     std::size_t ordinal_{};
-    std::uint8_t requested_{};
+    std::uint64_t requested_{};
+    bool reading_{}, terminal_{}, missing_{};
     Stage stage_ = Stage::idle;
 
     [[nodiscard]] static constexpr auto printable(std::uint64_t byte) -> bool {
@@ -85,6 +96,7 @@ class Stream final {
         length_ = 0;
         ordinal_ = 0;
         requested_ = 0;
+        reading_ = terminal_ = missing_ = false;
     }
 
 public:
@@ -108,25 +120,62 @@ public:
         stage_ = Stage::request;
         return true;
     }
+    [[nodiscard]] auto begin_read() -> bool {
+        const StreamBytes empty{};
+        if (!begin(empty, 0))
+            return false;
+        reading_ = true;
+        return true;
+    }
     [[nodiscard]] auto next_input() const -> std::optional<Input> {
+        if (reading_) {
+            if (stage_ == Stage::request && !terminal_ && ordinal_ <= 53)
+                return Input{1, ordinal_};
+            return std::nullopt;
+        }
         if (stage_ != Stage::request || ordinal_ >= length_)
             return std::nullopt;
         return Input{input_[ordinal_], ordinal_};
     }
     [[nodiscard]] auto accept_request(std::uint64_t byte, std::uint64_t ordinal) -> bool {
-        if (stage_ != Stage::request || ordinal_ >= length_ || ordinal != ordinal_ || !printable(byte))
+        if (stage_ != Stage::request || ordinal != ordinal_ ||
+            (reading_ ? terminal_ || ordinal_ > 53 || byte != 1 : ordinal_ >= length_ || !printable(byte)))
             return false;
         requested_ = static_cast<std::uint8_t>(byte);
         stage_ = Stage::reply;
         return true;
     }
     [[nodiscard]] auto accept_reply(std::uint64_t byte, std::uint64_t ordinal) -> bool {
+        if (reading_) {
+            if (stage_ != Stage::reply || ordinal != ordinal_ || terminal_ || ordinal_ > 53 ||
+                !(byte == 2 || byte == 3 || (byte & ~std::uint64_t{0xff00}) == 1))
+                return false;
+            requested_ = byte;
+            stage_ = Stage::acknowledgment;
+            return true;
+        }
         if (stage_ != Stage::reply || !matches(byte, ordinal))
             return false;
         stage_ = Stage::acknowledgment;
         return true;
     }
     [[nodiscard]] auto acknowledge(std::uint64_t byte, std::uint64_t ordinal) -> bool {
+        if (reading_) {
+            if (stage_ != Stage::acknowledgment || ordinal != ordinal_ || byte != requested_)
+                return false;
+            if (byte == 2 || byte == 3) {
+                terminal_ = true;
+                missing_ = byte == 3;
+            } else {
+                if (ordinal_ >= 53)
+                    return false;
+                output_[ordinal_++] = static_cast<std::uint8_t>(byte >> 8);
+                length_ = ordinal_;
+            }
+            requested_ = 0;
+            stage_ = Stage::request;
+            return true;
+        }
         if (stage_ != Stage::acknowledgment || !matches(byte, ordinal))
             return false;
         output_[ordinal_] = requested_;
@@ -137,12 +186,12 @@ public:
         return true;
     }
     [[nodiscard]] auto ready_to_finish() const -> bool {
-        return stage_ == Stage::request && ordinal_ == length_;
+        return stage_ == Stage::request && (reading_ ? terminal_ : ordinal_ == length_);
     }
     [[nodiscard]] auto finish() -> std::optional<Output> {
         if (!ready_to_finish())
             return std::nullopt;
-        const Output copied{output_, length_};
+        const Output copied{output_, length_, missing_};
         scrub();
         stage_ = Stage::finished;
         return copied;
@@ -155,7 +204,7 @@ public:
         return true;
     }
     [[nodiscard]] auto scrubbed() const -> bool {
-        if (length_ != 0 || ordinal_ != 0 || requested_ != 0)
+        if (length_ != 0 || ordinal_ != 0 || requested_ != 0 || reading_ || terminal_ || missing_)
             return false;
         for (std::size_t index = 0; index < stream_capacity; ++index) {
             if (input_[index] != 0 || output_[index] != 0)

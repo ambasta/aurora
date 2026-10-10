@@ -77,7 +77,8 @@ For automated console acceptance, use `make smoke-console` (BIOS) or
 `make smoke-console-uefi`. Both are included in `make smoke-all`; `make test`
 remains native-only.
 
-A separately reviewed protected-command profile offers `upper`. Its
+The protected-command profile offers `upper` and now adds the same volatile note
+commands with authenticated CPL3 reads. Its
 [contract and current qualification](docs/program-console-contract.md) describe
 automatic local build/image/stack checks for public commands, the separate
 review-pinned first-image qualification, scoped guest evidence and final integration gates.

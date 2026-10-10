@@ -1,0 +1,27 @@
+# Private copied-value bridges, assembled with their generated Aurora graph.
+# The caller owns complete disjoint input/result records; no authority is copied.
+.text
+.global __au_runtime_note_update
+.hidden __au_runtime_note_update
+.type __au_runtime_note_update,@function
+__au_runtime_note_update:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r11
+    movq %rsi,%r10
+    call __au_v_m1_22kernel_program_console_n0__d11update_note
+    leave
+    ret
+.size __au_runtime_note_update,.-__au_runtime_note_update
+.global __au_runtime_note_project
+.hidden __au_runtime_note_project
+.type __au_runtime_note_project,@function
+__au_runtime_note_project:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r11
+    movq %rsi,%r10
+    call __au_v_m1_22kernel_program_console_n0__d12project_note
+    leave
+    ret
+.size __au_runtime_note_project,.-__au_runtime_note_project

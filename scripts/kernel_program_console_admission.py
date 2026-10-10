@@ -367,7 +367,7 @@ def stack_evidence(directory, *, snapshot=False):
     fixed = {
         "kernel/uefi/runtime-entry.S": "4eb746286de4390de61e559ad284ba74b0e671e3d59f1a83963874f95867e805",
         "kernel/exceptions.S": "c375958b8e813dadcf66c4f4113ba91f3ea6d5cc6c8f1cbda1bc480005d6c69f",
-        "kernel/uefi/ipc-user-entry.S": "bd189cafc7448e3324a73801c93282585a814a9eb97ba1dedb36a2f49cd95627",
+        "kernel/uefi/ipc-user-entry.S": "68c232480ea014a4448675fbe4ce1cf8134ff22bcc7dab7bb5ba0e481d8a8280",
         "kernel/uefi/runtime-tables.hpp": "c525ca83ff244c556b8196cf90e4ca18af42a5556caf2b298234f8a4a3543521",
     }
     for name, sha in fixed.items():
@@ -484,8 +484,16 @@ def stack_evidence(directory, *, snapshot=False):
         bodies = {
             key: decoder.analyze_function(symbol, instructions, user_starts) for key, symbol in user.functions.items()
         }
-        copied = snapshot and name == "bounds"
-        root = "__au_v_m1_16snapshot_service_n0__d16aurora_user_main" if copied else "aurora_user_main"
+        copied = name == "bounds"
+        root = (
+            (
+                "__au_v_m1_16snapshot_service_n0__d16aurora_user_main"
+                if snapshot
+                else "__au_v_m1_22program_stream_service_n0__d16aurora_user_main"
+            )
+            if copied
+            else "aurora_user_main"
+        )
         path = graph_peak(bodies, {}, root, set())
         path["entry_saved_bytes"] = 160 if copied else 48
         path["peak_with_entry"] = path["peak"] + path["entry_saved_bytes"]
@@ -516,6 +524,152 @@ def stack_evidence(directory, *, snapshot=False):
     )
 
 
+def note_evidence(directory, mode="program-console"):
+    """Exact private note composition; reuses the existing ELF/CFG decoder."""
+    decoder = load("note_bridge_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+    abi = load("note_record_abi", ROOT / "tests/kernel-snapshot-abi.py")
+    linked = decoder.Elf(directory / "payload.elf")
+    generated = decoder.Elf(directory / "language.o")
+    code, _ = decoder.disassemble(directory / "payload.elf")
+    names = {row.name: row for row in linked.symbols if row.section}
+    bridges = {"__au_runtime_note_update", "__au_runtime_note_project"}
+    need({name for name in names if name.startswith("__au_runtime_")} == bridges, "Closed note runtime inventory")
+    need(
+        not any(name.startswith(("__cxa_", "_GLOBAL__sub_I", "_Zn", "_Zd")) for name in names),
+        "Note acquired constructor or heap machinery",
+    )
+    need(
+        not subprocess.check_output(["nm", "-u", directory / "language.o"], text=True), "Note graph acquired authority"
+    )
+    expected_objects = {
+        "payload",
+        "payload-entry",
+        "language",
+        "acpi",
+        "pci",
+        "runtime",
+        "memory",
+        "runtime-entry",
+        "runtime-exceptions",
+        "user-clean",
+        "user-clean-entry",
+        "user-bounds",
+        "loader",
+        "embed",
+        "transition",
+        "loader-pe",
+        "embed-pe",
+        "transition-pe",
+        "memory-pe",
+    }
+    need({path.stem for path in directory.glob("*.o")} == expected_objects, "Exact protected-note object composition")
+    public = {
+        row.split()[2]
+        for row in subprocess.check_output(
+            ["nm", "-g", "--defined-only", directory / "language.o"], text=True
+        ).splitlines()
+        if len(row.split()) == 3
+    }
+    policies = {
+        "aurora_kernel_value",
+        "aurora_kernel_budget_tick",
+        "aurora_kernel_round_robin_next",
+        "aurora_kernel_ipc_transition",
+        "aurora_kernel_client_disposal",
+        "aurora_kernel_terminal_event",
+        "aurora_console_byte",
+        "aurora_console_command",
+        "__au_v_m2_6kernel7console_n1_6kernel_d12console_byte",
+        "__au_v_m2_6kernel7console_n1_6kernel_d15console_command",
+        "__au_v_m2_6kernel14terminal_event_n1_6kernel_d14terminal_event",
+    }
+    need({name for name in public if not is_reflection_helper(name)} == policies | bridges, "Exact note native exports")
+    assembly = (directory / "language.s").read_text()
+    evidence = []
+
+    def memory(offset, register):
+        return (f"-0x{-offset:x}" if offset < 0 else f"0x{offset:x}" if offset else "") + f"(%{register})"
+
+    for action, frame, argument_save, result_save, parameters, result_start, result_bytes in (
+        ("update", 464, -456, -464, ((0, -72, 72), (72, -136, 64), (136, -144, 8)), -448, 80),
+        ("project", 176, -168, -176, ((0, -72, 72),), -144, 72),
+    ):
+        private = "__au_v_m1_22kernel_program_console_n0__d" + (
+            "11update_note" if action == "update" else "12project_note"
+        )
+        bridge = "__au_runtime_note_" + action
+        need(private not in public and private in generated.functions, "Private note source entry")
+        symbol = linked.functions[bridge]
+        wrapper = []
+        for address, row in sorted(code.items()):
+            if symbol.address <= address < symbol.address + symbol.size:
+                operand = (
+                    private
+                    if row.op == "call" and decoder.target_of(row) == linked.functions[private].address
+                    else row.args
+                )
+                wrapper.append((row.op, operand))
+        check_note_bridge(wrapper, private)
+        # The linked bridge must be the same complete object function.
+        decoder.associate_object(linked, generated, generated.functions[bridge])
+        function = linked.functions[private]
+        body = [
+            row
+            for address, row in sorted(code.items())
+            if function.address <= address < function.address + function.size
+        ]
+        source = assembly.split(private + ":\n", 1)[1].split(".size " + private, 1)[0]
+        actual_frame, prefix = decoder.generated_frame([line.strip() for line in source.splitlines()], body)
+        need(actual_frame == frame, "Exact copied note helper frame")
+        expected = [("mov", "%r11," + memory(argument_save, "rbp")), ("mov", "%r10," + memory(result_save, "rbp"))]
+        for offset, local, extent in parameters:
+            expected += [("mov", memory(argument_save, "rbp") + ",%r11")]
+            for byte in range(0, extent, 8):
+                expected += [
+                    ("mov", memory(offset + byte, "r11") + ",%rax"),
+                    ("mov", "%rax," + memory(local + byte, "rbp")),
+                ]
+        need(
+            [(row.op, row.args) for row in body[prefix : prefix + len(expected)]] == expected,
+            "Exact note copied input binding",
+        )
+        result = [("mov", memory(result_save, "rbp") + ",%r10")]
+        for byte in range(0, result_bytes, 8):
+            result += [("mov", memory(result_start + byte, "rbp") + ",%rax"), ("mov", "%rax," + memory(byte, "r10"))]
+        rows = [(row.op, row.args) for row in body]
+        starts = [i for i, row in enumerate(rows) if row == result[0]]
+        need(
+            len(starts) == 1 and rows[starts[0] : starts[0] + len(result)] == result, "Exact note copied result binding"
+        )
+        evidence.append(
+            dict(
+                bridge=bridge,
+                private_entry=private,
+                frame=frame,
+                input_bytes=sum(p[2] for p in parameters),
+                result_bytes=result_bytes,
+            )
+        )
+    abi.main(directory, "transaction" if mode == "program-transaction" else "normal", note=True)
+    return dict(bridges=evidence, record=json.loads((directory / "note-abi.json").read_text()))
+
+
+def check_note_bridge(actual, private):
+    need(
+        actual
+        == [
+            ("push", "%rbp"),
+            ("mov", "%rsp,%rbp"),
+            ("mov", "%rdi,%r11"),
+            ("mov", "%rsi,%r10"),
+            ("call", private),
+            ("leave", ""),
+            ("ret", ""),
+        ],
+        "Exact copied note bridge",
+    )
+
+
 def source_files():
     paths = {ROOT / "Makefile"}
     for directory in ("kernel", "compiler", "library", "examples", "scripts", "tests"):
@@ -536,6 +690,7 @@ def build_files():
         "program-poll-metadata.json",
         "service-timer-metadata.json",
         "user-images.json",
+        "note-abi.json",
         "uefi-user-images.hpp",
         "uefi-payload.hpp",
         "language.s",
@@ -547,9 +702,8 @@ def build_files():
     names += [name + ".o" for name in ("payload", "acpi", "pci", "runtime", "loader", "memory", "embed", "transition")]
     names += [name + suffix for name in ("payload", "acpi", "pci", "runtime", "loader") for suffix in (".su", ".ci")]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
-    names += [
-        "user-" + name + suffix for name in ("clean", "bounds") for suffix in (".s", ".o", ".elf", ".bin", "-entry.o")
-    ]
+    names += ["user-" + name + suffix for name in ("clean", "bounds") for suffix in (".s", ".o", ".elf", ".bin")]
+    names += ["user-clean-entry.o"]
     return [BUILD / name for name in names]
 
 
@@ -602,9 +756,7 @@ def verify_inputs(manifest, mode):
         "-DAURORA_UEFI_PROGRAM_CONSOLE",
     }
     need(
-        required <= set(manifest["flags"])
-        and "-DAURORA_UEFI_DISPATCH" not in manifest["flags"]
-        and "-DAURORA_UEFI_CONSOLE" not in manifest["flags"],
+        required == {flag for flag in manifest["flags"] if flag.startswith("-DAURORA_UEFI_")},
         "Unexpected program profile flags",
     )
     injection = {flag for flag in manifest["flags"] if flag.startswith("-DAURORA_PROGRAM_")}
@@ -645,6 +797,7 @@ def emit(mode):
             prefix.with_suffix(".bin").read_bytes(),
             builder.BASE + index * 4096,
             names,
+            copied_note=index == 1,
         )
         for key, value in actual.items():
             need(metadata[name][key] == value, "Stale user metadata: " + key)
@@ -665,6 +818,7 @@ def emit(mode):
         poll=json.loads((BUILD / "program-poll-metadata.json").read_text()),
         timer=json.loads((BUILD / "service-timer-metadata.json").read_text()),
         stack=stack_evidence(BUILD),
+        note=note_evidence(BUILD, mode),
     )
     result["sha256"] = hashes(source_files() + build_files() + [BUILD / "program-build.json"])
     RECEIPT.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
