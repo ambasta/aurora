@@ -79,6 +79,13 @@ success, failure and handled interruption, preserving failure status and logs.
 It stages only current required artifacts and bounds default retention to two
 successful and two failed windows, with explicit keep-all/pins and conservative
 preservation of unmarked or unfinished evidence. Whole shared-tree moves are gone.
+Only the current managed run's successful screen dumps/probes are compacted to
+hash/size receipts after shared restoration; logs, summaries and images remain.
+Build/guest/restoration failure or interruption and explicit-keep dumps remain
+under the existing window policy. Post-success cleanup interruptions retain the
+remaining dumps and hash receipt. Old Meson/smoke output has an explicit per-directory cleanup procedure;
+there is no new historical sweep. Missing Event prerequisites are `BLOCKED` before
+build/evidence allocation, while build and guest defects remain `FAIL`.
 Its compiler-free controls are registered in ordinary/optimized Meson `dev`/`full`;
 implementation and registration alone do not establish fresh guest or aggregate passes.
 

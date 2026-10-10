@@ -837,22 +837,11 @@ def window(args, directory, runtime):
     budget(directory)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build-only", action="store_true")
-    parser.add_argument("--build-receipt", default=os.environ.get("EVENT_BUILD_RECEIPT"))
-    parser.add_argument("--code", default=os.environ.get("EVENT_CODE"))
-    parser.add_argument("--vars", default=os.environ.get("EVENT_VARS"))
-    parser.add_argument("--data", default=os.environ.get("EVENT_DATA"))
-    parser.add_argument("--esp-dir", default=os.environ.get("EVENT_ESP_DIR"))
-    parser.add_argument("--mtools-dir", default=os.environ.get("MTOOLS_DIR"))
-    parser.add_argument("--output-parent", default=os.environ.get("EVENT_OUTPUT_PARENT") or tempfile.gettempdir())
-    parser.add_argument("--normal-qemu", default=os.environ.get("QEMU") or "qemu-system-x86_64")
-    parser.add_argument("--normal-firmware", default="")
-    parser.add_argument("--normal-code", default="")
-    parser.add_argument("--normal-vars", default="")
-    parser.add_argument("--normal-data", default=os.environ.get("QEMU_DATA", ""))
-    args = parser.parse_args()
+class PrerequisiteBlocked(ValueError):
+    """Required local setup is unavailable; no build or guest has started."""
+
+
+def prerequisites(args):
     for name, value in os.environ.items():
         need(
             not value
@@ -879,19 +868,62 @@ def main():
         args.mtools_dir = args.mtools_dir or str(Path(tool).parent)
         esp.developer_tool_identity(args.mtools_dir)
     else:
-        safe_path(args.esp_dir, directory=True)
+        directory = safe_path(args.esp_dir, directory=True)
+        for mode in MODES:
+            safe_path(directory / (mode + ".raw"))
+    for tool in (os.environ.get("CXX") or "g++", "bash", "make", "as", "ld", "objcopy", "objdump", "nm", "readelf"):
+        need(shutil.which(tool), "Missing dependency: " + tool)
+    linker = subprocess.run(
+        ["bash", "-c", 'source "$1"; uefi_linker_select', "event-linker-check", str(ROOT / "scripts/uefi-linker.sh")],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    need(linker.returncode == 0, linker.stderr.strip() or "Missing UEFI PE linker")
     if not args.build_only:
-        safe_path(Path(shutil.which(args.normal_qemu) or args.normal_qemu).resolve())
+        qemu = safe_path(Path(shutil.which(args.normal_qemu) or args.normal_qemu).resolve())
+        need(os.access(qemu, os.X_OK), "Normal QEMU is not executable")
         for value in (args.normal_firmware, args.normal_code, args.normal_vars):
             if value:
                 safe_path(value)
+        expected_uefi_argv(
+            "normal", str(qemu), args.normal_firmware, args.normal_data, args.normal_code, args.normal_vars
+        )
+        if args.normal_data:
+            data_files(args.normal_data)
     parent = safe_path(args.output_parent, directory=True)
     need(parent != ROOT and ROOT not in parent.parents, "Event output must be outside the source tree")
     need(
         shutil.disk_usage(parent).free >= FREE_FLOOR + EVIDENCE_LIMIT,
         "Event run requires 1 GiB reservation plus 1 GiB free floor",
     )
-    runtime = None if args.build_only else runtime_inputs(args)
+    try:
+        runtime = None if args.build_only else runtime_inputs(args)
+    except (KeyError, TypeError) as error:
+        raise ValueError("Invalid custom runtime receipt: " + str(error)) from error
+    return parent, runtime
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--build-only", action="store_true")
+    parser.add_argument("--build-receipt", default=os.environ.get("EVENT_BUILD_RECEIPT"))
+    parser.add_argument("--code", default=os.environ.get("EVENT_CODE"))
+    parser.add_argument("--vars", default=os.environ.get("EVENT_VARS"))
+    parser.add_argument("--data", default=os.environ.get("EVENT_DATA"))
+    parser.add_argument("--esp-dir", default=os.environ.get("EVENT_ESP_DIR"))
+    parser.add_argument("--mtools-dir", default=os.environ.get("MTOOLS_DIR"))
+    parser.add_argument("--output-parent", default=os.environ.get("EVENT_OUTPUT_PARENT") or tempfile.gettempdir())
+    parser.add_argument("--normal-qemu", default=os.environ.get("QEMU") or "qemu-system-x86_64")
+    parser.add_argument("--normal-firmware", default="")
+    parser.add_argument("--normal-code", default="")
+    parser.add_argument("--normal-vars", default="")
+    parser.add_argument("--normal-data", default=os.environ.get("QEMU_DATA", ""))
+    args = parser.parse_args()
+    try:
+        parent, runtime = prerequisites(args)
+    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+        raise PrerequisiteBlocked(str(error)) from error
 
     def interrupted(signum, _frame):
         raise KeyboardInterrupt("Event smoke interrupted by signal " + str(signum))
@@ -906,8 +938,17 @@ def main():
     window(args, directory, runtime)
 
 
-if __name__ == "__main__":
+def cli():
     try:
         main()
+    except PrerequisiteBlocked as error:
+        print("BLOCKED: Event developer smoke: " + str(error), file=sys.stderr)
+        return 2
     except (Exception, KeyboardInterrupt) as error:
-        raise SystemExit("FAIL: Event developer smoke: " + str(error)) from error
+        print("FAIL: Event developer smoke: " + str(error), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(cli())

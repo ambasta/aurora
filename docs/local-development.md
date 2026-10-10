@@ -168,8 +168,23 @@ outside the namespace stay in place. Legacy top-level objects from older builder
 are left untouched and are no longer link/admission inputs.
 
 Graphical smoke also leaves the shared UEFI tree in place and stages only required
-current image/admission artifacts. By default it retains the latest two successful
-and two failed run directories; a failed build's available objects/artifacts are
+current image/admission artifacts. After every guest and the shared normal-image
+restoration succeed, it replaces that run's full physical/PPM screen dumps and
+viewport probes with `guests/screen-captures.json` (relative names, byte sizes and
+SHA256 hashes, compaction status and an explicit remaining-raw-file list).
+Hashes identify validated bytes; they do not claim those raw files remain.
+Summaries, serial/QMP/stderr logs, build logs and staged images
+remain. Build, guest or restoration failures and handled interruptions retain all
+captures; no older run's dumps are compacted. `AURORA_GRAPHICAL_KEEP_RUNS=all`, or
+a `.keep` present before dump removal starts, also preserves successful dumps.
+Pins are rechecked after hashing and before each removal; a late pin stops further
+removals but cannot recover already discarded dumps. The passed run marker is
+written before this optional housekeeping. An interruption during hashing keeps
+all dumps; one during removal keeps the remaining dumps and complete hash receipt,
+without relabeling the passed guest/restoration result. Compaction errors warn.
+The hash receipt is written before any dump is removed.
+By default it retains the latest two successful and two failed run directories;
+a failed build's available objects/artifacts are
 moved within the same filesystem before normal restoration; small image/receipt
 files are copied. Snapshot failures are reported, but restoration still runs and
 may replace inputs that could not be retained. `AURORA_GRAPHICAL_KEEP_RUNS=N` changes each limit
@@ -202,6 +217,39 @@ expected serial sequence and QEMU status. QEMU's debug-exit success status is
 unexpected exits or invalid transcripts fail. A BIOS success does not establish
 UEFI success, and neither establishes physical AMD/Framework support.
 
+## Reclaiming old local output explicitly
+
+Stop builds, tests, guests and separate image readers before cleanup. Inspect the
+exact directories with `du -sh` and keep any required review evidence first.
+There is no automatic sweep of historical Meson output. To remove generated
+native build products while retaining a configured build and its Meson logs:
+
+```sh
+meson compile -C build/gcc16 --clean
+```
+
+Substitute the one configured Meson build you intend to clean. This removes
+Ninja-tracked products, not failed/kept runner scratch or unrelated review output;
+subsequent tests rebuild their dependencies. To retire an entire old build or
+one completed smoke window, choose its exact directory and inspect it first:
+
+```sh
+# Examples only: replace each name with the one retired directory you reviewed.
+du -sh -- build/gcc16-retired build/graphical-smoke/run-ABC123
+rm -ri -- build/gcc16-retired
+rm -ri -- build/graphical-smoke/run-ABC123
+```
+
+The interactive removals include that selected directory's logs and receipts.
+Never use a wildcard or remove the whole `build` tree: it can contain active
+outputs, retained failures, `.keep` pins and user-owned review directories.
+For graphical runs, inspect `.graphical-smoke-run.json`; leave `running`, missing
+or malformed records alone until their ownership is understood. Leave `.keep`
+windows alone until review and all readers have finished. Explicit external
+runner output and Event evidence are not covered by these paths; delete such a
+directory only after separately identifying its owner, completion and review needs.
+Nothing here authorizes cleanup of another checkout or a reviewer's directory.
+
 ## Choosing tests
 
 To exercise the actual Aurora Event consumer on hosted synthetic transport, use
@@ -226,7 +274,11 @@ make smoke-iommu-event EVENT_BUILD_RECEIPT=/absolute/BUILD-RECEIPT.json \
 This requires the [supported custom model and initial firmware bytes](../tools/qemu-amdvi/README.md#developer-event-runtime),
 GNU mtools 4.0.48 with no system config, and ordinary QEMU/OVMF for normal
 restoration. `MTOOLS_DIR` selects an installed tool directory; `EVENT_ESP_DIR`
-is a validated raw-ESP alternative on unsupported mtools hosts. Evidence is
+is a validated raw-ESP alternative on unsupported mtools hosts. Missing or invalid
+local prerequisites report `BLOCKED` (exit 2), before building or allocating a run;
+actual build, image-admission and guest defects report `FAIL` (exit 1 from the runner).
+GNU Make itself returns 2 for an unsuccessful recipe, so use the diagnostic label
+when interpreting `make smoke-iommu-event`. Evidence is
 retained outside source under `EVENT_OUTPUT_PARENT` (default system temporary
 directory), with fixed budgets and a 1 GiB free floor. Remove only completed runs
 you no longer need. `scripts/kernel-iommu-event-smoke.sh --build-only` checks fresh

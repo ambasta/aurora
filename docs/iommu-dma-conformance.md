@@ -66,6 +66,9 @@ through `EVENT_BUILD_RECEIPT`, `EVENT_CODE`, `EVENT_VARS`, `EVENT_DATA`. Ordinar
 `QEMU`/`QEMU_DATA` and `OVMF` or `OVMF_CODE`/`OVMF_VARS` independently select normal
 restoration. `scripts/kernel-iommu-event-smoke.sh --build-only` checks the same
 fresh images/ESPs and restores normal bytes without guests or a custom runtime.
+Unavailable or invalid local prerequisites are `BLOCKED` (runner exit 2) before
+build/evidence allocation; build, image-admission and guest defects remain `FAIL`
+(runner exit 1). GNU Make returns 2 for an unsuccessful recipe in either case.
 
 Initial ESP support is installed GNU mtools 4.0.48 with standard system config
 locations, selected through PATH or `MTOOLS_DIR`. It checks initial versions and
