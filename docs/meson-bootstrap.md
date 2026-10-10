@@ -38,6 +38,14 @@ compatibility or uncertain dependency identity. Do not modify inputs while
 qualifying. Record final source/tool identities and Meson's standard commands,
 introspection and logs; no new qualification supervisor is introduced.
 
+Artifact-managed Meson runners remove only their newly owned `aurora-meson-*`
+scratch directory after a confirmed successful child exit. Set
+`AURORA_MESON_KEEP_ARTIFACTS=1` to retain successful scratch for review. Failed,
+signalled, interrupted or unlaunched runs remain; cleanup errors are reported
+without changing the test result. The adapter prints the path before the child
+and the cleanup outcome afterward. Raw Meson logs, historical evidence, sibling
+directories and explicit artifact paths passed directly to a runner are untouched.
+
 `make test` invokes the same `full` graph. `make test-compiler`, `make -C compiler
 test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
 fresh or matching configured directory, or omit it for a compiler-bytes/flags-keyed

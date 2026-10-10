@@ -7,6 +7,7 @@ oracle_env.set('TMP', meson.current_build_dir())
 oracle_env.set('TEMP', meson.current_build_dir())
 oracle_env.set('PYTHONDONTWRITEBYTECODE', '1')
 oracle_env.set('CXX', oracle_cxx)
+artifact_adapter = files('meson_artifacts.py')
 
 # Keep complete existing runners: no first-N sampling or weaker result/trap oracle.
 # dev is quick feedback; slow contains exhaustive integration/ABI sweeps.
@@ -173,7 +174,8 @@ endforeach
 # Meson owns compiler dependencies; this records observed artifact stability only.
 test(
     'json-profile', python,
-    args: ['-B', '-O', files('compiler/json_profile.py'), aurorac, '--developer-selected-compiler'],
+    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_profile.py'),
+           aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
     depends: aurorac, suite: ['full', 'slow', 'bytes', 'compiler'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
 )
@@ -183,7 +185,8 @@ logical_spans_abi = executable(
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('logical-spans-abi', python,
-     args: ['-B', '-O', files('compiler/logical_spans_abi.py'), logical_spans_abi],
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/logical_spans_abi.py'),
+            logical_spans_abi, '--artifacts', '@ARTIFACTS@'],
      depends: logical_spans_abi, suite: ['full', 'dev', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
@@ -198,13 +201,15 @@ method_spans_abi = executable(
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('method-spans-abi', python,
-     args: ['-B', '-O', files('compiler/method_spans_abi.py'), method_spans_abi],
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/method_spans_abi.py'),
+            method_spans_abi, '--artifacts', '@ARTIFACTS@'],
      depends: method_spans_abi, suite: ['full', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 # Single-scalar codecs retain their own independent oracle and hosted composition.
 test(
     'json-codecs', python,
-    args: ['-B', '-O', files('compiler/json_codecs.py'), aurorac, '--developer-selected-compiler'],
+    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_codecs.py'),
+           aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
     depends: aurorac, suite: ['full', 'slow', 'bytes', 'compiler'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
 )
@@ -212,7 +217,8 @@ test(
 # Exact integer spelling conversion and mathematically bounded decimal output.
 test(
     'json-integers', python,
-    args: ['-B', '-O', files('compiler/json_integers.py'), aurorac, '--developer-selected-compiler'],
+    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_integers.py'),
+           aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
     depends: aurorac, suite: ['full', 'slow', 'bytes', 'compiler'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
 )
@@ -220,7 +226,8 @@ test(
 # Full-document validation precedes copied root member/index observations.
 test(
     'json-lookup', python,
-    args: ['-B', '-O', files('compiler/json_lookup.py'), aurorac, '--developer-selected-compiler'],
+    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_lookup.py'),
+           aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
     depends: aurorac, suite: ['full', 'slow', 'bytes', 'compiler'], env: oracle_env,
     workdir: meson.current_build_dir(), timeout: 600, is_parallel: true,
 )
@@ -245,7 +252,8 @@ borrowed_objects_abi = executable(
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('borrowed-objects-abi', python,
-     args: ['-B', '-O', files('compiler/borrowed_objects_abi.py'), borrowed_objects_abi],
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/borrowed_objects_abi.py'),
+            borrowed_objects_abi, '--artifacts', '@ARTIFACTS@'],
      depends: borrowed_objects_abi, suite: ['full', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
@@ -418,7 +426,6 @@ endforeach
 
 # Remaining compiler-native coverage. Fixtures are build targets, not commands
 # hidden inside each test invocation; Ninja tracks C++ header dependencies.
-artifact_adapter = files('meson_artifacts.py')
 compiler_fixtures = {}
 foreach fixture : [
     'diagnostics', 'lexer_trivia', 'source_overlays', 'ir_tests', 'stack_probes',
