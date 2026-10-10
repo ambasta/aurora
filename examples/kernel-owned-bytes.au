@@ -6,6 +6,49 @@ import storage.block_io;
 import storage.ram_sector;
 import examples.ram_sector_record;
 
+// The native adapter receives only this canonical 72-byte copied value. Neither
+// the device owner nor a view survives the resource function's normal cleanup.
+class ProducedRecord {
+    storage::SectorIoStatus outcome;
+    std::BinaryBuffer64 payload;
+public:
+    ProducedRecord(storage::SectorIoStatus status, std::BinaryBuffer64 record)
+        : outcome(status), payload(record) {}
+};
+
+auto produce_record(builtin::ByteRegion region, i64 selector) -> ProducedRecord {
+    builtin::OwnedBytes backing = region.try_allocate(512);
+    storage::RamSectorDevice device = storage::RamSectorDevice(region, move(backing));
+    const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+    if (device.status() != storage::SectorIoStatus::success) {
+        return ProducedRecord(storage::SectorIoStatus::invalid_source, zero);
+    }
+    std::BinaryBuffer64 original = std::BinaryBuffer64();
+    i64 index = 0;
+    while (index < 64) {
+        if (original.write_u8(index, u8((index * 53 + 7) % 256)) != std::ByteWriteStatus::success) {
+            return ProducedRecord(storage::SectorIoStatus::invalid_source, zero);
+        }
+        index = index + 1;
+    }
+    storage::Sector512 sector = storage::Sector512();
+    if (sector.write_record(448, original) != std::ByteWriteStatus::success
+        || device.write_sector(0, sector) != storage::SectorIoStatus::success) {
+        return ProducedRecord(storage::SectorIoStatus::invalid_source, zero);
+    }
+    const storage::SectorReadResult saved = device.read_sector(selector);
+    if (saved.status() != storage::SectorIoStatus::success) {
+        return ProducedRecord(saved.status(), zero);
+    }
+    const storage::Sector512 snapshot = saved.sector_or_zero();
+    const storage::RecordReadResult tail = snapshot.read_record(448);
+    if (tail.status() != std::ByteReadStatus::success) {
+        return ProducedRecord(storage::SectorIoStatus::invalid_source, zero);
+    }
+    const std::BinaryBuffer64 record = tail.record_or_zero();
+    return ProducedRecord(storage::SectorIoStatus::success, record);
+}
+
 auto pass_bytes(builtin::ByteRegion region, builtin::OwnedBytes input) -> builtin::OwnedBytes {
     input.set(input.size() - 1, 53u8);
     return move(input);

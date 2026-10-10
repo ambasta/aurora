@@ -154,6 +154,7 @@ def owned_bytes_symbols(symbols):
     rows = {words[2]: words[1] for line in symbols.splitlines() if len(words := line.split()) == 3}
     required = (
         "__au_runtime_bytes_kernel_entry",
+        "__au_runtime_bytes_kernel_produce",
         "__au_runtime_bytes_allocate",
         "__au_runtime_bytes_at",
         "__au_runtime_bytes_set",
@@ -754,8 +755,11 @@ def main(
         need("aurora_kernel_value" not in language_symbols, "Owned-byte profile included ordinary scalar graph")
         profile_calls = subprocess.check_output(["objdump", "-drwC", str(BUILD / "owned-bytes-profile.o")], text=True)
         need(
-            policy_call_present(profile_calls, "__au_runtime_bytes_kernel_entry"),
-            "Kernel grant does not call the actual private bridge",
+            all(
+                policy_call_present(profile_calls, name)
+                for name in ("__au_runtime_bytes_kernel_entry", "__au_runtime_bytes_kernel_produce")
+            ),
+            "Kernel grant does not call both actual private bridges",
         )
     else:
         need("__au_runtime_bytes_" not in symbols, "Ordinary profile acquired an owned-byte runtime dependency")

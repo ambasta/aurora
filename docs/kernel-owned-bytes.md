@@ -12,8 +12,9 @@ The profile is deliberately exclusive. It compiles `examples/kernel-owned-bytes.
 and a private grant bridge in one object instead of the ordinary scalar policy
 graph. Each current generated graph exports the same reflection helper names;
 mixed independently generated scalar/resource graphs remain unsupported.
-The source entry stays local, and only a scalar status crosses the private bridge.
-No descriptor, pointer, span or physical address crosses the private grant bridge.
+The source entries stay local. The original bridge returns scalar status; a
+second private bridge returns a pointer-free copied status and 64-byte record.
+No owner descriptor, source pointer, span or physical address is returned.
 
 The acceptance gate is focused native ownership/failure coverage, explicit
 unsupported-import rejection, complete linked stack/authority/image admission,
@@ -110,6 +111,34 @@ rejection, compiler-driven cleanup, whole-page poison/readback and exact counter
 Host tests cover the wider fragmentation, metadata/page/quota exhaustion,
 descriptor and fail-stop boundaries. Neither synthetic transcripts nor native
 adapter passes establish a real guest result or physical-hardware support.
+
+## Copied producer handoff
+
+The same exclusive profile now calls a real resource-granted `produce_record`.
+It allocates one 512-byte `RamSectorDevice`, writes a fixed 64-byte record at
+sector offset 448 through the existing storage library, reads the sector back,
+and returns `ProducedRecord`. Its canonical copied layout is eight status bytes
+followed by all 64 payload bytes. Every storage operation is checked; recoverable
+failure returns a closed `SectorIoStatus` and an actually zero payload.
+
+The second private bridge sets R11 to a 16-byte-aligned region/selector record
+and R10 to fresh disjoint 72-byte result storage. The native adapter requires
+exact allocation/release counts and zero used bytes, live allocations, held pages
+and retained pages before successfully closing the actual region. Only then does
+it reacquire and poison released backing and inspect the complete copied status,
+all payload bytes and surrounding canaries. Success and out-of-range read cases
+allocate/release once; quota and physical-page exhaustion allocate/release zero
+times. The success grant has exactly 512 logical bytes. All prior profile cases,
+six runtime imports, page pool, stack and image caps remain unchanged.
+
+The focused host command above additionally checks extreme sector indices and
+rejects corruption of actual success/failure payloads, status and canaries.
+Generated assembly is not host-sanitizer-instrumented. Source/object/linked
+admission binds the private signature, canonical layout, cleanup/copy order and
+call closure; independent exact-image review and a real owned-bytes guest plus
+normal restoration remain separate required gates. This adds no protected reader,
+IPC transport, persistent owner, filesystem, active device or physical-hardware
+qualification.
 
 ## Reconstructed readonly-owner consumer
 

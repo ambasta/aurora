@@ -22,6 +22,8 @@ ENTRY = "__au_v_m1_18kernel_owned_bytes_n0__d24kernel_owned_bytes_entry"
 CONSUMER = "__au_v_m1_18kernel_owned_bytes_n0__d13consume_bytes"
 TRANSFER = "__au_v_m1_18kernel_owned_bytes_n0__d10pass_bytes"
 BRIDGE = "__au_runtime_bytes_kernel_entry"
+PRODUCER = "__au_v_m1_18kernel_owned_bytes_n0__d14produce_record"
+PRODUCER_BRIDGE = "__au_runtime_bytes_kernel_produce"
 WALK = "_ZZNK6aurora4uefi10PageTables6verifyEmRKNS0_5BytesEPKNS0_18LocalApicAdmissionEENKUlOT_mjmE_clIRKSA_EEbS9_mjm"
 CPP_OBJECTS = ("payload", "acpi", "pci", "runtime", "owned-bytes-runtime", "owned-bytes-profile")
 STACK_BYTES = 16384
@@ -1112,6 +1114,7 @@ def generated_divisions(symbols, instructions):
     owners = {
         admission.GENERATED[name]: count
         for name, count in {
+            "producer": 1,
             "record": 1,
             "sector_pattern_matches": 2,
             "write_ram_pattern": 2,
@@ -1140,6 +1143,168 @@ def generated_divisions(symbols, instructions):
         "Signed division outside finite generated owners",
     )
     return {"pairs": sum(owners.values()), "owners": owners}
+
+
+def producer_source_contract(source):
+    source = re.sub(r"//[^\n]*|/\*.*?\*/", "", source, flags=re.S)
+    compact = re.sub(r"\s+", "", source)
+    declaration = (
+        "class ProducedRecord { storage::SectorIoStatus outcome; std::BinaryBuffer64 payload; public: "
+        "ProducedRecord(storage::SectorIoStatus status, std::BinaryBuffer64 record) "
+        ": outcome(status), payload(record) {} };"
+    )
+    require(compact.count(re.sub(r"\s+", "", declaration)) == 1, "Changed copied producer class/layout")
+    signature = "auto produce_record(builtin::ByteRegion region, i64 selector) -> ProducedRecord {"
+    require(compact.count(re.sub(r"\s+", "", signature)) == 1, "Changed copied producer signature")
+    return {"input_bytes": 16, "result_bytes": 72, "status_offset": 0, "payload_offset": 8, "payload_bytes": 64}
+
+
+def generated_producer(body, linked, local_bytes, prefix, constructor):
+    """Check this one copied boundary, retaining the ordinary stack/edge proof.
+
+    The native caller supplies fresh output storage. The exact bridge keeps it
+    separate from its own input record; the generated producer uses six fresh
+    frame results and saves the two hidden addresses outside source storage.
+    This is not a general pointer-provenance or compiler-verification framework.
+    """
+    require(len(body) == len(linked), "Copied boundary source/link instruction inventory mismatch")
+    decoded = [(row.op, row.args) for row in linked]
+
+    def moves(position, pairs):
+        # Only exact MOVQ pairs at the named boundary are normalized. There is
+        # no admission of other operands, instruction forms or arbitrary code.
+        source = [f"movq {left}, {right}" for left, right in pairs]
+
+        def operand(value):
+            return re.sub(r"(-?)([0-9]+)(?=\(%r)", lambda m: "" if int(m[2]) == 0 else m[1] + hex(int(m[2])), value)
+
+        expected = [("mov", operand(left) + "," + operand(right)) for left, right in pairs]
+        require(body[position : position + len(pairs)] == source, "Changed copied boundary source moves")
+        require(decoded[position : position + len(pairs)] == expected, "Changed copied boundary linked moves")
+
+    if constructor:
+        require(local_bytes == 96, "Changed copied result constructor frame")
+        pairs = [
+            ("%r10", "-88(%rbp)"),
+            ("%r11", "-96(%rbp)"),
+            ("-96(%rbp)", "%r11"),
+            ("0(%r11)", "%rax"),
+            ("%rax", "-8(%rbp)"),
+            ("-96(%rbp)", "%r11"),
+        ]
+        for offset in range(8, 72, 8):
+            pairs += [(f"{offset}(%r11)", "%rax"), ("%rax", f"{offset - 80}(%rbp)")]
+        pairs += [("-8(%rbp)", "%rax"), ("-88(%rbp)", "%r10"), ("%rax", "0(%r10)"), ("-88(%rbp)", "%r10")]
+        for offset in range(8, 72, 8):
+            pairs += [(f"{offset - 80}(%rbp)", "%rax"), ("%rax", f"{offset}(%r10)")]
+        moves(prefix, pairs)
+        end = prefix + len(pairs)
+        require(
+            len(body) == end + 4
+            and body[end] == "movabsq $0, %rax"
+            and decoded[end] == ("movabs", "$0x0,%rax")
+            and body[end + 1].startswith("jmp .Lreturn")
+            and linked[end + 1].op == "jmp"
+            and target_of(linked[end + 1]) == linked[-2].address,
+            "Changed copied result constructor completion",
+        )
+        return {"result_bytes": 72, "status_offset": 0, "payload_offset": 8}
+
+    input_save, output_save = f"-{local_bytes - 8}(%rbp)", f"-{local_bytes}(%rbp)"
+    moves(
+        prefix,
+        [
+            ("%r11", input_save),
+            ("%r10", output_save),
+            (input_save, "%r11"),
+            ("(%r11)", "%rax"),
+            ("%rax", "-8(%rbp)"),
+            (input_save, "%r11"),
+            ("8(%r11)", "%rax"),
+            ("%rax", "-16(%rbp)"),
+        ],
+    )
+    allocation = prefix + 8
+    require(
+        body[allocation : allocation + 9]
+        == [
+            "movabsq $512, %rax",
+            *[f"movq $0, -{offset}(%rbp)" for offset in (48, 40, 32, 24)],
+            "movq %rax, %rsi",
+            "movq -8(%rbp), %rdi",
+            "leaq -48(%rbp), %rdx",
+            "call __au_runtime_bytes_allocate",
+        ]
+        and decoded[allocation : allocation + 8]
+        == [
+            ("movabs", "$0x200,%rax"),
+            *[("movq", f"$0x0,-0x{offset:x}(%rbp)") for offset in (48, 40, 32, 24)],
+            ("mov", "%rax,%rsi"),
+            ("mov", "-0x8(%rbp),%rdi"),
+            ("lea", "-0x30(%rbp),%rdx"),
+        ]
+        and body.count("call __au_runtime_bytes_allocate") == 1,
+        "Copied producer must allocate exactly one 512-byte owner",
+    )
+    ctor = load_admission().GENERATED["ProducedRecord.new"]
+    calls = [index for index, line in enumerate(body) if line == "call " + ctor]
+    returns = [index for index, line in enumerate(body) if line == f"movq {output_save}, %r10"]
+    require(len(calls) == len(returns) == 6, "Changed copied producer result-path count")
+    slots, result_accesses = [], {prefix + 1}
+    for call, returned in zip(calls, returns):
+        match = re.fullmatch(r"leaq -([0-9]+)\(%rbp\), %r10", body[call - 1])
+        require(match and call < returned, "Missing fresh copied result constructor destination")
+        slot = int(match[1])
+        require(
+            72 <= slot <= local_bytes - 16
+            and body[call - 2] == "movq %rsp, %r11"
+            and decoded[call - 2 : call] == [("mov", "%rsp,%r11"), ("lea", f"-0x{slot:x}(%rbp),%r10")],
+            "Copied result aliases hidden saves or outgoing argument storage",
+        )
+        slots.append((slot - 72, slot))
+        cleanup = ["addq $80, %rsp"]
+        linked_cleanup = [("add", "$0x50,%rsp")]
+        for owner in (120, 48):
+            cleanup += [
+                "pushq %rax",
+                f"leaq -{owner}(%rbp), %rdi",
+                "subq $8, %rsp",
+                "call __au_runtime_bytes_drop",
+                "addq $8, %rsp",
+                "popq %rax",
+            ]
+            linked_cleanup += [
+                ("push", "%rax"),
+                ("lea", f"-0x{owner:x}(%rbp),%rdi"),
+                ("sub", "$0x8,%rsp"),
+                ("call", decoded[call + len(linked_cleanup) + 4][1]),
+                ("add", "$0x8,%rsp"),
+                ("pop", "%rax"),
+            ]
+        require(body[call + 1 : returned] == cleanup, "Copied result published before complete owner cleanup")
+        require(decoded[call + 1 : returned] == linked_cleanup, "Linked copied result cleanup changed")
+        pairs = [(output_save, "%r10")]
+        for offset in range(0, 72, 8):
+            pairs += [(f"{offset - slot}(%rbp)", "%rax"), ("%rax", f"{offset}(%r10)")]
+        moves(returned, pairs)
+        end = returned + len(pairs)
+        require(
+            body[end] == "xorq %rax, %rax"
+            and decoded[end] == ("xor", "%rax,%rax")
+            and body[end + 1].startswith("jmp .Lreturn")
+            and linked[end + 1].op == "jmp"
+            and target_of(linked[end + 1]) == linked[-2].address,
+            "Copied result has an incomplete or redirected return",
+        )
+        result_accesses.add(returned)
+    require(all(left[1] <= right[0] for left, right in zip(sorted(slots), sorted(slots)[1:])), "Copied results overlap")
+    require(
+        {index for index, line in enumerate(body) if output_save in line} == result_accesses
+        and sum("(%r10)" in line for line in body) == 6 * 9
+        and sum(line.startswith("jmp .Lreturn") for line in body) == 6,
+        "Copied output address escaped or gained an unaccounted access/return",
+    )
+    return {"input_bytes": 16, "result_bytes": 72, "fresh_result_slots": slots, "return_paths": 6}
 
 
 def generated_records(source, functions, symbols, instructions):
@@ -1179,6 +1344,9 @@ def generated_records(source, functions, symbols, instructions):
         )
         actual_calls = [row for row in functions[name]["calls"] if row["kind"] == "call"]
         generated_calls(name, expected_calls, actual_calls, admission)
+        copied = None
+        if name in (PRODUCER, admission.GENERATED["ProducedRecord.new"]):
+            copied = generated_producer(body, linked, local_bytes, prefix, name != PRODUCER)
         if name not in (ENTRY, TRANSFER, CONSUMER):
             base = local_bytes + 16
             outgoing = []
@@ -1205,6 +1373,8 @@ def generated_records(source, functions, symbols, instructions):
                 "linked_local_peak": functions[name]["local_peak"],
                 "calls": actual_calls,
             }
+            if copied is not None:
+                records[name]["copied_boundary"] = copied
             continue
         region_targets = {admission.GENERATED["record"], admission.GENERATED["check_ram_sectors"]}
         allowed = runtime | ({TRANSFER, CONSUMER} | region_targets if name == ENTRY else set())
@@ -1256,30 +1426,37 @@ def generated_records(source, functions, symbols, instructions):
     return records
 
 
-def validate_bridge(symbols, instructions, functions):
+def validate_bridge(symbols, instructions, functions, copied=False):
+    name, target, allocation = (PRODUCER_BRIDGE, PRODUCER, 16) if copied else (BRIDGE, ENTRY, 32)
     expected = [
         ("push", "%rbp"),
         ("mov", "%rsp,%rbp"),
-        ("sub", "$0x20,%rsp"),
+        ("sub", f"$0x{allocation:x},%rsp"),
         ("mov", "%rdi,(%rsp)"),
         ("mov", "%rsi,0x8(%rsp)"),
-        ("mov", "%rdx,0x10(%rsp)"),
-        ("movq", "$0x0,0x18(%rsp)"),
+    ]
+    expected += [("mov", "%rdx,%r10")] if copied else [("mov", "%rdx,0x10(%rsp)"), ("movq", "$0x0,0x18(%rsp)")]
+    expected += [
         ("mov", "%rsp,%r11"),
-        ("call", ENTRY),
+        ("call", target),
         ("leave", ""),
         ("ret", ""),
     ]
-    symbol = symbols[BRIDGE]
+    symbol = symbols[name]
     actual = []
     for address in sorted(instructions):
         if symbol.address <= address < symbol.address + symbol.size:
             insn = instructions[address]
-            operand = ENTRY if insn.op == "call" and target_of(insn) == symbols[ENTRY].address else insn.args
+            operand = target if insn.op == "call" and target_of(insn) == symbols[target].address else insn.args
             actual.append((insn.op, operand))
     require(actual == expected, "Private bridge instruction/frame/callee profile changed")
-    require(functions[BRIDGE]["local_peak"] == 48, "Wrong bridge stack extent")
-    return {"frame_allocation": 32, "saved_rbp_and_return": 16, "local_peak": 48, "calls": functions[BRIDGE]["calls"]}
+    require(functions[name]["local_peak"] == allocation + 16, "Wrong bridge stack extent")
+    return {
+        "frame_allocation": allocation,
+        "saved_rbp_and_return": 16,
+        "local_peak": allocation + 16,
+        "calls": functions[name]["calls"],
+    }
 
 
 def load_admission():
@@ -1316,6 +1493,7 @@ def validate(directory):
         *load_admission().GENERATED.values(),
         *load_admission().REFLECTION,
         BRIDGE,
+        PRODUCER_BRIDGE,
         "aurora_reflect_size",
         "aurora_reflect_field_count",
         "memcpy",
@@ -1344,6 +1522,10 @@ def validate(directory):
         returning = enlarged
     require(NORETURN <= functions.keys() and not NORETURN & returning, "Changed non-returning diagnostic")
     bridge = validate_bridge(elf.functions, instructions, functions)
+    producer_bridge = validate_bridge(elf.functions, instructions, functions, copied=True)
+    producer_source = Path(__file__).resolve().parents[1] / "examples/kernel-owned-bytes.au"
+    producer_contract = producer_source_contract(producer_source.read_text())
+    producer_contract["source_sha256"] = hashlib.sha256(producer_source.read_bytes()).hexdigest()
     divisions = generated_divisions(elf.functions, instructions)
     generated = generated_records((directory / "language.s").read_text(), functions, elf.functions, instructions)
     levels, roots = recursion_proof(functions, elf.functions, instructions, starts, associations)
@@ -1356,6 +1538,8 @@ def validate(directory):
     required = {
         "uefi_payload_main",
         BRIDGE,
+        PRODUCER_BRIDGE,
+        PRODUCER,
         ENTRY,
         TRANSFER,
         CONSUMER,
@@ -1364,6 +1548,7 @@ def validate(directory):
             load_admission().GENERATED[name]
             for name in (
                 "record",
+                "ProducedRecord.new",
                 "check_ram_sectors",
                 "RamSectorDevice.new",
                 "RamSectorDevice.read_sector",
@@ -1411,6 +1596,8 @@ def validate(directory):
         "generated": generated,
         "generated_divisions": divisions,
         "bridge": bridge,
+        "producer_bridge": producer_bridge,
+        "producer_contract": producer_contract,
         "verifier": {"entry_sites": roots, "levels": levels, "maximum_active_frames": 4},
         "object_admission": admission,
         "sha256": {name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in files},
@@ -1449,6 +1636,173 @@ def self_test():
                 code[base + index] = Instruction(base + index, 1, op, operands)
         bodies = {name: analyze_function(symbol, code, starts) for name, symbol in symbols.items()}
         return bodies, symbols, code, starts
+
+    bridge_rows = [
+        ("push", "%rbp"),
+        ("mov", "%rsp,%rbp"),
+        ("sub", "$0x10,%rsp"),
+        ("mov", "%rdi,(%rsp)"),
+        ("mov", "%rsi,0x8(%rsp)"),
+        ("mov", "%rdx,%r10"),
+        ("mov", "%rsp,%r11"),
+        ("call", "@" + PRODUCER),
+        ("leave", ""),
+        ("ret", ""),
+    ]
+    bodies, symbols, code, _ = fixture({PRODUCER_BRIDGE: bridge_rows, PRODUCER: [("ret", "")]})
+    validate_bridge(symbols, code, bodies, copied=True)
+    positives += 1
+    for index, changed in (
+        (2, ("sub", "$0x20,%rsp")),
+        (3, ("mov", "%rsi,(%rsp)")),
+        (4, ("mov", "%rsi,0x10(%rsp)")),
+        (5, ("mov", "%rsp,%r10")),
+        (5, ("mov", "%rdx,%r11")),
+        (6, ("mov", "%r10,%r11")),
+        (7, ("call", "0 <wrong>")),
+    ):
+        changed_code = dict(code)
+        changed_code[index] = Instruction(index, 1, *changed)
+        rejects("copied bridge operand/extent/alias", lambda c=changed_code: validate_bridge(symbols, c, bodies, True))
+    changed_bodies = deepcopy(bodies)
+    changed_bodies[PRODUCER_BRIDGE]["local_peak"] = 24
+    rejects("copied bridge stack bound", lambda: validate_bridge(symbols, code, changed_bodies, True))
+
+    source = (
+        "class ProducedRecord { storage::SectorIoStatus outcome; std::BinaryBuffer64 payload; public: "
+        "ProducedRecord(storage::SectorIoStatus status, std::BinaryBuffer64 record) "
+        ": outcome(status), payload(record) {} }; "
+        "auto produce_record(builtin::ByteRegion region, i64 selector) -> ProducedRecord {}"
+    )
+    producer_source_contract(source)
+    positives += 1
+    for old, new in (
+        ("SectorIoStatus outcome", "i64 outcome"),
+        ("BinaryBuffer64 payload", "Sector512 payload"),
+        ("payload(record)", "payload()"),
+        ("ByteRegion region, i64 selector", "i64 selector, ByteRegion region"),
+        ("-> ProducedRecord", "-> i64"),
+    ):
+        rejects(
+            "copied source signature/layout",
+            lambda old=old, new=new: producer_source_contract(source.replace(old, new)),
+        )
+
+    # Small handwritten boundary fixture, independent of compiler execution.
+    body = [
+        "movq %r11, -632(%rbp)",
+        "movq %r10, -640(%rbp)",
+        "movq -632(%rbp), %r11",
+        "movq (%r11), %rax",
+        "movq %rax, -8(%rbp)",
+        "movq -632(%rbp), %r11",
+        "movq 8(%r11), %rax",
+        "movq %rax, -16(%rbp)",
+        "movabsq $512, %rax",
+        *[f"movq $0, -{offset}(%rbp)" for offset in (48, 40, 32, 24)],
+        "movq %rax, %rsi",
+        "movq -8(%rbp), %rdi",
+        "leaq -48(%rbp), %rdx",
+        "call __au_runtime_bytes_allocate",
+    ]
+    for slot in (192, 264, 336, 408, 480, 552):
+        body += [
+            "movq %rsp, %r11",
+            f"leaq -{slot}(%rbp), %r10",
+            "call " + load_admission().GENERATED["ProducedRecord.new"],
+        ]
+        body += ["addq $80, %rsp"]
+        for owner in (120, 48):
+            body += [
+                "pushq %rax",
+                f"leaq -{owner}(%rbp), %rdi",
+                "subq $8, %rsp",
+                "call __au_runtime_bytes_drop",
+                "addq $8, %rsp",
+                "popq %rax",
+            ]
+        body += ["movq -640(%rbp), %r10"]
+        for offset in range(0, 72, 8):
+            body += [f"movq {offset - slot}(%rbp), %rax", f"movq %rax, {offset}(%r10)"]
+        body += ["xorq %rax, %rax", "jmp .Lreturn0"]
+    body += ["leave", "ret"]
+
+    def boundary_rows(lines):
+        rows = []
+        for index, line in enumerate(lines):
+            op, _, args = line.partition(" ")
+            args = args.replace(" ", "")
+            args = re.sub(r"-?\d+", lambda match: ("-" if int(match[0]) < 0 else "") + hex(abs(int(match[0]))), args)
+            # Register names contain digits; only memory offsets/immediates
+            # need hex spelling in this synthetic GNU-disassembly fixture.
+            args = re.sub(r"%r0x([0-9a-f]+)", lambda match: "%r" + str(int(match[1], 16)), args)
+            args = args.replace("0x0(%", "(%")
+            op = {
+                "movabsq": "movabs",
+                "leaq": "lea",
+                "subq": "sub",
+                "addq": "add",
+                "pushq": "push",
+                "popq": "pop",
+                "xorq": "xor",
+                "movq": "movq" if args.startswith("$") else "mov",
+            }.get(op, op)
+            if op == "jmp":
+                args = f"{len(lines) - 2:x} <return>"
+            rows.append(Instruction(index, 1, op, args))
+        return rows
+
+    linked = boundary_rows(body)
+    generated_producer(body, linked, 640, 0, False)
+    positives += 1
+    for old, new in (
+        ("movq %r10, -640(%rbp)", "movq %r10, -632(%rbp)"),
+        ("movq 8(%r11), %rax", "movq 16(%r11), %rax"),
+        ("movabsq $512, %rax", "movabsq $513, %rax"),
+        ("leaq -192(%rbp), %r10", "leaq -640(%rbp), %r10"),
+        ("leaq -264(%rbp), %r10", "leaq -192(%rbp), %r10"),
+        ("leaq -120(%rbp), %rdi", "leaq -48(%rbp), %rdi"),
+        ("movq %rax, 64(%r10)", "movq %rax, 72(%r10)"),
+        ("movq -192(%rbp), %rax", "movq -200(%rbp), %rax"),
+    ):
+        changed = list(body)
+        changed[changed.index(old)] = new
+        rejects("copied source boundary mutation", lambda b=changed: generated_producer(b, linked, 640, 0, False))
+        changed_linked = boundary_rows(changed)
+        rejects("copied linked boundary mutation", lambda c=changed_linked: generated_producer(body, c, 640, 0, False))
+        rejects(
+            "matched copied boundary mutation",
+            lambda b=changed, c=changed_linked: generated_producer(b, c, 640, 0, False),
+        )
+
+    ctor = [
+        "movq %r10, -88(%rbp)",
+        "movq %r11, -96(%rbp)",
+        "movq -96(%rbp), %r11",
+        "movq 0(%r11), %rax",
+        "movq %rax, -8(%rbp)",
+        "movq -96(%rbp), %r11",
+    ]
+    for offset in range(8, 72, 8):
+        ctor += [f"movq {offset}(%r11), %rax", f"movq %rax, {offset - 80}(%rbp)"]
+    ctor += ["movq -8(%rbp), %rax", "movq -88(%rbp), %r10", "movq %rax, 0(%r10)", "movq -88(%rbp), %r10"]
+    for offset in range(8, 72, 8):
+        ctor += [f"movq {offset - 80}(%rbp), %rax", f"movq %rax, {offset}(%r10)"]
+    ctor += ["movabsq $0, %rax", "jmp .Lreturn0", "leave", "ret"]
+    ctor_linked = boundary_rows(ctor)
+    generated_producer(ctor, ctor_linked, 96, 0, True)
+    positives += 1
+    for old, new in (
+        ("movq %r11, -96(%rbp)", "movq %r11, -88(%rbp)"),
+        ("movq 8(%r11), %rax", "movq 16(%r11), %rax"),
+        ("movq %rax, 0(%r10)", "movq %rax, 8(%r10)"),
+        ("movq %rax, 64(%r10)", "movq %rax, 72(%r10)"),
+    ):
+        changed = [new if line == old else line for line in ctor]
+        changed_linked = boundary_rows(changed)
+        rejects("copied ctor source layout", lambda b=changed: generated_producer(b, ctor_linked, 96, 0, True))
+        rejects("copied ctor linked layout", lambda c=changed_linked: generated_producer(ctor, c, 96, 0, True))
+        rejects("matched copied ctor layout", lambda b=changed, c=changed_linked: generated_producer(b, c, 96, 0, True))
 
     # The RAM closure adds five existing scalar operations, no graphical I/O.
     original_neutral, original_flags = NEUTRAL, PRESERVE_FLAGS
@@ -1554,6 +1908,7 @@ def self_test():
 
     division_symbols, division_code = {}, {}
     for label, count in (
+        ("producer", 1),
         ("record", 1),
         ("sector_pattern_matches", 2),
         ("write_ram_pattern", 2),
@@ -1567,7 +1922,7 @@ def self_test():
         for offset in range(0, count * 5, 5):
             division_code[start + offset] = Instruction(start + offset, 2, "cqto", "")
             division_code[start + offset + 2] = Instruction(start + offset + 2, 3, "idiv", "%r11")
-    require(generated_divisions(division_symbols, division_code)["pairs"] == 9, "Wrong finite division inventory")
+    require(generated_divisions(division_symbols, division_code)["pairs"] == 10, "Wrong finite division inventory")
     positives += 1
     for op, args, size in (("cqto", "%rax", 2), ("idiv", "(%r11)", 3), ("idiv", "%rcx", 3), ("idiv", "%r11", 4)):
         changed = dict(division_code)

@@ -132,6 +132,14 @@ its owners; copied results carry no region authority. Resource copied parameters
 direct resource-call returns and protected snapshot services remain separate.
 Focused source/IR/private-ABI checks do not replace final integrated qualification.
 
+The existing CPU-only owned-bytes profile adds a [target copied producer handoff](kernel-owned-bytes.md#copied-producer-handoff).
+Its real one-sector RAM device returns the complete 72-byte status/record through
+a private result bridge. The native adapter closes the region, reacquires and
+poisons released backing, then checks all 64 bytes, exact accounting and canaries;
+quota/page exhaustion returns actual zero payloads. Existing caps and runtime
+authority are unchanged. Final-source image/guest/full qualification is separate;
+protected readers, IPC integration and persistent file services remain unimplemented.
+
 Copied-value x86 lowering now coalesces verified contiguous groups of eight u8
 payload leaves into existing RAX-only qword load/store pairs, retaining exact byte
 tails and separate padding handling. The [byte representation contract](../compiler/BYTES.md#physical-representation-gate)
