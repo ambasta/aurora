@@ -369,9 +369,13 @@ class DeveloperCommands(unittest.TestCase):
                     "framebuffer",
                     "console",
                     "graphical-console",
+                    "snapshot",
                 )
             ]
             expected += [
+                # The exclusive owned-byte and snapshot branches each route
+                # this shared translation unit through the selected compiler.
+                ("kernel/owned-bytes.cpp", "build/uefi/owned-bytes-runtime.o"),
                 ("kernel/owned-bytes.cpp", "build/uefi/owned-bytes-runtime.o"),
                 ("kernel/uefi/owned-bytes.cpp", "build/uefi/owned-bytes-profile.o"),
             ]

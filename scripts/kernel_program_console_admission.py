@@ -311,9 +311,12 @@ def switch_no_bypass(body, guard, jump, targets, decoder):
             need(not guard.address < target <= jump.address, "Transfer bypasses switch bound")
 
 
-def stack_evidence(directory):
+def stack_evidence(directory, *, snapshot=False):
     decoder = load("program_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     decoder.CPP_OBJECTS = ("payload", "acpi", "pci", "runtime")
+    if snapshot:
+        decoder.CPP_OBJECTS += ("owned-bytes-runtime", "snapshot")
+        decoder.configure_owned_bytes()
     decoder.configure_console("program")
     original_rows = decoder.stack_rows
     # The CFG decoder independently accounts for every stack adjustment below.
@@ -352,6 +355,8 @@ def stack_evidence(directory):
     decoder.NORETURN = frozenset(
         name for name in linked.functions if name == "uefi_payload_fail" or "4stopE" in name or "4failE" in name
     )
+    if snapshot:
+        decoder.NORETURN |= decoder.OWNED_NORETURN
     for object_name in ("language", "memory"):
         obj = decoder.Elf(directory / (object_name + ".o"))
         for symbol in obj.functions.values():
@@ -362,7 +367,7 @@ def stack_evidence(directory):
     fixed = {
         "kernel/uefi/runtime-entry.S": "4eb746286de4390de61e559ad284ba74b0e671e3d59f1a83963874f95867e805",
         "kernel/exceptions.S": "c375958b8e813dadcf66c4f4113ba91f3ea6d5cc6c8f1cbda1bc480005d6c69f",
-        "kernel/uefi/ipc-user-entry.S": "08c04296ebd57a2b9447d057eecdabc0088dd7372460f8ba204497279581a108",
+        "kernel/uefi/ipc-user-entry.S": "bd189cafc7448e3324a73801c93282585a814a9eb97ba1dedb36a2f49cd95627",
         "kernel/uefi/runtime-tables.hpp": "c525ca83ff244c556b8196cf90e4ca18af42a5556caf2b298234f8a4a3543521",
     }
     for name, sha in fixed.items():
@@ -455,7 +460,7 @@ def stack_evidence(directory):
     )
     irq_peak = 176 + 15 + dispatch["peak"]
     points = {}
-    for name in ("uefi_program_poll_begin", "uefi_service_drain_begin"):
+    for name in () if snapshot else ("uefi_program_poll_begin", "uefi_service_drain_begin"):
         pc = named[name].address
         owners = [
             key for key, symbol in linked.functions.items() if symbol.address <= pc < symbol.address + symbol.size
@@ -464,7 +469,9 @@ def stack_evidence(directory):
         path = graph_peak(functions, frames, "uefi_payload_entry", recursive, target=owners[0])
         path["peak_with_interrupt"] = path["peak"] + irq_peak
         points[name] = path
-    need(normal["peak"] + boot_fault <= 15360, "Kernel normal/fault stack cap exhausted")
+    reserve = decoder.FAULT_RESERVE if snapshot else boot_fault
+    need(boot_fault <= reserve, "Synchronous fault path exceeds retained fault reserve")
+    need(normal["peak"] + reserve <= 15360, "Kernel normal/fault stack cap exhausted")
     need(
         irq_peak <= 15360 and all(value["peak_with_interrupt"] <= 15360 for value in points.values()),
         "IRQ or kernel poll/drain stack cap exhausted",
@@ -477,9 +484,11 @@ def stack_evidence(directory):
         bodies = {
             key: decoder.analyze_function(symbol, instructions, user_starts) for key, symbol in user.functions.items()
         }
-        path = graph_peak(bodies, {}, "aurora_user_main", set())
-        path["entry_saved_bytes"] = 48
-        path["peak_with_entry"] = path["peak"] + 48
+        copied = snapshot and name == "bounds"
+        root = "__au_v_m1_16snapshot_service_n0__d16aurora_user_main" if copied else "aurora_user_main"
+        path = graph_peak(bodies, {}, root, set())
+        path["entry_saved_bytes"] = 160 if copied else 48
+        path["peak_with_entry"] = path["peak"] + path["entry_saved_bytes"]
         need(path["peak_with_entry"] <= 15360, "CPL3 stack cap exhausted")
         users[name] = path
     return dict(
@@ -487,6 +496,8 @@ def stack_evidence(directory):
         cap_bytes=15360,
         normal=normal,
         boot_fault=boot_fault,
+        fault_reserve=reserve,
+        normal_with_fault_reserve=normal["peak"] + reserve,
         irq_frame_bytes=176,
         irq_alignment_bytes=15,
         irq_dispatch=dispatch,

@@ -94,6 +94,16 @@ def normalize_repeat_spelling(raw, args):
     return canonical
 
 
+def zero_qword_push(raw, op, args, size):
+    # In 64-bit mode, this exact unprefixed imm8 encoding writes a sign-extended
+    # zero qword at old RSP-8. No register value is substituted or inferred.
+    require(
+        raw == b"\x6a\x00" and (op, args, size) == ("push", "$0x0", 2),
+        "Unsupported immediate PUSH encoding/width/operand",
+    )
+    return dict(rsp_delta=-8, write_bytes=8, initialized_value=0)
+
+
 def disassemble(path):
     text = command("objdump", "-dw", str(path))
     instructions = {}
@@ -107,6 +117,8 @@ def disassemble(path):
         args = args.split("#", 1)[0].strip()
         if op == "rep":
             args = normalize_repeat_spelling(bytes.fromhex(raw), args)
+        if op == "push" and args == "$0x0":
+            zero_qword_push(bytes.fromhex(raw), op, args, len(raw.split()))
         instructions[address] = Instruction(address, len(raw.split()), op, args)
     require(instructions, "Missing linked disassembly")
     return instructions, text
@@ -508,6 +520,7 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
                 "Memory-push authorization does not match the original instruction",
             )
     observed_pushes = {}
+    immediate_pushes = {}
     wide_level_registers = ("%rcx", "%ecx", *CALLEE_SAVED_REGISTERS[carrier][:2])
     # State: consumed bytes, saved frame-pointer depth, ecx, r14, known ZF.
     states = {begin: (0, None, seed, None, None)}
@@ -620,6 +633,11 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
                     depth_before=depth,
                     depth_after=depth + 8,
                 )
+            elif op == "push" and insn.args == "$0x0":
+                require(insn.size == 2, "Prefixed or unsupported immediate-zero PUSH")
+                immediate_pushes[address] = dict(
+                    address=address, depth_before=depth, depth_after=depth + 8, write_bytes=8, initialized_value=0
+                )
             else:
                 require(
                     op == "pushf" or re.fullmatch(r"%r(?:ax|bx|cx|dx|si|di|bp|[89]|1[0-5])", insn.args),
@@ -715,6 +733,8 @@ def analyze_function(symbol, instructions, starts, seed=None, fault=False, carri
         returns=returns,
         push_peak=push_peak,
     )
+    if immediate_pushes:
+        result["immediate_zero_pushes"] = sorted(immediate_pushes.values(), key=lambda row: row["address"])
     if authorized_pushes:
         result["stack_memory_pushes"] = sorted(observed_pushes.values(), key=lambda row: row["address"])
     return result
@@ -1636,6 +1656,33 @@ def self_test():
                 code[base + index] = Instruction(base + index, 1, op, operands)
         bodies = {name: analyze_function(symbol, code, starts) for name, symbol in symbols.items()}
         return bodies, symbols, code, starts
+
+    require(
+        zero_qword_push(b"\x6a\x00", "push", "$0x0", 2) == dict(rsp_delta=-8, write_bytes=8, initialized_value=0),
+        "Immediate zero qword semantics",
+    )
+    for raw, op, args, size in (
+        (b"\x66\x6a\x00", "pushw", "$0x0", 3),
+        (b"\x67\x6a\x00", "push", "$0x0", 3),
+        (b"\x6a\x01", "push", "$0x0", 2),
+        (b"\x6a\x00", "push", "$0x1", 2),
+        (b"\x68\x00\x00\x00\x00", "push", "$0x0", 5),
+        (b"\xff\x30", "push", "(%rax)", 2),
+    ):
+        rejects("immediate qword PUSH shape", lambda: zero_qword_push(raw, op, args, size))
+    immediate = {
+        0: Instruction(0, 2, "push", "$0x0"),
+        2: Instruction(2, 4, "add", "$0x8,%rsp"),
+        6: Instruction(6, 1, "ret", ""),
+    }
+    pushed = analyze_function(Symbol("zero_push", 0, 7, 1, 2), immediate, {0: "zero_push"})
+    require(
+        pushed["local_peak"] == 16
+        and pushed["immediate_zero_pushes"]
+        == [dict(address=0, depth_before=0, depth_after=8, write_bytes=8, initialized_value=0)],
+        "Immediate zero PUSH loses depth/value identity",
+    )
+    positives += 2
 
     bridge_rows = [
         ("push", "%rbp"),

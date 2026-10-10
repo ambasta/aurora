@@ -1,5 +1,60 @@
 # Staged request/reply IPC foundation
 
+## Protected snapshot profile
+
+The optional `snapshot-client` and `snapshot-service` sources exercise one
+immutable copied 64-byte RAM record, after its real producer's owners and region
+close. The service accepts operation/absolute-offset words, selects the actual
+byte in protected Aurora and returns closed byte/EOF/error encodings. The client
+is relaunched with a fresh scrubbed stack for every request/completion; its actual
+completion return supplies the next absolute offset. This is a finite snapshot
+consumer, not persistent Aurora locals, mutable files or general process lifetime.
+
+`scripts/kernel-snapshot-tests.sh` compiles those sources, the minimal combined
+supervisor root and existing Mailbox for a bounded native replay. It also links
+the two user fixtures under the unchanged 4 KiB limit. Native SIGILL observation
+of the actual service bounds read is not protected fault containment evidence.
+The fixed copied service record is 96 bytes at user stack top minus112, with
+phase/operation/offset at0/8/16, Snapshot64 bytes at24..87 and zero tail padding.
+The conditional IPC wrapper reserves the record before saving its envelope and
+restores exact RSP before the existing INT0x81. The source record and wrapper are
+assembled together to keep the aggregate entry local.
+
+`UEFI_MODE=snapshot` composes only the existing ACPI/PCI discovery, protected IPC
+runtime and a closed-region copied producer. It keeps the allocator and protected
+stack pools separate. After authenticated receive and complete stack scrubbing,
+the runtime verifies the retained final stack PageLease and its exact user and
+supervisor mappings, then copies only the fixed record through the supervisor
+mapping. Publication is bound once to the current endpoint generation; clearing,
+revocation and fresh production precede a restarted service incarnation.
+
+The adapter validates only the closed reply encoding. The compiled client checks
+each actual returned byte and supplies the next offset; malformed or incorrect
+actual replies fail closed. Explicit output-buffer, retained-slot and lease
+clearing does not promise erasure of all compiler-created supervisor stack copies.
+Finite fault/cancel/restart, foreign owner, stale/revoked generation, producer
+selector/quota/page failure and actual malformed/wrong-byte reply image variants
+are selected with `snapshot-*` modes in `scripts/kernel-uefi-build.sh`.
+
+All eleven finite image variants pass exact composition, private bridge/user
+wrapper, image and combined native/Aurora stack checks. The measured supervisor
+maximum is 14,768 bytes plus the existing 512-byte fault reserve, leaving only
+80 bytes below the unchanged 15,360-byte admission cap in the 16 KiB stack. The
+actual deepest path is ACPI/PCI discovery and four-level page verification.
+Client/service totals including their wrappers are 112/352 bytes. Every rebuild
+must re-establish these bounds; the thin margin is not an expanded budget.
+
+The native runner and optimized ordered-transcript controls are registered in
+`full`/`slow`/`integration`, with a private Meson output directory. The existing
+UEFI smoke launcher selects the original clock for each explicit snapshot mode,
+validates its exact transcript, and restores the normal image on success or
+failure. Compiler-free launcher controls exercise those restoration exits.
+All eleven modes passed actual QEMU/OVMF execution, including service fault and
+cancel/restart, with exact launched EFI captures and normal-image restoration.
+Fresh normal UEFI and BIOS smokes also passed. Final integrated `full` and
+independent outcome review remain release gates. The exclusive owned-byte
+profile is unchanged; this composition admits no arbitrary copied inputs.
+
 This optional UEFI profile runs two independently compiled Aurora images under
 separate owned CR3 roots. The client produces a two-word request `(40, 2)`, the
 service computes 42, and the client checks the copied reply. It is a bounded

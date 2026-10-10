@@ -1,0 +1,82 @@
+module kernel_snapshot;
+import kernel.snapshot;
+import kernel.ipc_transition;
+import kernel.terminal_event;
+import std.binary;
+import std.binary_buffer;
+import storage.sector;
+import storage.block_io;
+import storage.ram_sector;
+
+class ProducedSnapshot {
+    storage::SectorIoStatus outcome;
+    kernel::Snapshot64 payload;
+public:
+    ProducedSnapshot(storage::SectorIoStatus status, kernel::Snapshot64 snapshot)
+        : outcome(status), payload(snapshot) {}
+};
+
+auto produce_snapshot(builtin::ByteRegion region, i64 selector) -> ProducedSnapshot {
+    builtin::OwnedBytes backing = region.try_allocate(512);
+    storage::RamSectorDevice device = storage::RamSectorDevice(region, move(backing));
+    const kernel::Snapshot64 zero = kernel::Snapshot64();
+    const ProducedSnapshot invalid = ProducedSnapshot(storage::SectorIoStatus::invalid_source, zero);
+    if (device.status() != storage::SectorIoStatus::success) {
+        return invalid;
+    }
+    storage::Sector512 sector = storage::Sector512();
+    i64 index = 0;
+    while (index < 64) {
+        if (sector.write_byte(448 + index, u8((index * 53 + 7) % 256)) != std::ByteWriteStatus::success) {
+            return invalid;
+        }
+        index = index + 1;
+    }
+    if (device.write_sector(0, sector) != storage::SectorIoStatus::success) {
+        return invalid;
+    }
+    const storage::SectorReadResult saved = device.read_sector(selector);
+    if (saved.status() != storage::SectorIoStatus::success) {
+        return ProducedSnapshot(saved.status(), zero);
+    }
+    const storage::Sector512 copied = saved.sector_or_zero();
+    kernel::Snapshot64 snapshot = kernel::Snapshot64();
+    index = 0;
+    while (index < 64) {
+        const std::ByteReadResult byte = copied.read_byte(448 + index);
+        if (byte.status() != std::ByteReadStatus::success || !snapshot.set(index, u8(byte.value_or(0u64)))) {
+            return invalid;
+        }
+        index = index + 1;
+    }
+    return ProducedSnapshot(storage::SectorIoStatus::success, snapshot);
+}
+
+// Only exact assembly trampolines export these private scalar policy seams.
+auto snapshot_kernel_value() -> i64 { return 42; }
+
+auto snapshot_ipc_transition(u64 operation, u64 phase, u64 state, u64 scrubbed) -> u64 {
+    const kernel::TransactionSnapshot snapshot = kernel::TransactionSnapshot(phase, state, scrubbed);
+    const kernel::TransactionDecision decision = kernel::transaction_transition(operation, snapshot);
+    if (decision.action() == kernel::TransactionAction::invalid) { return 0u64; }
+    if (decision.action() == kernel::TransactionAction::refused) { return 1u64; }
+    u64 effect = 0u64;
+    if (decision.effect() == kernel::TransactionEffect::submit_request) { effect = 1u64; }
+    if (decision.effect() == kernel::TransactionEffect::deliver_request) { effect = 2u64; }
+    if (decision.effect() == kernel::TransactionEffect::store_reply) { effect = 3u64; }
+    if (decision.effect() == kernel::TransactionEffect::consume_reply) { effect = 4u64; }
+    if (decision.effect() == kernel::TransactionEffect::consume_cancelled) { effect = 5u64; }
+    if (decision.effect() == kernel::TransactionEffect::cancel_request) { effect = 6u64; }
+    if (decision.effect() == kernel::TransactionEffect::recycle_record) { effect = 7u64; }
+    return 2u64 | (decision.next() << 8) | (effect << 16);
+}
+
+auto snapshot_terminal_event(u64 vector, u64 matched_sites, u64 stack_top) -> u64 {
+    const kernel::TerminalEvent event = kernel::terminal_event(vector, matched_sites, stack_top);
+    if (event == kernel::TerminalEvent::returned) { return 1u64; }
+    if (event == kernel::TerminalEvent::bounds) { return 2u64; }
+    if (event == kernel::TerminalEvent::overflow) { return 3u64; }
+    if (event == kernel::TerminalEvent::division_zero) { return 4u64; }
+    if (event == kernel::TerminalEvent::shift_count) { return 5u64; }
+    return 0u64;
+}

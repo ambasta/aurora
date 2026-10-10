@@ -269,6 +269,7 @@ def image_options(arguments):
     allowed = (
         [],
         ["--ipc-policy"],
+        ["--ipc-policy", "--snapshot"],
         ["--owned-bytes"],
         ["--ipc-policy", "--disposal-policy"],
         ["--graphical-console"],
@@ -278,6 +279,7 @@ def image_options(arguments):
     need(arguments in allowed, "Expected one exact supported image-policy flag combination")
     return dict(
         require_ipc="--ipc-policy" in arguments,
+        require_snapshot="--snapshot" in arguments,
         require_owned_bytes="--owned-bytes" in arguments,
         require_disposal="--disposal-policy" in arguments,
         require_graphical_console="--graphical-console" in arguments,
@@ -303,6 +305,113 @@ def nm_entries(text):
         need(name not in result, "Duplicate code/import symbol: " + name)
         result[name] = kind
     return result
+
+
+def snapshot_image_policy(directory, symbols):
+    expected_objects = {
+        "payload",
+        "payload-entry",
+        "language",
+        "acpi",
+        "pci",
+        "runtime",
+        "memory",
+        "snapshot",
+        "owned-bytes-runtime",
+        "runtime-entry",
+        "runtime-exceptions",
+        "user-clean",
+        "user-clean-entry",
+        "user-bounds",
+        "loader",
+        "embed",
+        "transition",
+        "loader-pe",
+        "embed-pe",
+        "transition-pe",
+        "memory-pe",
+    }
+    need({path.stem for path in directory.glob("*.o")} == expected_objects, "Exact snapshot object composition")
+    entries = nm_entries(subprocess.check_output(["nm", "-a", str(directory / "language.o")], text=True))
+    need(
+        {name for name, kind in entries.items() if kind == "U"}
+        == {"__au_runtime_bytes_" + name for name in ("allocate", "at", "set", "drop")},
+        "Exact snapshot generated runtime imports",
+    )
+    exports = {
+        "aurora_kernel_value",
+        "aurora_kernel_ipc_transition",
+        "aurora_kernel_terminal_event",
+        "__au_runtime_snapshot_produce",
+    }
+    reflections = {"aurora_reflect_size", "aurora_reflect_field_count"} | {
+        f"__au_reflect_s{index}_{suffix}" for index in range(1, 10) for suffix in ("size", "field_count")
+    }
+    need(
+        {name for name, kind in entries.items() if kind == "T"} == exports | reflections,
+        "Exact snapshot native and reflection exports",
+    )
+    producer = "__au_v_m1_15kernel_snapshot_n0__d16produce_snapshot"
+    need(entries.get(producer) == "t", "Private copied producer entry")
+    names = nm_entries(symbols)
+    need(
+        {name for name in names if name.startswith("__au_runtime_")}
+        == {
+            "__au_runtime_bytes_" + name
+            for name in ("allocate", "at", "set", "drop", "borrow_length", "resize", "kernel_fault")
+        }
+        | {"__au_runtime_snapshot_produce"},
+        "Closed snapshot runtime authority inventory",
+    )
+    need(
+        not any(name.startswith(("__cxa_", "_GLOBAL__sub_I", "_Zn", "_Zd")) for name in names),
+        "Snapshot acquired constructor or heap machinery",
+    )
+    decoder = common.load("snapshot_image_stack", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+    linked = decoder.Elf(directory / "payload.elf")
+    instructions, _ = decoder.disassemble(directory / "payload.elf")
+    for public, private in (
+        ("aurora_kernel_value", "snapshot_kernel_value"),
+        ("aurora_kernel_ipc_transition", "snapshot_ipc_transition"),
+        ("aurora_kernel_terminal_event", "snapshot_terminal_event"),
+    ):
+        need(entries.get(private) == "t", "Private snapshot policy source entry")
+        target = linked.functions[public]
+        body = [
+            insn for address, insn in instructions.items() if target.address <= address < target.address + target.size
+        ]
+        need(
+            len(body) == 1 and body[0].op == "jmp" and decoder.target_of(body[0]) == linked.functions[private].address,
+            "Exact snapshot policy trampoline",
+        )
+    target = linked.functions["__au_runtime_snapshot_produce"]
+    body = []
+    for address, insn in instructions.items():
+        if target.address <= address < target.address + target.size:
+            operand = (
+                producer
+                if insn.op == "call" and decoder.target_of(insn) == linked.functions[producer].address
+                else insn.args
+            )
+            body.append((insn.op, operand))
+    need(
+        body
+        == [
+            ("push", "%rbp"),
+            ("mov", "%rsp,%rbp"),
+            ("sub", "$0x10,%rsp"),
+            ("mov", "%rdi,(%rsp)"),
+            ("mov", "%rsi,0x8(%rsp)"),
+            ("mov", "%rdx,%r10"),
+            ("mov", "%rsp,%r11"),
+            ("call", producer),
+            ("leave", ""),
+            ("ret", ""),
+        ],
+        "Exact copied producer bridge",
+    )
+    calls = subprocess.check_output(["objdump", "-drwC", str(directory / "snapshot.o")], text=True)
+    need(policy_call_present(calls, "__au_runtime_snapshot_produce"), "Snapshot adapter must call actual producer")
 
 
 def profile_selection(symbols, object_names, graphical, event=False, observe=False):
@@ -711,7 +820,14 @@ def main(
     require_graphical_console=False,
     require_iommu_event=False,
     require_iommu_observe=False,
+    require_snapshot=False,
 ):
+    need(
+        not require_snapshot
+        or require_ipc
+        and not any((require_owned_bytes, require_disposal, require_graphical_console, require_iommu_event)),
+        "Exact snapshot image-policy composition",
+    )
     need(
         not require_graphical_console or not (require_ipc or require_owned_bytes or require_disposal),
         "Graphical profile cannot combine with another image-policy flag",
@@ -742,7 +858,10 @@ def main(
             names += ["event-intake"]
     if require_graphical_console:
         graphical_image_policy(BUILD, symbols)
-    if require_owned_bytes:
+    if require_snapshot:
+        snapshot_image_policy(BUILD, symbols)
+        names += ["owned-bytes-runtime", "snapshot"]
+    elif require_owned_bytes:
         need(not require_ipc, "Owned-byte and IPC profiles cannot combine")
         owned_bytes_symbols(symbols)
         names += ["owned-bytes-runtime", "owned-bytes-profile"]

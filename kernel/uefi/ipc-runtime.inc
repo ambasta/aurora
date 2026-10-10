@@ -3,7 +3,12 @@ auto ipc_record(std::string_view operation,U64 first,U64 second) -> void {
     Serial::text("AURORA_UEFI_IPC_"); Serial::text(operation); Serial::text(": transaction="); Serial::number(transaction);
     Serial::text(" first="); Serial::number(first); Serial::text(" second="); Serial::number(second); Serial::text("\r\n");
 }
-auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 second,ProgramEvent expected_event,U64 expected_value,
+auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 second,ProgramEvent expected_event,
+#ifdef AURORA_UEFI_SNAPSHOT
+                 std::optional<U64> expected_value,
+#else
+                 U64 expected_value,
+#endif
                  std::optional<ipc::Endpoint> override_endpoint=std::nullopt) -> void {
     require(index<2 && root()==kernel_root && active==L::domain_count,"IPC launch boundary");
     auto& domain=domains[index]; require(domain.handle && verify(domain),"IPC launch domain");
@@ -15,6 +20,21 @@ auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 
     launch[6]=phase==ipc::Phase::service ? 0x202 : 2;
 #endif
     for (const auto& lease:domain.stacks) { const auto address=frames.address(*lease); require(address.has_value(),"IPC stack lease"); fill(*address,0); }
+#ifdef AURORA_UEFI_SNAPSHOT
+    for (const auto& lease:domain.stacks) require(zero(*frames.address(*lease)),"snapshot complete launch scrub");
+    if (phase==ipc::Phase::service) {
+        require(index==1 && mailbox->state()==ipc::State::delivered && snapshot_slot.matches(*endpoint),
+                "snapshot authenticated delivery binding");
+        const auto physical=frames.address(*domain.stacks.back());
+        const auto virtual_page=domain.contract->layout().user_stack_top()-L::page_size;
+        require(physical && (domain.tables->entry(virtual_page)&~0x60ULL)==(*physical|7|RuntimeTables::nx)
+            && (PageTables{kernel_root,static_cast<std::size_t>(handoff->get(96))}.entry(*physical)&~0x60ULL)
+                ==(*physical|3|RuntimeTables::nx),"snapshot exact retained stack mapping");
+        auto* record=reinterpret_cast<std::byte*>(*physical+L::page_size-ipc::SnapshotSlot::stack_reservation);
+        require(snapshot_slot.stage(ipc::SnapshotSlot::Record{record,ipc::SnapshotSlot::record_bytes},*endpoint,
+                    source_phase,ipc::Request{first,second}),"snapshot bounded stack record");
+    }
+#endif
     require(program.begin(*domain.contract) && registry.activate(*domain.handle),"IPC launch state");
     active=index;
     Serial::text("AURORA_UEFI_IPC_ENTER: slot="); Serial::number(index); Serial::text(" phase="); Serial::number(source_phase);
@@ -43,12 +63,17 @@ auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 
     const auto current_stack=stack();
     require(root()==kernel_root && active==L::domain_count && saved_rsp==0 && !program.running()
         && current_stack>=arena+Handoff::stack_bottom && current_stack<arena+Handoff::stack_top,"IPC restored authority");
+#ifdef AURORA_UEFI_SNAPSHOT
+    require(program.event()==expected_event && (expected_event!=ProgramEvent::returned || !expected_value || program.value()==*expected_value),"IPC compiled result");
+#else
     require(program.event()==expected_event && (expected_event!=ProgramEvent::returned || program.value()==expected_value),"IPC compiled result");
+#endif
     Serial::text("AURORA_UEFI_IPC_RESTORE: slot="); Serial::number(index); Serial::text(" root="); Serial::number(root());
     Serial::text(" stack="); Serial::number(current_stack); Serial::text(" event="); Serial::text(expected_event==ProgramEvent::returned ? "returned" : expected_event==ProgramEvent::bounds ? "bounds" : "budget");
     Serial::text(" value="); Serial::number(program.value()); Serial::text("\r\n");
     launch={}; selected_phase=ipc::Phase::inactive;
 }
+#ifndef AURORA_UEFI_SNAPSHOT
 auto ipc_complete(bool cancelled) -> void {
     const auto endpoint=mailbox->endpoint(*domains[0].handle); require(endpoint.has_value(),"IPC completion grant");
     const auto completion=mailbox->consume(*domains[0].handle,ipc::Phase::completion,*endpoint,transaction);
@@ -144,3 +169,4 @@ auto run_ipc() -> void {
     Serial::text("AURORA_UEFI_SERVICE_BUDGET_OK\r\n");
 #endif
 }
+#endif

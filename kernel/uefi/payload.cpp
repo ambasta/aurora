@@ -188,7 +188,11 @@ auto payload_main(U64 arena, U64 size) -> void {
         fail("ACPI discovery");
 #endif
 #ifdef AURORA_UEFI_RUNTIME
+#ifdef AURORA_UEFI_SNAPSHOT
+    if (!aurora::uefi::run_protected(arena, h, pool))
+#else
     if (!aurora::uefi::run_protected(arena, h))
+#endif
         fail("protected runtime");
 #endif
     auto page = pool.acquire();

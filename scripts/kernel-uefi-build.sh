@@ -45,6 +45,9 @@ case "${UEFI_MODE:-normal}" in
    if [[ "$UEFI_MODE" != framebuffer ]]; then flag="${UEFI_MODE#framebuffer-}"; extra+=("-DAURORA_FRAMEBUFFER_${flag^^}"); fi ;;
  framebuffer-probe) extra+=(-DAURORA_UEFI_FRAMEBUFFER -DAURORA_UEFI_FRAMEBUFFER_PROBE) ;;
  owned-bytes) extra+=(-DAURORA_UEFI_OWNED_BYTES) ;;
+ snapshot|snapshot-fault|snapshot-cancel|snapshot-owner|snapshot-stale|snapshot-revoked|snapshot-producer-selector|snapshot-producer-quota|snapshot-producer-pages|snapshot-reply-reserved|snapshot-reply-byte)
+   extra+=(-DAURORA_UEFI_SNAPSHOT -DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC)
+   if [[ "$UEFI_MODE" != snapshot ]]; then flag="${UEFI_MODE#snapshot-}"; flag="${flag//-/_}"; extra+=("-DAURORA_SNAPSHOT_${flag^^}"); fi ;;
  console|console-service-stale|console-service-reentry|console-service-timeout|console-service-report)
    extra+=(-DAURORA_UEFI_ACPI -DAURORA_UEFI_CONSOLE)
    if [[ "$UEFI_MODE" != console ]]; then flag="${UEFI_MODE#console-service-}"; extra+=("-DAURORA_CONSOLE_SERVICE_${flag^^}"); fi ;;
@@ -106,7 +109,7 @@ esac
 # Profiles share this directory. Retire only owned profile objects and their
 # compiler sidecars before rebuilding; keep common outputs, caches and evidence.
 profile_objects=(console console-entry graphical-console framebuffer event-intake
-    owned-bytes-runtime owned-bytes-profile runtime-entry runtime-exceptions
+    owned-bytes-runtime owned-bytes-profile snapshot runtime-entry runtime-exceptions
     user-{clean,bounds,peer}{,-entry})
 for name in "${profile_objects[@]}"; do
     rm -f -- "build/uefi/$name.o" "build/uefi/$name.su" "build/uefi/$name.ci"
@@ -143,10 +146,16 @@ if [[ "${UEFI_MODE:-normal}" == iommu-event-* ]]; then
    --compiler "$compiler" --cxx "$cxx" --pe-linker "$UEFI_LINKER" "${provenance_flags[@]}"
 fi
 runtime_objects=()
-if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* || "${UEFI_MODE:-normal}" == dispatch* || "${UEFI_MODE:-normal}" == user-* || "${UEFI_MODE:-normal}" == program-* ]]; then
+if [[ "${UEFI_MODE:-normal}" == runtime* || "${UEFI_MODE:-normal}" == ipc* || "${UEFI_MODE:-normal}" == budget* || "${UEFI_MODE:-normal}" == dispatch* || "${UEFI_MODE:-normal}" == user-* || "${UEFI_MODE:-normal}" == program-* || "${UEFI_MODE:-normal}" == snapshot* ]]; then
  mode="${UEFI_MODE#runtime-}"
  case "$mode" in span|code|stack|kernel|window|write|nx|return|unknown|syscall|sysenter) ;; *) mode=normal ;; esac
- if [[ "$UEFI_MODE" == program-* ]]; then
+ if [[ "$UEFI_MODE" == snapshot* ]]; then
+   mode=normal
+   case "$UEFI_MODE" in snapshot-owner|snapshot-reply-reserved|snapshot-reply-byte) mode="${UEFI_MODE#snapshot-}" ;; esac
+   python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$mode" --snapshot
+   python3 -B tests/kernel-snapshot-abi.py build/uefi --uefi-mode "$mode"
+   as --64 --defsym AURORA_IPC=1 kernel/uefi/runtime-entry.S -o build/uefi/runtime-entry.o
+ elif [[ "$UEFI_MODE" == program-* ]]; then
    program_image_mode=normal
    case "$UEFI_MODE" in program-owner|program-ordinal|program-unknown|program-transaction) program_image_mode="${UEFI_MODE#program-}" ;; esac
    python3 scripts/kernel-uefi-ipc-images.py --compiler "$compiler" --mode "$program_image_mode" --service-budget --user-budget --program-console
@@ -195,6 +204,7 @@ if [[ "${UEFI_MODE:-normal}" == framebuffer || "${UEFI_MODE:-normal}" == framebu
 fi
 if [[ "${UEFI_MODE:-normal}" == program-* ]]; then language_entry=examples/kernel-program-console.au; fi
 if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then language_entry=examples/kernel-owned-bytes.au; fi
+if [[ "${UEFI_MODE:-normal}" == snapshot* ]]; then language_entry=examples/kernel-snapshot.au; fi
 if [[ "${UEFI_MODE:-normal}" == console || "${UEFI_MODE:-normal}" == console-service-* ]]; then
     language_entry=examples/kernel-console-service.au
     as --64 kernel/uefi/console-entry.S -o build/uefi/console-entry.o
@@ -214,6 +224,8 @@ elif [[ "${UEFI_MODE:-normal}" == graphical-console || "${UEFI_MODE:-normal}" ==
     as --64 build/uefi/language.s kernel/uefi/graphical-console-entry.S -o build/uefi/language.o
 elif (( ${#framebuffer_objects[@]} )); then
     as --64 build/uefi/language.s kernel/uefi/display-service-entry.S -o build/uefi/language.o
+elif [[ "${UEFI_MODE:-normal}" == snapshot* ]]; then
+    as --64 build/uefi/language.s kernel/uefi/snapshot-entry.S -o build/uefi/language.o
 elif [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     as --64 build/uefi/language.s kernel/uefi/owned-bytes-entry.S -o build/uefi/language.o
     python3 tests/kernel-uefi-owned-bytes-admission.py build/uefi/language.o
@@ -233,6 +245,10 @@ if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/owned-bytes.cpp -o build/uefi/owned-bytes-runtime.o
     "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/owned-bytes.cpp -o build/uefi/owned-bytes-profile.o
     owned_bytes_objects+=(build/uefi/owned-bytes-runtime.o build/uefi/owned-bytes-profile.o)
+elif [[ "${UEFI_MODE:-normal}" == snapshot* ]]; then
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/owned-bytes.cpp -o build/uefi/owned-bytes-runtime.o
+    "$cxx" "${flags[@]}" "${extra[@]}" -fpie -fvisibility=hidden -c kernel/uefi/snapshot.cpp -o build/uefi/snapshot.o
+    owned_bytes_objects+=(build/uefi/owned-bytes-runtime.o build/uefi/snapshot.o)
 fi
 # One layout source; only Event profiles opt into alignment-ordered BSS.
 "$cxx" -E -P -x c "${extra[@]}" kernel/uefi/payload.ld -o build/uefi/payload.ld
@@ -244,6 +260,9 @@ if [[ "${UEFI_MODE:-normal}" == owned-bytes ]]; then
     python3 tests/kernel-uefi-owned-bytes-stack.py build/uefi build/uefi/owned-bytes-stack.json
 fi
 objcopy -O binary build/uefi/payload.elf build/uefi/payload.bin
+if [[ "${UEFI_MODE:-normal}" == snapshot* ]]; then
+    python3 -B tests/kernel-snapshot-abi.py build/uefi --kernel-stack
+fi
 if [[ "${UEFI_MODE:-normal}" == runtime-table-* ]]; then
     python3 tests/kernel-uefi-tables-stack.py build/uefi "build/uefi/table-stack/$UEFI_MODE"
 fi
@@ -313,6 +332,7 @@ printf 'Built UEFI PE32+ loader and independent payload\n'
 
 image_policy=()
 case "${UEFI_MODE:-normal}" in
+    snapshot*) image_policy+=(--ipc-policy --snapshot) ;;
     ipc*|budget*|dispatch*|user-*|program-*) image_policy+=(--ipc-policy) ;;
     owned-bytes) image_policy+=(--owned-bytes) ;;
     graphical-console|graphical-console-capture) image_policy+=(--graphical-console) ;;
