@@ -13,6 +13,9 @@ Make is a convenience entrypoint to the same incremental graph; a second full
 Make aggregate is not required. Fresh explicit build directories configure
 automatically; compiler/flag changes select separate defaults, while changed
 backend/runtime identities reject reuse and require a fresh directory.
+The [Meson artifact adapter](meson-bootstrap.md) now removes its own successful
+scratch by default, preserving failures, explicit keeps and raw Meson logs.
+Compiler-free behavior controls do not establish a full native pass or measured savings.
 Package Manifest/Graph command receipts distinguish actual compiler and native
 CPU/wall cost under fixed watchdogs; see the [test contract](developer-test-contract.md).
 Graph catalog fixtures now observe complete bounded report blocks while retaining

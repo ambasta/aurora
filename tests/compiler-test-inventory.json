@@ -114,9 +114,14 @@
       "borrowed-objects-abi": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/borrowed_objects_abi.py",
-          "borrowed-objects-abi"
+          "borrowed-objects-abi",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -545,10 +550,15 @@
       "json-codecs": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/json_codecs.py",
           "@BUILD@/aurorac",
-          "--developer-selected-compiler"
+          "--developer-selected-compiler",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -577,10 +587,15 @@
       "json-integers": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/json_integers.py",
           "@BUILD@/aurorac",
-          "--developer-selected-compiler"
+          "--developer-selected-compiler",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -601,10 +616,15 @@
       "json-lookup": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/json_lookup.py",
           "@BUILD@/aurorac",
-          "--developer-selected-compiler"
+          "--developer-selected-compiler",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -648,10 +668,15 @@
       "json-profile": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/json_profile.py",
           "@BUILD@/aurorac",
-          "--developer-selected-compiler"
+          "--developer-selected-compiler",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -718,9 +743,14 @@
       "logical-spans-abi": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/logical_spans_abi.py",
-          "logical-spans-abi"
+          "logical-spans-abi",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -765,9 +795,14 @@
       "method-spans-abi": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/method_spans_abi.py",
-          "method-spans-abi"
+          "method-spans-abi",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",

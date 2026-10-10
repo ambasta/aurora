@@ -80,7 +80,7 @@ def verify(manifest):
     need(
         pins["oracle"] == ROOT / "scripts/framebuffer_capture_oracle.py"
         and pins["scene"] == ROOT / "tests/kernel_display_oracle.py"
-        and pins["normal_oracle"] == ROOT / "tests/kernel-uefi-smoke.py",
+        and pins["normal_oracle"] == ROOT / "scripts/kernel_uefi_oracle.py",
         "helper identity",
     )
     need(set(manifest["trees"]) == {"source", "data", "runtime"}, "tree inventory")

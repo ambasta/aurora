@@ -49,6 +49,10 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    whenever toolchain identity or dependency tracking is in doubt. Select matching
    real `gcc`/`g++` tools on PATH as well as `CXX`. Record final source identity,
    compiler/binutils/runtime identities, actual commands and Meson test logs.
+   Keep raw Meson logs, failed/interrupted scratch and explicitly kept artifacts.
+   The Meson artifact adapter removes only its own new scratch after success;
+   use `AURORA_MESON_KEEP_ARTIFACTS=1` when successful scratch is needed for review.
+   Never sweep historical evidence or explicitly supplied runner output paths.
    A selected-compiler digest is artifact stability, not a fresh-build receipt.
    With GCC 16, also build and smoke normal BIOS and UEFI images. Run
    existing image/admission and emulator gates for each affected kernel profile,
