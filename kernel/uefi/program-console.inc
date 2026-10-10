@@ -4,6 +4,11 @@
 using ProgramSerial=Serial; // One shared sticky receive-error latch, including runtime traces.
 using ProgramDisplay=console::Presentation<ProgramSerial>;
 program::Stream command_stream;
+program::Note command_note;
+bool command_reading{};
+extern "C" void __au_runtime_note_update(const void*, void*);
+extern "C" void __au_runtime_note_project(const void*, void*);
+
 bool command_owned{},console_waiting{},console_probe_used{};
 U64 console_wait_stack{},console_wakes{},console_expected_wake{};
 extern const std::byte program_poll_begin asm("uefi_program_poll_begin");
@@ -93,6 +98,18 @@ auto program_console_envelope(const Bytes& captured,U64 result) -> void {
     for (const auto& lease:domain.stacks) {
         const auto address=frames.address(*lease); require(address.has_value(),"program stack lease"); fill(*address,0);
     }
+    if (phase==ipc::Phase::service) {
+        require(index==1 && mailbox->state()==ipc::State::delivered && command_note.matches(*endpoint),
+                "note authenticated publication");
+        const auto physical=frames.address(*domain.stacks.back());
+        const auto virtual_page=domain.contract->layout().user_stack_top()-L::page_size;
+        require(physical && (domain.tables->entry(virtual_page)&~0x60ULL)==(*physical|7|RuntimeTables::nx)
+            && (PageTables{kernel_root,static_cast<std::size_t>(handoff->get(96))}.entry(*physical)&~0x60ULL)
+                ==(*physical|3|RuntimeTables::nx),"note exact retained stack mapping");
+        auto* record=reinterpret_cast<std::byte*>(*physical+L::page_size-program::Note::stack_reservation);
+        require(command_note.stage(std::span<std::byte,program::Note::record_bytes>{record,program::Note::record_bytes},
+            *endpoint,source,ipc::Request{byte,ordinal}),"note fixed copied record");
+    }
     require(program.begin(*domain.contract) && registry.activate(*domain.handle),"program launch state");
     active=index;
     const auto selected=domain.tables->root(); asm volatile("mov %0,%%cr3"::"r"(selected):"memory");
@@ -106,10 +123,11 @@ auto program_console_envelope(const Bytes& captured,U64 result) -> void {
     require(program_boundary(),"program post-run quiescence");
     return okay;
 }
-// Inject only after one byte was fully acknowledged. Empty/one-byte commands
-// do not consume the probe; only an actual injection makes later commands healthy.
+// Inject only after one byte was fully acknowledged. A note read includes its
+// final EOF round; only an actual injection makes later commands healthy.
 [[nodiscard]] auto program_source(ipc::Phase phase,U64 ordinal) -> U64 {
-    const U64 normal=phase==ipc::Phase::request ? 0 : phase==ipc::Phase::service ? 1 : 2;
+    const U64 normal=command_reading ? (phase==ipc::Phase::request ? 12 : phase==ipc::Phase::service ? 11 : 13)
+        : (phase==ipc::Phase::request ? 0 : phase==ipc::Phase::service ? 1 : 2);
     if (console_probe_used || ordinal!=1) return normal;
 #ifdef AURORA_PROGRAM_REQUEST_FAULT
     if (phase==ipc::Phase::request) { console_probe_used=true; return 8; }
@@ -144,6 +162,7 @@ auto program_cleanup(bool success) -> void {
                 "program cancellation consumption");
         }
     }
+    command_note.release();
     require(mailbox->scrubbed() && mailbox->revoke(ipc::Phase::inactive)
         && retire(0) && retire(1) && frames.used()==0,"program revoke/retire/scrub");
     mailbox.reset(); transaction=0; launch={}; selected_client=2;
@@ -152,17 +171,24 @@ auto program_cleanup(bool success) -> void {
     ProgramSerial::text("AURORA_PROGRAM_COMMAND_END: success="); ProgramSerial::number(success ? 1 : 0);
     ProgramSerial::text(" used=0 epoch="); ProgramSerial::number(timer_epoch); ProgramSerial::text("\r\n");
 }
-auto program_command(console::Snapshot& input) -> void {
+auto program_command(console::Snapshot& input, bool reading=false) -> void {
     const auto input_length=input.length();
     require(!command_owned && program_boundary() && !mailbox && frames.used()==0
-        && command_stream.begin(input.bytes(),input.length()),"program command admission");
+        && (reading ? command_stream.begin_read() : command_stream.begin(input.bytes(),input.length())),"program command admission");
     input={}; // The stream now owns the only retained command-input copy.
-    command_owned=true; selected_client=0;
+    command_owned=true; command_reading=reading; selected_client=0;
     mailbox.emplace(registry);
     require(create(0)==0 && create(1)==1 && mailbox->bind(*domains[0].handle,*domains[1].handle),"program participants");
+    program::Note::Value projection{};
+    // Upper ignores the read field and receives only its zero placeholder.
+    if (reading) __au_runtime_note_project(command_note.saved().data(),projection.data());
+    const auto service_grant=mailbox->endpoint(*domains[1].handle);
+    require(service_grant && command_note.bind(projection,*service_grant),"note frozen publication");
+    projection={};
     const auto grant=mailbox->endpoint(*domains[0].handle); require(grant.has_value(),"program command grant");
     ProgramSerial::text("AURORA_PROGRAM_COMMAND_BEGIN: grant="); ProgramSerial::number(grant->generation());
-    ProgramSerial::text(" length="); ProgramSerial::number(input_length); ProgramSerial::text(" domains=2\r\n");
+    ProgramSerial::text(" length="); ProgramSerial::number(input_length);
+    ProgramSerial::text(reading ? " domains=2 kind=note\r\n" : " domains=2 kind=upper\r\n");
     bool success=true;
     while (const auto next=command_stream.next_input()) {
         const auto ordinal=next->ordinal();
@@ -189,7 +215,7 @@ auto program_command(console::Snapshot& input) -> void {
     if (success) {
         auto output=command_stream.finish();
         require(output && command_stream.scrubbed(),"program complete output");
-        ProgramSerial::text("output> ");
+        ProgramSerial::text(output->missing() ? "Note is missing." : "output> ");
         for (std::size_t i=0;i<output->length();++i) {
             const auto byte=output->byte(i); require(byte.has_value(),"program output bounds");
             ProgramSerial::put(*byte);
@@ -208,7 +234,27 @@ auto program_command(console::Snapshot& input) -> void {
     for (std::size_t i=0;i<command.size();++i) if (input.bytes()[i]!=command[i]) return false;
     return true;
 }
-auto run_program_console() -> void {
+[[nodiscard]] auto program_note_update(const console::Snapshot& input) -> U64 {
+    require(!command_owned && !mailbox && frames.used()==0 && program_boundary() && !command_note.bound(),
+            "note quiescent update");
+    program::Note::UpdateInput copied{};
+    const auto& saved=command_note.saved();
+    for (std::size_t index=0;index<saved.size();++index) {
+        copied[index]=saved[index];
+    }
+    for (std::size_t index=0;index<input.bytes().size();++index) {
+        copied[72+index]=std::byte(input.bytes()[index]);
+    }
+    for (unsigned byte=0;byte<8;++byte) {
+        copied[136+byte]=std::byte(input.length()>>(8*byte));
+    }
+    program::Note::Update update{};
+    __au_runtime_note_update(copied.data(),update.data());
+    const auto event=command_note.commit(update);
+    require(event.has_value(),"note closed update");
+    return *event;
+}
+__attribute__((noinline)) auto run_program_console() -> void {
     require(program_boundary() && !command_owned && L::domain_count==2,"program console initial ownership");
     const auto begin=reinterpret_cast<U64>(&program_poll_begin),end=reinterpret_cast<U64>(&program_poll_end);
     require(begin>=arena+Handoff::payload_offset && end>begin && end-begin==3
@@ -216,7 +262,7 @@ auto run_program_console() -> void {
     require((hardware::Io::read(0x3fb)&0x80)==0,"program UART register bank");
     hardware::Io::write(0x3f9,0); require(hardware::Io::read(0x3f9)==0,"program UART IRQ disabled");
     ProgramSerial::initialize_input();
-    ProgramSerial::text("AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper, ASCII, 64-byte lines\r\naurora> ");
+    ProgramSerial::text("AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines\r\naurora> ");
     console::Line line; console::Snapshot copied; bool text_input=false;
     for (;;) {
         require(!command_owned && program_boundary(),"program console receive boundary");
@@ -227,17 +273,25 @@ auto run_program_console() -> void {
             if (text_input) {
                 text_input=false; ProgramSerial::text("\r\n"); program_command(copied); copied={}; continue;
             }
+            const auto note_event=program_note_update(copied);
+            if (note_event!=0) {
+                ProgramSerial::text("\r\n");
+                if (note_event==1) ProgramSerial::text("Note saved.\r\naurora> ");
+                else program_command(copied,true);
+                copied={}; continue;
+            }
             if (is_upper(copied)) {
                 copied={}; text_input=true; ProgramSerial::text("\r\ntext> "); continue;
             }
         }
         if (event==console::Event::rejected) text_input=false;
         if (event==console::Event::help) {
-            ProgramSerial::text("\r\nupper   Uppercase a line in a protected Aurora program\r\nhelp    Show commands\r\nstatus  Show console state\r\nexit    Close this QEMU session\r\naurora> ");
+            ProgramSerial::text("\r\nupper   Uppercase a line in a protected Aurora program\r\nwrite note <text>  Replace the RAM note (53 ASCII bytes)\r\ncat note          Read the note in protected Aurora\r\nhelp    Show commands\r\nstatus  Show console state\r\nexit    Close this QEMU session\r\naurora> ");
         } else if (event==console::Event::status) {
             ProgramSerial::text("\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> ");
         } else if (!ProgramDisplay::render(event,*byte,console::Platform::uefi)) {
             require(program_boundary() && frames.used()==0 && !mailbox,"program console exit boundary");
+            command_note.clear();
             ProgramSerial::text("AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0\r\n");
             return;
         }

@@ -50,7 +50,7 @@ hardware support.
 | Ideal filesystem and XFS compatibility | Host crash model, runtime-capacity RAM sector device, offline XFS geometry/root/inline-extent readers | Real transport, mounted file services, persistence/recovery/GC and XFS read-write; no target filesystem is usable yet |
 | Framework Laptop 13 AMD system | Emulator boot/discovery, owned page/pin preparation, test-only AMD references and bounded emulator model diagnostics | Actual DMA conformance/isolation, active drivers, device power/recovery and complete-machine physical qualification; no supported physical tuple |
 | Native binutils/glibc/Mesa alternatives | Host-bootstrap compiler, Aurora core/byte/text/JSON modules and bounded package metadata tools | Native assembler/linker/toolchain, complete platform runtime and standard library, graphics stack and reproducible native rebuilds; no C/POSIX/ABI compatibility promise |
-| Useful apps, terminal and tiling desktop | Aurora-owned simple-UEFI serial editor/presentation and bounded serial-input graphical console; BIOS diagnostic prompt and scoped protected uppercase command with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
+| Useful apps, terminal and tiling desktop | Aurora-owned simple-UEFI serial editor/presentation and bounded serial-input graphical console; BIOS diagnostic prompt and scoped protected uppercase and volatile note-read commands with fault/budget recovery and authority fail-stop; bounded text/JSON consumers | General program and file services, terminal sessions, display/input/compositor, text shaping, tiling/workspaces and usable packaged apps |
 
 ### Current contract map
 
@@ -95,7 +95,14 @@ response cells under the unchanged input/pixel budgets; the addition requires
 fresh final-source qualification. The [sealed service contract](../compiler/SERVICES.md)
 keeps copied reports separate from authority; the [kernel contract](native-console-service.md)
 records exact hosted, linked-stack/image, five-profile PTY and restoration scope.
-BIOS/protected editors, general services and physical hardware remain separate.
+The protected-command profile now reuses the same update policy in ordinary
+Aurora and reads a frozen value through authenticated two-domain CPL3 IPC. It
+retains upper, buffers output until complete retirement and preserves the saved
+note on recoverable failures. Its [contract](program-console-contract.md#session-local-protected-note)
+records independently reviewed copied-record/image admission, all 12 affected
+original-clock guest profiles and fresh normal BIOS/UEFI restoration boots.
+These scoped results do not replace the final-source full aggregate or establish
+general services, a protected BIOS console or physical-hardware support.
 A second compiler-sealed DisplaySession kind adds only bounded pixel output,
 exact-kind loans/helper verification and copied closed results. Its compiler
 contract is in [SERVICES.md](../compiler/SERVICES.md); native framebuffer/guest
@@ -277,18 +284,18 @@ Unsupported class-field types receive a type-located AU2003 diagnostic without
 expanding the accepted language. See the [repair scope and required gates](../compiler/FORMAT.md#parenthesized-operands-and-unsupported-fields--2026-10-08).
 
 
-## Protected command console — normal guest composite accepted
+## Protected command console — scoped note/upper guests accepted
 
-An opt-in two-domain UEFI console now runs a compiled Aurora uppercase client
-and a separate copied-byte stream service. The original-clock guest completed
-six commands and 363 CPL3 runs, including empty/edit/64-byte input and rejection
-recovery, with staged exactly-once output and quiescent retirement. Independent
-review accepted the preserved original guest plus a narrow CRCRLF oracle replay;
-the original oracle failure remains recorded. Hosted models and fatal trusted
-C++ adapter sanitizers passed. Fault/budget/pending/hostile variants, final joined
-dev/slow and separate normal restoration boot remain pending. See the consolidated
-[contract and current status](program-console-contract.md). No broad kernel,
-release or hardware completion is claimed.
+The opt-in two-domain UEFI console retains compiled Aurora uppercase processing
+and now reads one volatile note through authenticated copied-value IPC. Independent
+review accepted the 2026-10-10 source/native/admission gates and all 12 affected
+original-clock guests: 3,674 CPL3 launches, six partial-read recoveries, four exact
+authority fail-stops and fresh normal BIOS/UEFI restoration boots. Output follows
+quiescent retirement; saved notes survive contained read failures. The original
+upper-only guest and its CRCRLF oracle repair remain historical evidence, not a
+substitute for this new run. See the [contract and scope](program-console-contract.md).
+The canonical final-source full aggregate remains a separate merge gate; no
+broad kernel, release or hardware completion is claimed.
 
 ## Transactional quoted UTF-8 append — 2026-10-08
 

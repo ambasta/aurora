@@ -13,7 +13,7 @@ def need(value, message):
         raise ValueError(message)
 
 
-def verify(data, blob, base, symbols, *, image_count=2, copied_snapshot=False):
+def verify(data, blob, base, symbols, *, image_count=2, copied_snapshot=False, copied_note=False):
     need(len(data) >= 64, "Truncated ELF header")
     need(type(image_count) is int and image_count in (2, 3), "Unknown bounded image profile")
     need(base in tuple(BASE + index * 4096 for index in range(image_count)), "Foreign virtual image layout")
@@ -36,8 +36,14 @@ def verify(data, blob, base, symbols, *, image_count=2, copied_snapshot=False):
         "Bounded RX image",
     )
     need(offset + filesz <= len(data) and data[offset : offset + filesz] == blob, "Exact installed image bytes")
+    need(not (copied_snapshot and copied_note), "Distinct copied service records")
     compiled = "__au_v_m1_16snapshot_service_n0__d16aurora_user_main" if copied_snapshot else "aurora_user_main"
-    need(not copied_snapshot or base == BASE + 4096 and image_count == 2, "Exact copied snapshot service slot")
+    if copied_note:
+        compiled = "__au_v_m1_22program_stream_service_n0__d16aurora_user_main"
+    need(
+        not (copied_snapshot or copied_note) or base == BASE + 4096 and image_count == 2,
+        "Exact copied snapshot service slot",
+    )
     need(
         symbols.get("aurora_program_entry") == base and base <= symbols.get(compiled, 0) < base + len(blob),
         "Compiled entry",

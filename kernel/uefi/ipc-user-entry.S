@@ -1,3 +1,9 @@
+.ifdef SNAPSHOT_SERVICE
+.set COPIED_SERVICE,1
+.endif
+.ifdef PROGRAM_NOTE_SERVICE
+.set COPIED_SERVICE,1
+.endif
 .section .text.user_entry,"ax"
 .code64
 .global aurora_program_entry
@@ -14,8 +20,9 @@ aurora_program_entry:
     jnz bad_entry
     cmpq $0,-8(%rsp)
     jne bad_entry
-.ifdef SNAPSHOT_SERVICE
-    # Fixed record at S-112, 96 initialized bytes plus a 16-byte sentinel gap.
+.ifdef COPIED_SERVICE
+    # Fixed 96-byte record at S-112, followed by a 16-byte sentinel gap.
+    # Snapshot ends in zero padding; NoteRead64 owns the final length qword.
     # Reserve before the envelope: calls and locals must grow below the record.
     sub $112,%rsp
 .endif
@@ -122,9 +129,13 @@ aurora_budget_context_end:
     pop %rdi
 skip_context_probe:
 .endif
-.ifdef SNAPSHOT_SERVICE
+.ifdef COPIED_SERVICE
     lea 48(%rsp),%r11
+.ifdef PROGRAM_NOTE_SERVICE
+    call __au_v_m1_22program_stream_service_n0__d16aurora_user_main
+.else
     call __au_v_m1_16snapshot_service_n0__d16aurora_user_main
+.endif
 .else
     call aurora_user_main
 .endif
@@ -134,7 +145,7 @@ skip_context_probe:
     pop %rcx
     pop %rdx
     pop %rdi
-.ifdef SNAPSHOT_SERVICE
+.ifdef COPIED_SERVICE
     add $112,%rsp
 .ifdef SNAPSHOT_REPLY_RESERVED
     movabs $0x8000000000000000,%r10
@@ -179,6 +190,6 @@ aurora_program_return_pc:
     ud2
 bad_entry:
     ud2
-.ifndef SNAPSHOT_SERVICE
+.ifndef COPIED_SERVICE
 .section .note.GNU-stack,"",@progbits
 .endif

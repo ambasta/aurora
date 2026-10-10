@@ -14,6 +14,81 @@ A separate CPL3 stream service validates and returns its requested output byte.
 This is an embedded bounded application demonstration, not a general process or
 syscall ABI, filesystem, terminal emulator, or hardware qualification.
 
+## Session-local protected note
+
+The current source also accepts `write note <text>` and `cat note`. One RAM-only
+note holds at most 53 printable ASCII bytes and is cleared on exit. It is a
+copied value, not a RamSectorDevice, filesystem, persistent file or protected
+writer. The existing `console::SessionNote` Aurora library owns exact command
+matching, validation before replacement, missing/empty semantics and suffix
+clearing. The native adapter never parses those commands or computes note bytes.
+
+An ordinary `update_note(SessionNote, BinaryBuffer64, i64) -> NoteUpdate` returns
+a closed 72-byte note plus an explicitly mapped 8-byte event. The native bridge
+commits that result only at the quiescent console boundary, with no Mailbox,
+active domain, retained frame or bound read. Native initialization has an exact
+private representation; a generated `SessionNote(empty)` constructor-equivalence
+fixture checks it. Invalid input preserves the old value.
+
+Each read freezes an Aurora `NoteRead64` projection: 64 payload bytes and a signed
+length, with -1 representing missing. The small dependency-free module adds no
+console, storage or runtime authority to CPL3. The service receives three scalar
+launch words and that 72-byte value in an exact 96-byte record at stack-top-112.
+The final qword belongs to this explicit note contract; the distinct snapshot
+profile keeps its original zero-padding contract. The wrapper reserves 112 bytes
+before its 48-byte envelope so generated calls grow below the copied record.
+Upper uses the same typed service entry with a zero placeholder, without copying
+the saved note into that command's domain.
+
+Fresh endpoint generations bind each frozen read. After authenticated receive,
+the adapter stages it through the retained, verified last stack-page lease under
+both the domain and kernel mappings. The compiled client requests absolute
+offsets (phase 12), the compiled service returns actual byte/EOF/missing data
+(phase 11), and the compiled client validates each reply (phase 13). Byte replies
+encode `1 | byte << 8`; EOF is 2 and missing is 3. A read includes one final EOF
+round even when empty. No expected-pattern fallback or native payload oracle is
+used. Native output staging validates order, closed encoding and exact client
+acknowledgment, then releases output only after Mailbox revocation and both domain
+retirements. Missing is reported after the same authenticated retirement boundary.
+
+Recoverable request/service/completion faults or budgets discard partial output,
+release the frozen projection and return to the prompt. The saved note survives,
+and another read uses fresh domains and grants. Invalid authority still fails
+stop. Normal PTY coverage checks missing, repeated reads, short/empty replacement,
+53-byte limits and damaged replacement preservation; each existing recovery
+profile exercises a failed note read followed by a fresh successful read and the
+retained upper cases. This avoids repeating every note boundary under every fault.
+
+The preguest gates add exact aggregate/bridge/inventory checks and source-native
+Mailbox lifecycle tests to the existing admission and transcript controls. The
+ordinary and hosted ASan/UBSan fixture each passed 9,391 checks, including actual
+Aurora constructor equivalence; generated Aurora assembly is unsanitized. The
+existing snapshot native regression also passed 75,329 checks. These focused
+results do not replace the canonical final-source full gate.
+
+On 2026-10-10, independent source/ABI/stack and guest-outcome review accepted all
+12 existing protected-console profiles on GCC 16.2.0-3, Binutils 2.47 and the
+original-clock QEMU 10.0.13/OVMF runtime. The normal note/upper script completed
+13 commands and 735 CPL3 launches, including missing, repeated, shorter, empty
+and 53-byte readback plus rejected replacement preservation. Each of the six
+fault/budget profiles discarded a partially staged note read and then read the
+unchanged saved value on fresh grants before completing the retained upper cases.
+Pending ownership drain and all four authority fail-stops passed their existing
+exact gates. In total, the matrix recorded 3,674 launches, 68 retired commands,
+61 completed outputs, six recoveries and four fail-stops. Each launched EFI was
+captured and matched to its separately reviewed image. Fresh normal UEFI and BIOS
+restoration boots also passed with captured launch bytes.
+
+Every variant retained the 131,072-byte mapped-image limit: payload 118,944 bytes,
+mapped extent 126,976. The normal supervisor peak is 14,768 bytes plus the
+unchanged applicable measured 151-byte synchronous-fault path, totaling 14,919
+against the 15,360-byte admission cap. The stricter separate comparison using
+the snapshot profile's fixed 512-byte reserve is 15,280; no reserve was reduced.
+Legacy scalar/snapshot executable wrapper expansions remain identical, so the
+fresh snapshot native/ABI regression does not imply an unrelated new snapshot
+guest qualification. Root full, publication and physical-hardware scope remain
+separate from this bounded result.
+
 ## Authority and data
 
 Exactly two real domains use `ipc::Mailbox`, not the three-domain dispatcher.
@@ -64,7 +139,7 @@ Preserve raw failures and receipts. A focused gate is not full native or hardwar
 qualification. Terminal-event policy work must be composed without losing its
 Aurora classifier wrapper/import or weakening its trusted envelope checks.
 
-## Current qualification
+## Historical upper-only qualification
 
 The original-clock QEMU 10.0.13/OVMF normal profile completed six commands and
 363 authenticated CPL3 runs: `HELLO, AURORA 42!`, a repeated command, empty input,

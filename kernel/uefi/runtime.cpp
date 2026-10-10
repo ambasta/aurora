@@ -37,6 +37,7 @@
 #include "../console-presentation.hpp"
 #include "../console-uart.hpp"
 #include "../program-stream.hpp"
+#include "../program-note.hpp"
 #endif
 namespace aurora::uefi {
 extern std::uint64_t saved_rsp asm("uefi_runtime_saved_rsp") __attribute__((visibility("hidden")));
@@ -66,7 +67,27 @@ using Serial = SnapshotDiagnostics;
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
 // Runtime diagnostics and input share the same sticky LSR error latch. A raw
 // hardware::Serial read during a protected command would otherwise erase OE.
-using Serial = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;
+class ProgramSerialAdapter final {
+    using Uart = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;
+
+public:
+    static void initialize_input() {
+        Uart::initialize_input();
+    }
+    template <class Editor> static auto poll(Editor &line) {
+        return Uart::poll(line);
+    }
+    static void put(std::uint8_t byte) {
+        Uart::put(byte);
+    }
+    [[gnu::noinline]] static void text(std::string_view value) {
+        Uart::text(value);
+    }
+    [[gnu::noinline]] static void number(U64 value) {
+        Uart::number(value);
+    }
+};
+using Serial = ProgramSerialAdapter;
 #else
 using hardware::Serial;
 #endif

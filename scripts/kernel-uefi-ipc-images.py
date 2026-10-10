@@ -20,9 +20,17 @@ _base = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_base)
 
 
-def verify(data, blob, base, symbols, probe_opcode=b"\x0f\x0b", *, dispatcher=False, copied_snapshot=False):
+def verify(
+    data, blob, base, symbols, probe_opcode=b"\x0f\x0b", *, dispatcher=False, copied_snapshot=False, copied_note=False
+):
     result = _base.verify(
-        data, blob, base, symbols, image_count=3 if dispatcher else 2, copied_snapshot=copied_snapshot
+        data,
+        blob,
+        base,
+        symbols,
+        image_count=3 if dispatcher else 2,
+        copied_snapshot=copied_snapshot,
+        copied_note=copied_note,
     )
     need(result["probe_offset"] == 0, "IPC has no address literal authority")
     probe = result["probe_pc"]
@@ -40,9 +48,9 @@ def verify(data, blob, base, symbols, probe_opcode=b"\x0f\x0b", *, dispatcher=Fa
     return result
 
 
-def service_metadata(meta, blob, symbols, function_size):
+def service_metadata(meta, blob, symbols, function_size, compiled="aurora_user_main"):
     base = meta["entry"]
-    begin = symbols.get("aurora_user_main", 0)
+    begin = symbols.get(compiled, 0)
     need(type(function_size) is int and function_size > 0, "Nonempty compiled function")
     end = begin + function_size
     need(
@@ -79,6 +87,14 @@ def build(
     )
     need(not snapshot or mode in ("normal", "owner", "reply-reserved", "reply-byte"), "Unsupported snapshot mode")
     need(mode not in ("reply-reserved", "reply-byte") or snapshot, "Snapshot reply probe requires snapshot")
+    need(
+        not program_console or service_budget and user_budget and not dispatcher,
+        "Protected console requires its exact two-domain timer composition",
+    )
+    need(
+        not program_console or mode in ("normal", "owner", "ordinal", "unknown", "transaction"),
+        "Unsupported protected console mode",
+    )
     need(not user_budget or dispatcher or program_console, "User budgets require dispatcher profile")
     need(not dispatcher or service_budget, "Dispatcher requires service timer profile")
     out.mkdir(parents=True, exist_ok=True)
@@ -102,7 +118,7 @@ def build(
                 ROOT / f"tests/kernel-programs/{fixture}.au",
                 "--module-root",
                 ROOT / "library",
-                *(["--module-root", ROOT / "kernel/policies"] if snapshot else []),
+                *(["--module-root", ROOT / "kernel/policies"] if snapshot or program_console else []),
                 "-o",
                 prefix.with_suffix(".s"),
             ]
@@ -118,8 +134,8 @@ def build(
         flags = ["--defsym", f"IPC_{mode.upper().replace(chr(45), chr(95))}=1"] if hostile else []
         if user_budget and mode == "context" and index == 0:
             flags += ["--defsym", "IPC_CLIENT_CONTEXT=1"]
-        if snapshot and index == 1:
-            flags = ["--defsym", "SNAPSHOT_SERVICE=1"]
+        if (snapshot or program_console) and index == 1:
+            flags += ["--defsym", "SNAPSHOT_SERVICE=1" if snapshot else "PROGRAM_NOTE_SERVICE=1"]
             if mode in ("reply-reserved", "reply-byte"):
                 flags += ["--defsym", f"SNAPSHOT_{mode.upper().replace(chr(45), chr(95))}=1"]
             run(
@@ -180,16 +196,22 @@ def build(
             opcode,
             dispatcher=dispatcher,
             copied_snapshot=snapshot and index == 1,
+            copied_note=program_console and index == 1,
         )
         if service_budget:
+            compiled = (
+                "__au_v_m1_22program_stream_service_n0__d16aurora_user_main"
+                if program_console and index == 1
+                else "aurora_user_main"
+            )
             functions = [
                 line.split()
                 for line in subprocess.check_output(["readelf", "-sW", elf], text=True).splitlines()
-                if line.split() and line.split()[-1] == "aurora_user_main"
+                if line.split() and line.split()[-1] == compiled
             ]
             need(len(functions) == 1 and functions[0][3] == "FUNC", "Exact compiled function symbol")
-            need(int(functions[0][1], 16) == symbols["aurora_user_main"], "Consistent function entry")
-            meta = service_metadata(meta, blob, symbols, int(functions[0][2]))
+            need(int(functions[0][1], 16) == symbols[compiled], "Consistent function entry")
+            meta = service_metadata(meta, blob, symbols, int(functions[0][2]), compiled)
         records[name] = meta
         header.append(
             f"inline constexpr std::array<std::byte,{len(blob)}> {name}_bytes = {{"
