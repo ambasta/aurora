@@ -44,6 +44,9 @@ restoration boot. The stricter prebuilt qualification path remains
 `scripts/kernel-framebuffer-capture.py` (see `--help`): it still requires the pinned
 manifest, four independent approval roles, all four cases and an actual normal
 restoration boot. A preview never creates those approvals.
+New manifests pin `normal_oracle` to the current SHA-256 of
+`scripts/kernel_uefi_oracle.py`, retaining verification before dynamic loading
+and rejecting the former test-executable pin without rewriting historical evidence.
 
 ## Current-source graphical smoke
 

@@ -463,5 +463,132 @@ class NativeCompilerWrapperTests(unittest.TestCase):
             self.assertFalse(marker.exists())
 
 
+class MesonArtifactTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.scratch = self.root / "build"
+        self.scratch.mkdir()
+        self.cwd = self.root / "cwd"
+        self.cwd.mkdir()
+        self.external = self.root / "explicit-artifacts"
+        self.external.mkdir()
+        self.sibling = self.scratch / "aurora-meson-older"
+        self.sibling.mkdir()
+        (self.sibling / "evidence").write_text("older evidence")
+        self.adapter = Path(__file__).resolve().with_name("meson_artifacts.py")
+        self.env = {**os.environ, "TMPDIR": str(self.scratch), "CXX": "chosen-cxx --flag"}
+        self.env.pop("AURORA_MESON_KEEP_ARTIFACTS", None)
+
+    def run_adapter(self, code=None, *, command=None):
+        if command is None:
+            command = [sys.executable, "-B", "-c", code, "@ARTIFACTS@"]
+        result = subprocess.run(
+            [sys.executable, "-B", *(["-O"] if sys.flags.optimize else []), str(self.adapter), *command],
+            cwd=self.cwd,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        first = result.stdout.splitlines()[0]
+        self.assertTrue(first.startswith("Artifacts: "), result)
+        parent = Path(first.removeprefix("Artifacts: "))
+        self.assertEqual(parent.parent, self.scratch)
+        self.assertNotEqual(parent, self.sibling)
+        self.assertEqual((self.sibling / "evidence").read_text(), "older evidence")
+        return result, parent
+
+    def test_success_cleans_only_owned_scratch_and_preserves_invocation(self):
+        code = (
+            "import json, os, sys; from pathlib import Path; "
+            "output = Path(sys.argv[1]); absent = not output.exists(); output.mkdir(); "
+            "(output / 'generated').write_text('scratch'); "
+            "(Path(sys.argv[3]) / 'receipt').write_text('explicit evidence'); "
+            "print(json.dumps([absent, os.getcwd(), sys.argv[1:], os.environ['CXX'], os.environ['PATH']])); "
+            "print('child stderr', file=sys.stderr)"
+        )
+        result, parent = self.run_adapter(
+            command=[
+                sys.executable,
+                "-B",
+                "-c",
+                code,
+                "@ARTIFACTS@",
+                "--artifacts",
+                str(self.external),
+                "literal @ARTIFACTS@",
+                "a b",
+                "",
+            ]
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observed = json.loads(result.stdout.splitlines()[1])
+        self.assertEqual(
+            observed,
+            [
+                True,
+                str(self.cwd),
+                [str(parent / "output"), "--artifacts", str(self.external), "literal @ARTIFACTS@", "a b", ""],
+                self.env["CXX"],
+                self.env["PATH"],
+            ],
+        )
+        self.assertEqual(result.stderr, "child stderr\n")
+        self.assertEqual(result.stdout.splitlines()[-1], "Removed artifacts: " + str(parent))
+        self.assertFalse(parent.exists())
+        self.assertEqual((self.external / "receipt").read_text(), "explicit evidence")
+
+    def test_only_explicit_keep_one_retains_success(self):
+        for value in ("1", "0", ""):
+            with self.subTest(keep=value):
+                self.env["AURORA_MESON_KEEP_ARTIFACTS"] = value
+                result, parent = self.run_adapter("from pathlib import Path; import sys; Path(sys.argv[1]).mkdir()")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(parent.exists(), value == "1")
+                outcome = "Retained" if value == "1" else "Removed"
+                self.assertIn(outcome + " artifacts: " + str(parent), result.stdout)
+
+    def test_failure_signal_and_interruption_retain_evidence(self):
+        for end, expected in (
+            ("sys.exit(23)", 23),
+            ("os.kill(os.getpid(), signal.SIGTERM)", 256 - signal.SIGTERM),
+            ("os.kill(os.getppid(), signal.SIGINT); time.sleep(30)", None),
+        ):
+            with self.subTest(end=end):
+                result, parent = self.run_adapter(
+                    "import os, signal, sys, time; from pathlib import Path; "
+                    "output = Path(sys.argv[1]); output.mkdir(); (output / 'evidence').write_text('failure'); " + end
+                )
+                if expected is None:
+                    self.assertNotEqual(result.returncode, 0)
+                else:
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual((parent / "output/evidence").read_text(), "failure")
+                self.assertIn("Retained artifacts: " + str(parent), result.stdout)
+                self.assertNotIn("Removed artifacts:", result.stdout)
+
+    def test_launch_error_retains_owned_directory(self):
+        result, parent = self.run_adapter(command=[str(self.root / "missing-command"), "@ARTIFACTS@"])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(parent.is_dir())
+        self.assertIn("Retained artifacts: " + str(parent), result.stdout)
+
+    def test_cleanup_error_reports_remaining_scratch_without_failing_success(self):
+        result, parent = self.run_adapter(
+            "import sys; from pathlib import Path; output = Path(sys.argv[1]); output.mkdir(); "
+            "(output / 'evidence').write_text('kept'); parent = output.parent; "
+            "parent.rename(parent.with_suffix('.moved')); "
+            f"parent.symlink_to({str(self.external)!r}, target_is_directory=True)"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Artifact cleanup incomplete: " + str(parent), result.stderr)
+        self.assertNotIn("Removed artifacts:", result.stdout)
+        self.assertTrue(parent.is_symlink())
+        self.assertTrue(self.external.is_dir())
+        self.assertEqual((parent.with_suffix(".moved") / "output/evidence").read_text(), "kept")
+
+
 if __name__ == "__main__":
     unittest.main()
