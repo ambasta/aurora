@@ -132,8 +132,9 @@ all: compiler kernel
 # Developer shortcuts reuse the existing build and validated smoke mechanisms.
 # Export these selectors so both environment and make NAME=value syntax work.
 export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
+export EVENT_BUILD_RECEIPT EVENT_CODE EVENT_VARS EVENT_DATA EVENT_ESP_DIR EVENT_OUTPUT_PARENT MTOOLS_DIR
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
-.PHONY: smoke-graphical-console capture-framebuffer help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream
+.PHONY: smoke-iommu-event smoke-graphical-console capture-framebuffer help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream
 help:
 	@printf '%s\n' \
 	  'make                  Build the compiler and BIOS kernel image' \
@@ -147,6 +148,7 @@ help:
 	  'make qualify-program-console-uefi  Qualify an independently reviewed prebuilt protected console' \
 	  'make test-program-stream  Run copied-stream and two-role authority host tests' \
 	  'make capture-framebuffer  Build/check and save a local PNG preview under build/' \
+	  'make smoke-iommu-event  Opt-in custom-model Event guests with current admission and normal restoration' \
 	  'make smoke-graphical-console  Build/check graphical guests, capture pixels and restore normal UEFI' \
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
@@ -179,6 +181,9 @@ smoke-program-console-uefi:
 
 qualify-program-console-uefi:
 	./scripts/kernel-program-console-smoke.sh --qualification
+
+smoke-iommu-event:
+	./scripts/kernel-iommu-event-smoke.sh
 
 smoke-graphical-console:
 	./scripts/kernel-graphical-smoke.sh

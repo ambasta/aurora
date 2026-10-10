@@ -213,11 +213,27 @@ meson test -C build/gcc16 iommu-event-source-native --print-errorlogs
 
 Replace `build/gcc16` with your configured build directory. This incrementally
 builds the selected test's dependencies and exercises sealed Event/Console
-sessions; it does not run a guest or qualify live DMA. Event UEFI profiles remain
-build-only through `UEFI_MODE=iommu-event-success ./scripts/kernel-uefi-build.sh`.
-The generic UEFI smoke launcher rejects them before building or launching QEMU
-and points to this hosted route. Actual Event guest execution still requires the
-[reviewed model, firmware, raw ESP and supervised plan](iommu-dma-conformance.md).
+sessions; it does not run a guest or qualify live DMA. Build-only Event images
+remain available through `UEFI_MODE=iommu-event-success ./scripts/kernel-uefi-build.sh`.
+For an actual current-source developer guest, use the separate opt-in target:
+
+```sh
+make smoke-iommu-event EVENT_BUILD_RECEIPT=/absolute/BUILD-RECEIPT.json \
+  EVENT_CODE=/absolute/OVMF_CODE_4M.fd EVENT_VARS=/absolute/OVMF_VARS_4M.fd \
+  EVENT_DATA=/absolute/qemu-data
+```
+
+This requires the [supported custom model and initial firmware bytes](../tools/qemu-amdvi/README.md#developer-event-runtime),
+GNU mtools 4.0.48 with no system config, and ordinary QEMU/OVMF for normal
+restoration. `MTOOLS_DIR` selects an installed tool directory; `EVENT_ESP_DIR`
+is a validated raw-ESP alternative on unsupported mtools hosts. Evidence is
+retained outside source under `EVENT_OUTPUT_PARENT` (default system temporary
+directory), with fixed budgets and a 1 GiB free floor. Remove only completed runs
+you no longer need. `scripts/kernel-iommu-event-smoke.sh --build-only` checks fresh
+images/ESPs and restores normal bytes without guests. See the
+[developer scope and qualification boundary](iommu-dma-conformance.md#supported-local-developer-execution).
+The generic UEFI launcher still rejects Event profiles; the fast hosted test
+and default `smoke-all` remain unchanged.
 
 - `./scripts/compiler-test.sh` or `make -C compiler test`: complete compiler-only
   Meson suite with dependency-tracked compiler and fixture builds.

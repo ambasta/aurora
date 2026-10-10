@@ -535,3 +535,12 @@ test('iommu-event-esp-controls', python,
      args: ['-B', files('kernel-uefi-event-esp.py')], suite: ['full', 'dev'], timeout: 120)
 test('iommu-event-esp-controls-optimized', python,
      args: ['-B', '-O', files('kernel-uefi-event-esp.py')], suite: ['full', 'dev'], timeout: 120)
+
+# Developer Event controls use synthetic bytes and owned fake children, never QEMU.
+foreach mode : ['', '-O']
+  foreach test_name : ['oracle', 'smoke']
+    test('iommu-event-' + test_name + '-controls' + (mode == '' ? '' : '-optimized'), python,
+         args: ['-B'] + (mode == '' ? [] : [mode]) + files('kernel-iommu-event-' + test_name + '.py'),
+         suite: ['full', 'dev'], timeout: 120)
+  endforeach
+endforeach

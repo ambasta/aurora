@@ -63,8 +63,11 @@ The implementation passed GCC 16 full tests and independent image/guest review
 for all four active emulator profiles; the [contract](iommu-dma-conformance.md)
 records source, toolchain and runtime scope. Read-only observation cannot grant
 admission; physical isolation, drain and reclamation remain unqualified.
-The generic UEFI smoke launcher points Event profiles to build-only and hosted
-test routes; it does not admit an Event guest clock or bypass supervised execution.
+The separate opt-in `make smoke-iommu-event` builds/admit-checks current profiles,
+validates raw ESPs and full serial/RAM evidence, then restores and boots normal
+UEFI. This supported developer route requires the explicit custom-model tuple,
+but no per-run independent review pin. It does not confer release qualification.
+The generic UEFI launcher still rejects Event; hosted tests remain the cheap default.
 
 The current-source `make smoke-graphical-console` runner now retains fresh
 production/capture pixel evidence and an actual final normal restoration. The

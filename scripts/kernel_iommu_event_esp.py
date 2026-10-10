@@ -26,6 +26,7 @@ FREE_FLOOR_BYTES = 1024 * 1024 * 1024
 MTOOLS_SHA256 = "0fcd90361bb5077f1289342f6e7713f98269847dbda25d6f1657018f42c53e85"
 MTOOLS_BYTES = 214336
 MTOOLS_COMMANDS = ("mformat", "mmd", "mcopy", "minfo", "mdir")
+DEVELOPER_MTOOLS_VERSION = "4.0.48"
 LABEL = b"AURORA_ESP".ljust(11)
 EOC = 0x0FFFFFF8
 
@@ -250,12 +251,46 @@ def same_bytes(first, second):
                 return True
 
 
-def build(loader, loader_sha256, mtools_root, output_dir):
+def developer_tool_identity(root, home=None):
+    """Bind installed tools, without inheriting the historical executable pin.
+
+    GNU mtools reads system configuration, then ~/.mtoolsrc, then MTOOLSRC;
+    MTOOLSRC=/dev/null alone is not isolation. This bounded contract supports
+    GNU 4.0.48 with the standard system configuration locations only.
+    """
+    for path in (Path("/etc/mtools.conf"), Path("/etc/default/mtools.conf")):
+        need(not os.path.lexists(path), "Developer system mtools configuration exists: " + str(path))
+    if home is not None:
+        need(home.resolve(strict=True) == home and home.is_dir(), "Invalid private mtools home")
+        need(not os.path.lexists(home / ".mtoolsrc"), "Developer private mtools configuration exists")
+    root = Path(root).absolute()
+    need(root.is_dir(), "Invalid developer mtools root")
+    identities = {}
+    for name in MTOOLS_COMMANDS:
+        selected = root / name
+        executable = regular(selected.resolve(strict=True))
+        need(os.access(executable, os.X_OK), "Developer mtools is not executable: " + name)
+        identities[name] = dict(
+            command_path=str(selected),
+            resolved_path=str(executable),
+            bytes=executable.stat().st_size,
+            sha256=sha256(executable),
+        )
+    return identities
+
+
+def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, run_command=None):
+    need(run_command is None or developer, "Command callback requires developer ESP mode")
+    need(not developer or callable(run_command), "Developer ESP mode requires a bounded command callback")
     check_hash(loader_sha256)
     loader = regular(loader)
     need(0 < loader.stat().st_size < IMAGE_BYTES // 2, "Invalid admitted loader size")
     need(sha256(loader) == loader_sha256, "Admitted loader SHA256 mismatch")
-    tools = verify_tools(mtools_root)
+    if developer:
+        tools = Path(mtools_root).absolute()
+        tool_identity = developer_tool_identity(tools)
+    else:
+        tools = verify_tools(mtools_root)
     output = Path(output_dir).absolute()
     need(output.parent.resolve(strict=True) == output.parent and output.parent.is_dir(), "Invalid output parent")
     need(output != ROOT and ROOT not in output.parents, "ESP output must be outside author source")
@@ -271,6 +306,7 @@ def build(loader, loader_sha256, mtools_root, output_dir):
     admitted.chmod(0o400)
     commands = []
     results = []
+    versions = {}
     for role in ("master", "rebuild"):
         home = output / (role + "-home")
         home.mkdir(mode=0o700)
@@ -286,22 +322,47 @@ def build(loader, loader_sha256, mtools_root, output_dir):
             MTOOLS_NO_VFAT="1",
         )
 
+        def verify_developer_identity():
+            need(developer_tool_identity(tools, home) == tool_identity, "Developer mtools identity changed")
+            need(shutil.disk_usage(output).free >= FREE_FLOOR_BYTES, "ESP free-space floor failed")
+
         def run(name, *args):
+            if developer:
+                verify_developer_identity()
             command = [str(tools / name), *map(str, args)]
             commands.append(dict(command=command, environment=environment))
             (output / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
             log = output / (role + "-" + str(len(commands)) + "-" + name + ".log")
-            with log.open("xb") as stream:
-                subprocess.run(
-                    command,
-                    env=environment,
-                    stdin=subprocess.DEVNULL,
-                    stdout=stream,
-                    stderr=subprocess.STDOUT,
-                    timeout=60,
-                    check=True,
-                    umask=0o077,
+            if developer:
+                run_command(command, log, environment)
+            else:
+                with log.open("xb") as stream:
+                    subprocess.run(
+                        command,
+                        env=environment,
+                        stdin=subprocess.DEVNULL,
+                        stdout=stream,
+                        stderr=subprocess.STDOUT,
+                        timeout=60,
+                        check=True,
+                        umask=0o077,
+                    )
+            if developer:
+                verify_developer_identity()
+            return log
+
+        if developer and role == "master":
+            for name in MTOOLS_COMMANDS:
+                log = run(name, "--version")
+                with log.open("rb") as stream:
+                    version = stream.read(4097)
+                need(len(version) <= 4096, "Oversized developer mtools version output: " + name)
+                expected = (name + " (GNU mtools) " + DEVELOPER_MTOOLS_VERSION).encode("ascii")
+                need(
+                    version.splitlines() and version.splitlines()[0] == expected,
+                    "Unsupported developer mtools version: " + name + "; require GNU " + DEVELOPER_MTOOLS_VERSION,
                 )
+                versions[name] = version.decode("ascii")
 
         with image.open("xb") as stream:
             stream.truncate(IMAGE_BYTES)
@@ -342,7 +403,10 @@ def build(loader, loader_sha256, mtools_root, output_dir):
         image.chmod(0o444)
     need(same_bytes(output / "esp-master.raw", output / "esp-rebuild.raw"), "Independent ESP rebuild differs")
     need(results[0] == results[1], "Independent FAT admission differs")
-    verify_tools(tools)
+    if developer:
+        verify_developer_identity()
+    else:
+        verify_tools(tools)
     need(sha256(loader) == loader_sha256 and sha256(admitted) == loader_sha256, "Admitted loader changed")
     result = dict(
         schema="aurora-iommu-event-esp-build-v1",
@@ -360,6 +424,14 @@ def build(loader, loader_sha256, mtools_root, output_dir):
         commands=commands,
         builder_sha256=sha256(Path(__file__)),
     )
+    if developer:
+        result.update(
+            schema="aurora-iommu-event-developer-esp-build-v1",
+            status="developer-byte-identity-checked",
+            independent_review=False,
+            mtools={name: dict(**tool_identity[name], version_output=versions[name]) for name in MTOOLS_COMMANDS},
+        )
+        del result["mtools_sha256"]
     with (output / "esp-admission.json").open("x") as stream:
         json.dump(result, stream, indent=2, sort_keys=True)
         stream.write("\n")
