@@ -25,6 +25,8 @@ MODES = (
 )
 ENTRY = "__au_v_m1_22kernel_console_service_n0__d15console_service"
 BRIDGE = "__au_runtime_console_entry"
+VALUE_BRIDGE = "__au_runtime_console_value"
+BRIDGES = (BRIDGE, VALUE_BRIDGE)
 
 
 def need(value, message):
@@ -176,7 +178,7 @@ def stack_evidence(directory):
         if name == "uefi_payload_fail" or "4failE" in name or name == "_ZN6aurora4uefi11run_consoleEmRKNS0_5BytesE"
     )
     functions = decoder.compiled_stack_functions(
-        directory, linked, language, code, starts, frames, compiler_edges, (BRIDGE,)
+        directory, linked, language, code, starts, frames, compiler_edges, BRIDGES
     )
     functions.update(
         decoder.assembly_stack_functions(
@@ -184,7 +186,14 @@ def stack_evidence(directory):
             code,
             starts,
             set(memory.functions)
-            | {BRIDGE, "uefi_payload_entry", "uefi_payload_fault", "uefi_payload_page_fault", "fault_common"},
+            | {
+                BRIDGE,
+                VALUE_BRIDGE,
+                "uefi_payload_entry",
+                "uefi_payload_fault",
+                "uefi_payload_page_fault",
+                "fault_common",
+            },
         )
     )
     verify_noreturn(functions, decoder.NORETURN)
@@ -197,6 +206,12 @@ def stack_evidence(directory):
         row for address, row in sorted(code.items()) if bridge.address <= address < bridge.address + bridge.size
     ]
     verify_bridge_body(decoder, bridge_body, starts)
+    value = linked.functions[VALUE_BRIDGE]
+    decoder.verify_tail_bridge(
+        [row for address, row in sorted(code.items()) if value.address <= address < value.address + value.size],
+        starts,
+        "aurora_kernel_value",
+    )
     for name in functions:
         common.graph_peak(functions, name)
     normal = common.graph_peak(functions, "uefi_payload_entry")

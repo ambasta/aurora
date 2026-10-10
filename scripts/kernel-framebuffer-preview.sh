@@ -6,9 +6,17 @@ fail() { echo "FAIL: framebuffer preview: $*" >&2; exit 1; }
 blocked() { echo "BLOCKED: framebuffer preview: $*" >&2; exit 2; }
 if [[ $# == 1 && "$1" == --help ]]; then
     echo 'Build/check and capture an emulator-only framebuffer preview under build/. Not qualified evidence.'
+    echo '--full-smoke runs all four framebuffer cases and an actual normal boot.'
     exit 0
 fi
-[[ $# == 0 ]] || fail 'usage: scripts/kernel-framebuffer-preview.sh [--help]'
+modes=(framebuffer)
+options=()
+if [[ $# == 1 && "$1" == --full-smoke ]]; then
+    modes=(framebuffer framebuffer-record framebuffer-permissions framebuffer-stale)
+    options=(--full-smoke)
+else
+    [[ $# == 0 ]] || fail 'usage: scripts/kernel-framebuffer-preview.sh [--help|--full-smoke]'
+fi
 for name in "${!KERNEL_TEST_@}" AURORA_TEST_CONTEXT KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE UEFI_CONSOLE_HANDOFF; do
     [[ -n "$name" ]] || continue
     [[ -z "${!name:-}" ]] || fail "unset $name before capture"
@@ -37,8 +45,18 @@ uefi_firmware_select || blocked 'UEFI firmware unavailable'
 source scripts/uefi-linker.sh
 uefi_linker_select || blocked 'UEFI PE linker unavailable'
 python3 -B scripts/kernel_framebuffer_preview.py --preflight
-if image_dir="$(UEFI_MODE=framebuffer ./scripts/kernel-uefi-build.sh --print-image-dir)"; then :; else
-    status=$?; echo "FAIL: framebuffer preview image build/admission exited $status" >&2; exit "$status"
-fi
-exec python3 -B scripts/kernel_framebuffer_preview.py --build-dir "$image_dir" "$qemu" "$UEFI_FIRMWARE_COMBINED" \
+image_dir=
+profile_root=
+for mode in "${modes[@]}"; do
+    if selected="$(UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh --print-image-dir)"; then :; else
+        status=$?; echo "FAIL: framebuffer $mode image build/admission exited $status" >&2; exit "$status"
+    fi
+    if [[ ${#options[@]} != 0 ]]; then
+        [[ ${selected##*/} == "$mode" ]] || fail 'unexpected native framebuffer profile'
+        [[ -z "$profile_root" || ${selected%/*} == "$profile_root" ]] || fail 'profiles selected different native builds'
+        profile_root=${selected%/*}
+    fi
+    if [[ "$mode" == framebuffer ]]; then image_dir=$selected; fi
+done
+exec python3 -B scripts/kernel_framebuffer_preview.py "${options[@]}" --build-dir "$image_dir" "$qemu" "$UEFI_FIRMWARE_COMBINED" \
     "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}"

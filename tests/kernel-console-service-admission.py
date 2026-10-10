@@ -118,6 +118,10 @@ class Admission(unittest.TestCase):
             ("leave", ""),
             ("ret", ""),
         ]
+        decoder.verify_tail_bridge(body([("jmp", "100 <value>")]), {256: "aurora_kernel_value"}, "aurora_kernel_value")
+        for changed in ([("call", "100 <value>")], [("jmp", "101 <wrong>")]):
+            with self.assertRaises(ValueError):
+                decoder.verify_tail_bridge(body(changed), {256: "aurora_kernel_value"}, "aurora_kernel_value")
         service.verify_bridge_body(decoder, body(operations), {256: service.ENTRY})
         for index, replacement in ((2, ("mov", "%rsi,%r11")), (3, ("call", "101 <wrong>")), (5, ("ret", "$0x8"))):
             changed = list(operations)

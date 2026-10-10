@@ -104,7 +104,7 @@ private:
 #endif
     PhysicalPages &pool_;
     const user::DomainRegistry &registry_;
-    Scrub scrub_;
+    Scrub const scrub_;
     void *scrub_context_;
     std::uint64_t epoch_{};
     std::array<Entry, capacity> entries_{};

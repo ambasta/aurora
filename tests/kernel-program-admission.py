@@ -219,6 +219,49 @@ def main():
         need(decoder.switch_window(rows)["entries"] == count, "Bounded table count/register relation")
         reject(lambda: decoder.switch_window(rows[:3] + rows[4:]), "missing switch index zero extension")
 
+    # The immutable mapping boundary is page-aligned beyond the raw file;
+    # the complete table itself must exist within both independent bounds.
+    from types import SimpleNamespace
+
+    code = [
+        decoder.Instruction(address, size, op, args)
+        for address, size, op, args in (
+            (0, 4, "cmp", "$0x5,%rax"),
+            (4, 2, "ja", "70 <reject>"),
+            (6, 7, "lea", "0xf3(%rip),%rdx"),
+            (13, 4, "movslq", "(%rdx,%rax,4),%rax"),
+            (17, 3, "add", "%rdx,%rax"),
+            (20, 2, "jmp", "*%rax"),
+            (112, 1, "ret", ""),
+        )
+    ]
+    linked = SimpleNamespace(
+        functions={"switch": decoder.Symbol("switch", 0, 128, 1, 2)},
+        symbols=[
+            decoder.Symbol("__payload_text_end", 128, 0, 1, 0),
+            decoder.Symbol("__payload_read_end", 4096, 0, 1, 0),
+        ],
+    )
+    raw = bytes(256) + (-144).to_bytes(4, "little", signed=True) * 6
+    instructions = {row.address: row for row in code}
+    need(
+        decoder.bounded_switches(linked, instructions, {"switch": 8}, raw)[1] == {20},
+        "Page-aligned immutable boundary incorrectly requires raw padding",
+    )
+    reject(lambda: decoder.bounded_switches(linked, instructions, {"switch": 8}, raw[:-1]), "truncated switch table")
+    for text_end, read_end in ((257, 4096), (128, 279)):
+        bad = SimpleNamespace(
+            functions=linked.functions,
+            symbols=[
+                decoder.Symbol("__payload_text_end", text_end, 0, 1, 0),
+                decoder.Symbol("__payload_read_end", read_end, 0, 1, 0),
+            ],
+        )
+        reject(
+            lambda bad=bad: decoder.bounded_switches(bad, instructions, {"switch": 8}, raw),
+            "switch table escapes immutable mapping",
+        )
+
     graph = {
         "root": body(24, ("worker", 24)),
         "worker": body(32, ("leaf", 32)),

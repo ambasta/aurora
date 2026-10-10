@@ -30,12 +30,15 @@ Missing prerequisites are `BLOCKED`; build, admission and guest defects are fail
 The framebuffer image stays in its isolated native profile directory; normal
 images coexist. Do not mutate an image profile while it is in use.
 
-The result says `qualified: false`. Preview runs neither the three negative
-guests nor a normal restoration boot. The stricter prebuilt path is
-`scripts/kernel-framebuffer-capture.py` (see `--help`): a pinned manifest, four
-independent approval roles, all four cases and an actual normal restoration.
-Its manifest pins `normal_oracle` to `scripts/kernel_uefi_oracle.py`, checked
-before dynamic loading. A preview never supplies independent approvals.
+The result says `qualified: false`. Ordinary preview runs one positive guest.
+For all four admitted native profiles, run the same entrypoint with
+`scripts/kernel-framebuffer-preview.sh --full-smoke`. It checks the success scene
+and all three no-write cases with the existing independent pixel/serial oracles,
+then invokes the normal UEFI smoke entrypoint for an actual restoration boot,
+even after a guest failure. An unreaped guest blocks restoration. Each attempt
+retains its captures, admissions, normal boot log and summary in a fresh directory.
+No external manifest, tool pins or approval-role receipts are required; final-source
+GCC 16 full testing and independent review remain separate merge gates.
 
 ## Current-source graphical smoke
 

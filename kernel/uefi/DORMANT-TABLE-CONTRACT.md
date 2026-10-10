@@ -97,8 +97,16 @@ edges before boot. The TABLES-only ACPI preparation function ends before PCI
 scan construction, preserving historical branches. The bound covers ACPI,
 Topology parsing, PCI, fixed-four-slot mapping verification, table construction,
 readback/corruption, cleanup and runtime helpers, plus1024 bytes for faults.
-Mode-specific raw .su, disassembly and the calculated bound are retained under
-build/uefi/table-stack/<mode>. A table-sized stack temporary or reintroduced
+The one indirect scrub call is an explicit trusted source contract: TABLES selects
+only the dormant adapter, whose sole ledger construction binds `table_scrub` to
+PinLedger's private const callback field. Admission guards that narrow construction
+and immutable-field contract, binds caller/target to exact runtime.o source/signature
+records, and charges the actual scrub frame and closure to the full caller frame.
+Every other unresolved call rejects. GCC metadata does not prove this callback
+binding or general C++ alias safety; source review and hosted/guest resource checks
+remain part of the trust boundary. No historical source hash is used.
+Mode-specific raw .su, disassembly and the calculated bound are retained under the
+selected native profile's table-stack/<mode> directory. A table-sized stack temporary or reintroduced
 parser-to-PCI edge fails the regression gate. No stack/page-layout widening occurs.
 
 Commands: make test-dormant-tables, SANITIZE=1 make test-dormant-tables,

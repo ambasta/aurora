@@ -48,13 +48,6 @@ def verify_stack_budget(normal, fault):
     need(normal + fault <= 15360, "Existing 16 KiB mixed-stack/fault reserve exhausted")
 
 
-def verify_value_bridge(decoder, rows, starts):
-    need(
-        len(rows) == 1 and rows[0].op == "jmp" and starts.get(decoder.target_of(rows[0])) == "aurora_kernel_value",
-        "Display value bridge must tail-call the exact scalar value root",
-    )
-
-
 def stack_evidence(directory):
     decoder = load("framebuffer_stack_decoder", ROOT / "scripts/kernel_stack.py")
     decoder.CPP_OBJECTS = ("payload", "acpi", "pci", "runtime", "framebuffer")
@@ -132,10 +125,10 @@ def stack_evidence(directory):
     body = [row for address, row in sorted(code.items()) if bridge.address <= address < bridge.address + bridge.size]
     console.verify_bridge_body(decoder, body, starts)
     value = linked.functions[VALUE_BRIDGE]
-    verify_value_bridge(
-        decoder,
+    decoder.verify_tail_bridge(
         [row for address, row in sorted(code.items()) if value.address <= address < value.address + value.size],
         starts,
+        "aurora_kernel_value",
     )
     for name in functions:
         common.graph_peak(functions, name)

@@ -9,6 +9,7 @@ from pathlib import Path
 import argparse
 import errno
 import json
+import io
 import os
 import pty
 import select
@@ -24,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import kernel_console_service_admission as admission
 import kernel_uefi_console_clock as clock
+import qemu_transport as transport
 
 
 def need(value, message):
@@ -32,21 +34,9 @@ def need(value, message):
 
 
 def run_bounded(argv, timeout, env=None):
-    process = subprocess.Popen(
-        argv, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except BaseException:
-        if process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.communicate(timeout=5)
-        raise
-    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+    stdout, stderr = io.BytesIO(), io.BytesIO()
+    status = transport.run_logged(argv, stdout, stderr=stderr, cwd=ROOT, env=env, timeout=timeout, timeout_status=False)
+    return subprocess.CompletedProcess(argv, status, stdout.getvalue(), stderr.getvalue())
 
 
 def validate_fault(transcript, status, mode, sent):
@@ -92,35 +82,12 @@ def fault_guest(mode, work):
         cwd=ROOT,
     )
     combined, code, variables, *firmware = selected.decode().split("\0")[:-1]
-    argv = [qemu]
-    if os.environ.get("QEMU_DATA"):
-        argv += ["-L", os.environ["QEMU_DATA"]]
-    argv += [
-        "-machine",
-        "q35",
-        "-accel",
-        "tcg",
-        "-cpu",
-        "qemu64",
-        "-smp",
-        "1",
-        "-m",
-        "128M",
-        *firmware,
-        "-drive",
-        "format=raw,file=fat:ro:" + str(admission.BUILD / "esp") + ",snapshot=on",
-        "-nic",
-        "none",
-        "-display",
-        "none",
-        "-serial",
-        "stdio",
-        "-monitor",
-        "none",
-        "-no-reboot",
-        "-device",
-        "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    ]
+    argv = transport.command(
+        qemu,
+        os.environ.get("QEMU_DATA", ""),
+        firmware=transport.firmware_args(combined, code, variables),
+        boot=transport.fat_boot(admission.BUILD / "esp"),
+    )
     recipe = clock.receipt(
         argv, qemu, combined, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(admission.BUILD / "esp")
     )
@@ -134,7 +101,7 @@ def fault_guest(mode, work):
     started = time.monotonic()
     try:
         with (work / "guest.stderr").open("wb") as stderr:
-            process = subprocess.Popen(argv, cwd=ROOT, stdin=slave, stdout=slave, stderr=stderr, start_new_session=True)
+            process = transport.start(argv, cwd=ROOT, stdin=slave, stdout=slave, stderr=stderr)
             os.close(slave)
             slave = -1
             while True:
@@ -155,25 +122,19 @@ def fault_guest(mode, work):
                         tty.setraw(master)
                         os.write(master, b"x")
                         sent = True
-                elif process.poll() is not None:
+                elif transport.exited(process):
                     break
-            status = process.wait(timeout=2)
+            status = transport.wait_exit(process, 2)
         validate_fault(bytes(transcript), status, mode, sent)
         return dict(
             exit_status=status, elapsed_seconds=time.monotonic() - started, input_sent=sent, transcript_sha256=None
         )
     finally:
-        if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
-        os.close(master)
-        if slave != -1:
-            os.close(slave)
+        errors, _, unsettled = transport.finish(process, fds=(master, slave if slave != -1 else None))
         (work / "guest.log").write_bytes(transcript)
+        if unsettled:
+            raise transport.ChildNotReaped("; ".join(errors))
+        need(not errors, "; ".join(errors))
 
 
 def restore_normal(work, env, result=None):
@@ -305,6 +266,8 @@ def main():
         # This normal-profile command includes an actual validated QEMU boot.
         env = dict(os.environ, MESON_BUILD_DIR=str(admission.BUILD.parents[2]))
         try:
+            if isinstance(primary_error, transport.ChildNotReaped):
+                raise primary_error
             restore_normal(work, env, result)
             if primary_error is None:
                 result["status"] = "passed"

@@ -690,7 +690,7 @@ def analyze_function(symbol, instructions, starts, fault=False):
     return result
 
 
-def cpp_stack_functions(symbols, code, starts, payload, frames, edges, internal_jumps=()):
+def cpp_stack_functions(symbols, code, starts, payload, frames, edges, internal_jumps=(), callbacks=None):
     """Trust GCC frame/call facts; cross-check direct transfers, not C++ semantics.
 
     Retain the full frame at every call AND tail call. GCC does not account for
@@ -700,7 +700,18 @@ def cpp_stack_functions(symbols, code, starts, payload, frames, edges, internal_
     these adjacent flag-save pairs: GCC metadata does not bound arbitrary asm.
     Aurora uses emitted facts; standalone assembly retains its separate checks.
     """
-    require(all(a in frames and b in symbols for a, b in edges), "Unknown compiler caller or callee")
+    callbacks = callbacks or {}
+    require(
+        all(
+            caller in frames and target in frames and (caller, "__indirect_call") in edges
+            for caller, target in callbacks.items()
+        ),
+        "Invalid source-reviewed callback binding",
+    )
+    require(
+        all(a in frames and (b in symbols or (b == "__indirect_call" and a in callbacks)) for a, b in edges),
+        "Unknown compiler caller or callee",
+    )
     pop_bytes = {
         "%" + name: bytes(([0x41] if index >= 8 else []) + [0x58 + index % 8])
         for index, name in enumerate("rax rcx rdx rbx rsp rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15".split())
@@ -713,7 +724,7 @@ def cpp_stack_functions(symbols, code, starts, payload, frames, edges, internal_
             row for address, row in sorted(code.items()) if symbol.address <= address < symbol.address + symbol.size
         ]
         require(rows and rows[0].address == symbol.address, "Missing C++ function instructions")
-        pairs, calls = [], []
+        pairs, calls, callback_sites = [], [], 0
         for row in rows:
             require(row.next <= symbol.address + symbol.size, "C++ instruction exceeds function")
             if row.op.startswith(("pushf", "popf")):
@@ -744,13 +755,20 @@ def cpp_stack_functions(symbols, code, starts, payload, frames, edges, internal_
             if row.address in internal_jumps:
                 require(row.op == "jmp" and row.args.startswith("*"), "Unexpected internal switch jump")
                 continue
-            target = target_of(row)  # Supported call/jump targets must resolve directly.
+            if row.op == "call" and row.args.startswith("*"):
+                require(name in callbacks, "Unbound indirect C++ call")
+                callback_sites += 1
+                direct.add((name, "__indirect_call"))
+                calls.append(dict(address=row.address, target=callbacks[name], kind="source-reviewed-callback"))
+                continue
+            target = target_of(row)  # Other supported call/jump targets must resolve directly.
             require(target in code, "C++ transfer to non-instruction")
             if row.op != "call" and symbol.address <= target < symbol.address + symbol.size:
                 continue
             require(target in starts, "C++ transfer lacks exact function entry")
             direct.add((name, starts[target]))
             calls.append(dict(address=row.address, target=starts[target], kind="call" if row.op == "call" else "tail"))
+        require(callback_sites == int(name in callbacks), "Changed source-reviewed callback call-site inventory")
         bound = frame + (8 if pairs else 0)
         for call in calls:
             call["live_bytes"] = bound
@@ -852,6 +870,13 @@ def compiled_stack_functions(directory, linked, language, code, starts, frames, 
     functions = cpp_stack_functions(linked.functions, code, starts, payload, frames, edges, internal_jumps)
     functions.update(language_stack_functions(directory, linked, language, code, starts, bridges))
     return functions
+
+
+def verify_tail_bridge(rows, starts, target):
+    require(
+        len(rows) == 1 and rows[0].op == "jmp" and starts.get(target_of(rows[0])) == target,
+        "Scalar bridge must tail-call its exact generated root",
+    )
 
 
 def assembly_stack_functions(symbols, code, starts, names):
@@ -1040,7 +1065,7 @@ def bounded_switches(linked, code, frames, payload):
         body = [
             row for address, row in sorted(code.items()) if symbol.address <= address < symbol.address + symbol.size
         ]
-        indirect = [index for index, row in enumerate(body) if row.op in ("jmp", "call") and row.args.startswith("*")]
+        indirect = [index for index, row in enumerate(body) if row.op == "jmp" and row.args.startswith("*")]
         if not indirect:
             continue
         require(len(indirect) == 1, "Unexpected indirect branch inventory")
@@ -1052,7 +1077,7 @@ def bounded_switches(linked, code, frames, payload):
         )
         require(
             named["__payload_text_end"].address <= table
-            and table + entries * 4 <= named["__payload_read_end"].address <= len(payload),
+            and table + entries * 4 <= min(named["__payload_read_end"].address, len(payload)),
             "Switch table is not immutable payload data",
         )
         targets = [
@@ -1242,6 +1267,7 @@ def image_stack_graph(
     generated=True,
     payload_entry=True,
     allow_bounded=lambda _: True,
+    source_callbacks=(),
 ):
     """One composition for exact C++/Aurora facts and the explicit assembly boundary.
 
@@ -1258,8 +1284,14 @@ def image_stack_graph(
     require(len(starts) == len(linked.functions), "Ambiguous linked function starts")
     edges = set()
     frames, associations = cpp_frames(directory, linked, objects, edges, source_root, allow_bounded)
+    callbacks = {}
+    for caller, target in source_callbacks:
+        caller_name = source_frame_symbol(associations, *caller)
+        target_name = source_frame_symbol(associations, *target)
+        require(caller_name not in callbacks, "Duplicate source-reviewed callback caller")
+        callbacks[caller_name] = target_name
     switches, internal = bounded_switches(linked, code, frames, payload)
-    functions = cpp_stack_functions(linked.functions, code, starts, payload, frames, edges, internal)
+    functions = cpp_stack_functions(linked.functions, code, starts, payload, frames, edges, internal, callbacks)
     memory = Elf(directory / "objects/memory.o")
     require(
         memory.type == 1 and set(memory.functions) == {"memcpy", "memmove", "memset", "memcmp"},
@@ -1304,6 +1336,7 @@ def image_stack_graph(
         disassembly=disassembly,
         protected_irq=irq,
         runtime_entry_peak=entry_peak,
+        trusted_source_callbacks=callbacks,
     )
 
 
@@ -1361,4 +1394,5 @@ def profile_stack(
         minimum_unused=STACK_BYTES - peak,
         compiler_frames=records,
         bounded_switches=graph["bounded_switches"],
+        trusted_source_callbacks=graph.get("trusted_source_callbacks", {}),
     )

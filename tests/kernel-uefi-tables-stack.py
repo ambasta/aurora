@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,46 @@ OPTIONAL = ("table_corruption(", "table_exhaustion(")
 EXCLUDED = {"PageTables::verify(": ("lambda",)}
 
 
+# The compiler reports only __indirect_call. This single binding is a reviewed
+# source contract, mechanically guarded below, not compiler-derived alias proof.
+CALLBACKS = (
+    (
+        ("runtime.o", "kernel/pin-ledger.hpp", "bool aurora::memory::PinLedger::release_reserved(Entry&)"),
+        (
+            "runtime.o",
+            "kernel/uefi/dormant-runtime.inc",
+            "bool aurora::uefi::{anonymous}::table_scrub(void*, U64, std::size_t)",
+        ),
+    ),
+)
+
+
+def callback_contract(runtime, profile, ledger):
+    require(
+        re.search(
+            r'#ifdef AURORA_UEFI_TABLES\s*#include "dormant-runtime.inc"\s*#else\s*'
+            r'#include "pin-runtime.inc"\s*#endif',
+            runtime,
+        ),
+        "Changed exclusive table adapter selection",
+    )
+    require(
+        len(re.findall(r"\bPinLedger\b", runtime + profile)) == 1
+        and re.search(r"std::optional<memory::PinLedger>\s+table_ledger\s*;", profile),
+        "Changed table ledger instance contract",
+    )
+    constructions = re.findall(r"\btable_ledger\s*\.\s*emplace\s*\(([^;]*)\)\s*;", profile)
+    require(
+        len(constructions) == 1
+        and re.fullmatch(r"\s*frames\s*,\s*registry\s*,\s*table_scrub\s*,\s*nullptr\s*", constructions[0]),
+        "Changed table scrub constructor target",
+    )
+    require(
+        re.search(r"\bScrub\s+const\s+scrub_\s*;", ledger) and re.search(r"\bscrub_\s*\(\s*scrub\s*\)", ledger),
+        "Changed immutable scrub field contract",
+    )
+
+
 def validate(graph):
     result = shared.profile_stack(
         graph,
@@ -58,6 +99,47 @@ def validate(graph):
 def self_test():
     from copy import deepcopy
     from unittest import TestCase
+
+    runtime = '#ifdef AURORA_UEFI_TABLES\n#include "dormant-runtime.inc"\n#else\n#include "pin-runtime.inc"\n#endif'
+    profile = (
+        "std::optional<memory::PinLedger> table_ledger; table_ledger.emplace(frames,registry,table_scrub,nullptr);"
+    )
+    ledger = "Scrub const scrub_; PinLedger(Scrub scrub): scrub_(scrub) {}"
+    callback_contract(runtime, profile, ledger)
+    for changed in (profile.replace("table_scrub", "different_scrub"), profile + profile):
+        with TestCase().assertRaises(ValueError):
+            callback_contract(runtime, changed, ledger)
+    with TestCase().assertRaises(ValueError):
+        callback_contract(runtime, profile, ledger.replace(" const", ""))
+    symbols = {
+        name: shared.Symbol(name, address, size, 1, 2) for name, address, size in (("release", 0, 3), ("scrub", 4, 1))
+    }
+    code = {
+        row.address: row
+        for row in (
+            shared.Instruction(0, 2, "call", "*%rax"),
+            shared.Instruction(2, 1, "ret", ""),
+            shared.Instruction(4, 1, "ret", ""),
+        )
+    }
+    arguments = (
+        symbols,
+        code,
+        {0: "release", 4: "scrub"},
+        b"\xff\xd0\xc3\x90\xc3",
+        {"release": 160, "scrub": 8},
+        {("release", "__indirect_call")},
+    )
+    graph = shared.cpp_stack_functions(*arguments, callbacks={"release": "scrub"})
+    require(
+        shared.calculate(graph, "release")["peak"] == 168, "Callback closure was not charged to its full caller frame"
+    )
+    for callbacks in ({}, {"release": "foreign"}, {"scrub": "release"}):
+        with TestCase().assertRaises(ValueError):
+            shared.cpp_stack_functions(*arguments, callbacks=callbacks)
+    code[0] = shared.Instruction(0, 2, "jmp", "*%rax")
+    with TestCase().assertRaises(ValueError):
+        shared.cpp_stack_functions(*arguments, callbacks={"release": "scrub"})
 
     # Independent work branches share a root; the bound is their maximum, not
     # the sum of every emitted frame. No real compiler/image evidence is claimed.
@@ -101,8 +183,17 @@ if __name__ == "__main__":
         if args.directory and args.build_dir:
             parser.error("select one artifact directory")
         directory = args.build_dir or args.directory or args.source_root / "build/uefi"
+        callback_contract(
+            (args.source_root / "kernel/uefi/runtime.cpp").read_text(),
+            (args.source_root / "kernel/uefi/dormant-runtime.inc").read_text(),
+            (args.source_root / "kernel/pin-ledger.hpp").read_text(),
+        )
         graph = shared.image_stack_graph(
-            directory, ("payload", "acpi", "pci", "runtime"), args.source_root, protected=True
+            directory,
+            ("payload", "acpi", "pci", "runtime"),
+            args.source_root,
+            protected=True,
+            source_callbacks=CALLBACKS,
         )
         result = validate(graph)
         result["elf_sha256"] = hashlib.sha256((directory / "payload.elf").read_bytes()).hexdigest()

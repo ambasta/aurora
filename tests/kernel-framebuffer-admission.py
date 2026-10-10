@@ -42,14 +42,14 @@ class Guards(unittest.TestCase):
             changed[index] = replacement
             with self.assertRaises(ValueError):
                 graphics.console.verify_bridge_body(decoder, body(changed), {256: graphics.ENTRY})
-        graphics.verify_value_bridge(decoder, body([("jmp", "100 <value>")]), {256: "aurora_kernel_value"})
+        decoder.verify_tail_bridge(body([("jmp", "100 <value>")]), {256: "aurora_kernel_value"}, "aurora_kernel_value")
         for changed in (
             [("call", "100 <value>")],
             [("jmp", "101 <wrong>")],
             [("push", "%rax"), ("jmp", "100 <value>")],
         ):
             with self.assertRaises(ValueError):
-                graphics.verify_value_bridge(decoder, body(changed), {256: "aurora_kernel_value"})
+                decoder.verify_tail_bridge(body(changed), {256: "aurora_kernel_value"}, "aurora_kernel_value")
         graphics.verify_stack_budget(15000, 360)
         for normal, fault in [(15001, 360), (0, -1), (True, 0), (16384, 0)]:
             with self.assertRaises(ValueError):

@@ -72,6 +72,19 @@ class Routing(unittest.TestCase):
         self.assertNotIn("receipt", calls[2])
         self.assertNotIn("manifest", calls[2])
 
+    def test_full_smoke_builds_four_native_profiles_on_existing_entrypoint(self):
+        self.fixture.script(
+            self.fixture.scripts / "kernel-uefi-build.sh",
+            'printf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\n'
+            'printf "%s/build/meson/kernel-images/uefi/%s\\n" "$PWD" "$UEFI_MODE"\n',
+        )
+        self.run_script("--full-smoke")
+        calls = self.fixture.calls()
+        self.assertEqual(calls[1:5], ["build|" + mode for mode in preview.admission.MODES])
+        self.assertIn("--full-smoke --build-dir ", calls[5])
+        self.assertIn("/kernel-images/uefi/framebuffer ", calls[5])
+        self.assertEqual(len(calls), 6)
+
     def test_help_needs_no_prerequisites(self):
         (self.fixture.bin / "qemu-system-x86_64").unlink()
         self.assertIn("Not qualified evidence", self.run_script("--help"))
@@ -224,6 +237,63 @@ class PreviewControls(unittest.TestCase):
                 self.assertEqual(sorted(row["status"] for row in records), ["failed", "passed", "passed"])
                 self.assertEqual(len(list(root.glob("build/framebuffer-preview/*/framebuffer.png"))), 2)
                 self.assertNotIn("image", next(row for row in records if row["status"] == "failed"))
+
+    def test_full_smoke_preserves_failures_and_requires_real_normal_entrypoint(self):
+        for failure, restore_status, unsettled in (
+            (None, 0, False),
+            ("framebuffer-record", 0, False),
+            (None, 7, False),
+            ("framebuffer-record", 0, True),
+        ):
+            with (
+                self.subTest(failure=failure, restore_status=restore_status, unsettled=unsettled),
+                tempfile.TemporaryDirectory() as temporary,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                root = Path(temporary)
+                (root / "build").mkdir()
+                build = root / "build/meson/kernel-images/uefi/framebuffer"
+                modes = []
+
+                def synthetic(mode, manifest, pins, roots, env, directory, **kwargs):
+                    modes.append(mode)
+                    directory.mkdir()
+                    (directory / "after.ppm").write_bytes(self.ppm)
+                    return dict(
+                        mode=mode,
+                        status="failed" if mode == failure else "passed",
+                        error="synthetic guest failure",
+                        unsettled=mode == failure and unsettled,
+                    )
+
+                def restore(argv, log, **kwargs):
+                    self.assertEqual(argv, ["bash", root / "scripts/kernel-uefi-smoke.sh", "normal"])
+                    self.assertEqual(kwargs["env"]["MESON_BUILD_DIR"], str(root / "build/meson"))
+                    log.write_text("normal smoke output")
+                    return restore_status
+
+                with (
+                    patch.object(preview, "ROOT", root),
+                    patch.object(preview, "preflight"),
+                    patch.object(preview.admission, "configure_paths"),
+                    patch.object(preview.admission, "checked", side_effect=lambda mode: {"mode": mode}),
+                    patch.object(preview.capture, "run_case", side_effect=synthetic),
+                    patch.object(preview.transport, "run_logged", side_effect=restore) as normal,
+                ):
+                    if failure or restore_status:
+                        with self.assertRaises(ValueError):
+                            preview.run("qemu", "firmware", "", "", "", build_dir=build, full_smoke=True)
+                    else:
+                        preview.run("qemu", "firmware", "", "", "", build_dir=build, full_smoke=True)
+                self.assertEqual(modes, list(preview.admission.MODES[:2] if failure else preview.admission.MODES))
+                self.assertEqual(normal.call_count, 0 if unsettled else 1)
+                record = json.loads(next(root.glob("build/framebuffer-preview/*/preview.json")).read_text())
+                self.assertEqual(record["status"], "failed" if failure or restore_status else "passed")
+                self.assertEqual(
+                    record["normal_restoration"]["status"], "failed" if unsettled or restore_status else "passed"
+                )
+                if failure:
+                    self.assertIn("synthetic guest failure", record["error"])
 
     def test_postcapture_source_drift_prevents_png_success(self):
         with tempfile.TemporaryDirectory() as temporary, contextlib.redirect_stdout(io.StringIO()):

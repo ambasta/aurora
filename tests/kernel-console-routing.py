@@ -531,5 +531,62 @@ class NormalRestoration(unittest.TestCase):
                 self.assertEqual(len(calls), 2)
 
 
+class ConsoleFaultTransport(unittest.TestCase):
+    def load(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        spec = importlib.util.spec_from_file_location(
+            "fault_transport_control", ROOT / "tests/kernel-console-service-qualification.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_shared_fault_transport_retains_four_independent_fault_oracles(self):
+        qualification = self.load()
+        start = qualification.transport.start
+        prefix = (
+            b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
+            b"AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0\n"
+        )
+        ready = b"AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\naurora> "
+        rejected = b"AURORA_UEFI_CONSOLE_FAIL: console service authority\n"
+        tails = {"stale": rejected, "reentry": ready + rejected, "timeout": ready[:17], "report": ready}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for mode, tail in tails.items():
+                work = root / mode
+                work.mkdir()
+                body = "import os; os.write(1, " + repr(prefix + tail) + ")\n"
+                if mode == "report":
+                    body += "if os.read(0, 1) != b'x': raise SystemExit(9)\n"
+                    report = b"AURORA_UEFI_EXCEPTION: vector=255 fault\nAURORA_UEFI_PAYLOAD_FAIL: exception\n"
+                    body += "os.write(1, " + repr(report) + ")\n"
+                body += "raise SystemExit(35)\n"
+
+                def launch(argv, **options):
+                    self.assertIn("file=fat:ro:" + str(root / "esp"), " ".join(argv))
+                    return start([sys.executable, "-B", "-c", body], **options)
+
+                with (
+                    self.subTest(mode=mode),
+                    patch.object(qualification.admission, "BUILD", root),
+                    patch.object(qualification.shutil, "which", return_value=sys.executable),
+                    patch.object(qualification.subprocess, "check_output", return_value=b"/firmware\0\0\0"),
+                    patch.object(qualification.transport, "start", side_effect=launch),
+                ):
+                    result = qualification.fault_guest("console-service-" + mode, work)
+                self.assertEqual(result["exit_status"], 35)
+                self.assertEqual(result["input_sent"], mode == "report")
+                self.assertTrue((work / "guest.log").read_bytes().startswith(prefix))
+                self.assertTrue((work / "clock.json").is_file())
+
+    def test_shared_helper_keeps_stdout_stderr_and_exit_status_separate(self):
+        qualification = self.load()
+        result = qualification.run_bounded(
+            [sys.executable, "-B", "-c", "import os; os.write(1,b'out'); os.write(2,b'err'); raise SystemExit(7)"], 5
+        )
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (7, b"out", b"err"))
+
+
 if __name__ == "__main__":
     unittest.main()
