@@ -6,22 +6,23 @@ cd "$(dirname "$0")/.."
 [[ -x "$AURORAC" ]] || { echo 'Selected AURORAC is not executable' >&2; exit 2; }
 build_dir="${KERNEL_OWNED_VIEWS_BUILD_DIR:-build/kernel-owned-views}"
 mkdir -p "$build_dir"
-"$AURORAC" examples/kernel-owned-bytes.au -o "$build_dir/language.s"
+"$AURORAC" --module-root library examples/kernel-owned-bytes.au -o "$build_dir/language.s"
 as --64 "$build_dir/language.s" kernel/uefi/owned-bytes-entry.S -o "$build_dir/language.o"
 python3 -B tests/kernel-uefi-owned-bytes-admission.py "$build_dir/language.o"
+wrappers=(-Wl,--wrap=__au_runtime_bytes_allocate -Wl,--wrap=__au_runtime_bytes_drop)
 flags=(-std=c++23 -O1 -g -Wall -Wextra -Wpedantic -Werror -DNDEBUG -fno-exceptions -fno-rtti -no-pie)
 case "${SANITIZE:-0}" in
     0) ;;
     1) flags+=(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer) ;;
     *) echo 'FAIL: SANITIZE must be 0 or 1' >&2; exit 1 ;;
 esac
-"${CXX:-g++}" "${flags[@]}" tests/kernel-uefi-owned-views.cpp kernel/owned-bytes.cpp \
+"${CXX:-g++}" "${flags[@]}" "${wrappers[@]}" tests/kernel-uefi-owned-views.cpp kernel/owned-bytes.cpp \
     "$build_dir/language.o" -o "$build_dir/native"
-for mode in 0 1 2 3 4 5 6; do
+for mode in 0 1 2 3 4 5 6 7 8 9 10; do
     ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=1" \
     UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" "$build_dir/native" "$mode"
 done
-"${CXX:-g++}" "${flags[@]}" -DAURORA_OWNED_VIEW_ZERO_LENGTH_CONTROL=1 \
+"${CXX:-g++}" "${flags[@]}" "${wrappers[@]}" -DAURORA_OWNED_VIEW_ZERO_LENGTH_CONTROL=1 \
     tests/kernel-uefi-owned-views.cpp kernel/owned-bytes.cpp "$build_dir/language.o" \
     -Wl,--wrap=__au_runtime_bytes_borrow_length -o "$build_dir/rejected-zero-length"
 set +e
@@ -34,3 +35,17 @@ set -e
 expected='FAIL UEFI owner-view fixture: unexpected result for independently supplied length'
 [[ "$(cat "$build_dir/zero-length.stderr")" == "$expected" ]] || { echo 'FAIL: wrong zero-length rejection' >&2; exit 1; }
 echo 'PASS: nonempty-to-empty readonly-view poisoning rejected'
+
+"${CXX:-g++}" "${flags[@]}" "${wrappers[@]}" -DAURORA_RAM_SECTOR_ALIAS_CONTROL=1 \
+    tests/kernel-uefi-owned-views.cpp kernel/owned-bytes.cpp "$build_dir/language.o" \
+    -Wl,--wrap=__au_runtime_bytes_set -o "$build_dir/rejected-page-alias"
+set +e
+ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=1" \
+UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" \
+    "$build_dir/rejected-page-alias" 8 > "$build_dir/page-alias.stdout" 2> "$build_dir/page-alias.stderr"
+status=$?
+set -e
+[[ "$status" == 1 && ! -s "$build_dir/page-alias.stdout" ]] || { echo 'FAIL: page alias was not rejected' >&2; exit 1; }
+expected='FAIL UEFI owner-view fixture: independent complete storage byte pattern'
+[[ "$(cat "$build_dir/page-alias.stderr")" == "$expected" ]] || { echo 'FAIL: wrong page-alias rejection' >&2; exit 1; }
+echo 'PASS: logical storage page alias rejected'

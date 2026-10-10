@@ -59,6 +59,24 @@ class Instruction:
         return self.address + self.size
 
 
+def verify_signed_division_pair(symbol, sign, divide, payload=None):
+    # Register-only CQTO/IDIV R11 clobbers RAX/RDX, not stack/RCX/R14. Profiles
+    # retain their own finite owner/count policy; graphical also binds raw bytes.
+    require(
+        (sign.op, sign.size) == ("cqto", 2)
+        and (divide.op, divide.args, divide.size) == ("idiv", "%r11", 3)
+        and sign.next == divide.address
+        and divide.next <= symbol.address + symbol.size,
+        "Unknown generated signed-division pair/operands/owner",
+    )
+    if payload is not None:
+        require(
+            payload[sign.address : sign.next] == bytes.fromhex("4899")
+            and payload[divide.address : divide.next] == bytes.fromhex("49f7fb"),
+            "Unknown generated signed-division bytes",
+        )
+
+
 def normalize_repeat_spelling(raw, args):
     # Binutils 2.47 omits the implicit DS/ES segment names. Only the already
     # admitted byte primitives may use this spelling alias, with exact opcodes;
@@ -380,6 +398,13 @@ def configure_console(profile):
     NEUTRAL |= CONSOLE_SCALAR | extra
     READ_ONLY |= frozenset(("testb", "testl", "testw"))
     PRESERVE_FLAGS |= extra & frozenset(("sti", "wrmsr", "mfence", "pause", "cqto"))
+
+
+def configure_owned_bytes():
+    global NEUTRAL, PRESERVE_FLAGS
+    # Reuse only the serializer/device arithmetic, without console/device opcodes.
+    NEUTRAL |= (CONSOLE_SCALAR & {"setg", "setge", "movw"}) | (CONSOLE_EXTRA["graphical"] & {"cqto", "idiv"})
+    PRESERVE_FLAGS |= {"cqto"}
 
 
 def target_of(insn):
@@ -1027,6 +1052,96 @@ def calculate(functions, frames, levels, root):
     return {"peak": total, "path": path, "closure": sorted({name for name, _ in cache})}
 
 
+def generated_frame(body, linked):
+    require(body[:2] == ["pushq %rbp", "movq %rsp, %rbp"], "Unknown generated frame prologue")
+    expected = [("push", "%rbp"), ("mov", "%rsp,%rbp")]
+    allocated, cursor = 0, 2
+    while cursor < len(body) and (match := re.fullmatch(r"subq \$([0-9]+), %rsp", body[cursor])):
+        count = int(match[1])
+        require(0 < count <= 4096 and count % 16 == 0, "Unaligned or oversized generated frame probe")
+        require(cursor == 2 or allocated % 4096 == 0, "Unexpected generated frame probe split")
+        require(
+            cursor + 1 < len(body) and body[cursor + 1] == "orq $0, (%rsp)",
+            "Missing generated frame probe touch",
+        )
+        expected.extend((("sub", f"$0x{count:x},%rsp"), ("orq", "$0x0,(%rsp)")))
+        allocated += count
+        cursor += 2
+    require(0 < allocated <= STACK_CAP, "Missing or excessive generated frame allocation")
+    require([(row.op, row.args) for row in linked[:cursor]] == expected, "Generated source/linked frame mismatch")
+    return allocated, cursor
+
+
+def generated_calls(name, expected, actual, admitted):
+    require(expected == [row["target"] for row in actual], "Generated source/linked call mismatch")
+    require(set(expected) == admitted.CALLS[name], "Changed finite generated call graph: " + name)
+
+
+def generated_argument_record(body, position, call, base, size, linked):
+    require(position + 1 < len(body) and body[position + 1] == f"addq ${size}, %rsp", "Changed private record release")
+    start = position - 1
+    while start >= 0 and not body[start].startswith(("subq ", "call ")):
+        start -= 1
+    require(start >= 0 and body[start] == f"subq ${size}, %rsp", "Changed private record allocation")
+    require("movq %rsp, %r11" in body[start + 1 : position], "Missing private argument-record address")
+    require(call["live_bytes"] == base + size, "Changed linked private argument-record extent")
+    sites = [index for index, row in enumerate(linked) if row.address == call["address"]]
+    require(len(sites) == 1, "Missing or ambiguous linked private call site")
+    site = sites[0]
+    require(
+        linked[site].op == "call"
+        and site + 1 < len(linked)
+        and (linked[site + 1].op, linked[site + 1].args) == ("add", f"$0x{size:x},%rsp"),
+        "Changed linked private record release",
+    )
+    start = site - 1
+    while start >= 0 and linked[start].op not in ("sub", "call"):
+        start -= 1
+    require(
+        start >= 0
+        and (linked[start].op, linked[start].args) == ("sub", f"$0x{size:x},%rsp")
+        and any((row.op, row.args) == ("mov", "%rsp,%r11") for row in linked[start + 1 : site]),
+        "Changed linked private argument-record allocation/address",
+    )
+
+
+def generated_divisions(symbols, instructions):
+    # Same exact register-only CQTO/IDIV pair as the shared graphical arithmetic.
+    # Keep finite owners/counts; this does not admit memory operands or new I/O.
+    admission = load_admission()
+    owners = {
+        admission.GENERATED[name]: count
+        for name, count in {
+            "record": 1,
+            "sector_pattern_matches": 2,
+            "write_ram_pattern": 2,
+            "RamSectorDevice.status": 1,
+            "RamSectorDevice.geometry": 1,
+            "RamSectorDevice.read_sector": 1,
+            "RamSectorDevice.write_sector": 1,
+        }.items()
+    }
+    seen = {}
+    for name, count in owners.items():
+        symbol = symbols[name]
+        rows = [
+            row
+            for address, row in sorted(instructions.items())
+            if symbol.address <= address < symbol.address + symbol.size and row.op in ("cqto", "idiv")
+        ]
+        require(len(rows) == count * 2, "Changed generated signed-division count")
+        for index in range(0, len(rows), 2):
+            sign, divide = rows[index : index + 2]
+            require(sign.args == "", "Unknown generated sign-extension operands")
+            verify_signed_division_pair(symbol, sign, divide)
+            seen[sign.address] = seen[divide.address] = name
+    require(
+        set(seen) == {address for address, row in instructions.items() if row.op in ("cqto", "idiv")},
+        "Signed division outside finite generated owners",
+    )
+    return {"pairs": sum(owners.values()), "owners": owners}
+
+
 def generated_records(source, functions, symbols, instructions):
     bodies = {}
     current = None
@@ -1040,35 +1155,59 @@ def generated_records(source, functions, symbols, instructions):
             current = None
         elif current and line and not line.startswith(".") and not line.endswith(":"):
             bodies[current].append(line)
+    admission = load_admission()
     require(
-        set(bodies) == {ENTRY, TRANSFER, CONSUMER, "aurora_reflect_size", "aurora_reflect_field_count"},
+        set(bodies) == set(admission.GENERATED.values()) | admission.REFLECTION,
         "Unexpected generated function inventory",
     )
     records = {}
     runtime = {
         "__au_runtime_bytes_" + suffix for suffix in ("allocate", "at", "set", "drop", "borrow_length", "resize")
     }
-    for name in (ENTRY, TRANSFER, CONSUMER):
+    for name in admission.GENERATED.values():
         body = bodies[name]
-        require(body[:2] == ["pushq %rbp", "movq %rsp, %rbp"], "Unknown generated frame prologue")
-        frame = re.fullmatch(r"subq \$([0-9]+), %rsp", body[2])
-        require(frame, "Missing bounded generated frame allocation")
-        local_bytes = int(frame[1])
-        require(local_bytes % 16 == 0, "Unaligned generated frame")
         linked = [
             instructions[address]
             for address in sorted(instructions)
             if symbols[name].address <= address < symbols[name].address + symbols[name].size
         ]
-        require(
-            [(row.op, row.args) for row in linked[:3]]
-            == [("push", "%rbp"), ("mov", "%rsp,%rbp"), ("sub", f"$0x{local_bytes:x},%rsp")],
-            "Generated source/linked frame mismatch",
-        )
+        local_bytes, prefix = generated_frame(body, linked)
         expected_calls = [line.removeprefix("call ") for line in body if line.startswith("call ")]
+        require(
+            all(row["kind"] in ("call", "trap") for row in functions[name]["calls"]),
+            "Unexpected generated tail transfer",
+        )
         actual_calls = [row for row in functions[name]["calls"] if row["kind"] == "call"]
-        require(expected_calls == [row["target"] for row in actual_calls], "Generated source/linked call mismatch")
-        allowed = runtime | ({TRANSFER, CONSUMER} if name == ENTRY else set())
+        generated_calls(name, expected_calls, actual_calls, admission)
+        if name not in (ENTRY, TRANSFER, CONSUMER):
+            base = local_bytes + 16
+            outgoing = []
+            actual = iter(actual_calls)
+            for position, line in enumerate(body):
+                if line.startswith("call "):
+                    call = next(actual)
+                    target = call["target"]
+                    if target in admission.ARGUMENT_BYTES:
+                        size = admission.ARGUMENT_BYTES[target]
+                        generated_argument_record(body, position, call, base, size, linked)
+                        outgoing.append(size)
+            allocations = [
+                int(match[1]) for line in body[prefix:] if (match := re.fullmatch(r"subq \$([0-9]+), %rsp", line))
+            ]
+            require(
+                sorted(value for value in allocations if value != 8) == sorted(outgoing),
+                "Unaccounted generated outgoing record allocation: " + name,
+            )
+            records[name] = {
+                "frame_allocation": local_bytes,
+                "base_with_saved_rbp_and_return": base,
+                "outgoing_argument_bytes": outgoing,
+                "linked_local_peak": functions[name]["local_peak"],
+                "calls": actual_calls,
+            }
+            continue
+        region_targets = {admission.GENERATED["record"], admission.GENERATED["check_ram_sectors"]}
+        allowed = runtime | ({TRANSFER, CONSUMER} | region_targets if name == ENTRY else set())
         if name == CONSUMER:
             allowed = {"__au_runtime_bytes_at"}
         require(set(expected_calls) <= allowed, "Unknown generated resource/helper call")
@@ -1076,10 +1215,17 @@ def generated_records(source, functions, symbols, instructions):
         resource = [row for row in actual_calls if row["target"] == TRANSFER]
         require((len(resource) == 1) if name == ENTRY else not resource, "Wrong generated resource-transfer count")
         source_allocations = [
-            int(match[1]) for line in body[3:] if (match := re.fullmatch(r"subq \$([0-9]+), %rsp", line))
+            int(match[1]) for line in body[prefix:] if (match := re.fullmatch(r"subq \$([0-9]+), %rsp", line))
         ]
-        require(all(count in (8, 48, 64) for count in source_allocations), "Unknown generated temporary allocation")
+        require(all(count in (8, 32, 48, 64) for count in source_allocations), "Unknown generated temporary allocation")
         if name == ENTRY:
+            region_calls = [row for row in actual_calls if row["target"] in region_targets]
+            require(
+                source_allocations.count(32) == 2
+                and len(region_calls) == 2
+                and all(row["live_bytes"] == base + 32 for row in region_calls),
+                "Region-only argument record no longer has its exact 32-byte extent",
+            )
             require(
                 source_allocations.count(48) == 1 and resource[0]["live_bytes"] == base + 48,
                 "Resource argument record no longer has its exact 48-byte extent",
@@ -1106,6 +1252,7 @@ def generated_records(source, functions, symbols, instructions):
             "linked_local_peak": functions[name]["local_peak"],
             "calls": actual_calls,
         }
+    require(all(not functions[name]["calls"] for name in admission.REFLECTION), "Reflection helper acquired a call")
     return records
 
 
@@ -1146,6 +1293,7 @@ def load_admission():
 
 def validate(directory):
     global NORETURN
+    configure_owned_bytes()
     elf = Elf(directory / "payload.elf")
     require(elf.type == 2, "Expected linked executable payload")
     require(not command("nm", "-u", str(directory / "payload.elf")).strip(), "Unresolved linked payload symbol")
@@ -1165,9 +1313,8 @@ def validate(directory):
     for symbol in memory.functions.values():
         associate_object(elf, memory, symbol)
     assembly = {
-        ENTRY,
-        TRANSFER,
-        CONSUMER,
+        *load_admission().GENERATED.values(),
+        *load_admission().REFLECTION,
         BRIDGE,
         "aurora_reflect_size",
         "aurora_reflect_field_count",
@@ -1197,6 +1344,7 @@ def validate(directory):
         returning = enlarged
     require(NORETURN <= functions.keys() and not NORETURN & returning, "Changed non-returning diagnostic")
     bridge = validate_bridge(elf.functions, instructions, functions)
+    divisions = generated_divisions(elf.functions, instructions)
     generated = generated_records((directory / "language.s").read_text(), functions, elf.functions, instructions)
     levels, roots = recursion_proof(functions, elf.functions, instructions, starts, associations)
     normal = calculate(functions, frames, levels, "uefi_payload_entry")
@@ -1212,6 +1360,25 @@ def validate(directory):
         TRANSFER,
         CONSUMER,
         *load_admission().RUNTIME,
+        *(
+            load_admission().GENERATED[name]
+            for name in (
+                "record",
+                "check_ram_sectors",
+                "RamSectorDevice.new",
+                "RamSectorDevice.read_sector",
+                "RamSectorDevice.write_sector",
+                "RamSectorDevice.make_read_only",
+                "RamSectorDevice.flush",
+                "Sector512.read_record",
+                "Sector512.write_record",
+                "SectorReadResult.sector_or_zero",
+                "read_be32",
+                "read_le64",
+                "encode_be32",
+                "encode_le64",
+            )
+        ),
         "_ZN6aurora4uefi15run_owned_bytesEmRNS_6memory13PhysicalPagesE",
     }
     require(required <= set(normal["closure"]), "Dedicated owned-byte call chain is missing")
@@ -1242,6 +1409,7 @@ def validate(directory):
         "compiler_frames": associations,
         "linked_functions": functions,
         "generated": generated,
+        "generated_divisions": divisions,
         "bridge": bridge,
         "verifier": {"entry_sites": roots, "levels": levels, "maximum_active_frames": 4},
         "object_admission": admission,
@@ -1281,6 +1449,140 @@ def self_test():
                 code[base + index] = Instruction(base + index, 1, op, operands)
         bodies = {name: analyze_function(symbol, code, starts) for name, symbol in symbols.items()}
         return bodies, symbols, code, starts
+
+    # The RAM closure adds five existing scalar operations, no graphical I/O.
+    original_neutral, original_flags = NEUTRAL, PRESERVE_FLAGS
+    configure_owned_bytes()
+    require(NEUTRAL - original_neutral == {"setg", "setge", "movw", "cqto", "idiv"}, "Owned scalar scope widened")
+    for op, operands in (("setg", "%al"), ("setge", "%al"), ("movw", "$0x1,%ax"), ("cqto", ""), ("idiv", "%r11")):
+        scalar, *_ = fixture({"root": [(op, operands), ("ret", "")]})
+        require(scalar["root"]["local_peak"] == 8, "Owned scalar changed stack depth")
+        positives += 1
+    for op in ("sti", "wrmsr", "sidt", "mfence", "pause"):
+        rejects("unrelated graphical instruction", lambda op=op: fixture({"root": [(op, ""), ("ret", "")]}))
+    for op in ("setg", "setge", "movw"):
+        rejects("new scalar stack pointer write", lambda op=op: fixture({"root": [(op, "%rsp"), ("ret", "")]}))
+    globals()["NEUTRAL"], globals()["PRESERVE_FLAGS"] = original_neutral, original_flags
+
+    frame_source = [
+        "pushq %rbp",
+        "movq %rsp, %rbp",
+        "subq $4096, %rsp",
+        "orq $0, (%rsp)",
+        "subq $576, %rsp",
+        "orq $0, (%rsp)",
+        "movq %r10, -4664(%rbp)",
+    ]
+    frame_linked = [
+        Instruction(index, 1, op, args)
+        for index, (op, args) in enumerate(
+            (
+                ("push", "%rbp"),
+                ("mov", "%rsp,%rbp"),
+                ("sub", "$0x1000,%rsp"),
+                ("orq", "$0x0,(%rsp)"),
+                ("sub", "$0x240,%rsp"),
+                ("orq", "$0x0,(%rsp)"),
+            )
+        )
+    ]
+    require(generated_frame(frame_source, frame_linked) == (4672, 6), "Page-probed local frame was undercounted")
+    positives += 1
+    for index, changed in (
+        (0, "pushq %rax"),
+        (2, "subq $4097, %rsp"),
+        (2, "subq $32, %rsp"),
+        (3, "orq $1, (%rsp)"),
+        (4, "subq $577, %rsp"),
+    ):
+        source = list(frame_source)
+        source[index] = changed
+        rejects("changed generated page probe", lambda source=source: generated_frame(source, frame_linked))
+    rejects("truncated generated page probe", lambda: generated_frame(frame_source[:3], frame_linked))
+    rejects("changed linked page probe", lambda: generated_frame(frame_source, frame_linked[:-1]))
+
+    record_source = ["subq $528, %rsp", "orq $0, (%rsp)", "movq %rsp, %r11", "call callee", "addq $528, %rsp"]
+    record_linked = [
+        Instruction(index, 1, op, args)
+        for index, (op, args) in enumerate(
+            (
+                ("sub", "$0x210,%rsp"),
+                ("orq", "$0x0,(%rsp)"),
+                ("mov", "%rsp,%r11"),
+                ("call", "0 <callee>"),
+                ("add", "$0x210,%rsp"),
+            )
+        )
+    ]
+    generated_argument_record(record_source, 3, {"live_bytes": 592, "address": 3}, 64, 528, record_linked)
+    positives += 1
+    for index, changed in ((0, "subq $520, %rsp"), (2, "movq %rax, %r11"), (4, "addq $520, %rsp")):
+        source = list(record_source)
+        source[index] = changed
+        rejects(
+            "changed private sector record",
+            lambda source=source: generated_argument_record(
+                source, 3, {"live_bytes": 592, "address": 3}, 64, 528, record_linked
+            ),
+        )
+    rejects(
+        "changed linked sector record",
+        lambda: generated_argument_record(record_source, 3, {"live_bytes": 584, "address": 3}, 64, 528, record_linked),
+    )
+
+    for index, op, args in ((0, "sub", "$0x200,%rsp"), (2, "mov", "%rax,%r11"), (4, "add", "$0x200,%rsp")):
+        changed = list(record_linked)
+        changed[index] = Instruction(index, 1, op, args)
+        rejects(
+            "changed linked private record instruction",
+            lambda changed=changed: generated_argument_record(
+                record_source, 3, {"live_bytes": 592, "address": 3}, 64, 528, changed
+            ),
+        )
+
+    admission = load_admission()
+    caller = admission.GENERATED["RamSectorDevice.flush"]
+    callee = admission.GENERATED["RamSectorDevice.status"]
+    generated_calls(caller, [callee], [{"target": callee}], admission)
+    positives += 1
+    rejects("generated source/link edge mismatch", lambda: generated_calls(caller, [callee], [], admission))
+    for changed in ([], [admission.GENERATED["RamSectorDevice.write_sector"]], [callee, ENTRY]):
+        rejects(
+            "finite generated edge mutation",
+            lambda changed=changed: generated_calls(caller, changed, [{"target": name} for name in changed], admission),
+        )
+
+    division_symbols, division_code = {}, {}
+    for label, count in (
+        ("record", 1),
+        ("sector_pattern_matches", 2),
+        ("write_ram_pattern", 2),
+        ("RamSectorDevice.status", 1),
+        ("RamSectorDevice.geometry", 1),
+        ("RamSectorDevice.read_sector", 1),
+        ("RamSectorDevice.write_sector", 1),
+    ):
+        name, start = admission.GENERATED[label], len(division_symbols) * 100
+        division_symbols[name] = Symbol(name, start, count * 5, 1, 2)
+        for offset in range(0, count * 5, 5):
+            division_code[start + offset] = Instruction(start + offset, 2, "cqto", "")
+            division_code[start + offset + 2] = Instruction(start + offset + 2, 3, "idiv", "%r11")
+    require(generated_divisions(division_symbols, division_code)["pairs"] == 9, "Wrong finite division inventory")
+    positives += 1
+    for op, args, size in (("cqto", "%rax", 2), ("idiv", "(%r11)", 3), ("idiv", "%rcx", 3), ("idiv", "%r11", 4)):
+        changed = dict(division_code)
+        address = 0 if op == "cqto" else 2
+        changed[address] = Instruction(address, size, op, args)
+        rejects(
+            "changed signed-division operands/width",
+            lambda changed=changed: generated_divisions(division_symbols, changed),
+        )
+    changed = dict(division_code)
+    changed[999] = Instruction(999, 2, "cqto", "")
+    rejects("division outside finite owner", lambda: generated_divisions(division_symbols, changed))
+    changed = dict(division_code)
+    del changed[0]
+    rejects("missing sign-extension pair", lambda: generated_divisions(division_symbols, changed))
 
     leaf = [("ret", "")]
     root = [

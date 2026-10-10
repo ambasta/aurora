@@ -18,6 +18,11 @@ Raw kernel resize is a [bounded extension](../docs/kernel-owned-resize.md) with
 A reconstructed [readonly-view increment](../docs/kernel-owned-views-results.md)
 has fresh local build/host/guest gates; final acceptance is recorded separately.
 
+The same profile also admits the existing Aurora `RamSectorDevice` on 16 sectors
+of real owned pages, with fragmented leases, complete copied readback and explicit
+cleanup. Its [storage contract and qualification boundary](../docs/block-io-contract.md#cpu-only-uefi-ram-device)
+retain CPU-only authority and exclude mounted files or persistence.
+
 ## Build and verify
 
 For the shortest normal-boot commands and tool overrides, see

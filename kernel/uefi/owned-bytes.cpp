@@ -40,6 +40,93 @@ bool zero(std::span<std::byte> backing, std::size_t size) noexcept {
     }
     return true;
 }
+
+[[gnu::noinline]] bool run_ram_sectors(std::uint64_t arena, memory::PhysicalPages &pool) noexcept {
+    const auto base = arena + Handoff::pool_offset;
+    std::span<std::byte> backing{reinterpret_cast<std::byte *>(base), Region::backing_bytes};
+    std::array<std::optional<memory::PageLease>, Region::pool_pages> holders;
+    volatile std::byte *data = backing.data();
+    for (std::size_t scenario = 0; scenario < 4; ++scenario) {
+        if (pool.used() != 0) {
+            return false;
+        }
+        for (std::size_t page = 0; page < holders.size(); ++page) {
+            holders[page].reset();
+            for (std::size_t offset = 0; offset < Region::page_bytes; ++offset) {
+                data[page * Region::page_bytes + offset] = std::byte{static_cast<unsigned char>(0xa0 + page)};
+            }
+            auto lease = pool.acquire();
+            if (!lease || pool.address(*lease) != base + page * Region::page_bytes) {
+                return false;
+            }
+            holders[page].emplace(std::move(*lease));
+        }
+        const std::size_t held = scenario == 1 ? 0 : scenario == 3 ? 14 : 8;
+        for (std::size_t page = 0; page < holders.size(); ++page) {
+            const bool available = scenario == 1 || (scenario == 3 ? page == 1 || page == 3 : page % 2 == 1);
+            if (available) {
+                if (!pool.release(*holders[page])) {
+                    return false;
+                }
+                holders[page].reset();
+            }
+        }
+        if (pool.used() != held || !byte_region.open(pool, backing, base, payload_quota) ||
+            __au_runtime_bytes_kernel_entry(byte_region.id(), 16, static_cast<std::int64_t>(scenario + 4)) != 42) {
+            return false;
+        }
+        kernel::bytes::Metrics expected;
+        expected.quota = payload_quota;
+        expected.successful_allocations = 1;
+        expected.releases = 1;
+        expected.peak_live_allocations = 1;
+        expected.peak_used = 8192;
+        expected.last_allocation_id = 24 + scenario;
+        expected.last_released_id = 24 + scenario;
+        expected.peak_held_pages = 2;
+        if (byte_region.metrics() != expected || pool.used() != held) {
+            return false;
+        }
+        for (std::size_t page = 0; page < holders.size(); ++page) {
+            const bool touched = scenario == 1 ? page < 2 : page == 1 || page == 3;
+            const auto expected_byte = touched ? std::byte{0} : std::byte{static_cast<unsigned char>(0xa0 + page)};
+            for (std::size_t offset = 0; offset < Region::page_bytes; ++offset) {
+                if (data[page * Region::page_bytes + offset] != expected_byte) {
+                    return false;
+                }
+            }
+            if (holders[page] && pool.address(*holders[page]) != base + page * Region::page_bytes) {
+                return false;
+            }
+        }
+        if (!byte_region.close() || byte_region.is_open() || byte_region.faulted()) {
+            return false;
+        }
+        for (auto &holder : holders) {
+            if (holder && !pool.release(*holder)) {
+                return false;
+            }
+        }
+        if (pool.used() != 0) {
+            return false;
+        }
+        if (scenario == 0) {
+            Serial::text("AURORA_UEFI_OWNED_BYTES_RECORD: sectors=16 pages=1,3 holders=8 snapshot=1 scrubbed=1 "
+                         "allocations=1 releases=1 used=0\r\n");
+        } else {
+            Serial::text("AURORA_UEFI_OWNED_BYTES_STORAGE: case=");
+            Serial::number(scenario - 1);
+            Serial::text(" sectors=16 written=0,7,8,15 boundary=4095,4096 pages=");
+            Serial::text(scenario == 1 ? "0,1" : "1,3");
+            Serial::text(" holders=");
+            Serial::number(held);
+            Serial::text(" snapshot=1 bounds=1 readonly=1 visibility=1 durable=0 failure=");
+            Serial::text(scenario == 3 ? "pages" : "quota");
+            Serial::text(" preserved=1 scrubbed=1 allocations=1 releases=1 used=0\r\n");
+        }
+    }
+    return true;
+}
 } // namespace
 
 [[gnu::noinline]] bool run_owned_bytes(std::uint64_t arena, memory::PhysicalPages &pool) noexcept {
@@ -204,7 +291,7 @@ bool zero(std::span<std::byte> backing, std::size_t size) noexcept {
         return false;
     }
     Serial::text("AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=23 releases=23\r\n");
-    return true;
+    return run_ram_sectors(arena, pool);
 }
 } // namespace aurora::uefi
 

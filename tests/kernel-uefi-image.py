@@ -164,12 +164,9 @@ def owned_bytes_symbols(symbols):
     )
     for name in required:
         need(rows.get(name) in ("t", "T"), "Missing kernel owned-byte implementation: " + name)
-    for name in (
-        "__au_v_m1_18kernel_owned_bytes_n0__d24kernel_owned_bytes_entry",
-        "__au_v_m1_18kernel_owned_bytes_n0__d10pass_bytes",
-        "__au_v_m1_18kernel_owned_bytes_n0__d13consume_bytes",
-    ):
-        need(rows.get(name) == "t", "Owned-byte Aurora entry must remain local: " + name)
+    admission = common.load("owned_byte_image_admission", ROOT / "tests/kernel-uefi-owned-bytes-admission.py")
+    for name, kind in admission.DEFINITIONS.items():
+        need(rows.get(name) == kind, "Missing or nonlocal owned-byte graph definition: " + name)
     forbidden = (
         "aurora_kernel_value",
         "aurora_kernel_budget_tick",
