@@ -55,6 +55,62 @@ run. When a context is present, Make validates it before the `run`, `run-uefi`
 or `kernel-uefi` recipe can proceed. The wrappers still reject an inherited context after that check.
 No shortcut promises unsupervised execution using an active sealed compiler.
 
+## Pinned container foundation
+
+The dependency-only [Containerfile](../ci/Containerfile) and
+[toolchain workflow](../.github/workflows/toolchain.yml) prepare one GCC 16
+image for CI and developers. This is a bootstrap foundation: no published image
+digest or successful container qualification is claimed yet. The existing release
+gates and host commands still apply until the real image passes them.
+
+The image fixes a Debian base digest, the 2026-10-09 Debian package snapshot,
+GCC 16.2.0, binutils 2.47, Meson 1.12.1, Ninja 1.13.2, the GNU PE linker,
+nlohmann-json 3.11.3, clang-format 22.1.8 and Ruff 0.16.7. It retains the existing
+stock QEMU 10.0.13 and combined OVMF bytes. It contains dependencies only; the
+checkout is mounted at runtime. The immutable snapshot still requires valid
+Debian signatures; only its expiration check is disabled for later rebuilds.
+
+The initial workflow is restricted to pushes to `ci/gcc16-container`, with one
+90-minute standard Linux job and two compile/test workers. Before the first
+triggering push, confirm available included Actions capacity or explicit bounded
+spending approval. It does not enable billing, create credentials, change package
+visibility or start a larger runner. It uses GitHub's short-lived workflow token
+and publishes a private package only after complete Meson `full`, separate LSP,
+and real normal BIOS/UEFI boots succeed. The private digest is pulled back and
+checked against the tested image before being reported in the run summary.
+Commands and complete test/smoke output go to the GitHub job logs. Failed runs
+also print the remaining Meson diagnostics. This disposable CI job uploads no
+Actions artifacts; existing local failure evidence remains untouched.
+
+After that successful run, commit its exact `ghcr.io/ambasta/aurora-toolchain@sha256:`
+reference as the only line in `ci/image`. Never invent a digest or pin a mutable
+tag. Until this file exists, `scripts/container.sh` fails with a clear prerequisite
+message. Add ordinary PR/main CI against this same proven digest, then remove
+the temporary bootstrap push trigger; keep manual image rebuilds explicit.
+
+With a verified pin, Docker and an existing authorized private-registry login:
+
+```sh
+./scripts/container.sh                              # development shell
+./scripts/container.sh bash ci/test.sh               # clean full/LSP/normal boots
+./scripts/container.sh meson test -C build/container --suite dev --num-processes 2
+```
+
+`ci/test.sh` expects a fresh `build/container` directory. Ordinary incremental
+Meson commands can reuse it; when using explicit cleanup, select
+`MESON_BUILD_DIR=build/container`. The launcher uses the caller's UID/GID, no
+network, a read-only image filesystem and a disposable writable `/tmp`. It does
+not pass host credentials or inherited toolchain settings into the container.
+Private pulls require existing registry access; the launcher does not create a
+token, change visibility or export large image archives.
+
+The first image covers stock normal boots. The patched AMD-IOMMU Event model,
+clean BAR firmware and their special control artifacts remain separate fixtures.
+This workflow does not run or claim `make smoke-all`, all affected-profile
+qualification, physical hardware, or equivalence of those fixtures. Keep their
+existing gates when the corresponding code changes. Remove host discovery and
+per-run toolchain hashing only after the supported image is actually verified.
+
 ## Dependencies and overrides
 
 Install dependencies using your normal host package-management workflow:

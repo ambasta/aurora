@@ -1,0 +1,84 @@
+FROM debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+
+LABEL org.opencontainers.image.source="https://github.com/ambasta/aurora"
+LABEL org.opencontainers.image.description="Aurora GCC 16 development and standard-emulator dependencies"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# This directory is the entire build context. Never copy the checkout into the image.
+# The dated archive fixes transitive dependencies too. Expiry checking is disabled
+# only for this immutable snapshot; Debian signature verification stays enabled.
+# Signed HTTP bootstraps ca-certificates, then both archive sources use HTTPS.
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* \
+    && printf '%s\n' \
+       'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20261009T120000Z/ trixie main' \
+       > /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends \
+       ca-certificates \
+       libc6-dev \
+       make=4.4.1-2 \
+       python3=3.13.5-1 \
+       python3-venv=3.13.5-1 \
+       python3-setuptools \
+       pkgconf=1.8.1-4 \
+       ripgrep=14.1.1-1+b4 \
+       nlohmann-json3-dev=3.11.3-2.1 \
+       qemu-system-x86=1:10.0.13+ds-0+deb13u1 \
+       qemu-system-common=1:10.0.13+ds-0+deb13u1 \
+       qemu-system-data=1:10.0.13+ds-0+deb13u1 \
+       seabios=1.16.3-2 \
+       ovmf=2025.02-8+deb13u1 \
+    && sed -i 's|http://|https://|' /etc/apt/sources.list \
+    && printf '%s\n' \
+       'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20261009T120000Z/ unstable main' \
+       > /etc/apt/sources.list.d/toolchain.list \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends \
+       gcc-16=16.2.0-3 \
+       g++-16=16.2.0-3 \
+       binutils=2.47-6 \
+       binutils-mingw-w64-x86-64=2.47-6+13.3+b1 \
+       meson=1.12.1-2 \
+       ninja-build=1.13.2-1 \
+       clang-format-22=1:22.1.8-1+b2 \
+    && ln -sf gcc-16 /usr/bin/gcc \
+    && ln -sf gcc-16 /usr/bin/cc \
+    && ln -sf g++-16 /usr/bin/g++ \
+    && ln -sf g++-16 /usr/bin/c++ \
+    && ln -sf clang-format-22 /usr/bin/clang-format \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY ruff-requirements.txt /tmp/ruff-requirements.txt
+RUN python3 -m venv /opt/aurora-style \
+    && /opt/aurora-style/bin/python -m pip install \
+       --disable-pip-version-check --no-cache-dir --no-deps --only-binary=:all: \
+       --require-hashes -r /tmp/ruff-requirements.txt \
+    && rm /tmp/ruff-requirements.txt
+
+ENV PATH="/opt/aurora-style/bin:${PATH}" \
+    CC=gcc \
+    CXX=g++ \
+    UEFI_LD=/usr/bin/x86_64-w64-mingw32-ld \
+    QEMU=/usr/bin/qemu-system-x86_64 \
+    QEMU_DATA=/usr/share/qemu \
+    OVMF=/usr/share/ovmf/OVMF.fd \
+    LC_ALL=C.UTF-8 \
+    TZ=UTC \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Fail the image build on accidental tool drift, before any Aurora test is run.
+RUN test "$(gcc -dumpfullversion)" = 16.2.0 \
+    && test "$(g++ -dumpfullversion)" = 16.2.0 \
+    && test "$(meson --version)" = 1.12.1 \
+    && test "$(ninja --version)" = 1.13.2 \
+    && test "$(ruff --version)" = 'ruff 0.16.7' \
+    && clang-format --version | grep -F 'version 22.1.8' \
+    && "$UEFI_LD" -V | grep -w i386pep \
+    && printf '%s\n' \
+       'd3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067  /usr/bin/qemu-system-x86_64' \
+       '14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db  /usr/share/ovmf/OVMF.fd' \
+       | sha256sum --check
+
+WORKDIR /workspace
+CMD ["bash"]

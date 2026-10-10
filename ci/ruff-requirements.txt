@@ -1,0 +1,2 @@
+# Official PyPI manylinux x86-64 wheel; this image supports linux/amd64 only.
+ruff==0.16.7 --hash=sha256:9ce7f8f22df67c93ed96c717f9128eadb797144ac2bad475cf536f31d6100c55

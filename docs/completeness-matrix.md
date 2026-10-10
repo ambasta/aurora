@@ -9,6 +9,10 @@ borrows, readable glyph literals, host-toolchain portability and a complete
 canonical Meson graph. Every merge or release requires final integrated GCC 16
 `full` tests plus normal BIOS/UEFI and applicable image/actual guest checks.
 GCC 14 is optional targeted compatibility evidence, not a routine gate.
+A [dependency-only GCC 16 container foundation](local-development.md#pinned-container-foundation)
+is source-prepared for full native, LSP and stock normal BIOS/UEFI CI. No published
+digest or successful container run is claimed yet; existing qualification and
+special patched-emulator fixture requirements remain in force.
 Make is a convenience entrypoint to the same incremental graph; a second full
 Make aggregate is not required. Fresh explicit build directories configure
 automatically; compiler/flag changes select separate defaults, while changed

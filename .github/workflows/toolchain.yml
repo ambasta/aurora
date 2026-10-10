@@ -1,0 +1,93 @@
+name: GCC 16 toolchain
+
+# Publishing this branch starts a standard billed-or-included GitHub runner.
+# Confirm included capacity or bounded spending approval before the first push.
+# After bootstrap, retain workflow_dispatch and remove this temporary push trigger.
+on:
+  push:
+    branches: [ci/gcc16-container]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-toolchain-publication
+  cancel-in-progress: false
+
+jobs:
+  qualify-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      IMAGE: ghcr.io/ambasta/aurora-toolchain
+      DOCKER_CONFIG: ${{ runner.temp }}/aurora-docker
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Build dependency-only image
+        run: |
+          docker build --platform linux/amd64 --file ci/Containerfile \
+            --tag "$IMAGE:$GITHUB_SHA" ci
+
+      - name: Full native, LSP and normal BIOS/UEFI tests
+        run: |
+          printf 'Source revision: %s\n' "$GITHUB_SHA"
+          docker image inspect --format 'Test image: {{.Id}}' "$IMAGE:$GITHUB_SHA"
+          docker run --rm --init --platform linux/amd64 \
+            --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --cpus 2 --memory 6g --user "$(id -u):$(id -g)" --env HOME=/tmp \
+            --tmpfs /tmp:exec,mode=1777 \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace" \
+            --workdir /workspace "$IMAGE:$GITHUB_SHA" bash ci/test.sh
+
+      - name: Publish private package and verify digest
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          package_url=https://api.github.com/users/ambasta/packages/container/aurora-toolchain
+          package_status="$(curl --silent --show-error --output "$RUNNER_TEMP/package.json" \
+            --write-out '%{http_code}' --header "Authorization: Bearer $REGISTRY_TOKEN" \
+            --header 'Accept: application/vnd.github+json' "$package_url")"
+          case "$package_status" in
+            200) jq -e '.visibility == "private"' "$RUNNER_TEMP/package.json" ;;
+            404) ;; # New GHCR packages are private by default.
+            *) echo "Cannot verify package visibility: HTTP $package_status" >&2; exit 1 ;;
+          esac
+          mkdir -p "$DOCKER_CONFIG"
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io \
+            --username "$GITHUB_ACTOR" --password-stdin
+          tested_id="$(docker image inspect --format '{{.Id}}' "$IMAGE:$GITHUB_SHA")"
+          docker push "$IMAGE:$GITHUB_SHA"
+          published="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$GITHUB_SHA")"
+          [[ "$published" =~ ^ghcr\.io/ambasta/aurora-toolchain@sha256:[0-9a-f]{64}$ ]]
+          docker pull --platform linux/amd64 "$published"
+          test "$(docker image inspect --format '{{.Id}}' "$published")" = "$tested_id"
+          curl --fail --silent --show-error --header "Authorization: Bearer $REGISTRY_TOKEN" \
+            --header 'Accept: application/vnd.github+json' "$package_url" \
+            | jq -e '.visibility == "private"'
+          printf 'Verified published image: %s\n' "$published"
+          printf 'Tested and pulled back: `%s`\n' "$published" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Show remaining failure diagnostics
+        if: failure() || cancelled()
+        run: |
+          for log in build/container/meson-logs/meson-log.txt \
+            build/container/meson-logs/full.txt build/container/meson-logs/lsp.txt \
+            build/kernel-serial.log build/uefi/normal.log; do
+            if [[ -f "$log" ]]; then
+              printf '::group::%s\n' "$log"
+              cat "$log"
+              echo '::endgroup::'
+            fi
+          done
