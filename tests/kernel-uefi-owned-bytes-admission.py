@@ -11,11 +11,13 @@ RUNTIME = frozenset(
 ENTRY = "__au_v_m1_18kernel_owned_bytes_n0__d24kernel_owned_bytes_entry"
 CONSUMER = "__au_v_m1_18kernel_owned_bytes_n0__d13consume_bytes"
 TRANSFER = "__au_v_m1_18kernel_owned_bytes_n0__d10pass_bytes"
+PRODUCER = "__au_v_m1_18kernel_owned_bytes_n0__d14produce_record"
 DEFINITIONS = {
     ENTRY: "t",
     TRANSFER: "t",
     CONSUMER: "t",
     "__au_runtime_bytes_kernel_entry": "T",
+    "__au_runtime_bytes_kernel_produce": "T",
     "aurora_reflect_size": "T",
     "aurora_reflect_field_count": "T",
 }
@@ -42,7 +44,8 @@ def mangle(kind, module, scope, name):
 
 # Exact declaration closure of the real RAM device and existing serializer.
 # Short labels below are finite aliases, never accepted symbol-name patterns.
-GENERATED = {"entry": ENTRY, "transfer": TRANSFER, "consumer": CONSUMER}
+GENERATED = {"entry": ENTRY, "transfer": TRANSFER, "consumer": CONSUMER, "producer": PRODUCER}
+GENERATED["ProducedRecord.new"] = mangle("k", "kernel_owned_bytes", "ProducedRecord", "ProducedRecord")
 for name in (
     "sector_pattern_matches",
     "write_ram_pattern",
@@ -114,6 +117,12 @@ CALLS = {
     ),
     "transfer": "runtime.set",
     "consumer": "runtime.at",
+    "producer": (
+        "ProducedRecord.new BinaryBuffer64.new BinaryBuffer64.write_u8 RamSectorDevice.new "
+        "RamSectorDevice.status RamSectorDevice.read_sector RamSectorDevice.write_sector Sector512.new "
+        "Sector512.read_record Sector512.write_record SectorReadResult.status SectorReadResult.sector_or_zero "
+        "RecordReadResult.status RecordReadResult.record_or_zero runtime.allocate runtime.drop"
+    ),
     "example_main": "record",
     "record": (
         "BinaryBuffer64.new RamSectorDevice.new Sector512.new BinaryBuffer64.write_be16 "
@@ -163,6 +172,8 @@ ARGUMENT_BYTES = {
     "entry": 32,
     "transfer": 48,
     "consumer": 64,
+    "producer": 16,
+    "ProducedRecord.new": 80,
     "record": 32,
     "example_main": 32,
     "check_ram_sectors": 32,

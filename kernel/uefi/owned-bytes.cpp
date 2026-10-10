@@ -22,6 +22,7 @@
 
 extern "C" std::int64_t
 __au_runtime_bytes_kernel_entry(std::uint64_t region, std::int64_t length, std::int64_t selector) noexcept;
+extern "C" void __au_runtime_bytes_kernel_produce(std::uint64_t region, std::int64_t selector, void *result) noexcept;
 
 namespace aurora::uefi {
 namespace {
@@ -37,6 +38,105 @@ bool zero(std::span<std::byte> backing, std::size_t size) noexcept {
         if (data[index] != std::byte{0}) {
             return false;
         }
+    }
+    return true;
+}
+
+[[gnu::noinline]] bool run_copied_record(std::uint64_t arena, memory::PhysicalPages &pool) noexcept {
+    const auto base = arena + Handoff::pool_offset;
+    std::span<std::byte> backing{reinterpret_cast<std::byte *>(base), Region::backing_bytes};
+    volatile std::byte *data = backing.data();
+    std::array<std::optional<memory::PageLease>, Region::pool_pages> holders;
+    for (std::size_t scenario = 0; scenario < 4; ++scenario) {
+        if (pool.used() != 0) {
+            return false;
+        }
+        for (std::size_t index = 0; index < backing.size(); ++index) {
+            data[index] = std::byte{0xa5};
+        }
+        const std::size_t held = scenario == 3 ? Region::pool_pages : 0;
+        for (std::size_t index = 0; index < held; ++index) {
+            auto lease = pool.acquire();
+            if (!lease || pool.address(*lease) != base + index * Region::page_bytes) {
+                return false;
+            }
+            holders[index].emplace(std::move(*lease));
+        }
+        const std::uint64_t quota = scenario == 2 ? 511 : 512;
+        if (!byte_region.open(pool, backing, base, quota)) {
+            return false;
+        }
+        // Nine canonical words: status followed by all 64 record bytes. Fresh
+        // poisoned storage has two leading and one trailing canary words. It is
+        // disjoint from the bridge's private aligned region/selector record.
+        alignas(16) std::array<std::uint64_t, 12> output;
+        output.fill(0xa5a5a5a5a5a5a5a5);
+        __au_runtime_bytes_kernel_produce(byte_region.id(), scenario == 1 ? 1 : 0, output.data() + 2);
+        kernel::bytes::Metrics expected;
+        expected.quota = quota;
+        if (scenario < 2) {
+            expected.successful_allocations = 1;
+            expected.releases = 1;
+            expected.peak_live_allocations = 1;
+            expected.peak_used = 512;
+            expected.last_allocation_id = 28 + scenario;
+            expected.last_released_id = 28 + scenario;
+            expected.peak_held_pages = 1;
+        }
+        // No returned status or payload is inspected until every owner has
+        // ended, all accounting is exact and the actual region has closed.
+        if (byte_region.metrics() != expected || pool.used() != held || !byte_region.close() || byte_region.is_open() ||
+            byte_region.faulted()) {
+            return false;
+        }
+        for (std::size_t index = 0; index < backing.size(); ++index) {
+            const auto byte = scenario < 2 && index < Region::page_bytes ? std::byte{0} : std::byte{0xa5};
+            if (data[index] != byte) {
+                return false;
+            }
+        }
+        for (std::size_t index = 0; index < held; ++index) {
+            if (pool.address(*holders[index]) != base + index * Region::page_bytes || !pool.release(*holders[index])) {
+                return false;
+            }
+            holders[index].reset();
+        }
+        auto reused = pool.acquire();
+        if (!reused || pool.address(*reused) != base) {
+            return false;
+        }
+        for (std::size_t index = 0; index < Region::page_bytes; ++index) {
+            data[index] = std::byte{0xdd};
+        }
+        for (std::size_t index = 0; index < Region::page_bytes; ++index) {
+            if (data[index] != std::byte{0xdd}) {
+                return false;
+            }
+        }
+        const std::uint64_t status = scenario == 0 ? 0 : scenario == 1 ? 1 : 3;
+        if (output[0] != 0xa5a5a5a5a5a5a5a5 || output[1] != 0xa5a5a5a5a5a5a5a5 || output[11] != 0xa5a5a5a5a5a5a5a5 ||
+            output[2] != status) {
+            return false;
+        }
+        const auto *record = reinterpret_cast<const unsigned char *>(output.data() + 3);
+        for (std::size_t index = 0; index < 64; ++index) {
+            const auto byte = scenario == 0 ? static_cast<unsigned char>((index * 53 + 7) % 256) : 0;
+            if (record[index] != byte) {
+                return false;
+            }
+        }
+        if (!pool.release(*reused) || pool.used() != 0) {
+            return false;
+        }
+        Serial::text("AURORA_UEFI_OWNED_BYTES_COPY: case=");
+        Serial::number(scenario);
+        Serial::text(" status=");
+        Serial::number(status);
+        Serial::text(" bytes=64 closed=1 reused=1 canaries=1 allocations=");
+        Serial::number(expected.successful_allocations);
+        Serial::text(" releases=");
+        Serial::number(expected.releases);
+        Serial::text(" used=0\r\n");
     }
     return true;
 }
@@ -291,7 +391,7 @@ bool zero(std::span<std::byte> backing, std::size_t size) noexcept {
         return false;
     }
     Serial::text("AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=23 releases=23\r\n");
-    return run_ram_sectors(arena, pool);
+    return run_ram_sectors(arena, pool) && run_copied_record(arena, pool);
 }
 } // namespace aurora::uefi
 

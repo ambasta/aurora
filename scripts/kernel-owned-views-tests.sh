@@ -18,7 +18,7 @@ case "${SANITIZE:-0}" in
 esac
 "${CXX:-g++}" "${flags[@]}" "${wrappers[@]}" tests/kernel-uefi-owned-views.cpp kernel/owned-bytes.cpp \
     "$build_dir/language.o" -o "$build_dir/native"
-for mode in 0 1 2 3 4 5 6 7 8 9 10; do
+for mode in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
     ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=1" \
     UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" "$build_dir/native" "$mode"
 done
@@ -49,3 +49,28 @@ set -e
 expected='FAIL UEFI owner-view fixture: independent complete storage byte pattern'
 [[ "$(cat "$build_dir/page-alias.stderr")" == "$expected" ]] || { echo 'FAIL: wrong page-alias rejection' >&2; exit 1; }
 echo 'PASS: logical storage page alias rejected'
+
+# Corrupt the actual private-ABI result after the real producer returns. Both
+# success and failure must inspect the real bytes, including byte 63 and canaries.
+for damage in 1 2 3; do
+    "${CXX:-g++}" "${flags[@]}" "${wrappers[@]}" "-DAURORA_COPIED_RECORD_DAMAGE_CONTROL=$damage" \
+        tests/kernel-uefi-owned-views.cpp kernel/owned-bytes.cpp "$build_dir/language.o" \
+        -Wl,--wrap=__au_runtime_bytes_kernel_produce -o "$build_dir/rejected-copy-$damage"
+    case "$damage" in
+        1) expected='FAIL UEFI owner-view fixture: copied record every actual payload byte after close and reuse' ;;
+        2) expected='FAIL UEFI owner-view fixture: copied record result canaries' ;;
+        3) expected='FAIL UEFI owner-view fixture: copied record closed status' ;;
+    esac
+    for mode in 11 12 13 14; do
+        set +e
+        ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=1" \
+        UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" \
+            "$build_dir/rejected-copy-$damage" "$mode" > "$build_dir/copy-$damage-$mode.stdout" \
+            2> "$build_dir/copy-$damage-$mode.stderr"
+        status=$?
+        set -e
+        [[ "$status" == 1 && ! -s "$build_dir/copy-$damage-$mode.stdout" ]] || { echo 'FAIL: copied-result damage accepted' >&2; exit 1; }
+        [[ "$(cat "$build_dir/copy-$damage-$mode.stderr")" == "$expected" ]] || { echo 'FAIL: wrong copied-result rejection' >&2; exit 1; }
+    done
+done
+echo 'PASS: actual copied success/failure payload, canary and status damage rejected'

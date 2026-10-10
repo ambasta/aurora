@@ -16,6 +16,7 @@ using aurora::kernel::bytes::Region;
 using aurora::memory::PageLease;
 using aurora::memory::PhysicalPages;
 extern "C" std::int64_t __au_runtime_bytes_kernel_entry(std::uint64_t, std::int64_t, std::int64_t);
+extern "C" void __au_runtime_bytes_kernel_produce(std::uint64_t, std::int64_t, void *);
 
 namespace {
 constexpr std::size_t page_bytes = Region::page_bytes;
@@ -105,6 +106,73 @@ struct Fixture {
 Fixture *active = nullptr;
 std::size_t failed_allocations_checked = 0;
 std::size_t storage_releases_checked = 0;
+std::span<const std::byte> copied_backing;
+std::size_t copied_releases_checked = 0;
+
+void copied_record(std::int64_t mode) {
+    PhysicalPages pool;
+    alignas(page_bytes) std::array<std::byte, page_count * page_bytes> backing;
+    std::array<std::optional<PageLease>, page_count> holders;
+    Region region;
+    require(pool.initialize(base, page_count), "copied record real pool");
+    backing.fill(std::byte{0xa5});
+    const std::size_t held = mode == 14 ? page_count : 0;
+    for (std::size_t index = 0; index < held; ++index) {
+        auto lease = pool.acquire();
+        require(lease && pool.address(*lease) == base + index * page_bytes, "copied record real holder");
+        holders[index].emplace(std::move(*lease));
+    }
+    const std::uint64_t quota = mode == 13 ? 511 : 512;
+    require(region.open(pool, backing, base, quota), "copied record grant");
+    // Precisely 72 bytes of result, aligned and surrounded by poisoned canaries.
+    // This never aliases the bridge's separate 16-byte region/selector record.
+    alignas(16) std::array<std::uint64_t, 12> output;
+    output.fill(0xa5a5a5a5a5a5a5a5);
+    const std::int64_t selector = mode == 12 ? 1 : mode == 15 ? INT64_MIN : mode == 16 ? INT64_MAX : 0;
+    copied_backing = backing;
+    __au_runtime_bytes_kernel_produce(region.id(), selector, output.data() + 2);
+    copied_backing = {};
+    Metrics expected;
+    expected.quota = quota;
+    const bool allocated = mode != 13 && mode != 14;
+    if (allocated) {
+        expected.successful_allocations = 1;
+        expected.releases = 1;
+        expected.peak_live_allocations = 1;
+        expected.peak_used = 512;
+        expected.last_allocation_id = 1;
+        expected.last_released_id = 1;
+        expected.peak_held_pages = 1;
+    }
+    require(region.metrics() == expected && pool.used() == held && copied_releases_checked == (allocated ? 1u : 0u),
+            "copied record exact pre-close cleanup");
+    require(region.close() && !region.is_open() && !region.faulted(), "copied record actual region close");
+    // The actual returned status and payload have not been read before close.
+    for (std::size_t index = 0; index < backing.size(); ++index) {
+        require(backing[index] == (allocated && index < page_bytes ? std::byte{0} : std::byte{0xa5}),
+                "copied record full scrub and untouched backing");
+    }
+    for (std::size_t index = 0; index < held; ++index) {
+        require(pool.address(*holders[index]) == base + index * page_bytes && pool.release(*holders[index]),
+                "copied record preserves foreign leases");
+    }
+    auto reused = pool.acquire();
+    require(reused && pool.address(*reused) == base, "copied record reacquires released backing");
+    std::fill_n(backing.begin(), page_bytes, std::byte{0xdd});
+    require(output[0] == 0xa5a5a5a5a5a5a5a5 && output[1] == 0xa5a5a5a5a5a5a5a5 && output[11] == 0xa5a5a5a5a5a5a5a5,
+            "copied record result canaries");
+    const std::uint64_t status = mode == 11 ? 0 : allocated ? 1 : 3;
+    require(output[2] == status, "copied record closed status");
+    const auto *record = reinterpret_cast<const unsigned char *>(output.data() + 3);
+    for (std::size_t index = 0; index < 64; ++index) {
+        const auto byte = mode == 11 ? static_cast<unsigned char>((index * 53 + 7) % 256) : 0;
+        require(record[index] == byte, "copied record every actual payload byte after close and reuse");
+    }
+    require(pool.release(*reused) && pool.used() == 0, "copied record final pool empty");
+    std::printf("PASS UEFI copied-record host fixture: mode=%lld bytes=64 status=%llu closed/reused/canaries\n",
+                static_cast<long long>(mode),
+                static_cast<unsigned long long>(status));
+}
 } // namespace
 
 extern "C" void __real___au_runtime_bytes_allocate(std::uint64_t, std::int64_t, NativeOwner *) noexcept;
@@ -127,12 +195,34 @@ __wrap___au_runtime_bytes_allocate(std::uint64_t region, std::int64_t length, Na
 
 extern "C" void __real___au_runtime_bytes_drop(NativeOwner *) noexcept;
 extern "C" void __wrap___au_runtime_bytes_drop(NativeOwner *owner) noexcept {
+    if (!copied_backing.empty() && owner->success != 0) {
+        require(owner->length == 512, "copied producer exactly one sector");
+        for (std::size_t index = 0; index < copied_backing.size(); ++index) {
+            const auto expected = index < 448   ? std::byte{0}
+                                  : index < 512 ? std::byte{static_cast<unsigned char>(((index - 448) * 53 + 7) % 256)}
+                                  : index < page_bytes ? std::byte{0}
+                                                       : std::byte{0xa5};
+            require(copied_backing[index] == expected, "copied producer independent live storage bytes");
+        }
+        ++copied_releases_checked;
+    }
     if (active != nullptr && active->mode >= 7 && owner->success != 0 && owner->length == 8192) {
         require(active->storage_matches(), "independent complete storage byte pattern");
         ++storage_releases_checked;
     }
     __real___au_runtime_bytes_drop(owner);
 }
+
+#ifdef AURORA_COPIED_RECORD_DAMAGE_CONTROL
+extern "C" void __real___au_runtime_bytes_kernel_produce(std::uint64_t, std::int64_t, void *);
+extern "C" void __wrap___au_runtime_bytes_kernel_produce(std::uint64_t region, std::int64_t selector, void *output) {
+    __real___au_runtime_bytes_kernel_produce(region, selector, output);
+    // Poison the actual copied bytes, including the raw failure payload. No
+    // accessor may mask this damage into canonical zeroes or substitute success.
+    auto *bytes = static_cast<unsigned char *>(output);
+    bytes[AURORA_COPIED_RECORD_DAMAGE_CONTROL == 2 ? 72 : AURORA_COPIED_RECORD_DAMAGE_CONTROL == 3 ? 0 : 71] ^= 1;
+}
+#endif
 
 #ifdef AURORA_RAM_SECTOR_ALIAS_CONTROL
 extern "C" std::uint64_t __real___au_runtime_bytes_set(NativeOwner *, std::int64_t, std::uint64_t) noexcept;
@@ -153,9 +243,13 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
 }
 int main(int argc, char **argv) {
     require(argc == 2 && ((argv[1][0] >= '0' && argv[1][0] <= '9' && argv[1][1] == '\0') ||
-                          (argv[1][0] == '1' && argv[1][1] == '0' && argv[1][2] == '\0')),
+                          (argv[1][0] == '1' && argv[1][1] >= '0' && argv[1][1] <= '6' && argv[1][2] == '\0')),
             "exact mode");
-    const std::int64_t mode = argv[1][1] == '\0' ? argv[1][0] - '0' : 10;
+    const std::int64_t mode = argv[1][1] == '\0' ? argv[1][0] - '0' : 10 + argv[1][1] - '0';
+    if (mode >= 11) {
+        copied_record(mode);
+        return 0;
+    }
     const std::int64_t length = mode >= 7 ? 16 : mode == 1 ? 0 : mode == 2 ? -1 : 4097;
     Fixture fixture(mode);
     active = &fixture;

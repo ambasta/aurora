@@ -135,6 +135,11 @@ def validate(status, text, mode):
             "holders=14 snapshot=1 bounds=1 readonly=1 visibility=1 durable=0 failure=pages preserved=1 "
             "scrubbed=1 allocations=1 releases=1 used=0"
         ),
+        *[
+            f"AURORA_UEFI_OWNED_BYTES_COPY: case={case} status={status} bytes=64 closed=1 reused=1 "
+            f"canaries=1 allocations={allocations} releases={allocations} used=0"
+            for case, status, allocations in ((0, 0, 1), (1, 1, 1), (2, 3, 0), (3, 3, 0))
+        ],
     ]
     actual_owned = [line.strip() for line in text.splitlines() if "AURORA_UEFI_OWNED_BYTES" in line]
     need(actual_owned == (owned_lines if mode == "owned-bytes" else []), "Wrong owned-byte lifecycle evidence")
@@ -211,6 +216,11 @@ def self_test():
         "holders=14 snapshot=1 bounds=1 readonly=1 visibility=1 durable=0 failure=pages preserved=1 "
         "scrubbed=1 allocations=1 releases=1 used=0\n"
     )
+    for case, status, allocations in ((0, 0, 1), (1, 1, 1), (2, 3, 0), (3, 3, 0)):
+        records += (
+            f"AURORA_UEFI_OWNED_BYTES_COPY: case={case} status={status} bytes=64 closed=1 reused=1 "
+            f"canaries=1 allocations={allocations} releases={allocations} used=0\n"
+        )
     cases["owned-bytes"] = (33, success.replace("AURORA_UEFI_LANGUAGE_OK:", records + "AURORA_UEFI_LANGUAGE_OK:"))
     cases["stale-exhausted"] = (
         35,
@@ -277,6 +287,14 @@ def self_test():
                 ("written=0,7,8,15", "written=0,1,2,3"),
                 ("boundary=4095,4096", "boundary=4094,4095"),
                 ("snapshot=1", "snapshot=0"),
+                ("bytes=64", "bytes=63"),
+                ("closed=1", "closed=0"),
+                ("reused=1", "reused=0"),
+                ("canaries=1", "canaries=0"),
+                ("case=0 status=0", "case=0 status=3"),
+                ("case=1 status=1", "case=1 status=0"),
+                ("case=2 status=3", "case=2 status=0"),
+                ("case=3 status=3", "case=3 status=0"),
                 ("bounds=1", "bounds=0"),
                 ("readonly=1", "readonly=0"),
                 ("visibility=1", "visibility=0"),
