@@ -195,10 +195,11 @@ copies are rejected. A valid device's visibility flush is volatile, while durabl
 flush is unsupported. Invalid sources return `invalid_source` for I/O and
 `unsupported` for either flush mode.
 
-The single [record example](examples/ram_sector_record.au) takes a host-granted
+The single [record example](examples/ram_sector_record.au) takes a caller-granted
 region and runtime sector count, checks multiplication before allocating, then
-uses the same sector API. It has no standalone runtime grant and must be linked
-through the explicit hosted adapter. The focused storage tests cover its success
+uses the same sector API. Its exported implementation is shared by the hosted
+wrapper and the [CPU-only UEFI profile](../docs/block-io-contract.md#cpu-only-uefi-ram-device).
+It has no standalone runtime grant. The focused storage tests cover its success
 and failure paths. Fresh compiler admission and focused hosted runs passed in
 normal and optimized Python; the [I/O contract](../docs/block-io-contract.md)
 records their scope. Earlier one-sector results do not qualify this ownership

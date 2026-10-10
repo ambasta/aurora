@@ -65,8 +65,10 @@ atomicity is introduced.
 The [single example](../library/examples/ram_sector_record.au) receives a region
 and runtime sector count, checks count multiplication before allocating, writes
 header/trailer records through the same sector API and checks retained snapshots.
-Its header records the actual runtime count. The explicit hosted test adapter
-grants authority; there is no implicit allocation grant for a standalone main.
+Its header records the actual runtime count. The importable example and its
+standalone wrapper share one implementation. Either the explicit hosted adapter
+or the CPU-only kernel grant below supplies authority; a standalone main has no
+implicit allocation grant.
 
 The focused I/O runner defines 57 native cases, 18 rejection fixtures and six
 example invocations. It covers runtime counts 1/2/3/17/129, complete byte patterns,
@@ -96,3 +98,38 @@ inline-sector results in the [consolidation history](storage-consolidation.md)
 do not qualify this representation. Copied-value caps remain unchanged; runtime
 capacity is bounded by successful allocation and representation. No guest,
 physical device, filesystem mount, durability or performance claim follows.
+
+## CPU-only UEFI RAM device
+
+The existing `owned-bytes` profile now calls this unchanged RAM device on the real
+page-backed `ByteRegion`, after its owner/view/resize cases. Four new invocations
+reuse the same private bridge: the existing serializer at 16 sectors, then normal,
+fragmented and page-exhausted storage checks. Each owns 8,192 bytes within the
+existing 8,194-byte quota and closes its region after compiler-driven cleanup.
+The device API and library bodies are unchanged; no second sector representation,
+backend, mutable payload escape or runtime import is introduced.
+
+The Aurora workload checks every byte of sectors 0, 7, 8 and 15, the 4,095/4,096
+boundary, a copied read surviving an overwrite, extreme invalid indices, readonly
+transition and range precedence, visibility completion and unsupported durability.
+It rechecks all 16 sectors after rejected writes and quota/page allocation failure.
+The trusted harness uses real unrelated leases to force backing onto pages 1/3,
+checks their addresses and complete poison bytes, verifies full-page scrubbing
+and exact allocation/release metrics, then returns the pool to zero use.
+The hosted replay additionally observes complete backing/metrics across a failed
+allocation and rejects deliberately aliased logical pages.
+
+The first candidate image uses 114,688 of 131,072 reserved bytes. Its linked normal
+stack is 12,248 bytes plus the existing 512-byte fault reserve, below the 15,360
+admission cap on the unchanged 16 KiB stack. Existing object/image/linked-stack
+checks retain the six imports and finite generated call closure. Eleven hosted
+modes and both hostile controls pass ordinarily and with fatal C++ ASan/UBSan;
+generated Aurora code is not sanitizer-instrumented. Actual guest, normal
+restoration and independent image/result review passed on 2026-10-10: the exact
+admitted owned-bytes image, runtime-span regression and normal UEFI each exited
+33 under Debian QEMU 10.0.13/OVMF; the normal BIOS smoke also passed. All four RAM
+invocations reported full cleanup, including unrelated fragmented holders.
+Prerequisite merge, final-base reconciliation and final-source GCC 16 full
+qualification remain separate gates. This is target-native volatile RAM storage,
+not a mounted filesystem, protected file service, physical disk or persistence
+claim.

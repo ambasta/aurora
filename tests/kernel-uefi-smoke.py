@@ -116,6 +116,25 @@ def validate(status, text, mode):
         "AURORA_UEFI_OWNED_BYTES_RESIZE: case=2 prefix=1 zero=1 preserved=1 allocations=22 releases=22 used=0",
         "AURORA_UEFI_OWNED_BYTES_RESIZE: case=3 prefix=1 zero=1 preserved=1 allocations=23 releases=23 used=0",
         "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=23 releases=23",
+        (
+            "AURORA_UEFI_OWNED_BYTES_RECORD: sectors=16 pages=1,3 holders=8 snapshot=1 scrubbed=1 "
+            "allocations=1 releases=1 used=0"
+        ),
+        (
+            "AURORA_UEFI_OWNED_BYTES_STORAGE: case=0 sectors=16 written=0,7,8,15 boundary=4095,4096 pages=0,1 "
+            "holders=0 snapshot=1 bounds=1 readonly=1 visibility=1 durable=0 failure=quota preserved=1 "
+            "scrubbed=1 allocations=1 releases=1 used=0"
+        ),
+        (
+            "AURORA_UEFI_OWNED_BYTES_STORAGE: case=1 sectors=16 written=0,7,8,15 boundary=4095,4096 pages=1,3 "
+            "holders=8 snapshot=1 bounds=1 readonly=1 visibility=1 durable=0 failure=quota preserved=1 "
+            "scrubbed=1 allocations=1 releases=1 used=0"
+        ),
+        (
+            "AURORA_UEFI_OWNED_BYTES_STORAGE: case=2 sectors=16 written=0,7,8,15 boundary=4095,4096 pages=1,3 "
+            "holders=14 snapshot=1 bounds=1 readonly=1 visibility=1 durable=0 failure=pages preserved=1 "
+            "scrubbed=1 allocations=1 releases=1 used=0"
+        ),
     ]
     actual_owned = [line.strip() for line in text.splitlines() if "AURORA_UEFI_OWNED_BYTES" in line]
     need(actual_owned == (owned_lines if mode == "owned-bytes" else []), "Wrong owned-byte lifecycle evidence")
@@ -180,6 +199,17 @@ def self_test():
         "AURORA_UEFI_OWNED_BYTES_RESIZE: case=2 prefix=1 zero=1 preserved=1 allocations=22 releases=22 used=0\n"
         "AURORA_UEFI_OWNED_BYTES_RESIZE: case=3 prefix=1 zero=1 preserved=1 allocations=23 releases=23 used=0\n"
         "AURORA_UEFI_OWNED_BYTES_CLOSED: quota=8194 used=0 allocations=23 releases=23\n"
+        "AURORA_UEFI_OWNED_BYTES_RECORD: sectors=16 pages=1,3 holders=8 snapshot=1 scrubbed=1 "
+        "allocations=1 releases=1 used=0\n"
+        "AURORA_UEFI_OWNED_BYTES_STORAGE: case=0 sectors=16 written=0,7,8,15 boundary=4095,4096 pages=0,1 "
+        "holders=0 snapshot=1 bounds=1 readonly=1 visibility=1 durable=0 failure=quota preserved=1 "
+        "scrubbed=1 allocations=1 releases=1 used=0\n"
+        "AURORA_UEFI_OWNED_BYTES_STORAGE: case=1 sectors=16 written=0,7,8,15 boundary=4095,4096 pages=1,3 "
+        "holders=8 snapshot=1 bounds=1 readonly=1 visibility=1 durable=0 failure=quota preserved=1 "
+        "scrubbed=1 allocations=1 releases=1 used=0\n"
+        "AURORA_UEFI_OWNED_BYTES_STORAGE: case=2 sectors=16 written=0,7,8,15 boundary=4095,4096 pages=1,3 "
+        "holders=14 snapshot=1 bounds=1 readonly=1 visibility=1 durable=0 failure=pages preserved=1 "
+        "scrubbed=1 allocations=1 releases=1 used=0\n"
     )
     cases["owned-bytes"] = (33, success.replace("AURORA_UEFI_LANGUAGE_OK:", records + "AURORA_UEFI_LANGUAGE_OK:"))
     cases["stale-exhausted"] = (
@@ -243,6 +273,17 @@ def self_test():
                 ("empty=1", "empty=0"),
                 ("allocations=9", "allocations=10"),
                 ("releases=9", "releases=8"),
+                ("sectors=16", "sectors=8"),
+                ("written=0,7,8,15", "written=0,1,2,3"),
+                ("boundary=4095,4096", "boundary=4094,4095"),
+                ("snapshot=1", "snapshot=0"),
+                ("bounds=1", "bounds=0"),
+                ("readonly=1", "readonly=0"),
+                ("visibility=1", "visibility=0"),
+                ("durable=0", "durable=1"),
+                ("failure=pages", "failure=quota"),
+                ("holders=14", "holders=13"),
+                ("scrubbed=1", "scrubbed=0"),
             ]:
                 broken.append((status, text.replace(old, new)))
         if mode in ("wp", "nx"):

@@ -1,4 +1,10 @@
 module kernel_owned_bytes;
+import std.binary;
+import std.binary_buffer;
+import storage.sector;
+import storage.block_io;
+import storage.ram_sector;
+import examples.ram_sector_record;
 
 auto pass_bytes(builtin::ByteRegion region, builtin::OwnedBytes input) -> builtin::OwnedBytes {
     input.set(input.size() - 1, 53u8);
@@ -39,6 +45,12 @@ auto consume_bytes(builtin::span<const u8> input) -> i64 {
 // The trusted kernel supplies the region and runtime length. Both live owners
 // use actual page leases. No byte array, raw address or host result is substituted.
 auto kernel_owned_bytes_entry(builtin::ByteRegion region, i64 length, i64 selector) -> i64 {
+    if (length == 16 && selector == 4) {
+        return ram_sector_record(region, length, 0);
+    }
+    if (length == 16 && 5 <= selector && selector <= 7) {
+        return check_ram_sectors(region, selector, 0);
+    }
     // A separate scalar selector exercises only the existing raw owner ABI.
     if (0 < selector && selector < 4 && length == 4097) {
         builtin::OwnedBytes resized = region.try_allocate(length);
@@ -173,6 +185,151 @@ auto kernel_owned_bytes_entry(builtin::ByteRegion region, i64 length, i64 select
     builtin::OwnedBytes failed = region.try_allocate(-1);
     if (failed.ok() || failed.size() != 0 || failed.set(0, 99u8)) {
         return -9;
+    }
+    return 42;
+}
+
+// These helpers use the actual copied-sector API and synchronous owning borrows.
+// No payload address, alternate sector representation or runtime import is added.
+auto sector_pattern_matches(storage::Sector512 sector, i64 seed) -> bool {
+    i64 offset = 0;
+    while (offset < 512) {
+        const std::ByteReadResult byte = sector.read_byte(offset);
+        u64 expected = 0u64;
+        if (seed >= 0) {
+            expected = u64((offset * 53 + offset / 256 * 31 + seed * 17 + 7) % 256);
+        }
+        if (byte.status() != std::ByteReadStatus::success || byte.value_or(256u64) != expected) {
+            return false;
+        }
+        offset = offset + 1;
+    }
+    return true;
+}
+
+auto write_ram_pattern(storage::RamSectorDevice& device, i64 index, i64 seed) -> storage::SectorIoStatus {
+    storage::Sector512 sector = storage::Sector512();
+    i64 offset = 0;
+    while (offset < 512) {
+        if (sector.write_byte(offset, u8((offset * 53 + offset / 256 * 31 + seed * 17 + 7) % 256))
+            != std::ByteWriteStatus::success) {
+            return storage::SectorIoStatus::invalid_source;
+        }
+        offset = offset + 1;
+    }
+    return device.write_sector(index, sector);
+}
+
+auto read_ram_pattern(const storage::RamSectorDevice& device, i64 index, i64 seed) -> bool {
+    const storage::SectorReadResult report = device.read_sector(index);
+    if (report.status() != storage::SectorIoStatus::success) {
+        return false;
+    }
+    const storage::Sector512 sector = report.sector_or_zero();
+    return sector_pattern_matches(sector, seed);
+}
+
+auto invalid_ram_read(const storage::RamSectorDevice& device, i64 index) -> bool {
+    const storage::SectorReadResult report = device.read_sector(index);
+    if (report.status() != storage::SectorIoStatus::out_of_range) {
+        return false;
+    }
+    const storage::Sector512 sector = report.sector_or_zero();
+    return sector_pattern_matches(sector, -1);
+}
+
+auto ram_snapshot_survives(storage::RamSectorDevice& device) -> bool {
+    const storage::SectorReadResult saved = device.read_sector(8);
+    if (saved.status() != storage::SectorIoStatus::success
+        || write_ram_pattern(device, 8, 61) != storage::SectorIoStatus::success) {
+        return false;
+    }
+    const storage::Sector512 snapshot = saved.sector_or_zero();
+    if (!sector_pattern_matches(snapshot, 8) || !read_ram_pattern(device, 8, 61)) {
+        return false;
+    }
+    return true;
+}
+
+auto check_ram_sectors(builtin::ByteRegion region, i64 selector, i64 _reserved) -> i64 {
+    builtin::OwnedBytes backing = region.try_allocate(8192);
+    storage::RamSectorDevice device = storage::RamSectorDevice(region, move(backing));
+    if (device.status() != storage::SectorIoStatus::success) {
+        return -40;
+    }
+    const storage::SectorGeometry initial = device.geometry();
+    if (initial.sector_size_bytes() != 512u64 || initial.sector_count() != 16u64 || !initial.can_write()) {
+        return -41;
+    }
+    i64 index = 0;
+    while (index < 16) {
+        if (!read_ram_pattern(device, index, -1)) {
+            return -42;
+        }
+        index = index + 1;
+    }
+    const builtin::array<i64, 4> written = {0, 7, 8, 15};
+    index = 0;
+    while (index < 4) {
+        if (write_ram_pattern(device, written[index], written[index]) != storage::SectorIoStatus::success
+            || !read_ram_pattern(device, written[index], written[index])) {
+            return -43;
+        }
+        index = index + 1;
+    }
+    if (!ram_snapshot_survives(device)) {
+        return -44;
+    }
+    // 8192 committed bytes leave only two quota bytes. The last case instead
+    // requests one byte with every physical page leased, preserving the device.
+    i64 failed_length = 3;
+    if (selector == 7) {
+        failed_length = 1;
+    }
+    builtin::OwnedBytes failed = region.try_allocate(failed_length);
+    if (failed.ok() || failed.size() != 0 || failed.set(0, 99u8)) {
+        return -45;
+    }
+    const builtin::array<i64, 4> invalid = {-9223372036854775807 - 1, -1, 16, 9223372036854775807};
+    index = 0;
+    while (index < 4) {
+        if (write_ram_pattern(device, invalid[index], 99) != storage::SectorIoStatus::out_of_range
+            || !invalid_ram_read(device, invalid[index])) {
+            return -46;
+        }
+        index = index + 1;
+    }
+    const storage::SectorGeometry preserved = device.geometry();
+    if (!preserved.can_write()
+        || device.flush(storage::SectorFlushMode::visibility) != storage::SectorFlushStatus::volatile_complete
+        || device.flush(storage::SectorFlushMode::durable) != storage::SectorFlushStatus::unsupported
+        || device.make_read_only() != storage::SectorIoStatus::success
+        || device.make_read_only() != storage::SectorIoStatus::success) {
+        return -47;
+    }
+    const storage::SectorGeometry readonly = device.geometry();
+    if (readonly.can_write() || readonly.sector_count() != 16u64
+        || write_ram_pattern(device, 7, 99) != storage::SectorIoStatus::read_only
+        || write_ram_pattern(device, 16, 99) != storage::SectorIoStatus::out_of_range
+        || device.flush(storage::SectorFlushMode::visibility) != storage::SectorFlushStatus::volatile_complete
+        || device.flush(storage::SectorFlushMode::durable) != storage::SectorFlushStatus::unsupported) {
+        return -48;
+    }
+    // Recheck every byte of every sector after all rejected operations, including
+    // untouched sectors and both sides of the logical 4096-byte page boundary.
+    index = 0;
+    while (index < 16) {
+        i64 seed = -1;
+        if (index == 0 || index == 7 || index == 15) {
+            seed = index;
+        }
+        if (index == 8) {
+            seed = 61;
+        }
+        if (!read_ram_pattern(device, index, seed)) {
+            return -49;
+        }
+        index = index + 1;
     }
     return 42;
 }

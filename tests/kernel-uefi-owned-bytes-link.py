@@ -45,7 +45,19 @@ def main():
         "owned-bytes-profile",
     )
     objects = [build / (name + ".o") for name in object_names]
-    inputs += objects + [build / "language.o", ROOT / "kernel/uefi/payload.ld"]
+    inputs += objects + [build / "language.s", build / "language.o", ROOT / "kernel/uefi/payload.ld"]
+    inputs += [
+        ROOT / "library" / name
+        for name in (
+            "std/binary.au",
+            "std/bytes.au",
+            "std/binary_buffer.au",
+            "storage/sector.au",
+            "storage/block_io.au",
+            "storage/ram_sector.au",
+            "examples/ram_sector_record.au",
+        )
+    ]
     before = {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}
     result = dict(status="running", native_executed=False, guest_executed=False, inputs=before)
     receipt = out / "run.json"
@@ -121,9 +133,16 @@ def main():
         if before != {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}:
             raise ValueError("Compile-only rejection inputs changed")
         result.update(
-            status="passed", positive_profiles=1, resize_links=1, unsupported_import_rejections=1, negative_links=2
+            status="passed",
+            positive_profiles=1,
+            resize_links=1,
+            unsupported_import_rejections=1,
+            negative_links=2,
+            generated_functions=len(ADMISSION.GENERATED),
+            reflection_helpers=len(ADMISSION.REFLECTION),
+            runtime_imports=sorted(ADMISSION.RUNTIME),
         )
-        print("PASS: six-helper admission, real resize ELF and unknown-import/mixed-graph rejection")
+        print("PASS: six-helper admission, real RAM storage/resize ELF and unknown-import/mixed-graph rejection")
     except BaseException as error:
         result.update(status="failed", error=str(error))
         raise

@@ -173,6 +173,14 @@ old results paragraph or its “not implemented” list.
   [RAM sector I/O](block-io-contract.md), [offline XFS file reading](xfs-file-contract.md),
   [Framework target](framework-13-7840u.md) and [AMD qualification](amd-support.md).
 
+The existing `owned-bytes` UEFI profile now exercises the real RAM-sector library
+on 16 page-backed sectors, including fragmented leases and copied snapshots.
+The [bounded integration](block-io-contract.md#cpu-only-uefi-ram-device) fits the
+unchanged image/stack caps and passes focused hosted checks plus independently
+reviewed actual owned-bytes/runtime-span guests and normal BIOS/UEFI restoration.
+Prerequisite merge and final-source full qualification remain separate. Mounted
+files and protected file services remain future work.
+
 ### Critical path and verification boundary
 
 Follow the [dependency roadmap](roadmap.md): protected program/file services are

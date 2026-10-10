@@ -1,4 +1,4 @@
-module ram_sector_record_example;
+export module examples.ram_sector_record;
 import std.binary;
 import std.binary_buffer;
 import storage.sector;
@@ -7,7 +7,7 @@ import storage.ram_sector;
 
 // One owned serialization record representation and one sector-device contract.
 // This is volatile RAM I/O, not a filesystem or durable device write.
-auto main(builtin::ByteRegion region, i64 sector_count, i64 _reserved) -> i64 {
+export auto ram_sector_record(builtin::ByteRegion region, i64 sector_count, i64 _reserved) -> i64 {
     if (sector_count <= 0 || sector_count > 9223372036854775807 / 512) {
         return 13;
     }
@@ -111,4 +111,9 @@ auto main(builtin::ByteRegion region, i64 sector_count, i64 _reserved) -> i64 {
         return 12;
     }
     return 42;
+}
+
+// The same example is callable by the target profile and the hosted example runner.
+auto main(builtin::ByteRegion region, i64 sector_count, i64 reserved) -> i64 {
+    return ram_sector_record(region, sector_count, reserved);
 }

@@ -2921,7 +2921,7 @@ def verify_language_object(language):
     return sorted(imports)
 
 
-def verify_generated_divisions(functions, code, payload):
+def verify_generated_divisions(decoder, functions, code, payload):
     """Exactly two register-only signed division pairs in draw_cell's arithmetic.
 
     CQTO writes RDX from RAX's sign and preserves flags. IDIV R11 writes only
@@ -2930,6 +2930,7 @@ def verify_generated_divisions(functions, code, payload):
     complete byte, operand, ownership and adjacency check. Synchronous faults
     retain the ordinary fault-path budget.
     """
+    need(payload is not None, "Missing generated signed-division payload bytes")
     owner = "__au_v_m1_24kernel_graphical_console_n0__d9draw_cell"
     need(owner in functions, "Missing generated division owner")
     symbol = functions[owner]
@@ -2939,18 +2940,10 @@ def verify_generated_divisions(functions, code, payload):
     for index in (0, 2):
         sign, divide = forms[index : index + 2]
         need(
-            symbol.address <= sign.address < divide.address < divide.next <= symbol.address + symbol.size
-            and sign.op == "cqto"
-            and not sign.args
-            and sign.size == 2
-            and payload[sign.address : sign.next] == bytes.fromhex("4899")
-            and divide.address == sign.next
-            and divide.op == "idiv"
-            and divide.args == "%r11"
-            and divide.size == 3
-            and payload[divide.address : divide.next] == bytes.fromhex("49f7fb"),
-            "Unknown generated signed-division bytes/operands/owner/pair",
+            symbol.address <= sign.address < divide.address < divide.next and not sign.args,
+            "Unknown generated signed-division owner/operands",
         )
+        decoder.verify_signed_division_pair(symbol, sign, divide, payload)
         evidence.append(
             dict(
                 owner=owner,
@@ -3387,7 +3380,7 @@ def stack_evidence(directory):
     code, disassembly = decoder.disassemble(directory / "payload.elf")
     original_code = dict(code)
     payload = (directory / "payload.bin").read_bytes()
-    divisions = verify_generated_divisions(linked.functions, code, payload)
+    divisions = verify_generated_divisions(decoder, linked.functions, code, payload)
     body = lambda symbol: [r for a, r in sorted(code.items()) if symbol.address <= a < symbol.address + symbol.size]
     verify_irq_body(decoder, body(linked.functions[irq.name]), starts)
     normalized = []

@@ -2892,8 +2892,10 @@ class Admission(unittest.TestCase):
             5: decoder.Instruction(5, 2, "cqto", ""),
             7: decoder.Instruction(7, 3, "idiv", "%r11"),
         }
-        verify = graphical.verify_generated_divisions
+        verify = lambda symbols, rows, payload: graphical.verify_generated_divisions(decoder, symbols, rows, payload)
         self.assertEqual(len(verify(symbols, rows, payload)), 2)
+        with self.assertRaises(ValueError):
+            verify(symbols, rows, None)
         for position in range(len(payload)):
             changed = bytearray(payload)
             changed[position] ^= 1
