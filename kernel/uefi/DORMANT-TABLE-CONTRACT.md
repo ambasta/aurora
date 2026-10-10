@@ -95,29 +95,20 @@ are corrupt. Hardware/DMA success markers are never emitted or accepted.
 Each table-mode build checks actual compiler .su records and linked direct-call
 edges before boot. The TABLES-only ACPI preparation function ends before PCI
 scan construction, preserving historical branches. The bound covers ACPI,
-Topology parsing, PCI, recursive mapping verification, table construction,
+Topology parsing, PCI, fixed-four-slot mapping verification, table construction,
 readback/corruption, cleanup and runtime helpers, plus1024 bytes for faults.
 Mode-specific raw .su, disassembly and the calculated bound are retained under
 build/uefi/table-stack/<mode>. A table-sized stack temporary or reintroduced
 parser-to-PCI edge fails the regression gate. No stack/page-layout widening occurs.
 
 Commands: make test-dormant-tables, SANITIZE=1 make test-dormant-tables,
-make test-uefi-tables and make smoke-uefi-tables. Independent final review passed
-all four actual guest modes. The final integrated166-mode worker run passed with
-288 project inputs and183 external pins unchanged;757 receipt hashes verified.
-Each table variant retained3248 bytes beyond the measured bound including fault
-reserve. Parent aggregate and readback/quarantine/normal spot verification passed.
-Source archive integrity is checked separately from functional acceptance. The initial two privacy probes that failed for the wrong
-C++ reason remain historical evidence; corrected probes use valid member pointers
-and positive public-mutant controls, independently rerun before guest integration.
-
+make test-uefi-tables and make smoke-uefi-tables. Hosted checks do not establish
+actual guest behavior or hardware DMA authority.
 
 ## Separate architectural translation oracle
 
-The hosted [Mode 0/1 oracle](../../docs/iommu-translation-oracle.md) now provides
-test-only fixtures for noncanonical architectural semantics that this profile
-cannot represent. It reads copied constructor bytes and independent fixtures;
-it grants no publication authority. Independent source review accepted that
-separate increment. Its [focused hosted gates](../../docs/iommu-translation-oracle-results.md)
-passed normally and under fatal sanitizers, with independent retained-evidence
-and final claim review accepted.
+The hosted [Mode 0/1 oracle](../../docs/iommu-models.md) provides test-only
+fixtures for noncanonical architectural semantics that this profile cannot
+represent. It reads copied constructor bytes and independent fixtures; it grants
+no publication authority. The [DMA conformance boundary](../../docs/iommu-dma-conformance.md)
+separates software-model behavior from actual translation/isolation evidence.

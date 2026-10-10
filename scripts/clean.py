@@ -15,7 +15,9 @@ def checked_path(root, selected, scratch):
     path = Path(os.path.abspath(root / selected))
     if path == base or not path.is_relative_to(base) or not path.resolve().is_relative_to(base):
         raise ValueError("select a path beneath build/, without symlinks outside it: " + str(path))
+    resolved = path.resolve()
     parents = [path, *path.parents[: len(path.relative_to(base).parts)]]
+    parents += [resolved, *resolved.parents[: len(resolved.relative_to(base).parts)]]
     if (
         path.name == ".keep"
         or any((parent / ".keep").exists() or (parent / ".keep").is_symlink() for parent in parents)

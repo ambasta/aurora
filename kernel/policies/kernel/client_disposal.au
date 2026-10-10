@@ -2,17 +2,31 @@ export module kernel.client_disposal;
 
 // Copied recovery facts only. Identity, quiescence and all effects stay trusted.
 export namespace kernel {
-    enum class DisposalAction { invalid, refused, accepted };
-    enum class DisposalEffect { none, empty, retained_receipt, cancel_consume, consume_terminal };
+    enum class DisposalAction {
+        invalid,
+        refused,
+        accepted
+    };
+    enum class DisposalEffect {
+        none,
+        empty,
+        retained_receipt,
+        cancel_consume,
+        consume_terminal
+    };
 
     class DisposalDecision {
         DisposalAction outcome;
         DisposalEffect treatment;
     public:
-        DisposalDecision(DisposalAction action, DisposalEffect effect)
-            : outcome(action), treatment(effect) {}
-        auto action() const -> DisposalAction { return outcome; }
-        auto effect() const -> DisposalEffect { return treatment; }
+        DisposalDecision(DisposalAction action, DisposalEffect effect) : outcome(action), treatment(effect) {
+        }
+        auto action() const -> DisposalAction {
+            return outcome;
+        }
+        auto effect() const -> DisposalEffect {
+            return treatment;
+        }
     };
 
     auto client_disposal(u64 phase, u64 state) -> DisposalDecision {
@@ -29,11 +43,13 @@ export namespace kernel {
             return empty;
         }
         if (state == 5u64) {
-            const DisposalDecision retained = DisposalDecision(DisposalAction::accepted, DisposalEffect::retained_receipt);
+            const DisposalDecision retained = DisposalDecision(DisposalAction::accepted,
+                DisposalEffect::retained_receipt);
             return retained;
         }
         if (state == 1u64 || state == 2u64) {
-            const DisposalDecision cancelled = DisposalDecision(DisposalAction::accepted, DisposalEffect::cancel_consume);
+            const DisposalDecision cancelled = DisposalDecision(DisposalAction::accepted,
+                DisposalEffect::cancel_consume);
             return cancelled;
         }
         const DisposalDecision terminal = DisposalDecision(DisposalAction::accepted, DisposalEffect::consume_terminal);

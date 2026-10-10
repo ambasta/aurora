@@ -3,24 +3,41 @@ import package.identity;
 import std.array;
 
 export namespace package {
-    enum class ManifestStatus { success, malformed, out_of_range };
-    enum class DependencyStatus { success, malformed, out_of_range, index_out_of_range };
+    enum class ManifestStatus {
+        success,
+        malformed,
+        out_of_range
+    };
+    enum class DependencyStatus {
+        success,
+        malformed,
+        out_of_range,
+        index_out_of_range
+    };
 }
 
 namespace package {
     auto manifest_name_equal(IdentityResult left, IdentityResult right) -> bool {
-        if (left.status() != IdentityStatus::success) { return false; }
-        if (right.status() != IdentityStatus::success) { return false; }
-        if (left.name_size() != right.name_size()) { return false; }
+        if (left.status() != IdentityStatus::success) {
+            return false;
+        }
+        if (right.status() != IdentityStatus::success) {
+            return false;
+        }
+        if (left.name_size() != right.name_size()) {
+            return false;
+        }
         i64 index = 0;
         while (index < left.name_size()) {
-            if (left.name_byte_or(index,0u8) != right.name_byte_or(index,0u8)) { return false; }
+            if (left.name_byte_or(index, 0u8) != right.name_byte_or(index, 0u8)) {
+                return false;
+            }
             index = index + 1;
         }
         return true;
     }
     auto manifest_identity_error() -> IdentityResult {
-        const std::array<u8,24> empty = std::array<u8,24>();
+        const std::array<u8, 24> empty = std::array<u8, 24>();
         const IdentityResult result = IdentityResult(IdentityStatus::malformed, empty, 0, 0u64, 0u64, 0u64);
         return result;
     }
@@ -32,24 +49,37 @@ export namespace package {
         IdentityResult stored_identity;
         i64 dependencies;
     public:
-        ManifestResult(ManifestStatus status, IdentityResult identity, i64 count)
-            : outcome(status), stored_identity(identity), dependencies(count) {}
+        ManifestResult(ManifestStatus status, IdentityResult identity, i64 count) : outcome(status),
+            stored_identity(identity), dependencies(count) {
+        }
         auto status() const -> ManifestStatus {
-            if (outcome != ManifestStatus::success) { return outcome; }
+            if (outcome != ManifestStatus::success) {
+                return outcome;
+            }
             const IdentityResult identity = stored_identity;
-            if (identity.status() != IdentityStatus::success) { return ManifestStatus::malformed; }
-            if (dependencies < 0) { return ManifestStatus::malformed; }
-            if (dependencies > 8) { return ManifestStatus::malformed; }
+            if (identity.status() != IdentityStatus::success) {
+                return ManifestStatus::malformed;
+            }
+            if (dependencies < 0) {
+                return ManifestStatus::malformed;
+            }
+            if (dependencies > 8) {
+                return ManifestStatus::malformed;
+            }
             return ManifestStatus::success;
         }
         auto identity_or_error() const -> IdentityResult {
             if (status() != ManifestStatus::success) {
-                const IdentityResult result = manifest_identity_error(); return result;
+                const IdentityResult result = manifest_identity_error();
+                return result;
             }
-            const IdentityResult result = stored_identity; return result;
+            const IdentityResult result = stored_identity;
+            return result;
         }
         auto dependency_count_or(i64 fallback) const -> i64 {
-            if (status() != ManifestStatus::success) { return fallback; }
+            if (status() != ManifestStatus::success) {
+                return fallback;
+            }
             return dependencies;
         }
     };
@@ -61,41 +91,65 @@ export namespace package {
         i64 dependencies;
         i64 selected_index;
     public:
-        DependencyResult(DependencyStatus status, IdentityResult identity,
-                         IdentityResult dependency, i64 count, i64 index)
-            : outcome(status), stored_identity(identity), stored_dependency(dependency),
-              dependencies(count), selected_index(index) {}
+        DependencyResult(DependencyStatus status, IdentityResult identity, IdentityResult dependency, i64 count,
+            i64 index) : outcome(status), stored_identity(identity), stored_dependency(dependency), dependencies(count),
+            selected_index(index) {
+        }
         auto status() const -> DependencyStatus {
-            if (outcome != DependencyStatus::success) { return outcome; }
+            if (outcome != DependencyStatus::success) {
+                return outcome;
+            }
             const IdentityResult identity = stored_identity;
             const IdentityResult dependency = stored_dependency;
-            if (identity.status() != IdentityStatus::success) { return DependencyStatus::malformed; }
-            if (dependency.status() != IdentityStatus::success) { return DependencyStatus::malformed; }
-            if (dependencies < 1) { return DependencyStatus::malformed; }
-            if (dependencies > 8) { return DependencyStatus::malformed; }
-            if (selected_index < 0) { return DependencyStatus::malformed; }
-            if (selected_index >= dependencies) { return DependencyStatus::malformed; }
-            if (manifest_name_equal(identity,dependency)) { return DependencyStatus::malformed; }
+            if (identity.status() != IdentityStatus::success) {
+                return DependencyStatus::malformed;
+            }
+            if (dependency.status() != IdentityStatus::success) {
+                return DependencyStatus::malformed;
+            }
+            if (dependencies < 1) {
+                return DependencyStatus::malformed;
+            }
+            if (dependencies > 8) {
+                return DependencyStatus::malformed;
+            }
+            if (selected_index < 0) {
+                return DependencyStatus::malformed;
+            }
+            if (selected_index >= dependencies) {
+                return DependencyStatus::malformed;
+            }
+            if (manifest_name_equal(identity, dependency)) {
+                return DependencyStatus::malformed;
+            }
             return DependencyStatus::success;
         }
         auto identity_or_error() const -> IdentityResult {
             if (status() != DependencyStatus::success) {
-                const IdentityResult result = manifest_identity_error(); return result;
+                const IdentityResult result = manifest_identity_error();
+                return result;
             }
-            const IdentityResult result = stored_identity; return result;
+            const IdentityResult result = stored_identity;
+            return result;
         }
         auto dependency_or_error() const -> IdentityResult {
             if (status() != DependencyStatus::success) {
-                const IdentityResult result = manifest_identity_error(); return result;
+                const IdentityResult result = manifest_identity_error();
+                return result;
             }
-            const IdentityResult result = stored_dependency; return result;
+            const IdentityResult result = stored_dependency;
+            return result;
         }
         auto dependency_count_or(i64 fallback) const -> i64 {
-            if (status() != DependencyStatus::success) { return fallback; }
+            if (status() != DependencyStatus::success) {
+                return fallback;
+            }
             return dependencies;
         }
         auto index_or(i64 fallback) const -> i64 {
-            if (status() != DependencyStatus::success) { return fallback; }
+            if (status() != DependencyStatus::success) {
+                return fallback;
+            }
             return selected_index;
         }
     };
@@ -104,20 +158,29 @@ export namespace package {
 namespace package {
     auto manifest_failure(ManifestStatus status) -> ManifestResult {
         const IdentityResult identity = manifest_identity_error();
-        const ManifestResult result = ManifestResult(status,identity,0); return result;
+        const ManifestResult result = ManifestResult(status, identity, 0);
+        return result;
     }
     auto manifest_dependency_failure(DependencyStatus status) -> DependencyResult {
         const IdentityResult identity = manifest_identity_error();
-        const DependencyResult result = DependencyResult(status,identity,identity,0,0); return result;
+        const DependencyResult result = DependencyResult(status, identity, identity, 0, 0);
+        return result;
     }
-    auto manifest_literal(builtin::span<const u8> bytes, i64 offset,
-                          builtin::span<const u8> literal) -> bool {
-        if (offset < 0) { return false; }
-        if (offset > bytes.size()) { return false; }
-        if (literal.size() > bytes.size() - offset) { return false; }
+    auto manifest_literal(builtin::span<const u8> bytes, i64 offset, builtin::span<const u8> literal) -> bool {
+        if (offset < 0) {
+            return false;
+        }
+        if (offset > bytes.size()) {
+            return false;
+        }
+        if (literal.size() > bytes.size() - offset) {
+            return false;
+        }
         i64 index = 0;
         while (index < literal.size()) {
-            if (bytes.at(offset + index) != literal.at(index)) { return false; }
+            if (bytes.at(offset + index) != literal.at(index)) {
+                return false;
+            }
             index = index + 1;
         }
         return true;
@@ -127,8 +190,12 @@ namespace package {
     auto manifest_line_end(builtin::span<const u8> bytes, i64 start, i64 end) -> i64 {
         i64 cursor = start;
         while (cursor < end) {
-            if (cursor - start > 57) { return -1; }
-            if (bytes.at(cursor) == 10u8) { return cursor; }
+            if (cursor - start > 57) {
+                return -1;
+            }
+            if (bytes.at(cursor) == 10u8) {
+                return cursor;
+            }
             cursor = cursor + 1;
         }
         return -1;
@@ -137,59 +204,151 @@ namespace package {
 
 export namespace package {
     auto parse_manifest(builtin::span<const u8> bytes, i64 offset, i64 count) -> ManifestResult {
-        if (offset < 0) { const ManifestResult r = manifest_failure(ManifestStatus::out_of_range); return r; }
-        if (count < 0) { const ManifestResult r = manifest_failure(ManifestStatus::out_of_range); return r; }
-        if (offset > bytes.size()) { const ManifestResult r = manifest_failure(ManifestStatus::out_of_range); return r; }
-        if (count > bytes.size() - offset) {
-            const ManifestResult r = manifest_failure(ManifestStatus::out_of_range); return r;
+        if (offset < 0) {
+            const ManifestResult r = manifest_failure(ManifestStatus::out_of_range);
+            return r;
         }
-        if (count < 37) { const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r; }
-        if (count > 615) { const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r; }
-        const builtin::array<u8,25> header = {97u8,117u8,114u8,111u8,114u8,97u8,45u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,49u8,10u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8};
-        if (!manifest_literal(bytes,offset,borrow_bytes(header))) {
-            const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r;
+        if (count < 0) {
+            const ManifestResult r = manifest_failure(ManifestStatus::out_of_range);
+            return r;
+        }
+        if (offset > bytes.size()) {
+            const ManifestResult r = manifest_failure(ManifestStatus::out_of_range);
+            return r;
+        }
+        if (count > bytes.size() - offset) {
+            const ManifestResult r = manifest_failure(ManifestStatus::out_of_range);
+            return r;
+        }
+        if (count < 37) {
+            const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+            return r;
+        }
+        if (count > 615) {
+            const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+            return r;
+        }
+        const builtin::array<u8, 25> header = {
+            97u8,
+            117u8,
+            114u8,
+            111u8,
+            114u8,
+            97u8,
+            45u8,
+            112u8,
+            97u8,
+            99u8,
+            107u8,
+            97u8,
+            103u8,
+            101u8,
+            32u8,
+            49u8,
+            10u8,
+            112u8,
+            97u8,
+            99u8,
+            107u8,
+            97u8,
+            103u8,
+            101u8,
+            32u8
+        };
+        if (!manifest_literal(bytes, offset, borrow_bytes(header))) {
+            const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+            return r;
         }
         const i64 end = offset + count;
         const i64 root_start = offset + 25;
-        const i64 root_end = manifest_line_end(bytes,root_start,end);
-        if (root_end < 0) { const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r; }
-        const IdentityResult identity = parse_identity(bytes,root_start,root_end - root_start);
-        if (identity.status() != IdentityStatus::success) {
-            const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r;
+        const i64 root_end = manifest_line_end(bytes, root_start, end);
+        if (root_end < 0) {
+            const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+            return r;
         }
-        const builtin::array<u8,8> prefix = {100u8,101u8,112u8,101u8,110u8,100u8,115u8,32u8};
-        const builtin::array<u8,4> finish = {101u8,110u8,100u8,10u8};
-        builtin::array<i64,8> starts = {0,0,0,0,0,0,0,0};
-        builtin::array<i64,8> lengths = {0,0,0,0,0,0,0,0};
+        const IdentityResult identity = parse_identity(bytes, root_start, root_end - root_start);
+        if (identity.status() != IdentityStatus::success) {
+            const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+            return r;
+        }
+        const builtin::array<u8, 8> prefix = {
+            100u8,
+            101u8,
+            112u8,
+            101u8,
+            110u8,
+            100u8,
+            115u8,
+            32u8
+        };
+        const builtin::array<u8, 4> finish = {
+            101u8,
+            110u8,
+            100u8,
+            10u8
+        };
+        builtin::array<i64, 8> starts = {
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        };
+        builtin::array<i64, 8> lengths = {
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        };
         i64 dependencies = 0;
         i64 cursor = root_end + 1;
         while (cursor < end) {
             if (end - cursor == 4) {
-                if (manifest_literal(bytes,cursor,borrow_bytes(finish))) {
-                    const ManifestResult result = ManifestResult(ManifestStatus::success,identity,dependencies);
+                if (manifest_literal(bytes, cursor, borrow_bytes(finish))) {
+                    const ManifestResult result = ManifestResult(ManifestStatus::success, identity, dependencies);
                     return result;
                 }
             }
-            if (dependencies >= 8) { const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r; }
-            if (end - cursor < 16) { const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r; }
-            if (!manifest_literal(bytes,cursor,borrow_bytes(prefix))) {
-                const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r;
+            if (dependencies >= 8) {
+                const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+                return r;
+            }
+            if (end - cursor < 16) {
+                const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+                return r;
+            }
+            if (!manifest_literal(bytes, cursor, borrow_bytes(prefix))) {
+                const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+                return r;
             }
             const i64 start = cursor + 8;
-            const i64 line_end = manifest_line_end(bytes,start,end);
-            if (line_end < 0) { const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r; }
-            const IdentityResult dependency = parse_identity(bytes,start,line_end - start);
-            if (dependency.status() != IdentityStatus::success) {
-                const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r;
+            const i64 line_end = manifest_line_end(bytes, start, end);
+            if (line_end < 0) {
+                const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+                return r;
             }
-            if (manifest_name_equal(identity,dependency)) {
-                const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r;
+            const IdentityResult dependency = parse_identity(bytes, start, line_end - start);
+            if (dependency.status() != IdentityStatus::success) {
+                const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+                return r;
+            }
+            if (manifest_name_equal(identity, dependency)) {
+                const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+                return r;
             }
             i64 previous = 0;
             while (previous < dependencies) {
-                const IdentityResult earlier = parse_identity(bytes,starts[previous],lengths[previous]);
-                if (manifest_name_equal(earlier,dependency)) {
-                    const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r;
+                const IdentityResult earlier = parse_identity(bytes, starts[previous], lengths[previous]);
+                if (manifest_name_equal(earlier, dependency)) {
+                    const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+                    return r;
                 }
                 previous = previous + 1;
             }
@@ -198,39 +357,47 @@ export namespace package {
             dependencies = dependencies + 1;
             cursor = line_end + 1;
         }
-        const ManifestResult r = manifest_failure(ManifestStatus::malformed); return r;
+        const ManifestResult r = manifest_failure(ManifestStatus::malformed);
+        return r;
     }
 
-    auto manifest_dependency(builtin::span<const u8> bytes, i64 offset, i64 count,
-                             i64 index) -> DependencyResult {
-        const ManifestResult summary = parse_manifest(bytes,offset,count);
+    auto manifest_dependency(builtin::span<const u8> bytes, i64 offset, i64 count, i64 index) -> DependencyResult {
+        const ManifestResult summary = parse_manifest(bytes, offset, count);
         if (summary.status() == ManifestStatus::out_of_range) {
-            const DependencyResult r = manifest_dependency_failure(DependencyStatus::out_of_range); return r;
+            const DependencyResult r = manifest_dependency_failure(DependencyStatus::out_of_range);
+            return r;
         }
         if (summary.status() != ManifestStatus::success) {
-            const DependencyResult r = manifest_dependency_failure(DependencyStatus::malformed); return r;
+            const DependencyResult r = manifest_dependency_failure(DependencyStatus::malformed);
+            return r;
         }
         const i64 dependencies = summary.dependency_count_or(0);
-        if (index < 0) { const DependencyResult r = manifest_dependency_failure(DependencyStatus::index_out_of_range); return r; }
+        if (index < 0) {
+            const DependencyResult r = manifest_dependency_failure(DependencyStatus::index_out_of_range);
+            return r;
+        }
         if (index >= dependencies) {
-            const DependencyResult r = manifest_dependency_failure(DependencyStatus::index_out_of_range); return r;
+            const DependencyResult r = manifest_dependency_failure(DependencyStatus::index_out_of_range);
+            return r;
         }
         const i64 end = offset + count;
-        const i64 root_end = manifest_line_end(bytes,offset + 25,end);
+        const i64 root_end = manifest_line_end(bytes, offset + 25, end);
         i64 cursor = root_end + 1;
         i64 current = 0;
         while (current < dependencies) {
             const i64 start = cursor + 8;
-            const i64 line_end = manifest_line_end(bytes,start,end);
+            const i64 line_end = manifest_line_end(bytes, start, end);
             if (current == index) {
                 const IdentityResult identity = summary.identity_or_error();
-                const IdentityResult dependency = parse_identity(bytes,start,line_end - start);
-                const DependencyResult result = DependencyResult(DependencyStatus::success,identity,dependency,dependencies,index);
+                const IdentityResult dependency = parse_identity(bytes, start, line_end - start);
+                const DependencyResult result = DependencyResult(DependencyStatus::success, identity, dependency,
+                    dependencies, index);
                 return result;
             }
             current = current + 1;
             cursor = line_end + 1;
         }
-        const DependencyResult r = manifest_dependency_failure(DependencyStatus::index_out_of_range); return r;
+        const DependencyResult r = manifest_dependency_failure(DependencyStatus::index_out_of_range);
+        return r;
     }
 }

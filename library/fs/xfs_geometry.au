@@ -4,8 +4,39 @@ import std.binary;
 import std.bit;
 
 export namespace fs {
-    enum class XfsGeometryStatus { probe_rejected, unsupported_feature_profile, unsupported_layout, offline_state_indicated, inconsistent_header, size_unrepresentable, header_geometry_consistent };
-    enum class XfsGeometryIssue { none, legacy_required_bits, legacy_excluded_bits, features2_required_bits, features2_excluded_bits, extended_feature_masks, features2_mirror, needs_repair, offline_operation, realtime, external_log, striping, quota_or_misc_flags, block_geometry, inode_geometry, directory_geometry, ag_geometry, data_byte_size, realtime_zero_geometry, inode_alignment, log_geometry, misc_geometry };
+    enum class XfsGeometryStatus {
+        probe_rejected,
+        unsupported_feature_profile,
+        unsupported_layout,
+        offline_state_indicated,
+        inconsistent_header,
+        size_unrepresentable,
+        header_geometry_consistent
+    };
+    enum class XfsGeometryIssue {
+        none,
+        legacy_required_bits,
+        legacy_excluded_bits,
+        features2_required_bits,
+        features2_excluded_bits,
+        extended_feature_masks,
+        features2_mirror,
+        needs_repair,
+        offline_operation,
+        realtime,
+        external_log,
+        striping,
+        quota_or_misc_flags,
+        block_geometry,
+        inode_geometry,
+        directory_geometry,
+        ag_geometry,
+        data_byte_size,
+        realtime_zero_geometry,
+        inode_alignment,
+        log_geometry,
+        misc_geometry
+    };
 
     class XfsBlockFacts {
         u64 _block_bytes;
@@ -15,14 +46,29 @@ export namespace fs {
         u64 _directory_block_bytes;
         u64 _effective_log_sector_bytes;
     public:
-        XfsBlockFacts(u64 block_bytes, u64 sector_bytes, u64 block_log, u64 sector_log, u64 directory_block_bytes, u64 effective_log_sector_bytes)
-            : _block_bytes(block_bytes), _sector_bytes(sector_bytes), _block_log(block_log), _sector_log(sector_log), _directory_block_bytes(directory_block_bytes), _effective_log_sector_bytes(effective_log_sector_bytes) {}
-        auto block_bytes() const -> u64 { return _block_bytes; }
-        auto sector_bytes() const -> u64 { return _sector_bytes; }
-        auto block_log() const -> u64 { return _block_log; }
-        auto sector_log() const -> u64 { return _sector_log; }
-        auto directory_block_bytes() const -> u64 { return _directory_block_bytes; }
-        auto effective_log_sector_bytes() const -> u64 { return _effective_log_sector_bytes; }
+        XfsBlockFacts(u64 block_bytes, u64 sector_bytes, u64 block_log, u64 sector_log, u64 directory_block_bytes,
+            u64 effective_log_sector_bytes) : _block_bytes(block_bytes), _sector_bytes(sector_bytes),
+            _block_log(block_log), _sector_log(sector_log), _directory_block_bytes(directory_block_bytes),
+            _effective_log_sector_bytes(effective_log_sector_bytes) {
+        }
+        auto block_bytes() const -> u64 {
+            return _block_bytes;
+        }
+        auto sector_bytes() const -> u64 {
+            return _sector_bytes;
+        }
+        auto block_log() const -> u64 {
+            return _block_log;
+        }
+        auto sector_log() const -> u64 {
+            return _sector_log;
+        }
+        auto directory_block_bytes() const -> u64 {
+            return _directory_block_bytes;
+        }
+        auto effective_log_sector_bytes() const -> u64 {
+            return _effective_log_sector_bytes;
+        }
     };
 
     class XfsInodeFacts {
@@ -31,12 +77,22 @@ export namespace fs {
         u64 _inode_log;
         u64 _inodes_per_block_log;
     public:
-        XfsInodeFacts(u64 inode_bytes, u64 inodes_per_block, u64 inode_log, u64 inodes_per_block_log)
-            : _inode_bytes(inode_bytes), _inodes_per_block(inodes_per_block), _inode_log(inode_log), _inodes_per_block_log(inodes_per_block_log) {}
-        auto inode_bytes() const -> u64 { return _inode_bytes; }
-        auto inodes_per_block() const -> u64 { return _inodes_per_block; }
-        auto inode_log() const -> u64 { return _inode_log; }
-        auto inodes_per_block_log() const -> u64 { return _inodes_per_block_log; }
+        XfsInodeFacts(u64 inode_bytes, u64 inodes_per_block, u64 inode_log,
+            u64 inodes_per_block_log) : _inode_bytes(inode_bytes), _inodes_per_block(inodes_per_block),
+            _inode_log(inode_log), _inodes_per_block_log(inodes_per_block_log) {
+        }
+        auto inode_bytes() const -> u64 {
+            return _inode_bytes;
+        }
+        auto inodes_per_block() const -> u64 {
+            return _inodes_per_block;
+        }
+        auto inode_log() const -> u64 {
+            return _inode_log;
+        }
+        auto inodes_per_block_log() const -> u64 {
+            return _inodes_per_block_log;
+        }
     };
 
     class XfsDataFacts {
@@ -44,11 +100,18 @@ export namespace fs {
         u64 _claimed_data_bytes;
         u64 _claimed_data_sectors;
     public:
-        XfsDataFacts(u64 data_blocks, u64 claimed_data_bytes, u64 claimed_data_sectors)
-            : _data_blocks(data_blocks), _claimed_data_bytes(claimed_data_bytes), _claimed_data_sectors(claimed_data_sectors) {}
-        auto data_blocks() const -> u64 { return _data_blocks; }
-        auto claimed_data_bytes() const -> u64 { return _claimed_data_bytes; }
-        auto claimed_data_sectors() const -> u64 { return _claimed_data_sectors; }
+        XfsDataFacts(u64 data_blocks, u64 claimed_data_bytes, u64 claimed_data_sectors) : _data_blocks(data_blocks),
+            _claimed_data_bytes(claimed_data_bytes), _claimed_data_sectors(claimed_data_sectors) {
+        }
+        auto data_blocks() const -> u64 {
+            return _data_blocks;
+        }
+        auto claimed_data_bytes() const -> u64 {
+            return _claimed_data_bytes;
+        }
+        auto claimed_data_sectors() const -> u64 {
+            return _claimed_data_sectors;
+        }
     };
 
     class XfsAgFacts {
@@ -59,14 +122,28 @@ export namespace fs {
         u64 _last_ag_blocks;
         u64 _last_ag_start_bytes;
     public:
-        XfsAgFacts(u64 ag_block_log, u64 ag_blocks, u64 ag_count, u64 ag_bytes, u64 last_ag_blocks, u64 last_ag_start_bytes)
-            : _ag_block_log(ag_block_log), _ag_blocks(ag_blocks), _ag_count(ag_count), _ag_bytes(ag_bytes), _last_ag_blocks(last_ag_blocks), _last_ag_start_bytes(last_ag_start_bytes) {}
-        auto ag_block_log() const -> u64 { return _ag_block_log; }
-        auto ag_blocks() const -> u64 { return _ag_blocks; }
-        auto ag_count() const -> u64 { return _ag_count; }
-        auto ag_bytes() const -> u64 { return _ag_bytes; }
-        auto last_ag_blocks() const -> u64 { return _last_ag_blocks; }
-        auto last_ag_start_bytes() const -> u64 { return _last_ag_start_bytes; }
+        XfsAgFacts(u64 ag_block_log, u64 ag_blocks, u64 ag_count, u64 ag_bytes, u64 last_ag_blocks,
+            u64 last_ag_start_bytes) : _ag_block_log(ag_block_log), _ag_blocks(ag_blocks), _ag_count(ag_count),
+            _ag_bytes(ag_bytes), _last_ag_blocks(last_ag_blocks), _last_ag_start_bytes(last_ag_start_bytes) {
+        }
+        auto ag_block_log() const -> u64 {
+            return _ag_block_log;
+        }
+        auto ag_blocks() const -> u64 {
+            return _ag_blocks;
+        }
+        auto ag_count() const -> u64 {
+            return _ag_count;
+        }
+        auto ag_bytes() const -> u64 {
+            return _ag_bytes;
+        }
+        auto last_ag_blocks() const -> u64 {
+            return _last_ag_blocks;
+        }
+        auto last_ag_start_bytes() const -> u64 {
+            return _last_ag_start_bytes;
+        }
     };
 
     class XfsLogFacts {
@@ -76,13 +153,25 @@ export namespace fs {
         u64 _log_start_bytes;
         u64 _log_bytes;
     public:
-        XfsLogFacts(u64 log_start_encoded, u64 log_ag, u64 log_ag_block, u64 log_start_bytes, u64 log_bytes)
-            : _log_start_encoded(log_start_encoded), _log_ag(log_ag), _log_ag_block(log_ag_block), _log_start_bytes(log_start_bytes), _log_bytes(log_bytes) {}
-        auto log_start_encoded() const -> u64 { return _log_start_encoded; }
-        auto log_ag() const -> u64 { return _log_ag; }
-        auto log_ag_block() const -> u64 { return _log_ag_block; }
-        auto log_start_bytes() const -> u64 { return _log_start_bytes; }
-        auto log_bytes() const -> u64 { return _log_bytes; }
+        XfsLogFacts(u64 log_start_encoded, u64 log_ag, u64 log_ag_block, u64 log_start_bytes,
+            u64 log_bytes) : _log_start_encoded(log_start_encoded), _log_ag(log_ag), _log_ag_block(log_ag_block),
+            _log_start_bytes(log_start_bytes), _log_bytes(log_bytes) {
+        }
+        auto log_start_encoded() const -> u64 {
+            return _log_start_encoded;
+        }
+        auto log_ag() const -> u64 {
+            return _log_ag;
+        }
+        auto log_ag_block() const -> u64 {
+            return _log_ag_block;
+        }
+        auto log_start_bytes() const -> u64 {
+            return _log_start_bytes;
+        }
+        auto log_bytes() const -> u64 {
+            return _log_bytes;
+        }
     };
 
     class XfsGeometryFacts {
@@ -92,8 +181,9 @@ export namespace fs {
         XfsAgFacts _ags;
         XfsLogFacts _log;
     public:
-        XfsGeometryFacts(XfsBlockFacts blocks, XfsInodeFacts inodes, XfsDataFacts data, XfsAgFacts ags, XfsLogFacts log)
-            : _blocks(blocks), _inodes(inodes), _data(data), _ags(ags), _log(log) {}
+        XfsGeometryFacts(XfsBlockFacts blocks, XfsInodeFacts inodes, XfsDataFacts data, XfsAgFacts ags,
+            XfsLogFacts log) : _blocks(blocks), _inodes(inodes), _data(data), _ags(ags), _log(log) {
+        }
         auto blocks() const -> XfsBlockFacts {
             const XfsBlockFacts result = _blocks;
             return result;
@@ -121,11 +211,18 @@ export namespace fs {
         u64 _features2;
         u64 _bad_features2;
     public:
-        XfsHeaderObservations(u64 versionnum, u64 features2, u64 bad_features2)
-            : _versionnum(versionnum), _features2(features2), _bad_features2(bad_features2) {}
-        auto versionnum() const -> u64 { return _versionnum; }
-        auto features2() const -> u64 { return _features2; }
-        auto bad_features2() const -> u64 { return _bad_features2; }
+        XfsHeaderObservations(u64 versionnum, u64 features2, u64 bad_features2) : _versionnum(versionnum),
+            _features2(features2), _bad_features2(bad_features2) {
+        }
+        auto versionnum() const -> u64 {
+            return _versionnum;
+        }
+        auto features2() const -> u64 {
+            return _features2;
+        }
+        auto bad_features2() const -> u64 {
+            return _bad_features2;
+        }
     };
 
     class XfsFeatureMasks {
@@ -134,20 +231,30 @@ export namespace fs {
         u64 _incompat;
         u64 _log_incompat;
     public:
-        XfsFeatureMasks(u64 compat, u64 ro_compat, u64 incompat, u64 log_incompat)
-            : _compat(compat), _ro_compat(ro_compat), _incompat(incompat), _log_incompat(log_incompat) {}
-        auto compat() const -> u64 { return _compat; }
-        auto ro_compat() const -> u64 { return _ro_compat; }
-        auto incompat() const -> u64 { return _incompat; }
-        auto log_incompat() const -> u64 { return _log_incompat; }
+        XfsFeatureMasks(u64 compat, u64 ro_compat, u64 incompat, u64 log_incompat) : _compat(compat),
+            _ro_compat(ro_compat), _incompat(incompat), _log_incompat(log_incompat) {
+        }
+        auto compat() const -> u64 {
+            return _compat;
+        }
+        auto ro_compat() const -> u64 {
+            return _ro_compat;
+        }
+        auto incompat() const -> u64 {
+            return _incompat;
+        }
+        auto log_incompat() const -> u64 {
+            return _log_incompat;
+        }
     };
 
     class XfsFeatureDiagnostics {
         XfsFeatureMasks _unsupported;
         XfsFeatureMasks _unknown;
     public:
-        XfsFeatureDiagnostics(XfsFeatureMasks unsupported, XfsFeatureMasks unknown)
-            : _unsupported(unsupported), _unknown(unknown) {}
+        XfsFeatureDiagnostics(XfsFeatureMasks unsupported, XfsFeatureMasks unknown) : _unsupported(unsupported),
+            _unknown(unknown) {
+        }
         auto unsupported() const -> XfsFeatureMasks {
             const XfsFeatureMasks result = _unsupported;
             return result;
@@ -157,7 +264,6 @@ export namespace fs {
             return result;
         }
     };
-
 }
 
 namespace fs {
@@ -165,10 +271,14 @@ namespace fs {
         XfsGeometryStatus _status;
         XfsGeometryIssue _issue;
     public:
-        XfsGeometryVerdict(XfsGeometryStatus status, XfsGeometryIssue issue)
-            : _status(status), _issue(issue) {}
-        auto status() const -> XfsGeometryStatus { return _status; }
-        auto issue() const -> XfsGeometryIssue { return _issue; }
+        XfsGeometryVerdict(XfsGeometryStatus status, XfsGeometryIssue issue) : _status(status), _issue(issue) {
+        }
+        auto status() const -> XfsGeometryStatus {
+            return _status;
+        }
+        auto issue() const -> XfsGeometryIssue {
+            return _issue;
+        }
     };
 
     auto xfs_zero_geometry_facts() -> XfsGeometryFacts {
@@ -203,10 +313,16 @@ export namespace fs {
         XfsFeatureDiagnostics _masks;
         XfsGeometryFacts _facts;
     public:
-        XfsGeometryReport(XfsGeometryStatus status, XfsGeometryIssue issue, XfsProbeResult probe, XfsHeaderObservations raw, XfsFeatureDiagnostics masks, XfsGeometryFacts facts)
-            : _status(status), _issue(issue), _probe(probe), _raw(raw), _masks(masks), _facts(facts) {}
-        auto status() const -> XfsGeometryStatus { return _status; }
-        auto issue() const -> XfsGeometryIssue { return _issue; }
+        XfsGeometryReport(XfsGeometryStatus status, XfsGeometryIssue issue, XfsProbeResult probe,
+            XfsHeaderObservations raw, XfsFeatureDiagnostics masks, XfsGeometryFacts facts) : _status(status),
+            _issue(issue), _probe(probe), _raw(raw), _masks(masks), _facts(facts) {
+        }
+        auto status() const -> XfsGeometryStatus {
+            return _status;
+        }
+        auto issue() const -> XfsGeometryIssue {
+            return _issue;
+        }
         auto probe() const -> XfsProbeResult {
             const XfsProbeResult result = _probe;
             return result;
@@ -228,320 +344,320 @@ export namespace fs {
             return result;
         }
     };
-
 }
 
 namespace fs {
-    auto xfs_geometry_failure(XfsGeometryStatus status, XfsGeometryIssue issue,
-                              XfsProbeResult probe, XfsHeaderObservations raw,
-                              XfsFeatureDiagnostics masks) -> XfsGeometryReport {
+    auto xfs_geometry_failure(XfsGeometryStatus status, XfsGeometryIssue issue, XfsProbeResult probe,
+        XfsHeaderObservations raw, XfsFeatureDiagnostics masks) -> XfsGeometryReport {
         const XfsGeometryFacts zero = xfs_zero_geometry_facts();
         const XfsGeometryReport result = XfsGeometryReport(status, issue, probe, raw, masks, zero);
         return result;
     }
 
-    auto xfs_check_header_policy(builtin::span<const u8> bytes, XfsProbeResult probe,
-                                 XfsHeaderObservations raw, XfsFeatureDiagnostics masks)
-                                 -> XfsGeometryVerdict {
+    auto xfs_check_header_policy(builtin::span<const u8> bytes, XfsProbeResult probe, XfsHeaderObservations raw,
+        XfsFeatureDiagnostics masks) -> XfsGeometryVerdict {
         if ((raw.versionnum() & 46240u64) != 46240u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::legacy_required_bits);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::legacy_required_bits);
             return failure;
         }
         if ((raw.features2() & 394u64) != 394u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::features2_required_bits);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::features2_required_bits);
             return failure;
         }
         if ((raw.versionnum() & (65535u64 ^ 48293u64)) != 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_feature_profile, XfsGeometryIssue::legacy_excluded_bits);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_feature_profile,
+                XfsGeometryIssue::legacy_excluded_bits);
             return failure;
         }
         if ((raw.features2() & (4294967295u64 ^ 394u64)) != 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_feature_profile, XfsGeometryIssue::features2_excluded_bits);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_feature_profile,
+                XfsGeometryIssue::features2_excluded_bits);
             return failure;
         }
         if ((probe.features_incompat() & 16u64) != 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::offline_state_indicated, XfsGeometryIssue::needs_repair);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::offline_state_indicated,
+                XfsGeometryIssue::needs_repair);
             return failure;
         }
         const XfsFeatureMasks unsupported = masks.unsupported();
-        if ((unsupported.compat() | unsupported.ro_compat() | unsupported.incompat() | unsupported.log_incompat()) != 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_feature_profile, XfsGeometryIssue::extended_feature_masks);
+        if ((unsupported.compat() | unsupported.ro_compat() | unsupported.incompat() | unsupported.log_incompat())
+            != 0u64) {
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_feature_profile,
+                XfsGeometryIssue::extended_feature_masks);
             return failure;
         }
         if ((probe.features_incompat() & 1u64) == 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_feature_profile, XfsGeometryIssue::extended_feature_masks);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_feature_profile,
+                XfsGeometryIssue::extended_feature_masks);
             return failure;
         }
         if (raw.features2() != raw.bad_features2()) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_layout, XfsGeometryIssue::features2_mirror);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_layout,
+                XfsGeometryIssue::features2_mirror);
             return failure;
         }
         if (bytes.at(126) != 0u8) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::offline_state_indicated, XfsGeometryIssue::offline_operation);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::offline_state_indicated,
+                XfsGeometryIssue::offline_operation);
             return failure;
         }
         if (xfs_geometry_read64(bytes, 16) != 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_layout, XfsGeometryIssue::realtime);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_layout,
+                XfsGeometryIssue::realtime);
             return failure;
         }
         if (xfs_geometry_read64(bytes, 48) == 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_layout, XfsGeometryIssue::external_log);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_layout,
+                XfsGeometryIssue::external_log);
             return failure;
         }
         if ((xfs_geometry_read32(bytes, 184) | xfs_geometry_read32(bytes, 188)) != 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_layout, XfsGeometryIssue::striping);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_layout,
+                XfsGeometryIssue::striping);
             return failure;
         }
         if (xfs_geometry_read32(bytes, 196) > 1u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_layout, XfsGeometryIssue::striping);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_layout,
+                XfsGeometryIssue::striping);
             return failure;
         }
         if ((xfs_geometry_read16(bytes, 176) | u64(bytes.at(178))) != 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_layout, XfsGeometryIssue::quota_or_misc_flags);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_layout,
+                XfsGeometryIssue::quota_or_misc_flags);
             return failure;
         }
-        const XfsGeometryVerdict result = XfsGeometryVerdict(
-            XfsGeometryStatus::header_geometry_consistent, XfsGeometryIssue::none);
+        const XfsGeometryVerdict result = XfsGeometryVerdict(XfsGeometryStatus::header_geometry_consistent,
+            XfsGeometryIssue::none);
         return result;
     }
 
-    auto xfs_check_geometry_fields(builtin::span<const u8> bytes,
-                                   XfsHeaderObservations raw, XfsProbeResult probe)
-                                   -> XfsGeometryVerdict {
+    auto xfs_check_geometry_fields(builtin::span<const u8> bytes, XfsHeaderObservations raw,
+        XfsProbeResult probe) -> XfsGeometryVerdict {
         const u64 maximum = 18446744073709551615u64;
         const u64 block_bytes = xfs_geometry_read32(bytes, 4);
         const u64 block_log = u64(bytes.at(120));
         if (block_log < 10u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::block_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::block_geometry);
             return failure;
         }
         if (block_log > 16u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::block_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::block_geometry);
             return failure;
         }
         if (block_bytes != (1u64 << i64(block_log))) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::block_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::block_geometry);
             return failure;
         }
         if (block_bytes < 512u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::block_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::block_geometry);
             return failure;
         }
         const u64 inode_bytes = xfs_geometry_read16(bytes, 104);
         const u64 inode_log = u64(bytes.at(122));
         if (inode_log < 8u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::inode_geometry);
             return failure;
         }
         if (inode_log > 11u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::inode_geometry);
             return failure;
         }
         if (inode_bytes != (1u64 << i64(inode_log))) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::inode_geometry);
             return failure;
         }
         if (inode_log == 8u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::unsupported_layout, XfsGeometryIssue::inode_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_layout,
+                XfsGeometryIssue::inode_geometry);
             return failure;
         }
         if (inode_bytes > block_bytes) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::inode_geometry);
             return failure;
         }
         if (inode_log > block_log) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::inode_geometry);
             return failure;
         }
         if (xfs_geometry_read16(bytes, 106) != block_bytes / inode_bytes) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::inode_geometry);
             return failure;
         }
         if (u64(bytes.at(123)) != block_log - inode_log) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::inode_geometry);
             return failure;
         }
         const u64 directory_log = u64(bytes.at(192));
         if (directory_log > 16u64 - block_log) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::directory_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::directory_geometry);
             return failure;
         }
         const u64 ag_blocks = xfs_geometry_read32(bytes, 84);
         const u64 ag_count = xfs_geometry_read32(bytes, 88);
         const u64 data_blocks = xfs_geometry_read64(bytes, 8);
         if (ag_blocks == 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         if (ag_count == 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         if (data_blocks == 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         if (ag_blocks > maximum / block_bytes) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         const u64 ag_bytes = ag_blocks * block_bytes;
         if (ag_bytes < 16777216u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         if (ag_bytes > 1099511627776u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         const u64 ag_log = u64(bytes.at(124));
         if (ag_log != u64(std::bit_width(ag_blocks - 1u64))) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         if (ag_log > 30u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         const u64 quotient = data_blocks / ag_blocks;
         const u64 remainder = data_blocks % ag_blocks;
         if (quotient > 4294967295u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         if (quotient == 4294967295u64) {
             if (remainder != 0u64) {
-                const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                    XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+                const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                    XfsGeometryIssue::ag_geometry);
                 return failure;
             }
         }
         u64 expected_count = quotient;
-        if (remainder != 0u64) { expected_count = expected_count + 1u64; }
+        if (remainder != 0u64) {
+            expected_count = expected_count + 1u64;
+        }
         if (ag_count != expected_count) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         if (ag_count - 1u64 > maximum / ag_blocks) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
-        const u64 tail_base = (ag_count - 1u64) * ag_blocks;
+        const u64 tail_base =(ag_count - 1u64) * ag_blocks;
         if (tail_base > data_blocks) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         const u64 last_ag_blocks = data_blocks - tail_base;
         if (last_ag_blocks < 64u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         if (last_ag_blocks > ag_blocks) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::ag_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::ag_geometry);
             return failure;
         }
         if (data_blocks > maximum / block_bytes) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::size_unrepresentable, XfsGeometryIssue::data_byte_size);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::size_unrepresentable,
+                XfsGeometryIssue::data_byte_size);
             return failure;
         }
         if (tail_base > maximum / block_bytes) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::size_unrepresentable, XfsGeometryIssue::data_byte_size);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::size_unrepresentable,
+                XfsGeometryIssue::data_byte_size);
             return failure;
         }
-        if ((xfs_geometry_read64(bytes, 24) | xfs_geometry_read32(bytes, 92) | u64(bytes.at(125)) | xfs_geometry_read64(bytes, 152)) != 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::realtime_zero_geometry);
+        if ((xfs_geometry_read64(bytes, 24) | xfs_geometry_read32(bytes, 92) | u64(bytes.at(125))
+            | xfs_geometry_read64(bytes, 152)) != 0u64) {
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::realtime_zero_geometry);
             return failure;
         }
         const u64 realtime_extent_blocks = xfs_geometry_read32(bytes, 80);
         if (realtime_extent_blocks > maximum / block_bytes) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::realtime_zero_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::realtime_zero_geometry);
             return failure;
         }
         const u64 realtime_extent_bytes = realtime_extent_blocks * block_bytes;
         if (realtime_extent_bytes < 4096u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::realtime_zero_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::realtime_zero_geometry);
             return failure;
         }
         if (realtime_extent_bytes > 1073741824u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::realtime_zero_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::realtime_zero_geometry);
             return failure;
         }
         const u64 inode_alignment = xfs_geometry_read32(bytes, 180);
         const u64 sparse_alignment = xfs_geometry_read32(bytes, 228);
         if ((probe.features_incompat() & 2u64) != 0u64) {
             if (inode_bytes > maximum / 64u64) {
-                const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                    XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_alignment);
+                const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                    XfsGeometryIssue::inode_alignment);
                 return failure;
             }
             if (inode_alignment != (64u64 * inode_bytes) / block_bytes) {
-                const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                    XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_alignment);
+                const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                    XfsGeometryIssue::inode_alignment);
                 return failure;
             }
             if (sparse_alignment != 0u64) {
                 if (sparse_alignment > inode_alignment) {
-                    const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                        XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_alignment);
+                    const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                        XfsGeometryIssue::inode_alignment);
                     return failure;
                 }
                 if (inode_alignment % sparse_alignment != 0u64) {
-                    const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                        XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_alignment);
+                    const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                        XfsGeometryIssue::inode_alignment);
                     return failure;
                 }
             }
         } else {
             if (sparse_alignment != 0u64) {
-                const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                    XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::inode_alignment);
+                const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                    XfsGeometryIssue::inode_alignment);
                 return failure;
             }
         }
@@ -549,107 +665,109 @@ namespace fs {
         const u64 log_sector_log = u64(bytes.at(193));
         if ((raw.versionnum() & 2048u64) == 0u64) {
             if ((log_sector_bytes | log_sector_log) != 0u64) {
-                const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                    XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+                const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                    XfsGeometryIssue::log_geometry);
                 return failure;
             }
         } else {
             if (log_sector_bytes != 512u64) {
-                const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                    XfsGeometryStatus::unsupported_layout, XfsGeometryIssue::log_geometry);
+                const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_layout,
+                    XfsGeometryIssue::log_geometry);
                 return failure;
             }
             if (log_sector_log != 9u64) {
-                const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                    XfsGeometryStatus::unsupported_layout, XfsGeometryIssue::log_geometry);
+                const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_layout,
+                    XfsGeometryIssue::log_geometry);
                 return failure;
             }
         }
         const u64 log_blocks = xfs_geometry_read32(bytes, 96);
         if (log_blocks == 0u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         if (log_blocks > 1048576u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         if (log_blocks > maximum / block_bytes) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         if (log_blocks * block_bytes > 2136997888u64) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         const u64 encoded_start = xfs_geometry_read64(bytes, 48);
         const u64 log_ag = encoded_start >> i64(ag_log);
         const u64 log_ag_block = encoded_start & ((1u64 << i64(ag_log)) - 1u64);
         if (log_ag >= ag_count) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         u64 actual_ag_blocks = ag_blocks;
-        if (log_ag == ag_count - 1u64) { actual_ag_blocks = last_ag_blocks; }
+        if (log_ag == ag_count - 1u64) {
+            actual_ag_blocks = last_ag_blocks;
+        }
         if (log_ag_block >= actual_ag_blocks) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         if (log_blocks > actual_ag_blocks - log_ag_block) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         if (log_ag_block <= 1536u64 / block_bytes) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         if (log_ag > maximum / ag_blocks) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         const u64 log_base = log_ag * ag_blocks;
         if (log_base > maximum - log_ag_block) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         const u64 linear_start = log_base + log_ag_block;
         if (linear_start > data_blocks) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         if (log_blocks > data_blocks - linear_start) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         if (linear_start > maximum / block_bytes) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::log_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::log_geometry);
             return failure;
         }
         if (bytes.at(127) > 100u8) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::misc_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::misc_geometry);
             return failure;
         }
         if (bytes.at(179) != 0u8) {
-            const XfsGeometryVerdict failure = XfsGeometryVerdict(
-                XfsGeometryStatus::inconsistent_header, XfsGeometryIssue::misc_geometry);
+            const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
+                XfsGeometryIssue::misc_geometry);
             return failure;
         }
-        const XfsGeometryVerdict result = XfsGeometryVerdict(
-            XfsGeometryStatus::header_geometry_consistent, XfsGeometryIssue::none);
+        const XfsGeometryVerdict result = XfsGeometryVerdict(XfsGeometryStatus::header_geometry_consistent,
+            XfsGeometryIssue::none);
         return result;
     }
 
@@ -661,23 +779,21 @@ namespace fs {
         const u64 ag_blocks = xfs_geometry_read32(bytes, 84);
         const u64 ag_count = xfs_geometry_read32(bytes, 88);
         const u64 ag_log = u64(bytes.at(124));
-        const u64 tail_base = (ag_count - 1u64) * ag_blocks;
+        const u64 tail_base =(ag_count - 1u64) * ag_blocks;
         const u64 data_bytes = data_blocks * block_bytes;
         const u64 encoded_start = xfs_geometry_read64(bytes, 48);
         const u64 log_ag = encoded_start >> i64(ag_log);
         const u64 log_ag_block = encoded_start & ((1u64 << i64(ag_log)) - 1u64);
         const u64 linear_start = log_ag * ag_blocks + log_ag_block;
-        const XfsBlockFacts blocks = XfsBlockFacts(
-            block_bytes, 512u64, u64(bytes.at(120)), 9u64,
-            block_bytes * (1u64 << i64(u64(bytes.at(192)))), 512u64);
-        const XfsInodeFacts inodes = XfsInodeFacts(
-            xfs_geometry_read16(bytes, 104), xfs_geometry_read16(bytes, 106),
+        const XfsBlockFacts blocks = XfsBlockFacts(block_bytes, 512u64, u64(bytes.at(120)), 9u64, block_bytes * (1u64
+            << i64(u64(bytes.at(192)))), 512u64);
+        const XfsInodeFacts inodes = XfsInodeFacts(xfs_geometry_read16(bytes, 104), xfs_geometry_read16(bytes, 106),
             u64(bytes.at(122)), u64(bytes.at(123)));
         const XfsDataFacts data = XfsDataFacts(data_blocks, data_bytes, data_bytes / 512u64);
-        const XfsAgFacts ags = XfsAgFacts(ag_log, ag_blocks, ag_count,
-            ag_blocks * block_bytes, data_blocks - tail_base, tail_base * block_bytes);
-        const XfsLogFacts log = XfsLogFacts(encoded_start, log_ag, log_ag_block,
-            linear_start * block_bytes, xfs_geometry_read32(bytes, 96) * block_bytes);
+        const XfsAgFacts ags = XfsAgFacts(ag_log, ag_blocks, ag_count, ag_blocks * block_bytes, data_blocks - tail_base,
+            tail_base * block_bytes);
+        const XfsLogFacts log = XfsLogFacts(encoded_start, log_ag, log_ag_block, linear_start * block_bytes,
+            xfs_geometry_read32(bytes, 96) * block_bytes);
         const XfsGeometryFacts result = XfsGeometryFacts(blocks, inodes, data, ags, log);
         return result;
     }
@@ -690,37 +806,33 @@ export namespace fs {
             const XfsHeaderObservations raw = XfsHeaderObservations(0u64, 0u64, 0u64);
             const XfsFeatureMasks zero = XfsFeatureMasks(0u64, 0u64, 0u64, 0u64);
             const XfsFeatureDiagnostics masks = XfsFeatureDiagnostics(zero, zero);
-            const XfsGeometryReport failure = xfs_geometry_failure(
-                XfsGeometryStatus::probe_rejected, XfsGeometryIssue::none, probe, raw, masks);
+            const XfsGeometryReport failure = xfs_geometry_failure(XfsGeometryStatus::probe_rejected,
+                XfsGeometryIssue::none, probe, raw, masks);
             return failure;
         }
-        const XfsHeaderObservations raw = XfsHeaderObservations(
-            xfs_geometry_read16(bytes, 100), xfs_geometry_read32(bytes, 200),
-            xfs_geometry_read32(bytes, 204));
-        const XfsFeatureMasks unsupported = XfsFeatureMasks(
-            probe.features_compat(), probe.features_ro_compat() & (4294967295u64 ^ 15u64),
-            probe.features_incompat() & (4294967295u64 ^ 43u64), probe.features_log_incompat());
-        const XfsFeatureMasks unknown = XfsFeatureMasks(
-            probe.features_compat(), probe.features_ro_compat() & (4294967295u64 ^ 15u64),
-            probe.features_incompat() & (4294967295u64 ^ 2047u64),
+        const XfsHeaderObservations raw = XfsHeaderObservations(xfs_geometry_read16(bytes, 100),
+            xfs_geometry_read32(bytes, 200), xfs_geometry_read32(bytes, 204));
+        const XfsFeatureMasks unsupported = XfsFeatureMasks(probe.features_compat(), probe.features_ro_compat()
+            & (4294967295u64 ^ 15u64), probe.features_incompat() & (4294967295u64 ^ 43u64),
+            probe.features_log_incompat());
+        const XfsFeatureMasks unknown = XfsFeatureMasks(probe.features_compat(), probe.features_ro_compat()
+            & (4294967295u64 ^ 15u64), probe.features_incompat() & (4294967295u64 ^ 2047u64),
             probe.features_log_incompat() & (4294967295u64 ^ 1u64));
         const XfsFeatureDiagnostics masks = XfsFeatureDiagnostics(unsupported, unknown);
         const XfsGeometryVerdict policy = xfs_check_header_policy(bytes, probe, raw, masks);
         if (policy.status() != XfsGeometryStatus::header_geometry_consistent) {
-            const XfsGeometryReport failure = xfs_geometry_failure(
-                policy.status(), policy.issue(), probe, raw, masks);
+            const XfsGeometryReport failure = xfs_geometry_failure(policy.status(), policy.issue(), probe, raw, masks);
             return failure;
         }
         const XfsGeometryVerdict geometry = xfs_check_geometry_fields(bytes, raw, probe);
         if (geometry.status() != XfsGeometryStatus::header_geometry_consistent) {
-            const XfsGeometryReport failure = xfs_geometry_failure(
-                geometry.status(), geometry.issue(), probe, raw, masks);
+            const XfsGeometryReport failure = xfs_geometry_failure(geometry.status(), geometry.issue(), probe, raw,
+                masks);
             return failure;
         }
         const XfsGeometryFacts facts = xfs_build_geometry_facts(bytes);
-        const XfsGeometryReport result = XfsGeometryReport(
-            XfsGeometryStatus::header_geometry_consistent, XfsGeometryIssue::none,
-            probe, raw, masks, facts);
+        const XfsGeometryReport result = XfsGeometryReport(XfsGeometryStatus::header_geometry_consistent,
+            XfsGeometryIssue::none, probe, raw, masks, facts);
         return result;
     }
 }

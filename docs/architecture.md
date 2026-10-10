@@ -89,7 +89,7 @@ assumptions. The Aurora-authored library supplies working freestanding value and
 byte operations; general ownership, allocation and runtime services remain open.
 
 For current status, use the [completeness matrix](completeness-matrix.md).
-[Verification history](verification.md) identifies the source and environment of
+[Verification history](developer-test-contract.md) identifies the source and environment of
 each tested checkpoint. The [language design](language.md),
 [device contract](device-contract.md) and [roadmap](roadmap.md) describe the next
 layers of the system.

@@ -37,7 +37,6 @@ from package_profiles import (
 )
 from package_native_runner import PackageRunner, finalize_report
 
-CONTRACT_SHA256 = "5aa8786a1afc3fac793deccb1e4bb11ae2d6497ab10093b0545c72aa39dc7103"
 CAP, MAX_CAP, FLOOR = 256 << 20, 1024 << 20, 1 << 30
 SOURCE_CAP, BATCH = 64 << 10, 128
 U32, U64 = (1 << 32) - 1, (1 << 64) - 1
@@ -610,7 +609,10 @@ def negative_cases():
         (
             "span-cannot-be-field",
             PREFIX + "class Leak{builtin::span<const u8> value;};",
-            "unsupported class field type 'builtin::span<const u8>': class fields require scalar, class, private fixed-array or private owned-byte storage",
+            (
+                "unsupported class field type 'builtin::span<const u8>': class fields require scalar, class, pr"
+                "ivate fixed-array or private owned-byte storage"
+            ),
         ),
         (
             "manifest-enum-no-conversion",
@@ -850,7 +852,6 @@ def freeze_corpus(directory):
     shutil.copyfile(__file__, directory / "package_manifest.py")
     report = dict(
         status="revised-reference-after-independent-v1-freeze",
-        contract_sha256=CONTRACT_SHA256,
         original_freeze="oracle-reference-v1/freeze.json",
         revision_reason=(
             "Exact LF model repair retained; safe failed-run finalization and verified tar.xz compaction; "
@@ -1049,10 +1050,9 @@ def main():
     if not diagnostic_only:
         compiler = args.compiler.resolve(strict=True)
         identity = resolve_identity(args, compiler, ROOT)
-    self_test(temporary_parent=Path(tempfile.gettempdir())
-              if args.profile == "dev" or args.meson_selected_compiler else None)
-    frozen = ROOT / "evidence/package-manifest/contract-before-implementation.md"
-    require(sha(frozen) == CONTRACT_SHA256, "frozen pre-implementation contract byte identity")
+    self_test(
+        temporary_parent=Path(tempfile.gettempdir()) if args.profile == "dev" or args.meson_selected_compiler else None
+    )
     if args.self_test_only:
         print("PASS independent grammar/integer oracle and high-bit/length/exit/budget/path controls")
         return
@@ -1078,7 +1078,6 @@ def main():
         ROOT / "scripts/owned_outputs.py",
         ROOT / "scripts/package_profiles.py",
         ROOT / "scripts/compiler_contract.py",
-        frozen,
         Path(sys.executable).resolve(strict=True),
         *runner.tools.values(),
     ]

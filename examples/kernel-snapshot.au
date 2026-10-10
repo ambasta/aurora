@@ -12,8 +12,8 @@ class ProducedSnapshot {
     storage::SectorIoStatus outcome;
     kernel::Snapshot64 payload;
 public:
-    ProducedSnapshot(storage::SectorIoStatus status, kernel::Snapshot64 snapshot)
-        : outcome(status), payload(snapshot) {}
+    ProducedSnapshot(storage::SectorIoStatus status, kernel::Snapshot64 snapshot) : outcome(status), payload(snapshot) {
+    }
 };
 
 auto produce_snapshot(builtin::ByteRegion region, i64 selector) -> ProducedSnapshot {
@@ -53,30 +53,60 @@ auto produce_snapshot(builtin::ByteRegion region, i64 selector) -> ProducedSnaps
 }
 
 // Only exact assembly trampolines export these private scalar policy seams.
-auto snapshot_kernel_value() -> i64 { return 42; }
+auto snapshot_kernel_value() -> i64 {
+    return 42;
+}
 
 auto snapshot_ipc_transition(u64 operation, u64 phase, u64 state, u64 scrubbed) -> u64 {
     const kernel::TransactionSnapshot snapshot = kernel::TransactionSnapshot(phase, state, scrubbed);
     const kernel::TransactionDecision decision = kernel::transaction_transition(operation, snapshot);
-    if (decision.action() == kernel::TransactionAction::invalid) { return 0u64; }
-    if (decision.action() == kernel::TransactionAction::refused) { return 1u64; }
+    if (decision.action() == kernel::TransactionAction::invalid) {
+        return 0u64;
+    }
+    if (decision.action() == kernel::TransactionAction::refused) {
+        return 1u64;
+    }
     u64 effect = 0u64;
-    if (decision.effect() == kernel::TransactionEffect::submit_request) { effect = 1u64; }
-    if (decision.effect() == kernel::TransactionEffect::deliver_request) { effect = 2u64; }
-    if (decision.effect() == kernel::TransactionEffect::store_reply) { effect = 3u64; }
-    if (decision.effect() == kernel::TransactionEffect::consume_reply) { effect = 4u64; }
-    if (decision.effect() == kernel::TransactionEffect::consume_cancelled) { effect = 5u64; }
-    if (decision.effect() == kernel::TransactionEffect::cancel_request) { effect = 6u64; }
-    if (decision.effect() == kernel::TransactionEffect::recycle_record) { effect = 7u64; }
+    if (decision.effect() == kernel::TransactionEffect::submit_request) {
+        effect = 1u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::deliver_request) {
+        effect = 2u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::store_reply) {
+        effect = 3u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::consume_reply) {
+        effect = 4u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::consume_cancelled) {
+        effect = 5u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::cancel_request) {
+        effect = 6u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::recycle_record) {
+        effect = 7u64;
+    }
     return 2u64 | (decision.next() << 8) | (effect << 16);
 }
 
 auto snapshot_terminal_event(u64 vector, u64 matched_sites, u64 stack_top) -> u64 {
     const kernel::TerminalEvent event = kernel::terminal_event(vector, matched_sites, stack_top);
-    if (event == kernel::TerminalEvent::returned) { return 1u64; }
-    if (event == kernel::TerminalEvent::bounds) { return 2u64; }
-    if (event == kernel::TerminalEvent::overflow) { return 3u64; }
-    if (event == kernel::TerminalEvent::division_zero) { return 4u64; }
-    if (event == kernel::TerminalEvent::shift_count) { return 5u64; }
+    if (event == kernel::TerminalEvent::returned) {
+        return 1u64;
+    }
+    if (event == kernel::TerminalEvent::bounds) {
+        return 2u64;
+    }
+    if (event == kernel::TerminalEvent::overflow) {
+        return 3u64;
+    }
+    if (event == kernel::TerminalEvent::division_zero) {
+        return 4u64;
+    }
+    if (event == kernel::TerminalEvent::shift_count) {
+        return 5u64;
+    }
     return 0u64;
 }

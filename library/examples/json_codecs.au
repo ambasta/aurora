@@ -85,8 +85,8 @@ auto json_codecs_example(builtin::ByteRegion region, i64 initial_capacity, i64 o
         const std::JsonEscapeResult escaped = std::escape_json_scalar(scalar.scalar_or(0u64));
         // These checked reservations are allocation-free after total reservation.
         // They also show the reusable per-scalar append precondition explicitly.
-        if (utf8.size() > 9223372036854775807 - decoded.size() || escaped.size() > 9223372036854775807 - output.size())
-            {
+        if (utf8.size() > 9223372036854775807 - decoded.size() || escaped.size() > 9223372036854775807
+            - output.size()) {
             return -7;
         }
         if (!decoded.try_reserve(decoded.size() + utf8.size()) || !output.try_reserve(output.size() + escaped.size())) {

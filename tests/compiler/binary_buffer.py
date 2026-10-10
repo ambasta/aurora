@@ -5,6 +5,7 @@ Every recoverable error checks all 64 preexisting bytes. Bounds traps, compile
 rejections, copied values and reader interoperation use the existing native oracle.
 This is focused library evidence, not a compiler or root aggregate qualification.
 """
+
 from pathlib import Path
 import argparse
 import hashlib
@@ -35,7 +36,7 @@ def initialized_buffer():
 
 
 def byte_checks(expected, variable="buffer"):
-    rows = [", ".join(f"{value}u8" for value in expected[start:start + 8]) for start in range(0, CAPACITY, 8)]
+    rows = [", ".join(f"{value}u8" for value in expected[start : start + 8]) for start in range(0, CAPACITY, 8)]
     elements = ",\n            ".join(rows)
     return f"""
         const builtin::array<u8, 64> expected = {{
@@ -70,7 +71,7 @@ def modeled_write(model, width, endian, offset, value):
         return "out_of_range"
     if value >= 1 << width:
         return "value_out_of_range"
-    model[offset:offset + size] = value.to_bytes(size, "little" if endian == "le" else "big")
+    model[offset : offset + size] = value.to_bytes(size, "little" if endian == "le" else "big")
     return "success"
 
 
@@ -96,11 +97,13 @@ def scalar_cases(seed, count):
                     """
                     body += byte_checks(model)
                     yield Case(f"{endian}{width} value {value} offset {offset}", body, 42, imports=IMPORTS)
-            failures = [(offset, maximum) for offset in (
-                -(1 << 63), -1, CAPACITY - size + 1, 63, 64, (1 << 63) - 1)]
+            failures = [(offset, maximum) for offset in (-(1 << 63), -1, CAPACITY - size + 1, 63, 64, (1 << 63) - 1)]
             if width < 64:
-                failures += [(offset, value) for offset in (-1, 0, CAPACITY - size, CAPACITY, (1 << 63) - 1)
-                             for value in (maximum + 1, MAX_U64)]
+                failures += [
+                    (offset, value)
+                    for offset in (-1, 0, CAPACITY - size, CAPACITY, (1 << 63) - 1)
+                    for value in (maximum + 1, MAX_U64)
+                ]
             for offset, value in failures:
                 model = bytearray(range(128, 192))
                 status = modeled_write(model, width, endian, offset, value)
@@ -138,7 +141,9 @@ def sequence_cases(seed):
 
 
 def value_cases():
-    yield Case("size, exact representation and zero initialization", """
+    yield Case(
+        "size, exact representation and zero initialization",
+        """
         const std::BinaryBuffer64 buffer = std::BinaryBuffer64();
         if (buffer.size() != 64) {
             return 0u64;
@@ -146,20 +151,30 @@ def value_cases():
         if (size_of(std::BinaryBuffer64) != 64) {
             return 0u64;
         }
-    """ + byte_checks(bytes(CAPACITY)), 42, imports=IMPORTS)
+    """
+        + byte_checks(bytes(CAPACITY)),
+        42,
+        imports=IMPORTS,
+    )
     for offset in (-(1 << 63), -1, 0, 63, 64, (1 << 63) - 1):
         for value in (0, 42, 255):
             model = bytearray(range(128, 192))
             status = "success" if 0 <= offset < CAPACITY else "out_of_range"
             if status == "success":
                 model[offset] = value
-            body = initialized_buffer() + f"""
+            body = (
+                initialized_buffer()
+                + f"""
                 if (buffer.write_u8({offset}, {value}u8) != std::ByteWriteStatus::{status}) {{
                     return 0u64;
                 }}
-            """ + byte_checks(model)
+            """
+                + byte_checks(model)
+            )
             yield Case(f"u8 offset {offset} value {value}", body, 42, imports=IMPORTS)
-    yield Case("ordinary copied argument and return remain independent", """
+    yield Case(
+        "ordinary copied argument and return remain independent",
+        """
         std::BinaryBuffer64 original = std::BinaryBuffer64();
         original.write_be16(62, 4660u64);
         std::BinaryBuffer64 copy = identity(original);
@@ -172,17 +187,23 @@ def value_cases():
             return 0u64;
         }
         return 42u64;
-    """, 42, imports=IMPORTS, prelude="""
+    """,
+        42,
+        imports=IMPORTS,
+        prelude="""
         auto identity(std::BinaryBuffer64 buffer) -> std::BinaryBuffer64 {
             return buffer;
         }
-    """)
+    """,
+    )
     for width in (16, 32, 64):
         for endian in ("le", "be"):
             value = 0x0123456789ABCDEF & ((1 << width) - 1)
             size = width // 8
             wire = ",\n                    ".join(f"buffer.at({index + 3})" for index in range(size))
-            yield Case(f"readonly reader interoperation {endian}{width}", f"""
+            yield Case(
+                f"readonly reader interoperation {endian}{width}",
+                f"""
                 std::BinaryBuffer64 buffer = std::BinaryBuffer64();
                 if (buffer.write_{endian}{width}(3, {value}u64) != std::ByteWriteStatus::success) {{
                     return 0u64;
@@ -195,7 +216,10 @@ def value_cases():
                     return 0u64;
                 }}
                 return report.value_or(0u64);
-            """, value, imports=IMPORTS)
+            """,
+                value,
+                imports=IMPORTS,
+            )
 
 
 def byte_position_cases():
@@ -203,17 +227,23 @@ def byte_position_cases():
         for value in (0, 1, 128, 255):
             model = bytearray(range(128, 192))
             model[offset] = value
-            body = initialized_buffer() + f"""
+            body = (
+                initialized_buffer()
+                + f"""
                 if (buffer.write_u8({offset}, {value}u8) != std::ByteWriteStatus::success) {{
                     return 0u64;
                 }}
-            """ + byte_checks(model)
+            """
+                + byte_checks(model)
+            )
             yield Case(f"independent byte {offset} value {value}", body, 42, imports=IMPORTS)
 
 
 def read_cases():
     for offset in (-(1 << 63), -1, CAPACITY, (1 << 63) - 1):
-        body = initialized_buffer() + f"""
+        body = (
+            initialized_buffer()
+            + f"""
             if (buffer.write_u8({offset}, 255u8) != std::ByteWriteStatus::out_of_range) {{
                 return 0u64;
             }}
@@ -227,9 +257,13 @@ def read_cases():
             if (byte.value_or(18446744073709551615u64) != 18446744073709551615u64) {{
                 return 0u64;
             }}
-        """ + byte_checks(range(128, 192))
+        """
+            + byte_checks(range(128, 192))
+        )
         yield Case(f"signed read/write boundary {offset} preserves all bytes", body, 42, imports=IMPORTS)
-    yield Case("failed byte reports mask nonzero u64 payloads", """
+    yield Case(
+        "failed byte reports mask nonzero u64 payloads",
+        """
         const std::ByteReadResult byte = std::ByteReadResult(std::ByteReadStatus::out_of_range, 255u64);
         if (byte.status() != std::ByteReadStatus::out_of_range) {
             return 0u64;
@@ -241,10 +275,16 @@ def read_cases():
             return 0u64;
         }
         return 42u64;
-    """, 42, imports=IMPORTS)
+    """,
+        42,
+        imports=IMPORTS,
+    )
     expected = bytearray(range(128, 192))
     expected[63] = 0
-    yield Case("copied byte report survives source mutation", initialized_buffer() + """
+    yield Case(
+        "copied byte report survives source mutation",
+        initialized_buffer()
+        + """
         if (buffer.write_u8(63, 255u8) != std::ByteWriteStatus::success) {
             return 0u64;
         }
@@ -259,11 +299,16 @@ def read_cases():
         if (report.value_or(0u64) != 255u64 || copied.value_or(0u64) != 255u64) {
             return 0u64;
         }
-    """ + byte_checks(expected), 42, imports=IMPORTS, prelude="""
+    """
+        + byte_checks(expected),
+        42,
+        imports=IMPORTS,
+        prelude="""
         auto identity(std::ByteReadResult report) -> std::ByteReadResult {
             return report;
         }
-    """)
+    """,
+    )
 
 
 def copy_cases():
@@ -273,7 +318,10 @@ def copy_cases():
     original[0] = 0
     copied[63] = 0
     changed[31] = 255
-    yield Case("copied values and function boundaries preserve all bytes", initialized_buffer() + """
+    yield Case(
+        "copied values and function boundaries preserve all bytes",
+        initialized_buffer()
+        + """
         std::BinaryBuffer64 copied = identity(buffer);
         std::BinaryBuffer64 changed = copied;
         if (buffer.write_u8(0, 0u8) != std::ByteWriteStatus::success) {
@@ -285,12 +333,18 @@ def copy_cases():
         if (changed.write_u8(31, 255u8) != std::ByteWriteStatus::success) {
             return 0u64;
         }
-    """ + continue_check(original) + continue_check(copied, "copied") + byte_checks(changed, "changed"),
-               42, imports=IMPORTS, prelude="""
+    """
+        + continue_check(original)
+        + continue_check(copied, "copied")
+        + byte_checks(changed, "changed"),
+        42,
+        imports=IMPORTS,
+        prelude="""
         auto identity(std::BinaryBuffer64 buffer) -> std::BinaryBuffer64 {
             return buffer;
         }
-    """)
+    """,
+    )
     expected = bytearray(CAPACITY)
     expected[0:2] = (4660).to_bytes(2, "big")
     expected[56:64] = ((1 << 63) + 42).to_bytes(8, "little")
@@ -298,7 +352,9 @@ def copy_cases():
     original[0] = 0
     copied = bytearray(expected)
     copied[63] = 0
-    yield Case("copied record codecs preserve independent wire bytes", """
+    yield Case(
+        "copied record codecs preserve independent wire bytes",
+        """
         std::BinaryBuffer64 buffer = std::BinaryBuffer64();
         if (buffer.write_be16(0, 4660u64) != std::ByteWriteStatus::success) {
             return 0u64;
@@ -315,7 +371,9 @@ def copy_cases():
         if (buffer.write_u8(0, 0u8) != std::ByteWriteStatus::success) {
             return 0u64;
         }
-    """ + continue_check(expected, "copied") + """
+    """
+        + continue_check(expected, "copied")
+        + """
         if (copied.write_u8(63, 0u8) != std::ByteWriteStatus::success) {
             return 0u64;
         }
@@ -327,7 +385,12 @@ def copy_cases():
         if (first.value_or(0u64) != 4660u64 || last.value_or(0u64) != 9223372036854775850u64) {
             return 0u64;
         }
-    """ + continue_check(original) + byte_checks(copied, "copied"), 42, imports=IMPORTS)
+    """
+        + continue_check(original)
+        + byte_checks(copied, "copied"),
+        42,
+        imports=IMPORTS,
+    )
 
 
 def rejection_cases():
@@ -344,11 +407,13 @@ def rejection_cases():
         "const std::ByteReadResult byte = buffer.read_u8(0); return byte.value_or(0u8);",
     ]
     for index, body in enumerate(bodies):
-        yield Rejection(f"buffer visibility/type rejection {index}",
-                        "module test; import std.binary_buffer; import std.binary;"
-                        "auto consume(builtin::span<const u8> input) -> u64 { return u64(input.size()); }"
-                        "auto test() -> u64 {"
-                        "std::BinaryBuffer64 buffer = std::BinaryBuffer64();" + body + "}")
+        yield Rejection(
+            f"buffer visibility/type rejection {index}",
+            "module test; import std.binary_buffer; import std.binary;"
+            "auto consume(builtin::span<const u8> input) -> u64 { return u64(input.size()); }"
+            "auto test() -> u64 {"
+            "std::BinaryBuffer64 buffer = std::BinaryBuffer64();" + body + "}",
+        )
 
 
 def main():
@@ -360,8 +425,14 @@ def main():
     require(0 <= args.random_count <= 16, "random-count must be 0..16")
     compiler = args.compiler.resolve()
     print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()} seed={args.seed}", flush=True)
-    cases = (list(value_cases()) + list(scalar_cases(args.seed, args.random_count)) + list(sequence_cases(args.seed))
-             + list(byte_position_cases()) + list(read_cases()) + list(copy_cases()))
+    cases = (
+        list(value_cases())
+        + list(scalar_cases(args.seed, args.random_count))
+        + list(sequence_cases(args.seed))
+        + list(byte_position_cases())
+        + list(read_cases())
+        + list(copy_cases())
+    )
     rejections = list(rejection_cases())
     with tempfile.TemporaryDirectory(prefix="aurora-binary-buffer-") as temporary:
         runner = NativeRunner(Path(temporary), compiler, 10)
@@ -384,9 +455,11 @@ def main():
         for offset in (-1, 64, (1 << 63) - 1):
             path = Path(temporary) / "bounds.au"
             output = Path(temporary) / "bounds.s"
-            path.write_text("module bounds; import std.binary_buffer; import std.binary; auto test() -> u64 {"
-                            "const std::BinaryBuffer64 buffer = std::BinaryBuffer64();"
-                            f"return u64(buffer.at({offset}));" + "}")
+            path.write_text(
+                "module bounds; import std.binary_buffer; import std.binary; auto test() -> u64 {"
+                "const std::BinaryBuffer64 buffer = std::BinaryBuffer64();"
+                f"return u64(buffer.at({offset}));" + "}"
+            )
             command([compiler, "--module-root", ROOT / "library", path, "-o", output])
             observed, symbols = runner.assemble(output.read_text(), ["test"])
             validate_trap(observed, Trap.BOUNDS, symbols, f"buffer read bounds {offset}")
@@ -395,8 +468,11 @@ def main():
         command([compiler, "--module-root", ROOT / "library", example, "-o", assembly])
         observed, _ = runner.assemble(assembly.read_text(), ["main"])
         validate_values(observed, [Case("binary buffer example", "", 42, result_type="i64")])
-    print(f"PASS binary buffer: {len(cases)} native cases, {len(rejections)} rejections, "
-          "3 exact bounds traps; example=passed", flush=True)
+    print(
+        f"PASS binary buffer: {len(cases)} native cases, {len(rejections)} rejections, "
+        "3 exact bounds traps; example=passed",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic local-admission/qualification routing; no compiler or guest executes."""
+"""Synthetic native-admission routing; no compiler or guest executes."""
 
 from pathlib import Path
 import os
@@ -53,10 +53,6 @@ class Entrypoints(unittest.TestCase):
             """
 case "$*" in
     "-B scripts/qemu_transport.py "*) exec "$REAL_PYTHON" "$@" ;;
-    "-B scripts/kernel_program_console_admission.py reviewed --mode "*)
-        echo reviewed >> "$CALLS"
-        if [[ -z "${PROGRAM_CONSOLE_REVIEW_SHA256:-}" ]]; then echo 'BLOCKED: external review missing'; exit 2; fi
-        exit "${REVIEW_STATUS:-0}" ;;
     "-B scripts/kernel_program_console_admission.py checked --mode "*)
         echo checked >> "$CALLS"; exit "${CHECK_STATUS:-0}" ;;
     "-B tests/kernel-program-console-pty.py "*)
@@ -109,7 +105,7 @@ exit "${BUILD_STATUS:-0}"
         self.assertIn('scripts/meson_test.py --kernel uefi --profile "$profile"', script)
         self.assertNotIn("make -C compiler", script)
 
-    def test_public_smoke_builds_isolated_profile_without_pin(self):
+    def test_public_smoke_builds_isolated_profile(self):
         for mode in ("program-console", "program-pending", "program-owner"):
             self.run_script(args=(mode,))
             self.assertEqual(
@@ -128,26 +124,6 @@ exit "${BUILD_STATUS:-0}"
         self.clear()
         self.run_script(name="kernel-program-console.sh", env={"GUEST_STATUS": "0"}, expected=1)
         self.assertEqual(self.calls()[-1], "guest")
-
-    def test_qualification_never_rebuilds_before_reviewed_guest(self):
-        (self.repo / "build").mkdir()
-        self.run_script(args=("--qualification",), env={"PROGRAM_CONSOLE_REVIEW_SHA256": "a" * 64})
-        self.assertEqual(
-            self.calls(),
-            [
-                "reviewed",
-                "pty|-B tests/kernel-program-console-pty.py --mode program-console --qualification",
-            ],
-        )
-        self.clear()
-        result = self.run_script(args=("--qualification",), expected=2)
-        self.assertIn("BLOCKED:", result)
-        self.assertEqual(self.calls(), ["reviewed"])
-        self.clear()
-        self.run_script(
-            args=("--qualification",), env={"PROGRAM_CONSOLE_REVIEW_SHA256": "a" * 64, "REVIEW_STATUS": "1"}, expected=1
-        )
-        self.assertEqual(self.calls(), ["reviewed"])
 
     def test_build_admission_and_guest_failures_never_become_blocked(self):
         for build, pty, expected in ((2, 0, 2), (19, 0, 19), (0, 2, 2), (0, 17, 17)):

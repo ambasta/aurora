@@ -390,7 +390,7 @@
     "make": false,
     "meson": false,
     "meson_commands": {},
-    "reason": "Requires a separate baseline compiler; differential evidence, not a semantics oracle.",
+    "reason": "Separate differential gate requires a user-selected saved baseline compiler plus candidate; run directly as documented in developer-test-contract.md.",
     "root_make": false
   },
   "fixed_containers.py": {
@@ -460,11 +460,30 @@
     "root_make": true
   },
   "function_overloads_independent.py": {
-    "kind": "supplemental-runner",
+    "kind": "runner",
     "make": false,
-    "meson": false,
-    "meson_commands": {},
-    "reason": "Independent standalone overload qualification runner.",
+    "meson": true,
+    "meson_commands": {
+      "function-overloads-independent": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "@SOURCE@/tests/compiler/function_overloads_independent.py",
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "core",
+          "full",
+          "slow"
+        ]
+      }
+    },
+    "reason": "Complete behavioral runner in the Meson full graph.",
     "root_make": false
   },
   "function_templates.py": {
@@ -634,11 +653,31 @@
     "root_make": true
   },
   "json_codecs_owned.py": {
-    "kind": "supplemental-runner",
+    "kind": "runner",
     "make": false,
-    "meson": false,
-    "meson_commands": {},
-    "reason": "Supplemental historical independently pinned owner join.",
+    "meson": true,
+    "meson_commands": {
+      "json-codecs-owned": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/json_codecs_owned.py",
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "bytes",
+          "compiler",
+          "full",
+          "slow"
+        ]
+      }
+    },
+    "reason": "Complete behavioral runner in the Meson full graph.",
     "root_make": false
   },
   "json_integers.py": {
@@ -792,9 +831,29 @@
   "lint.py": {
     "kind": "runner",
     "make": true,
-    "meson": false,
-    "meson_commands": {},
-    "reason": "Focused Make formatter/linter gate, outside the root native aggregate; separate tools required.",
+    "meson": true,
+    "meson_commands": {
+      "semantic-lint": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "@SOURCE@/tests/compiler/lint.py",
+          "@BUILD@/aurora-fmt",
+          "@BUILD@/aurorac",
+          "lint-fixture",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Complete behavioral runner in the Meson full graph.",
     "root_make": false
   },
   "logical_spans_abi.py": {
@@ -1525,11 +1584,12 @@
     "root_make": true
   },
   "service_group.py": {
-    "kind": "runner",
+    "kind": "composed-runner",
     "make": false,
     "meson": false,
     "meson_commands": {},
-    "reason": "Composed child executed by display_service.py in Make and Meson; not directly named by either registration inventory.",
+    "meson_parent": "display_service.py",
+    "reason": "Executed as a child by registered display-service; no duplicate standalone execution.",
     "root_make": false
   },
   "service_group_ir_abi.py": {

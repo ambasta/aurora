@@ -119,6 +119,34 @@ test(
     timeout: 180,
 )
 
+# Standalone behavioral runners participate in the ordinary full graph.
+lint_fixture = executable(
+    'lint-fixture', 'compiler/lint.cpp',
+    include_directories: include_directories('../compiler'), dependencies: hosted_lexer,
+    native: true, install: false,
+)
+test('semantic-lint', python,
+     args: ['-B', artifact_adapter, python, '-B', files('compiler/lint.py'),
+            aurora_fmt, aurorac, lint_fixture, '--artifacts', '@ARTIFACTS@'],
+     depends: [aurora_fmt, aurorac, lint_fixture], suite: ['full', 'dev', 'compiler'],
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
+test('function-overloads-independent', python,
+     args: ['-B', artifact_adapter, python, '-B', files('compiler/function_overloads_independent.py'),
+            aurorac, '--artifacts', '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'slow', 'core', 'compiler'],
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
+test('json-codecs-owned', python,
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_codecs_owned.py'),
+            aurorac, '--artifacts', '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'slow', 'bytes', 'compiler'],
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
+
+# Compiler-free semantic selection and authority controls for package profiles.
+test('package-profile-controls', python,
+     args: ['-B', files('test_package_profiles.py')],
+     suite: ['full', 'dev', 'packages', 'compiler'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 60, is_parallel: true)
+
 # Named semantic selections, explicitly partial; Meson/Ninja builds aurorac.
 # Each family creates a unique retained receipt/output directory beneath TMPDIR
 # and gives every subprocess a private, cap-accounted tmp subdirectory.

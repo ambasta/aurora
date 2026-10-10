@@ -9,9 +9,9 @@ guest acceptance is claimed.
 
 from pathlib import Path
 import json
+import importlib.util
 import os
 import re
-import shlex
 import signal
 import shutil
 import subprocess
@@ -19,6 +19,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 BASH = shutil.which("bash")
@@ -479,6 +480,55 @@ class ConsoleRouting(unittest.TestCase):
             self.assertIn("scripts/compiler_contract.py check", self.calls()[0])
             self.assertFalse((self.repo / "build").exists())
             self.clear_calls()
+
+
+class NormalRestoration(unittest.TestCase):
+    def test_native_restoration_requires_fresh_mandatory_outputs_and_preserves_compiler(self):
+        spec = importlib.util.spec_from_file_location(
+            "console_restoration_controls", ROOT / "tests/kernel-console-service-qualification.py"
+        )
+        qualification = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(qualification)
+        for behavior in ("fresh", "stale", "missing", "failed"):
+            with self.subTest(behavior=behavior), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                image = root / "native/kernel-images/uefi/normal"
+                image.mkdir(parents=True)
+                work = root / "evidence"
+                work.mkdir()
+                for name in ("normal.log", "normal.clock.json"):
+                    path = image / name
+                    if behavior != "missing" or name != "normal.clock.json":
+                        path.write_bytes(b"same bytes are allowed after a fresh write")
+                        os.utime(path, ns=(1, 1))
+                calls = []
+
+                def run(argv, timeout, env=None):
+                    calls.append(argv)
+                    self.assertEqual(env["AURORAC"], "/reviewed/prebuilt-compiler")
+                    if "--print-image-dir" in argv:
+                        return subprocess.CompletedProcess(argv, 0, (str(image) + "\n").encode(), b"")
+                    self.assertEqual(argv[-1], "normal")
+                    self.assertNotIn("--shared-normal", argv)
+                    self.assertEqual(env["MESON_BUILD_DIR"], str(root / "native"))
+                    if behavior == "fresh":
+                        for name in ("normal.log", "normal.clock.json"):
+                            (image / name).write_bytes(b"same bytes are allowed after a fresh write")
+                    elif behavior == "missing":
+                        (image / "normal.log").write_bytes(b"fresh log")
+                    return subprocess.CompletedProcess(argv, 1 if behavior == "failed" else 0, b"boot", b"stderr")
+
+                with patch.object(qualification, "run_bounded", side_effect=run):
+                    if behavior == "fresh":
+                        receipt = qualification.restore_normal(work, {"AURORAC": "/reviewed/prebuilt-compiler"})
+                        self.assertEqual(receipt["image_directory"], str(image))
+                        for name in ("normal.log", "normal.clock.json"):
+                            self.assertEqual((work / ("restoration-" + name)).read_bytes(), (image / name).read_bytes())
+                    else:
+                        expected = {"stale": "Stale", "missing": "Missing", "failed": "restoration failed"}[behavior]
+                        with self.assertRaisesRegex(ValueError, expected):
+                            qualification.restore_normal(work, {"AURORAC": "/reviewed/prebuilt-compiler"})
+                self.assertEqual(len(calls), 2)
 
 
 if __name__ == "__main__":

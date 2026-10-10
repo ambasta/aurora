@@ -1,7 +1,6 @@
 # Disposable-child generated-stack guard fixtures
 
-Focused hosted qualification and independent source/result review passed on
-2026-10-07. The x86 emitter reserves function frames and canonical argument
+The x86 emitter reserves function frames and canonical argument
 records in steps of at most 4096 bytes, immediately executing `orq $0,(%rsp)`
 after each positive step, including sub-page tails. Zero reservations do not
 touch memory. All GPR values except the intended RSP movement are preserved;
@@ -105,52 +104,6 @@ Registration in the full recipe does not claim that the full native aggregate wa
 
 Kernel/BIOS/UEFI stacks, mixed C++/assembly chains, other page sizes/hosts,
 performance and arbitrary-program finite stack bounds require separate gates.
-
-## Fresh focused results — 2026-10-07
-
-Four warning-clean C++23 producer builds and all 23 selected components passed:
-
-- 47 direct-IR/assembly probe cases, 67 sector IR checks and 51 method IR checks
-- 21 sector and 21 method handwritten-ABI cases in each Python mode
-- 17 sector native cases, 21 rejections and six exact bounds traps in each mode
-- Eight existing value/container/constructor/method/packed/span/integer suites
-- All 15 disposable-child guard cases in each mode: eight successful returns
-  and seven expected faults. Exact fault PC/address/RSP, alternate-stack use,
-  every landing canary and positive register/stack restoration were checked.
-
-Independent retained-machine-code review confirmed all 28 exported probe labels
-point to actual ORQ instructions. Normal and optimized emitted guard assembly is
-identical. The finite sector fixture peaks remain 9968/9984/2128 bytes; these are
-controlled emitted-layout calculations, not runtime high-water measurements or
-arbitrary-program bounds.
-
-An earlier attempt exceeded its 256 MiB output cap while retaining a second
-large ABI corpus. Its raw artifacts were subsequently lost during workspace
-replacement and are not acceptance evidence. Source was recovered to its exact
-673-file digest, independently re-reviewed, and all focused gates were rerun.
-The fresh build/normal phase retained 148692992 bytes, optimized/regression phase
-262144 bytes, and guard phase 94208 bytes. Their caps were 256/256/16 MiB.
-One full large ABI corpus is retained; the existing runner removes successful
-optimized-mode scratch. Current receipts and guard artifacts are retained.
-
-The accepted tested source manifest is
-`8cc9a9b4788bf1f18722548580d411344a7c01f7e6e22c4ca10e93eaf514009b`.
-The compiler digest is
-`762ba74b8b58d4c6ae7c335507a7b06560a90f44c98d268defa36e086fa41630`.
-No full native aggregate, performance neutrality, kernel/QEMU qualification,
-C++/assembly-wide protection or general stack-safety proof is claimed.
-
-## Current storage-consumer composition
-
-Publication was joined onto PR52 main
-`c3f2587b25bf2aa6be49d8036f6c2b31475218a8`, preserving the owned-sector and
-block-I/O modules, examples and Make/Meson registrations. No compiler
-implementation input changed in that join. A separate nine-invocation focused
-compatibility run passed on the qualified probe compiler: owned-sector's 43
-native cases/nine rejections and block-I/O's 38 native cases/13 rejections in
-both Python modes, including their examples, plus complete optimized block-value,
-binary-writer, byte-codec, RAM-block and storage-binary runners. This adds hosted
-consumer compatibility, not a full aggregate, kernel or device qualification.
 
 ## Compiler-emitted stack/call facts
 

@@ -52,7 +52,7 @@ Rare required exceptions need a nearby reason and the narrowest suppression;
 do not exclude a whole file to hide ordinary long expressions. C++ formatting
 also needs review for unsplittable tokens and exact-layout fixtures.
 
-The [Aurora language-tooling plan](language-tooling.md) describes the compiler
+The [Aurora language-tooling plan](../compiler/TOOLING.md) describes the compiler
 work needed for native `.au` support.
 
 Tool references: [Ruff configuration](https://docs.astral.sh/ruff/configuration/),

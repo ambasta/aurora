@@ -96,6 +96,49 @@ class Controls(unittest.TestCase):
                 master_sha256=smoke.esp.sha256(self.root / "master"),
             )
 
+    def test_packaged_tools_use_fixed_prefix_without_runtime_hash_records(self):
+        prefix = self.root / "package"
+        for name in (
+            "bin/qemu-system-x86_64",
+            *("model/" + name for name in smoke.MODEL),
+            "model/configs/devices/x86_64-softmmu/aurora-dma.mak",
+        ):
+            path = prefix / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("packaged dependency")
+        (prefix / "bin/qemu-system-x86_64").chmod(0o700)
+        (prefix / "share/qemu").mkdir(parents=True)
+        (prefix / "firmware").mkdir()
+        for role, name in (("code", "OVMF_CODE_4M.fd"), ("vars", "OVMF_VARS_4M.fd")):
+            with (prefix / "firmware" / name).open("wb") as file:
+                file.truncate(smoke.FIRMWARE[role][0])
+        marker = prefix / "runtime.json"
+        smoke.write_json(marker, smoke.PACKAGE_MARKER)
+
+        def version(argv, output, **options):
+            self.assertEqual(argv, [str(prefix / "bin/qemu-system-x86_64"), "--version"])
+            output.write(b"QEMU emulator version 10.0.13\n")
+            return 0
+
+        with (
+            patch.object(smoke.transport, "run_logged", side_effect=version) as run,
+            patch.object(smoke, "identity", side_effect=AssertionError("packaged tools must not be rehashed")),
+        ):
+            runtime = smoke.packaged_runtime(prefix)
+            smoke.verify_runtime(runtime)
+            smoke.verify_dependencies(runtime, self.root)
+            run.assert_called_once()
+            self.assertTrue(runtime["packaged"])
+            self.assertNotIn("files", runtime)
+            self.assertNotIn("library_bindings", runtime)
+        smoke.write_json(marker, dict(smoke.PACKAGE_MARKER, model="stock"))
+        with self.assertRaisesRegex(ValueError, "model/version"):
+            smoke.packaged_runtime(prefix)
+        smoke.write_json(marker, smoke.PACKAGE_MARKER)
+        with patch.object(smoke.transport, "run_logged", side_effect=lambda argv, output, **kw: output.write(b"wrong")):
+            with self.assertRaisesRegex(ValueError, "QEMU version"):
+                smoke.packaged_runtime(prefix)
+
     def test_original_clock_and_explicit_devices(self):
         expected = [
             "qemu",
@@ -545,7 +588,7 @@ class Controls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "directory limit"):
             smoke.data_files(data)
 
-    def test_low_space_stale_source_and_master_copy_are_prelaunch_failures(self):
+    def test_low_space_staged_drift_and_master_copy_are_prelaunch_failures(self):
         from types import SimpleNamespace
 
         with (
@@ -574,11 +617,12 @@ class Controls(unittest.TestCase):
         image = self.root / "staged"
         image.mkdir()
         (image / "loader").write_bytes(b"loader")
-        record = dict(mode="normal", source={"current": "old"}, files={"loader": smoke.identity(image / "loader")})
+        record = dict(mode="normal", files={"loader": smoke.identity(image / "loader")})
         smoke.write_json(image / "image.json", record)
-        with patch.object(smoke, "source_identity", return_value={"current": "new"}):
-            with self.assertRaisesRegex(ValueError, "Source changed"):
-                smoke.verify_stage(image, record)
+        smoke.verify_stage(image, record)
+        (image / "loader").write_bytes(b"changed loader")
+        with self.assertRaisesRegex(ValueError, "Staged image changed"):
+            smoke.verify_stage(image, record)
 
     def test_make_empty_exports_keep_launcher_defaults(self):
         from types import SimpleNamespace

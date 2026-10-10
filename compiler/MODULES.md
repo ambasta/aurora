@@ -33,11 +33,11 @@ build/aurorac --module-root library application.au -o build/application.s
 - Imported files must declare the exact requested name and use `export module`.
 - Declarations are module-private unless explicitly marked `export`. An `export namespace` deliberately exports its contained declarations, including nested namespace members. An interface header alone does not export all declarations.
 - Namespace blocks can reopen and nest, including `namespace a::b { ... }`. A namespace and a function/class cannot occupy the same visible name.
-- Qualified calls/types use `a::b::name`. Lookup begins in the current/enclosing namespace, then the unit's global namespace. Namespace aliases, using declarations, leading-global `::name` and reexports are not implemented. Explicit bounded templates use their separate contracts. The unaccepted ordinary overload candidate supports one defining-module set per qualified name; see FUNCTION-OVERLOADS.md.
+- Qualified calls/types use `a::b::name`. Lookup begins in the current/enclosing namespace, then the unit's global namespace. Namespace aliases, using declarations, leading-global `::name` and reexports are not implemented. Explicit bounded templates use their separate contracts. Ordinary overloads support one defining-module set per qualified name; see GENERICS.md.
 - Every function body resolves in its defining module, including private helper calls. An unresolved call is rejected before the graph is merged; a root function cannot silently satisfy or hijack an undeclared imported helper.
 - A unit sees its own declarations and only directly imported exported declarations. Imports do not implicitly reexport their dependencies. `export import` is rejected explicitly.
 - Duplicate imports, duplicate non-overload declarations, repeated exact overload parameter tuples, namespace/declaration collisions and ambiguous visible exported names are rejected. Multiple search roots containing the same requested module are an error, not precedence-based shadowing.
-- Class exports permit checked inline scalar-field values in callers. Fields remain private by default. Public constructors and methods of directly imported exported classes are available, with private access and const receiver checks; bodies resolve in the defining class and module. See CLASSES.md. Ordinary functions can now copy bounded scalar-field class parameters/results through a private native value convention; exported signatures cannot expose private types, and callers must directly see signature types. See VALUE-CALLS.md. Arrays/owners/references and method aggregate signatures remain unsupported; no C-compatible or interprocedural-borrow ABI is implied.
+- Class exports permit checked inline scalar-field values in callers. Fields remain private by default. Public constructors and methods of directly imported exported classes are available, with private access and const receiver checks; bodies resolve in the defining class and module. See VALUES.md. Ordinary functions can now copy bounded scalar-field class parameters/results through a private native value convention; exported signatures cannot expose private types, and callers must directly see signature types. See VALUES.md. Owning and synchronous-view signatures use the separate checked ownership modes; no C-compatible ABI is implied.
 
 ## Native identities and the temporary entry seam
 
@@ -78,7 +78,7 @@ Reads enforce byte limits on actual captured bytes, including files that grow du
 
 Pinned descriptors protect path/inode authority, not atomic content versioning. Another writer to the same inode can change bytes while a bounded read is in progress; the captured buffer may contain mixed versions. Compilation uses the buffer after capture, but neither a per-file atomic snapshot nor an atomic multi-file repository snapshot is promised. Reproducible builds still require stable source contents. Privileged host changes and compromise of the host/compiler implementation are outside this guarantee.
 
-These byte/depth limits intentionally reject overly deep otherwise-grammatical programs; they do not bound total compiler work or solve all compiler resource scaling. Typed-IR facts still scale with basic-block count and live slots; compact representations and compiler-wide budgets remain tracked future work (see RESOURCE-NOTE.md).
+These byte/depth limits intentionally reject overly deep otherwise-grammatical programs; they do not bound total compiler work or solve all compiler resource scaling. Typed-IR facts still scale with basic-block count and live slots; dense initialization facts are implemented, while compiler-wide budgets remain future work (see ARCHITECTURE.md).
 
 ## Atomic artifact output
 
@@ -91,26 +91,3 @@ Precommit failures preserve existing source/output bytes. Cleanup addresses only
 This provides ordinary atomic replacement and prevents target symlink/hard-link swaps from causing writes through a source inode. It is not a claim of crash durability (there is no file/directory fsync protocol), multi-file transactions, or artifact integrity against a privileged or caller-equivalent actor that can tamper with private temporary entries or rewrite the output directory. Such an actor can also replace artifacts after commit. Inputs are captured byte buffers, not atomic file/repository versions.
 
 Native tests cover the destination/temp-name collision, poisoned partial writes, source aliases, destination swaps, pinned-parent replacement, own-temp cleanup and actual OS write/rename failures. The rename-denial fault gate requires an unprivileged test user; it fails explicitly rather than silently skipping that check under root.
-
-## Real first library module
-
-`library/std/core.au` is compiled through this same pipeline. It exports scalar `std::min`, `std::max` and `std::abs`; its private helper exercises defining-module lookup. It has no libc dependency, heap allocation, foreign calls, implicit conversion or unsafe surface.
-
-This small executable core is a library seed, not a complete libc/libc++ replacement. Allocation, byte/string facilities, containers, I/O, errors, synchronization and general generic/ownership APIs remain future work. See library/README.md for exact contracts.
-
-## Tests
-
-`make -C compiler test` includes source/IR tests, `tests/modules/run.py`, and native host-source adapter tests. `make -C compiler test-modules` runs the module/library and adapter subset.
-
-Coverage includes normal exit-1 rejection (no signals/artifact/source modification) of reproduced deeply nested bodies/parentheses and skewed expressions, plus accepted near-boundary cases, real cross-module execution, private helper hijack rejection, namespace/native identity collisions, export and transitive visibility, scoped static/runtime reflection, graph limits, root ambiguity, symlink escape rejection, retained-root replacement and concurrent safe-link/escaping-link replacement inside owned disposable fixtures. These tests are bounded evidence, not a proof against every filesystem race or future optimizer transformation.
-
-## Ordinary overload candidate
-
-The unaccepted [exact-match overload subset](FUNCTION-OVERLOADS.md) groups only
-ordinary declarations in one defining module. Per-member export and selected
-signature visibility apply; sets from different modules never merge. Resolved
-parameter identities form private native symbols for actual overload sets.
-Single-declaration symbols and the root answer bootstrap entry remain unchanged.
-
-Isolated release/fatal sanitizer and independent overload gates passed; separate
-parent integration remains pending. See evidence/function-overloads/README.md.

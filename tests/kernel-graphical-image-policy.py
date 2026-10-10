@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("graphical_image_policy", ROOT / "tests/kernel-uefi-image.py")
+spec = importlib.util.spec_from_file_location("graphical_image_policy", ROOT / "scripts/kernel_uefi_image.py")
 policy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(policy)
 capture_spec = importlib.util.spec_from_file_location(
@@ -276,7 +276,7 @@ class ImagePolicy(unittest.TestCase):
         self.reject(lambda f: f["object_symbols"].update(runtime=defined(ENTRY, "t")))
 
     def test_exact_language_only_reflection_helpers(self):
-        self.assertEqual(policy.REFLECTION_HELPERS, frozenset(REFLECTION))
+        self.assertEqual(policy.common.stack_facts.reflection_inventory(REFLECTION), set(REFLECTION))
         for name in REFLECTION:
             self.reject(lambda f, n=name: f.update(symbols=f["symbols"].replace(defined(n), "")))
             for kind in ("t", "D", "W", "U"):

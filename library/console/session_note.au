@@ -4,7 +4,12 @@ import std.binary;
 
 export namespace console {
     // One session-local RAM note. No device, disk, allocator or service authority.
-    enum class NoteEvent { unknown, written, read, missing };
+    enum class NoteEvent {
+        unknown,
+        written,
+        read,
+        missing
+    };
 
     class SessionNote {
         std::BinaryBuffer64 bytes;
@@ -21,9 +26,8 @@ export namespace console {
         }
         auto submit(std::BinaryBuffer64 command, i64 count) -> NoteEvent {
             if (count == 8) {
-                if (command.at(0) == 'c' && command.at(1) == 'a' && command.at(2) == 't'
-                    && command.at(3) == ' ' && command.at(4) == 'n' && command.at(5) == 'o'
-                    && command.at(6) == 't' && command.at(7) == 'e') {
+                if (command.at(0) == 'c' && command.at(1) == 'a' && command.at(2) == 't' && command.at(3) == ' '
+                    && command.at(4) == 'n' && command.at(5) == 'o' && command.at(6) == 't' && command.at(7) == 'e') {
                     if (length < 0) {
                         return NoteEvent::missing;
                     }
@@ -33,10 +37,9 @@ export namespace console {
             if (count < 11 || count > 64) {
                 return NoteEvent::unknown;
             }
-            if (command.at(0) != 'w' || command.at(1) != 'r' || command.at(2) != 'i'
-                || command.at(3) != 't' || command.at(4) != 'e' || command.at(5) != ' '
-                || command.at(6) != 'n' || command.at(7) != 'o' || command.at(8) != 't'
-                || command.at(9) != 'e' || command.at(10) != ' ') {
+            if (command.at(0) != 'w' || command.at(1) != 'r' || command.at(2) != 'i' || command.at(3) != 't'
+                || command.at(4) != 'e' || command.at(5) != ' ' || command.at(6) != 'n' || command.at(7) != 'o'
+                || command.at(8) != 't' || command.at(9) != 'e' || command.at(10) != ' ') {
                 return NoteEvent::unknown;
             }
             // Validate before replacement, even for callers other than Line64.

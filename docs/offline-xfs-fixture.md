@@ -72,7 +72,7 @@ Both tools report version `6.13.0`. The locally extracted liburcu supplied the
 one missing runtime library. The remaining loaded dependencies came from the
 host. Full package dependency declarations, `ldd` output, executable and loaded
 library SHA256 values, host tool versions, exact arguments and results are in
-[`provenance.json`](../fixtures/xfs-offline/provenance.json). Declared dependencies
+[`provenance.json`](../fixtures/xfs-offline/README.md). Declared dependencies
 for other utilities within xfsprogs do not imply those utilities were installed
 or executed.
 
@@ -81,7 +81,7 @@ The immutable native compiler was `/tmp/aurora-m014-compiler-corrected`, SHA256
 The sanitized compiler was `/tmp/aurora-m014-compiler-corrected-sanitized`,
 SHA256 `ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa`.
 Its separate receipt is
-[`native-sanitized-results.json`](../fixtures/xfs-offline/native-sanitized-results.json).
+[`native-sanitized-results.json`](../fixtures/xfs-offline/README.md).
 The first sanitizer attempt stopped before native case execution because
 LeakSanitizer cannot operate under this environment's tracing. The preserved
 failure record contains the diagnostic excerpt and does not claim a passed
@@ -103,7 +103,7 @@ to `mkfs.xfs`, once, with these arguments:
 ```sh
 LD_LIBRARY_PATH=/tmp/aurora-xfs-offline-tools/root/usr/lib/x86_64-linux-gnu \
   /tmp/aurora-xfs-offline-tools/root/usr/sbin/mkfs.xfs \
-  -d file=1,name=/workspace/scratch/48c5de6446f8/aurora-storage-next/fixtures/xfs-offline/.work/disk.img,size=512m \
+  -d file=1,name=fixtures/xfs-offline/.work/disk.img,size=512m \
   -s size=512 \
   -m crc=1,uuid=5cdfd5a7-110e-4cd7-8e31-fc36b74c265f \
   -b size=4096 -L AURORA_X0
@@ -121,7 +121,7 @@ LD_LIBRARY_PATH=/tmp/aurora-xfs-offline-tools/root/usr/lib/x86_64-linux-gnu \
   -c 'sb 0' \
   -c 'p magicnum versionnum sectsize sectlog crc features_compat features_ro_compat features_incompat features_log_incompat' \
   -c version \
-  /workspace/scratch/48c5de6446f8/aurora-storage-next/fixtures/xfs-offline/.work/disk.img
+  fixtures/xfs-offline/.work/disk.img
 ```
 
 The large disposable image was subsequently copied sparsely to
@@ -151,7 +151,7 @@ length, and GF(2) checks, which remain active under optimized Python. Default
 runs print a summary and do not rewrite any receipt. `--receipt PATH` explicitly
 writes the result JSON. `--compiler PATH --compiler-sha256 HASH` permits review
 with another independently pinned compiler; the supplied hash must match its
-bytes. The author's [`native-results.json`](../fixtures/xfs-offline/native-results.json)
+bytes. The author's [`native-results.json`](../fixtures/xfs-offline/README.md)
 records every expected and observed full-width scalar, the normal exit code,
 source hashes, and generated source/assembly hashes. Repeating this check reads
 only the small saved header; it does not need the filesystem image or extracted
@@ -168,13 +168,9 @@ then checks the decoded512-byte SHA256
 `55ad821909c312048d9936a74c8904cd25f97aa190b48ae0004b03eaffdc6586`.
 Neither UTF-8 normalization nor replacement encoding is permitted.
 
-The original binary was preserved by same-filesystem rename outside the versioned
-tree at `/workspace/scratch/48c5de6446f8/aurora-fixture-originals/m015/superblock-v5-512.bin`.
-`fixtures/xfs-offline/transport-provenance.json` records the move and both hashes.
-An initial cross-filesystem rename to /workspace/shared failed with EXDEV before
-moving the file. No bytes were deleted or regenerated, and no new mkfs ran.
-The original creation, xfs_db and native receipts remain unchanged and describe
-the original binary path used for those runs.
+The original binary remains archived outside the versioned tree. Its creation
+and native comparison records retain their historical scope; the source-controlled
+hex transport is the portable replay input.
 
 `--transport-self-test-only` runs17 explicit malformed/missing/oversized input
 controls, including same-size incorrect byte widths, duplicate and reordered

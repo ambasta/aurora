@@ -4,4 +4,4 @@ class Interrupts final {
 public:
     static auto initialize() -> void;
 };
-}
+} // namespace aurora::hardware

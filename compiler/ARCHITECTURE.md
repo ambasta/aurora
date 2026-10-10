@@ -19,7 +19,7 @@ The implementation uses internal header units and one translation unit so existi
 
 The current value and temporary operand stack carry explicit scalar/reference payload types. Source owners lower to scalar payload slots after the source ownership checks succeed. Borrow bindings lower to typed compiler-internal stack handles. No instruction offers arbitrary address arithmetic, arbitrary indirect stores, source-level raw pointers or opaque assembly injection.
 
-The IR records typed byte-addressed slots and complete frame size. U8 fields/elements use width one; previous scalar storage stays width eight, including canonical bool values. Logical class shapes and canonical byte offsets/alignment/reserved extents are distinct. The verifier recomputes physical metadata from nominal shape, rejects conflicting supplied maps and checks occupied-byte disjointness. The backend consumes the validated map; packed loads zero-extend and padding is initialized without making it a source field. See BYTES.md for the developing representation gate.
+The IR records typed byte-addressed slots and complete frame size. U8 fields/elements use width one; previous scalar storage stays width eight, including canonical bool values. Logical class shapes and canonical byte offsets/alignment/reserved extents are distinct. The verifier recomputes physical metadata from nominal shape, rejects conflicting supplied maps and checks occupied-byte disjointness. The backend consumes the validated map; packed loads zero-extend and padding is initialized without making it a source field. See SCALARS.md for the developing representation gate.
 
 `CheckedAdd`, `CheckedSubtract`, `CheckedMultiply` and `CheckedNegate` retain their fail-stop overflow requirement through lowering. Comparison and logical-not operations are distinct. The backend always emits the appropriate overflow branch for checked arithmetic. There is no unguarded arithmetic operation in this IR for source numeric expressions.
 
@@ -59,7 +59,7 @@ The verifier protects the backend against malformed instruction modules through 
 
 ## Regression evidence
 
-`make -C compiler test` runs the existing source acceptance/rejection/execution cases and direct typed-IR tests. The latter include guard deletion/bypass/mismatch, uninitialized slots, invalid types, malformed symbols, unknown targets, parameter rebinding, unreachable stack effects, shrinking predecessor/loop states and control-flow joins. A maximum-size 4096-element initializer test also bounds retained snapshot facts deterministically rather than increasing a wall-clock timeout. See RESOURCE-NOTE.md for the reproduced resource failure, repair and remaining scaling limit.
+`make -C compiler test` runs the existing source acceptance/rejection/execution cases and direct typed-IR tests. The latter include guard deletion/bypass/mismatch, uninitialized slots, invalid types, malformed symbols, unknown targets, parameter rebinding, unreachable stack effects, shrinking predecessor/loop states and control-flow joins. A maximum-size 4096-element initializer test also bounds retained snapshot facts deterministically rather than increasing a wall-clock timeout. See ARCHITECTURE.md for the reproduced resource failure, repair and remaining scaling limit.
 
 `python3 tests/compiler/equivalence.py BASELINE CANDIDATE` compares deterministic accepted programs, exact eight-byte integer results, SIGILL failure paths and rejection diagnostics against a saved previous compiler. This bounded differential test is not an equivalence proof. The independent `tests/semantics` oracle predicts results without relying on either compiler.
 
@@ -67,92 +67,26 @@ Historical verification manifests are preserved. A previous executable used for 
 
 ## Remaining resource scaling
 
-Basic-block snapshots remove the quadratic retained history of straight-line aggregate initialization. In this isolated representation-only candidate, `State.initialized` and `State.maybeInitialized` use dense bits over the function's validated scalar-slot universe. Must-initialized joins use intersection and may-initialized joins use union. Other receiver/logical/object/capability facts, stacks, CFG and semantic decisions are unchanged. Negative/unknown offsets cannot become unchecked bit indices; slot-domain and allocation arithmetic follow existing frame limits.
+Basic-block snapshots remove the quadratic retained history of straight-line aggregate initialization. Currently, `State.initialized` and `State.maybeInitialized` use dense bits over the function's validated scalar-slot universe. Must-initialized joins use intersection and may-initialized joins use union. Other receiver/logical/object/capability facts, stacks, CFG and semantic decisions are unchanged. Negative/unknown offsets cannot become unchecked bit indices; slot-domain and allocation arithmetic follow existing frame limits.
 
 Each of the two bitsets reserves `8 * ceil(declared_scalar_slots / 64)` logical payload bytes per retained state, even when its current facts are empty. `peakRetainedInitializationPayloadBytes` measures these word payloads only: it excludes the shared universe, container/allocator overhead, temporary states and every other fact collection. The original logical fact metric continues counting facts, not bits allocated. This representation improves dense-fact snapshots but can use more memory for sparse or empty states.
 
-The sparse tradeoff is observable in valid source: 2,048 empty branch diamonds before four initialized 4,096-byte arrays used 189,692 KiB with the baseline and 210,048 KiB with this candidate in one bounded run, with identical assembly. An IR-only 65,536-unused-slot/1,537-state case reserves 25,182,208 payload bytes despite zero initialized facts. These counterexamples prohibit a universal memory or speedup claim. No compiler-wide memory/time budget is introduced; state count, stacks, remaining node-based facts, AST and other allocations still depend on program structure. See RESOURCE-NOTE.md for dense improvements, sparse costs, exact limits and pending acceptance.
+Dense storage depends on the complete declared universe even for empty facts,
+so many sparse block-entry states can use more memory than node-based sets.
+Other state, operand stacks, ASTs and allocations still scale with input. There
+is no compiler-wide memory/time budget or universal improvement claim.
 
 ## Source-depth implementation limits
 
 Parser-produced trees have bounded recursive depth: expression parsing128, block nesting128, type parsing64 and namespace components32. Constructed expression ASTs independently cap depth at128, including left-associative chains and postfix member/index chains that have shallow parser recursion. Child attachment checks precede retention of an over-deep tree, so normal rejection cannot leave an unbounded destructor chain. These caps address reproduced small-file stack overflows, not arbitrary internally forged ASTs or a general compiler-wide memory/work bound. Deep rejection tests disable core dumps and require normal exit1, no output and unchanged inputs.
 
-## Encapsulated receiver boundary
+## Capability and value boundaries
 
-See [CLASSES.md](CLASSES.md) for the source and IR contract. Nominal class layouts, lexical object lifetimes, constructor completion and readonly/exclusive receiver permissions are explicit in IR. Methods use a separate capability-bearing call instruction; receiver addresses cannot enter the scalar operand stack or be stored in source-visible slots. Constructor/method entrypoints retain their defining-module reflection scope. The semantic frontend remains trusted for lexical privacy and name resolution.
+[Classes and values](VALUES.md), [bounded generics](GENERICS.md), [scalars](SCALARS.md), [ownership/views](OWNERSHIP.md) and [sealed services](SERVICES.md) specify current source and independent IR obligations. Every receiver, argument/result record, span, loan, owner and service grant has dedicated typed storage and lifetime operations; no scalar or layout metadata can manufacture authority. Spans use the current 56-byte tagged array/owner representation. Logical nested/empty fields still require complete initialization.
 
-## Ordinary class-value calls
+[Generated stack probes](STACK-GUARDS.md) touch each at-most-4096-byte downward reservation step. They require a valid starting stack and existing inaccessible guard; they do not bound recursion or establish kernel image admission.
 
-[VALUE-CALLS.md](VALUE-CALLS.md) specifies immutable independent parameter copies and complete nominal class returns. AggregateCall, BindObjectParameter and ReturnObject preserve value boundaries explicitly; hidden record/result capabilities never enter scalar operands. The verifier rejects incomplete, mutable or aliasing snapshots/results and mismatched nominal layouts. Exported signature type privacy and direct-import availability are resolved by the frontend. Backend and verifier dispatch are compile-time exhaustive so an added instruction variant cannot silently produce partial successful output.
-
-## Checked division boundary
-
-CheckedDivide/CheckedRemainder retain zero and signed-overflow guards as part of the lowering operation. No native IDIV is issued for zero divisors or the minimum/-1 pair; remainder handles the latter as zero. The dedicated division-zero UD2 label is distinct from checked arithmetic overflow. Integer enum switches are exhaustive under warning-as-error builds, and mutation tests cover both future enum members and instruction variants. See [INTEGERS.md](INTEGERS.md).
-
-## Unsigned arithmetic boundary
-
-U64 is an exact scalar IR type. BinaryValue carries its operand type; shifts require u64 data and an i64 count. Convert accepts only checked cross-type i64/u64 conversions and clears bounds evidence. Unary complement is fixed to 64 bits. All array/class/value-call payload checks preserve the exact scalar type. Count validation and representability checks belong to the checked shift lowering operation, with distinct invalid-count and overflow UD2 sites. See [UNSIGNED.md](UNSIGNED.md); no scalar integer can become a receiver, record, result or borrow capability.
-
-## Bounded class-template expansion
-
-`templates.hpp` deep-copies and substitutes explicit scalar arguments into concrete class ASTs. Module resolution owns defining-module identity, visibility, deduplication and request caps. Unexpanded parameter and template-argument metadata are rejected at the concrete boundary; no generic operation enters native IR. Ordinary nominal class/receiver/value-call checks apply unchanged. See [TEMPLATES.md](TEMPLATES.md) for the precise restricted domain and remaining resource limits.
-
-## Private fixed-array fields
-
-ClassFields logical shapes partition the flat classLayouts leaves exactly. Constructor-only zero initialization accounts for every array leaf. Receiver-array guard evidence identifies nominal receiver, logical field, element type and range; indexed operations require it independently of local-array tokens. Whole-class value copies and ABI staging use the flattened leaf layout, with a64-leaf class boundary cap. Scalar receiver instructions cannot reinterpret array fields. Capacity parameters disappear during typed substitution; no source integer becomes an address. See [FIXED-CONTAINERS.md](FIXED-CONTAINERS.md).
-
-## Composed-value boundary in development
-
-Logical fields may name a concrete nominal child class with an exact flattened
-leaf range. A bounded acyclic containment walk checks depth and layout; empty
-children retain logical completion facts. CopyObject, ObjectFieldCopy and
-InitializeObjectField are the only operations that establish nested value
-completion. Scalar stores cannot forge it. Constructor class arguments use
-readonly independent records, with a separately saved receiver capability.
-[COMPOSED-VALUES.md](COMPOSED-VALUES.md) states the source and verification contract;
-final validation is pending.
-
-## Closed enums and composed method results
-
-The milestone012 candidate adds declared enum types and EnumConstant, with exact
-case/type checks through value slots, fields and calls. Arithmetic and array
-elements keep their original numeric domains. MethodCall retains constructor
-objectArguments and appends resultOffset, selecting separate saved receiver and
-record/result slots. Recursive ClassField metadata and logical object completion
-remain the basis of copies and returns. The fixed-instance nominal arguments
-available to a generated template body do not widen runtime descriptor views.
-See [ENUM-RESULTS.md](ENUM-RESULTS.md); compiler review passed and final integration is pending.
-
-## Readonly span invocation boundary (milestone014 candidate)
-
-Byte-array origins have explicit BeginArray/EndArray lifetimes. Typed span spills
-are disjoint sixteen-byte capability reservations, never scalar slots. BorrowSpan
-requires a complete active owner; ReborrowSpan preserves its root and direct
-parent. EndSpan rejects live children, and EndArray rejects outstanding borrows.
-Continuing CFG states must agree on all active origins and capabilities. Store
-validation rejects mutation through any original array element while borrowed.
-
-BindSpanParameter belongs to the canonical entry prefix. AggregateCall retains
-its existing objectArguments/resultOffset contract and adds independent positional
-spanArguments. All class/scalar/span record offsets are explicit; the six-source-
-parameter limit does not become twelve scalar registers. Span-bearing functions
-use private native identities/local linkage. SpanLoad combines the bounds check
-and typed byte load; no separated pointer or length can bypass it. The analyzer
-also enforces lexical scope and source-level restrictions described in SPANS.md.
-This remains a narrow synchronous static-borrow candidate, not general lifetime
-polymorphism or a runtime borrow checker.
-
-## Ordinary overload candidate boundary
-
-Module resolution retains one defining-module declaration group and per-member
-export visibility. It resolves nominal signatures, rejects repeated parameter
-tuples, then records visible native candidates and signature visibility on each
-call AST. Semantic lowering checks arity, stages each actual argument once using
-existing scalar/class/span operations, and selects exactly one nominal tuple.
-Result and selected signature authority are checked independently. Existing IR
-Call/AggregateCall instructions identify a single concrete validated function; no
-overload metadata reaches IR. Scalar overload entrypoints have local linkage.
-This remains an unaccepted candidate under FUNCTION-OVERLOADS.md.
-
-The isolated candidate passed complete release/fatal sanitizer compiler gates and
-independent source/IR/native review. Parent integration is still pending.
+Const non-template methods can expose a checked readonly view of their implicit
+private fixed-u8 field. Source analysis and typed IR preserve the exact named
+receiver binding/creation lifetime and field provenance; copies have independent
+roots. This does not introduce general returned references or stored spans.

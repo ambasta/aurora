@@ -592,19 +592,11 @@ if action == 'guest':
                     patch.object(smoke.admission.common, "verify_object_exports"),
                     patch.object(smoke.admission, "RECEIPT", build / "graphical-console-admission.json"),
                     patch.object(smoke.admission, "checked", return_value=None) as admission_check,
-                    patch.object(smoke.admission, "source_files", return_value=[]),
                     patch.object(smoke.admission.common, "BUILD", build),
                 ):
                     files = smoke.admission.build_files(mode)
                     if mode != "normal":
-                        files += [
-                            build / name
-                            for name in (
-                                "graphical-console-admission.json",
-                                "graphical-console-build.json",
-                                "graphical-console-build-start.json",
-                            )
-                        ]
+                        files += [build / "graphical-console-admission.json"]
                     for path in files:
                         path.parent.mkdir(parents=True, exist_ok=True)
                         path.write_text("current")
@@ -867,7 +859,7 @@ if action == 'guest':
         with tempfile.TemporaryDirectory() as temporary:
             args = SimpleNamespace(images=Path(temporary), qemu="qemu", data="", firmware=["-bios", "firmware"])
 
-            def verify(args, mode=None, source=True):
+            def verify(args, mode=None):
                 if mode != "normal":
                     raise ValueError("capture drift")
 
@@ -882,7 +874,7 @@ if action == 'guest':
                     smoke.restoration(args, Path(temporary) / "restore", {})
                 launch.assert_called_once()
                 validate.assert_called_once_with(33, "", "normal")
-                self.assertEqual(checks.call_args_list[0].kwargs, dict(source=False))
+                self.assertEqual(checks.call_args_list[0].args, (args, "normal"))
 
     def test_bounds_and_cleanup(self):
         stream = io.BytesIO()

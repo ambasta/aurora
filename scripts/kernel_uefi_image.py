@@ -166,7 +166,7 @@ def owned_bytes_symbols(symbols):
     )
     for name in required:
         need(rows.get(name) in ("t", "T"), "Missing kernel owned-byte implementation: " + name)
-    admission = common.load("owned_byte_image_admission", ROOT / "tests/kernel-uefi-owned-bytes-admission.py")
+    admission = common.load("owned_byte_image_admission", ROOT / "scripts/kernel_owned_bytes_admission.py")
     for name, kind in admission.DEFINITIONS.items():
         need(rows.get(name) == kind, "Missing or nonlocal owned-byte graph definition: " + name)
     forbidden = (
@@ -215,10 +215,7 @@ GRAPHICAL_OBJECTS = frozenset(
         "memory-pe",
     )
 )
-REFLECTION_HELPERS = frozenset(
-    ("aurora_reflect_size", "aurora_reflect_field_count")
-    + tuple(f"__au_reflect_s{module}_{field}" for module in range(1, 7) for field in ("size", "field_count"))
-)
+
 GRAPHICAL_BRIDGES = frozenset(("__au_runtime_graphical_entry", "__au_runtime_graphical_value"))
 GRAPHICAL_IMPORTS = frozenset(("__au_runtime_console_next", "__au_runtime_display_pixel"))
 GRAPHICAL_HOST = GRAPHICAL_IMPORTS | {"__au_runtime_console_put"}
@@ -371,7 +368,7 @@ def snapshot_image_policy(directory, symbols):
         not any(name.startswith(("__cxa_", "_GLOBAL__sub_I", "_Zn", "_Zd")) for name in names),
         "Snapshot acquired constructor or heap machinery",
     )
-    decoder = common.load("snapshot_image_stack", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+    decoder = common.load("snapshot_image_stack", ROOT / "scripts/kernel_stack.py")
     linked = decoder.Elf(directory / "payload.elf")
     instructions, _ = decoder.disassemble(directory / "payload.elf")
     for public, private in (
@@ -500,9 +497,9 @@ def profile_selection(symbols, object_names, graphical, event=False, observe=Fal
             all(names.get(name) in ("t", "T") for name in GRAPHICAL_BRIDGES | GRAPHICAL_HOST),
             "Graphical runtime authority must be linked code",
         )
+        reflection = common.stack_facts.reflection_inventory(names)
         need(
-            {name for name in names if name.startswith(("aurora_reflect_", "__au_reflect_"))} == REFLECTION_HELPERS
-            and all(names[name] == "T" for name in REFLECTION_HELPERS),
+            all(names[name] == "T" for name in reflection),
             "Graphical reflection helper inventory/type mismatch",
         )
         need(
@@ -598,18 +595,9 @@ def event_object_policy(symbols, object_symbols, calls, language_bindings, mode)
             )
 
 
-def event_image_policy(directory, symbols=None, mode=None):
+def event_image_policy(directory, symbols=None, *, mode):
     directory = Path(directory)
-    if mode is None:
-        manifest = json.loads((directory / "iommu-event-build-start.json").read_text())
-        mode = manifest["mode"]
-        need(
-            mode in EVENT_MODES
-            and manifest["schema"] == "aurora-iommu-event-build-v1"
-            and {flag for flag in manifest["flags"] if flag.startswith("-DAURORA_IOMMU_EVENT_CASE")}
-            == {"-DAURORA_IOMMU_EVENT_CASE=" + str(EVENT_MODES.index(mode))},
-            "Event image lacks exact build selector",
-        )
+    need(mode in EVENT_MODES, "Event image requires an exact canonical mode")
     if symbols is None:
         symbols = subprocess.check_output(["nm", "-a", str(directory / "payload.elf")], text=True)
     profile_selection(
@@ -648,14 +636,14 @@ def graphical_object_policy(symbols, object_symbols, calls, language_bindings):
     profile_selection(symbols, object_symbols, True)
     parsed = {name: nm_entries(value) for name, value in object_symbols.items()}
     language = parsed["language"]
+    helpers = common.stack_facts.reflection_inventory(language)
     need(
         {name for name, kind in language.items() if kind in ("U", "w", "v")} == GRAPHICAL_IMPORTS,
         "Graphical generated imports must be exactly Console.next and Display.pixel",
     )
     need(
-        {name for name, kind in language.items() if kind.isupper() and kind != "U"}
-        == GRAPHICAL_BRIDGES | REFLECTION_HELPERS
-        and all(language.get(name) == "T" for name in GRAPHICAL_BRIDGES | REFLECTION_HELPERS),
+        {name for name, kind in language.items() if kind.isupper() and kind != "U"} == GRAPHICAL_BRIDGES | helpers
+        and all(language.get(name) == "T" for name in GRAPHICAL_BRIDGES | helpers),
         "Graphical globals must be exactly paired bridges and closed reflection helpers",
     )
     need(
@@ -673,7 +661,7 @@ def graphical_object_policy(symbols, object_symbols, calls, language_bindings):
                 ("GLOBAL", "HIDDEN")
                 if name in GRAPHICAL_BRIDGES
                 else ("GLOBAL", "DEFAULT")
-                if name in REFLECTION_HELPERS
+                if name in helpers
                 else ("LOCAL", "DEFAULT")
             ),
             "Graphical function escaped private ELF binding: " + name,
@@ -686,7 +674,7 @@ def graphical_object_policy(symbols, object_symbols, calls, language_bindings):
     for object_name, entries in parsed.items():
         reflection = {name for name in entries if name.startswith(("aurora_reflect_", "__au_reflect_"))}
         need(
-            reflection == (REFLECTION_HELPERS if object_name == "language" else set())
+            reflection == (helpers if object_name == "language" else set())
             and all(entries[name] == "T" for name in reflection),
             "Wrong reflection helper owner/importer: " + object_name,
         )
@@ -767,7 +755,7 @@ def console_service_policy(symbols, language_symbols, calls, contents, graphical
         for response in (b"Unknown command.", b"Line rejected:", b"Show commands", b"line capacity=64", b"aurora> "):
             need(response not in contents[object_name], "Human command presentation remains in C++ " + object_name)
     allowed_globals = (
-        GRAPHICAL_BRIDGES | REFLECTION_HELPERS
+        GRAPHICAL_BRIDGES | common.stack_facts.reflection_inventory(nm_entries(language_symbols))
         if graphical
         else {
             "__au_runtime_console_entry",
@@ -813,7 +801,7 @@ def graphical_image_policy(directory, symbols=None):
         language_imports=sorted(GRAPHICAL_IMPORTS),
         language_bridges=sorted(GRAPHICAL_BRIDGES),
         host_authorities=sorted(GRAPHICAL_HOST),
-        reflection_helpers=sorted(REFLECTION_HELPERS),
+        reflection_helpers=sorted(common.stack_facts.reflection_inventory(nm_entries(object_symbols["language"]))),
     )
 
 
@@ -828,6 +816,7 @@ def main(
     *,
     build_dir=None,
     check_only=False,
+    event_mode=None,
 ):
     build = Path(build_dir).resolve() if build_dir is not None else BUILD
     common.configure_paths(build, ROOT)
@@ -846,6 +835,12 @@ def main(
         or not (require_ipc or require_owned_bytes or require_disposal or require_graphical_console),
         "Event profile cannot combine with another image-policy flag",
     )
+    need(
+        event_mode in EVENT_MODES and require_iommu_observe == (event_mode == "iommu-event-observe")
+        if require_iommu_event
+        else event_mode is None,
+        "Event image-policy selector mismatch",
+    )
     pe_path = build / "esp/EFI/BOOT/BOOTX64.EFI"
     data = pe_path.read_bytes()
     binary = (build / "payload.bin").read_bytes()
@@ -862,7 +857,7 @@ def main(
         require_iommu_observe,
     )
     if require_iommu_event:
-        event_image_policy(build, symbols)
+        event_image_policy(build, symbols, mode=event_mode)
         if not require_iommu_observe:
             names += ["event-intake"]
     if require_graphical_console:
@@ -1038,12 +1033,13 @@ def cli():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--build-dir", type=Path, help="artifact directory (default: build/uefi)")
     parser.add_argument("--check-only", action="store_true", help="compare existing image metadata without writing")
+    parser.add_argument("--event-mode", choices=EVENT_MODES)
     arguments, policy_arguments = parser.parse_known_args()
     try:
         options = image_options(policy_arguments)
     except ValueError as error:
         raise SystemExit(str(error)) from error
-    main(**options, build_dir=arguments.build_dir, check_only=arguments.check_only)
+    main(**options, build_dir=arguments.build_dir, check_only=arguments.check_only, event_mode=arguments.event_mode)
 
 
 if __name__ == "__main__":

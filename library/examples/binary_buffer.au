@@ -16,8 +16,16 @@ auto main() -> i64 {
         return 3;
     }
     const builtin::array<u8, 10> record = {
-        buffer.at(0), buffer.at(1), buffer.at(2), buffer.at(3), buffer.at(4),
-        buffer.at(5), buffer.at(6), buffer.at(7), buffer.at(8), buffer.at(9)
+        buffer.at(0),
+        buffer.at(1),
+        buffer.at(2),
+        buffer.at(3),
+        buffer.at(4),
+        buffer.at(5),
+        buffer.at(6),
+        buffer.at(7),
+        buffer.at(8),
+        buffer.at(9)
     };
     buffer.write_u8(0, 255u8);
     const std::ByteReadResult length = std::read_be16(borrow_bytes(record), 0);

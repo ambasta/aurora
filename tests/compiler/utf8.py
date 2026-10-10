@@ -22,6 +22,7 @@ Fixtures contain at most 12 checks and 64 KiB of generated source.
 Run: python3 tests/compiler/utf8.py /path/to/aurorac
 Harness control: python3 -O tests/compiler/utf8.py --self-test-only
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,8 +53,30 @@ MAX_BATCH = 12
 STATUS = "std::Utf8Status::"
 SPAN = "builtin::span<const u8>"
 BOUNDARIES = (0, 0x7F, 0x80, 0x8F, 0x90, 0x9F, 0xA0, 0xBF, 0xC0, 0xFF)
-LEADS = (0, 0x7F, 0x80, 0xBF, 0xC0, 0xC1, 0xC2, 0xDF, 0xE0, 0xE1,
-         0xEC, 0xED, 0xEE, 0xEF, 0xF0, 0xF1, 0xF3, 0xF4, 0xF5, 0xF7, 0xF8, 0xFF)
+LEADS = (
+    0,
+    0x7F,
+    0x80,
+    0xBF,
+    0xC0,
+    0xC1,
+    0xC2,
+    0xDF,
+    0xE0,
+    0xE1,
+    0xEC,
+    0xED,
+    0xEE,
+    0xEF,
+    0xF0,
+    0xF1,
+    0xF3,
+    0xF4,
+    0xF5,
+    0xF7,
+    0xF8,
+    0xFF,
+)
 
 
 @dataclass(frozen=True)
@@ -79,8 +102,7 @@ def encode(value):
     require(scalar(value), "encoding model needs a Unicode scalar")
     if value < 128:
         return bytes((value,))
-    width = next(width for width, limit in ((2, 2048), (3, 65536), (4, 0x110000))
-                 if value < limit)
+    width = next(width for width, limit in ((2, 2048), (3, 65536), (4, 0x110000)) if value < limit)
     parts = []
     number = value
     for _ in range(width - 1):
@@ -98,8 +120,7 @@ def decode(data, offset, count, final):
     first = data[offset]
     if first < 128:
         return Decode("success", first, 1)
-    width = next((n for n in (2, 3, 4)
-                  if 256 - 2 ** (8 - n) <= first < 256 - 2 ** (7 - n)), None)
+    width = next((n for n in (2, 3, 4) if 256 - 2 ** (8 - n) <= first < 256 - 2 ** (7 - n)), None)
     if width is None:
         return Decode("invalid_sequence")
     value = first - (256 - 2 ** (8 - width))
@@ -138,7 +159,7 @@ def python_validation(data, final):
     try:
         text = decoder.decode(bytes(data), final)
     except UnicodeDecodeError as error:
-        prefix = bytes(data[:error.start])
+        prefix = bytes(data[: error.start])
         status = "truncated" if error.reason == "unexpected end of data" else "invalid_sequence"
         return Validation(status, error.start, len(prefix.decode("utf-8", "strict")))
     pending, state = decoder.getstate()
@@ -159,8 +180,9 @@ def crosscheck(data):
     for final in (False, True):
         modeled = validate(data, 0, len(data), final)
         expected = python_validation(data, final)
-        require(modeled == expected,
-                f"Python strict crosscheck {bytes(data).hex()} final={final}: {modeled} != {expected}")
+        require(
+            modeled == expected, f"Python strict crosscheck {bytes(data).hex()} final={final}: {modeled} != {expected}"
+        )
 
 
 def must_fail(action, label):
@@ -172,36 +194,53 @@ def must_fail(action, label):
 
 
 def self_tests():
-    for value, encoded in ((0, b"\0"), (127, b"\x7f"), (128, b"\xc2\x80"),
-                           (2047, b"\xdf\xbf"), (2048, b"\xe0\xa0\x80"),
-                           (0xD7FF, b"\xed\x9f\xbf"), (0xE000, b"\xee\x80\x80"),
-                           (0x10000, b"\xf0\x90\x80\x80"),
-                           (0x10FFFF, b"\xf4\x8f\xbf\xbf")):
+    for value, encoded in (
+        (0, b"\0"),
+        (127, b"\x7f"),
+        (128, b"\xc2\x80"),
+        (2047, b"\xdf\xbf"),
+        (2048, b"\xe0\xa0\x80"),
+        (0xD7FF, b"\xed\x9f\xbf"),
+        (0xE000, b"\xee\x80\x80"),
+        (0x10000, b"\xf0\x90\x80\x80"),
+        (0x10FFFF, b"\xf4\x8f\xbf\xbf"),
+    ):
         require(encode(value) == encoded, "mathematical encoder anchor")
-        require(decode(encoded, 0, len(encoded), True) == Decode("success", value, len(encoded)),
-                "mathematical decoder anchor")
-    anchors = ((b"\xc0", "invalid_sequence"), (b"\xc2", "truncated"),
-               (b"\xe0\x80", "invalid_sequence"), (b"\xed\xa0", "invalid_sequence"),
-               (b"\xf0\x80", "invalid_sequence"), (b"\xf4\x90", "invalid_sequence"),
-               (b"\xf5", "invalid_sequence"), (b"\xf0\x90\x80", "truncated"),
-               (b"\xe1A", "invalid_sequence"), (b"\xf1\x80A", "invalid_sequence"))
+        require(
+            decode(encoded, 0, len(encoded), True) == Decode("success", value, len(encoded)),
+            "mathematical decoder anchor",
+        )
+    anchors = (
+        (b"\xc0", "invalid_sequence"),
+        (b"\xc2", "truncated"),
+        (b"\xe0\x80", "invalid_sequence"),
+        (b"\xed\xa0", "invalid_sequence"),
+        (b"\xf0\x80", "invalid_sequence"),
+        (b"\xf4\x90", "invalid_sequence"),
+        (b"\xf5", "invalid_sequence"),
+        (b"\xf0\x90\x80", "truncated"),
+        (b"\xe1A", "invalid_sequence"),
+        (b"\xf1\x80A", "invalid_sequence"),
+    )
     for data, status in anchors:
         require(decode(data, 0, len(data), True) == Decode(status), "decoder status anchor")
         crosscheck(data)
     require(decode(b"\xff", 1, 0, True) == Decode("end_of_input"), "empty decode")
     require(validate(b"\xff", 1, 0, False) == Validation("success"), "empty validation")
-    require(validate(b"A\xc2\xa2\xe1A", 0, 5, False)
-            == Validation("invalid_sequence", 3, 2), "prefix anchor")
-    for offset, count in ((MIN_I64, 0), (0, MIN_I64), (-1, -1), (2, 0),
-                          (1, MAX_I64), (MAX_I64, MAX_I64)):
+    require(validate(b"A\xc2\xa2\xe1A", 0, 5, False) == Validation("invalid_sequence", 3, 2), "prefix anchor")
+    for offset, count in ((MIN_I64, 0), (0, MIN_I64), (-1, -1), (2, 0), (1, MAX_I64), (MAX_I64, MAX_I64)):
         require(decode(b"\xff", offset, count, False) == Decode("out_of_range"), "range first")
         require(validate(b"\xff", offset, count, False) == Validation("out_of_range"), "range first")
     good = Observation(PASS.to_bytes(8, "little"), exit_code=0)
     case = Case("all result bits", "", PASS)
     validate_values(good, [case])
-    for bad in (replace(good, output=good.output[:1]), replace(good, output=good.output + b"x"),
-                replace(good, exit_code=1), replace(good, terminal_signal=signal.SIGILL),
-                replace(good, output=(PASS ^ (1 << 40)).to_bytes(8, "little"))):
+    for bad in (
+        replace(good, output=good.output[:1]),
+        replace(good, output=good.output + b"x"),
+        replace(good, exit_code=1),
+        replace(good, terminal_signal=signal.SIGILL),
+        replace(good, output=(PASS ^ (1 << 40)).to_bytes(8, "little")),
+    ):
         must_fail(lambda bad=bad: validate_values(bad, [case]), "bad native observation")
     must_fail(lambda: require(False, "deliberate assertion"), "disabled require")
     print("PASS UTF-8 harness controls (active under Python -O)", flush=True)
@@ -226,8 +265,11 @@ def python_exhaustive():
             for tail in itertools.product(BOUNDARIES, repeat=width - 1):
                 crosscheck(bytes((lead, *tail)))
                 longer += 1
-    print(f"PASS Python strict crosscheck: {count} scalars, 256 one-byte, 65536 two-byte, "
-          f"{longer} longer boundary inputs", flush=True)
+    print(
+        f"PASS Python strict crosscheck: {count} scalars, 256 one-byte, 65536 two-byte, "
+        f"{longer} longer boundary inputs",
+        flush=True,
+    )
     return longer
 
 
@@ -285,13 +327,14 @@ auto model_check(builtin::span<const u8> bytes,i64 count,bool final_input)->u64{
     if(validation.scalar_count()!=scalars){return 6u64;}
     return 0u64;
 }
-"""
+"""  # noqa: E501 - Preserve exact embedded Aurora source bytes.
 
 
 def array(name, data, const=False):
     require(1 <= len(data) <= 4096, "fixture array must contain 1..4096 bytes")
-    return (f"{'const ' if const else ''}builtin::array<u8,{len(data)}> {name}={{"
-            + ",".join(f"{b}u8" for b in data) + "};")
+    return (
+        f"{'const ' if const else ''}builtin::array<u8,{len(data)}> {name}={{" + ",".join(f"{b}u8" for b in data) + "};"
+    )
 
 
 def check_result(name, data, offset, count, final):
@@ -314,7 +357,9 @@ def check_result(name, data, offset, count, final):
 
 
 def scalar_loop():
-    return Case("all 1112064 Unicode scalars in native runtime loop", r"""
+    return Case(
+        "all 1112064 Unicode scalars in native runtime loop",
+        r"""
         builtin::array<u8,4> bytes={255u8,255u8,255u8,255u8};
         u64 value=0u64;u64 visited=0u64;
         while(value<1114112u64){
@@ -349,14 +394,18 @@ def scalar_loop():
             value=value+1u64;
         }
         return 11914855783004569770u64+visited;
-    """, PASS + SCALARS)
+    """,  # noqa: E501 - Preserve exact embedded Aurora source bytes.
+        PASS + SCALARS,
+    )
 
 
 def short_loop(width):
-    limit = 256 ** width
+    limit = 256**width
     assignments = "bytes[0]=u8(number);" if width == 1 else "bytes[0]=u8(number/256);bytes[1]=u8(number%256);"
-    return Case(f"all {limit} inputs of length {width}, final and chunk", f"""
-        {array('bytes', bytes(width))}i64 number=0;u64 visited=0u64;
+    return Case(
+        f"all {limit} inputs of length {width}, final and chunk",
+        f"""
+        {array("bytes", bytes(width))}i64 number=0;u64 visited=0u64;
         while(number<{limit}){{
             {assignments}
             {{const {SPAN} view=borrow_bytes(bytes);
@@ -368,17 +417,24 @@ def short_loop(width):
             visited=visited+1u64;number=number+1;
         }}
         return {PASS}u64+visited;
-    """, PASS + limit, prelude=MODEL)
+    """,
+        PASS + limit,
+        prelude=MODEL,
+    )
 
 
 def boundary_loop(width):
     count = len(LEADS) * len(BOUNDARIES) ** (width - 1)
     radix = len(BOUNDARIES)
     tail = "i64 encoded=number; i64 position=" + str(width - 1) + ";"
-    tail += f"while(position>0){{bytes[position]=boundary[encoded%{radix}];encoded=encoded/{radix};position=position-1;}}"
-    return Case(f"{count} length-{width} boundary-class inputs, final and chunk", f"""
-        {array('leads', LEADS, const=True)}{array('boundary', BOUNDARIES, const=True)}
-        {array('bytes', bytes(width))}
+    tail += (
+        f"while(position>0){{bytes[position]=boundary[encoded%{radix}];encoded=encoded/{radix};position=position-1;}}"
+    )
+    return Case(
+        f"{count} length-{width} boundary-class inputs, final and chunk",
+        f"""
+        {array("leads", LEADS, const=True)}{array("boundary", BOUNDARIES, const=True)}
+        {array("bytes", bytes(width))}
         i64 lead=0;u64 visited=0u64;
         while(lead<{len(LEADS)}){{
             i64 number=0;
@@ -395,50 +451,95 @@ def boundary_loop(width):
             lead=lead+1;
         }}
         return {PASS}u64+visited;
-    """, PASS + count, prelude=MODEL)
+    """,
+        PASS + count,
+        prelude=MODEL,
+    )
 
 
 def ordinary_cases():
     # Complete scalar boundaries, NUL, BOM, noncharacters and unassigned scalars.
-    values = (0, 1, 0x7F, 0x80, 0x7FF, 0x800, 0xD7FF, 0xE000, 0xFFFF,
-              0x10000, 0x10FFFF, 0xFEFF, 0xFFFD, 0xFDD0, 0xFDEF, 0x1FFFE, 0x0378)
+    values = (
+        0,
+        1,
+        0x7F,
+        0x80,
+        0x7FF,
+        0x800,
+        0xD7FF,
+        0xE000,
+        0xFFFF,
+        0x10000,
+        0x10FFFF,
+        0xFEFF,
+        0xFFFD,
+        0xFDD0,
+        0xFDEF,
+        0x1FFFE,
+        0x0378,
+    )
     for value in values:
         raw = encode(value)
         owner = b"\xff" + raw + b"\xff"
         for final in (False, True):
             for cut in range(len(raw) + 1):
-                yield check_result(f"scalar U+{value:04X} window prefix {cut}, final={final}",
-                                   owner, 1, cut, final)
+                yield check_result(f"scalar U+{value:04X} window prefix {cut}, final={final}", owner, 1, cut, final)
     # Range rejection must precede decoding and avoid signed addition overflow.
     data = b"\xff\xc2\xa2\xff"
-    for offset, count in itertools.product((MIN_I64, -1, 0, 1, 3, 4, 5, MAX_I64),
-                                            (MIN_I64, -1, 0, 1, 2, 4, MAX_I64)):
+    for offset, count in itertools.product((MIN_I64, -1, 0, 1, 3, 4, 5, MAX_I64), (MIN_I64, -1, 0, 1, 2, 4, MAX_I64)):
         for final in (False, True):
             yield check_result(f"range offset={offset} count={count} final={final}", data, offset, count, final)
     # All complete leading bytes/scalars are counted, failing scalar is untouched.
     prefix = encode(0) + encode(0xFEFF) + encode(0x1F642) + b"A"
-    endings = (b"", b"\x80", b"\xc0", b"\xc1\xbf", b"\xc2", b"\xe0\x9f",
-               b"\xed\xa0", b"\xed\xbf\xbf", b"\xf0\x8f", b"\xf4\x90",
-               b"\xf5", b"\xff", b"\xe1A", b"\xf1\x80A", b"\xe1\x80",
-               b"\xf1\x80", b"\xf1\x80\x80", b"\xf4\x8f\xbf", b"\xffA")
+    endings = (
+        b"",
+        b"\x80",
+        b"\xc0",
+        b"\xc1\xbf",
+        b"\xc2",
+        b"\xe0\x9f",
+        b"\xed\xa0",
+        b"\xed\xbf\xbf",
+        b"\xf0\x8f",
+        b"\xf4\x90",
+        b"\xf5",
+        b"\xff",
+        b"\xe1A",
+        b"\xf1\x80A",
+        b"\xe1\x80",
+        b"\xf1\x80",
+        b"\xf1\x80\x80",
+        b"\xf4\x8f\xbf",
+        b"\xffA",
+    )
     for ending in endings:
         for final in (False, True):
             data = b"\xff" + prefix + ending + b"\x00"
-            yield check_result(f"validated prefix before {ending.hex()} final={final}", data, 1,
-                               len(prefix) + len(ending), final)
+            yield check_result(
+                f"validated prefix before {ending.hex()} final={final}", data, 1, len(prefix) + len(ending), final
+            )
     # Public reports contain ordinary, forgeable data; scalar fallback remains safe.
     for status in ("success", "end_of_input", "out_of_range", "invalid_sequence", "truncated", "need_more"):
         for value in (0, 0xD7FF, 0xD800, 0xDFFF, 0xE000, 0x10FFFF, 0x110000, MAX_U64):
             expected = value if status == "success" and scalar(value) else MAX_U64 - 1
-            yield Case(f"public {status} report scalar {value}",
-                       f"const std::Utf8DecodeResult report=std::Utf8DecodeResult({STATUS}{status},{value}u64,0);"
-                       f"return report.scalar_or({MAX_U64-1}u64);", expected)
+            yield Case(
+                f"public {status} report scalar {value}",
+                f"const std::Utf8DecodeResult report=std::Utf8DecodeResult({STATUS}{status},{value}u64,0);"
+                f"return report.scalar_or({MAX_U64 - 1}u64);",
+                expected,
+            )
         for width in (MIN_I64, -1, 0, 1, 4, MAX_I64):
             expected_width = width if status == "success" else 0
-            yield Case(f"public {status} report width {width} is ordinary data",
-                       f"const std::Utf8DecodeResult report=std::Utf8DecodeResult({STATUS}{status},65u64,{width});"
-                       "return report.width();", expected_width, result_type="i64")
-    yield Case("decode report copies and input owner stay independent", f"""
+            yield Case(
+                f"public {status} report width {width} is ordinary data",
+                f"const std::Utf8DecodeResult report=std::Utf8DecodeResult({STATUS}{status},65u64,{width});"
+                "return report.width();",
+                expected_width,
+                result_type="i64",
+            )
+    yield Case(
+        "decode report copies and input owner stay independent",
+        f"""
         builtin::array<u8,4> bytes={{240u8,159u8,153u8,130u8}};
         const std::Utf8DecodeResult saved=std::decode_utf8(borrow_bytes(bytes),0,4,true);
         {{const {SPAN} view=borrow_bytes(bytes);
@@ -452,14 +553,20 @@ def ordinary_cases():
         const std::Utf8DecodeResult copy=saved;
         if(either(copy.status()!=std::Utf8Status::success,copy.width()!=4)){{return 3u64;}}
         return copy.scalar_or(0u64);
-    """, 0x1F642)
-    yield Case("validation reports are independent ordinary signed-count values", f"""
+    """,  # noqa: E501 - Preserve exact embedded Aurora source bytes.
+        0x1F642,
+    )
+    yield Case(
+        "validation reports are independent ordinary signed-count values",
+        f"""
         const std::Utf8ValidationResult original=std::Utf8ValidationResult(std::Utf8Status::success,{MIN_I64},{MAX_I64});
         const std::Utf8ValidationResult copy=original;
         if(copy.status()!=std::Utf8Status::success){{return 1u64;}}
         if(either(copy.prefix_bytes()!={MIN_I64},copy.scalar_count()!={MAX_I64})){{return 2u64;}}
         return {PASS}u64;
-    """, PASS)
+    """,  # noqa: E501 - Preserve exact embedded Aurora source bytes.
+        PASS,
+    )
     data = b"A" * 4092 + encode(0x10FFFF)
     yield check_result("full maximum-capacity 4096-byte span", data, 0, len(data), True)
     yield check_result("four-byte scalar at maximum-capacity span tail", data, 4092, 4, False)
@@ -468,8 +575,7 @@ def ordinary_cases():
 def replay_cases():
     # A fixed four-byte pending owner holds at most three bytes after a feed;
     # each arriving byte is appended only after the previous borrow has ended.
-    examples = ((0, 0x7F, 0x80, 0x800, 0x10000, 0x10FFFF, 0xFEFF, 0xFDD0),
-                (0x1F642, 65, 0xD7FF, 0xE000, 0x0378, 0))
+    examples = ((0, 0x7F, 0x80, 0x800, 0x10000, 0x10FFFF, 0xFEFF, 0xFDD0), (0x1F642, 65, 0xD7FF, 0xE000, 0x0378, 0))
     for values in examples:
         data = b"".join(encode(value) for value in values)
         # Every split is replayed from the unconsumed suffix. Separate fixtures
@@ -482,9 +588,15 @@ def replay_cases():
             body += f"const {SPAN} view=borrow_bytes(bytes);"
             body += f"const std::Utf8ValidationResult first=std::validate_utf8(view,0,{split},false);"
             body += f"if(first.status()!={STATUS}{first.status}){{return 1u64;}}"
-            body += f"if(either(first.prefix_bytes()!={first.prefix_bytes},first.scalar_count()!={first.scalar_count})){{return 2u64;}}"
+            body += (
+                f"if(either(first.prefix_bytes()!={first.prefix_bytes},first.sca"
+                f"lar_count()!={first.scalar_count})){{return 2u64;}}"
+            )
             body += f"if({split}-first.prefix_bytes()>3){{return 3u64;}}"
-            body += f"const std::Utf8ValidationResult last=std::validate_utf8(view,first.prefix_bytes(),{len(data)}-first.prefix_bytes(),true);"
+            body += (
+                f"const std::Utf8ValidationResult last=std::validate_utf8(view,f"
+                f"irst.prefix_bytes(),{len(data)}-first.prefix_bytes(),true);"
+            )
             body += "if(last.status()!=std::Utf8Status::success){return 4u64;}"
             body += f"if(last.prefix_bytes()+first.prefix_bytes()!={len(data)}){{return 5u64;}}"
             body += f"if(last.scalar_count()+first.scalar_count()!={len(values)}){{return 6u64;}}"
@@ -502,7 +614,9 @@ def replay_cases():
         body += "count=count+1;committed=committed+used;used=0;"
         body += "}else{if(either(result.status()!=std::Utf8Status::need_more,result.width()!=0)){return 3u64;}}}"
         body += "if(used>3){return 4u64;}}"
-        body += f"if(either(either(used!=0,committed!={len(data)}),count!={len(values)})){{return 5u64;}}return {PASS}u64;"
+        body += (
+            f"if(either(either(used!=0,committed!={len(data)}),count!={len(values)})){{return 5u64;}}return {PASS}u64;"
+        )
         yield Case(f"one-byte chunk replay with at most three retained bytes {data.hex()}", body, PASS)
 
 
@@ -518,25 +632,43 @@ class Suite:
 
     def command(self, args, directory, name, compiler=False, native=False):
         address_limit = None if compiler and self.sanitized_compiler else (512 if compiler else 128) << 20
+
         def limits():
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
             resource.setrlimit(resource.RLIMIT_CPU, (10, 11))
             resource.setrlimit(resource.RLIMIT_FSIZE, (8 << 20, 8 << 20))
             if address_limit is not None:
                 resource.setrlimit(resource.RLIMIT_AS, (address_limit, address_limit))
-        receipt = {"command": [str(arg) for arg in args], "cpu_soft_seconds": 10,
-                   "cpu_hard_seconds": 11, "address_space_bytes": address_limit,
-                   "file_size_bytes": 8 << 20, "wall_seconds": self.timeout if native else 30}
+
+        receipt = {
+            "command": [str(arg) for arg in args],
+            "cpu_soft_seconds": 10,
+            "cpu_hard_seconds": 11,
+            "address_space_bytes": address_limit,
+            "file_size_bytes": 8 << 20,
+            "wall_seconds": self.timeout if native else 30,
+        }
         try:
-            with (directory / f"{name}.stdout").open("wb") as stdout, (directory / f"{name}.stderr").open("wb") as stderr:
-                result = subprocess.run([str(arg) for arg in args], stdout=stdout, stderr=stderr,
-                                        timeout=receipt["wall_seconds"], preexec_fn=limits)
+            with (
+                (directory / f"{name}.stdout").open("wb") as stdout,
+                (directory / f"{name}.stderr").open("wb") as stderr,
+            ):
+                result = subprocess.run(
+                    [str(arg) for arg in args],
+                    stdout=stdout,
+                    stderr=stderr,
+                    timeout=receipt["wall_seconds"],
+                    preexec_fn=limits,
+                )
             receipt["returncode"] = result.returncode
-            require(result.returncode == 0,
-                    f"{name}: expected exit 0, got {result.returncode}: "
-                    + (directory / f"{name}.stderr").read_bytes()[:4096].decode(errors="replace"))
-            require((directory / f"{name}.stderr").stat().st_size == 0,
-                    f"{name}: unexpected stderr; see retained artifact")
+            require(
+                result.returncode == 0,
+                f"{name}: expected exit 0, got {result.returncode}: "
+                + (directory / f"{name}.stderr").read_bytes()[:4096].decode(errors="replace"),
+            )
+            require(
+                (directory / f"{name}.stderr").stat().st_size == 0, f"{name}: unexpected stderr; see retained artifact"
+            )
             return (directory / f"{name}.stdout").read_bytes()
         except subprocess.TimeoutExpired as error:
             receipt["timeout"] = True
@@ -547,14 +679,25 @@ class Suite:
     def execute(self, directory, functions):
         instructions = [".text", ".globl _start", "_start:"]
         for function in functions:
-            instructions.extend([f"call {function}", "pushq %rax", "movq $1,%rax", "movq $1,%rdi",
-                                 "movq %rsp,%rsi", "movq $8,%rdx", "syscall", "addq $8,%rsp"])
-        instructions.extend(["movq $60,%rax", "xorq %rdi,%rdi", "syscall",
-                             '.section .note.GNU-stack,"",@progbits'])
+            instructions.extend(
+                [
+                    f"call {function}",
+                    "pushq %rax",
+                    "movq $1,%rax",
+                    "movq $1,%rdi",
+                    "movq %rsp,%rsi",
+                    "movq $8,%rdx",
+                    "syscall",
+                    "addq $8,%rsp",
+                ]
+            )
+        instructions.extend(["movq $60,%rax", "xorq %rdi,%rdi", "syscall", '.section .note.GNU-stack,"",@progbits'])
         (directory / "entry.s").write_text("\n".join(instructions) + "\n")
         self.command(["as", "--64", directory / "compiled.s", "-o", directory / "program.o"], directory, "assemble")
         self.command(["as", "--64", directory / "entry.s", "-o", directory / "entry.o"], directory, "entry")
-        self.command(["ld", "-o", directory / "program", directory / "entry.o", directory / "program.o"], directory, "link")
+        self.command(
+            ["ld", "-o", directory / "program", directory / "entry.o", directory / "program.o"], directory, "link"
+        )
         output = self.command([directory / "program"], directory, "native", native=True)
         return Observation(output, exit_code=0)
 
@@ -562,9 +705,11 @@ class Suite:
         require(1 <= len(cases) <= MAX_BATCH, "native batch size limit")
         require(len(cases) == 1 or all(not item.prelude for item in cases), "prelude isolation")
         functions = [f"utf8_case_{index}" for index in range(len(cases))]
-        source = ("module utf8_test;import std.utf8;\n"
-                  "auto both(bool a,bool b)->bool{if(a){return b;}return false;}\n"
-                  "auto either(bool a,bool b)->bool{if(a){return true;}return b;}\n")
+        source = (
+            "module utf8_test;import std.utf8;\n"
+            "auto both(bool a,bool b)->bool{if(a){return b;}return false;}\n"
+            "auto either(bool a,bool b)->bool{if(a){return true;}return b;}\n"
+        )
         for function, case in zip(functions, cases):
             source += case.prelude + f"\nauto {function}()->{case.result_type}{{{case.body}}}\n"
         require(len(source.encode()) <= MAX_SOURCE_BYTES, "generated source byte limit")
@@ -573,12 +718,20 @@ class Suite:
         self.batches += 1
         path, output = directory / "input.au", directory / "compiled.s"
         path.write_text(source)
-        receipt = {"cases": [case.name for case in cases], "source_bytes": len(source.encode()),
-                   "source_sha256": hashlib.sha256(source.encode()).hexdigest(), "status": "running"}
+        receipt = {
+            "cases": [case.name for case in cases],
+            "source_bytes": len(source.encode()),
+            "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
+            "status": "running",
+        }
         started = time.monotonic()
         try:
-            self.command([self.compiler, "--module-root", ROOT / "library", path, "-o", output],
-                         directory, "compiler", compiler=True)
+            self.command(
+                [self.compiler, "--module-root", ROOT / "library", path, "-o", output],
+                directory,
+                "compiler",
+                compiler=True,
+            )
             require(output.is_file(), "successful compiler did not create assembly")
             require(path.read_text() == source, "compiler modified its source")
             observed = self.execute(directory, functions)
@@ -603,8 +756,9 @@ def main():
     parser.add_argument("--self-test-only", action="store_true")
     parser.add_argument("--artifacts", type=Path)
     parser.add_argument("--timeout", type=int, default=15, help="native wall timeout; CPU stays capped at 10/11s")
-    parser.add_argument("--sanitized-compiler", action="store_true",
-                        help="omit only compiler RLIMIT_AS for sanitizer shadow memory")
+    parser.add_argument(
+        "--sanitized-compiler", action="store_true", help="omit only compiler RLIMIT_AS for sanitizer shadow memory"
+    )
     args = parser.parse_args()
     require(5 <= args.timeout <= 90, "native wall timeout must be between 5 and 90 seconds")
     self_tests()
@@ -613,23 +767,33 @@ def main():
     require(args.compiler is not None, "compiler argument required for native execution")
     compiler = args.compiler.resolve()
     library = ROOT / "library/std/utf8.au"
-    identities = {"compiler_sha256": hashlib.sha256(compiler.read_bytes()).hexdigest(),
-                  "utf8_sha256": hashlib.sha256(library.read_bytes()).hexdigest(),
-                  "test_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+    identities = {
+        "compiler_sha256": hashlib.sha256(compiler.read_bytes()).hexdigest(),
+        "utf8_sha256": hashlib.sha256(library.read_bytes()).hexdigest(),
+        "test_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    }
     if args.artifacts:
         directory = args.artifacts.resolve()
         directory.mkdir(parents=True, exist_ok=False)
     else:
         (ROOT / "build").mkdir(exist_ok=True)
         directory = Path(tempfile.mkdtemp(prefix="utf8-native-", dir=ROOT / "build"))
-    manifest = {**identities, "python": sys.version, "optimized_python": not __debug__,
-                "native_wall_seconds": args.timeout, "tool_wall_seconds": 30,
-                "cpu_soft_hard_seconds": [10, 11], "compiler_address_space_bytes": None if args.sanitized_compiler else 512 << 20,
-                "other_address_space_bytes": 128 << 20, "regular_file_bytes": 8 << 20,
-                "max_source_bytes": MAX_SOURCE_BYTES,
-                "max_cases_per_batch": MAX_BATCH, "unicode_format": "17.0.0 section 3.9 Table 3-7",
-                "scope": "ordinary functional Linux/x86-64 execution; no safety/performance proof",
-                "status": "running"}
+    manifest = {
+        **identities,
+        "python": sys.version,
+        "optimized_python": not __debug__,
+        "native_wall_seconds": args.timeout,
+        "tool_wall_seconds": 30,
+        "cpu_soft_hard_seconds": [10, 11],
+        "compiler_address_space_bytes": None if args.sanitized_compiler else 512 << 20,
+        "other_address_space_bytes": 128 << 20,
+        "regular_file_bytes": 8 << 20,
+        "max_source_bytes": MAX_SOURCE_BYTES,
+        "max_cases_per_batch": MAX_BATCH,
+        "unicode_format": "17.0.0 section 3.9 Table 3-7",
+        "scope": "ordinary functional Linux/x86-64 execution; no safety/performance proof",
+        "status": "running",
+    }
     print(json.dumps({**identities, "artifacts": str(directory)}), flush=True)
     suite = None
     try:
@@ -645,16 +809,30 @@ def main():
                 batch = []
         if batch:
             suite.check(batch)
-        require(hashlib.sha256(compiler.read_bytes()).hexdigest() == identities["compiler_sha256"],
-                "compiler identity changed during test")
-        require(hashlib.sha256(library.read_bytes()).hexdigest() == identities["utf8_sha256"],
-                "UTF-8 library changed during test")
-        manifest.update(status="passed", native_checks=suite.count, native_batches=suite.batches,
-                        scalar_values=SCALARS, one_byte_inputs=256, two_byte_inputs=65536,
-                        longer_boundary_inputs=longer, final_modes_per_input=2)
-        print(f"PASS UTF-8: {suite.count} native checks in {suite.batches} bounded fixtures; "
-              f"all {SCALARS} scalars, 256 one-byte, 65536 two-byte, {longer} longer boundary inputs; "
-              f"artifacts={directory}", flush=True)
+        require(
+            hashlib.sha256(compiler.read_bytes()).hexdigest() == identities["compiler_sha256"],
+            "compiler identity changed during test",
+        )
+        require(
+            hashlib.sha256(library.read_bytes()).hexdigest() == identities["utf8_sha256"],
+            "UTF-8 library changed during test",
+        )
+        manifest.update(
+            status="passed",
+            native_checks=suite.count,
+            native_batches=suite.batches,
+            scalar_values=SCALARS,
+            one_byte_inputs=256,
+            two_byte_inputs=65536,
+            longer_boundary_inputs=longer,
+            final_modes_per_input=2,
+        )
+        print(
+            f"PASS UTF-8: {suite.count} native checks in {suite.batches} bounded fixtures; "
+            f"all {SCALARS} scalars, 256 one-byte, 65536 two-byte, {longer} longer boundary inputs; "
+            f"artifacts={directory}",
+            flush=True,
+        )
     except Exception as error:
         manifest.update(status="failed", error=str(error))
         raise

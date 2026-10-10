@@ -1,11 +1,11 @@
 export module std.array;
 
 export namespace std {
-    template <Scalar T, i64 N>
-    class array {
+    template <Scalar T, i64 N> class array {
         builtin::array<T, N> elements;
     public:
-        array() : elements{} {}
+        array() : elements{} {
+        }
 
         auto size() const -> i64 {
             return N;

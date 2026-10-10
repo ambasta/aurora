@@ -1,3 +1,4 @@
 *
 !Containerfile
 !ruff-requirements.txt
+!build-event.py

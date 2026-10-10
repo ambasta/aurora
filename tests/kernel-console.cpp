@@ -12,22 +12,30 @@ auto need(bool condition, std::string_view message) -> void {
         std::exit(1);
     }
 }
-auto feed(Line& line, std::string_view bytes) -> Event {
+auto feed(Line &line, std::string_view bytes) -> Event {
     auto event = Event::ignored;
-    for (const auto byte : bytes) { event = line.consume(static_cast<std::uint8_t>(byte)); }
+    for (const auto byte : bytes) {
+        event = line.consume(static_cast<std::uint8_t>(byte));
+    }
     need(line.length() <= 64, "line capacity violated");
     return event;
 }
-}
+} // namespace
 
 auto main() -> int {
     using aurora::console::byte_policy;
     using aurora::console::command_policy;
     for (auto byte = std::uint64_t{0}; byte < 256; ++byte) {
         auto expected = std::uint64_t{5};
-        if (byte >= 32 && byte <= 126) { expected = 2; }
-        if (byte == 8 || byte == 127) { expected = 1; }
-        if (byte == 10 || byte == 13) { expected = 4; }
+        if (byte >= 32 && byte <= 126) {
+            expected = 2;
+        }
+        if (byte == 8 || byte == 127) {
+            expected = 1;
+        }
+        if (byte == 10 || byte == 13) {
+            expected = 4;
+        }
         need(byte_policy(byte, 0, 0, 0) == expected, "byte classification mismatch");
     }
     need(byte_policy(256, 0, 0, 0) == 0, "out-of-range byte accepted");
@@ -57,7 +65,9 @@ auto main() -> int {
         need(line.consume('x') == Event::echo, "64-byte line truncated early");
     }
     need(line.consume('\n') == Event::unknown, "64-byte line rejected");
-    for (unsigned index = 0; index < 512; ++index) { static_cast<void>(line.consume('x')); }
+    for (unsigned index = 0; index < 512; ++index) {
+        static_cast<void>(line.consume('x'));
+    }
     need(feed(line, "\b\177exit\r") == Event::rejected, "overflow suffix escaped rejection");
     need(feed(line, "\nhelp\n") == Event::help, "overflow did not recover at CRLF");
     for (const auto bad : {0, 9, 27, 31, 128, 255}) {

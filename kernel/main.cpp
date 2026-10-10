@@ -34,20 +34,27 @@ volatile unsigned breakpoint_count = 0;
     aurora::hardware::Serial::text(message);
     aurora::hardware::Serial::text("\r\nAURORA_BOOT_FAIL\r\n");
     aurora::hardware::Io::write(0xf4, 0x11);
-    for (;;) asm volatile("cli; hlt");
+    for (;;)
+        asm volatile("cli; hlt");
 }
 auto require(bool condition, std::string_view message) -> void {
-    if (!condition) fail(message);
+    if (!condition)
+        fail(message);
 }
 auto program_fault_kind(aurora::user::ProgramEvent event) -> std::string_view {
     using aurora::user::ProgramEvent;
     switch (event) {
-    case ProgramEvent::bounds: return "bounds";
-    case ProgramEvent::overflow: return "overflow";
-    case ProgramEvent::division_zero: return "division_zero";
-    case ProgramEvent::shift_count: return "shift_count";
+    case ProgramEvent::bounds:
+        return "bounds";
+    case ProgramEvent::overflow:
+        return "overflow";
+    case ProgramEvent::division_zero:
+        return "division_zero";
+    case ProgramEvent::shift_count:
+        return "shift_count";
     case ProgramEvent::rejected:
-    case ProgramEvent::returned: fail("Non-fault event has no fault kind");
+    case ProgramEvent::returned:
+        fail("Non-fault event has no fault kind");
     }
     fail("Invalid fault event");
 }
@@ -55,11 +62,12 @@ auto program_fault_kind(aurora::user::ProgramEvent event) -> std::string_view {
 auto physical_read(std::uint64_t address, unsigned bytes) -> std::uint64_t {
     auto result = std::uint64_t{0};
     for (auto index = 0U; index < bytes; ++index)
-        result |= static_cast<std::uint64_t>(*reinterpret_cast<volatile const std::uint8_t*>(address + index)) << (index * 8);
+        result |= static_cast<std::uint64_t>(*reinterpret_cast<volatile const std::uint8_t *>(address + index))
+                  << (index * 8);
     return result;
 }
 auto arena_is_usable(std::uint64_t start, std::uint64_t end) -> bool {
-    const auto bytes = std::span{reinterpret_cast<const std::byte*>(0x5000), std::size_t{8 + 32 * 24}};
+    const auto bytes = std::span{reinterpret_cast<const std::byte *>(0x5000), std::size_t{8 + 32 * 24}};
     return aurora::memory::FirmwareMemory::grants(bytes, start, end);
 }
 auto page_self_test() -> void {
@@ -83,13 +91,14 @@ auto page_self_test() -> void {
         require(!page->valid(), "Move left an owning alias");
         // Touch every allocated byte through the architecture boundary.
         for (std::uint64_t byte = 0; byte < page_size; ++byte)
-            *reinterpret_cast<volatile std::uint8_t*>(*address + byte) = static_cast<std::uint8_t>(index);
+            *reinterpret_cast<volatile std::uint8_t *>(*address + byte) = static_cast<std::uint8_t>(index);
     }
     require(pages.used() == count && !pages.acquire(), "Exhaustion accounting failed");
     for (std::size_t index = 0; index < count; ++index) {
         const auto address = pages.address(*leases[index]);
-        require(address.has_value() && physical_read(*address, 1) == index
-            && physical_read(*address + page_size - 1, 1) == index, "Allocated physical pages alias or are inaccessible");
+        require(address.has_value() && physical_read(*address, 1) == index &&
+                    physical_read(*address + page_size - 1, 1) == index,
+                "Allocated physical pages alias or are inaccessible");
     }
     require(!foreign_pages.release(*leases[0]), "Foreign ownership accepted");
     require(pages.release(*leases[0]), "First release failed");
@@ -105,19 +114,24 @@ auto page_self_test() -> void {
     aurora::hardware::Serial::text("AURORA_PAGES_OK: 128 frames, exhaustion, reuse, ownership, double-free\r\n");
 }
 auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> void {
-    using aurora::user::UserPrograms;
-    using aurora::user::ProgramEvent;
     using aurora::hardware::Serial;
-    const auto* contract = UserPrograms::contract(index);
+    using aurora::user::ProgramEvent;
+    using aurora::user::UserPrograms;
+    const auto *contract = UserPrograms::contract(index);
     require(contract != nullptr && !user_expected && !program_run.running(), "Invalid or nested user program run");
     require(aurora::user::AddressSpaces::scrub(domains[index]), "Private user stack reset failed");
     require(program_run.begin(*contract), "Program contract rejected");
     program_index = index;
     require(aurora::user::AddressSpaces::activate(domains[index]), "Domain activation failed");
     require(!aurora::user::AddressSpaces::destroy(domains[index]), "Active domain teardown accepted");
-    Serial::text("AURORA_DOMAIN_ENTER: image="); Serial::number(index);
-    Serial::text(" root="); Serial::number(aurora::hardware::Protection::current_root()); Serial::text("\r\n");
-    Serial::text("AURORA_PROGRAM_ENTER: image="); Serial::number(index); Serial::text("\r\n");
+    Serial::text("AURORA_DOMAIN_ENTER: image=");
+    Serial::number(index);
+    Serial::text(" root=");
+    Serial::number(aurora::hardware::Protection::current_root());
+    Serial::text("\r\n");
+    Serial::text("AURORA_PROGRAM_ENTER: image=");
+    Serial::number(index);
+    Serial::text("\r\n");
 #ifdef AURORA_TEST_PROGRAM_KERNEL_TRAP
     asm volatile("jmp *%0" : : "r"(contract->bounds_pc()) : "memory");
     fail("Kernel UD2 unexpectedly returned");
@@ -134,29 +148,41 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
 #endif
     const auto resumed = user_program(contract->entry());
     require(aurora::user::AddressSpaces::deactivate(domains[index]), "Kernel root restoration failed");
-    Serial::text("AURORA_DOMAIN_RESTORED: root="); Serial::number(aurora::hardware::Protection::current_root()); Serial::text("\r\n");
+    Serial::text("AURORA_DOMAIN_RESTORED: root=");
+    Serial::number(aurora::hardware::Protection::current_root());
+    Serial::text("\r\n");
     require(resumed == 1 && !program_run.running() && program_run.event() == expected,
-        "Program did not finish with the required typed outcome");
+            "Program did not finish with the required typed outcome");
     require(aurora::hardware::Protection::verify(), "Program altered protected mapping state");
     if (expected == ProgramEvent::returned) {
         require(program_run.value() == 42, "Compiled user program returned wrong result");
-        Serial::text("AURORA_PROGRAM_RETURN: image="); Serial::number(index);
-        Serial::text(" value="); Serial::number(program_run.value()); Serial::text("\r\n");
+        Serial::text("AURORA_PROGRAM_RETURN: image=");
+        Serial::number(index);
+        Serial::text(" value=");
+        Serial::number(program_run.value());
+        Serial::text("\r\n");
     } else {
-        Serial::text("AURORA_PROGRAM_CONTAINED: image="); Serial::number(index);
-        Serial::text(" kind="); Serial::text(program_fault_kind(expected)); Serial::text("\r\n");
+        Serial::text("AURORA_PROGRAM_CONTAINED: image=");
+        Serial::number(index);
+        Serial::text(" kind=");
+        Serial::text(program_fault_kind(expected));
+        Serial::text("\r\n");
     }
 }
 [[maybe_unused]] auto compiled_program_self_test() -> void {
-    using aurora::user::ProgramEvent;
-    using aurora::user::AddressSpaces;
     using aurora::hardware::Protection;
     using aurora::hardware::Serial;
+    using aurora::user::AddressSpaces;
+    using aurora::user::ProgramEvent;
 #ifdef AURORA_DIVISION_FIXTURE
-    Serial::text("AURORA_DIVISION_FIXTURE: "); Serial::text(AURORA_DIVISION_FIXTURE); Serial::text("\r\n");
+    Serial::text("AURORA_DIVISION_FIXTURE: ");
+    Serial::text(AURORA_DIVISION_FIXTURE);
+    Serial::text("\r\n");
 #endif
 #ifdef AURORA_UNSIGNED_FIXTURE
-    Serial::text("AURORA_UNSIGNED_FIXTURE: "); Serial::text(AURORA_UNSIGNED_FIXTURE); Serial::text("\r\n");
+    Serial::text("AURORA_UNSIGNED_FIXTURE: ");
+    Serial::text(AURORA_UNSIGNED_FIXTURE);
+    Serial::text("\r\n");
 #endif
     require(!AddressSpaces::initialize(foreign_pages), "Out-of-arena allocator accepted by domain manager");
     require(AddressSpaces::initialize(pages), "Domain manager initialization failed");
@@ -172,13 +198,21 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     }
     require(pages.used() == 12 && !AddressSpaces::create(0), "Domain ownership/resource bound failed");
     require(!AddressSpaces::activate(aurora::user::DomainHandle{}), "Invalid domain handle accepted");
-    Serial::text("AURORA_DOMAINS_READY: kernel="); Serial::number(Protection::kernel_root());
+    Serial::text("AURORA_DOMAINS_READY: kernel=");
+    Serial::number(Protection::kernel_root());
     for (std::size_t index = 0; index < domains.size(); ++index) {
-        Serial::text(" root"); Serial::number(index); Serial::text("="); Serial::number(roots[index]);
-        Serial::text(" frame"); Serial::number(index); Serial::text("="); Serial::number(*AddressSpaces::stack_frame(domains[index], 0));
+        Serial::text(" root");
+        Serial::number(index);
+        Serial::text("=");
+        Serial::number(roots[index]);
+        Serial::text(" frame");
+        Serial::number(index);
+        Serial::text("=");
+        Serial::number(*AddressSpaces::stack_frame(domains[index], 0));
     }
     Serial::text("\r\n");
-    require(AddressSpaces::stack_frame(domains[1], 0) == 0x104000, "Cross-domain test address does not name second owner's frame");
+    require(AddressSpaces::stack_frame(domains[1], 0) == 0x104000,
+            "Cross-domain test address does not name second owner's frame");
     execute_program(0, ProgramEvent::returned);
 #ifdef AURORA_TEST_DIVISION_ZERO
     execute_program(1, ProgramEvent::division_zero);
@@ -194,30 +228,39 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
         require(!AddressSpaces::stack_zero(domain), "Compiled program did not use its own leased stack memory");
     const auto stale = domains[0];
     std::array<std::uint64_t, 4> released_frames{};
-    for (std::size_t page = 0; page < 4; ++page) released_frames[page] = *AddressSpaces::stack_frame(stale, page);
+    for (std::size_t page = 0; page < 4; ++page)
+        released_frames[page] = *AddressSpaces::stack_frame(stale, page);
     require(AddressSpaces::destroy(stale) && pages.used() == 8, "Inactive domain teardown failed");
     for (const auto frame : released_frames)
         for (std::uint64_t byte = 0; byte < 4096; byte += 8)
             require(physical_read(frame + byte, 8) == 0, "Released frame still contains user bytes");
-    require(!AddressSpaces::activate(stale) && !AddressSpaces::destroy(stale) && !AddressSpaces::scrub(stale), "Destroyed domain authority retained");
+    require(!AddressSpaces::activate(stale) && !AddressSpaces::destroy(stale) && !AddressSpaces::scrub(stale),
+            "Destroyed domain authority retained");
     // Leave only two free frames: creation must roll back a partial four-frame stack.
     for (std::size_t index = 0; index < 118; ++index) {
-        auto page = pages.acquire(); require(page.has_value(), "Rollback test setup failed");
+        auto page = pages.acquire();
+        require(page.has_value(), "Rollback test setup failed");
         leases[index].emplace(std::move(*page));
     }
-    require(physical_read(0x17e000, 1) == 126 && physical_read(0x17f000, 1) == 127, "Rollback fixture lost recognizable prior bytes");
-    require(pages.used() == 126 && !AddressSpaces::create(0) && pages.used() == 126, "Partial domain creation leaked frames");
+    require(physical_read(0x17e000, 1) == 126 && physical_read(0x17f000, 1) == 127,
+            "Rollback fixture lost recognizable prior bytes");
+    require(pages.used() == 126 && !AddressSpaces::create(0) && pages.used() == 126,
+            "Partial domain creation leaked frames");
     for (std::uint64_t address = 0x17e000; address < 0x180000; address += 8)
         require(physical_read(address, 8) == 0, "Rollback released unsanitized frame bytes");
-    for (std::size_t index = 0; index < 118; ++index) require(pages.release(*leases[index]), "Rollback test cleanup failed");
+    for (std::size_t index = 0; index < 118; ++index)
+        require(pages.release(*leases[index]), "Rollback test cleanup failed");
     auto replacement = AddressSpaces::create(0);
     require(replacement.has_value(), "Domain slot reuse failed");
     domains[0] = *replacement;
-    require(AddressSpaces::stack_frame(domains[0], 0) == released_frames[0] && AddressSpaces::stack_zero(domains[0]), "Physical frame reuse was not sanitized");
-    require(!AddressSpaces::activate(stale) && !AddressSpaces::destroy(stale), "Stale handle resurrected after slot reuse");
+    require(AddressSpaces::stack_frame(domains[0], 0) == released_frames[0] && AddressSpaces::stack_zero(domains[0]),
+            "Physical frame reuse was not sanitized");
+    require(!AddressSpaces::activate(stale) && !AddressSpaces::destroy(stale),
+            "Stale handle resurrected after slot reuse");
     Serial::text("AURORA_DOMAIN_REUSE_OK: stale denied, released bytes zero, partial rollback, same frames\r\n");
     execute_program(0, ProgramEvent::returned);
-    for (const auto domain : domains) require(AddressSpaces::destroy(domain), "Final domain teardown failed");
+    for (const auto domain : domains)
+        require(AddressSpaces::destroy(domain), "Final domain teardown failed");
     require(pages.used() == 0 && Protection::verify(), "Domain teardown leaked memory or active root");
     Serial::text("AURORA_DOMAINS_OK: private CR3, private stacks, zero reuse, clean teardown\r\n");
 #ifdef AURORA_TEST_DIVISION_ZERO
@@ -234,11 +277,19 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     Serial::text("AURORA_UNSIGNED_OK: full-width values, exact typed trap, clean restart, private teardown\r\n");
 #endif
 }
-}
-auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t instruction,
-    std::uint64_t code, std::uint64_t frame, std::uint64_t user_value) -> std::uint64_t asm("aurora_exception_dispatch");
-auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t instruction,
-    std::uint64_t code, std::uint64_t frame, std::uint64_t user_value) -> std::uint64_t {
+} // namespace
+auto exception_dispatch(std::uint64_t vector,
+                        std::uint64_t error,
+                        std::uint64_t instruction,
+                        std::uint64_t code,
+                        std::uint64_t frame,
+                        std::uint64_t user_value) -> std::uint64_t asm("aurora_exception_dispatch");
+auto exception_dispatch(std::uint64_t vector,
+                        std::uint64_t error,
+                        std::uint64_t instruction,
+                        std::uint64_t code,
+                        std::uint64_t frame,
+                        std::uint64_t user_value) -> std::uint64_t {
     using aurora::hardware::Protection;
     const auto cpl = code & 3;
     if (vector == 3 && breakpoint_expected && cpl == 0) {
@@ -246,14 +297,15 @@ auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t
         return 0;
     }
     const auto on_entry_stack = frame >= Protection::entry_stack_bottom && frame < Protection::entry_stack_top;
-    if (vector == 128 && user_expected && cpl == 3 && on_entry_stack && user_value == 42
-        && instruction >= Protection::user_code && instruction < Protection::user_code + 4096) {
+    if (vector == 128 && user_expected && cpl == 3 && on_entry_stack && user_value == 42 &&
+        instruction >= Protection::user_code && instruction < Protection::user_code + 4096) {
         user_returns = user_returns + 1;
         return 1; // Dedicated assembly continuation restores only the saved privileged stack.
     }
     using aurora::hardware::Serial;
-    const auto scheduled=aurora::user::Scheduler::interrupt(vector,code,instruction,frame);
-    if (scheduled>=0) return static_cast<std::uint64_t>(scheduled);
+    const auto scheduled = aurora::user::Scheduler::interrupt(vector, code, instruction, frame);
+    if (scheduled >= 0)
+        return static_cast<std::uint64_t>(scheduled);
 #ifdef AURORA_TEST_DOMAIN_ROOT_MISMATCH
     if (program_run.running() && code == 0x1b) {
         const auto root = Protection::kernel_root();
@@ -261,42 +313,63 @@ auto exception_dispatch(std::uint64_t vector, std::uint64_t error, std::uint64_t
         Serial::text("AURORA_DOMAIN_ROOT_MISMATCH_INJECTED\r\n");
     }
 #endif
-    if (program_run.running() && program_index < domains.size()
-        && aurora::user::AddressSpaces::active(domains[program_index]) && code == 0x1b && frame >= Protection::entry_stack_bottom
-        && frame <= Protection::entry_stack_top - 176 && frame % 8 == 0) {
+    if (program_run.running() && program_index < domains.size() &&
+        aurora::user::AddressSpaces::active(domains[program_index]) && code == 0x1b &&
+        frame >= Protection::entry_stack_bottom && frame <= Protection::entry_stack_top - 176 && frame % 8 == 0) {
         const auto flags = physical_read(frame + 152, 8);
         const auto stack = physical_read(frame + 160, 8);
         const auto ss = physical_read(frame + 168, 8);
         const auto context = aurora::user::ProgramContext{vector, error, instruction, code, ss, stack, flags, frame};
         if (program_run.accept(context, user_value)) {
-            Serial::text("AURORA_DOMAIN_EVENT: image="); Serial::number(program_index);
-            Serial::text(" root="); Serial::number(Protection::current_root()); Serial::text("\r\n");
+            Serial::text("AURORA_DOMAIN_EVENT: image=");
+            Serial::number(program_index);
+            Serial::text(" root=");
+            Serial::number(Protection::current_root());
+            Serial::text("\r\n");
             if (program_run.event() != aurora::user::ProgramEvent::returned) {
-                Serial::text("AURORA_PROGRAM_FAULT: image="); Serial::number(program_index);
-                Serial::text(" kind="); Serial::text(program_fault_kind(program_run.event()));
-                Serial::text(" vector="); Serial::number(vector);
-                if (program_run.event() == aurora::user::ProgramEvent::division_zero
-                    || program_run.event() == aurora::user::ProgramEvent::shift_count) {
-                    Serial::text(" error="); Serial::number(error);
+                Serial::text("AURORA_PROGRAM_FAULT: image=");
+                Serial::number(program_index);
+                Serial::text(" kind=");
+                Serial::text(program_fault_kind(program_run.event()));
+                Serial::text(" vector=");
+                Serial::number(vector);
+                if (program_run.event() == aurora::user::ProgramEvent::division_zero ||
+                    program_run.event() == aurora::user::ProgramEvent::shift_count) {
+                    Serial::text(" error=");
+                    Serial::number(error);
                 }
-                Serial::text(" rip="); Serial::number(instruction);
-                Serial::text(" cpl=3 frame="); Serial::number(frame); Serial::text("\r\n");
+                Serial::text(" rip=");
+                Serial::number(instruction);
+                Serial::text(" cpl=3 frame=");
+                Serial::number(frame);
+                Serial::text("\r\n");
             }
             return 1;
         }
     }
     if (program_run.running()) {
-        Serial::text("AURORA_DOMAIN_FAULT_ROOT: root="); Serial::number(Protection::current_root()); Serial::text("\r\n");
+        Serial::text("AURORA_DOMAIN_FAULT_ROOT: root=");
+        Serial::number(Protection::current_root());
+        Serial::text("\r\n");
     }
-    Serial::text("AURORA_EXCEPTION_FATAL: "); Serial::number(vector);
-    Serial::text(" error="); Serial::number(error);
-    Serial::text(" rip="); Serial::number(instruction); Serial::text("\r\n");
+    Serial::text("AURORA_EXCEPTION_FATAL: ");
+    Serial::number(vector);
+    Serial::text(" error=");
+    Serial::number(error);
+    Serial::text(" rip=");
+    Serial::number(instruction);
+    Serial::text("\r\n");
     std::uint64_t cr2;
     asm volatile("mov %%cr2, %0" : "=r"(cr2));
-    Serial::text("AURORA_EXCEPTION_CONTEXT: cpl="); Serial::number(cpl);
-    Serial::text(" frame="); Serial::number(frame);
-    Serial::text(" cr2="); Serial::number(cr2); Serial::text("\r\n");
-    if (cpl == 3 && on_entry_stack) Serial::text("AURORA_TSS_ENTRY_OK\r\n");
+    Serial::text("AURORA_EXCEPTION_CONTEXT: cpl=");
+    Serial::number(cpl);
+    Serial::text(" frame=");
+    Serial::number(frame);
+    Serial::text(" cr2=");
+    Serial::number(cr2);
+    Serial::text("\r\n");
+    if (cpl == 3 && on_entry_stack)
+        Serial::text("AURORA_TSS_ENTRY_OK\r\n");
     if (vector == 8 && frame >= Protection::emergency_stack_bottom && frame < Protection::emergency_stack_top)
         Serial::text("AURORA_IST_OK\r\n");
     fail("Exception halted safely");
@@ -313,11 +386,12 @@ auto kernel_main() -> void {
     Serial::text("Aurora bootstrap: x86-64 long mode\r\n");
     aurora::hardware::Interrupts::initialize();
     using aurora::hardware::Protection;
-    require(arena_is_usable(0x10000, reinterpret_cast<std::uint64_t>(&protected_image_end))
-        && arena_is_usable(Protection::emergency_stack_bottom, Protection::main_stack_top)
-        && arena_is_usable(aurora::user::UserPrograms::code_begin, aurora::user::UserPrograms::code_end)
-        && arena_is_usable(Protection::user_code, Protection::user_code + 4096)
-        && arena_is_usable(Protection::user_stack_bottom, Protection::user_stack_top), "Firmware does not grant protected image, stacks or controlled user pages");
+    require(arena_is_usable(0x10000, reinterpret_cast<std::uint64_t>(&protected_image_end)) &&
+                arena_is_usable(Protection::emergency_stack_bottom, Protection::main_stack_top) &&
+                arena_is_usable(aurora::user::UserPrograms::code_begin, aurora::user::UserPrograms::code_end) &&
+                arena_is_usable(Protection::user_code, Protection::user_code + 4096) &&
+                arena_is_usable(Protection::user_stack_bottom, Protection::user_stack_top),
+            "Firmware does not grant protected image, stacks or controlled user pages");
     require(Protection::activate(), "Required NX capability or protected mapping validation failed");
     Serial::text("AURORA_WX_OK: RX text, R-NX constants, RW-NX data, NXE, WP, guards\r\n");
     breakpoint_expected = true;
@@ -331,16 +405,18 @@ auto kernel_main() -> void {
     fail("Divide exception failed to dispatch");
 #endif
 #ifdef AURORA_TEST_PAGE_FAULT
-    static_cast<void>(*reinterpret_cast<volatile const std::uint8_t*>(0x400000));
+    static_cast<void>(*reinterpret_cast<volatile const std::uint8_t *>(0x400000));
     fail("Page fault failed to dispatch");
 #endif
 #ifdef AURORA_TEST_WP
-    *reinterpret_cast<volatile std::uint8_t*>(0x10000) = 0;
+    *reinterpret_cast<volatile std::uint8_t *>(0x10000) = 0;
     fail("Supervisor write protection failed");
 #endif
 #ifdef AURORA_TEST_NX
     nx_probe[0] = 0xc3;
-    Serial::text("AURORA_FAULT_TARGET: "); Serial::number(reinterpret_cast<std::uint64_t>(nx_probe.data())); Serial::text("\r\n");
+    Serial::text("AURORA_FAULT_TARGET: ");
+    Serial::number(reinterpret_cast<std::uint64_t>(nx_probe.data()));
+    Serial::text("\r\n");
     reinterpret_cast<void (*)()>(nx_probe.data())();
     fail("Data execution was permitted");
 #endif
@@ -349,10 +425,13 @@ auto kernel_main() -> void {
     fail("Stack guard failed");
 #endif
     user_expected = true;
-    Serial::text("AURORA_USER_ENTER: "); Serial::number(AURORA_USER_PROBE_MODE); Serial::text("\r\n");
+    Serial::text("AURORA_USER_ENTER: ");
+    Serial::number(AURORA_USER_PROBE_MODE);
+    Serial::text("\r\n");
     const auto user_result = user_probe(AURORA_USER_PROBE_MODE);
     user_expected = false;
-    require(user_result == 1 && user_returns == 1 && Protection::verify(), "Controlled user boundary did not return intact");
+    require(user_result == 1 && user_returns == 1 && Protection::verify(),
+            "Controlled user boundary did not return intact");
     Serial::text("AURORA_USER_OK: ring3, own stack, TSS entry, controlled return\r\n");
 #ifdef AURORA_TEST_SCHEDULE
     require(aurora::user::Scheduler::run(pages), "Scheduling test failed");

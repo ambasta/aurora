@@ -60,7 +60,8 @@ def execute(root, scope, targets=(), output=None):
     meson = shutil.which("meson")
     contract.require(
         meson,
-        "Meson was not found on PATH; install Meson 1.12.1+ and Ninja, then retry (see docs/meson-bootstrap.md)",
+        "BLOCKED: Meson was not found on PATH; install Meson 1.12.1+ and Ninja, "
+        "then retry (see docs/meson-bootstrap.md)",
     )
     meson = str(Path(meson).absolute())
     cxx = meson_toolchain.selected_tool(contract.parse_cxx(env.get("CXX", "g++")))
@@ -116,6 +117,29 @@ def execute(root, scope, targets=(), output=None):
                 check=True,
                 stdout=output,
             )
+        options_command = [meson, "introspect", str(build), "--buildoptions"]
+        options = json.loads(subprocess.check_output(options_command, cwd=root, env=env))
+        required_options = {"kernel_compiler", "kernel_images", "uefi_ld", "cpp_args"}
+        if required_options - {item["name"] for item in options}:
+            # Older build metadata predates these project options. Let Meson load
+            # current declarations before checking selections. Do not pass new -D
+            # options here: old coredata can reject them before reading the source,
+            # and overwriting existing settings would hide a configuration mismatch.
+            subprocess.run(
+                [meson, "setup", "--reconfigure", str(build), str(root)],
+                cwd=root,
+                env=env,
+                check=True,
+                stdout=output,
+            )
+            options = json.loads(subprocess.check_output(options_command, cwd=root, env=env))
+        missing = required_options - {item["name"] for item in options}
+        contract.require(
+            not missing,
+            "Missing Meson build options after reconfigure: "
+            + ", ".join(sorted(missing))
+            + "; select a fresh matching MESON_BUILD_DIR",
+        )
         configured = json.loads(
             subprocess.check_output([meson, "introspect", str(build), "--compilers"], cwd=root, env=env)
         )
@@ -124,18 +148,18 @@ def execute(root, scope, targets=(), output=None):
             len(command) == 1 and meson_toolchain.selected_tool(command[0]) == cxx,
             "Configured compiler differs from CXX; select the matching build directory",
         )
-        options = json.loads(
-            subprocess.check_output([meson, "introspect", str(build), "--buildoptions"], cwd=root, env=env)
-        )
         if scope is not None:
             contract.require(
                 not next(item["value"] for item in options if item["name"] == "kernel_compiler"),
                 "Native aggregate tests require their own compiler; use a separate kernel-only build for AURORAC",
             )
-        if selected_compiler:
+        if scope is None:
+            configured_kernel = next(item["value"] for item in options if item["name"] == "kernel_compiler")
+            requested_kernel = str(selected_compiler or "")
             contract.require(
-                selected_kernel_compiler(build).resolve(strict=True) == selected_compiler,
-                "Configured kernel compiler differs from AURORAC; select a fresh matching build directory",
+                configured_kernel == requested_kernel,
+                "Configured kernel compiler differs from the requested AURORAC/native selection; "
+                "select a fresh matching MESON_BUILD_DIR",
             )
         selected_images = next(item["value"] for item in options if item["name"] == "kernel_images")
         contract.require(
@@ -153,8 +177,11 @@ def execute(root, scope, targets=(), output=None):
             cpp_args == shlex.split(env.get("CXXFLAGS", "")),
             "Configured cpp_args differ from CXXFLAGS; select matching flags/build directory",
         )
+        # Meson's generated aggregate covers declared test dependencies, including
+        # non-default fixtures. Build it with our explicit jobs bound before tests.
+        build_targets = list(targets) if scope is None else ["--ninja-args=meson-test-prereq"]
         subprocess.run(
-            [meson, "compile", "-C", str(build), "-j", str(build_jobs), *targets],
+            [meson, "compile", "-C", str(build), "-j", str(build_jobs), *build_targets],
             cwd=root,
             env=env,
             check=True,

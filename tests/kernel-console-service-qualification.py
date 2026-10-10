@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Review-pinned prebuilt first-change PTY gate, then actual normal restoration.
+"""Prebuilt native console PTY gate, followed by actual normal restoration.
 
-This path never rebuilds the reviewed console image. Routine public console
-commands instead run their reproducible automated image/stack checks.
+The selected console image must pass automatic artifact admission before a guest
+starts. The normal restoration uses the same configured native build.
 """
 
 from pathlib import Path
@@ -108,7 +108,7 @@ def fault_guest(mode, work):
         "128M",
         *firmware,
         "-drive",
-        "format=raw,file=fat:ro:build/uefi/esp,snapshot=on",
+        "format=raw,file=fat:ro:" + str(admission.BUILD / "esp") + ",snapshot=on",
         "-nic",
         "none",
         "-display",
@@ -121,7 +121,9 @@ def fault_guest(mode, work):
         "-device",
         "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
-    recipe = clock.receipt(argv, qemu, combined, code, variables, os.environ.get("QEMU_DATA", ""))
+    recipe = clock.receipt(
+        argv, qemu, combined, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(admission.BUILD / "esp")
+    )
     recipe.update(timeout_argv=None, test_supervision="private PTY, 30-second deadline")
     (work / "clock.json").write_text(json.dumps(recipe, indent=2) + "\n")
     master, slave = pty.openpty()
@@ -174,18 +176,89 @@ def fault_guest(mode, work):
         (work / "guest.log").write_bytes(transcript)
 
 
+def restore_normal(work, env, result=None):
+    """Boot the selected isolated normal image and require this attempt's logs."""
+    selected = run_bounded(
+        [
+            sys.executable,
+            "-B",
+            ROOT / "scripts/meson_test.py",
+            "--kernel",
+            "uefi",
+            "--profile",
+            "normal",
+            "--print-image-dir",
+        ],
+        env=env,
+        timeout=180,
+    )
+    (work / "restoration-build.stdout").write_bytes(selected.stdout)
+    (work / "restoration-build.stderr").write_bytes(selected.stderr)
+    need(selected.returncode == 0, "Could not select the native normal restoration image")
+    paths = selected.stdout.decode().splitlines()
+    need(len(paths) == 1, "Ambiguous native normal image directory")
+    directory = Path(paths[0])
+    need(
+        directory.is_absolute()
+        and directory.is_dir()
+        and directory.resolve(strict=True) == directory
+        and directory.parts[-3:] == ("kernel-images", "uefi", "normal"),
+        "Unexpected native normal image directory",
+    )
+    names = ("normal.log", "normal.clock.json")
+    before = {}
+    for name in names:
+        path = directory / name
+        need(not path.is_symlink(), "Symlinked normal restoration output")
+        before[name] = path.stat() if path.exists() else None
+    # Pin the same configured build when the smoke wrapper selects its image.
+    env = dict(env, MESON_BUILD_DIR=str(directory.parents[2]))
+    restored = run_bounded(["bash", ROOT / "scripts/kernel-uefi-smoke.sh", "normal"], env=env, timeout=180)
+    (work / "restoration.stdout").write_bytes(restored.stdout)
+    (work / "restoration.stderr").write_bytes(restored.stderr)
+    restoration = dict(
+        exit_status=restored.returncode,
+        image_directory=str(directory),
+        output_sha256=admission.digest(work / "restoration.stdout"),
+    )
+    if result is not None:
+        result["restoration"] = restoration
+    need(restored.returncode == 0, "Actual normal-image restoration failed")
+    for name in names:
+        path = directory / name
+        need(path.is_file() and not path.is_symlink(), "Missing normal restoration output: " + name)
+        current = path.stat()
+        old = before[name]
+        need(
+            old is None
+            or (current.st_ino, current.st_mtime_ns, current.st_ctime_ns)
+            != (old.st_ino, old.st_mtime_ns, old.st_ctime_ns),
+            "Stale normal restoration output: " + name,
+        )
+        shutil.copy2(path, work / ("restoration-" + name))
+    return restoration
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=admission.MODES, default="console")
+    parser.add_argument("--build-dir", type=Path, required=True)
     args = parser.parse_args()
+    admission.configure_paths(args.build_dir, ROOT)
+    need(
+        admission.BUILD.parts[-3:] == ("kernel-images", "uefi", args.mode),
+        "Expected the selected native console profile directory",
+    )
     need(
         not os.environ.get("AURORA_TEST_CONTEXT") and not os.environ.get("UEFI_MODE"),
         "Unset inherited test/profile controls",
     )
     # Failed preflight must neither start a guest nor modify/restage its image.
-    receipt = admission.reviewed(args.mode)
+    receipt = admission.checked(args.mode)
     need(shutil.which(os.environ.get("QEMU", "qemu-system-x86_64")), "QEMU unavailable")
-    work = Path(tempfile.mkdtemp(prefix=args.mode + "-qualified-", dir=ROOT / "build"))
+    evidence_root = ROOT / "build"
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix=args.mode + "-qualified-", dir=evidence_root))
     shutil.copy2(admission.RECEIPT, work / "admission.json")
     for path in admission.build_files():
         target = work / "image" / path.relative_to(admission.BUILD)
@@ -196,12 +269,14 @@ def main():
         mode=args.mode,
         status="failed",
         admission_sha256=admission.digest(admission.RECEIPT),
-        compiler=receipt["build"]["compiler"],
     )
     primary_error = None
     try:
         if args.mode == "console":
-            replay = run_bounded([sys.executable, "-B", ROOT / "tests/kernel-console-pty.py", "--uefi"], timeout=40)
+            replay = run_bounded(
+                [sys.executable, "-B", ROOT / "tests/kernel-console-pty.py", "--uefi", "--build-dir", admission.BUILD],
+                timeout=40,
+            )
             (work / "driver.stdout").write_bytes(replay.stdout)
             (work / "driver.stderr").write_bytes(replay.stderr)
             for name in (
@@ -217,28 +292,20 @@ def main():
         else:
             result["guest"] = fault_guest(args.mode, work)
             result["guest"]["transcript_sha256"] = admission.digest(work / "guest.log")
-        admission.reviewed(args.mode)  # Prebuilt source/image stayed exact through execution.
+        need(
+            admission.checked(args.mode) == receipt
+            and admission.digest(admission.RECEIPT) == result["admission_sha256"],
+            "Admitted image or report changed during guest execution",
+        )
     except BaseException as error:
         primary_error = error
         result["guest_error"] = str(error)
     finally:
         # A qualified attempt owns restoration even when its PTY gate failed.
         # This normal-profile command includes an actual validated QEMU boot.
-        env = os.environ.copy()
-        env.pop("CONSOLE_SERVICE_REVIEW_SHA256", None)
+        env = dict(os.environ, MESON_BUILD_DIR=str(admission.BUILD.parents[2]))
         try:
-            restored = run_bounded(
-                ["bash", ROOT / "scripts/kernel-uefi-smoke.sh", "--shared-normal", "normal"], env=env, timeout=180
-            )
-            (work / "restoration.stdout").write_bytes(restored.stdout)
-            (work / "restoration.stderr").write_bytes(restored.stderr)
-            result["restoration"] = dict(
-                exit_status=restored.returncode, output_sha256=admission.digest(work / "restoration.stdout")
-            )
-            need(restored.returncode == 0, "Actual normal-image restoration failed")
-            for name in ("normal.log", "normal.clock.json"):
-                if (admission.BUILD / name).exists():
-                    shutil.copy2(admission.BUILD / name, work / ("restoration-" + name))
+            restore_normal(work, env, result)
             if primary_error is None:
                 result["status"] = "passed"
         except BaseException as error:
@@ -248,7 +315,7 @@ def main():
         (work / "qualification.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     if primary_error is not None:
         raise primary_error
-    print("PASS reviewed prebuilt " + args.mode + " PTY and actual normal restoration: " + str(work))
+    print("PASS admitted prebuilt " + args.mode + " PTY and actual normal restoration: " + str(work))
 
 
 def terminate(_number, _frame):

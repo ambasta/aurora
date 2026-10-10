@@ -36,24 +36,7 @@ Finite fault/cancel/restart, foreign owner, stale/revoked generation, producer
 selector/quota/page failure and actual malformed/wrong-byte reply image variants
 are selected with `snapshot-*` modes in `scripts/kernel-uefi-build.sh`.
 
-All eleven finite image variants pass exact composition, private bridge/user
-wrapper, image and combined native/Aurora stack checks. The measured supervisor
-maximum is 14,768 bytes plus the existing 512-byte fault reserve, leaving only
-80 bytes below the unchanged 15,360-byte admission cap in the 16 KiB stack. The
-actual deepest path is ACPI/PCI discovery and four-level page verification.
-Client/service totals including their wrappers are 112/352 bytes. Every rebuild
-must re-establish these bounds; the thin margin is not an expanded budget.
-
-The native runner and optimized ordered-transcript controls are registered in
-`full`/`slow`/`integration`, with a private Meson output directory. The existing
-UEFI smoke launcher selects the original clock for each explicit snapshot mode,
-validates its exact transcript, and restores the normal image on success or
-failure. Compiler-free launcher controls exercise those restoration exits.
-All eleven modes passed actual QEMU/OVMF execution, including service fault and
-cancel/restart, with exact launched EFI captures and normal-image restoration.
-Fresh normal UEFI and BIOS smokes also passed. Final integrated `full` and
-independent outcome review remain release gates. The exclusive owned-byte
-profile is unchanged; this composition admits no arbitrary copied inputs.
+Every image variant requires exact private bridge/user-wrapper, image and combined native/Aurora stack admission. The supervisor normal path plus 512-byte fault reserve must fit 15,360 bytes of the 16 KiB stack; current bounds must be recalculated after every rebuild. Native/transcript tests belong to full/slow/integration. Actual snapshot guests use the original clock, strict ordered transcripts and normal restoration. Focused/previous runs do not qualify a changed image.
 
 This optional UEFI profile runs two independently compiled Aurora images under
 separate owned CR3 roots. The client produces a two-word request `(40, 2)`, the
@@ -148,20 +131,6 @@ The previous 80 modes remain acceptance gates. This mechanism adds no timer,
 preemption, general service registry, persistent process, SMP, IPC buffering,
 DMA/controller activation or physical Framework support. Firmware trust and
 physical device isolation remain separate unfinished requirements.
-
-## Candidate verification
-
-The independent fifteen-mode OVMF run passed on compiler
-`d91e06fad144a89c1c836e16db20ef48b8a644bf4c23b22a1517e08f25e1d82c`.
-The strict PIC/PE image gate remained enabled. Hosted ASan/UBSan checks passed
-26,120 rejected envelope combinations and 262,144 six-operation sequences
-against an independent state model, plus copied full-width/zero payloads,
-revocation/rebirth and generation boundaries. Transcript checks have fifteen
-positive and 1,732 negative cases; IPC image authority adds four positive and
-26 negative cases to the existing three/64 image controls. These are bounded
-tests and independent review, not a proof of general IPC safety. The parent
-checkpoint records the complete previous-mode preservation run separately.
-
 
 ## Protected-console copied note
 

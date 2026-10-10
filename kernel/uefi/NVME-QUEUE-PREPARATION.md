@@ -1,10 +1,5 @@
-# CPU-only NVMe queue-page preparation candidate
+# CPU-only NVMe queue-page preparation
 
-Status: independent source, hosted/sanitizer and corrected linked-stack review
-passed. The actual preparation and affected BAR controls passed strict serial,
-complete trace and provenance checks, with two normal restoration boots. The
-first rejected stack image and the first trace-cap failure remain preserved.
-See the [exact results and limits](../../docs/nvme-queue-preparation-results.md).
 This is CPU-only page preparation, not a device driver, Identify command, disk
 read or DMA-isolation gate.
 
@@ -111,15 +106,6 @@ continue rejecting controller/queue/doorbell/DMA/interrupt events. The seven
 historical BAR modes remain separately selectable and their aggregate is unchanged.
 
 ## Qualification commands and scope
-
-The original 711-file source passed independent source/hosted evidence review:
-1,871 ordinary and 1,901 bounded-generation queue checks, normally and with fatal
-ASan/UBSan; page/pin/BAR dependencies and Python validator/routing controls also
-passed. Fresh corrected linked and guest gates then passed separately. The first
-linked candidate had a 16,960-byte sum of reported maximum frames and a proven
-16,672-byte simultaneous prefix before preparation; its rejected image remains
-preserved. No guest was started with that image. The new linked stack/frame/edge validator
-rejects that parser lifetime and retains explicit fault/callee reserves.
 
 Freeze source and tool hashes before execution, retain commands/status/logs, and use the shared native-resource
 admission before starting any compilation or guest. A focused pass is not a

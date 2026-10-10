@@ -9,10 +9,17 @@ class SourceRange {
     i64 begin_offset;
     i64 end_offset;
 public:
-    SourceRange(i64 begin, i64 end) : begin_offset(begin), end_offset(end) {}
-    auto begin() const -> i64 { return begin_offset; }
-    auto end() const -> i64 { return end_offset; }
-    auto width() const -> i64 { return end_offset - begin_offset; }
+    SourceRange(i64 begin, i64 end) : begin_offset(begin), end_offset(end) {
+    }
+    auto begin() const -> i64 {
+        return begin_offset;
+    }
+    auto end() const -> i64 {
+        return end_offset;
+    }
+    auto width() const -> i64 {
+        return end_offset - begin_offset;
+    }
     auto shift(i64 amount) -> i64 {
         begin_offset = begin_offset + amount;
         end_offset = end_offset + amount;
@@ -20,43 +27,57 @@ public:
     }
 };
 
-auto transport(std::pair<std::array<u8,16>,SourceRange> token)
-    -> std::pair<std::array<u8,16>,SourceRange> {
+auto transport(std::pair<std::array<u8, 16>, SourceRange> token) -> std::pair<std::array<u8, 16>, SourceRange> {
     return token;
 }
 
 auto test() -> i64 {
-    std::array<u8,16> bytes = std::array<u8,16>();
+    std::array<u8, 16> bytes = std::array<u8, 16>();
     bytes.set(0, 105u8);
     bytes.set(1, 100u8);
     const SourceRange source = SourceRange(10, 12);
-    const std::pair<std::array<u8,16>,SourceRange> token =
-        std::pair<std::array<u8,16>,SourceRange>(bytes, source);
-    const std::pair<std::array<u8,16>,SourceRange> returned = transport(token);
+    const std::pair<std::array<u8, 16>, SourceRange> token = std::pair<std::array<u8, 16>, SourceRange>(bytes, source);
+    const std::pair<std::array<u8, 16>, SourceRange> returned = transport(token);
 
     bytes.set(0, 0u8);
-    std::array<u8,16> changed_bytes = returned.first;
+    std::array<u8, 16> changed_bytes = returned.first;
     SourceRange changed_range = returned.second;
     changed_bytes.set(0, 120u8);
     changed_range.shift(20);
 
-    const std::array<u8,16> saved_bytes = token.first;
+    const std::array<u8, 16> saved_bytes = token.first;
     const SourceRange saved_range = token.second;
-    const std::array<u8,16> returned_bytes = returned.first;
+    const std::array<u8, 16> returned_bytes = returned.first;
     const SourceRange returned_range = returned.second;
-    if (saved_bytes.at(0) != 105u8) { return 1; }
-    if (saved_bytes.at(1) != 100u8) { return 2; }
-    if (returned_bytes.at(0) != 105u8) { return 3; }
-    if (changed_bytes.at(0) != 120u8) { return 4; }
-    if (saved_range.begin() != 10) { return 5; }
-    if (returned_range.end() != 12) { return 6; }
-    if (changed_range.begin() != 30) { return 7; }
+    if (saved_bytes.at(0) != 105u8) {
+        return 1;
+    }
+    if (saved_bytes.at(1) != 100u8) {
+        return 2;
+    }
+    if (returned_bytes.at(0) != 105u8) {
+        return 3;
+    }
+    if (changed_bytes.at(0) != 120u8) {
+        return 4;
+    }
+    if (saved_range.begin() != 10) {
+        return 5;
+    }
+    if (returned_range.end() != 12) {
+        return 6;
+    }
+    if (changed_range.begin() != 30) {
+        return 7;
+    }
     i64 index = 2;
     while (index < saved_bytes.size()) {
-        if (saved_bytes.at(index) != 0u8) { return 8; }
+        if (saved_bytes.at(index) != 0u8) {
+            return 8;
+        }
         index = index + 1;
     }
-    static_assert(size_of(std::pair<std::array<u8,16>,SourceRange>) == 32);
-    static_assert(field_count(std::pair<std::array<u8,16>,SourceRange>) == 2);
+    static_assert(size_of(std::pair<std::array<u8, 16>, SourceRange>) == 32);
+    static_assert(field_count(std::pair<std::array<u8, 16>, SourceRange>) == 2);
     return changed_range.begin() + returned_range.end();
 }

@@ -25,7 +25,7 @@ class Interactive final {
         Io::write(0x21, 0xef);
         Io::write(0xa1, 0xff);
         Transport::initialize_input(); // Clear FIFOs; receive threshold is one byte.
-        Io::write(0x3f9, 1); // Received-data interrupt only; no transmit IRQ.
+        Io::write(0x3f9, 1);           // Received-data interrupt only; no transmit IRQ.
     }
 
 public:
@@ -46,9 +46,11 @@ public:
                 Io::write(0x3f9, 0);
                 Io::write(0x21, 0xff);
                 Io::write(0xf4, 0x10);
-                for (;;) { asm volatile("cli; hlt"); }
+                for (;;) {
+                    asm volatile("cli; hlt");
+                }
             }
         }
     }
 };
-}
+} // namespace aurora::console

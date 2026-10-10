@@ -171,10 +171,8 @@ def check_context_prerequisite_controls():
 def check_runtime_fixture_routes(source):
     # Only frozen IOMMU runtime fixtures are forbidden here. XFS native corpus
     # registrations are ordinary required tests, despite sharing the word fixtures.
-    forbidden = ('iommu/fixtures/', 'frozen-import.py', 'transport-import-v1.py',
-                 'command-stop-diagnostic.py')
-    require(not any(name in source for name in forbidden), 'An IOMMU runtime fixture entered default test routing')
-
+    forbidden = ("iommu/fixtures/", "frozen-import.py", "transport-import-v1.py", "command-stop-diagnostic.py")
+    require(not any(name in source for name in forbidden), "An IOMMU runtime fixture entered default test routing")
 
 
 def check_integrity():
@@ -211,8 +209,12 @@ def check_integrity():
     require("files('iommu-diagnostics.py')" in meson, "Meson lost static diagnostics")
     check_runtime_fixture_routes(make + meson)
     check_runtime_fixture_routes("fixtures/xfs-root ../fixtures/xfs-offline/verify_native.py")
-    for forbidden in ("tests/iommu/fixtures/unknown.py", "frozen-import.py",
-                      "transport-import-v1.py", "command-stop-diagnostic.py"):
+    for forbidden in (
+        "tests/iommu/fixtures/unknown.py",
+        "frozen-import.py",
+        "transport-import-v1.py",
+        "command-stop-diagnostic.py",
+    ):
         try:
             check_runtime_fixture_routes(forbidden)
         except ValueError:

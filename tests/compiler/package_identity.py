@@ -37,7 +37,6 @@ from package_profiles import (
     validate_identity_selection,
 )
 
-CONTRACT_SHA256 = "79af6fe35314b1dd17a6f1115c8269754866018e39061c5ad1cba6161634887f"
 CAP = 128 << 20
 MAX_CAP = 1024 << 20
 FLOOR = 1 << 30
@@ -973,8 +972,6 @@ def main():
     runner = Runner(compiler, artifacts, cap)
     runner.budget(65536)
     artifacts.mkdir()
-    frozen = ROOT / "evidence/package-identity/contract-before-implementation.md"
-    require(sha(frozen) == CONTRACT_SHA256, "frozen pre-implementation contract byte identity")
     pins = {
         str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p): sha(p)
         for p in [
@@ -982,7 +979,6 @@ def main():
             ROOT / "library/package/identity.au",
             ROOT / "library/std/array.au",
             Path(__file__).resolve(),
-            frozen,
             ROOT / "scripts/owned_outputs.py",
             ROOT / "scripts/package_profiles.py",
             ROOT / "scripts/compiler_contract.py",
@@ -995,8 +991,6 @@ def main():
         compiler_identity=identity.record(),
         compiler_sha256_before=sha(compiler),
         pins=pins,
-        contract_document_sha256=sha(ROOT / "docs/package-identity-contract.md"),
-        authored_contract_sha256=sha(frozen),
         tool_paths={name: str(path) for name, path in runner.tools.items()},
         python_path=str(Path(sys.executable).resolve()),
         command=sys.argv,

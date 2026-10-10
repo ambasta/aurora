@@ -13,7 +13,10 @@ static_assert(!std::is_move_assignable_v<PageLease>);
 static_assert(!std::is_copy_constructible_v<PhysicalPages>);
 
 auto check(bool condition, std::string_view message) -> void {
-    if (!condition) { std::cerr << "FAIL: " << message << '\n'; std::exit(1); }
+    if (!condition) {
+        std::cerr << "FAIL: " << message << '\n';
+        std::exit(1);
+    }
 }
 auto main() -> int {
     PhysicalPages pool;
@@ -25,8 +28,8 @@ auto main() -> int {
     check(!pool.initialize(0x100000, 129), "capacity");
     check(!pool.initialize(UINT64_MAX - 4095, 1), "address overflow");
     check(pool.initialize(0x100000, 128), "initialization");
-    check(pool.arena_matches(0x100000, 128) && !pool.arena_matches(0x200000, 128)
-        && !pool.arena_matches(0x100000, 127), "arena identity restriction");
+    check(pool.arena_matches(0x100000, 128) && !pool.arena_matches(0x200000, 128) && !pool.arena_matches(0x100000, 127),
+          "arena identity restriction");
     check(!pool.initialize(0x200000, 1), "reinitialization");
     check(foreign.initialize(0x200000, 1), "foreign initialization");
     std::array<std::optional<PageLease>, 128> leases;
@@ -50,7 +53,8 @@ auto main() -> int {
         check(!pool.release(*leases[index]), "retired lease against recycled generation");
         leases[index].emplace(std::move(*fresh));
     }
-    for (auto& lease : leases) check(pool.release(*lease), "cleanup");
+    for (auto &lease : leases)
+        check(pool.release(*lease), "cleanup");
     check(pool.used() == 0, "cleanup count");
     // Deterministic state-machine stress against an independent live-slot count.
     auto random = std::uint32_t{0x12345678};
@@ -69,12 +73,16 @@ auto main() -> int {
         }
         check(pool.used() == live, "stress accounting");
         for (std::size_t a = 0; a < leases.size(); ++a) {
-            if (!leases[a]->valid()) continue;
+            if (!leases[a]->valid())
+                continue;
             for (std::size_t b = a + 1; b < leases.size(); ++b)
-                if (leases[b]->valid()) check(pool.address(*leases[a]) != pool.address(*leases[b]), "stress alias");
+                if (leases[b]->valid())
+                    check(pool.address(*leases[a]) != pool.address(*leases[b]), "stress alias");
         }
     }
-    for (auto& lease : leases) if (lease->valid()) check(pool.release(*lease), "stress cleanup");
+    for (auto &lease : leases)
+        if (lease->valid())
+            check(pool.release(*lease), "stress cleanup");
     check(pool.used() == 0, "stress leak");
     // Same-address allocator replacement must not resurrect previous ownership.
     std::optional<PhysicalPages> incarnation;

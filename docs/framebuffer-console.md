@@ -1,538 +1,310 @@
-# Bounded firmware framebuffer console
+# Bounded framebuffer console
 
-Output-only rendering and bounded graphical-session diagnostics have
-independently accepted guest captures on exact pinned fixtures. The joined
-capture-failure candidate, final GCC 16 `full` gate and merge review
-remain pending; this is not a claim of whole-system readiness.
-The current source join adds the reviewed GCC 14/GCC 16 portability machinery
-and readable binary glyph spellings. Graphical compiler frames now bind exact
-assembler symbols through `.ci` and complete `.su` source records, retaining
-object/linked-byte checks. The fixed-slot graphical traversal needs no paired
-recursive alias recognizer or canonicalization. The unchanged
-legacy verifier's local visited-array invariant has a separately reviewed source
-applicability check for the joined headers. This is source integration only:
-changed-output image admission, failure-fixture guests and the GCC 16
-final integrated gates remain pending. Capture admission now checks current
-build provenance and bounded image/stack/state structure instead of replaying
-historical compiler/object tuples or absolute capture instruction inventories.
-This deliberately retires those capture machine-behavior proof claims; hosted
-and actual guest behavior gates remain required. Historical receipts retain
-only their original source/image scope and confer no new acceptance.
-Firmware `SetMode` can clear its display before the controlled capture boundary.
-No GPU driver, desktop, physical Framework display support, DMA or IOMMU claim
-follows from this work.
+Aurora renders an output-only status page and a separate serial-input graphical
+console after ExitBootServices. Both use sealed DisplaySession authority through
+trusted C++/assembly adapters. These are experimental QEMU profiles, with no GPU
+driver, keyboard, desktop, physical Framework display, DMA or IOMMU qualification.
+
+| Route | What it establishes | What remains separate |
+|---|---|---|
+| `make capture-framebuffer` | Fresh output-only image admission and one PNG/physical capture | Negative guests, restoration boot and independent qualification |
+| `make smoke-graphical-console` | Fresh production/capture image checks, twenty guest cases and a normal boot | Final-source GCC 16 `full` and independent review |
+| Image admission v6 | Current build identity, image/private-ABI/stack/state structure | Selector, authority, pixel and diagnostic behavior |
+
+This document describes current behavior and gates, not a completed run. Exact
+commands, hashes, failures and past results belong in retained evidence and
+Git/PR history. Earlier source or receipt schemas cannot qualify a changed image.
 
 ## Developer preview
 
-Run `make capture-framebuffer` to build the current framebuffer profile through
-its normal image and mixed-stack checks, then capture one bounded QEMU guest.
-No external manifest, machine-specific review receipt or Python image package is
-needed. The command prints a fresh `build/framebuffer-preview/run-*/framebuffer.png`
-path; the same directory keeps the raw PPM, physical before/after bytes and logs.
-It uses the existing exact 800×600 q35/TCG/std-VGA fixture and pixel oracle, with a
-90-second guest limit and bounded process cleanup. Other firmware geometries
-fail closed. `QEMU`, `QEMU_DATA`, `OVMF`, `OVMF_CODE`/`OVMF_VARS`, `OVMF_DIR`, `CXX`
-and `UEFI_LD` work as on the [other developer commands](local-development.md).
-Missing prerequisites report `BLOCKED`; build, admission and guest failures remain
-failures. The successful framebuffer image remains in `build/uefi`; normal boot
-commands rebuild their own profile.
+Run `make capture-framebuffer` to build and admit the current output-only profile,
+then capture one bounded guest. It prints
+`build/framebuffer-preview/run-*/framebuffer.png`; the directory also retains raw
+PPM, physical before/after bytes and logs. No external manifest, review token or
+Python image package is needed. It uses the exact 800×600 q35/TCG/std-VGA fixture
+and pixel oracle, with a 90-second guest limit and bounded process cleanup.
+Other geometries fail closed. Use the
+[local-development prerequisites and overrides](local-development.md), including
+`QEMU`, `QEMU_DATA`, `OVMF`, `OVMF_CODE`/`OVMF_VARS`, `OVMF_DIR`, `CXX` and `UEFI_LD`.
+Missing prerequisites are `BLOCKED`; build, admission and guest defects are failures.
+The framebuffer image stays in its isolated native profile directory; normal
+images coexist. Do not mutate an image profile while it is in use.
 
-This is a developer preview, not independently qualified evidence. Its record
-says `qualified: false`; it runs neither the three negative guests nor a normal
-restoration boot. The stricter prebuilt qualification path remains
-`scripts/kernel-framebuffer-capture.py` (see `--help`): it still requires the pinned
-manifest, four independent approval roles, all four cases and an actual normal
-restoration boot. A preview never creates those approvals.
-New manifests pin `normal_oracle` to the current SHA-256 of
-`scripts/kernel_uefi_oracle.py`, retaining verification before dynamic loading
-and rejecting the former test-executable pin without rewriting historical evidence.
+The result says `qualified: false`. Preview runs neither the three negative
+guests nor a normal restoration boot. The stricter prebuilt path is
+`scripts/kernel-framebuffer-capture.py` (see `--help`): a pinned manifest, four
+independent approval roles, all four cases and an actual normal restoration.
+Its manifest pins `normal_oracle` to `scripts/kernel_uefi_oracle.py`, checked
+before dynamic loading. A preview never supplies independent approvals.
 
 ## Current-source graphical smoke
 
-`make smoke-graphical-console` builds and checks normal UEFI, production graphical
-and capture graphical images sequentially, then runs twenty fresh graphical
-cases and one actual normal restoration. It uses version-5 admission;
-that receipt stays structure-only and never grants behavioral qualification.
-No external approval receipts or historical compiler/address allowlists are needed
-for this developer command. Independent review and final GCC 16 `full` remain
-separate merge gates. This command creates new observations, not recovered evidence.
+`make smoke-graphical-console` builds/checks normal UEFI, production graphical and
+capture graphical images sequentially, executes twenty cases, then actually
+boots retained normal UEFI. It needs no external approval receipts or historical
+compiler/address allowlist. Its version-6 image receipt is structure-only.
 
-For review before execution, use
-`AURORA_GRAPHICAL_KEEP_RUNS=all scripts/kernel-graphical-smoke.sh --build-only`.
-It prints a fresh directory containing ordinary image copies and build logs,
-then rebuilds normal UEFI in the shared `build/uefi` directory before returning.
-The builder clears only its disposable `objects` namespace; shared caches and logs
-stay in place. Staging copies the required current artifact inventory, never the
-whole shared tree. The `all` setting pins this review window until manually removed.
-Then run `python3 -B scripts/kernel_graphical_smoke.py --images DIR/images
---evidence DIR/guests QEMU OVMF CODE VARS DATA`, using either a combined OVMF path
-or the CODE/VARS pair and empty strings for unused inputs. The shell uses the
-shared firmware selector; usual QEMU/firmware/compiler overrides apply.
+For build-only inspection and retained review inputs:
 
-Coverage includes production help/status/note write/read/edit/exit; capture BS/DEL/CRLF,
-rejection/recovery/exit and a sent but unconsumed sentinel; exact capacity 64,
-overflow 65 locking/recovery, event 80 and native idle 4096; an explicit fixture-G
-regression; note readback, shorter/empty replacement, malformed/control-byte
-preservation and the maximum 53-byte note; invalid selector, all four C/D/c/d
-no-effect authority denials and F/I
-pixel failures. The 96-copy guard remains hosted-only. Idle has no input or pause
-from release through its terminal marker. Production uses observed viewport
-boundaries because it has no PRE_SAMPLE markers. Capture sends only the selector
-before PRE_SAMPLE 0, then synchronizes every byte on completed-sample markers.
+```sh
+AURORA_GRAPHICAL_KEEP_RUNS=all scripts/kernel-graphical-smoke.sh --build-only
+python3 -B scripts/kernel_graphical_smoke.py --images DIR/images \
+    --evidence DIR/guests QEMU OVMF CODE VARS DATA
+```
 
-Every saved physical/PPM pair checks scanout, the model viewport, every outside
-byte and the 1,024-byte tail against a real baseline. Captures retain selected
-editing/control/capacity milestones and final state; this is sampled evidence,
-not continuous memory observation. F/I overlays exactly 0/55 successful model
-stores on that baseline and checks 1/56 attempts, without hosted A5-fill bytes.
-The production baseline is its already-painted initial state; it cannot establish
-pre-initial-paint outside-byte preservation. Production's actual exit 33 is
-separate from the capture guests' QMP quit 0.
+Use the printed run directory for `DIR`, an OVMF combined path or CODE/VARS pair,
+and empty strings for unused inputs. The shell uses the shared firmware selector
+and standard overrides. Build-only stages the required isolated profile artifacts
+and performs no guest qualification or shared-image restoration rebuild.
 
-Guests use original-clock q35/TCG, one CPU and disposable snapshot media, with
-no network or physical-device access. Each graphical guest has a 90-second wall
-limit (production also has at most 80 small 56,032-byte state probes per chunk,
-with full pairs only at matches); restoration has
-30 seconds. Serial is limited to 1 MiB, cumulative QMP and each child output file
-to 4 MiB. Per-case raw pairs, input, serial, QMP, stderr and summary are preserved
-on first failure; remaining cases stop, owned QEMU is reaped, and the retained
-normal image is actually booted in `finally`. Separately, the shell rebuilds
-normal UEFI in shared `build/uefi` on success, build-only, and failure or handled
-INT/TERM after staging starts. Foreground work finishes before shell restoration;
-the original failure status is preserved, and a restoration failure is reported
-with its retained build log and makes an otherwise successful command fail.
-Failed/partial owned objects are renamed into the run window before restoration;
-small image/receipt artifacts are copied. A failed restoration also retains its
-own inputs. Capture failure is reported and restoration still runs, so inputs
-that could not be retained may be replaced. Successful runs avoid both whole-tree
-moves/copies.
-After the guest window and shared normal-image restoration both succeed, the
-managed shell run discards only known physical/PPM dumps and viewport probes in
-that run. Summaries, serial/QMP/stderr and build logs, staged images and unknown
-files remain. Build, guest or restoration failures retain raw captures. Explicit
-keep-all or a `.keep` before removal preserves successful dumps too. Every path
-is checked before cleanup, held no-follow directory handles anchor deletion, and
-pins are checked before each removal. A later pin
-or cleanup interruption preserves the remaining dumps; deleted captures cannot
-be recovered. Errors warn without changing the completed build/guest result.
-Standalone runner outputs and historical windows are never adopted for this
-cleanup. No screen-hash receipt is produced or required; retained logs record the
-actual comparisons, while discarded screenshots are no longer available.
-Default retention keeps the latest two successful and two failed windows. Set
-`AURORA_GRAPHICAL_KEEP_RUNS=N` (1..999) to change both limits, or `all` to skip
-pruning and pin the new run. A `.keep` file pins an individual window. A separate
-runner pins a completed window in this checkout before its first image check;
-remove the pin manually after review/use finishes. A managed window from another
-checkout must already have a regular `.keep` file created there; foreign retention
-files are never changed by this reader. Pruning errors emit a warning without
-changing the build/guest result. Unmarked,
-malformed and unfinished windows remain untouched for manual review/cleanup; this
-exceptional evidence and explicit pins are outside the automatic count bound.
-See [explicit local cleanup](local-development.md#reclaiming-old-local-output-explicitly)
-for retiring selected old builds/windows without sweeping review directories.
-This rebuild does not replace the staged-normal boot validation. This isolated
-window leaves no persistent guest state, so one final boot suffices.
-Ordinary/optimized compiler-free runner
-controls belong to Meson `dev`/`full` and `make test-graphical-controls`.
+Coverage includes production commands/edit/exit; capture BS/DEL/CRLF,
+rejection/recovery and an unconsumed sentinel; exact capacity 64, overflow 65,
+event 80 and native idle 4096; fixture G; note readback, shorter/empty replacement,
+malformed/control-byte preservation and maximum 53-byte content; invalid selector,
+all C/D/c/d no-effect denials and F/I pixel failures. The 96-copy guard is hosted
+only. Production synchronizes on observed viewport boundaries; capture sends only
+the selector before PRE_SAMPLE 0, then synchronizes bytes on completed samples.
+Idle receives no input or pause between release and its terminal marker.
 
-The graphical console shares `console.session_note` with the simple serial
-console: exact `write note <text>` replaces one RAM-only note, and `cat note`
-renders its content or a missing message. Content is at most 53 printable ASCII
-bytes; empty content is valid and replacement clears the previous suffix. A new
-invocation starts missing. The hosted transcript oracle additionally covers
-UART damage, invalid bytes and same-process session reset. These source changes
-require fresh qualification; this paragraph records no new execution.
+Each physical/PPM pair checks scanout, modeled viewport, every outside byte and
+the 1,024-byte tail against its real baseline. Selected editing/control/capacity
+milestones are sampled, not continuously observed. F/I overlays exactly 0/55
+successful stores and checks 1/56 attempts, without hosted A5-fill bytes.
+Production starts with an already-painted baseline, so it cannot establish
+outside-byte preservation before the initial paint. Production exit 33 differs
+from capture QMP termination 0.
 
-The same session now owns four named RAM files through `console.session_files`.
-`write NAME TEXT`, `cat NAME`, `rm NAME` and `ls` use the [shared grammar and
-failure rules](native-console-service.md#session-local-named-files). `note` stays
-separate. Copied `FileReply` values supply ordinary response cells; the workspace
-never crosses into `TextCells`. Listing is deterministic and fits one response row.
-A two-file todo/ideas demonstration plus exit fits 75 input bytes. An eight-byte
-name with 49 content bytes fills one 64-byte command; writing, reading and exiting
-that combination needs 83 input bytes, so clean-exit maximum-name and maximum-content
-cases are separate. The combined case retains the existing bounded-end behavior.
-These additions require fresh final-source qualification.
+Guests use original-clock q35/TCG, one CPU and disposable snapshot media, without
+network or physical-device access. Each graphical guest has a 90-second wall
+limit; restoration has 30 seconds. Production probes at most 80 small 56,032-byte
+states per chunk, taking full pairs only at matches. Serial is limited to 1 MiB,
+cumulative QMP and each child output file to 4 MiB. First failure stops remaining
+cases and retains raw pairs/input/serial/QMP/stderr/summary; owned QEMU is reaped
+and retained normal UEFI boots in `finally`.
 
-The existing 68 response cells, 80 input events, 96 copied samples and pixel,
-stack and image limits are unchanged. Maximum-length write/read/exit with LF
-uses 79 events; extra editing or CRLF bytes can exhaust that budget. Input is
-still serial, with no physical keyboard, filesystem, disk persistence or new
-device authority.
+### Restoration and retention
 
-## Dependency and outcome
+Image products are isolated by profile. A separately staged normal image is
+actually booted after graphical cases; changing the selected profile needs no
+shared normal-image rebuild. A failure retains its original status and diagnostics;
+normal-boot failure makes an otherwise successful qualification fail. Staging and
+retention errors are reported, without substituting image bytes for a guest boot.
 
-The output-only checkpoint is a native Aurora-rendered graphical status page after
-`ExitBootServices`, through sealed `DisplaySession` on accepted NativeConsole
-PR97/main `916fd18f18995241c1da367db6a04e7eb3cfce63`. The compiler extension
-retains kind-checked exclusive synchronous borrowing and existing readonly byte
-windows. Its focused compiler/Console regression review is separate from final
-integrated acceptance. Aurora owns the project-authored font, rasterization,
-colors, clipping, cursor/layout and all human-facing content.
-The trusted host boundary only authenticates, bounds-checks, packs pixels and
-performs ordered volatile stores. No raw pointer, mutable framebuffer span or
-`OwnedBytes` video-memory surrogate is introduced.
+After both guest execution and the normal restoration boot succeed, managed runs discard
+only known physical/PPM dumps and viewport probes from that run. Summaries,
+serial/QMP/stderr, build logs, staged images and unknown files remain. Build,
+guest/restoration failure, interruption or explicit keep retains raw captures.
+Known capture files are checked before deletion. Cleanup errors warn without
+changing completed test results; an interruption preserves remaining dumps but
+cannot recover removed captures. Keep review windows before starting cleanup.
+No screen-hash receipt replaces discarded pixels; logs record actual comparisons.
+Standalone outputs and historical windows are never adopted for this cleanup.
 
-The shared `graphics.font5x7` library module supplies the base A-Z, 0-9, space,
-colon and hyphen glyphs and the original unsupported-byte fallback. Constants
-retain seven readable five-bit binary groups and their documented packed-bit
-orientation. The graphical consumer adds its lowercase/punctuation glyphs and
-draws at unit scale directly; the status page retains its 3x/2x scale selection.
-The hosted gate checks all 256 base-font byte mappings against independent visual
-rows and both consumers against their existing pixel oracles. Historical guest
-captures retain their original source/compiler scope; extraction and simplified
-unit-scale drawing require fresh integrated image/stack and guest gates.
+Default retention keeps two successful and two failed managed windows.
+`AURORA_GRAPHICAL_KEEP_RUNS=N` accepts 1..999 for both limits; `all` skips pruning
+and pins the new window. A regular `.keep` pins one window. A separate runner pins
+a completed local window before image checks; remove that pin manually after use.
+A foreign checkout's managed window must already have a regular `.keep`; this
+reader never modifies foreign retention files. Unmarked, malformed and unfinished
+windows remain for manual review outside the count bound. See
+[explicit local cleanup](local-development.md#reclaiming-old-local-output-explicitly).
 
-## Provisional transport and authority
+## Rendering and authority
 
-Handoff v5 retains the 128-byte header and reserves its own record at arena offset
-`0xe0000`, supervisor read-only/NX. The other versions retain their existing
-meaning. The output-only build rejects combination with ACPI, runtime, BAR and
-console profiles; combined input/display borrowing uses the separate v6 contract
-below.
-The 64-byte version-1 graphics record contains magic/version/length, physical
-base/resource bytes, width/height/pixel pitch/format, selected mode/mode count and
-zero reserved bytes. It carries no firmware pointer.
+Aurora owns the font, rasterization, colors, clipping, layout and human-facing
+content. The trusted host boundary authenticates and bounds-checks, packs pixels
+and performs ordered volatile stores. No raw pointer, mutable framebuffer span
+or `OwnedBytes` video-memory surrogate reaches source.
 
-The loader performs bounded GOP discovery, mode queries and selection before the
-final memory-map/exit loop. Every successful query buffer is freed. It prefers
-800×600, otherwise the first supported mode. Limits are 1024×768, pitch at most
-1024 pixels, 64 queried modes and at most 3 MiB/768 mapped pages. Only UEFI's two
-32-bit RGB/BGR formats are accepted; the reserved byte is canonical zero on pixel
-writes. Base must be page-aligned and every rounded mapped page must lie entirely
-inside the reported resource. Unsupported alignment, bitmasks and BLT-only modes
-fail closed. See the [UEFI GOP definition](https://uefi.org/specs/UEFI/2.10/12_Protocols_Console_Support.html#graphics-output-protocol).
+`graphics.font5x7` provides A–Z, 0–9, space, colon, hyphen and fallback glyphs as
+seven five-bit groups with documented packed-bit orientation. The graphical
+consumer adds lowercase/punctuation and unit-scale drawing; the status page uses
+3x/2x scaling. Hosted tests compare all 256 base-font byte mappings to independent
+visual rows and both consumers to pixel oracles.
+
+### Firmware handoff and mapping
+
+Output-only handoff v5 retains the 128-byte header and its record at arena offset
+`0xe0000`, supervisor read-only/NX. It rejects combination with ACPI, runtime, BAR
+and console profiles; combined input/display uses v6 below. The 64-byte version-1
+graphics record holds magic/version/length, physical base/resource size,
+width/height/pitch/format, mode/count and zero reserved bytes, with no firmware pointer.
+
+Before final memory-map/exit, bounded GOP discovery frees every successful query
+buffer and prefers 800×600, otherwise the first supported mode. Limits are
+1024×768, pitch 1024 pixels, 64 queried modes and 3 MiB/768 mapped pages. Only the
+two UEFI 32-bit RGB/BGR formats are accepted, with canonical zero reserved bytes
+on writes. Page-aligned base and rounded mapped pages must fit the resource;
+bitmask and BLT-only modes reject. See the
+[UEFI GOP definition](https://uefi.org/specs/UEFI/2.10/12_Protocols_Console_Support.html#graphics-output-protocol).
+Firmware SetMode may clear the display before the controlled capture boundary.
 
 Ordinary admission requires complete reserved/MMIO final-map coverage. It denies
-RAM, runtime and ACPI overlaps, unsupported memory attributes, the complete owned
-arena, LAPIC, IOAPIC and the q35 ECAM aperture. It checks physical width and PAT
-index 3 is UC, without changing PAT/MTRRs. Every exit retry rechecks its final map.
+RAM, runtime/ACPI overlap, unsupported attributes, the owned arena, LAPIC, IOAPIC
+and q35 ECAM. Physical width and PAT index 3 UC are checked without changing
+PAT/MTRRs. Every exit retry rechecks the final map.
 
-A separately named q35/OVMF/std-VGA fixture rule is now source-prepared from an
-independently accepted probe and is called only by the explicit fixture build. Actual rendering and no-write failure capture are qualified only for this fixture. Missing descriptor coverage never selects it automatically.
-`FramebufferRecord::parse` yields only a description; it cannot mint the resource
-token accepted by that rule. The pre-exit loader can mint that token. The
-payload restoration adapter establishes the current root, owned immutable
-record and complete tree before constructing its counterpart. Its exact resource tuple is base `0x80000000`, 1,921,024 bytes (469 pages),
-800×600, pitch 800, BGR format 1, mode 3 of 30 and physical width 40. Every
-field drift rejects. The external qualification additionally pins q35/TCG,
-qemu64, one CPU, 128 MiB, std VGA, QEMU, OVMF and tool data; guest metadata cannot
-prove those environment identities. Source/model and final-image reviews remain
-required for independent qualification; developer previews retain the automated
-image, stack and runtime guards.
+The explicit q35/OVMF/std-VGA fixture has a separate admission rule; missing
+descriptors never select it automatically. `FramebufferRecord::parse` gives a
+description, not resource authority. The pre-exit loader can mint the token;
+payload restoration first establishes the current root, immutable owned record
+and complete tree. The exact tuple is base `0x80000000`, 1,921,024 bytes/469 pages,
+800×600, pitch 800, BGR format 1, mode 3 of 30 and physical width 40. Every field
+drift rejects. External qualification separately pins q35/TCG, qemu64, one CPU,
+128 MiB, std VGA, QEMU, OVMF and tool data; guest metadata cannot prove host identities.
 
-The mapping window begins at `0xffffa00000001000`; both end guards are absent.
-Its maximum extent requires four additional intermediate table pages, within the
-unchanged 16-page pool and 1 MiB arena. Leaves must match exact physical pages and
-supervisor RW/NX/UC flags. Whole-tree validation rejects all extra leaves, aliases,
-shared/cyclic table paths, changed permissions and missing pages. Handoff v5 alone
-does not relax the strict verifier. No user mapping is created.
+The mapping starts at `0xffffa00000001000` with absent end guards. Its maximum
+extent needs four extra intermediate pages within the 16-page pool/1 MiB arena.
+Leaves must match physical pages and supervisor RW/NX/UC flags. Whole-tree checks
+reject extra leaves, aliases, shared/cyclic paths, changed permissions and missing
+pages. No user mapping or relaxed strict-verifier rule is introduced.
 
-## Evidence and required remaining gates
+### Output-only capture
 
-Hosted source tests cover geometry, independent byte packing, strict coverage,
-map splits/holes, forbidden resource intersections, PAT/width failures, mocked
-GOP calls/freeing and complete-tree/guard/alias corruption. These are bootstrap
-models, not graphics or physical-device qualification.
+The output-only image gate retains the shared fail-closed CFG/object decoder.
+It permits only checked immediate-push encodings `6a00`/`6a28`; memory pushes and
+wide signed stack normalizations reject. Legacy lookup/walker emission retains
+unambiguous object identity, a four-level root and decreasing-level/restore checks.
+The mixed-stack plus fault cap remains 15,360 bytes within the 16 KiB stack.
 
-The dedicated probe runner accepts only explicitly pinned QEMU/firmware/EFI
-inputs, uses disposable q35/TCG/std-VGA with the original clock, records its exact
-command/output and requires ordered firmware-exit/private-paging markers. It does
-not build or approve an image. A separate normal-image restoration remains
-required. The capture-only pre-store UART gate follows private paging,
-accepts exactly byte `0x47`, and has a ten-million-iteration bound. It gives
-Aurora no input capability. The host pauses QEMU, captures all 469 pages, releases
-the gate, then pauses the completed or fail-stopped image for comparison. Record,
-permission and stale-grant injections occur only after that baseline gate.
-The record negative corrupts the local copied record; it never makes the owned
-record page writable or disables CR0.WP. The existing generic smoke oracle does not qualify this new mode.
+Hosted geometry/packing, coverage splits/holes, forbidden intersections,
+PAT/width, mocked GOP/freeing and tree/guard/alias controls are bootstrap models.
+Generated-Aurora pixel tests cover native BGR, padded RGB, clipped odd surfaces and
+maximum geometry, with independent glyph/byte oracles and guard/padding/tail checks.
+Hosted cross-kind, stale-generation, reentry, lifetime and mapping denials remain
+separate from guest captures.
 
-The accepted hosted/native evidence covers independent generated-Aurora pixels,
-RGB/BGR guard/padding, source/IR/private-ABI authority, exact linked mixed-stack and
-image checks, reviewed guest admission, real screenshot/physical before-and-after
-capture and denied grants with no stores. The final integrated GCC 16 Meson
-`full` suite and independent merge review are still required.
-
-### Accepted aperture probe, 2026-10-08
-
-The independently admitted probe EFI was
-`2ba93fcb453c1cd1a18fedabbbe6b2a880f07dc270757a049a258ddaf0586626`;
-payload ELF `0dcff4bf8b402af061d646e44a16100dfc80be2deb5ba506c41be9498b82762c`.
-QEMU was `d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067`,
-OVMF `14954040cc754ade0c625ac3470ea46d4c14318b5b1396de4ef77090203d76db`.
-The exact 469-page GOP resource above had no overlapping final-map descriptor;
-ordinary described admission correctly denied it. ExitBootServices succeeded on
-attempt 1; private paging and matching geometry were verified with eight table
-pages. An independently reviewed receipt bound source/compiler/tool-data hashes,
-ordered markers, geometry and map arithmetic. A separate fresh normal image
-actually booted through the standard success oracle afterward. These results
-qualify the aperture observation only; they do not establish Aurora pixel output.
-
-### Current hosted and image preparation
-
-Five actual-generated-Aurora byte cases cover native 800×600 BGR, padded RGB,
-two clipped odd surfaces and the maximum 1024×768 geometry. Their independent
-font-row/byte oracle matches all visible pixels, reserved bytes, guard regions,
-row padding and page tail; the native-size scene issues 484,711 stores. A real
-Console grant supplied to the generated Display entry fails before stores.
-Native session controls also reject cross-kind grants in the opposite direction,
-stale generations, raw channel overflow, reentry, geometry/mapping drift and
-invalid lifetime/completion. These are hosted results, not guest capture proof.
-
-The new exact image gate reuses the fail-closed CFG/object decoder without its
-old image measurements. It admits only two verified immediate-push encodings
-(`6a00`, `6a28`); memory pushes and wide signed stack normalizations stay rejected.
-The shared walker checker additionally accepts one exact save/level-move order,
-with r14 saved before assignment and unchanged root-3/decrement/restore proof.
-The lookup and recursive walker prohibit IPA cloning/partial inlining to retain
-unambiguous object identities and exact four-level roots. Original decoder
-controls plus new mutations pass; budgets remain 16 KiB stack and 15,360-byte
-mixed-stack/fault cap. Independent qualification requires final exact-image
-review pins; the developer preview binds the automatic admission to current
-source and image bytes.
-
-### Accepted native capture, 2026-10-08
-
-Execution manifest `8bbb3356d0939cc5d13eb79128feaeb01e934016c5c306106e4d842790260171`
-bound the independently reviewed images, source-equivalence wrappers, compiler,
-runner, firmware, QEMU/data/runtime and four explicit approval roles. The current
-Aurora formatter changed whitespace only; independently regenerated assembly was
-byte-identical. Original build receipts remain intact; no rebuilt-image claim
-was made for those source-only rebindings.
-
-The positive guest exited firmware, validated private paging, waited for the
-baseline capture, and then executed 484,711 Aurora pixel operations. The raw
-1,921,024-byte framebuffer and real 800×600 screenshot matched the independent
-pixel oracle; all 1,024 rounded tail bytes equaled the baseline. Screenshot RGB
-SHA-256 was `aa54951e2adf263c9e1c8abe47f85b03165f97cdbb6dd5a6bb8c3d01fc61d74e`.
-There is no native row padding at pitch 800; padded-row preservation is hosted
-evidence only. QMP pause acknowledgements and exact release ordering were checked.
-
-Three fresh denied guests (malformed copied record, NX-missing mapping and stale
-generation) retained all 1,921,024 resource bytes and their screenshots unchanged,
-with zero Aurora stores. Each fail-stop was captured before termination. A
-separate normal image then actually booted through the standard normal oracle
-(exit 33). Independent raw review SHA-256 was
-`87d128213af579dec28b8f5f1850ad4c030ec560ddb1fec9bf574669571d98f6`.
-No new CPU/GPU device activation, DMA/IOMMU progress, physical hardware support,
-interactive graphical input or general compositor follows from this checkpoint.
+The prebuilt probe runner requires pinned QEMU/firmware/EFI, original clock and
+ordered firmware-exit/private-paging markers; it neither builds nor approves an
+image. The capture-only pre-store UART gate accepts exactly `0x47` within ten
+million iterations after private paging and grants Aurora no input capability.
+The host pauses QEMU, samples all 469 pages, releases the gate and samples the
+completed/fail-stopped image. Copied-record, NX-permission and stale-generation
+injections occur after the baseline. Record corruption never makes the owned
+record writable or disables CR0.WP. The generic boot oracle does not qualify
+this mode; positive/three denied captures and a normal boot are separate gates.
 
 ## Bounded serial-input graphical session
 
-A separate profile combines distinct ConsoleSession and DisplaySession borrows
-in one synchronous invocation. `examples/kernel-graphical-console.au`
-reuses the exact Aurora Line64 editor and project font, adding all printable ASCII,
-two rows of 68 text cells, an underline cursor and dirty-cell redraw. The prompt
-accepts 64 bytes, BS/DEL, CR/LF/CRLF and the existing help/status/exit commands;
-invalid/damaged/overflow lines reject until submission. The second row retains
-only the latest response. There is no scrolling terminal or keyboard driver.
+`examples/kernel-graphical-console.au` combines distinct ConsoleSession and
+DisplaySession borrows in one synchronous invocation. It reuses Aurora Line64
+and all printable ASCII, with two rows of 68 cells, underline cursor and dirty
+redraw. The prompt holds 64 bytes, BS/DEL and CR/LF/CRLF; damaged/invalid/overflow
+lines reject until submission. The second row keeps only the latest response.
+The [shared note/file grammar](native-console-service.md#session-local-ram-note)
+applies, with invocation-local storage and copied FileReply presentation.
 
-The viewport is 408x18 pixels at (32,128), requiring at least 440x146 geometry.
-Outside pixels and padding remain untouched. At most 80 byte events and 96 copied
-samples yield at most 82 changed paint passes and 992,938 pixel stores, below the
-unchanged million-store cap. Source exhaustion renders a final response; the
-separate native 4096-total-wake ceiling fail-stops without inventing input.
-The 96-sample guard has hosted-only coverage through damaged copied observations;
-clean absent UART polls stay inside the native session and do not consume it.
-Closed graphical completion values are independently checked and explicitly
-mapped when both original sessions close. Pixel failure stops without retry or
-rollback. No source capability contains or replaces the other.
+The viewport is 408×18 at (32,128), requiring at least 440×146. Outside pixels
+and padding stay untouched. At most 80 events and 96 copied samples permit 82
+changed paint passes/992,938 stores under the million-store cap. Source exhaustion
+renders a final response; native 4096-total-wake exhaustion fail-stops without
+inventing input. Clean absent UART polls do not consume samples. The 96-sample
+guard is exercised through hosted damaged observations. Closed completion values
+are checked/mapped when both original sessions close; pixel failure never retries
+or rolls back. Neither source capability contains the other.
 
-The native source profile uses handoff v6, independent Console/Display
-preflight, exact paired LAPIC/framebuffer whole-tree verification and observational
-timer/interrupt/UART quiet checks. Versions 1–5 retain their original contracts.
-The 1 MiB arena, 16 page-table pages and 16 KiB stack stay unchanged. Each exact
-image must establish normal + fault <= 15,360, wait + IRQ + fault <= 15,360 and
-IRQ + fault <= 4,096 bytes, including the 176-byte IRQ frame and alignment.
+Maximum note write/read/exit with LF costs 79 events; edits/CRLF may exhaust the
+budget. Two-file todo/ideas plus exit fits 75. An eight-byte name and 49-byte content
+fill one 64-byte command, but write/read/exit costs 83; clean-exit maximum-name and
+maximum-content cases are separate, and the combined case uses bounded completion.
 
-Developer entry remains `UEFI_MODE=graphical-console ./scripts/kernel-uefi-build.sh`
-(with `graphical-console-capture` reserved for controlled capture). Both modes
-require their own combined linked-stack/image begin/end/emit admission;
-every new attempt invalidates prior combined receipts before build work. Missing
-or failed checks reject. Automatic evidence still requires independent exact-image
-review and cannot authorize a guest or borrow a legacy profile's qualification.
-Version-5 image receipts retain measured capture artifact/state structure by
-mode. Current build provenance binds the complete source, tools, exact flags and
-output bytes at begin/end/admission; it does not require a historical source-token
-allowlist. A fresh implementation edit proceeds to the actual image/stack checks.
-Stale or mixed source/output/tool inputs still reject. Earlier receipt schemas,
-even with an exact review pin, cannot satisfy current `checked`/`reviewed`.
-The former source-only action and token-projection subreceipt are removed;
-historical source and image receipts retain their original scope.
-Capture state evidence still says `structure-only` and
-`behavior_qualification: pending-hosted-and-guest-gates`; emitting or checking a
-receipt does not mark those gates passed.
-The capture profile separates its bounded pre-store selector from editor input,
-emits completed-sample/store markers, and leaves terminal or failed scanout intact
-for external physical capture and ordinary normal-image restoration.
+Handoff v6 independently preflights both grants, paired LAPIC/framebuffer mappings
+and observational timer/interrupt/UART quiet checks. Earlier handoffs are unchanged.
+The arena/page pool/stack remain 1 MiB/16 pages/16 KiB. Exact images must fit normal
+plus fault and wait plus IRQ/fault within 15,360 bytes, and IRQ plus fault within
+4,096, including the 176-byte IRQ frame and alignment.
 
-`make test-graphical-console` now shares the controlled build-once compiler and
-includes the paired paging model and ordinary/optimized admission controls.
-Meson `slow`/`full` includes the complete hosted runner; `dev`/`full` includes
-paging and admission controls. A directly pinned run uses
-`python3 -B -O tests/kernel-graphical-console.py --run /path/to/aurorac
---compiler-sha256 REVIEWED_SHA256`; a controlled `--developer-build-receipt`
-is also supported. Every invocation recompiles the observer and hashes its
-recursive quoted-header closure, including the capture policy. Existing routes
-remain sufficient; registration alone is not aggregate qualification.
+### Build admission and trust limits
 
-The earlier actual generated consumer passed
-67 hosted cases: 39 transcript/geometry cases, six baseline/output-failure cases,
-and 22 pre-entry denials. Intermediate and final pixels, exact ordered stores,
-untouched guards/padding, bounded completion and no-retry behavior were checked
-against a separate model. Independent receipt/source review confirmed that scope;
-most successful raw outputs were compacted into comparison receipts and hashes.
+Use `UEFI_MODE=graphical-console ./scripts/kernel-uefi-build.sh`; the separate
+`graphical-console-capture` mode is for controlled capture. Each mode requires
+its own combined linked-stack/image begin/end/emit admission; starting a build
+invalidates prior combined receipts. Source/tool/flags/output identity binds
+begin/end/admission. Mixed or stale inputs reject; historical token/object/compiler
+allowlists and earlier receipt schemas cannot satisfy current checked/reviewed gates.
 
-The independently accepted positive three-boot window 004 covers the original
-988-file production and capture source snapshots and their exact admitted images.
-Actual PTY input exercised editing, help/status, rejection locking, CRLF and exit.
-All 17 physical/PPM capture pairs matched: two production initial/help captures
-and fifteen capture-profile baseline/intermediate/final captures. The capture
-guest consumed 31 samples, left its sentinel unconsumed and made 26,163 stores;
-the production guest completed with 16,321 stores and exit 33. A separate ordinary
-normal image passed its existing serial oracle with actual exit 33. Independent
-review `interactive-results-review-004/review.json` has SHA-256
-`e28aacf7b586aca97a8583cc61d6ba71d450067042751097e79d9c73ac148f43`.
-This accepts that positive interaction only; it preserves failed earlier attempts
-and the restoration's sampled-process-provenance limit, with no continuous or
-post-entry mapping claim.
+Version-6 receipts (`aurora-graphical-console-admission-v6`) check PE/ELF/PIC,
+exact source/symbol/object/link associations, compiler-reported C++ frame/call
+bounds, generated-Aurora control-flow/stack, private ABI and production capture
+absence. Capture requires fourteen typed, sized, aligned, contained and disjoint
+BSS fields: nine state/counters, Console/Display grants and generations, and the
+entry active flag. Addresses and section indexes are measured. The result is
+`structure-only`, with `behavior_qualification: pending-hosted-and-guest-gates`.
 
-Four separate windows on the preserved capture image also qualified exact
-64-byte capacity, 65th-byte overflow locking and recovery, 80-event termination
-and the native 4096-wake idle deadline. Their 22 additional physical/PPM capture
-pairs matched exact model stores or unchanged initial pixels. Idle reached
-4,097 raw polls with zero copied samples and retained the initial 7,826 stores;
-this fail-stop is distinct from the hosted-only 96-copy guard. Each window had
-its own actual ordinary normal restoration with exit 33; capture termination by
-QMP is not native debug-exit 35. Independent review
-`remaining-guest-results-review-001/review.json` has SHA-256
-`4a2e9b38ea04e9ec6c1e2a141ffd6e5f9ad55145429821282cfceb338cfaf143`.
-These results retain the same sampled-provenance limits and qualify only those
-preserved images, not the numeric-selector candidate below.
+The C++ bound trusts GCC .su/.ci metadata, conservatively retaining complete
+frames at calls and tail transfers with exact compiler-versus-linked direct-edge
+agreement. Checked adjacent pushfq/register-pop pairs add eight bytes per
+containing frame; arbitrary inline assembly is outside that metadata guarantee.
+Unresolved targets, unsupported transfers, unbounded/unapproved dynamic frames
+and graph cycles reject. Both page-table walkers use four fixed local slots.
+Generated-Aurora, private ABI, assembly and IRQ/fault checks and budgets remain.
 
-The joined capture-only failure extension is unqualified. Its pure closed policy
-accepts exactly seven selector bytes before any grant, consumer entry or store:
+Graphical builds require separate non-inlined/non-cloned Console and Display
+validators with matching frame/source/symbol ownership. C++ instruction-by-
+instruction stack/CFG replay and the special memory-push hook are retired.
+Traversal termination, snapshot ordering, local-storage independence, bitmap
+bounds, helper memory effects and arbitrary C++ correctness trust reviewed source
+and compilation, with independent reference parity, hostile hosted and guest
+checks. Receipt versions 1–5 cannot qualify this boundary. Fresh image, behavioral,
+restoration and final-source GCC 16 full/review gates remain necessary.
 
-| Byte | Release code | Scenario | Fixed action |
-|---|---|---|---|
-| G | 1 | normal | Use both live grants |
-| C | 2 | cross-console | Put the live Display grant in the local Console field |
-| D | 3 | cross-display | Put the live Console grant in the local Display field |
-| c | 4 | stale-console | Close/reopen Console and invoke with its saved old generation |
-| d | 5 | stale-display | Close/reopen Display and invoke with its saved old generation |
-| F | 6 | first-pixel-error | Fail the first pixel attempt, before any store |
-| I | 7 | interior-pixel-error | Fail after exactly 55 successful stores |
+### Capture selectors and behavioral gates
 
-All other 249 bytes reject with `capture selector` and no release marker.
-A valid byte emits `AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=N` through the
-existing decimal-number writer, with exactly the code above; invalid code 0 is
-never released. Historical source-contract receipts used
-`aurora-graphical-capture-source-v2`; current admission binds fresh build provenance
-instead. The ten-million-iteration gate and UART-error rejection are unchanged.
-No later byte selects a scenario.
-The hosted observer independently checks all 256 selector values, literal numeric
-codes, exact names and fixed failure predicates. The complete hosted runner now
-requires 145 cases: 108 transcript/geometry cases, two same-process session
-resets, 13 output-failure cases (including ordinal 55) and 22 pre-entry denials.
-This inventory is prepared, not a claim of a new hosted pass.
+Capture selects one scenario before grants, consumer entry or stores:
 
-Failure lines retain their original fields and append capture-only
-`completed=N wakes=W pixel_attempts=P`; completion lines append
-`entries=E samples=R output_attempts=O completed=N pixel_attempts=P` after their
-existing completion/wakes/stores fields. Production diagnostics retain their
-original format. C/D/c/d must fail paired-service preflight with zero counters
-and an unchanged full framebuffer; an invalid selector also has no release.
-F/I return graphical completion 2 with one entry, zero samples/output attempts and
-respectively 1/56 pixel attempts and 0/55 stores, before any pre-sample marker.
-I preserves exactly the first 55 model stores: a 6x9 background cell and the
-first glyph pixel.
-These inject the existing transport failure result at valid coordinates; no
-geometry fault, retry, rollback or synchronous fault is claimed.
+| Byte | Release code | Fixed action |
+|---|---|---|
+| G | 1 | Both live grants |
+| C | 2 | Live Display grant in local Console field |
+| D | 3 | Live Console grant in local Display field |
+| c | 4 | Close/reopen Console, then its saved generation |
+| d | 5 | Close/reopen Display, then its saved generation |
+| F | 6 | Fail first pixel attempt before a store |
+| I | 7 | Fail after exactly 55 successful stores |
 
-The new candidate requires focused generated-consumer verification, exact
-production/capture reconstruction and independent image admission, separate
-guest denial/pixel-failure windows and positive regression, actual normal
-restoration, then the final integrated full Meson graph on GCC 16 and independent
-review. GCC 14 checks are optional targeted compatibility evidence.
-Original 988-file image receipts and preserved-image guest results do not qualify
-the new joined source. Partial/null-pair denials and deterministic synchronous faults
-remain separate from the seven selectors; no new keyboard, desktop or physical
-hardware qualification follows.
+Other bytes reject with `capture selector`, without release. Valid selectors emit
+`AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=N`; zero never releases. The gate has
+a ten-million-iteration bound, rejects UART damage and never selects again.
+Capture preserves terminal/failed scanout for physical sampling and normal restoration.
 
-The paired graphical verifier now traverses four paging levels with a fixed
-four-slot local array. The common linked decoder measures its stack effects and
-rejects call-graph cycles; only the unchanged legacy page walker retains a
-bounded recursion exception. Raw compiler frame/source associations, object/link
-byte binding, private ABI, IRQ/wait and complete stack budgets remain checked.
+Failure records append `completed=N wakes=W pixel_attempts=P`; completion records
+append `entries=E samples=R output_attempts=O completed=N pixel_attempts=P` after
+their completion/wakes/stores fields. Production diagnostic format is unchanged.
+C/D/c/d require zero counters and an unchanged framebuffer. F/I complete with code
+2, one entry, zero samples/output attempts, 1/56 attempts and 0/55 stores before
+PRE_SAMPLE. I preserves a 6×9 background cell and first glyph pixel. These inject
+transport failure at valid coordinates, not geometry or synchronous faults.
 
-This removes the graphical GCC14/GCC16 exact-body recognizers and their frozen
-machine fixtures. It deliberately stops claiming an independent machine proof
-of snapshot ordering, local-storage disjointness, bitmap bounds or helper memory
-effects. Those semantics depend on the reviewed C++ implementation and trusted
-compilation, with hostile hosted paging and actual guest behavior gates. Generic
-stack analysis does not establish traversal termination or arbitrary memory safety.
-Version-5 receipts cannot reuse the earlier paired machine proof. This source
-change remains unqualified until fresh current-source image/stack, hosted paging,
-applicable production/capture/fault guests, restoration and final full tests pass.
+`make test-graphical-console` uses the controlled compiler and includes paging
+and ordinary/optimized admission controls. Meson `slow`/`full` has the hosted
+runner; `dev`/`full` has paging/admission and compiler-free smoke controls
+(`make test-graphical-controls`). For a pinned hosted run:
 
-Only the graphical profile requires the private Console and Display validators
-to remain separate non-inlined, non-cloned bootstrap functions. Their raw compiler
-symbols, source ownership and frame sizes must agree with object/linked evidence;
-the validation predicates are unchanged. Other profiles do not enable these
-emission attributes. This boundary changes paired generated inputs, so fresh
-image/stack and capture-contract review is required before qualification reuse.
+```sh
+python3 -B -O tests/kernel-graphical-console.py --run /path/to/aurorac \
+    --compiler-sha256 REVIEWED_SHA256
+```
 
-The graphical stack adapter may authorize only a pair of direct RSP-relative
-qword argument pushes in the existing graphical entry owner. Actual instruction
-sites, unique ownership and four-byte opcodes replace historical function sizes
-and instruction offsets. Only positive, aligned disp8 sources are admitted.
-The shared decoder otherwise rejects memory pushes. For an authorized
-site it bounds the complete eight-byte source against the old live frame before
-adding eight bytes of stack consumption; stale or unused sites and unbalanced
-paths reject. This proves bounded stack effects, not copied-value initialization
-or authority. Existing save/return checks and whole-image budgets remain in force.
+A controlled `--developer-build-receipt` is also supported. Each run recompiles
+the observer and hashes its recursive quoted-header closure, including capture
+policy. The inventory requires 145 generated-consumer cases: 108 transcript/
+geometry, two session resets, 13 output failures and 22 entry denials.
 
-Current capture admission retains PE/ELF/PIC checks, `.su`/`.ci` associations,
-object/linked-byte binding, bounded stack/control-flow and private-ABI checks,
-current build provenance, and production fixture absence. Fourteen named
-BSS fields must have the expected type, size, alignment, containment and disjoint
-storage: nine counters/state fields, Console and Display grants and generations,
-and the graphical entry's active flag. Addresses and section indexes are measured;
-current source/tool/output hashes bind the local build rather than select an
-allowlisted historical machine.
+Qualification assigns each claim to its actual check:
 
-The removed capture checker replayed exact instruction/file/tool tuples to claim
-selector, authority, pixel-failure, diagnostic and inline UART/text/decimal
-behavior. The replacement does not establish those semantics or validate every
-historical GCC16 state global. Hosted grant/state/failure tests and actual guest
-capture, denial, pixel-failure and normal-restoration gates remain required.
-Compiler-free controls use small hand-authored structural/negative fixtures;
-complete encoded build snapshots are no longer repository test inputs.
-The narrow memory-push assumptions above remain unchanged. Graphical paging
-semantics now use the explicit trusted-C++ boundary described above; linked stack
-evidence is not arbitrary machine safety or complete compiler independence.
+- Hosted real policy checks all 256 selectors, independent numeric codes/names and
+  fixed 0/55 failure ordinals, including nearby/wide counts. Real sessions/entry
+  check identity, both preflights, wrong/duplicate kinds, stale generations,
+  geometry, lifetime and reentry.
+- Current image/stack admission checks the structure above, including compiled
+  imports, distinct frame ownership and absence of capture state in production.
+- Actual production/capture guests check release/sample ordering, diagnostics,
+  counters, denials, failed-store prefixes, unexpected writes and normal restoration.
+- Source review retains responsibility for privileged UART predicates, selector
+  bounds, counter increments and pre-store ordering. Hosted tests do not execute
+  privileged I/O; sampled guest pixels cannot establish every intermediate write.
 
-The removed five-file token allowlist and source-projection mutation tests proved
-only a match to historical source tokens. Their behavioral requirements remain assigned to the
-appropriate layer, rather than attributed to source hashes:
-
-- The hosted generated-consumer observer executes the real capture policy for all
-  256 selector bytes, independent numeric codes/names and fixed 0/55 failure
-  ordinals, including nearby and wide counts.
-- Real hosted Console/Display sessions and graphical entry cover exact record
-  identity, both preflights, wrong/duplicated kinds, stale generations, geometry,
-  lifetime and reentry; compiled imports/private ABI and distinct frame ownership
-  remain checked by image/stack admission.
-- Actual production/capture guests check release/sample order, diagnostics and
-  counters, all C/D/c/d no-effect denials, F/I failed-output store prefixes,
-  unexpected pixel writes and final normal restoration.
-- Artifact scans and linked-state checks retain production capture absence and
-  exact capture ownership, size, alignment, BSS containment and disjointness.
-
-These layers do not prove arbitrary adapter code correct. The unchanged private
-UART-status predicate, finite selector-loop bound, checked counter increments and
-pre-store ordering still require source review alongside the actual behavior
-gates. Hosted policy tests do not execute privileged adapter I/O; sampled guest
-pixels do not prove every intermediate write. Exact assignment counts and source
-conditional spellings are no longer admission criteria. Independent review and
-fresh final-source image/hosted/guest/full gates remain required before qualification.
+Registration or structural admission alone establishes no pass. Fresh source,
+hosted, image, affected guest/restoration and
+[final GCC 16 full/review gates](../AGENTS.md#workflow) remain required. Partial/null
+pairs and deterministic synchronous faults are separate from these seven selectors.

@@ -3,12 +3,17 @@ import std.binary;
 import std.bytes;
 
 export namespace std {
-    enum class ByteWriteStatus { success, out_of_range, value_out_of_range };
+    enum class ByteWriteStatus {
+        success,
+        out_of_range,
+        value_out_of_range
+    };
 
     class BinaryBuffer64 {
         builtin::array<u8, 64> elements;
     public:
-        BinaryBuffer64() : elements{} {}
+        BinaryBuffer64() : elements{} {
+        }
 
         auto size() const -> i64 {
             return 64;
@@ -25,12 +30,16 @@ export namespace std {
         }
 
         auto equal(i64 offset, i64 count, builtin::span<const u8> value) const -> bool {
-            if (offset < 0 || offset > 64 || count < 0 || count > 64 - offset) { return false; }
+            if (offset < 0 || offset > 64 || count < 0 || count > 64 - offset) {
+                return false;
+            }
             return std::equal(bytes(offset, count), value);
         }
 
         auto starts_with(i64 count, builtin::span<const u8> prefix) const -> bool {
-            if (count < 0 || count > 64) { return false; }
+            if (count < 0 || count > 64) {
+                return false;
+            }
             return std::starts_with(bytes(0, count), prefix);
         }
 

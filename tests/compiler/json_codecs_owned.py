@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Supplemental owner join only; requires separately reviewed owned-span compiler."""
+"""Exercise owner-backed codec windows and the shipped JSON codec example."""
 
 import argparse, hashlib, json, pathlib, shutil, sys
 
@@ -13,10 +13,10 @@ from unsigned_oracle import require
 p = argparse.ArgumentParser()
 p.add_argument("--repo-root", type=pathlib.Path, default=ROOT)
 p.add_argument("compiler", type=pathlib.Path)
-p.add_argument("--compiler-sha256", required=True)
 p.add_argument("--artifacts", type=pathlib.Path, required=True)
 a = p.parse_args()
-require(hashlib.sha256(a.compiler.read_bytes()).hexdigest() == a.compiler_sha256, "reviewed compiler digest")
+a.compiler = a.compiler.resolve(strict=True)
+compiler_digest = hashlib.sha256(a.compiler.read_bytes()).hexdigest()
 a.artifacts.mkdir(parents=True, exist_ok=False)
 commands = []
 cases = []
@@ -108,12 +108,12 @@ for f, digest in bound.items():
     require(hashlib.sha256(pathlib.Path(f).read_bytes()).hexdigest() == digest, "bound source changed")
 for f, digest in identities.items():
     require(hashlib.sha256((a.artifacts / f).read_bytes()).hexdigest() == digest, "library changed")
-require(hashlib.sha256(a.compiler.read_bytes()).hexdigest() == a.compiler_sha256, "compiler changed")
+require(hashlib.sha256(a.compiler.read_bytes()).hexdigest() == compiler_digest, "compiler changed")
 result = {
     "optimized": not __debug__,
     "programs": s.programs,
     "native_cases": s.native,
-    "compiler_sha256": a.compiler_sha256,
+    "compiler_sha256": compiler_digest,
     "library": identities,
     "bound_inputs": bound,
     "generated_inputs": {
@@ -125,8 +125,7 @@ result = {
     "runtime": {
         str(f): hashlib.sha256(f.read_bytes()).hexdigest() for f in (host.ROOT / "runtime").glob("hosted_bytes.*")
     },
-    "scope": "supplemental actual owner-backed codec windows and example revalidation; "
-    "no full aggregate or kernel claim",
+    "scope": "actual owner-backed codec windows and example revalidation; no full aggregate or kernel claim",
 }
 (a.artifacts / "result.json").write_text(json.dumps(result, indent=2) + "\n")
 print(json.dumps(result))

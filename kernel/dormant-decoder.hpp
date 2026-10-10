@@ -42,33 +42,27 @@ inline constexpr std::uint64_t write_bit = std::uint64_t{1} << 62;
 
 // Bounds are checked before every caller reaches this function. Byte assembly
 // makes the interpretation independent of CPU byte order and host alignment.
-inline std::uint64_t read_le64(std::span<const std::byte> bytes,
-                              std::size_t offset) noexcept {
+inline std::uint64_t read_le64(std::span<const std::byte> bytes, std::size_t offset) noexcept {
     std::uint64_t value = 0;
     for (std::size_t byte = 0; byte != 8; ++byte) {
-        value |= std::uint64_t{std::to_integer<std::uint8_t>(bytes[offset + byte])}
-                 << (byte * 8);
+        value |= std::uint64_t{std::to_integer<std::uint8_t>(bytes[offset + byte])} << (byte * 8);
     }
     return value;
 }
 
-inline bool complete_physical_page(std::uint64_t base,
-                                   std::uint64_t maximum) noexcept {
-    return (base & (page_size - 1)) == 0 &&
-           base <= maximum - (page_size - 1);
+inline bool complete_physical_page(std::uint64_t base, std::uint64_t maximum) noexcept {
+    return (base & (page_size - 1)) == 0 && base <= maximum - (page_size - 1);
 }
 
 } // namespace detail
 
-[[nodiscard]] inline bool validate(const Input& input) noexcept {
+[[nodiscard]] inline bool validate(const Input &input) noexcept {
     using namespace detail;
-    if (input.dte.size() != 8192 || input.root.size() != 4096 ||
-        input.physical_bits < 32 || input.physical_bits > 52 ||
+    if (input.dte.size() != 8192 || input.root.size() != 4096 || input.physical_bits < 32 || input.physical_bits > 52 ||
         (input.data_count != 1 && input.data_count != 2)) {
         return false;
     }
-    if (input.data_count == 1 &&
-        (input.pages[4] != 0 || input.iovas[1] != 0 || input.writable[1])) {
+    if (input.data_count == 1 && (input.pages[4] != 0 || input.iovas[1] != 0 || input.writable[1])) {
         return false;
     }
 
@@ -90,8 +84,7 @@ inline bool complete_physical_page(std::uint64_t base,
         return false;
     }
     for (std::size_t mapping = 0; mapping != input.data_count; ++mapping) {
-        if ((input.iovas[mapping] & (page_size - 1)) != 0 ||
-            input.iovas[mapping] >= iova_limit) {
+        if ((input.iovas[mapping] & (page_size - 1)) != 0 || input.iovas[mapping] >= iova_limit) {
             return false;
         }
     }
@@ -103,8 +96,7 @@ inline bool complete_physical_page(std::uint64_t base,
         const auto offset = rid * 32;
         const auto control = read_le64(input.dte, offset);
         const auto domain_and_flags = read_le64(input.dte, offset + 8);
-        if (read_le64(input.dte, offset + 16) != 0 ||
-            read_le64(input.dte, offset + 24) != 0) {
+        if (read_le64(input.dte, offset + 16) != 0 || read_le64(input.dte, offset + 24) != 0) {
             return false;
         }
         if (rid != 0x10) {
@@ -136,8 +128,7 @@ inline bool complete_physical_page(std::uint64_t base,
             continue;
         }
         const auto permissions = read_bit | (input.writable[mapping] ? write_bit : 0);
-        if ((entry & address_field) != input.pages[3 + mapping] ||
-            (entry & ~address_field) != (permissions | 1)) {
+        if ((entry & address_field) != input.pages[3 + mapping] || (entry & ~address_field) != (permissions | 1)) {
             return false;
         }
     }
@@ -149,12 +140,10 @@ inline bool complete_physical_page(std::uint64_t base,
 // every page grants the access. Physical contiguity is unnecessary. A hole,
 // restrictive leaf, empty interval, upper-address alias, or overflow rejects.
 // Validation covers the entire snapshot on every call, including unused slots.
-[[nodiscard]] inline bool permits(const Input& input, std::uint16_t rid,
-                                 std::uint64_t iova, std::uint64_t length,
-                                 bool write) noexcept {
+[[nodiscard]] inline bool
+permits(const Input &input, std::uint16_t rid, std::uint64_t iova, std::uint64_t length, bool write) noexcept {
     using namespace detail;
-    if (!validate(input) || rid != 0x10 || length == 0 || iova >= iova_limit ||
-        length > iova_limit - iova) {
+    if (!validate(input) || rid != 0x10 || length == 0 || iova >= iova_limit || length > iova_limit - iova) {
         return false;
     }
 

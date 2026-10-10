@@ -123,64 +123,175 @@ public:
     }
 };
 
-
 auto graphical_glyph_bits(u8 byte) -> u64 {
-    if (byte == 'a') { return 0b11110'10001'11110'10000'01110'00000'00000u64; }
-    if (byte == 'b') { return 0b01111'10001'10001'10001'01111'00001'00001u64; }
-    if (byte == 'c') { return 0b11110'00001'00001'00001'11110'00000'00000u64; }
-    if (byte == 'd') { return 0b11110'10001'10001'10001'11110'10000'10000u64; }
-    if (byte == 'e') { return 0b11110'00001'11111'10001'01110'00000'00000u64; }
-    if (byte == 'f') { return 0b00010'00010'00010'00111'00010'00010'01100u64; }
-    if (byte == 'g') { return 0b01110'10000'11110'10001'10001'11110'00000u64; }
-    if (byte == 'h') { return 0b10001'10001'10001'10001'01111'00001'00001u64; }
-    if (byte == 'i') { return 0b01110'00100'00100'00100'00110'00000'00100u64; }
-    if (byte == 'j') { return 0b00110'01001'01000'01000'01100'00000'01000u64; }
-    if (byte == 'k') { return 0b10001'01001'00111'01001'10001'00001'00001u64; }
-    if (byte == 'l') { return 0b01110'00100'00100'00100'00100'00100'00110u64; }
-    if (byte == 'm') { return 0b10001'10001'10101'10101'01011'00000'00000u64; }
-    if (byte == 'n') { return 0b10001'10001'10001'10001'01111'00000'00000u64; }
-    if (byte == 'o') { return 0b01110'10001'10001'10001'01110'00000'00000u64; }
-    if (byte == 'p') { return 0b00001'00001'01111'10001'01111'00000'00000u64; }
-    if (byte == 'q') { return 0b10000'10000'11110'10001'11110'00000'00000u64; }
-    if (byte == 'r') { return 0b00001'00001'00001'10011'01101'00000'00000u64; }
-    if (byte == 's') { return 0b01111'10000'01110'00001'11110'00000'00000u64; }
-    if (byte == 't') { return 0b01100'10010'00010'00010'00111'00010'00010u64; }
-    if (byte == 'u') { return 0b10110'11001'10001'10001'10001'00000'00000u64; }
-    if (byte == 'v') { return 0b00100'01010'10001'10001'10001'00000'00000u64; }
-    if (byte == 'w') { return 0b01010'10101'10101'10001'10001'00000'00000u64; }
-    if (byte == 'x') { return 0b10001'01010'00100'01010'10001'00000'00000u64; }
-    if (byte == 'y') { return 0b01110'10000'11110'10001'10001'00000'00000u64; }
-    if (byte == 'z') { return 0b11111'00010'00100'01000'11111'00000'00000u64; }
-    if (byte == '!') { return 0b00100'00000'00100'00100'00100'00100'00100u64; }
-    if (byte == '"') { return 0b00000'00000'00000'00000'01010'01010'01010u64; }
-    if (byte == '#') { return 0b00000'01010'11111'01010'01010'11111'01010u64; }
-    if (byte == '$') { return 0b00100'01111'10100'01110'00101'11110'00100u64; }
-    if (byte == '%') { return 0b11000'11001'00010'00100'01000'10011'00011u64; }
-    if (byte == '&') { return 0b10110'01001'01001'10101'00110'01001'00110u64; }
-    if (byte == '\'') { return 0b00000'00000'00000'00000'00010'00100'00100u64; }
-    if (byte == '(') { return 0b01000'00100'00010'00010'00010'00100'01000u64; }
-    if (byte == ')') { return 0b00010'00100'01000'01000'01000'00100'00010u64; }
-    if (byte == '*') { return 0b00000'10101'01110'11111'01110'10101'00000u64; }
-    if (byte == '+') { return 0b00000'00100'00100'11111'00100'00100'00000u64; }
-    if (byte == ',') { return 0b00010'00100'00000'00000'00000'00000'00000u64; }
-    if (byte == '.') { return 0b00100'00000'00000'00000'00000'00000'00000u64; }
-    if (byte == '/') { return 0b00001'00001'00010'00100'01000'10000'10000u64; }
-    if (byte == ';') { return 0b00010'00100'00100'00000'00000'00100'00000u64; }
-    if (byte == '<') { return 0b10000'01000'00100'00010'00100'01000'10000u64; }
-    if (byte == '=') { return 0b00000'00000'11111'00000'11111'00000'00000u64; }
-    if (byte == '>') { return 0b00001'00010'00100'01000'00100'00010'00001u64; }
-    if (byte == '?') { return 0b00100'00000'00100'01000'10000'10001'01110u64; }
-    if (byte == '@') { return 0b11110'00001'11101'10101'11101'10001'01110u64; }
-    if (byte == '[') { return 0b01110'00010'00010'00010'00010'00010'01110u64; }
-    if (byte == '\\') { return 0b10000'10000'01000'00100'00010'00001'00001u64; }
-    if (byte == ']') { return 0b01110'01000'01000'01000'01000'01000'01110u64; }
-    if (byte == '^') { return 0b00000'00000'00000'00000'10001'01010'00100u64; }
-    if (byte == '_') { return 0b11111'00000'00000'00000'00000'00000'00000u64; }
-    if (byte == '`') { return 0b00000'00000'00000'00000'00000'00100'00010u64; }
-    if (byte == '{') { return 0b01000'00100'00100'00010'00100'00100'01000u64; }
-    if (byte == '|') { return 0b00100'00100'00100'00100'00100'00100'00100u64; }
-    if (byte == '}') { return 0b00010'00100'00100'01000'00100'00100'00010u64; }
-    if (byte == '~') { return 0b00000'00000'00000'01101'10010'00000'00000u64; }
+    if (byte == 'a') {
+        return 0b11110'10001'11110'10000'01110'00000'00000u64;
+    }
+    if (byte == 'b') {
+        return 0b01111'10001'10001'10001'01111'00001'00001u64;
+    }
+    if (byte == 'c') {
+        return 0b11110'00001'00001'00001'11110'00000'00000u64;
+    }
+    if (byte == 'd') {
+        return 0b11110'10001'10001'10001'11110'10000'10000u64;
+    }
+    if (byte == 'e') {
+        return 0b11110'00001'11111'10001'01110'00000'00000u64;
+    }
+    if (byte == 'f') {
+        return 0b00010'00010'00010'00111'00010'00010'01100u64;
+    }
+    if (byte == 'g') {
+        return 0b01110'10000'11110'10001'10001'11110'00000u64;
+    }
+    if (byte == 'h') {
+        return 0b10001'10001'10001'10001'01111'00001'00001u64;
+    }
+    if (byte == 'i') {
+        return 0b01110'00100'00100'00100'00110'00000'00100u64;
+    }
+    if (byte == 'j') {
+        return 0b00110'01001'01000'01000'01100'00000'01000u64;
+    }
+    if (byte == 'k') {
+        return 0b10001'01001'00111'01001'10001'00001'00001u64;
+    }
+    if (byte == 'l') {
+        return 0b01110'00100'00100'00100'00100'00100'00110u64;
+    }
+    if (byte == 'm') {
+        return 0b10001'10001'10101'10101'01011'00000'00000u64;
+    }
+    if (byte == 'n') {
+        return 0b10001'10001'10001'10001'01111'00000'00000u64;
+    }
+    if (byte == 'o') {
+        return 0b01110'10001'10001'10001'01110'00000'00000u64;
+    }
+    if (byte == 'p') {
+        return 0b00001'00001'01111'10001'01111'00000'00000u64;
+    }
+    if (byte == 'q') {
+        return 0b10000'10000'11110'10001'11110'00000'00000u64;
+    }
+    if (byte == 'r') {
+        return 0b00001'00001'00001'10011'01101'00000'00000u64;
+    }
+    if (byte == 's') {
+        return 0b01111'10000'01110'00001'11110'00000'00000u64;
+    }
+    if (byte == 't') {
+        return 0b01100'10010'00010'00010'00111'00010'00010u64;
+    }
+    if (byte == 'u') {
+        return 0b10110'11001'10001'10001'10001'00000'00000u64;
+    }
+    if (byte == 'v') {
+        return 0b00100'01010'10001'10001'10001'00000'00000u64;
+    }
+    if (byte == 'w') {
+        return 0b01010'10101'10101'10001'10001'00000'00000u64;
+    }
+    if (byte == 'x') {
+        return 0b10001'01010'00100'01010'10001'00000'00000u64;
+    }
+    if (byte == 'y') {
+        return 0b01110'10000'11110'10001'10001'00000'00000u64;
+    }
+    if (byte == 'z') {
+        return 0b11111'00010'00100'01000'11111'00000'00000u64;
+    }
+    if (byte == '!') {
+        return 0b00100'00000'00100'00100'00100'00100'00100u64;
+    }
+    if (byte == '"') {
+        return 0b00000'00000'00000'00000'01010'01010'01010u64;
+    }
+    if (byte == '#') {
+        return 0b00000'01010'11111'01010'01010'11111'01010u64;
+    }
+    if (byte == '$') {
+        return 0b00100'01111'10100'01110'00101'11110'00100u64;
+    }
+    if (byte == '%') {
+        return 0b11000'11001'00010'00100'01000'10011'00011u64;
+    }
+    if (byte == '&') {
+        return 0b10110'01001'01001'10101'00110'01001'00110u64;
+    }
+    if (byte == '\'') {
+        return 0b00000'00000'00000'00000'00010'00100'00100u64;
+    }
+    if (byte == '(') {
+        return 0b01000'00100'00010'00010'00010'00100'01000u64;
+    }
+    if (byte == ')') {
+        return 0b00010'00100'01000'01000'01000'00100'00010u64;
+    }
+    if (byte == '*') {
+        return 0b00000'10101'01110'11111'01110'10101'00000u64;
+    }
+    if (byte == '+') {
+        return 0b00000'00100'00100'11111'00100'00100'00000u64;
+    }
+    if (byte == ',') {
+        return 0b00010'00100'00000'00000'00000'00000'00000u64;
+    }
+    if (byte == '.') {
+        return 0b00100'00000'00000'00000'00000'00000'00000u64;
+    }
+    if (byte == '/') {
+        return 0b00001'00001'00010'00100'01000'10000'10000u64;
+    }
+    if (byte == ';') {
+        return 0b00010'00100'00100'00000'00000'00100'00000u64;
+    }
+    if (byte == '<') {
+        return 0b10000'01000'00100'00010'00100'01000'10000u64;
+    }
+    if (byte == '=') {
+        return 0b00000'00000'11111'00000'11111'00000'00000u64;
+    }
+    if (byte == '>') {
+        return 0b00001'00010'00100'01000'00100'00010'00001u64;
+    }
+    if (byte == '?') {
+        return 0b00100'00000'00100'01000'10000'10001'01110u64;
+    }
+    if (byte == '@') {
+        return 0b11110'00001'11101'10101'11101'10001'01110u64;
+    }
+    if (byte == '[') {
+        return 0b01110'00010'00010'00010'00010'00010'01110u64;
+    }
+    if (byte == '\\') {
+        return 0b10000'10000'01000'00100'00010'00001'00001u64;
+    }
+    if (byte == ']') {
+        return 0b01110'01000'01000'01000'01000'01000'01110u64;
+    }
+    if (byte == '^') {
+        return 0b00000'00000'00000'00000'10001'01010'00100u64;
+    }
+    if (byte == '_') {
+        return 0b11111'00000'00000'00000'00000'00000'00000u64;
+    }
+    if (byte == '`') {
+        return 0b00000'00000'00000'00000'00000'00100'00010u64;
+    }
+    if (byte == '{') {
+        return 0b01000'00100'00100'00010'00100'00100'01000u64;
+    }
+    if (byte == '|') {
+        return 0b00100'00100'00100'00100'00100'00100'00100u64;
+    }
+    if (byte == '}') {
+        return 0b00010'00100'00100'01000'00100'00100'00010u64;
+    }
+    if (byte == '~') {
+        return 0b00000'00000'00000'01101'10010'00000'00000u64;
+    }
     return graphics::glyph_bits(byte);
 }
 
@@ -193,7 +304,8 @@ class TextCells {
     i64 previous_cursor;
     bool painted;
 public:
-    TextCells() : desired{}, committed{}, cursor(2), previous_cursor(-1), painted(false) {}
+    TextCells() : desired{}, committed{}, cursor(2), previous_cursor(-1), painted(false) {
+    }
     auto initialize() -> bool {
         i64 index = 0;
         while (index < 136) {
@@ -204,19 +316,25 @@ public:
         return true;
     }
     auto append(u8 byte) -> bool {
-        if (cursor < 2 || cursor >= 66 || byte < ' ' || byte > '~') { return false; }
+        if (cursor < 2 || cursor >= 66 || byte < ' ' || byte > '~') {
+            return false;
+        }
         desired[cursor] = byte;
         cursor = cursor + 1;
         return true;
     }
     auto erase() -> bool {
-        if (cursor <= 2 || cursor > 66) { return false; }
+        if (cursor <= 2 || cursor > 66) {
+            return false;
+        }
         cursor = cursor - 1;
         desired[cursor] = ' ';
         return true;
     }
     auto response(builtin::span<const u8> text) -> bool {
-        if (text.size() > 68) { return false; }
+        if (text.size() > 68) {
+            return false;
+        }
         i64 index = 2;
         while (index < 136) {
             desired[index] = ' ';
@@ -230,15 +348,29 @@ public:
         cursor = 2;
         return true;
     }
-    auto hide_cursor() -> bool { cursor = -1; return true; }
-    auto at(i64 index) const -> u8 { return desired[index]; }
-    auto cursor_at(i64 index) const -> bool { return cursor == index; }
-    auto dirty(i64 index) const -> bool {
-        return !painted || desired[index] != committed[index] ||
-            (cursor != previous_cursor && (index == cursor || index == previous_cursor));
+    auto hide_cursor() -> bool {
+        cursor = -1;
+        return true;
     }
-    auto commit(i64 index) -> bool { committed[index] = desired[index]; return true; }
-    auto finish_paint() -> bool { previous_cursor = cursor; painted = true; return true; }
+    auto at(i64 index) const -> u8 {
+        return desired[index];
+    }
+    auto cursor_at(i64 index) const -> bool {
+        return cursor == index;
+    }
+    auto dirty(i64 index) const -> bool {
+        return !painted || desired[index] != committed[index] || (cursor != previous_cursor && (index == cursor || index
+            == previous_cursor));
+    }
+    auto commit(i64 index) -> bool {
+        committed[index] = desired[index];
+        return true;
+    }
+    auto finish_paint() -> bool {
+        previous_cursor = cursor;
+        painted = true;
+        return true;
+    }
     auto show_ready() -> bool {
         array<u8, 43> text = "AURORA graphical console: help for commands";
         return response(borrow_bytes(text));
@@ -248,15 +380,169 @@ public:
         return response(borrow_bytes(text));
     }
     auto show_status() -> bool {
-        array<u8, 61> text = {'B', 'o', 'o', 't', ' ', 's', 'e', 'l', 'f', '-', 't', 'e', 's', 't', 's', ' ', 'p', 'a', 's', 's', 'e', 'd', ';', ' ', 'U', 'E', 'F', 'I', ';', ' ', 't', 'i', 'm', 'e', 'r', ' ', 'p', 'o', 'l', 'l', 'i', 'n', 'g', ';', ' ', 'l', 'i', 'n', 'e', ' ', 'c', 'a', 'p', 'a', 'c', 'i', 't', 'y', '=', '6', '4'};
+        array<u8, 61> text = {
+            'B',
+            'o',
+            'o',
+            't',
+            ' ',
+            's',
+            'e',
+            'l',
+            'f',
+            '-',
+            't',
+            'e',
+            's',
+            't',
+            's',
+            ' ',
+            'p',
+            'a',
+            's',
+            's',
+            'e',
+            'd',
+            ';',
+            ' ',
+            'U',
+            'E',
+            'F',
+            'I',
+            ';',
+            ' ',
+            't',
+            'i',
+            'm',
+            'e',
+            'r',
+            ' ',
+            'p',
+            'o',
+            'l',
+            'l',
+            'i',
+            'n',
+            'g',
+            ';',
+            ' ',
+            'l',
+            'i',
+            'n',
+            'e',
+            ' ',
+            'c',
+            'a',
+            'p',
+            'a',
+            'c',
+            'i',
+            't',
+            'y',
+            '=',
+            '6',
+            '4'
+        };
         return response(borrow_bytes(text));
     }
     auto show_unknown() -> bool {
-        array<u8, 27> text = {'U', 'n', 'k', 'n', 'o', 'w', 'n', ' ', 'c', 'o', 'm', 'm', 'a', 'n', 'd', '.', ' ', 'T', 'y', 'p', 'e', ' ', 'h', 'e', 'l', 'p', '.'};
+        array<u8, 27> text = {
+            'U',
+            'n',
+            'k',
+            'n',
+            'o',
+            'w',
+            'n',
+            ' ',
+            'c',
+            'o',
+            'm',
+            'm',
+            'a',
+            'n',
+            'd',
+            '.',
+            ' ',
+            'T',
+            'y',
+            'p',
+            'e',
+            ' ',
+            'h',
+            'e',
+            'l',
+            'p',
+            '.'
+        };
         return response(borrow_bytes(text));
     }
     auto show_rejected() -> bool {
-        array<u8, 63> text = {'L', 'i', 'n', 'e', ' ', 'r', 'e', 'j', 'e', 'c', 't', 'e', 'd', ':', ' ', 't', 'o', 'o', ' ', 'l', 'o', 'n', 'g', ',', ' ', 'n', 'o', 'n', '-', 'A', 'S', 'C', 'I', 'I', '/', 'c', 'o', 'n', 't', 'r', 'o', 'l', ' ', 'b', 'y', 't', 'e', ',', ' ', 'o', 'r', ' ', 'U', 'A', 'R', 'T', ' ', 'e', 'r', 'r', 'o', 'r', '.'};
+        array<u8, 63> text = {
+            'L',
+            'i',
+            'n',
+            'e',
+            ' ',
+            'r',
+            'e',
+            'j',
+            'e',
+            'c',
+            't',
+            'e',
+            'd',
+            ':',
+            ' ',
+            't',
+            'o',
+            'o',
+            ' ',
+            'l',
+            'o',
+            'n',
+            'g',
+            ',',
+            ' ',
+            'n',
+            'o',
+            'n',
+            '-',
+            'A',
+            'S',
+            'C',
+            'I',
+            'I',
+            '/',
+            'c',
+            'o',
+            'n',
+            't',
+            'r',
+            'o',
+            'l',
+            ' ',
+            'b',
+            'y',
+            't',
+            'e',
+            ',',
+            ' ',
+            'o',
+            'r',
+            ' ',
+            'U',
+            'A',
+            'R',
+            'T',
+            ' ',
+            'e',
+            'r',
+            'r',
+            'o',
+            'r',
+            '.'
+        };
         return response(borrow_bytes(text));
     }
     auto show_note(console::NoteEvent action, console::SessionNote note) -> bool {
@@ -280,7 +566,9 @@ public:
         return show_unknown();
     }
     auto show_files(console::FileReply reply) -> bool {
-        if (reply.status() == console::FileEvent::unknown) { return show_unknown(); }
+        if (reply.status() == console::FileEvent::unknown) {
+            return show_unknown();
+        }
         array<u8, 64> text = "                                                                ";
         i64 index = 0;
         while (index < reply.size()) {
@@ -290,15 +578,60 @@ public:
         return response(borrow_bytes(text));
     }
     auto show_exit() -> bool {
-        array<u8, 19> text = {'A', 'U', 'R', 'O', 'R', 'A', '_', 'C', 'O', 'N', 'S', 'O', 'L', 'E', '_', 'E', 'X', 'I', 'T'};
+        array<u8, 19> text = {
+            'A',
+            'U',
+            'R',
+            'O',
+            'R',
+            'A',
+            '_',
+            'C',
+            'O',
+            'N',
+            'S',
+            'O',
+            'L',
+            'E',
+            '_',
+            'E',
+            'X',
+            'I',
+            'T'
+        };
         return response(borrow_bytes(text));
     }
     auto show_empty() -> bool {
-        array<u8, 1> blank = {' '};
+        array<u8, 1> blank = {
+            ' '
+        };
         return response(borrow_bytes(blank));
     }
     auto show_bounded() -> bool {
-        array<u8, 22> text = {'I', 'N', 'P', 'U', 'T', ' ', 'B', 'U', 'D', 'G', 'E', 'T', ' ', 'E', 'X', 'H', 'A', 'U', 'S', 'T', 'E', 'D'};
+        array<u8, 22> text = {
+            'I',
+            'N',
+            'P',
+            'U',
+            'T',
+            ' ',
+            'B',
+            'U',
+            'D',
+            'G',
+            'E',
+            'T',
+            ' ',
+            'E',
+            'X',
+            'H',
+            'A',
+            'U',
+            'S',
+            'T',
+            'E',
+            'D'
+        };
         return response(borrow_bytes(text));
     }
 };
@@ -330,8 +663,7 @@ auto draw_glyph(builtin::DisplaySession& session, u64 width, u64 height, u64 x, 
                 const u64 target_x = x + column;
                 const u64 target_y = y + row;
                 if (target_x < width && target_y < height) {
-                    if (session.pixel(target_x, target_y, red, green, blue)
-                        != builtin::DisplayPutResult::success) {
+                    if (session.pixel(target_x, target_y, red, green, blue) != builtin::DisplayPutResult::success) {
                         return false;
                     }
                 }
@@ -345,9 +677,10 @@ auto draw_glyph(builtin::DisplaySession& session, u64 width, u64 height, u64 x, 
 
 // 54 clear stores + at most 35 glyph stores + at most five cursor stores.
 // Each pass has only one cursor, so 136*89+5 bounds a complete dirty pass.
-auto draw_cell(builtin::DisplaySession& display, u64 width, u64 height,
-               i64 index, u8 byte, bool cursor) -> bool {
-    if (index < 0 || index >= 136) { return false; }
+auto draw_cell(builtin::DisplaySession& display, u64 width, u64 height, i64 index, u8 byte, bool cursor) -> bool {
+    if (index < 0 || index >= 136) {
+        return false;
+    }
     const u64 x = 32u64 + u64(index % 68) * 6u64;
     const u64 y = 128u64 + u64(index / 68) * 9u64;
     u64 dy = 0u64;
@@ -365,7 +698,9 @@ auto draw_cell(builtin::DisplaySession& display, u64 width, u64 height,
         }
         dy = dy + 1u64;
     }
-    if (!draw_glyph(display, width, height, x, y, byte)) { return false; }
+    if (!draw_glyph(display, width, height, x, y, byte)) {
+        return false;
+    }
     if (cursor) {
         u64 dx = 0u64;
         while (dx < 5u64) {
@@ -380,13 +715,19 @@ auto draw_cell(builtin::DisplaySession& display, u64 width, u64 height,
     return true;
 }
 
-enum class GraphicalCompletion { requested_exit, bounded_end, output_failure, invalid_geometry, state_failure };
+enum class GraphicalCompletion {
+    requested_exit,
+    bounded_end,
+    output_failure,
+    invalid_geometry,
+    state_failure
+};
 
 // Private entry record: Console +0/+8; Display +16/+24; width +32; height +40.
 // The native caller MUST preflight both exact grants before this entry. This
 // source function cannot authenticate opaque grants without causing operations.
-auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& display,
-                       u64 width, u64 height) -> GraphicalCompletion {
+auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& display, u64 width,
+    u64 height) -> GraphicalCompletion {
     if (width < 440u64 || width > 1024u64 || height < 146u64 || height > 768u64) {
         return GraphicalCompletion::invalid_geometry;
     }
@@ -396,7 +737,9 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
     console::SessionFiles files = console::SessionFiles(empty);
     TextCells cells = TextCells();
     cells.initialize();
-    if (!cells.show_ready()) { return GraphicalCompletion::state_failure; }
+    if (!cells.show_ready()) {
+        return GraphicalCompletion::state_failure;
+    }
     u64 events = 0u64;
     u64 samples = 0u64;
     bool stopped = false;
@@ -415,29 +758,40 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
             index = index + 1;
         }
         cells.finish_paint();
-        if (stopped) { return completion; }
+        if (stopped) {
+            return completion;
+        }
         if (events == 80u64 || samples == 96u64) {
-            if (!cells.show_bounded()) { return GraphicalCompletion::state_failure; }
+            if (!cells.show_bounded()) {
+                return GraphicalCompletion::state_failure;
+            }
             cells.hide_cursor();
             stopped = true;
         } else {
             const builtin::ConsoleSample sample = input.next();
             samples = samples + 1u64;
-            if (sample.damaged) { line.reject(); }
+            if (sample.damaged) {
+                line.reject();
+            }
             if (sample.byte_present) {
                 events = events + 1u64;
                 const ConsoleEvent event = line.consume(sample.byte);
                 bool okay = true;
-                if (event == ConsoleEvent::echo) { okay = cells.append(sample.byte); }
-                else {
-                    if (event == ConsoleEvent::erased) { okay = cells.erase(); }
-                    else {
-                        if (event == ConsoleEvent::empty) { okay = cells.show_empty(); }
-                        else {
-                            if (event == ConsoleEvent::help) { okay = cells.show_help(); }
-                            else {
-                                if (event == ConsoleEvent::status) { okay = cells.show_status(); }
-                                else {
+                if (event == ConsoleEvent::echo) {
+                    okay = cells.append(sample.byte);
+                } else {
+                    if (event == ConsoleEvent::erased) {
+                        okay = cells.erase();
+                    } else {
+                        if (event == ConsoleEvent::empty) {
+                            okay = cells.show_empty();
+                        } else {
+                            if (event == ConsoleEvent::help) {
+                                okay = cells.show_help();
+                            } else {
+                                if (event == ConsoleEvent::status) {
+                                    okay = cells.show_status();
+                                } else {
                                     if (event == ConsoleEvent::unknown) {
                                         std::BinaryBuffer64 command = std::BinaryBuffer64();
                                         const i64 count = line.submission_size();
@@ -453,10 +807,10 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
                                         } else {
                                             okay = cells.show_note(action, note);
                                         }
-                                    }
-                                    else {
-                                        if (event == ConsoleEvent::rejected) { okay = cells.show_rejected(); }
-                                        else {
+                                    } else {
+                                        if (event == ConsoleEvent::rejected) {
+                                            okay = cells.show_rejected();
+                                        } else {
                                             if (event == ConsoleEvent::exit) {
                                                 okay = cells.show_exit();
                                                 cells.hide_cursor();
@@ -470,11 +824,15 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
                         }
                     }
                 }
-                if (!okay) { return GraphicalCompletion::state_failure; }
+                if (!okay) {
+                    return GraphicalCompletion::state_failure;
+                }
             }
         }
     }
     return GraphicalCompletion::state_failure;
 }
 
-auto aurora_kernel_value() -> i64 { return 42; }
+auto aurora_kernel_value() -> i64 {
+    return 42;
+}

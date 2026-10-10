@@ -2,31 +2,62 @@ export module kernel.console;
 
 // Copied values only. The trusted adapter owns UART access and its bounded buffer.
 export namespace kernel {
-    enum class ConsoleAction { invalid, ignore, append, erase, submit, reject };
-    enum class ConsoleCommand { empty, unknown, help, status, exit };
+    enum class ConsoleAction {
+        invalid,
+        ignore,
+        append,
+        erase,
+        submit,
+        reject
+    };
+    enum class ConsoleCommand {
+        empty,
+        unknown,
+        help,
+        status,
+        exit
+    };
 
     auto console_byte(u64 byte, u64 length, u64 rejected, u64 after_cr) -> ConsoleAction {
         if (byte > 255u64 || length > 64u64 || rejected > 1u64 || after_cr > 1u64) {
             return ConsoleAction::invalid;
         }
-        if (byte == 10u64 && after_cr == 1u64) { return ConsoleAction::ignore; }
-        if (byte == 10u64 || byte == 13u64) { return ConsoleAction::submit; }
-        if (rejected == 1u64) { return ConsoleAction::ignore; }
+        if (byte == 10u64 && after_cr == 1u64) {
+            return ConsoleAction::ignore;
+        }
+        if (byte == 10u64 || byte == 13u64) {
+            return ConsoleAction::submit;
+        }
+        if (rejected == 1u64) {
+            return ConsoleAction::ignore;
+        }
         if (byte == 8u64 || byte == 127u64) {
-            if (length == 0u64) { return ConsoleAction::ignore; }
+            if (length == 0u64) {
+                return ConsoleAction::ignore;
+            }
             return ConsoleAction::erase;
         }
-        if (byte < 32u64 || byte > 126u64 || length == 64u64) { return ConsoleAction::reject; }
+        if (byte < 32u64 || byte > 126u64 || length == 64u64) {
+            return ConsoleAction::reject;
+        }
         return ConsoleAction::append;
     }
 
     // At most six little-endian ASCII bytes are copied into prefix. Length is
     // independently checked, so neither a long prefix nor a suffix is a command.
     auto console_command(u64 prefix, u64 length) -> ConsoleCommand {
-        if (length == 0u64 && prefix == 0u64) { return ConsoleCommand::empty; }
-        if (length == 4u64 && prefix == 1886152040u64) { return ConsoleCommand::help; }
-        if (length == 6u64 && prefix == 126948300911731u64) { return ConsoleCommand::status; }
-        if (length == 4u64 && prefix == 1953069157u64) { return ConsoleCommand::exit; }
+        if (length == 0u64 && prefix == 0u64) {
+            return ConsoleCommand::empty;
+        }
+        if (length == 4u64 && prefix == 1886152040u64) {
+            return ConsoleCommand::help;
+        }
+        if (length == 6u64 && prefix == 126948300911731u64) {
+            return ConsoleCommand::status;
+        }
+        if (length == 4u64 && prefix == 1953069157u64) {
+            return ConsoleCommand::exit;
+        }
         return ConsoleCommand::unknown;
     }
 }

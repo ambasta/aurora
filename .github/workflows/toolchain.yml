@@ -1,12 +1,8 @@
 name: GCC 16 environment image
 
-# Only deliberate pushes to the bootstrap branch build/publish the image.
+# Dependency packaging only. Aurora builds, tests and emulator validation run locally.
 # Standard GitHub-hosted Linux runners are free for this public repository.
-# Packaging only: project builds, tests and emulator validation run locally.
-# After bootstrap, retain workflow_dispatch and remove this temporary push trigger.
 on:
-  push:
-    branches: [ci/gcc16-container]
   workflow_dispatch:
 
 permissions:
@@ -36,6 +32,7 @@ jobs:
       - name: Build dependency-only image
         run: |
           docker build --platform linux/amd64 --file ci/Containerfile \
+            --build-context event-patches=tools/qemu-amdvi/patches \
             --tag "$IMAGE:$GITHUB_SHA" ci
 
       - name: Publish package and verify digest

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run the existing-file snapshot overlay gate inside a fresh fixture directory."""
+
 from pathlib import Path
 import subprocess
 import sys

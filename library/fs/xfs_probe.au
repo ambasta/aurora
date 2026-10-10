@@ -4,7 +4,10 @@ import std.checksum;
 
 export namespace fs {
     enum class XfsProbeStatus {
-        wrong_length, unrecognized, unsupported_profile, checksum_mismatch,
+        wrong_length,
+        unrecognized,
+        unsupported_profile,
+        checksum_mismatch,
         header_integrity_valid
     };
 
@@ -15,27 +18,35 @@ export namespace fs {
         u64 incompat;
         u64 log_incompat;
     public:
-        XfsProbeResult(XfsProbeStatus status, u64 compat_bits, u64 ro_compat_bits,
-                       u64 incompat_bits, u64 log_incompat_bits)
-            : outcome(status), compat(compat_bits), ro_compat(ro_compat_bits),
-              incompat(incompat_bits), log_incompat(log_incompat_bits) {}
-        auto status() const -> XfsProbeStatus { return outcome; }
-        auto features_compat() const -> u64 { return compat; }
-        auto features_ro_compat() const -> u64 { return ro_compat; }
-        auto features_incompat() const -> u64 { return incompat; }
-        auto features_log_incompat() const -> u64 { return log_incompat; }
+        XfsProbeResult(XfsProbeStatus status, u64 compat_bits, u64 ro_compat_bits, u64 incompat_bits,
+            u64 log_incompat_bits) : outcome(status), compat(compat_bits), ro_compat(ro_compat_bits),
+            incompat(incompat_bits), log_incompat(log_incompat_bits) {
+        }
+        auto status() const -> XfsProbeStatus {
+            return outcome;
+        }
+        auto features_compat() const -> u64 {
+            return compat;
+        }
+        auto features_ro_compat() const -> u64 {
+            return ro_compat;
+        }
+        auto features_incompat() const -> u64 {
+            return incompat;
+        }
+        auto features_log_incompat() const -> u64 {
+            return log_incompat;
+        }
     };
 
     auto probe_xfs_v5_512(builtin::span<const u8> bytes) -> XfsProbeResult {
         if (bytes.size() != 512) {
-            const XfsProbeResult result = XfsProbeResult(
-                XfsProbeStatus::wrong_length, 0u64, 0u64, 0u64, 0u64);
+            const XfsProbeResult result = XfsProbeResult(XfsProbeStatus::wrong_length, 0u64, 0u64, 0u64, 0u64);
             return result;
         }
         const std::ByteReadResult magic = std::read_be32(bytes, 0);
         if (magic.value_or(0u64) != 1481003842u64) {
-            const XfsProbeResult result = XfsProbeResult(
-                XfsProbeStatus::unrecognized, 0u64, 0u64, 0u64, 0u64);
+            const XfsProbeResult result = XfsProbeResult(XfsProbeStatus::unrecognized, 0u64, 0u64, 0u64, 0u64);
             return result;
         }
 
@@ -46,39 +57,37 @@ export namespace fs {
         const std::ByteReadResult version = std::read_be16(bytes, 100);
         const std::ByteReadResult sector_size = std::read_be16(bytes, 102);
         if ((version.value_or(0u64) & 15u64) != 5u64) {
-            const XfsProbeResult result = XfsProbeResult(
-                XfsProbeStatus::unsupported_profile, compat.value_or(0u64),
+            const XfsProbeResult result = XfsProbeResult(XfsProbeStatus::unsupported_profile, compat.value_or(0u64),
                 ro_compat.value_or(0u64), incompat.value_or(0u64), log_incompat.value_or(0u64));
             return result;
         }
         if (sector_size.value_or(0u64) != 512u64) {
-            const XfsProbeResult result = XfsProbeResult(
-                XfsProbeStatus::unsupported_profile, compat.value_or(0u64),
+            const XfsProbeResult result = XfsProbeResult(XfsProbeStatus::unsupported_profile, compat.value_or(0u64),
                 ro_compat.value_or(0u64), incompat.value_or(0u64), log_incompat.value_or(0u64));
             return result;
         }
         if (bytes.at(121) != 9u8) {
-            const XfsProbeResult result = XfsProbeResult(
-                XfsProbeStatus::unsupported_profile, compat.value_or(0u64),
+            const XfsProbeResult result = XfsProbeResult(XfsProbeStatus::unsupported_profile, compat.value_or(0u64),
                 ro_compat.value_or(0u64), incompat.value_or(0u64), log_incompat.value_or(0u64));
             return result;
         }
 
-        const array<u8, 4> zero_checksum = {0u8, 0u8, 0u8, 0u8};
+        const array<u8, 4> zero_checksum = {
+            0u8,
+            0u8,
+            0u8,
+            0u8
+        };
         const std::ChecksumResult prefix = std::crc32c(bytes, 0, 224);
-        const std::ChecksumResult zeroed = std::crc32c_extend(
-            prefix.value_or(0u64), borrow_bytes(zero_checksum), 0, 4);
-        const std::ChecksumResult complete = std::crc32c_extend(
-            zeroed.value_or(0u64), bytes, 228, 284);
+        const std::ChecksumResult zeroed = std::crc32c_extend(prefix.value_or(0u64), borrow_bytes(zero_checksum), 0, 4);
+        const std::ChecksumResult complete = std::crc32c_extend(zeroed.value_or(0u64), bytes, 228, 284);
         const std::ByteReadResult stored = std::read_le32(bytes, 224);
         if (complete.value_or(0u64) != stored.value_or(0u64)) {
-            const XfsProbeResult result = XfsProbeResult(
-                XfsProbeStatus::checksum_mismatch, compat.value_or(0u64),
+            const XfsProbeResult result = XfsProbeResult(XfsProbeStatus::checksum_mismatch, compat.value_or(0u64),
                 ro_compat.value_or(0u64), incompat.value_or(0u64), log_incompat.value_or(0u64));
             return result;
         }
-        const XfsProbeResult result = XfsProbeResult(
-            XfsProbeStatus::header_integrity_valid, compat.value_or(0u64),
+        const XfsProbeResult result = XfsProbeResult(XfsProbeStatus::header_integrity_valid, compat.value_or(0u64),
             ro_compat.value_or(0u64), incompat.value_or(0u64), log_incompat.value_or(0u64));
         return result;
     }

@@ -4,15 +4,26 @@ import std.array;
 
 auto test() -> i64 {
     const std::Utf8EncodeResult encoded = std::encode_utf8(128512u64);
-    if (encoded.status() != std::Utf8EncodeStatus::success) { return 1; }
-    if (encoded.size() != 4) { return 2; }
-    std::array<u8,4> bytes = encoded.bytes_or_zero();
-    const builtin::array<u8,4> wire =
-        {bytes.at(0), bytes.at(1), bytes.at(2), bytes.at(3)};
-    const std::Utf8DecodeResult decoded =
-        std::decode_utf8(borrow_bytes(wire), 0, encoded.size(), true);
-    if (decoded.scalar_or(0u64) != 128512u64) { return 3; }
+    if (encoded.status() != std::Utf8EncodeStatus::success) {
+        return 1;
+    }
+    if (encoded.size() != 4) {
+        return 2;
+    }
+    std::array<u8, 4> bytes = encoded.bytes_or_zero();
+    const builtin::array<u8, 4> wire = {
+        bytes.at(0),
+        bytes.at(1),
+        bytes.at(2),
+        bytes.at(3)
+    };
+    const std::Utf8DecodeResult decoded = std::decode_utf8(borrow_bytes(wire), 0, encoded.size(), true);
+    if (decoded.scalar_or(0u64) != 128512u64) {
+        return 3;
+    }
     bytes.set(0, u8(0));
-    if (encoded.byte_or(0, u8(0)) != u8(240)) { return 4; }
+    if (encoded.byte_or(0, u8(0)) != u8(240)) {
+        return 4;
+    }
     return 42;
 }

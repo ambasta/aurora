@@ -404,15 +404,12 @@ class Controls(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(c.ContractError):
                 c.prepare_controls(self.launch(), {name: "opaque"})
 
-    def test_live_frozen_inputs_are_in_inventory(self):
-        for relative in (
-            "evidence/package-identity/contract-before-implementation.md",
-            "evidence/package-graph/oracle/reference-v1/reference.py",
-        ):
-            path = self.root / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("live frozen input")
-            self.assertIn(relative, c.source_inventory(self.root))
+    def test_live_oracle_is_in_inventory(self):
+        relative = "evidence/package-graph/oracle/reference-v1/reference.py"
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("synthetic inventory input")
+        self.assertIn(relative, c.source_inventory(self.root))
 
     def test_system_header_dependency_parser(self):
         header = self.root / "system header.hpp"

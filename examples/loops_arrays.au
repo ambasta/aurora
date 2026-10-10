@@ -1,7 +1,12 @@
 module examples.loops_arrays;
 
 auto array_sum() -> i64 {
-    const array<i64, 4> values = {10, 20, 5, 7};
+    const array<i64, 4> values = {
+        10,
+        20,
+        5,
+        7
+    };
     i64 index = 0;
     i64 total = 0;
     while (index < len(values)) {
@@ -12,7 +17,10 @@ auto array_sum() -> i64 {
 }
 
 auto independent_snapshot() -> i64 {
-    array<i64, 2> current = {20, 22};
+    array<i64, 2> current = {
+        20,
+        22
+    };
     const array<i64, 2> snapshot = current;
     current[0] = 100;
     static_assert(size_of(array<i64, 2>) == 16);

@@ -1,7 +1,5 @@
 # Read-only AMD-Vi observation profile
 
-M015 worker and independent gates pass; parent aggregate/archive acceptance
-is pending.
 This slice copies firmware topology and observes three static registers in a
 specified emulator. It neither configures DMA protection nor grants a device
 activation right. No IOMMU control, device/page table, command/event queue,
@@ -100,31 +98,3 @@ reset ordering. It was not separately instrumented as a complete dynamic call
 trace. Independent review accepted the retained control solely as the exact
 valid same-zero CTRL producer witness; its original broader whole-run absence
 criterion remains failed.
-
-## Final worker and independent results
-
-All 158 actual modes passed on compiler SHA256
-`2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8`: the
-147 historical modes and eleven new IVRS modes. Independent review separately
-ran the eleven new modes and verified the retained control/source evidence.
-The final run preserved 257 project and 178 external input hashes. Native policy
-checks passed 121,025 cases under nonrecovering ASan/UBSan. Strict validators
-cover 4,236 serial, 723 trace/control and 532 provenance negative cases; reviewer
-added 69 independent mutations. The corrected stack harness has 27 negatives.
-
-Actual compiler stack records now include a separate BAR frame of 2,272 bytes.
-Reviewed subtotals are preparation 8,064, scan 12,264, BAR 9,120 and observation
-9,792 bytes (write probe 9,808). Including the 512-byte fault reserve gives a
-12,776-byte peak, leaving 3,608 bytes within the unchanged 16KiB stack. An
-independent review found the earlier preparation subtotal omitted Topology's
-3,184-byte frame; the checker was corrected and all retained stack records
-revalidated without rewriting their original receipts. Runtime code did not
-change for that final arithmetic correction.
-
-Earlier failed guard-fault boots and the original missing-device trace-index
-rejection remain development evidence. The old failed ELF/stack-usage files
-were not saved before rebuilding, so attribution to the BAR prologue relies on
-the captured disassembly and fault trace, not an independently preserved old
-binary hash. Final mode receipts retain payload ELF, exact probe metadata and
-compiler stack records. Filtered distributable evidence omits firmware binaries
-while retaining their hashes and local audit copies.

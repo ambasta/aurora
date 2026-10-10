@@ -5,7 +5,17 @@ import std.decimal;
 import std.array;
 
 export namespace console {
-    enum class FileEvent { unknown, written, read, removed, listed, missing, invalid, full, reserved };
+    enum class FileEvent {
+        unknown,
+        written,
+        read,
+        removed,
+        listed,
+        missing,
+        invalid,
+        full,
+        reserved
+    };
 
     // Copied response bytes only: no workspace view or session authority escapes.
     class FileReply {
@@ -13,21 +23,32 @@ export namespace console {
         i64 length;
         FileEvent event;
     public:
-        FileReply() : bytes{}, length(0), event(FileEvent::unknown) {}
-        auto status() const -> FileEvent { return event; }
-        auto size() const -> i64 { return length; }
+        FileReply() : bytes{}, length(0), event(FileEvent::unknown) {
+        }
+        auto status() const -> FileEvent {
+            return event;
+        }
+        auto size() const -> i64 {
+            return length;
+        }
         auto at(i64 index) const -> u8 {
-            if (index < 0 || index >= length) { return '\0'; }
+            if (index < 0 || index >= length) {
+                return '\0';
+            }
             return bytes[index];
         }
         auto append(u8 byte) -> bool {
-            if (length == 64) { return false; }
+            if (length == 64) {
+                return false;
+            }
             bytes[length] = byte;
             length = length + 1;
             return true;
         }
         auto text(builtin::span<const u8> value) -> bool {
-            if (value.size() > 64 - length) { return false; }
+            if (value.size() > 64 - length) {
+                return false;
+            }
             i64 index = 0;
             while (index < value.size()) {
                 append(value.at(index));
@@ -62,8 +83,13 @@ export namespace console {
         array<std::BinaryBuffer64, 4> records;
         u64 occupied;
     public:
-        SessionFiles(std::BinaryBuffer64 empty)
-            : records{empty, empty, empty, empty}, occupied(0u64) {}
+        SessionFiles(std::BinaryBuffer64 empty) : records{
+            empty,
+            empty,
+            empty,
+            empty
+        }, occupied(0u64) {
+        }
 
         auto submit(std::BinaryBuffer64 command, i64 count) -> FileReply {
             FileReply reply = FileReply();
@@ -109,28 +135,27 @@ export namespace console {
             }
             if (action == FileEvent::unknown) {
                 // Exact verbs and malformed ls are recognized, without accepting prefixes.
-                if (command.equal(0, count, "write")
-                    || command.equal(0, count, "cat")
-                    || command.equal(0, count, "rm")
+                if (command.equal(0, count, "write") || command.equal(0, count, "cat") || command.equal(0, count, "rm")
                     || command.starts_with(count, "ls ")) {
                     reply.select(FileEvent::invalid);
                 }
                 return reply;
             }
             i64 end = start;
-            while (end < count && command.at(end) != ' ') { end = end + 1; }
+            while (end < count && command.at(end) != ' ') {
+                end = end + 1;
+            }
             const i64 name_size = end - start;
-            if (name_size < 1 || name_size > 8
-                || (action == FileEvent::written && end == count)
-                || (action != FileEvent::written && end != count)) {
+            if (name_size < 1 || name_size > 8 || (action == FileEvent::written && end == count) || (action
+                != FileEvent::written && end != count)) {
                 reply.select(FileEvent::invalid);
                 return reply;
             }
             i64 index = start;
             while (index < end) {
                 const u8 byte = command.at(index);
-                if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z')
-                    || (byte >= '0' && byte <= '9') || byte == '.' || byte == '_' || byte == '-')) {
+                if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9')
+                    || byte == '.' || byte == '_' || byte == '-')) {
                     reply.select(FileEvent::invalid);
                     return reply;
                 }
@@ -167,15 +192,20 @@ export namespace console {
             while (slot < 4) {
                 const std::BinaryBuffer64 record = records[slot];
                 const i64 length = i64(record.at(0));
-                const bool present = (occupied & (1u64 << slot)) != 0u64;
-                if (!present && free_slot == -1) { free_slot = slot; }
+                const bool present =(occupied & (1u64 << slot)) != 0u64;
+                if (!present && free_slot == -1) {
+                    free_slot = slot;
+                }
                 if (present && command.equal(start, name_size, record.bytes(2, length))) {
                     found = slot;
                 }
                 slot = slot + 1;
             }
             if (action == FileEvent::read) {
-                if (found == -1) { reply.select(FileEvent::missing); return reply; }
+                if (found == -1) {
+                    reply.select(FileEvent::missing);
+                    return reply;
+                }
                 reply.select(FileEvent::read);
                 const std::BinaryBuffer64 record = records[found];
                 index = 0;
@@ -211,7 +241,9 @@ export namespace console {
                     record.write_u8(10 + index, command.at(end + 1 + index));
                     index = index + 1;
                 }
-                if (found == -1) { found = free_slot; }
+                if (found == -1) {
+                    found = free_slot;
+                }
                 records[found] = record;
                 occupied = occupied | (1u64 << found);
             }
@@ -233,7 +265,9 @@ export namespace console {
                     index = index + 1;
                 }
                 reply.text(" byte");
-                if (content_size != 1) { reply.append('s'); }
+                if (content_size != 1) {
+                    reply.append('s');
+                }
             }
             return reply;
         }

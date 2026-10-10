@@ -64,8 +64,14 @@ def check(manifest, files, make_runners, registered=None, root_runners=None):
             raise ValueError(f"Make routing drift: {name}")
         if root_runners is not None and entry["root_make"] != (name in root_runners):
             raise ValueError(f"root Make coverage drift: {name}")
-        if not entry["reason"] or entry["kind"] not in ("runner", "supplemental-runner"):
+        if not entry["reason"] or entry["kind"] not in ("runner", "supplemental-runner", "composed-runner"):
             raise ValueError(f"unclassified runner: {name}")
+        if entry["kind"] == "composed-runner":
+            parent = entry.get("meson_parent")
+            if parent not in manifest or not manifest[parent]["meson"]:
+                raise ValueError(f"unregistered composed runner parent: {name}")
+            if registered is not None and parent not in registered:
+                raise ValueError(f"missing composed runner registration: {name}")
         if registered is not None and entry["meson"] != (name in registered):
             raise ValueError(f"Meson registration drift: {name}")
 
@@ -173,12 +179,15 @@ def check_graphical_meson(entries):
 
 def canonical_command(arguments, root, build, workdir=None):
     """Normalize real path arguments, preserving flags and argument order."""
-    roots = sorted(((Path(root).resolve(), '@SOURCE@'), (Path(build).resolve(), '@BUILD@')),
-                   key=lambda item: len(item[0].parts), reverse=True)
+    roots = sorted(
+        ((Path(root).resolve(), "@SOURCE@"), (Path(build).resolve(), "@BUILD@")),
+        key=lambda item: len(item[0].parts),
+        reverse=True,
+    )
     result = []
     for argument in arguments:
         value = str(argument)
-        if value.startswith('/') or (workdir is not None and value.startswith(('./', '../'))):
+        if value.startswith("/") or (workdir is not None and value.startswith(("./", "../"))):
             path = Path(value)
             if not path.is_absolute():
                 path = Path(workdir) / path
@@ -186,56 +195,79 @@ def canonical_command(arguments, root, build, workdir=None):
             for prefix, replacement in roots:
                 if path.is_relative_to(prefix):
                     relative = path.relative_to(prefix).as_posix()
-                    value = replacement + (('/' + relative) if relative != '.' else '')
+                    value = replacement + (("/" + relative) if relative != "." else "")
                     break
         result.append(value)
     return result
 
 
 def check_commands(manifest, records, root, build):
-    by_name = {record['name']: record for record in records}
+    by_name = {record["name"]: record for record in records}
     for runner, entry in manifest.items():
-        expected = entry.get('meson_commands', {})
-        if entry['meson'] and not expected:
-            raise ValueError('unaccounted compiler command variants: ' + runner)
-        actual = {record['name'] for record in records
-                  if any(Path(arg).resolve() == root / 'tests/compiler' / runner
-                         for arg in record['cmd'])}
+        expected = entry.get("meson_commands", {})
+        if entry["meson"] and not expected:
+            raise ValueError("unaccounted compiler command variants: " + runner)
+        actual = {
+            record["name"]
+            for record in records
+            if any(Path(arg).resolve() == root / "tests/compiler" / runner for arg in record["cmd"])
+        }
         if actual != set(expected):
-            raise ValueError('compiler command membership drift: ' + runner)
+            raise ValueError("compiler command membership drift: " + runner)
         for name, declaration in expected.items():
             record = by_name[name]
             # The Python executable can differ per toolchain environment; all
             # runner arguments, wrappers, fixtures, profiles and modes are exact.
-            command = canonical_command(record['cmd'][1:], root, build, record.get('workdir'))
-            command = ['@PYTHON@' if value == record['cmd'][0] else value for value in command]
-            if command != declaration['arguments']:
-                raise ValueError('compiler command/profile/mode drift: ' + name)
-            if sorted(suite.rsplit(':', 1)[-1] for suite in record['suite']) != declaration['suites']:
-                raise ValueError('compiler suite coverage drift: ' + name)
+            command = canonical_command(record["cmd"][1:], root, build, record.get("workdir"))
+            command = ["@PYTHON@" if value == record["cmd"][0] else value for value in command]
+            if command != declaration["arguments"]:
+                raise ValueError("compiler command/profile/mode drift: " + name)
+            if sorted(suite.rsplit(":", 1)[-1] for suite in record["suite"]) != declaration["suites"]:
+                raise ValueError("compiler suite coverage drift: " + name)
 
 
 def self_test():
-    for build in ('/repo/build/gcc14', '/build/gcc14'):
-        command = [build + '/../../repo/tests/compiler/a.py' if build == '/build/gcc14'
-                   else build + '/../../tests/compiler/a.py', '../aurorac', '--profile', 'full']
-        expected = ['@SOURCE@/tests/compiler/a.py', '@BUILD@/aurorac', '--profile', 'full']
-        if canonical_command(command, '/repo', build, build + '/tests') != expected:
-            raise ValueError('layout-independent path normalization failed')
-    commands = {'a.py': dict(meson=True, meson_commands={'a': dict(
-        arguments=['-B', '@SOURCE@/tests/compiler/a.py', '--profile', 'full'], suites=['full', 'slow'])})}
-    record = dict(name='a', cmd=['python3', '-B', '/repo/tests/compiler/a.py', '--profile', 'full'],
-                  suite=['aurora:full', 'aurora:slow'], workdir='/build/tests')
-    check_commands(commands, [record], Path('/repo'), Path('/build'))
-    for altered in ([], [dict(record, cmd=record['cmd'][:-1] + ['dev'])],
-                    [dict(record, cmd=['python3', '-O'] + record['cmd'][1:])],
-                    [dict(record, suite=['aurora:dev'])]):
+    for build in ("/repo/build/gcc14", "/build/gcc14"):
+        command = [
+            build + "/../../repo/tests/compiler/a.py"
+            if build == "/build/gcc14"
+            else build + "/../../tests/compiler/a.py",
+            "../aurorac",
+            "--profile",
+            "full",
+        ]
+        expected = ["@SOURCE@/tests/compiler/a.py", "@BUILD@/aurorac", "--profile", "full"]
+        if canonical_command(command, "/repo", build, build + "/tests") != expected:
+            raise ValueError("layout-independent path normalization failed")
+    commands = {
+        "a.py": dict(
+            meson=True,
+            meson_commands={
+                "a": dict(
+                    arguments=["-B", "@SOURCE@/tests/compiler/a.py", "--profile", "full"], suites=["full", "slow"]
+                )
+            },
+        )
+    }
+    record = dict(
+        name="a",
+        cmd=["python3", "-B", "/repo/tests/compiler/a.py", "--profile", "full"],
+        suite=["aurora:full", "aurora:slow"],
+        workdir="/build/tests",
+    )
+    check_commands(commands, [record], Path("/repo"), Path("/build"))
+    for altered in (
+        [],
+        [dict(record, cmd=record["cmd"][:-1] + ["dev"])],
+        [dict(record, cmd=["python3", "-O"] + record["cmd"][1:])],
+        [dict(record, suite=["aurora:dev"])],
+    ):
         try:
-            check_commands(commands, altered, Path('/repo'), Path('/build'))
+            check_commands(commands, altered, Path("/repo"), Path("/build"))
         except ValueError:
             pass
         else:
-            raise ValueError('compiler command/profile/mode negative control accepted drift')
+            raise ValueError("compiler command/profile/mode negative control accepted drift")
 
     sample = {"a.py": dict(make=True, root_make=True, meson=True, kind="runner", reason="native oracle")}
     all_runners, aggregate, _, _ = make_inventory(
@@ -304,17 +336,18 @@ def main():
     check(manifest, files, make_runners, registered, root_runners)
     if records is not None:
         check_commands(manifest, records, ROOT, args.meson_info.resolve().parents[1])
-    native_spec = importlib.util.spec_from_file_location('aurora_native_inventory', ROOT / 'tests/native/inventory.py')
+    native_spec = importlib.util.spec_from_file_location("aurora_native_inventory", ROOT / "tests/native/inventory.py")
     native = importlib.util.module_from_spec(native_spec)
     native_spec.loader.exec_module(native)
     native_summary = native.check(ROOT, records, reached)
-    gaps = sorted(name for name, entry in manifest.items() if not entry["meson"])
+    gaps = sorted(name for name, entry in manifest.items() if not entry["meson"] and entry["kind"] != "composed-runner")
+    composed = sum(entry["kind"] == "composed-runner" for entry in manifest.values())
     print(
         f"PASS compiler inventory: {len(files)} runnable scripts; "
         f"{len(make_runners)} Make-routed ({len(root_runners)} root aggregate); "
-        f"{len(files) - len(gaps)} Meson memberships "
+        f"{len(files) - len(gaps) - composed} direct Meson memberships and {composed} composed child "
         f"({'verified' if registered is not None else 'declared, not checked in this invocation'}); "
-        f"{len(gaps)} explicitly documented Meson gaps"
+        f"{len(gaps)} separate baseline-dependent gates"
     )
     print("PASS graphical focused Make routes and declared Meson bindings")
     print("Native inventory: " + json.dumps(native_summary, sort_keys=True))

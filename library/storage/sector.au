@@ -7,7 +7,8 @@ export namespace storage {
         std::ByteReadStatus outcome;
         std::BinaryBuffer64 payload;
     public:
-        RecordReadResult(std::ByteReadStatus status, std::BinaryBuffer64 record) : outcome(status), payload(record) {}
+        RecordReadResult(std::ByteReadStatus status, std::BinaryBuffer64 record) : outcome(status), payload(record) {
+        }
 
         auto status() const -> std::ByteReadStatus {
             return outcome;
@@ -26,7 +27,8 @@ export namespace storage {
     class Sector512 {
         builtin::array<u8, 512> elements;
     public:
-        Sector512() : elements{} {}
+        Sector512() : elements{} {
+        }
 
         auto size() const -> i64 {
             return 512;

@@ -114,7 +114,7 @@ all compiler kernel test-compiler test-image test-kernel test-semantics test-sem
     test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
     test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-client-disposal test-terminal-event test-native-cap-contracts \
     run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
-    program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream capture-framebuffer \
+    program-console-uefi smoke-program-console-uefi test-program-stream capture-framebuffer \
     test-developer-commands test-inventory test-graphical-console test-graphical-paging \
     smoke-graphical-console test-graphical-controls test-iommu-diagnostics test-artifact-budget: aurora-test-context
 aurora-test-context:
@@ -137,9 +137,9 @@ endif
 # Developer shortcuts reuse the existing build and validated smoke mechanisms.
 # Export these selectors so both environment and make NAME=value syntax work.
 export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
-export EVENT_BUILD_RECEIPT EVENT_CODE EVENT_VARS EVENT_DATA EVENT_ESP_DIR EVENT_OUTPUT_PARENT MTOOLS_DIR
+export EVENT_TOOL_PREFIX EVENT_BUILD_RECEIPT EVENT_CODE EVENT_VARS EVENT_DATA EVENT_ESP_DIR EVENT_OUTPUT_PARENT MTOOLS_DIR
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
-.PHONY: smoke-iommu-event smoke-graphical-console capture-framebuffer help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi qualify-program-console-uefi test-program-stream
+.PHONY: smoke-iommu-event smoke-graphical-console capture-framebuffer help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi test-program-stream
 help:
 	@printf '%s\n' \
 	  'make                  Build the compiler and BIOS kernel image' \
@@ -150,7 +150,6 @@ help:
 	  'make console-uefi     Open an opt-in UEFI timer-polled serial console' \
 	  'make program-console-uefi  Build/check and open the protected command console' \
 	  'make smoke-program-console-uefi  Build/check and test the protected command console' \
-	  'make qualify-program-console-uefi  Qualify an independently reviewed prebuilt protected console' \
 	  'make test-program-stream  Run copied-stream and two-role authority host tests' \
 	  'make capture-framebuffer  Build/check and save a local PNG preview under build/' \
 	  'make smoke-iommu-event  Opt-in custom-model Event guests with current admission and normal restoration' \
@@ -201,9 +200,6 @@ program-console-uefi:
 
 smoke-program-console-uefi:
 	./scripts/kernel-program-console-smoke.sh
-
-qualify-program-console-uefi:
-	./scripts/kernel-program-console-smoke.sh --qualification
 
 smoke-iommu-event:
 	./scripts/kernel-iommu-event-smoke.sh

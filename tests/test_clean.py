@@ -113,6 +113,18 @@ class CleanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mismatch"):
             self.run_clean()
 
+    def test_in_build_alias_preserves_canonical_ancestor_keep(self):
+        kept = self.root / "build/kept"
+        child = kept / "child"
+        child.mkdir(parents=True)
+        (kept / ".keep").touch()
+        alias = self.root / "build/alias"
+        alias.symlink_to(kept, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "kept output"):
+            self.run_clean("--scratch", str(alias / "child"))
+        self.assertTrue(child.is_dir())
+        self.assertTrue((kept / ".keep").exists())
+
     def test_make_scratch_requires_selection_and_exports_paths(self):
         (self.root / "scripts").mkdir()
         shutil.copyfile(ROOT / "scripts/clean.py", self.root / "scripts/clean.py")

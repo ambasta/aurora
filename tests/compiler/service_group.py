@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Distinct sealed service group source/ABI probe; no native or guest claim."""
+
 import argparse
 import os
 from pathlib import Path
@@ -8,12 +9,15 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
+
 def require(okay, message):
     if not okay:
         raise RuntimeError(message)
 
+
 def run(command):
     return subprocess.run(list(map(str, command)), cwd=ROOT, capture_output=True, timeout=120)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -28,7 +32,9 @@ def main():
     symbol = "__au_v_m1_13service_group_n0__d13group_service"
     require(".local " + symbol in text, "group entry must remain private")
     require("__au_runtime_bytes_" not in text, "service group acquired owner runtime")
-    assembly.write_text(text + f"""
+    assembly.write_text(
+        text
+        + f"""
 .text
 .globl __au_runtime_group_entry
 .hidden __au_runtime_group_entry
@@ -41,11 +47,24 @@ __au_runtime_group_entry:
     leave
     ret
 .size __au_runtime_group_entry,.-__au_runtime_group_entry
-""")
+"""
+    )
     binary = work / "group"
-    result = run([os.environ.get("CXX", "g++"), "-std=c++23", "-O1", "-Wall", "-Wextra", "-Werror",
-                  ROOT / "tests/compiler/service_group_host.cpp", ROOT / "tests/compiler/service_group_abi.S",
-                  assembly, "-o", binary])
+    result = run(
+        [
+            os.environ.get("CXX", "g++"),
+            "-std=c++23",
+            "-O1",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            ROOT / "tests/compiler/service_group_host.cpp",
+            ROOT / "tests/compiler/service_group_abi.S",
+            assembly,
+            "-o",
+            binary,
+        ]
+    )
     require(result.returncode == 0, result.stderr.decode())
     for mode in range(4):
         result = run([binary, mode])
@@ -59,8 +78,10 @@ __au_runtime_group_entry:
         "third": f"auto f({pair}, builtin::ConsoleSession& again) -> i64 {{ return 0; }}",
         "crossed": helper + f"auto f({pair}) -> i64 {{ return g(d, c, true); }}",
         "duplicate-argument": helper + f"auto f({pair}) -> i64 {{ return g(c, c, true); }}",
-        "suspended-first": helper + f"auto f({pair}) -> i64 {{ return g(c, d, c.put('Q') == builtin::ConsolePutResult::success); }}",
-        "suspended-second": helper + f"auto f({pair}) -> i64 {{ return g(c, d, d.pixel(0u64,0u64,0u8,0u8,0u8) == builtin::DisplayPutResult::success); }}",
+        "suspended-first": helper
+        + f"auto f({pair}) -> i64 {{ return g(c, d, c.put('Q') == builtin::ConsolePutResult::success); }}",
+        "suspended-second": helper + f"auto f({pair}) -> i64 {{ return g(c, d, d.pixel(0u64,0u64,0u8,"
+        f"0u8,0u8) == builtin::DisplayPutResult::success); }}",
         "fake": helper + "auto f(i64 c, i64 d) -> i64 { return g(c, d, true); }",
         "second-by-value": "auto f(builtin::ConsoleSession& c, builtin::DisplaySession d) -> i64 { return 0; }",
         "second-const": "auto f(builtin::ConsoleSession& c, const builtin::DisplaySession& d) -> i64 { return 0; }",
@@ -79,6 +100,7 @@ __au_runtime_group_entry:
         result = run([compiler, source, "-o", work / "rejected.s"])
         require(result.returncode == 1 and result.stderr, "invalid group source was not cleanly rejected: " + name)
     print(f"PASS distinct service group source/ABI: {len(negative)} negative cases; {work}")
+
 
 if __name__ == "__main__":
     main()

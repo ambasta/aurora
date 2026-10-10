@@ -4,21 +4,48 @@ import std.token_scan;
 auto test() -> i64 {
     // Final source window is " \nname->9x". The digit word is lexical data;
     // accepting it here does not claim that the parser accepts it as a number.
-    builtin::array<u8,10> source = {32u8,10u8,110u8,97u8,109u8,101u8,45u8,62u8,57u8,120u8};
+    builtin::array<u8, 10> source = {
+        32u8,
+        10u8,
+        110u8,
+        97u8,
+        109u8,
+        101u8,
+        45u8,
+        62u8,
+        57u8,
+        120u8
+    };
     const std::TokenResult name = std::next_token(borrow_bytes(source), 0, 10);
-    if (name.status() != std::TokenStatus::success) { return 1; }
-    if (name.kind() != std::TokenKind::identifier) { return 2; }
-    if (name.byte_offset() != 2 || name.byte_count() != 4) { return 3; }
-    if (name.consumed_bytes() != 6 || name.skipped_lf() != 1) { return 4; }
+    if (name.status() != std::TokenStatus::success) {
+        return 1;
+    }
+    if (name.kind() != std::TokenKind::identifier) {
+        return 2;
+    }
+    if (name.byte_offset() != 2 || name.byte_count() != 4) {
+        return 3;
+    }
+    if (name.consumed_bytes() != 6 || name.skipped_lf() != 1) {
+        return 4;
+    }
     const std::TokenResult arrow = std::next_token(borrow_bytes(source), 6, 4);
-    if (arrow.kind() != std::TokenKind::operator_pair || arrow.byte_count() != 2) { return 5; }
+    if (arrow.kind() != std::TokenKind::operator_pair || arrow.byte_count() != 2) {
+        return 5;
+    }
     const std::TokenResult digits = std::next_token(borrow_bytes(source), 8, 2);
-    if (digits.kind() != std::TokenKind::digit_word || digits.consumed_bytes() != 2) { return 6; }
+    if (digits.kind() != std::TokenKind::digit_word || digits.consumed_bytes() != 2) {
+        return 6;
+    }
     const std::TokenResult end = std::next_token(borrow_bytes(source), 10, 0);
-    if (end.status() != std::TokenStatus::end_of_input || end.byte_offset() != 10) { return 7; }
+    if (end.status() != std::TokenStatus::end_of_input || end.byte_offset() != 10) {
+        return 7;
+    }
     // The temporary borrows ended. Copied reports survive owner mutation.
     source[2] = 0u8;
     const std::TokenResult saved = name;
-    if (saved.byte_offset() != 2 || saved.byte_count() != 4) { return 8; }
+    if (saved.byte_offset() != 2 || saved.byte_count() != 4) {
+        return 8;
+    }
     return 42;
 }

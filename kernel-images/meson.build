@@ -44,16 +44,11 @@ profile_data = import('keyval').load(profile_file)
 kernel_profile_images = {}
 kernel_profile_users = {}
 admission_recipes = {
-  'program': ['kernel_program_console_admission.py', 'begin-build', 'end-build', 'program-build-start.json',
-              'program-build.json', 'program-console-admission.json'],
-  'console': ['kernel_console_service_admission.py', 'begin-build', 'end-build', 'console-service-build-start.json',
-              'console-service-build.json', 'console-service-admission.json'],
-  'graphical': ['kernel_graphical_console_admission.py', 'begin', 'end', 'graphical-console-build-start.json',
-                'graphical-console-build.json', 'graphical-console-admission.json'],
-  'framebuffer': ['kernel_framebuffer_admission.py', 'begin', 'end', 'framebuffer-build-start.json',
-                  'framebuffer-build.json', 'framebuffer-admission.json'],
-  'event': ['kernel_iommu_event_admission.py', 'begin-build', 'end-build', 'iommu-event-build-start.json',
-            'iommu-event-build.json', 'iommu-event-admission.json'],
+  'program': ['kernel_program_console_admission.py', 'program-console-admission.json'],
+  'console': ['kernel_console_service_admission.py', 'console-service-admission.json'],
+  'graphical': ['kernel_graphical_console_admission.py', 'graphical-console-admission.json'],
+  'framebuffer': ['kernel_framebuffer_admission.py', 'framebuffer-admission.json'],
+  'event': ['kernel_iommu_event_admission.py', 'iommu-event-admission.json'],
 }
 foreach profile_id : profile_data['profiles'].split('|')
   key = 'profiles.' + profile_id
@@ -70,28 +65,12 @@ foreach profile_id : profile_data['profiles'].split('|')
   objects = {}
   aurora_facts = []
   checks = []
-  begin_dependency = []
   admission = profile_data[key + '.admission']
   if admission != ''
     admission_recipe = admission_recipes[admission]
     admission_tool = files('../scripts/' + admission_recipe[0])
     admission_common_args = ['--mode', mode, '--build-dir', output_dir, '--source-root', kernel_source]
-    provenance_args = ['--compiler', kernel_image_compiler, '--cxx', native_cpp.cmd_array()[0]]
-    foreach flag : ['-std=c++23', '-O2', '-fstack-usage', '-fcallgraph-info=su'] + kernel_flags + ['-UNDEBUG'] + profile_flags
-      provenance_args += ['--flag=' + flag]
-    endforeach
-    if admission == 'graphical'
-      provenance_args += ['--linker', pe_linker]
-    elif admission == 'event'
-      provenance_args += ['--pe-linker', pe_linker]
-    endif
-    begin_dependency = [custom_target(prefix + '-begin-admission',
-      output: admission_recipe[3], build_subdir: output_subdir,
-      depfile: 'admission-source.d', depend_files: compiler_files,
-      command: [python, '-B', admission_tool, admission_recipe[1]] + admission_common_args + provenance_args +
-        ['--depfile', '@DEPFILE@', '--depfile-target', '@OUTPUT@'])]
   endif
-  profile_dependencies = begin_dependency
 
   root_args = []
   foreach root : profile_data[key + '.roots'].split('|')
@@ -100,7 +79,7 @@ foreach profile_id : profile_data['profiles'].split('|')
   language_name = platform == 'bios' ? 'kernel-language' : 'language'
   language = custom_target(prefix + '-language-assembly',
     input: files('../' + profile_data[key + '.language']), output: [language_name + '.s', language_name + '.stack.json'],
-    build_subdir: output_subdir, depfile: language_name + '.d', depends: profile_dependencies, depend_files: compiler_files,
+    build_subdir: output_subdir, depfile: language_name + '.d', depend_files: compiler_files,
     command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
               '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + root_args)
   aurora_facts += [language[1]]
@@ -109,17 +88,17 @@ foreach profile_id : profile_data['profiles'].split('|')
   bridge_input = bridge == '' ? [] : files('../' + bridge)
   objects += {language_name: custom_target(prefix + '-language-object',
     input: [language[0]] + bridge_input, output: language_name + '.o', build_subdir: object_subdir,
-    depends: profile_dependencies, command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
+    command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
   foreach name : profile_data[key + '.assembly'].split('|')
     assembly_key = key + '.assembly.' + name
     objects += {name: custom_target(prefix + '-' + name + '-object',
       input: files('../' + profile_data[assembly_key + '.source']), output: name + '.o',
-      build_subdir: object_subdir, depends: profile_dependencies,
+      build_subdir: object_subdir,
       command: [kernel_as] + profile_data[assembly_key + '.flags'].split('|') + ['@INPUT@', '-o', '@OUTPUT@'])}
   endforeach
   if platform == 'bios'
     boot = custom_target(prefix + '-boot', input: objects['boot'], output: 'boot.bin',
-      build_subdir: output_subdir, depend_files: files('../kernel/boot.ld'), depends: profile_dependencies,
+      build_subdir: output_subdir, depend_files: files('../kernel/boot.ld'),
       command: [kernel_ld, '-m', 'elf_i386', '--build-id=none', '--orphan-handling=error', '-T',
                 files('../kernel/boot.ld'), '@INPUT@', '-o', '@OUTPUT@'])
   endif
@@ -138,7 +117,7 @@ foreach profile_id : profile_data['profiles'].split('|')
       endforeach
       user_assembly = custom_target(prefix + '-user-' + name + '-assembly',
         input: files('../' + profile_data[user_key + '.source']), output: ['user-' + name + '.s', 'user-' + name + '.stack.json'],
-        build_subdir: output_subdir, depfile: 'user-' + name + '.d', depends: profile_dependencies, depend_files: compiler_files,
+        build_subdir: output_subdir, depfile: 'user-' + name + '.d', depend_files: compiler_files,
         command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                   '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + user_root_args)
       aurora_facts += [user_assembly[1]]
@@ -148,14 +127,13 @@ foreach profile_id : profile_data['profiles'].split('|')
       combined = profile_data[user_key + '.combined'] == '1'
       user_object = custom_target(prefix + '-user-' + name + '-object',
         input: [user_assembly[0]] + (combined ? entry_source : []), output: 'user-' + name + '.o',
-        build_subdir: object_subdir, depends: profile_dependencies,
+        build_subdir: object_subdir,
         command: [kernel_as, '--64', '-L'] + (combined ? entry_flags : []) + ['@INPUT@', '-o', '@OUTPUT@'])
       user_link_inputs = []
       if not combined
         entry_object = custom_target(prefix + '-user-' + name + '-entry-object',
           input: entry_source, output: 'user-' + name + '-entry.o', build_subdir: object_subdir,
-          depends: profile_dependencies,
-          command: [kernel_as, '--64'] + entry_flags + ['@INPUT@', '-o', '@OUTPUT@'])
+                command: [kernel_as, '--64'] + entry_flags + ['@INPUT@', '-o', '@OUTPUT@'])
         user_link_inputs += [entry_object]
       endif
       user_link_inputs += [user_object]
@@ -163,23 +141,23 @@ foreach profile_id : profile_data['profiles'].split('|')
         '--defsym=USER_BASE=' + profile_data[user_key + '.base']] : ['-T', files('../kernel/program.ld'),
         '--defsym', 'USER_BASE=' + profile_data[user_key + '.base'], '-z', 'max-page-size=0x1000']
       user_elf = custom_target(prefix + '-user-' + name + '-elf', input: user_link_inputs,
-        output: 'user-' + name + '.elf', build_subdir: output_subdir, depends: profile_dependencies,
+        output: 'user-' + name + '.elf', build_subdir: output_subdir,
         depend_files: files('../kernel/program.ld'),
         command: [kernel_ld, '-nostdlib', '--discard-none'] + user_link_flags + ['@INPUT@', '-o', '@OUTPUT@'])
       user_binary = custom_target(prefix + '-user-' + name + '-binary', input: user_elf,
-        output: 'user-' + name + '.bin', build_subdir: output_subdir, depends: profile_dependencies,
+        output: 'user-' + name + '.bin', build_subdir: output_subdir,
         command: [kernel_objcopy, '-O', 'binary', '@INPUT@', '@OUTPUT@'])
       user_inputs += [user_elf, user_binary]
     endforeach
     if platform == 'bios'
       user_metadata = custom_target(prefix + '-user-metadata', input: user_inputs,
         output: ['user-metadata.json', 'kernel-user-images.S', 'kernel-user-images.hpp'],
-        build_subdir: output_subdir, depends: profile_dependencies,
+        build_subdir: output_subdir,
         command: [python, '-B', files('../tests/kernel-user-image.py'), '--build-dir', output_dir] +
                  profile_data[key + '.user_metadata_options'].split('|'))
       generated_headers = [user_metadata[2]]
       objects += {'kernel-user-images': custom_target(prefix + '-user-images-object', input: user_metadata[1],
-        output: 'kernel-user-images.o', build_subdir: object_subdir, depends: profile_dependencies + user_inputs,
+        output: 'kernel-user-images.o', build_subdir: object_subdir, depends: user_inputs,
         command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
     else
       user_tool = profile_data[key + '.user_kind'] == 'ipc' ? 'kernel-uefi-ipc-images.py' : 'kernel-uefi-user-images.py'
@@ -187,7 +165,7 @@ foreach profile_id : profile_data['profiles'].split('|')
       user_options = user_option_text == '' ? [] : user_option_text.split('|')
       user_metadata = custom_target(prefix + '-user-metadata', input: user_inputs,
         output: ['uefi-user-images.hpp', 'user-images.json'], build_subdir: output_subdir,
-        depend_files: files('../scripts/kernel-uefi-user-images.py'), depends: profile_dependencies,
+        depend_files: files('../scripts/kernel-uefi-user-images.py'),
         command: [python, '-B', files('../scripts/' + user_tool), '--output', output_dir,
                   '--mode', profile_data[key + '.user_mode']] + user_options)
       generated_headers = [user_metadata[0]]
@@ -204,12 +182,12 @@ foreach profile_id : profile_data['profiles'].split('|')
     if platform == 'bios' or name == 'runtime'
       flags += ['-I' + include_dir]
     endif
-    native = static_library(prefix + '-' + name, [source, generated_headers, profile_dependencies],
+    native = static_library(prefix + '-' + name, [source, generated_headers],
       native: true, pic: false, install: false, build_by_default: false, implicit_include_directories: false,
       override_options: kernel_options, build_subdir: output_subdir / 'native', cpp_args: flags)
     sidecars = [name + '.o', name + '.su', name + '.source.json'] + (platform == 'uefi' ? [name + '.ci'] : [])
     objects += {name: custom_target(prefix + '-' + name + '-export', input: native.extract_objects(source),
-      output: sidecars, build_subdir: object_subdir, depends: profile_dependencies,
+      output: sidecars, build_subdir: object_subdir,
       command: [python, '-B', kernel_object_helper, '--native-object', '@INPUT@', '--source', source,
                 '--output', '@OUTPUT0@', '--compile-directory', meson.project_build_root()] +
                (platform == 'uefi' ? ['--callgraph'] : []))}
@@ -220,24 +198,24 @@ foreach profile_id : profile_data['profiles'].split('|')
   endforeach
   if platform == 'bios'
     elf = custom_target(prefix + '-elf', input: link_objects, output: 'kernel.elf',
-      build_subdir: output_subdir, depend_files: files('../kernel/link.ld'), depends: profile_dependencies,
+      build_subdir: output_subdir, depend_files: files('../kernel/link.ld'),
       command: [kernel_ld, '-nostdlib', '-z', 'max-page-size=0x1000', '-T', files('../kernel/link.ld'),
                 '@INPUT@', '-o', '@OUTPUT@'])
     binary = custom_target(prefix + '-binary', input: elf, output: 'kernel.bin', build_subdir: output_subdir,
-      depends: profile_dependencies, command: [kernel_objcopy, '-O', 'binary', '@INPUT@', '@OUTPUT@'])
+      command: [kernel_objcopy, '-O', 'binary', '@INPUT@', '@OUTPUT@'])
     profile_image = custom_target(prefix + '-image', input: [boot, objects['boot'], objects[language_name], elf, binary],
       output: 'aurora.img', build_subdir: output_subdir, build_by_default: mode == 'normal',
-      depend_files: files('../examples/kernel-bios.au', '../examples/kernel.au'), depends: profile_dependencies,
+      depend_files: files('../examples/kernel-bios.au', '../examples/kernel.au'),
       command: [python, '-B', files('../tests/kernel-image.py'), '--build-dir', output_dir])
   else
     linker_script = custom_target(prefix + '-linker-script', input: files('../kernel/uefi/payload.ld'),
-      output: 'payload.ld', build_subdir: output_subdir, depends: profile_dependencies,
+      output: 'payload.ld', build_subdir: output_subdir,
       command: native_cpp.cmd_array() + ['-E', '-P', '-x', 'c'] + profile_flags + ['@INPUT@', '-o', '@OUTPUT@'])
     elf = custom_target(prefix + '-elf', input: link_objects, output: 'payload.elf',
-      build_subdir: output_subdir, depends: profile_dependencies,
+      build_subdir: output_subdir,
       command: [kernel_ld, '-nostdlib', '-T', linker_script, '-z', 'max-page-size=0x1000', '@INPUT@', '-o', '@OUTPUT@'])
     binary = custom_target(prefix + '-binary', input: elf, output: 'payload.bin', build_subdir: output_subdir,
-      depends: profile_dependencies, command: [kernel_objcopy, '-O', 'binary', '@INPUT@', '@OUTPUT@'])
+      command: [kernel_objcopy, '-O', 'binary', '@INPUT@', '@OUTPUT@'])
     metadata_outputs = ['uefi-payload.hpp', 'embed.S', 'bar-metadata.json', 'ivrs-metadata.json']
     if admission in ['console', 'graphical']
       metadata_outputs += ['console-poll-metadata.json']
@@ -249,43 +227,48 @@ foreach profile_id : profile_data['profiles'].split('|')
       metadata_outputs += ['service-timer-metadata.json']
     endif
     metadata = custom_target(prefix + '-payload-metadata', input: [elf, binary], output: metadata_outputs,
-      build_subdir: output_subdir, depends: profile_dependencies,
+      build_subdir: output_subdir,
       command: [python, '-B', files('../scripts/kernel-uefi-metadata.py'), '--build-dir', output_dir])
     objects += {'embed': custom_target(prefix + '-embed-object', input: metadata[1], output: 'embed.o',
-      build_subdir: object_subdir, depends: profile_dependencies + [binary],
+      build_subdir: object_subdir, depends: [binary],
       command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
     loader_source = files('../kernel/uefi/loader.cpp')
-    loader = static_library(prefix + '-loader', [loader_source, metadata[0], generated_headers, profile_dependencies],
+    loader = static_library(prefix + '-loader', [loader_source, metadata[0], generated_headers],
       native: true, pic: false, install: false, build_by_default: false, implicit_include_directories: false,
       override_options: kernel_options, build_subdir: output_subdir / 'native',
       cpp_args: ['-fstack-usage', '-fcallgraph-info=su'] + kernel_flags + ['-UNDEBUG'] + profile_flags + ['-fpie', '-maccumulate-outgoing-args', '-I' + include_dir])
     objects += {'loader': custom_target(prefix + '-loader-export', input: loader.extract_objects(loader_source),
       output: ['loader.o', 'loader.su', 'loader.ci', 'loader.source.json'], build_subdir: object_subdir,
-      depends: profile_dependencies,
       command: [python, '-B', kernel_object_helper, '--native-object', '@INPUT@', '--source', loader_source,
                 '--output', '@OUTPUT0@', '--compile-directory', meson.project_build_root(), '--callgraph'])}
     pe_objects = []
     foreach name : ['loader', 'embed', 'transition', 'memory']
       pe_objects += [custom_target(prefix + '-' + name + '-pe-object', input: objects[name][0], output: name + '-pe.o',
-        build_subdir: object_subdir, depends: profile_dependencies,
+        build_subdir: object_subdir,
         command: [kernel_objcopy, '--remove-section=.comment', '--remove-section=.note.GNU-stack', '@INPUT@', '@OUTPUT@'])]
     endforeach
     pe = custom_target(prefix + '-pe', input: pe_objects, output: 'BOOTX64.EFI',
-      build_subdir: output_subdir / 'esp/EFI/BOOT', depends: profile_dependencies,
+      build_subdir: output_subdir / 'esp/EFI/BOOT',
       command: [pe_linker, '-mi386pep', '--subsystem', '10', '--entry=aurora_efi_entry', '--image-base=0x100000',
                 '--enable-reloc-section', '--dynamicbase', '--nxcompat', '--no-insert-timestamp', '@INPUT@', '-o', '@OUTPUT@'])
     image_option_text = profile_data[key + '.image_options']
     image_options = image_option_text == '' ? [] : image_option_text.split('|')
+    if admission == 'event'
+      image_options += ['--event-mode', mode]
+    endif
     profile_image = custom_target(prefix + '-image', input: [pe, elf, binary], output: 'image-metadata.json',
-      build_subdir: output_subdir, build_by_default: mode == 'normal', depends: profile_dependencies,
-      depend_files: files('../scripts/kernel_program_console_admission.py'),
+      build_subdir: output_subdir, build_by_default: mode == 'normal',
+      depend_files: files('../scripts/kernel_program_console_admission.py',
+        '../scripts/kernel_stack.py', '../scripts/kernel_snapshot_abi.py',
+        '../scripts/kernel_owned_bytes_admission.py'),
       command: [python, '-B', files('../scripts/kernel_uefi_image.py'), '--build-dir', output_dir] + image_options)
   endif
   check_names = profile_data[key + '.checks']
   validation_dependencies = files('../scripts/kernel_program_console_admission.py',
     '../scripts/kernel_stack.py', '../scripts/kernel_snapshot_abi.py', '../scripts/kernel_uefi_image.py',
-    '../tests/kernel-uefi-owned-bytes-stack.py', '../tests/kernel-uefi-owned-bytes-admission.py',
-    '../scripts/kernel-uefi-user-images.py', '../scripts/kernel-uefi-ipc-images.py')
+    '../scripts/kernel_owned_bytes_admission.py',
+    '../scripts/kernel-uefi-user-images.py', '../scripts/kernel-uefi-ipc-images.py',
+    '../tests/kernel-snapshot-abi.py')
   native_exports = []
   foreach name : cpp_names
     native_exports += [objects[name]]
@@ -298,47 +281,44 @@ foreach profile_id : profile_data['profiles'].split('|')
       if check in ['snapshot', 'note']
         checks += [custom_target(prefix + '-user-abi', input: user_inputs + [user_metadata] + aurora_facts,
           output: check == 'note' ? 'note-abi.json' : 'abi.json', build_subdir: output_subdir,
-          depends: profile_dependencies, depend_files: validation_dependencies,
+          depend_files: validation_dependencies,
           command: [python, '-B', files('../tests/kernel-snapshot-abi.py'), output_dir,
                     '--uefi-mode', profile_data[key + '.user_mode']] + (check == 'note' ? ['--note'] : []))]
       endif
       if check == 'snapshot'
         checks += [custom_target(prefix + '-snapshot-stack', input: [elf, binary] + native_exports + aurora_facts,
-          output: 'snapshot-stack.json', build_subdir: output_subdir, depends: profile_dependencies,
+          output: 'snapshot-stack.json', build_subdir: output_subdir,
           depend_files: validation_dependencies,
           command: [python, '-B', files('../tests/kernel-snapshot-abi.py'), output_dir, '--kernel-stack'])]
       elif check == 'owned-bytes'
         checks += [custom_target(prefix + '-owned-imports', input: objects[language_name],
           output: 'owned-bytes-imports.checked', build_subdir: output_subdir, capture: true,
-          depends: profile_dependencies, depend_files: validation_dependencies,
+          depend_files: validation_dependencies,
           command: [python, '-B', files('../tests/kernel-uefi-owned-bytes-admission.py'), '@INPUT@'])]
         checks += [custom_target(prefix + '-owned-stack', input: [elf, binary] + native_exports + aurora_facts,
-          output: 'owned-bytes-stack.json', build_subdir: output_subdir, depends: profile_dependencies,
+          output: 'owned-bytes-stack.json', build_subdir: output_subdir,
           depend_files: validation_dependencies,
           command: [python, '-B', files('../tests/kernel-uefi-owned-bytes-stack.py'), output_dir, '@OUTPUT@'])]
       elif check == 'tables'
-        checks += [custom_target(prefix + '-table-stack', input: [elf] + native_exports + aurora_facts,
+        checks += [custom_target(prefix + '-table-stack', input: [elf, binary] + native_exports + aurora_facts,
           output: ['stack.json', 'payload.su', 'acpi.su', 'pci.su', 'runtime.su', 'payload.disassembly.txt'],
-          build_subdir: output_subdir / 'table-stack' / mode, depends: profile_dependencies,
+          build_subdir: output_subdir / 'table-stack' / mode,
           depend_files: validation_dependencies,
           command: [python, '-B', files('../tests/kernel-uefi-tables-stack.py'), output_dir,
                     output_dir / 'table-stack' / mode])]
       elif check in ['ivrs', 'nvme']
         checks += [custom_target(prefix + '-' + check + '-stack', input: [elf, binary] + native_exports + aurora_facts,
-          output: check + '-stack.json', build_subdir: output_subdir, depends: profile_dependencies,
+          output: check + '-stack.json', build_subdir: output_subdir,
           depend_files: validation_dependencies,
           command: [python, '-B', files('../tests/kernel-uefi-' + check + '-stack.py'), output_dir, '@OUTPUT@'])]
       endif
     endforeach
   endif
   if admission != ''
-    end_admission = custom_target(prefix + '-end-admission',
-      input: [profile_image, metadata] + aurora_facts + native_exports + checks + begin_dependency,
-      output: admission_recipe[4], build_subdir: output_subdir,
-      depend_files: validation_dependencies,
-      command: [python, '-B', admission_tool, admission_recipe[2]] + admission_common_args)
-    checks += [custom_target(prefix + '-admission', input: end_admission, output: admission_recipe[5],
-      build_subdir: output_subdir, depend_files: validation_dependencies,
+    checks += [custom_target(prefix + '-admission',
+      input: [profile_image, metadata] + aurora_facts + native_exports + checks,
+      output: admission_recipe[1], build_subdir: output_subdir,
+      depend_files: validation_dependencies + files('../scripts/kernel_console_service_admission.py'),
       command: [python, '-B', admission_tool, 'emit'] + admission_common_args)]
   endif
   kernel_profile_images += {profile_id: [profile_image] + checks}

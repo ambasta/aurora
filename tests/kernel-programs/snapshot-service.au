@@ -3,10 +3,20 @@ import kernel.snapshot;
 
 auto aurora_user_main(u64 phase, u64 operation, u64 offset, kernel::Snapshot64 snapshot) -> u64 {
     // This calls the actual checked array read. No fallback is returned.
-    if (phase == 4u64) { return u64(snapshot.at(64)); }
-    if (phase != 1u64) { return 5u64; }
-    if (operation != 1u64) { return 3u64; }
-    if (offset == 64u64) { return 2u64; }
-    if (offset > 64u64) { return 4u64; }
+    if (phase == 4u64) {
+        return u64(snapshot.at(64));
+    }
+    if (phase != 1u64) {
+        return 5u64;
+    }
+    if (operation != 1u64) {
+        return 3u64;
+    }
+    if (offset == 64u64) {
+        return 2u64;
+    }
+    if (offset > 64u64) {
+        return 4u64;
+    }
     return 1u64 | (u64(snapshot.at(i64(offset))) << 8);
 }

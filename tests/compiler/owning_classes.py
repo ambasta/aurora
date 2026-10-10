@@ -803,8 +803,10 @@ class OwningSuite(Suite):
         )
         self.reject(
             "direct-owning-constructor-return",
-            program("return 0;", BOX + f"auto make({REGION} region,{OWNER} bytes)->Box{{"
-                    "return Box(region,move(bytes),23u8);}"),
+            program(
+                "return 0;",
+                BOX + f"auto make({REGION} region,{OWNER} bytes)->Box{{return Box(region,move(bytes),23u8);}}",
+            ),
         )
         self.reject("nested-owning-field", program("return 0;", BOX + "class Outer { Box box; };"))
         self.reject("public-owner-field", program("return 0;", f"class Bad {{ public: {OWNER} bytes; }};"))

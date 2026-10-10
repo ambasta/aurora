@@ -20,11 +20,14 @@ class NvmeQueueHandle final {
     std::uint64_t generation_{};
 
     NvmeQueueHandle(const NvmeQueueBundle &owner, std::uint64_t epoch, std::uint64_t generation)
-        : owner_(&owner), epoch_(epoch), generation_(generation) {}
+        : owner_(&owner), epoch_(epoch), generation_(generation) {
+    }
 
 public:
     NvmeQueueHandle() = default;
-    [[nodiscard]] auto generation() const -> std::uint64_t { return generation_; }
+    [[nodiscard]] auto generation() const -> std::uint64_t {
+        return generation_;
+    }
 };
 
 // Single-CPU, fixed five-page preparation over the existing allocator, not a
@@ -39,11 +42,25 @@ public:
     static constexpr std::size_t pool_pages = 16;
     static constexpr std::size_t page_bytes = memory::PhysicalPages::page_size;
     static constexpr std::size_t queue_entries = 2;
-    enum class Role { admin_submission, admin_completion, io_submission, io_completion, data };
-    enum class Direction { device_reads, device_writes };
+    enum class Role {
+        admin_submission,
+        admin_completion,
+        io_submission,
+        io_completion,
+        data
+    };
+    enum class Direction {
+        device_reads,
+        device_writes
+    };
 
 private:
-    enum class State { empty, preparing, prepared, retained };
+    enum class State {
+        empty,
+        preparing,
+        prepared,
+        retained
+    };
     inline static std::uint64_t next_epoch_{};
     memory::PhysicalPages &pool_;
     std::span<std::byte> backing_;
@@ -60,8 +77,7 @@ private:
     std::size_t failed_scrub_ = page_count;
 #endif
 #ifdef AURORA_NVME_QUEUE_GENERATION_LIMIT
-    static_assert(AURORA_NVME_QUEUE_GENERATION_LIMIT > 0
-                  && AURORA_NVME_QUEUE_GENERATION_LIMIT <= UINT64_MAX,
+    static_assert(AURORA_NVME_QUEUE_GENERATION_LIMIT > 0 && AURORA_NVME_QUEUE_GENERATION_LIMIT <= UINT64_MAX,
                   "A generation limit must be a positive representable integer");
     static constexpr std::uint64_t generation_limit = AURORA_NVME_QUEUE_GENERATION_LIMIT;
 #else
@@ -69,17 +85,16 @@ private:
 #endif
 
     [[nodiscard]] auto backing_valid() const -> bool {
-        return epoch_ && base_ % page_bytes == 0 && backing_.size() == pool_pages * page_bytes
-            && reinterpret_cast<std::uintptr_t>(backing_.data()) % page_bytes == 0
-            && pool_.arena_matches(base_, pool_pages);
+        return epoch_ && base_ % page_bytes == 0 && backing_.size() == pool_pages * page_bytes &&
+               reinterpret_cast<std::uintptr_t>(backing_.data()) % page_bytes == 0 &&
+               pool_.arena_matches(base_, pool_pages);
     }
 
     [[nodiscard]] auto page(std::size_t index) const -> std::optional<std::span<std::byte>> {
         if (!backing_valid() || index >= count_ || !leases_[index])
             return std::nullopt;
         const auto address = pool_.address(*leases_[index]);
-        if (!address || *address % page_bytes || *address < base_
-            || *address - base_ > backing_.size() - page_bytes)
+        if (!address || *address % page_bytes || *address < base_ || *address - base_ > backing_.size() - page_bytes)
             return std::nullopt;
         return backing_.subspan(static_cast<std::size_t>(*address - base_), page_bytes);
     }
@@ -128,8 +143,8 @@ private:
     }
 
     [[nodiscard]] auto matches(NvmeQueueHandle handle) const -> bool {
-        return state_ == State::prepared && handle.owner_ == this && handle.epoch_ == epoch_
-            && handle.generation_ == generation_ && count_ == page_count;
+        return state_ == State::prepared && handle.owner_ == this && handle.epoch_ == epoch_ &&
+               handle.generation_ == generation_ && count_ == page_count;
     }
 
     [[nodiscard]] static auto role_index(Role role, Direction direction) -> std::optional<std::size_t> {
@@ -170,15 +185,16 @@ public:
     NvmeQueueBundle(NvmeQueueBundle &&) = delete;
     auto operator=(NvmeQueueBundle &&) -> NvmeQueueBundle & = delete;
 
-    [[nodiscard]] auto prepare(const NvmeBarGrant &grant, const WindowAuthority &authority,
+    [[nodiscard]] auto prepare(const NvmeBarGrant &grant,
+                               const WindowAuthority &authority,
                                const PciBarSnapshot &current) -> std::optional<NvmeQueueHandle> {
         const auto cap = grant.capabilities();
         // The two-entry SQ/CQ shapes fit one page each. This bounded profile
         // requires 4 KiB pages; nothing here programs CC.MPS or a queue register.
-        if (state_ != State::empty || !backing_valid() || generation_ == generation_limit
-            || current.segment() != 0 || current.bus() != 0 || current.device() != 2 || current.function() != 0
-            || !grant.read_address(authority, current, 0, 8) || ((cap >> 48) & 15) != 0
-            || (cap & 0xffff) + 1 < queue_entries)
+        if (state_ != State::empty || !backing_valid() || generation_ == generation_limit || current.segment() != 0 ||
+            current.bus() != 0 || current.device() != 2 || current.function() != 0 ||
+            !grant.read_address(authority, current, 0, 8) || ((cap >> 48) & 15) != 0 ||
+            (cap & 0xffff) + 1 < queue_entries)
             return std::nullopt;
         ++generation_;
         state_ = State::preparing;
@@ -201,26 +217,35 @@ public:
 
     // A CPU preparation check only. The BAR ticket and complete copied endpoint
     // snapshot are rechecked on every query. No pointer/address leaves the bundle.
-    [[nodiscard]] auto ready(NvmeQueueHandle handle, const WindowAuthority &authority,
-                             const PciBarSnapshot &current, Role role, Direction direction) const -> bool {
+    [[nodiscard]] auto ready(NvmeQueueHandle handle,
+                             const WindowAuthority &authority,
+                             const PciBarSnapshot &current,
+                             Role role,
+                             Direction direction) const -> bool {
         const auto index = role_index(role, direction);
-        return matches(handle) && session_ && session_->read_address(authority, current, 0, 8)
-            && index && page(*index).has_value();
+        return matches(handle) && session_ && session_->read_address(authority, current, 0, 8) && index &&
+               page(*index).has_value();
     }
 
     [[nodiscard]] auto cancel(NvmeQueueHandle handle) -> bool {
         return matches(handle) && discard_unpublished();
     }
 
-    [[nodiscard]] auto held_pages() const -> std::size_t { return count_; }
-    [[nodiscard]] auto retained() const -> bool { return state_ == State::retained; }
+    [[nodiscard]] auto held_pages() const -> std::size_t {
+        return count_;
+    }
+    [[nodiscard]] auto retained() const -> bool {
+        return state_ == State::retained;
+    }
 
 #ifdef AURORA_NVME_QUEUE_TESTING
-    auto fail_scrub_for_test(std::size_t index) -> void { failed_scrub_ = index; }
+    auto fail_scrub_for_test(std::size_t index) -> void {
+        failed_scrub_ = index;
+    }
 #endif
 };
 
 static_assert(NvmeQueueBundle::queue_entries * 64 <= NvmeQueueBundle::page_bytes);
 static_assert(NvmeQueueBundle::queue_entries * 16 <= NvmeQueueBundle::page_bytes);
 static_assert(sizeof(NvmeQueueBundle) < 512);
-}
+} // namespace aurora::uefi

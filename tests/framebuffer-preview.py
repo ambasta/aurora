@@ -62,9 +62,13 @@ class Routing(unittest.TestCase):
         self.assertEqual(
             calls[:2], ["python|-B scripts/kernel_framebuffer_preview.py --preflight", "build|framebuffer"]
         )
-        self.assertTrue(calls[2].startswith("python|-B scripts/kernel_framebuffer_preview.py --build-dir "
-                                           + str(self.fixture.repo / "build/native framebuffer")
-                                           + " qemu-system-x86_64 "))
+        self.assertTrue(
+            calls[2].startswith(
+                "python|-B scripts/kernel_framebuffer_preview.py --build-dir "
+                + str(self.fixture.repo / "build/native framebuffer")
+                + " qemu-system-x86_64 "
+            )
+        )
         self.assertNotIn("receipt", calls[2])
         self.assertNotIn("manifest", calls[2])
 

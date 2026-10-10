@@ -154,12 +154,16 @@ auto show_erased(builtin::ConsoleSession& session) -> bool {
 }
 
 auto show_help(builtin::ConsoleSession& session) -> bool {
-    array<u8, 289> text = "help    Show commands\r\nstatus  Show boot state\r\nwrite NAME TEXT   Replace RAM-only file (4 files; name 1-8; text max 49)\r\ncat NAME; rm NAME; ls   Read, remove, list session files\r\nwrite note TEXT; cat note   Separate RAM-only note (max 53)\r\nexit    Close session; note and files are lost\r\n";
+    // Keep this indivisible byte-string token intact to preserve exact terminal output.
+    array<u8,
+        289> text =
+        "help    Show commands\r\nstatus  Show boot state\r\nwrite NAME TEXT   Replace RAM-only file (4 files; name 1-8; text max 49)\r\ncat NAME; rm NAME; ls   Read, remove, list session files\r\nwrite note TEXT; cat note   Separate RAM-only note (max 53)\r\nexit    Close session; note and files are lost\r\n";
     return emit_text(session, borrow_bytes(text));
 }
 
 auto show_status(builtin::ConsoleSession& session) -> bool {
-    array<u8, 92> text = "status: boot self-tests passed; UEFI serial console; timer-woken polling; line capacity=64\r\n";
+    array<u8,
+        92> text = "status: boot self-tests passed; UEFI serial console; timer-woken polling; line capacity=64\r\n";
     return emit_text(session, borrow_bytes(text));
 }
 
@@ -251,10 +255,13 @@ auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleComple
                                                     } else {
                                                         i64 index = 0;
                                                         while (okay && index < reply.size()) {
-                                                            okay = session.put(reply.at(index)) == builtin::ConsolePutResult::success;
+                                                            okay = session.put(reply.at(index))
+                                                                == builtin::ConsolePutResult::success;
                                                             index = index + 1;
                                                         }
-                                                        if (okay) { okay = show_newline(session); }
+                                                        if (okay) {
+                                                            okay = show_newline(session);
+                                                        }
                                                     }
                                                 }
                                             }

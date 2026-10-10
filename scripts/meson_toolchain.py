@@ -14,20 +14,24 @@ IMPLICIT_SEARCH_ENV = ("CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH", "LIBRARY
 def explicit_search():
     for name in IMPLICIT_SEARCH_ENV:
         if name in os.environ:
-            raise ValueError("Unset " + name + "; use explicit Meson include/link flags in a fresh build directory")
+            raise ValueError(
+                "BLOCKED: Unset " + name + "; use explicit Meson include/link flags in a fresh build directory"
+            )
 
 
 def selected_tool(name):
     selected = shutil.which(name)
     if selected is None:
-        raise ValueError("Missing development tool: " + name + "; select the pinned image or local tool prefix on PATH")
+        raise ValueError(
+            "BLOCKED: Missing development tool: " + name + "; select the pinned image or local tool prefix on PATH"
+        )
     return os.path.realpath(selected)
 
 
 def check(cxx, pe_linker=None):
     explicit_search()
     if not cxx:
-        raise ValueError("Missing configured C++ command")
+        raise ValueError("BLOCKED: Missing configured C++ command")
     commands = [
         (cxx, "-dumpfullversion", "16.2.0"),
         ([selected_tool("gcc")], "-dumpfullversion", "16.2.0"),
@@ -45,7 +49,7 @@ def check(cxx, pe_linker=None):
         lines = subprocess.check_output([*command, flag], text=True, timeout=10).splitlines()
         version = lines[0] if lines else ""
         if not version or version.split()[-1] != expected:
-            raise ValueError(shlex.join(command) + ": require " + expected + ", got " + version)
+            raise ValueError("BLOCKED: " + shlex.join(command) + ": require " + expected + ", got " + version)
         print(shlex.join(command) + ": " + version)
 
 
@@ -60,5 +64,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, OSError, subprocess.SubprocessError) as error:
+    except ValueError as error:
         raise SystemExit(str(error))
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SystemExit("BLOCKED: Cannot inspect selected development tools: " + str(error))

@@ -23,7 +23,7 @@ spec = importlib.util.spec_from_file_location(
 graphical = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = graphical
 spec.loader.exec_module(graphical)
-decoder = graphical.load("graphical_controls_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+decoder = graphical.load("graphical_controls_decoder", ROOT / "scripts/kernel_stack.py")
 
 
 REFLECTION = (
@@ -57,6 +57,70 @@ def fixture(specification, analyze=True):
 
 
 class NativeArtifacts(unittest.TestCase):
+    def test_aurora_stack_facts_bind_symbols_edges_and_budget(self):
+        with tempfile.TemporaryDirectory(prefix="aurora-facts-") as directory:
+            path = Path(directory) / "language.stack.json"
+            _, symbols, code, starts = fixture(
+                {"root": [("call", "@leaf"), ("call", "@leaf"), ("ret", "")], "leaf": [("ret", "")]}, analyze=False
+            )
+            facts = {
+                "version": 1,
+                "functions": {
+                    "root": {"local_bytes": 64, "calls": {"leaf": 48}},
+                    "leaf": {"local_bytes": 32, "calls": {}},
+                },
+            }
+
+            def check(value=facts, instructions=code, names=symbols):
+                path.write_text(json.dumps(value))
+                return decoder.aurora_stack_functions(path, symbols, instructions, starts, names)
+
+            functions = check()
+            self.assertEqual(graphical.common.graph_peak(functions, "root")["peak"], 80)
+            self.assertEqual([row["live_bytes"] for row in functions["root"]["calls"]], [48, 48])
+            # Source/local instructions are compiler-trusted; the consumer does
+            # not bring back a second Aurora opcode interpreter.
+            changed = dict(code)
+            leaf = symbols["leaf"].address
+            changed[leaf] = decoder.Instruction(leaf, 1, "compiler-local-op", "")
+            self.assertEqual(check(instructions=changed)["leaf"]["local_peak"], 32)
+            for mutate in (
+                lambda r: r.update(version=True),
+                lambda r: r.update(extra=1),
+                lambda r: r["functions"].pop("leaf"),
+                lambda r: r["functions"]["root"].update(extra=1),
+                lambda r: r["functions"]["root"].update(local_bytes=7),
+                lambda r: r["functions"]["root"].update(local_bytes=15361),
+                lambda r: r["functions"]["root"].update(local_bytes=True),
+                lambda r: r["functions"]["root"].update(calls={}),
+                lambda r: r["functions"]["root"].update(calls={"missing": 8}),
+                lambda r: r["functions"]["root"].update(calls={"leaf": 65}),
+                lambda r: r["functions"]["leaf"].update(calls={"root": 8}),
+            ):
+                changed_facts = deepcopy(facts)
+                mutate(changed_facts)
+                with self.assertRaises(ValueError):
+                    check(changed_facts)
+            with self.assertRaises(ValueError):
+                check(names={"root"})
+            changed = dict(code)
+            changed[0] = decoder.Instruction(0, 1, "call", "*%rax")
+            with self.assertRaises(ValueError):
+                check(instructions=changed)
+            path.write_text('{"version":1,"version":1,"functions":{}}')
+            with self.assertRaises(ValueError):
+                decoder.aurora_stack_functions(path, symbols, code, starts, symbols)
+            path.unlink()
+            with self.assertRaises(OSError):
+                decoder.aurora_stack_functions(path, symbols, code, starts, symbols)
+            functions["leaf"]["calls"] = [dict(target="root", live_bytes=8, kind="call")]
+            with self.assertRaises(ValueError):
+                graphical.common.graph_peak(functions, "root")
+            # The unchanged finite admission cap accepts equality and rejects +1.
+            graphical.verify_stack_budgets(14848, 0, 0, 512)
+            with self.assertRaises(ValueError):
+                graphical.verify_stack_budgets(14849, 0, 0, 512)
+
     def test_native_source_object_and_same_compilation_sidecars(self):
         with tempfile.TemporaryDirectory(prefix="native-admission-") as temporary:
             root = Path(temporary)
@@ -143,94 +207,37 @@ class NativeArtifacts(unittest.TestCase):
             exported.with_suffix(".ci").write_bytes(contents[".ci"])
             check()
 
-    def test_source_and_build_hash_roots_are_explicit_and_confined(self):
+    def test_artifact_hash_roots_are_explicit_and_confined(self):
         common = graphical.common
         with tempfile.TemporaryDirectory(prefix="admission-roots-") as temporary:
             base = Path(temporary)
             source, build = base / "source", base / "meson/kernel-images/uefi/graphical-console"
             source.mkdir()
             build.mkdir(parents=True)
-            (source / "same").write_text("source")
             (build / "same").write_text("build")
             (base / "outside").write_text("outside")
-            (source / "escape").symlink_to(base / "outside")
+            (build / "escape").symlink_to(base / "outside")
             with (
                 patch.object(common, "ROOT", common.ROOT),
                 patch.object(common, "BUILD", common.BUILD),
                 patch.object(common, "RECEIPT", common.RECEIPT),
             ):
                 common.configure_paths(build, source)
-                self.assertEqual(set(common.hashes([source / "same", build / "same"])), {"source:same", "build:same"})
-                self.assertEqual(common.include_directory(), "-Ikernel-images/uefi/graphical-console")
+                self.assertEqual(set(common.hashes([build / "same"])), {"build:same"})
                 self.assertEqual(
                     common.build_artifacts(["payload.o", "payload.su", "payload.ci"])[-1],
                     build / "objects/payload.source.json",
                 )
-                for path in (base / "outside", source / "escape"):
+                for path in (base / "outside", build / "escape"):
                     with self.assertRaises(ValueError):
                         common.hashes([path])
                 with self.assertRaises(ValueError):
-                    common.hashes([source / "same", source / "same"])
+                    common.hashes([build / "same", build / "same"])
                 (base / "link").symlink_to(build, target_is_directory=True)
                 with self.assertRaises(ValueError):
                     common.configure_paths(base / "link", source)
-
-    def test_begin_depfile_tracks_sources_and_directory_membership(self):
-        common = graphical.common
-        helper = (ROOT / "scripts/meson-native-fixture.py").read_text()
-        with tempfile.TemporaryDirectory(prefix="admission dep$# ") as temporary:
-            base = Path(temporary)
-            source, build = base / "checkout", base / "build/kernel-images/uefi/console"
-            build.mkdir(parents=True)
-            files = (
-                "Makefile",
-                "meson.build",
-                "meson_options.txt",
-                "compiler/Makefile",
-                "tests/meson.build",
-                "tests/compiler-test-inventory.json",
-                "kernel/uefi/payload.cpp",
-                "kernel-images/meson.build",
-                "kernel-images/profiles/meson.build",
-                "scripts/meson-native-fixture.py",
-            )
-            for name in files:
-                path = source / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(helper if name.endswith("meson-native-fixture.py") else "source")
-            with (
-                patch.object(common, "ROOT", common.ROOT),
-                patch.object(common, "BUILD", common.BUILD),
-                patch.object(common, "RECEIPT", common.RECEIPT),
-            ):
-                common.configure_paths(build, source)
-                args = SimpleNamespace(
-                    action="begin-build", depfile=build / "begin.d", depfile_target=build / "program-build-start.json"
-                )
-                common.check_depfile_options(args)
-                common.write_build_depfile(args, "program-build-start.json")
-                escaped = common.load("depfile_control_escape", source / "scripts/meson-native-fixture.py").escaped
-                text = args.depfile.read_text()
-                self.assertTrue(text.startswith(escaped(args.depfile_target) + ": "))
-                for path in [
-                    source,
-                    source / "kernel",
-                    source / "kernel/uefi",
-                    source / "kernel-images/profiles",
-                    *(source / name for name in files),
-                ]:
-                    self.assertIn(escaped(path), text)
-                for changes in (dict(action="emit"), dict(depfile_target=None)):
-                    with self.assertRaises(ValueError):
-                        common.check_depfile_options(SimpleNamespace(**(vars(args) | changes)))
-                for changes in (dict(depfile=base / "outside.d"), dict(depfile_target=build / "wrong.json")):
-                    with self.assertRaises(ValueError):
-                        common.write_build_depfile(
-                            SimpleNamespace(**(vars(args) | changes)), "program-build-start.json"
-                        )
                 with self.assertRaises(ValueError):
                     common.configure_paths(base, source)
-                self.assertEqual(common.BUILD, build)
 
 
 class Admission(unittest.TestCase):
@@ -337,12 +344,12 @@ class Admission(unittest.TestCase):
                 {"root": [("popcnt", "%rax,%rax"), (transfer, "@leaf")], "leaf": [("ret", "")]}, analyze=False
             )
             frames, edges = {"root": 32, "leaf": 16}, {("root", "leaf")}
-            result = graphical.cpp_stack_functions(decoder, symbols, code, starts, b"", frames, edges)
-            self.assertEqual(graphical.common.graph_peak(result, frames, "root")["peak"], 48)
+            result = decoder.cpp_stack_functions(symbols, code, starts, b"", frames, edges)
+            self.assertEqual(graphical.common.graph_peak(result, "root")["peak"], 48)
             self.assertEqual(result["root"]["calls"][0]["live_bytes"], 32)
             for changed in (set(), edges | {("leaf", "root")}, {("root", "absent")}, {("unknown", "leaf")}):
                 with self.subTest(edges=changed), self.assertRaises(ValueError):
-                    graphical.cpp_stack_functions(decoder, symbols, code, starts, b"", frames, changed)
+                    decoder.cpp_stack_functions(symbols, code, starts, b"", frames, changed)
             for op, args in (
                 ("call", "*%rax"),
                 ("jmp", "*%rax"),
@@ -355,7 +362,7 @@ class Admission(unittest.TestCase):
                 changed = dict(code)
                 changed[0] = decoder.Instruction(0, 1, op, args)
                 with self.subTest(transfer=(op, args)), self.assertRaises(ValueError):
-                    graphical.cpp_stack_functions(decoder, symbols, changed, starts, b"", frames, edges)
+                    decoder.cpp_stack_functions(symbols, changed, starts, b"", frames, edges)
         for kind in ("dynamic", "dynamic,bounded"):
             with self.subTest(kind=kind), self.assertRaises(ValueError):
                 decoder.stack_rows("kernel/uefi/payload.cpp:1:1:root()\t32\t" + kind)
@@ -372,8 +379,8 @@ class Admission(unittest.TestCase):
             3: decoder.Instruction(3, 1, "ret", ""),
         }
         payload = bytes.fromhex("9c415bc3")
-        check = lambda rows=code, raw=payload: graphical.cpp_stack_functions(
-            decoder, symbols, rows, {0: "root"}, raw, {"root": 16}, set()
+        check = lambda rows=code, raw=payload: decoder.cpp_stack_functions(
+            symbols, rows, {0: "root"}, raw, {"root": 16}, set()
         )
         self.assertEqual((check()["root"]["local_peak"], check()["root"]["inline_stack_bytes"]), (24, 8))
         for op, args, size in (("pop", "%rsp", 2), ("pop", "%r11d", 2), ("nop", "", 2), ("pop", "%r11", 1)):
@@ -387,67 +394,24 @@ class Admission(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check(raw=bytes(changed))
 
-    def test_exact_generated_signed_division_pairs(self):
-        owners = (
-            "__au_v_m1_24kernel_graphical_console_n0__d9draw_cell",
-            "__au_m_m2_7console13session_files_n2_7console12SessionFiles_d6submit",
-        )
-        symbols = {name: decoder.Symbol(name, base, 10, 1, 2) for name, base in zip(owners, (0, 16))}
-        pair = bytes.fromhex("489949f7fb")
-        payload = pair * 2 + b"\x90" * 6 + pair * 2
-        rows = {}
-        for base in (0, 5, 16, 21):
-            rows[base] = decoder.Instruction(base, 2, "cqto", "")
-            rows[base + 2] = decoder.Instruction(base + 2, 3, "idiv", "%r11")
-        verify = lambda symbols, rows, payload: graphical.verify_generated_divisions(decoder, symbols, rows, payload)
-        evidence = verify(symbols, rows, payload)
-        self.assertEqual([item["owner"] for item in evidence], [owners[0]] * 2 + [owners[1]] * 2)
-        with self.assertRaises(ValueError):
-            verify(symbols, rows, None)
-        for position in (*range(10), *range(16, 26)):
-            changed = bytearray(payload)
-            changed[position] ^= 1
-            with self.subTest(position=position), self.assertRaises(ValueError):
-                verify(symbols, rows, changed)
-        for address, row in rows.items():
-            changed = dict(rows)
-            del changed[address]
+    def test_source_modules_and_actual_reflection_inventory(self):
+        for symbol, module in (
+            ("__au_m_m2_3std13binary_buffer_n2_3std14BinaryBuffer64_d5equal", "std.binary_buffer"),
+            ("__au_k_m2_3std5array_n2_3std5array_d5array_t2_u8_v20", "std.array"),
+            ("__au_v_m2_3std7decimal_n1_3std_d18format_decimal_i64", "std.decimal"),
+        ):
+            self.assertEqual(decoder.aurora_module(symbol), module)
+            self.assertIn(module, graphical.LANGUAGE_MODULES)
+        for malformed in ("__au_v_m2_3std99bytes_n0__d1x", "__au_v_m1_0_n0__d1x", "__au_v_m1_3stdx_n0__d1x"):
+            self.assertIsNone(decoder.aurora_module(malformed))
+        helpers = set(REFLECTION) | {"__au_reflect_s8_size", "__au_reflect_s8_field_count"}
+        self.assertEqual(decoder.reflection_inventory(helpers), helpers)
+        for removed in ("aurora_reflect_size", "__au_reflect_s8_size"):
             with self.assertRaises(ValueError):
-                verify(symbols, changed, payload)
-            for args in ["%rsp", "%r14", "(%r11)", "%rax,%rdx", "$0"]:
-                changed = dict(rows)
-                changed[address] = decoder.Instruction(row.address, row.size, row.op, args)
-                with self.subTest(address=address, args=args), self.assertRaises(ValueError):
-                    verify(symbols, changed, payload)
-            for delta in [-1, 1]:
-                changed = dict(rows)
-                changed[address] = decoder.Instruction(row.address + delta, row.size, row.op, row.args)
-                with self.assertRaises(ValueError):
-                    verify(symbols, changed, payload)
-        for owner, base in zip(owners, (0, 16)):
-            for replacement in (None, (base + 1, 9), (base, 7), (base, 9)):
-                changed = dict(symbols)
-                if replacement is None:
-                    del changed[owner]
-                else:
-                    changed[owner] = decoder.Symbol(owner, *replacement, 1, 2)
-                with self.subTest(owner=owner, replacement=replacement), self.assertRaises(ValueError):
-                    verify(changed, rows, payload)
-            changed = dict(symbols)
-            changed["foreign"] = changed.pop(owner)
-            with self.assertRaises(ValueError):
-                verify(changed, rows, payload)
-        # Keeping the total pair count cannot move a third pair to one owner.
-        changed = {owners[0]: decoder.Symbol(owners[0], 0, 21, 1, 2), owners[1]: decoder.Symbol(owners[1], 21, 5, 1, 2)}
-        with self.assertRaises(ValueError):
-            verify(changed, rows, payload)
-        changed = dict(rows)
-        changed[26] = decoder.Instruction(26, 2, "cqto", "")
-        with self.assertRaises(ValueError):
-            verify(symbols, changed, payload + b"\x48\x99")
+                decoder.reflection_inventory(helpers - {removed})
 
     def test_generated_imports_and_module_identity(self):
-        names = graphical.expected_language_functions()  # Fixture construction only.
+        names = set(graphical.LANGUAGE_ROOTS) | set(REFLECTION)  # Fixture construction only.
         imports = [
             decoder.Symbol(name, 0, 0, 0, 0) for name in ["__au_runtime_console_next", "__au_runtime_display_pixel"]
         ]
@@ -480,7 +444,7 @@ class Admission(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "module/function"):
                 verify(functions=names | {extra})
         for missing in sorted(names):
-            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "module/function inventory"):
+            with self.subTest(missing=missing), self.assertRaises(ValueError):
                 verify(functions=names - {missing})
         for table, reason in [
             (bindings.replace("LOCAL DEFAULT", "GLOBAL DEFAULT"), "private ELF binding"),
@@ -588,8 +552,7 @@ class Admission(unittest.TestCase):
                 graphical.verify_reflection_body(decoder, foreign, baseline, payload)
 
     def test_reflection_helper_exact_inventory_and_binding(self):
-        self.assertEqual(graphical.REFLECTION_HELPERS, frozenset(REFLECTION))
-        names = graphical.expected_language_functions()
+        names = set(graphical.LANGUAGE_ROOTS) | set(REFLECTION)
         imports = [
             decoder.Symbol(name, 0, 0, 0, 0) for name in ("__au_runtime_console_next", "__au_runtime_display_pixel")
         ]
@@ -802,11 +765,11 @@ class Admission(unittest.TestCase):
             functions, *_ = fixture(graph)
             with self.assertRaises(ValueError):
                 for name in functions:
-                    graphical.common.graph_peak(functions, {}, name)
+                    graphical.common.graph_peak(functions, name)
 
     def test_fixed_frame_loop_and_stack_growth(self):
         functions, *_ = fixture({"fixed": [("test", "%eax,%eax"), ("jne", "@fixed"), ("ret", "")]})
-        self.assertEqual(graphical.common.graph_peak(functions, {}, "fixed")["peak"], 8)
+        self.assertEqual(graphical.common.graph_peak(functions, "fixed")["peak"], 8)
         with self.assertRaisesRegex(ValueError, "Inconsistent or unbounded stack"):
             fixture({"growing": [("sub", "$0x8,%rsp"), ("jmp", "@growing")]})
 
@@ -918,7 +881,7 @@ class Admission(unittest.TestCase):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 graphical.verify_stack_budgets(*values)
 
-    def test_generated_and_assembly_stack_forms_still_fail_closed(self):
+    def test_handwritten_assembly_stack_forms_still_fail_closed(self):
         for op, args in [
             ("push", "(%rsp)"),
             ("push", "0x10(%rip)"),
@@ -1031,291 +994,122 @@ class Admission(unittest.TestCase):
         self.assertEqual(graphical.CPP_OBJECTS, ("payload", "acpi", "pci", "runtime", "graphical-console"))
         self.assertEqual(graphical.ASSEMBLY_OBJECTS, ("payload-entry", "console-entry", "language", "memory"))
 
-    def test_begin_invalidates_before_fallible_checks(self):
-        with tempfile.TemporaryDirectory(prefix="graphical-invalidation-") as directory:
-            root = Path(directory)
-            names = [
-                "graphical-console-admission.json",
-                "graphical-console-build.json",
-                "graphical-console-build-start.json",
-            ]
-            sentinel = root / "payload.elf"
-            sentinel.write_bytes(b"preserved prior image")
-
-            def stale():
-                for name in names:
-                    (root / name).write_text("previous metadata")
-
-            with patch.object(graphical, "BUILD", root), patch.object(graphical, "RECEIPT", root / names[0]):
-                stale()
-                with self.assertRaisesRegex(ValueError, "Missing exact graphical build controls"):
-                    graphical.begin("graphical-console", "compiler", "cxx", [])
-                self.assertTrue(all(not (root / name).exists() for name in names))
-                stale()
-                with (
-                    patch.object(graphical, "source_files", return_value=[]),
-                    patch.object(graphical.common, "hashes", return_value={}),
-                    patch.object(graphical.common, "executable", side_effect=RuntimeError("tool unavailable")),
-                ):
-                    with self.assertRaisesRegex(RuntimeError, "tool unavailable"):
-                        graphical.begin(
-                            "graphical-console", "compiler", "cxx", graphical.expected_flags("graphical-console")
-                        )
-                self.assertTrue(all(not (root / name).exists() for name in names))
-                stale()
-                with (
-                    patch.object(Path, "unlink", side_effect=PermissionError("read-only metadata")),
-                    patch.object(graphical.common, "executable") as executable,
-                ):
-                    with self.assertRaisesRegex(PermissionError, "read-only metadata"):
-                        graphical.begin(
-                            "graphical-console", "compiler", "cxx", graphical.expected_flags("graphical-console")
-                        )
-                    executable.assert_not_called()
-                self.assertEqual(sentinel.read_bytes(), b"preserved prior image")
-
-    def test_mode_flags_sources_artifacts_and_review_identity(self):
+    def test_checked_artifacts_and_semantics(self):
         with tempfile.TemporaryDirectory(prefix="graphical-controls-") as directory:
             root = Path(directory)
-            paths = {name: root / name for name in ["source", "compiler", "cxx", "payload.bin", "tool", "pe_linker"]}
-            for name, path in paths.items():
-                path.write_text("original " + name)
+            output = root / "payload.bin"
+            output.write_bytes(b"checked image")
 
             def hashes(items):
                 return {str(path.relative_to(root)): graphical.digest(path) for path in items}
 
-            record = dict(
-                schema="aurora-graphical-console-build-v1",
-                mode="graphical-console",
-                flags=graphical.expected_flags("graphical-console"),
-                translation_unit_flags=deepcopy(graphical.TU_FLAGS),
-                objects=["payload.bin"],
-                source_sha256=hashes([paths["source"]]),
-                compiler=dict(path=str(paths["compiler"]), sha256=graphical.digest(paths["compiler"])),
-                cxx=dict(path=str(paths["cxx"]), sha256=graphical.digest(paths["cxx"])),
-                tools={
-                    name: dict(path=str(paths["tool"]), sha256=graphical.digest(paths["tool"]))
-                    for name in graphical.TOOLS
-                },
-                pe_linker=dict(path=str(paths["pe_linker"]), sha256=graphical.digest(paths["pe_linker"])),
-                output_sha256=hashes([paths["payload.bin"]]),
-            )
-            # The actual shared-session header changes in an isolated source tree.
-            # Reintroducing the old five-file token gate must reject this control.
-            for name in (
-                "kernel/graphical-session.hpp",
-                "kernel/console-session.hpp",
-                "kernel/display-session.hpp",
-                "kernel/uefi/graphical-console.cpp",
-                "kernel/uefi/graphical-capture-policy.hpp",
-            ):
-                target = root / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes((ROOT / name).read_bytes())
-            for name in ("scripts", "tests"):
-                (root / name).symlink_to(ROOT / name, target_is_directory=True)
-            paths["source"] = root / "kernel/graphical-session.hpp"
-            record["source_sha256"] = hashes([paths["source"]])
-            build = root / "graphical-console-build.json"
-            build.write_text(json.dumps(record))
             receipt = root / "graphical-console-admission.json"
             data = dict(
                 schema="aurora-graphical-console-admission-v6",
                 mode="graphical-console",
                 status="requires-independent-review",
                 clock="tcg-original-clock",
-                build=record,
-                image={"independent_image_result": 1},
-                stack={"independent_stack_result": 456},
-                sha256=hashes([paths["source"], paths["payload.bin"], build]),
+                image={"image_result": 1},
+                stack={"stack_result": 456},
+                sha256=hashes([output]),
             )
             receipt.write_text(json.dumps(data))
-            real_image_evidence = graphical.image_evidence
             with (
-                patch.object(graphical, "ROOT", root),
                 patch.object(graphical, "BUILD", root),
                 patch.object(graphical, "RECEIPT", receipt),
-                patch.object(graphical, "build_files", return_value=[paths["payload.bin"]]),
-                patch.object(graphical, "source_files", return_value=[paths["source"]]),
+                patch.object(graphical, "build_files", return_value=[output]),
                 patch.object(graphical.common, "hashes", side_effect=hashes),
-                patch.object(graphical.common, "executable", side_effect=lambda name: record["tools"][name]),
-                patch.object(graphical, "image_evidence", return_value={"independent_image_result": 1}),
-                patch.object(graphical, "stack_evidence", return_value={"independent_stack_result": 456}),
-                patch.dict(os.environ, {"GRAPHICAL_CONSOLE_REVIEW_SHA256": graphical.digest(receipt)}),
+                patch.object(graphical, "image_evidence", return_value=data["image"]),
+                patch.object(graphical, "stack_evidence", return_value=data["stack"]),
             ):
-                graphical.verify_inputs(record, "graphical-console")
-                graphical.checked("graphical-console")
-                graphical.reviewed("graphical-console")
-                for key in ["source", "compiler", "cxx", "payload.bin", "tool", "pe_linker"]:
-                    path = paths[key]
-                    saved = path.read_bytes()
-                    path.write_bytes(saved + b" drift")
-                    with self.subTest(drift=key), self.assertRaises(ValueError):
-                        graphical.checked("graphical-console")
-                    path.write_bytes(saved)
-                for mode in ["graphical-console-capture", "console", "framebuffer", "graphical-console-stale"]:
-                    with self.assertRaises(ValueError):
-                        graphical.checked(mode)
-                for flag in [
-                    "-DAURORA_UEFI_CONSOLE",
-                    "-DAURORA_UEFI_FRAMEBUFFER",
-                    "-DAURORA_UEFI_GRAPHICAL_CAPTURE",
-                    "-O0",
-                    "-DUNKNOWN",
-                ]:
-                    changed = deepcopy(record)
-                    changed["flags"].append(flag)
-                    with self.subTest(flag=flag), self.assertRaises(ValueError):
-                        graphical.verify_inputs(changed, "graphical-console")
-                for mutate in [
-                    lambda r: r["flags"].pop(),
-                    lambda r: r["flags"].reverse(),
-                    lambda r: r["objects"].append("console.o"),
-                    lambda r: r["translation_unit_flags"].update(runtime=[]),
-                    lambda r: r.update(schema="aurora-framebuffer-build-v1"),
-                ]:
-                    changed = deepcopy(record)
-                    mutate(changed)
-                    with self.assertRaises(ValueError):
-                        graphical.verify_inputs(changed, "graphical-console")
-                for pin in ["", "0" * 64, "A" * 64, graphical.digest(receipt)[:-1]]:
-                    with (
-                        patch.dict(os.environ, {"GRAPHICAL_CONSOLE_REVIEW_SHA256": pin}),
-                        self.assertRaises(ValueError),
-                    ):
-                        graphical.reviewed("graphical-console")
-                for version in (1, 2, 3, 4, 5):
-                    old = dict(data, schema=f"aurora-graphical-console-admission-v{version}")
-                    receipt.write_text(json.dumps(old))
-                    with patch.dict(os.environ, {"GRAPHICAL_CONSOLE_REVIEW_SHA256": graphical.digest(receipt)}):
-                        for check in (graphical.checked, graphical.reviewed):
-                            with self.subTest(version=version, check=check.__name__):
-                                with self.assertRaisesRegex(ValueError, "Unexpected graphical receipt"):
-                                    check("graphical-console")
-                receipt.write_text(json.dumps(data))
-                # A caller cannot relabel automatic evidence as independent acceptance.
-                changed = deepcopy(data)
-                changed["status"] = "accepted"
-                receipt.write_text(json.dumps(changed))
+                self.assertEqual(graphical.checked("graphical-console"), data)
+                output.write_bytes(b"changed image")
                 with self.assertRaises(ValueError):
                     graphical.checked("graphical-console")
-                receipt.write_text(json.dumps(data))
-                for key in list(data):
-                    changed = deepcopy(data)
-                    del changed[key]
-                    receipt.write_text(json.dumps(changed))
-                    with self.subTest(missing_receipt_key=key), self.assertRaises(ValueError):
-                        graphical.checked("graphical-console")
-                for key, value in [
+                output.write_bytes(b"checked image")
+                for mode in ["graphical-console-capture", "console", "framebuffer", "graphical-console-stale"]:
+                    with self.subTest(mode=mode), self.assertRaises(ValueError):
+                        graphical.checked(mode)
+                for key, value in (
                     ("schema", "aurora-graphical-console-admission-v1"),
+                    ("status", "accepted"),
+                    ("clock", "accelerated"),
                     ("image", {}),
                     ("stack", {}),
-                    ("image", {"independent_image_result": True}),
-                    ("stack", {"independent_stack_result": 0}),
-                    ("extra", True),
-                ]:
-                    changed = deepcopy(data)
-                    changed[key] = value
-                    receipt.write_text(json.dumps(changed))
-                    with self.subTest(forged_receipt_key=key, value=value), self.assertRaises(ValueError):
+                    ("image", {"image_result": True}),
+                    ("stack", {"stack_result": 0}),
+                    ("sha256", {}),
+                    ("sha256", {**data["sha256"], "foreign": "0" * 64}),
+                ):
+                    receipt.write_text(json.dumps(data | {key: value}))
+                    with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                         graphical.checked("graphical-console")
-                for raw in [
-                    '{"mode":"graphical-console","mode":"graphical-console"}',
-                    '{"nested":{"same":1,"same":1}}',
-                    '{"number":NaN}',
-                    '{"number":Infinity}',
-                ]:
-                    receipt.write_text(raw)
-                    with self.assertRaises(ValueError):
-                        graphical.read_json(receipt)
                 receipt.write_text(json.dumps(data))
-                build.write_text(json.dumps(dict(record, objects=["payload.bin", "console.o"])))
+                self.assertEqual(graphical.checked("graphical-console"), data)
+
+    def test_unambiguous_json_and_failed_image_invalidates_admission(self):
+        with tempfile.TemporaryDirectory(prefix="graphical-invalid-image-") as directory:
+            root = Path(directory)
+            receipt = root / "graphical-console-admission.json"
+            for raw in (
+                '{"mode":"graphical-console","mode":"graphical-console"}',
+                '{"nested":{"same":1,"same":1}}',
+                '{"number":NaN}',
+                '{"number":Infinity}',
+            ):
+                receipt.write_text(raw)
                 with self.assertRaises(ValueError):
-                    graphical.checked("graphical-console")
-                build.write_text(json.dumps(record))
-                original = paths["source"].read_text()
-                changed = original.replace(
-                    "if (active_ || incoming != &trusted)", "if (!incoming || active_ || incoming != &trusted)"
-                )
-                self.assertNotEqual(changed, original, "Exercise a real shared-session implementation edit")
-                paths["source"].write_text(changed)
-                with self.assertRaisesRegex(ValueError, "Graphical source changed since begin"):
-                    graphical.provenance("graphical-console")
-                # Re-enter the real image reader after fresh provenance. Invalid ELF
-                # must fail there, not at a source-token gate; no compiler/guest runs.
-                (root / "payload.elf").write_bytes(b"invalid ELF")
-                pe = root / "esp/EFI/BOOT/BOOTX64.EFI"
-                pe.parent.mkdir(parents=True)
-                pe.write_bytes(b"invalid PE")
+                    graphical.read_json(receipt)
+            (root / "payload.bin").write_bytes(b"invalid image")
+            (root / "payload.elf").write_bytes(b"invalid ELF")
+            pe = root / "esp/EFI/BOOT/BOOTX64.EFI"
+            pe.parent.mkdir(parents=True)
+            pe.write_bytes(b"invalid PE")
+            with (
+                patch.object(graphical, "BUILD", root),
+                patch.object(graphical.common, "BUILD", root),
+                patch.object(graphical, "RECEIPT", receipt),
+                patch.object(graphical, "build_files", return_value=[root / "payload.bin", root / "payload.elf", pe]),
+            ):
                 for mode in ("graphical-console", "graphical-console-capture"):
-                    fresh = dict(
-                        record, mode=mode, flags=graphical.expected_flags(mode), source_sha256=hashes([paths["source"]])
-                    )
-                    build.write_text(json.dumps(fresh))
-                    graphical.provenance(mode)
-                    receipt.write_text(json.dumps(data))
-                    with patch.object(graphical, "image_evidence", side_effect=real_image_evidence):
-                        with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, "Payload ELF architecture"):
-                            graphical.emit(mode)
-                    self.assertFalse(receipt.exists(), "Failed fresh image checks must remove stale PASS")
+                    receipt.write_text("stale admission")
+                    with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, "Payload ELF architecture"):
+                        graphical.emit(mode)
+                    self.assertFalse(receipt.exists(), "Failed fresh image checks must remove stale admission")
 
 
 class CaptureAdmission(unittest.TestCase):
     capture = "graphical-console-capture"
 
-    def test_capture_structure_gate_cannot_be_cleared_by_source_or_pin(self):
+    def test_capture_structure_gate_is_required_by_emit_and_checked(self):
         graphical.require_capture_structure("graphical-console")
         with self.assertRaisesRegex(ValueError, "Missing current capture structure evidence"):
             graphical.require_capture_structure(self.capture)
         with tempfile.TemporaryDirectory(prefix="graphical-capture-pending-") as directory:
             receipt = Path(directory) / "admission.json"
-            receipt.write_text("stale receipt")
+            receipt.write_text("stale admission")
             with (
                 patch.object(graphical, "RECEIPT", receipt),
-                patch.object(graphical, "provenance", return_value={}),
-                patch.object(graphical, "image_evidence", return_value={"source": "accepted"}),
+                patch.object(graphical, "image_evidence", return_value={"image_result": 1}),
                 patch.object(graphical, "stack_evidence", return_value={"normal": 1}),
-                patch.dict(os.environ, {"GRAPHICAL_CONSOLE_REVIEW_SHA256": "0" * 64}),
+                patch.object(graphical, "build_files", return_value=[]),
+                patch.object(graphical.common, "hashes", return_value={}),
             ):
                 with self.assertRaisesRegex(ValueError, "Missing current capture structure evidence"):
                     graphical.emit(self.capture)
-                self.assertFalse(receipt.exists(), "A source check cannot leave a capture admission receipt")
+                self.assertFalse(receipt.exists(), "Missing structure cannot leave a capture admission report")
                 data = dict(
                     schema="aurora-graphical-console-admission-v6",
                     mode=self.capture,
                     status="requires-independent-review",
                     clock="tcg-original-clock",
-                    build={},
-                    image={"source": "accepted"},
+                    image={"image_result": 1},
                     stack={"normal": 1},
                     sha256={},
                 )
                 receipt.write_text(json.dumps(data))
-                with (
-                    patch.object(graphical.common, "hashes", return_value={}),
-                    patch.dict(os.environ, {"GRAPHICAL_CONSOLE_REVIEW_SHA256": graphical.digest(receipt)}),
-                ):
-                    for check in (graphical.checked, graphical.reviewed):
-                        with (
-                            self.subTest(check=check.__name__),
-                            self.assertRaisesRegex(ValueError, "Missing current capture structure evidence"),
-                        ):
-                            check(self.capture)
-
-    def test_unknown_emission_reports_original_bytes_and_unproved_effect(self):
-        symbol = decoder.Symbol("unreviewed_capture_emission", 0, 5, 1, 2)
-        rows = {
-            0: decoder.Instruction(0, 4, "enter", "$0x20,$0"),
-            4: decoder.Instruction(4, 1, "ret", ""),
-        }
-        with self.assertRaisesRegex(ValueError, "Unknown instruction semantics: enter") as rejected:
-            decoder.analyze_function(symbol, rows, {0: symbol.name})
-        report = graphical.unreviewed_linked_function(symbol, rows, b"\xc8\x20\0\0\xc3", rejected.exception)
-        self.assertIn(symbol.name, report)
-        self.assertIn("call/stack effect remains unproved", report)
-        self.assertIn('"bytes":"c8200000"', report)
-        self.assertIn('"operands":"$0x20,$0"', report)
-        self.assertNotIn('"operation":"ret"', report)
+                with self.assertRaisesRegex(ValueError, "Missing current capture structure evidence"):
+                    graphical.checked(self.capture)
 
 
 class CaptureStructure(unittest.TestCase):
@@ -1471,28 +1265,6 @@ class CaptureStructure(unittest.TestCase):
             changed[key] = value
             with self.subTest(field=key), self.assertRaises(ValueError):
                 graphical.require_capture_structure("graphical-console-capture", changed)
-
-    def test_all_console_profiles_use_shared_scalar_stack_rules(self):
-        for profile in ("program", "service", "framebuffer", "graphical"):
-            shared = graphical.load("shared_scalar_" + profile, ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
-            shared.configure_console(profile)
-            self.assertTrue(shared.CONSOLE_SCALAR <= shared.NEUTRAL)
-            self.assertTrue({"testb", "testl", "testw"} <= shared.READ_ONLY)
-            symbol = shared.Symbol("pci_byte_flag", 0, 2, 1, 2)
-            for op, args, accepted in (
-                ("orb", "$0x1,(%rax)", True),
-                ("orb", "$0x1,%spl", False),
-                ("unknown_new_instruction", "", False),
-            ):
-                code = {0: shared.Instruction(0, 1, op, args), 1: shared.Instruction(1, 1, "ret", "")}
-                with self.subTest(profile=profile, operation=op, operands=args):
-                    if accepted:
-                        self.assertEqual(shared.analyze_function(symbol, code, {0: symbol.name})["local_peak"], 8)
-                    else:
-                        with self.assertRaises(ValueError):
-                            shared.analyze_function(symbol, code, {0: symbol.name})
-            with self.assertRaises(ValueError):
-                shared.configure_console("unknown")
 
 
 if __name__ == "__main__":

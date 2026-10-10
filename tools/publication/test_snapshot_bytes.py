@@ -128,8 +128,18 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), b"original\r\n")
 
     def test_delta_add_change_mode_delete_reconstructs_target(self):
-        base = [self.entry("old", b"remove"), self.entry("same", b"same"), self.entry("run", b"#!/bin/sh\n"), self.entry("serial", b"pass\n")]
-        target = [self.entry("new", b"\0"), self.entry("same", b"same"), self.entry("run", b"#!/bin/sh\n", "100755"), self.entry("serial", b"pass\r\n")]
+        base = [
+            self.entry("old", b"remove"),
+            self.entry("same", b"same"),
+            self.entry("run", b"#!/bin/sh\n"),
+            self.entry("serial", b"pass\n"),
+        ]
+        target = [
+            self.entry("new", b"\0"),
+            self.entry("same", b"same"),
+            self.entry("run", b"#!/bin/sh\n", "100755"),
+            self.entry("serial", b"pass\r\n"),
+        ]
         delta = sb.make_delta(base, target, sb.git_tree_id(base))
         self.assertEqual(len(delta), 4)
         self.assertEqual(sb.index_entries(sb.apply_delta(base, delta)), sb.index_entries(target))
@@ -151,10 +161,19 @@ class SnapshotTests(unittest.TestCase):
     def test_tree_hash_matches_git_for_ordering_unicode_modes_and_symlink(self):
         repo = self.root / "objects.git"
         subprocess.run(["git", "init", "--bare", "--quiet", str(repo)], check=True)
-        entries = [self.entry("dir/file", b"inside\r\n"), self.entry("dir.txt", b"nearby"), self.entry("dir0", b"next"), self.entry("\u03bb", "\u2603".encode()), self.entry("run", b"#!/bin/sh\n", "100755"), self.entry("link", b"dir/file", "120000")]
+        entries = [
+            self.entry("dir/file", b"inside\r\n"),
+            self.entry("dir.txt", b"nearby"),
+            self.entry("dir0", b"next"),
+            self.entry("\u03bb", "\u2603".encode()),
+            self.entry("run", b"#!/bin/sh\n", "100755"),
+            self.entry("link", b"dir/file", "120000"),
+        ]
         root = {}
         for entry in entries:
-            sha = subprocess.check_output(["git", "--git-dir", str(repo), "hash-object", "-w", "--stdin"], input=entry["content"].encode()).strip()
+            sha = subprocess.check_output(
+                ["git", "--git-dir", str(repo), "hash-object", "-w", "--stdin"], input=entry["content"].encode()
+            ).strip()
             parent = root
             parts = entry["path"].split("/")
             for part in parts[:-1]:
@@ -166,7 +185,9 @@ class SnapshotTests(unittest.TestCase):
             for name, value in directory.items():
                 mode, kind, sha = (b"040000", b"tree", git_tree(value)) if isinstance(value, dict) else value
                 records.append(mode + b" " + kind + b" " + sha + b"\t" + name.encode() + b"\0")
-            return subprocess.check_output(["git", "--git-dir", str(repo), "mktree", "-z"], input=b"".join(records)).strip()
+            return subprocess.check_output(
+                ["git", "--git-dir", str(repo), "mktree", "-z"], input=b"".join(records)
+            ).strip()
 
         self.assertEqual(sb.git_tree_id(entries), git_tree(root).decode())
 

@@ -1,7 +1,10 @@
 module ipc_service;
 auto aurora_user_main(i64 phase, i64 value, i64 second) -> i64 {
     if (phase == 4) {
-        const array<i64, 2> values = {20, 22};
+        const array<i64, 2> values = {
+            20,
+            22
+        };
         return values[value];
     }
     return value + second;

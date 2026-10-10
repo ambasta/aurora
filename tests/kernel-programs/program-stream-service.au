@@ -1,15 +1,36 @@
 module program_stream_service;
 import kernel.note_read;
 auto aurora_user_main(i64 phase, i64 value, i64 ordinal, kernel::NoteRead64 note) -> i64 {
-    if (phase == 5) { i64 toggle = 0; while (true) { toggle = 1 - toggle; } }
-    if (phase == 4) { const array<i64, 2> items = {1, 2}; return items[10]; }
+    if (phase == 5) {
+        i64 toggle = 0;
+        while (true) {
+            toggle = 1 - toggle;
+        }
+    }
+    if (phase == 4) {
+        const array<i64, 2> items = {
+            1,
+            2
+        };
+        return items[10];
+    }
     if (phase == 11) {
-        if (value != 1 || ordinal < 0 || ordinal > 53) { return 4; }
-        if (note.size() < 0) { return 3; }
-        if (ordinal == note.size()) { return 2; }
-        if (ordinal > note.size()) { return 4; }
+        if (value != 1 || ordinal < 0 || ordinal > 53) {
+            return 4;
+        }
+        if (note.size() < 0) {
+            return 3;
+        }
+        if (ordinal == note.size()) {
+            return 2;
+        }
+        if (ordinal > note.size()) {
+            return 4;
+        }
         return i64(1u64 | (u64(note.at(ordinal)) << 8));
     }
-    if (phase != 1 || ordinal < 0 || ordinal >= 64 || value < 32 || value > 126) { return -1; }
+    if (phase != 1 || ordinal < 0 || ordinal >= 64 || value < 32 || value > 126) {
+        return -1;
+    }
     return value;
 }

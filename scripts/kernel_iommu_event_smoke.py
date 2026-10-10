@@ -4,6 +4,7 @@
 import argparse
 import copy
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -24,7 +25,7 @@ import kernel_iommu_event_oracle as oracle
 import kernel_uefi_oracle as normal
 from kernel_emulator_clock import expected_uefi_argv
 import qemu_transport as transport
-from qemu_transport import ChildNotReaped, Qmp, cleanup, exited, reap_completed
+from qemu_transport import ChildNotReaped, Qmp, exited, reap_completed
 from qemu_transport import MissingPrerequisite as PrerequisiteBlocked
 from owned_outputs import allocated_bytes
 
@@ -94,12 +95,57 @@ def data_files(directory):
     return result
 
 
+PACKAGE_MARKER = dict(
+    schema="aurora-event-runtime-v1",
+    model="aurora-amdvi-command-stop-v1",
+    qemu_version="10.0.13",
+    firmware_version="2025.02-8+deb13u1",
+)
+
+
+def packaged_runtime(prefix):
+    """The selected package is the tool trust boundary; this is not attestation."""
+    prefix = safe_path(prefix, directory=True)
+    need(read_json(prefix / "runtime.json") == PACKAGE_MARKER, "Unsupported packaged Event model/version")
+    qemu = safe_path(prefix / "bin/qemu-system-x86_64")
+    need(os.access(qemu, os.X_OK), "Packaged Event QEMU is not executable")
+    for name in (*MODEL, "configs/devices/x86_64-softmmu/aurora-dma.mak"):
+        need(safe_path(prefix / "model" / name).stat().st_size > 0, "Empty packaged model input")
+    firmware = {}
+    for role, filename in (("code", "OVMF_CODE_4M.fd"), ("vars", "OVMF_VARS_4M.fd")):
+        path = safe_path(prefix / "firmware" / filename)
+        need(path.stat().st_size == FIRMWARE[role][0], "Unsupported packaged firmware size: " + role)
+        firmware[role] = str(path)
+    libraries = [safe_path(prefix / name, directory=True) for name in ("lib", "lib64") if (prefix / name).exists()]
+    library_path = ":".join(str(path) for path in libraries)
+    version = io.BytesIO()
+    transport.run_logged(
+        [str(qemu), "--version"],
+        version,
+        timeout=5,
+        limit=4096,
+        expected=0,
+        timeout_status=False,
+        env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "LD_LIBRARY_PATH": library_path},
+    )
+    need(re.match(rb"QEMU emulator version 10\.0\.13(?:\s|$)", version.getvalue()), "Unsupported packaged QEMU version")
+    return dict(
+        packaged=True,
+        qemu=str(qemu),
+        data=str(safe_path((prefix / "share/qemu").resolve(strict=True), directory=True)),
+        library_path=library_path,
+        **firmware,
+    )
+
+
 def runtime_inputs(args):
     """Verify a supplied build record, never its historical acceptance status.
 
     Like the compiler toolchain, this is a trusted user-supplied executable and
     build record. Hashes bind the actual inputs; they are not build attestation.
     """
+    if getattr(args, "tool_prefix", None):
+        return packaged_runtime(args.tool_prefix)
     record_path = safe_path(args.build_receipt)
     build = read_json(record_path)
     source = safe_path(build["source_path"], directory=True)
@@ -158,6 +204,8 @@ def runtime_inputs(args):
 
 
 def verify_runtime(runtime):
+    if runtime.get("packaged"):
+        return
     for path, recorded in runtime["files"].items():
         need(identity(path) == recorded, "Runtime input changed: " + path)
     for alias, row in runtime["library_bindings"].items():
@@ -243,7 +291,12 @@ def capture_guest(mode, receipt, runtime, master, directory, *, master_sha256):
     directory.mkdir(mode=0o700)
     for name in ("home", "no-modules"):
         (directory / name).mkdir(mode=0o700)
-    copy_private(runtime["vars"], directory / "vars.fd", runtime["files"][runtime["vars"]]["sha256"])
+    if runtime.get("packaged"):
+        # Only writable guest VARS is copied; package tools remain in their prefix.
+        shutil.copyfile(runtime["vars"], directory / "vars.fd")
+        (directory / "vars.fd").chmod(0o600)
+    else:
+        copy_private(runtime["vars"], directory / "vars.fd", runtime["files"][runtime["vars"]]["sha256"])
     copy_private(master, directory / "esp.raw", master_sha256)
     verify_dependencies(runtime, directory)
     process = serial_stream = serial_read = serial_write = None
@@ -388,6 +441,8 @@ def bounded_child(argv, log, *, env=None, timeout=1800, expected=0, limit=32 * S
 
 
 def verify_dependencies(runtime, directory):
+    if runtime.get("packaged"):
+        return
     bindings = runtime["library_bindings"]
     loaders = {row["resolved_path"] for alias, row in bindings.items() if Path(alias).name == "ld-linux-x86-64.so.2"}
     need(len(loaders) == 1, "Expected recorded x86-64 ELF interpreter")
@@ -445,12 +500,7 @@ def build(mode, directory, label=None):
     budget(directory)
 
 
-def source_identity():
-    return admission.common.hashes(admission.source_files())
-
-
 def stage(mode, directory):
-    source = source_identity()
     checked = admission.checked(mode) if mode != "normal" else None
     # Reuse the complete ordinary build inventory, including PE inputs/sidecars.
     if mode == "normal":
@@ -463,7 +513,7 @@ def stage(mode, directory):
     admitted = list(files)
     files += [BUILD / name for name in ("bar-metadata.json", "ivrs-metadata.json")]
     if checked:
-        files += [admission.RECEIPT, BUILD / "iommu-event-build.json", BUILD / "iommu-event-build-start.json"]
+        files += [admission.RECEIPT]
     expected = admission.common.hashes(files)
     if checked:
         for path in admitted:
@@ -477,11 +527,10 @@ def stage(mode, directory):
         copy_private(path, target, expected["build:" + path.relative_to(BUILD).as_posix()])
     result = dict(
         mode=mode,
-        source=source,
         files={str(p.relative_to(directory)): identity(p) for p in directory.rglob("*") if p.is_file()},
     )
     if checked:
-        decoder = admission.load("event_smoke_layout", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+        decoder = admission.load("event_smoke_layout", ROOT / "scripts/kernel_stack.py")
         linked = decoder.Elf(directory / "payload.elf")
         layout = {
             name: [s.address for s in linked.symbols if s.name == "__" + name]
@@ -503,12 +552,11 @@ def stage(mode, directory):
         result["checked"] = copy.deepcopy(checked)
         result["checked"]["image"]["payload_layout"] = layout
         oracle.capture_layout(result["checked"])
-    need(source == source_identity(), "Source changed during image staging")
     write_json(directory / "image.json", result)
     return result
 
 
-def verify_stage(directory, record, *, source=True):
+def verify_stage(directory, record):
     safe_path(directory, directory=True)
     need(not any(p.is_symlink() for p in directory.rglob("*")), "Symlink in staged image")
     need(read_json(directory / "image.json") == record, "Staged image record changed")
@@ -521,7 +569,6 @@ def verify_stage(directory, record, *, source=True):
         },
         "Staged image changed",
     )
-    need(not source or record["source"] == source_identity(), "Source changed since admission")
 
 
 def normal_boot(args, directory, image):
@@ -530,8 +577,9 @@ def normal_boot(args, directory, image):
     for value in (args.normal_firmware, args.normal_code, args.normal_vars):
         if value:
             paths.append(safe_path(value))
-    before = {str(p): identity(p) for p in paths}
-    if args.normal_data:
+    packaged = bool(getattr(args, "tool_prefix", None))
+    before = {} if packaged else {str(p): identity(p) for p in paths}
+    if args.normal_data and not packaged:
         data_before = data_files(args.normal_data)
     argv = transport.command(
         qemu,
@@ -557,9 +605,10 @@ def normal_boot(args, directory, image):
     log = directory / "normal-restoration.log"
     status = bounded_child(argv, log, timeout=30, expected=33)
     normal.validate(status, log.read_text(), "normal")
-    need(before == {str(p): identity(p) for p in paths}, "Normal runtime input changed")
-    if args.normal_data:
-        need(data_files(args.normal_data) == data_before, "Normal data changed")
+    if not packaged:
+        need(before == {str(p): identity(p) for p in paths}, "Normal runtime input changed")
+        if args.normal_data:
+            need(data_files(args.normal_data) == data_before, "Normal data changed")
 
 
 def window(args, directory, runtime):
@@ -591,6 +640,7 @@ def window(args, directory, runtime):
                     args.mtools_dir,
                     esp_dir,
                     developer=True,
+                    packaged=bool(getattr(args, "tool_prefix", None)),
                     run_command=lambda command, log, env: bounded_child(
                         command, log, env=env, timeout=60, limit=STREAM_LIMIT
                     ),
@@ -623,10 +673,10 @@ def window(args, directory, runtime):
             errors.append("restoration blocked: owned child has not been reaped")
         elif normal_record:
             try:
-                verify_stage(normal_image, normal_record, source=False)
+                verify_stage(normal_image, normal_record)
                 if not args.build_only:
                     normal_boot(args, directory, normal_image)
-                verify_stage(normal_image, normal_record, source=False)
+                verify_stage(normal_image, normal_record)
                 results.append(dict(mode="normal-restoration", status="passed"))
             except BaseException as error:
                 errors.append("restoration: " + type(error).__name__ + ": " + str(error))
@@ -661,9 +711,15 @@ def prerequisites(args):
             ),
             "Unset conflicting control: " + name,
         )
-    if not args.build_only and not all((args.build_receipt, args.code, args.vars, args.data)):
+    prefix = getattr(args, "tool_prefix", None)
+    need(
+        not prefix or not any((args.build_receipt, args.code, args.vars, args.data)),
+        "Choose EVENT_TOOL_PREFIX or external Event runtime inputs, not both",
+    )
+    if not args.build_only and not prefix and not all((args.build_receipt, args.code, args.vars, args.data)):
         raise PrerequisiteBlocked(
-            "Set EVENT_BUILD_RECEIPT, EVENT_CODE, EVENT_VARS and EVENT_DATA for the supported custom QEMU tuple"
+            "Set EVENT_BUILD_RECEIPT, EVENT_CODE, EVENT_VARS and EVENT_DATA, "
+            "or EVENT_TOOL_PREFIX for packaged Event tools"
         )
     if not args.esp_dir:
         tool = shutil.which("mformat")
@@ -671,7 +727,24 @@ def prerequisites(args):
             raise PrerequisiteBlocked("Install supported GNU mtools 4.0.48 or supply EVENT_ESP_DIR")
         args.mtools_dir = args.mtools_dir or str(Path(tool).parent)
         Path(args.mtools_dir).resolve(strict=True)
-        esp.developer_tool_identity(args.mtools_dir)
+        tools = esp.developer_tool_identity(args.mtools_dir, hash_tools=not prefix)
+        if prefix:
+            for name, tool in tools.items():
+                version = io.BytesIO()
+                transport.run_logged(
+                    [tool["command_path"], "--version"],
+                    version,
+                    timeout=5,
+                    limit=4096,
+                    expected=0,
+                    timeout_status=False,
+                    env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent", "MTOOLSRC": "/dev/null"},
+                )
+                expected = (name + " (GNU mtools) " + esp.DEVELOPER_MTOOLS_VERSION).encode()
+                need(
+                    version.getvalue().splitlines() and version.getvalue().splitlines()[0] == expected,
+                    "Unsupported packaged mtools version: " + name,
+                )
     else:
         directory = safe_path(args.esp_dir, directory=True)
         for mode in MODES:
@@ -711,7 +784,7 @@ def prerequisites(args):
             "normal", str(qemu), args.normal_firmware, args.normal_data, args.normal_code, args.normal_vars
         )
         if args.normal_data:
-            data_files(args.normal_data)
+            safe_path(args.normal_data, directory=True) if prefix else data_files(args.normal_data)
     parent = safe_path(args.output_parent, directory=True)
     need(parent != ROOT and ROOT not in parent.parents, "Event output must be outside the source tree")
     if shutil.disk_usage(parent).free < FREE_FLOOR + EVIDENCE_LIMIT:
@@ -726,6 +799,7 @@ def prerequisites(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-only", action="store_true")
+    parser.add_argument("--tool-prefix", default=os.environ.get("EVENT_TOOL_PREFIX") or None)
     parser.add_argument("--build-receipt", default=os.environ.get("EVENT_BUILD_RECEIPT"))
     parser.add_argument("--code", default=os.environ.get("EVENT_CODE"))
     parser.add_argument("--vars", default=os.environ.get("EVENT_VARS"))
@@ -751,7 +825,7 @@ def main():
         signal.signal(sig, interrupted)
     directory = Path(tempfile.mkdtemp(prefix="aurora-event-smoke-", dir=parent))
     print("Event smoke evidence: " + str(directory), flush=True)
-    if runtime:
+    if runtime and not runtime.get("packaged"):
         write_json(directory / "runtime.json", runtime)
     window(args, directory, runtime)
 

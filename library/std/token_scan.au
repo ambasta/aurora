@@ -1,8 +1,19 @@
 export module std.token_scan;
 
 export namespace std {
-    enum class TokenStatus { success, end_of_input, invalid_byte, invalid_window };
-    enum class TokenKind { none, identifier, digit_word, punctuation, operator_pair };
+    enum class TokenStatus {
+        success,
+        end_of_input,
+        invalid_byte,
+        invalid_window
+    };
+    enum class TokenKind {
+        none,
+        identifier,
+        digit_word,
+        punctuation,
+        operator_pair
+    };
 
     // Coordinates and observations are copies, never input-linked authority.
     // Public construction checks shape only; it does not certify source text.
@@ -14,51 +25,89 @@ export namespace std {
         i64 consumed_length;
         i64 line_feeds;
     public:
-        TokenResult(TokenStatus status, TokenKind kind, i64 offset, i64 count,
-                    i64 consumed, i64 skipped)
-            : outcome(status), category(kind), token_offset(offset),
-              token_length(count), consumed_length(consumed), line_feeds(skipped) {}
+        TokenResult(TokenStatus status, TokenKind kind, i64 offset, i64 count, i64 consumed,
+            i64 skipped) : outcome(status), category(kind), token_offset(offset), token_length(count),
+            consumed_length(consumed), line_feeds(skipped) {
+        }
         auto status() const -> TokenStatus {
-            if (outcome == TokenStatus::invalid_window) { return outcome; }
-            if (token_offset < 0 || token_offset > 4096) { return TokenStatus::invalid_window; }
-            if (token_length < 0 || token_length > 4096) { return TokenStatus::invalid_window; }
-            if (consumed_length < 0 || consumed_length > 4096) { return TokenStatus::invalid_window; }
-            if (line_feeds < 0 || line_feeds > 4096) { return TokenStatus::invalid_window; }
-            if (token_length > 4096 - token_offset) { return TokenStatus::invalid_window; }
-            if (consumed_length < token_length) { return TokenStatus::invalid_window; }
-            if (consumed_length - token_length > token_offset) { return TokenStatus::invalid_window; }
-            if (line_feeds > consumed_length - token_length) { return TokenStatus::invalid_window; }
+            if (outcome == TokenStatus::invalid_window) {
+                return outcome;
+            }
+            if (token_offset < 0 || token_offset > 4096) {
+                return TokenStatus::invalid_window;
+            }
+            if (token_length < 0 || token_length > 4096) {
+                return TokenStatus::invalid_window;
+            }
+            if (consumed_length < 0 || consumed_length > 4096) {
+                return TokenStatus::invalid_window;
+            }
+            if (line_feeds < 0 || line_feeds > 4096) {
+                return TokenStatus::invalid_window;
+            }
+            if (token_length > 4096 - token_offset) {
+                return TokenStatus::invalid_window;
+            }
+            if (consumed_length < token_length) {
+                return TokenStatus::invalid_window;
+            }
+            if (consumed_length - token_length > token_offset) {
+                return TokenStatus::invalid_window;
+            }
+            if (line_feeds > consumed_length - token_length) {
+                return TokenStatus::invalid_window;
+            }
             if (outcome == TokenStatus::success) {
-                if (category == TokenKind::none || token_length == 0) { return TokenStatus::invalid_window; }
-                if (category == TokenKind::punctuation && token_length != 1) { return TokenStatus::invalid_window; }
-                if (category == TokenKind::operator_pair && token_length != 2) { return TokenStatus::invalid_window; }
+                if (category == TokenKind::none || token_length == 0) {
+                    return TokenStatus::invalid_window;
+                }
+                if (category == TokenKind::punctuation && token_length != 1) {
+                    return TokenStatus::invalid_window;
+                }
+                if (category == TokenKind::operator_pair && token_length != 2) {
+                    return TokenStatus::invalid_window;
+                }
             }
             if (outcome == TokenStatus::end_of_input) {
-                if (category != TokenKind::none || token_length != 0) { return TokenStatus::invalid_window; }
+                if (category != TokenKind::none || token_length != 0) {
+                    return TokenStatus::invalid_window;
+                }
             }
             if (outcome == TokenStatus::invalid_byte) {
-                if (category != TokenKind::none || token_length != 1) { return TokenStatus::invalid_window; }
+                if (category != TokenKind::none || token_length != 1) {
+                    return TokenStatus::invalid_window;
+                }
             }
             return outcome;
         }
         auto kind() const -> TokenKind {
-            if (status() == TokenStatus::invalid_window) { return TokenKind::none; }
+            if (status() == TokenStatus::invalid_window) {
+                return TokenKind::none;
+            }
             return category;
         }
         auto byte_offset() const -> i64 {
-            if (status() == TokenStatus::invalid_window) { return 0; }
+            if (status() == TokenStatus::invalid_window) {
+                return 0;
+            }
             return token_offset;
         }
         auto byte_count() const -> i64 {
-            if (status() == TokenStatus::invalid_window) { return 0; }
+            if (status() == TokenStatus::invalid_window) {
+                return 0;
+            }
             return token_length;
         }
         auto consumed_bytes() const -> i64 {
-            if (status() == TokenStatus::invalid_window) { return 0; }
+            if (status() == TokenStatus::invalid_window) {
+                return 0;
+            }
             return consumed_length;
         }
         auto skipped_lf() const -> i64 {
-            if (status() == TokenStatus::invalid_window) { return 0; }
+            if (status() == TokenStatus::invalid_window) {
+                return 0;
+            }
             return line_feeds;
         }
     };
@@ -69,8 +118,7 @@ namespace std {
         return byte == 32u8 || (byte >= 9u8 && byte <= 13u8);
     }
     auto token_letter(u8 byte) -> bool {
-        return (byte >= 65u8 && byte <= 90u8) ||
-               (byte >= 97u8 && byte <= 122u8) || byte == 95u8;
+        return (byte >= 65u8 && byte <= 90u8) || (byte >= 97u8 && byte <= 122u8) || byte == 95u8;
     }
     auto token_digit(u8 byte) -> bool {
         return byte >= 48u8 && byte <= 57u8;
@@ -79,46 +127,54 @@ namespace std {
         return token_letter(byte) || token_digit(byte);
     }
     auto token_punctuation(u8 byte) -> bool {
-        return byte == 40u8 || byte == 41u8 || byte == 123u8 || byte == 125u8 ||
-               byte == 91u8 || byte == 93u8 || byte == 58u8 || byte == 59u8 ||
-               byte == 44u8 || byte == 61u8 || byte == 43u8 || byte == 45u8 ||
-               byte == 42u8 || byte == 47u8 || byte == 37u8 || byte == 60u8 ||
-               byte == 62u8 || byte == 33u8 || byte == 46u8 || byte == 38u8 ||
-               byte == 124u8 || byte == 94u8 || byte == 126u8;
+        return byte == 40u8 || byte == 41u8 || byte == 123u8 || byte == 125u8 || byte == 91u8 || byte == 93u8 || byte
+            == 58u8 || byte == 59u8 || byte == 44u8 || byte == 61u8 || byte == 43u8 || byte == 45u8 || byte == 42u8
+            || byte == 47u8 || byte == 37u8 || byte == 60u8 || byte == 62u8 || byte == 33u8 || byte == 46u8 || byte
+            == 38u8 || byte == 124u8 || byte == 94u8 || byte == 126u8;
     }
     auto token_pair(u8 first, u8 second) -> bool {
-        return (first == 45u8 && second == 62u8) ||
-               (first == 61u8 && second == 61u8) ||
-               (first == 33u8 && second == 61u8) ||
-               (first == 60u8 && second == 61u8) ||
-               (first == 62u8 && second == 61u8) ||
-               (first == 58u8 && second == 58u8) ||
-               (first == 60u8 && second == 60u8) ||
-               (first == 62u8 && second == 62u8) ||
-               (first == 38u8 && second == 38u8) ||
-               (first == 124u8 && second == 124u8);
+        return (first == 45u8 && second == 62u8) || (first == 61u8 && second == 61u8) || (first == 33u8 && second
+            == 61u8) || (first == 60u8 && second == 61u8) || (first == 62u8 && second == 61u8) || (first == 58u8
+            && second == 58u8) || (first == 60u8 && second == 60u8) || (first == 62u8 && second == 62u8) || (first
+            == 38u8 && second == 38u8) || (first == 124u8 && second == 124u8);
     }
     auto token_invalid_window() -> TokenResult {
-        const TokenResult result = TokenResult(TokenStatus::invalid_window,
-                                               TokenKind::none, 0, 0, 0, 0);
+        const TokenResult result = TokenResult(TokenStatus::invalid_window, TokenKind::none, 0, 0, 0, 0);
         return result;
     }
 }
 
 export namespace std {
     auto next_token(builtin::span<const u8> bytes, i64 offset, i64 count) -> TokenResult {
-        if (bytes.size() > 4096) { const TokenResult result = token_invalid_window(); return result; }
-        if (offset < 0) { const TokenResult result = token_invalid_window(); return result; }
-        if (count < 0) { const TokenResult result = token_invalid_window(); return result; }
-        if (offset > bytes.size()) { const TokenResult result = token_invalid_window(); return result; }
-        if (count > bytes.size() - offset) { const TokenResult result = token_invalid_window(); return result; }
+        if (bytes.size() > 4096) {
+            const TokenResult result = token_invalid_window();
+            return result;
+        }
+        if (offset < 0) {
+            const TokenResult result = token_invalid_window();
+            return result;
+        }
+        if (count < 0) {
+            const TokenResult result = token_invalid_window();
+            return result;
+        }
+        if (offset > bytes.size()) {
+            const TokenResult result = token_invalid_window();
+            return result;
+        }
+        if (count > bytes.size() - offset) {
+            const TokenResult result = token_invalid_window();
+            return result;
+        }
         i64 index = 0;
         i64 skipped = 0;
         bool trivia = true;
         while (index < count && trivia) {
             const u8 byte = bytes.at(offset + index);
             if (token_space(byte)) {
-                if (byte == 10u8) { skipped = skipped + 1; }
+                if (byte == 10u8) {
+                    skipped = skipped + 1;
+                }
                 index = index + 1;
             } else {
                 if (byte == 47u8 && index + 1 < count && bytes.at(offset + index + 1) == 47u8) {
@@ -132,27 +188,29 @@ export namespace std {
             }
         }
         if (index == count) {
-            const TokenResult result = TokenResult(TokenStatus::end_of_input,
-                TokenKind::none, offset + count, 0, count, skipped);
+            const TokenResult result = TokenResult(TokenStatus::end_of_input, TokenKind::none, offset + count, 0, count,
+                skipped);
             return result;
         }
         const i64 begin = index;
         const u8 first = bytes.at(offset + index);
         if (token_word(first)) {
             TokenKind kind = TokenKind::identifier;
-            if (token_digit(first)) { kind = TokenKind::digit_word; }
+            if (token_digit(first)) {
+                kind = TokenKind::digit_word;
+            }
             index = index + 1;
             while (index < count && token_word(bytes.at(offset + index))) {
                 index = index + 1;
             }
-            const TokenResult result = TokenResult(TokenStatus::success, kind,
-                offset + begin, index - begin, index, skipped);
+            const TokenResult result = TokenResult(TokenStatus::success, kind, offset + begin, index - begin, index,
+                skipped);
             return result;
         }
         // Classify an invalid current byte before inspecting any suffix byte.
         if (!token_punctuation(first)) {
-            const TokenResult result = TokenResult(TokenStatus::invalid_byte,
-                TokenKind::none, offset + begin, 1, begin + 1, skipped);
+            const TokenResult result = TokenResult(TokenStatus::invalid_byte, TokenKind::none, offset + begin, 1, begin
+                + 1, skipped);
             return result;
         }
         i64 width = 1;
@@ -161,8 +219,8 @@ export namespace std {
             width = 2;
             kind = TokenKind::operator_pair;
         }
-        const TokenResult result = TokenResult(TokenStatus::success, kind,
-            offset + begin, width, begin + width, skipped);
+        const TokenResult result = TokenResult(TokenStatus::success, kind, offset + begin, width, begin + width,
+            skipped);
         return result;
     }
 }

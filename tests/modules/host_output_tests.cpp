@@ -54,8 +54,7 @@ int main(int argc, char **argv) {
             require(!fs::exists(collision), "partial output exposed at destination");
             writer.commit();
         }
-        require(readFile(collision) == "complete collision-safe artifact",
-                "collision-safe commit failed");
+        require(readFile(collision) == "complete collision-safe artifact", "collision-safe commit failed");
         pass("destination cannot be its own temporary");
         {
             host::ArtifactWriter writer(output, sources);
@@ -63,21 +62,26 @@ int main(int argc, char **argv) {
             require(readFile(output) == "old artifact", "output changed before commit");
             writer.commit();
         }
-        require(readFile(output) == "new artifact" && readFile(source) == "source bytes",
-                "normal replacement");
+        require(readFile(output) == "new artifact" && readFile(source) == "source bytes", "normal replacement");
         pass("atomic complete replacement");
-        rejects("root source alias", [&] { host::ArtifactWriter writer(source, sources); });
+        rejects("root source alias", [&] {
+            host::ArtifactWriter writer(source, sources);
+        });
         fs::create_hard_link(source, base / "hardlink.s");
-        rejects("hardlink source alias",
-                [&] { host::ArtifactWriter writer(base / "hardlink.s", sources); });
+        rejects("hardlink source alias", [&] {
+            host::ArtifactWriter writer(base / "hardlink.s", sources);
+        });
         fs::create_symlink(source, base / "symlink.s");
-        rejects("symlink output policy",
-                [&] { host::ArtifactWriter writer(base / "symlink.s", sources); });
+        rejects("symlink output policy", [&] {
+            host::ArtifactWriter writer(base / "symlink.s", sources);
+        });
         fs::create_directory(base / "directory.s");
-        rejects("nonregular output policy",
-                [&] { host::ArtifactWriter writer(base / "directory.s", sources); });
-        rejects("filename leaf required",
-                [&] { host::ArtifactWriter writer(base / "..", sources); });
+        rejects("nonregular output policy", [&] {
+            host::ArtifactWriter writer(base / "directory.s", sources);
+        });
+        rejects("filename leaf required", [&] {
+            host::ArtifactWriter writer(base / "..", sources);
+        });
         std::string cancelled;
         {
             host::ArtifactWriter writer(output, sources);
@@ -94,10 +98,11 @@ int main(int argc, char **argv) {
             displaced = writer.temporaryName();
             fs::rename(base / displaced, base / "displaced-own.tmp");
             writeFile(base / displaced, "replacement owned by fixture");
-            rejects("changed temporary rejected", [&] { writer.commit(); });
+            rejects("changed temporary rejected", [&] {
+                writer.commit();
+            });
         }
-        require(readFile(base / displaced) == "replacement owned by fixture",
-                "cleanup removed replacement entry");
+        require(readFile(base / displaced) == "replacement owned by fixture", "cleanup removed replacement entry");
         require(readFile(output) == "new artifact", "changed temp altered destination");
         pass("cleanup preserves unrelated replacement entry");
         {
@@ -105,7 +110,9 @@ int main(int argc, char **argv) {
             writer.write("pending");
             fs::remove(output);
             fs::create_hard_link(source, output);
-            rejects("destination hardlink swap", [&] { writer.commit(); });
+            rejects("destination hardlink swap", [&] {
+                writer.commit();
+            });
         }
         require(readFile(source) == "source bytes" && readFile(output) == "source bytes",
                 "hardlink swap changed source");
@@ -116,10 +123,11 @@ int main(int argc, char **argv) {
             writer.write("pending");
             fs::remove(output);
             fs::create_symlink(source, output);
-            rejects("destination symlink swap", [&] { writer.commit(); });
+            rejects("destination symlink swap", [&] {
+                writer.commit();
+            });
         }
-        require(fs::is_symlink(output) && readFile(source) == "source bytes",
-                "symlink swap changed source");
+        require(fs::is_symlink(output) && readFile(source) == "source bytes", "symlink swap changed source");
         fs::remove(output);
         writeFile(output, "old artifact");
         const auto original = base / "parent", pinned = base / "pinned-parent",
@@ -142,13 +150,21 @@ int main(int argc, char **argv) {
         {
             host::ArtifactWriter writer(output, sources);
             writer.write("once");
-            rejects("write once", [&] { writer.write("twice"); });
-            rejects("misused writer cannot commit", [&] { writer.commit(); });
+            rejects("write once", [&] {
+                writer.write("twice");
+            });
+            rejects("misused writer cannot commit", [&] {
+                writer.commit();
+            });
         }
         {
             host::ArtifactWriter writer(output, sources);
-            rejects("commit requires complete write", [&] { writer.commit(); });
-            rejects("out-of-order commit poisons writer", [&] { writer.write("later"); });
+            rejects("commit requires complete write", [&] {
+                writer.commit();
+            });
+            rejects("out-of-order commit poisons writer", [&] {
+                writer.write("later");
+            });
         }
         {
             host::ArtifactWriter writer(base / "empty.s", sources);
@@ -160,7 +176,9 @@ int main(int argc, char **argv) {
         {
             host::ArtifactWriter writer(output, sources);
             const std::string tooLarge(64 * 1024 * 1024 + 1, 'x');
-            rejects("artifact byte budget", [&] { writer.write(tooLarge); });
+            rejects("artifact byte budget", [&] {
+                writer.write(tooLarge);
+            });
         }
         // A private child-process limit forces an actual partial-write/EFBIG failure.
         // No persistent process/system settings or non-fixture files are changed.
@@ -177,8 +195,7 @@ int main(int argc, char **argv) {
                 try {
                     writer.write("more than one byte");
                 } catch (const Error &error) {
-                    failed = std::string(error.what()).find("cannot write artifact temporary") !=
-                             std::string::npos;
+                    failed = std::string(error.what()).find("cannot write artifact temporary") != std::string::npos;
                 }
                 try {
                     writer.write("");
@@ -195,8 +212,7 @@ int main(int argc, char **argv) {
         }
         int status = 0;
         require(::waitpid(child, &status, 0) == child, "wait failed");
-        require(WIFEXITED(status) && WEXITSTATUS(status) == 0,
-                "write-failure injection did not fail as intended");
+        require(WIFEXITED(status) && WEXITSTATUS(status) == 0, "write-failure injection did not fail as intended");
         require(readFile(output) == "old artifact" && readFile(source) == "source bytes",
                 "write failure changed previous files");
         pass("partial OS write failure preserves output");
@@ -214,8 +230,7 @@ int main(int argc, char **argv) {
             try {
                 writer.commit();
             } catch (const Error &error) {
-                failed = std::string(error.what()).find("cannot atomically replace artifact") !=
-                         std::string::npos;
+                failed = std::string(error.what()).find("cannot atomically replace artifact") != std::string::npos;
             }
             fs::permissions(denied, fs::perms::owner_all);
             require(failed, "rename failure injection did not reach expected OS failure");

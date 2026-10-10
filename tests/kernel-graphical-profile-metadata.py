@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pure metadata controls: no tool, compiler, image, guest or device execution.
 
-Registration and source inventories do not establish runtime qualification.
+Registration and artifact inventories do not establish runtime qualification.
 """
 
 import ast
@@ -90,31 +90,6 @@ class ProfileMetadata(unittest.TestCase):
         for mode in ("console", "framebuffer", "program-console"):
             self.assertNotEqual(catalog["uefi/" + mode]["admission"], "graphical")
 
-    def test_combined_live_source_inventory(self):
-        admission = load("graphical_metadata_admission", "scripts/kernel_graphical_console_admission.py")
-        paths = admission.source_files()
-        self.assertEqual(len(paths), len(set(paths)))
-        required = (
-            "Makefile",
-            "compiler/Makefile",
-            "meson.build",
-            "tests/meson.build",
-            "tests/compiler-test-inventory.json",
-            "examples/kernel-graphical-console.au",
-            "kernel/uefi/graphical-console.cpp",
-            "kernel/uefi/graphical-capture-policy.hpp",
-            "kernel/uefi/graphical-console-entry.S",
-            "scripts/kernel-uefi-build.sh",
-            "scripts/kernel_graphical_console_admission.py",
-            "tests/kernel-graphical-profile-metadata.py",
-            "tests/developer-commands.py",
-        )
-        for relative in required:
-            self.assertIn(ROOT / relative, paths)
-        for path in paths:
-            self.assertTrue(path.is_file(), str(path))
-            self.assertNotIn("build", path.relative_to(ROOT).parts)
-
     def test_combined_artifacts_exclude_legacy_objects(self):
         admission = load("graphical_metadata_outputs", "scripts/kernel_graphical_console_admission.py")
         paths = [path.relative_to(admission.BUILD).as_posix() for path in admission.build_files()]
@@ -140,7 +115,6 @@ class ProfileMetadata(unittest.TestCase):
             {
                 "objects/console.o",
                 "objects/framebuffer.o",
-                "program-build.json",
                 "console-service-admission.json",
                 "framebuffer-admission.json",
             }.isdisjoint(paths)

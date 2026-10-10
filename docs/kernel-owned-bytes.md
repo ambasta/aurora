@@ -19,7 +19,7 @@ No owner descriptor, source pointer, span or physical address is returned.
 The acceptance gate is focused native ownership/failure coverage, explicit
 unsupported-import rejection, complete linked stack/authority/image admission,
 independent review, and an actual bounded QEMU boot followed by normal restoration.
-See [the results](kernel-owned-bytes-results.md) for the accepted evidence scope.
+Qualification belongs to the exact final source, image and actual guest run; previous receipts do not qualify a changed image.
 
 ## Allocation authority and lifetime
 
@@ -74,12 +74,7 @@ The shared `runtime/bytes_abi.hpp` is the unchanged 32-byte compiler-private own
 layout and helper declarations, including hosted resize. The hosted allocator
 implementation and its resize semantics remain separate. The kernel profile
 supports allocation, copied read/write, validated readonly logical borrowing and
-normal drop and failure-safe replacement resize. The
-[resize contract](kernel-owned-resize.md) and [focused results](kernel-owned-resize-results.md)
-cover fresh six-helper admission and bounded guest qualification; historical
-five-helper evidence is not reused. Mutable/general escaping borrowing,
-DMA/BAR/IOMMU activation, concurrency, exception unwinding and mixed graphs remain
-out of scope.
+normal drop and failure-safe replacement resize. Replacement resize is specified below and preserves the grant authority.
 
 ## Focused commands
 
@@ -97,13 +92,12 @@ UEFI_MODE=owned-bytes ./scripts/kernel-uefi-build.sh
 
 An explicit `AURORAC` may reuse a separately qualified compiler. Image build is
 compile/link admission only. The smoke launcher checks the exact original-clock
-command and serial transcript, then restores the ordinary image on exit. The
-separately selected profile is not added to the historical 177-mode aggregate.
+command and serial transcript, then restores the ordinary image on exit. The profile is selected separately from normal UEFI.
 Before a guest, the linked gate must account for generated frames, expression
 pushes, private resource call records, C++ stack-usage records, direct call edges
 and the bounded four-level page-table verifier. It rejects unmodeled dependencies
 and reserves 512 additional bytes for synchronous fault delivery/diagnostics;
-the final peak may not exceed 15,360 bytes of the unchanged 16,384-byte stack.
+the final peak may not exceed 15,360 bytes of the 16,384-byte stack.
 
 The guest exercises runtime lengths 65, 513 and 4,097, two simultaneous owners,
 full logical read/write checks, explicit moves, negative allocation, bounds-write
@@ -140,37 +134,49 @@ normal restoration remain separate required gates. This adds no protected reader
 IPC transport, persistent owner, filesystem, active device or physical-hardware
 qualification.
 
-## Reconstructed readonly-owner consumer
+## Replacement resize
 
-The earlier reconstructed readonly-owner checkpoint extended this same exclusive
-profile to exactly five imports:
-allocate, at, set, drop and borrow_length. A real Aurora consumer copies and
-narrows the existing 56-byte logical span, reads every byte and checks logical
-4,095/4,096 across a physical page boundary. Its return value is the observed
-length, checked against the independently supplied owner length. An empty span
-cannot masquerade as nonempty success. The consumer may call only copied read;
-three exact aligned 64-byte span-call records are checked at source and link.
 
-Eight even-page holders force two 4,097-byte owners onto pages 1/3 and 5/7.
-Whole-page scrub, untouched neighbor poison and actual foreign lease identities
-are checked before holder release and explicit region close. Existing length
-cases remain; successful-empty ownership adds no page. Exact totals are nine
-allocations and nine releases. Quota, pool, stack and region implementation do
-not change. This historical checkpoint rejected resize and unrelated imports; no stubs were supplied.
+The private 32-byte owner ABI, four fixed allocation records, sixteen PageLease
+pool pages, 3,072-byte Region metadata cap, supervisor mapping, 16 KiB stack and
+1 MiB arena remain unchanged. An empty existing record becomes private preparing
+storage. Public allocation is not called: final logical quota is checked as
+new_length <= quota - (used - old_length), and staging does not charge used or
+live_allocations. Region::page validates backing and that record's actual lease;
+it does not mistake preparing storage for a committed logical owner. Descriptor
+lookup exposes only live records.
 
-The dependency is the freshly reconstructed owned-span compiler/runtime.
-The exact image/import/linked-stack checks and independent source review passed
-before the new guest. Actual owned-bytes, runtime-span and normal guests passed
-with exact normal restoration. Historical results do not transfer.
-See [current results and limits](kernel-owned-views-results.md).
+Validation precedes every shortcut. Canonical failed owners never revive;
+negative requests return false; same-size valid requests return true unchanged,
+even when all four records are occupied or identities have exhausted. Changed
+sizes require a free metadata slot, a fresh identity and representable counters.
+Old and new rounded page sets must coexist. Page or metadata exhaustion can reject
+shrink as well as growth. Resize to zero needs a free metadata slot but no new page.
 
-Focused exact-source host replay, with an explicitly selected compiler:
+Every new page is fully zeroed/read back, including padding. Every old lease is
+preflighted; copied prefixes use checked logical page spans without assuming
+physical contiguity. The preserved prefix is min(old_length,new_length). Shrunk
+suffixes cannot revive after regrowth. After all recoverable work succeeds, old
+pages are scrubbed/read back and released, then replacement identity and logical
+accounting commit in the synchronous, single-CPU, nonreentrant adapter.
 
-```sh
-AURORAC=/path/to/current/aurorac ./scripts/kernel-owned-views-tests.sh
-AURORAC=/path/to/current/aurorac SANITIZE=1 ./scripts/kernel-owned-views-tests.sh
-```
+A changed-size success increments successful_allocations and releases once,
+keeps live_allocations constant, and updates last identities. peak_used observes
+committed logical use; peak_held_pages includes successful old+new staging.
+Recoverable failure leaves all committed metrics, old descriptor and old bytes
+unchanged. It scrubs/releases any acquired staging prefix and restores empty
+record hygiene. Free-page contents and allocator lease generations need not be
+unchanged after rollback.
 
-The adversarial host wrapper calls the real descriptor validator, then poisons
-its length to zero. Nonempty input must reject with exact failure. It is never
-linked into a guest. Host sanitizers do not instrument generated Aurora assembly.
+Bad lease, scrub or unexpected release failure is terminal: both transaction
+records are retained, including a zero-page peer, the Region faults permanently,
+and the endpoint never returns or unwinds. Old bytes are not promised unchanged
+after terminal retirement failure. Remaining leases cannot be reclaimed or
+forgotten; unrelated owners/foreign holders remain untouched. Hosted fault
+observers inspect state only and exit without unwinding.
+
+## Readonly views and RAM storage
+
+The real Aurora consumer copies and narrows 56-byte readonly views, including the 4095/4096 logical boundary over fragmented physical pages. Empty views retain their owner lifetime and cannot produce nonempty success. The private graph admits exactly allocate, at, set, drop, borrow_length and resize helpers; no unrelated runtime imports or mixed scalar/resource graph is accepted.
+
+The same profile exercises the unchanged `RamSectorDevice` on 16 sectors of page-backed ownership. It tests complete copied readback, readonly/range ordering, quota and page failures, fragmented leases, full-page scrub and exact cleanup. Its visibility flush is volatile and durable flush remains unsupported. This is CPU-only RAM storage, not a mounted/protected file service or persistent device.

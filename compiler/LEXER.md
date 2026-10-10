@@ -13,17 +13,17 @@ may include Unicode or arbitrary non-LF values, as before. Block comments and
 other unsupported syntax are not newly accepted. Lexical errors remain fatal
 and structured; a failed scan is never presented as a complete lossless result.
 
-Single-quoted [byte literals](BYTES.md#ascii-byte-character-literals) are one
+Single-quoted [byte literals](SCALARS.md#ascii-byte-character-literals) are one
 lossless token, including escapes and delimiters. Malformed spellings use AU1002
 with the attempted literal span; quote-like bytes inside comments stay trivia.
-Double-quoted [byte-string initializers](BYTES.md#bounded-byte-string-array-initializers)
+Double-quoted [byte-string initializers](SCALARS.md#bounded-byte-string-array-initializers)
 also remain one exact token, including raw UTF-8 and escapes. Their malformed
 spellings use AU1003; literal punctuation never becomes comments or separators.
 
 Binary integer spellings retain their `0b`/`0B` prefix, C++ apostrophe separators
 and exact suffix as one token. Malformed binary digit/separator/suffix attempts
 also stay whole for semantic integer-literal rejection; an apostrophe starting a
-token still begins a byte literal. The [integer contract](UNSIGNED.md#source-contract)
+token still begins a byte literal. The [integer contract](SCALARS.md#source-contract)
 defines ranges and keeps array/template capacities decimal-only.
 
 The legacy `lex(contents, path)` API wraps the same scanner with
@@ -34,7 +34,7 @@ This is infrastructure for the Aurora formatter/LSP, not a formatter, linter or
 language server by itself. [Existing-file overlays](SOURCE-OVERLAYS.md) now reuse these immutable snapshots.
 Editor version tracking and position-encoding conversion remain separate work.
 
-## Hosted Aurora lexer checkpoint
+## Hosted Aurora lexer
 
 `compiler/lexer.au` implements the entire lexical phase in Aurora. Its
 `next_lexeme(readonly span, copied cursor)` returns one token, whitespace run,
@@ -104,18 +104,6 @@ The focused `tests/compiler/lexer_trivia.cpp` gate checks independent positions,
 exact reconstruction, bounds, token equivalence, EOF, CRLF/tabs, comment-at-EOF,
 all non-LF byte values in a comment, structured rejection, canonical `>>`, and
 256 deterministic generated scanner inputs. Optional filename arguments extend
-reconstruction checks to a corpus. The fresh warning-clean GCC 14.2 gate passed
-all 73 `.au` sources in the frozen pre-composition candidate and all generated/adversarial cases. The 27
-structured-diagnostic cases and 793 existing frontend checks also passed. All
-26 examples from that candidate emitted byte-identical assembly against the accepted diagnostics
-compiler; five legacy rejection/output-preservation pairs were unchanged. Total
-bounded gate time was 73.03 seconds. Source and compiler pins were unchanged.
-Independent review accepted this bounded increment; no full native aggregate, sanitizer or QEMU
-qualification is claimed.
-
-The permanent compiler Make recipe uses explicit example and `library/std`
-source-directory globs. They matched 40 files in the tested candidate and 43 in
-the PR43 publication composition. The standalone gate supplied all 73 `.au` files
-from its frozen source manifest. That composition contains 77 `.au` files; its
-four added console/writer files do not gain coverage from this historical gate.
-Neither route scans generated build output.
+reconstruction checks to a corpus.
+Neither the focused gate nor a bootstrap comparison substitutes for final-source
+GCC 16 full, image and affected guest qualification.

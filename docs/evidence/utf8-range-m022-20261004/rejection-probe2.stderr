@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "<stdin>", line 5, in <module>
-  File "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/tests/compiler/utf8_range.py", line 231, in reject
-    require(diagnostic in error, f'{label}: expected diagnostic {diagnostic!r}; actual {error!r}')
-  File "/workspace/scratch/48c5de6446f8/aurora-readonly-text-m022-20261004/tests/compiler/utf8_range.py", line 22, in require
-    raise AssertionError(message)
-AssertionError: wrong scalar index type: expected diagnostic 'type'; actual 'aurorac: line 1: expected i64, got u64\n'

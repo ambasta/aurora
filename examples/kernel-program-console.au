@@ -25,18 +25,26 @@ auto aurora_kernel_value() -> i64 {
 // seam is ordinary Aurora; this packing is private to the current UEFI adapter.
 auto aurora_kernel_budget_tick(u64 initial, u64 remaining, u64 used) -> u64 {
     const kernel::TickDecision decision = kernel::interrupt_tick(initial, remaining, used);
-    if (decision.action() == kernel::TickAction::rejected) { return 0u64; }
+    if (decision.action() == kernel::TickAction::rejected) {
+        return 0u64;
+    }
     u64 action = 1u64;
-    if (decision.action() == kernel::TickAction::exhausted) { action = 2u64; }
+    if (decision.action() == kernel::TickAction::exhausted) {
+        action = 2u64;
+    }
     return (action << 16) | (decision.used() << 8) | decision.remaining();
 }
 
 // Private bootstrap transport of copied selection facts, never mailbox authority.
 auto aurora_kernel_round_robin_next(u64 cursor, u64 eligible_mask) -> u64 {
     const kernel::SelectionDecision decision = kernel::round_robin_next(cursor, eligible_mask);
-    if (decision.action() == kernel::SelectionAction::rejected) { return 0u64; }
+    if (decision.action() == kernel::SelectionAction::rejected) {
+        return 0u64;
+    }
     u64 action = 1u64;
-    if (decision.action() == kernel::SelectionAction::selected) { action = 2u64; }
+    if (decision.action() == kernel::SelectionAction::selected) {
+        action = 2u64;
+    }
     return action | (decision.selected() << 8) | (decision.next() << 16);
 }
 
@@ -44,60 +52,118 @@ auto aurora_kernel_round_robin_next(u64 cursor, u64 eligible_mask) -> u64 {
 auto aurora_kernel_ipc_transition(u64 operation, u64 phase, u64 state, u64 scrubbed) -> u64 {
     const kernel::TransactionSnapshot snapshot = kernel::TransactionSnapshot(phase, state, scrubbed);
     const kernel::TransactionDecision decision = kernel::transaction_transition(operation, snapshot);
-    if (decision.action() == kernel::TransactionAction::invalid) { return 0u64; }
-    if (decision.action() == kernel::TransactionAction::refused) { return 1u64; }
+    if (decision.action() == kernel::TransactionAction::invalid) {
+        return 0u64;
+    }
+    if (decision.action() == kernel::TransactionAction::refused) {
+        return 1u64;
+    }
     u64 effect = 0u64;
-    if (decision.effect() == kernel::TransactionEffect::submit_request) { effect = 1u64; }
-    if (decision.effect() == kernel::TransactionEffect::deliver_request) { effect = 2u64; }
-    if (decision.effect() == kernel::TransactionEffect::store_reply) { effect = 3u64; }
-    if (decision.effect() == kernel::TransactionEffect::consume_reply) { effect = 4u64; }
-    if (decision.effect() == kernel::TransactionEffect::consume_cancelled) { effect = 5u64; }
-    if (decision.effect() == kernel::TransactionEffect::cancel_request) { effect = 6u64; }
-    if (decision.effect() == kernel::TransactionEffect::recycle_record) { effect = 7u64; }
+    if (decision.effect() == kernel::TransactionEffect::submit_request) {
+        effect = 1u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::deliver_request) {
+        effect = 2u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::store_reply) {
+        effect = 3u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::consume_reply) {
+        effect = 4u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::consume_cancelled) {
+        effect = 5u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::cancel_request) {
+        effect = 6u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::recycle_record) {
+        effect = 7u64;
+    }
     return 2u64 | (decision.next() << 8) | (effect << 16);
 }
 
 // Private recovery-plan transport; no receipt, payload or authority is copied.
 auto aurora_kernel_client_disposal(u64 phase, u64 state) -> u64 {
     const kernel::DisposalDecision decision = kernel::client_disposal(phase, state);
-    if (decision.action() == kernel::DisposalAction::invalid) { return 0u64; }
-    if (decision.action() == kernel::DisposalAction::refused) { return 1u64; }
+    if (decision.action() == kernel::DisposalAction::invalid) {
+        return 0u64;
+    }
+    if (decision.action() == kernel::DisposalAction::refused) {
+        return 1u64;
+    }
     u64 effect = 0u64;
-    if (decision.effect() == kernel::DisposalEffect::empty) { effect = 1u64; }
-    if (decision.effect() == kernel::DisposalEffect::retained_receipt) { effect = 2u64; }
-    if (decision.effect() == kernel::DisposalEffect::cancel_consume) { effect = 3u64; }
-    if (decision.effect() == kernel::DisposalEffect::consume_terminal) { effect = 4u64; }
+    if (decision.effect() == kernel::DisposalEffect::empty) {
+        effect = 1u64;
+    }
+    if (decision.effect() == kernel::DisposalEffect::retained_receipt) {
+        effect = 2u64;
+    }
+    if (decision.effect() == kernel::DisposalEffect::cancel_consume) {
+        effect = 3u64;
+    }
+    if (decision.effect() == kernel::DisposalEffect::consume_terminal) {
+        effect = 4u64;
+    }
     return 2u64 | (effect << 8);
 }
 
 // Private scalar bootstrap transport, not an Aurora ABI or external capability.
 auto aurora_console_byte(u64 byte, u64 length, u64 rejected, u64 after_cr) -> u64 {
     const kernel::ConsoleAction action = kernel::console_byte(byte, length, rejected, after_cr);
-    if (action == kernel::ConsoleAction::ignore) { return 1u64; }
-    if (action == kernel::ConsoleAction::append) { return 2u64; }
-    if (action == kernel::ConsoleAction::erase) { return 3u64; }
-    if (action == kernel::ConsoleAction::submit) { return 4u64; }
-    if (action == kernel::ConsoleAction::reject) { return 5u64; }
+    if (action == kernel::ConsoleAction::ignore) {
+        return 1u64;
+    }
+    if (action == kernel::ConsoleAction::append) {
+        return 2u64;
+    }
+    if (action == kernel::ConsoleAction::erase) {
+        return 3u64;
+    }
+    if (action == kernel::ConsoleAction::submit) {
+        return 4u64;
+    }
+    if (action == kernel::ConsoleAction::reject) {
+        return 5u64;
+    }
     return 0u64;
 }
 
 auto aurora_console_command(u64 prefix, u64 length) -> u64 {
     const kernel::ConsoleCommand command = kernel::console_command(prefix, length);
-    if (command == kernel::ConsoleCommand::empty) { return 1u64; }
-    if (command == kernel::ConsoleCommand::help) { return 2u64; }
-    if (command == kernel::ConsoleCommand::status) { return 3u64; }
-    if (command == kernel::ConsoleCommand::exit) { return 4u64; }
+    if (command == kernel::ConsoleCommand::empty) {
+        return 1u64;
+    }
+    if (command == kernel::ConsoleCommand::help) {
+        return 2u64;
+    }
+    if (command == kernel::ConsoleCommand::status) {
+        return 3u64;
+    }
+    if (command == kernel::ConsoleCommand::exit) {
+        return 4u64;
+    }
     return 0u64;
 }
 
 // Private bootstrap transport of copied facts; enum ordinals are not the wire.
 auto aurora_kernel_terminal_event(u64 vector, u64 matched_sites, u64 stack_top) -> u64 {
     const kernel::TerminalEvent event = kernel::terminal_event(vector, matched_sites, stack_top);
-    if (event == kernel::TerminalEvent::returned) { return 1u64; }
-    if (event == kernel::TerminalEvent::bounds) { return 2u64; }
-    if (event == kernel::TerminalEvent::overflow) { return 3u64; }
-    if (event == kernel::TerminalEvent::division_zero) { return 4u64; }
-    if (event == kernel::TerminalEvent::shift_count) { return 5u64; }
+    if (event == kernel::TerminalEvent::returned) {
+        return 1u64;
+    }
+    if (event == kernel::TerminalEvent::bounds) {
+        return 2u64;
+    }
+    if (event == kernel::TerminalEvent::overflow) {
+        return 3u64;
+    }
+    if (event == kernel::TerminalEvent::division_zero) {
+        return 4u64;
+    }
+    if (event == kernel::TerminalEvent::shift_count) {
+        return 5u64;
+    }
     return 0u64;
 }
 
@@ -106,7 +172,8 @@ class NoteUpdate {
     console::SessionNote note;
     u64 event;
 public:
-    NoteUpdate(console::SessionNote next, u64 action) : note(next), event(action) {}
+    NoteUpdate(console::SessionNote next, u64 action) : note(next), event(action) {
+    }
 };
 
 auto update_note(console::SessionNote current, std::BinaryBuffer64 command, i64 count) -> NoteUpdate {
@@ -114,16 +181,23 @@ auto update_note(console::SessionNote current, std::BinaryBuffer64 command, i64 
     const console::NoteEvent event = next.submit(command, count);
     u64 action = 0u64;
     // Select the existing protected uppercase program without changing storage.
-    if (count == 10 && command.at(0) == 'u' && command.at(1) == 'p'
-        && command.at(2) == 'p' && command.at(3) == 'e' && command.at(4) == 'r'
-        && command.at(5) == ' ' && command.at(6) == 'n' && command.at(7) == 'o'
-        && command.at(8) == 't' && command.at(9) == 'e') {
+    if (count == 10 && command.at(0) == 'u' && command.at(1) == 'p' && command.at(2) == 'p' && command.at(3) == 'e'
+        && command.at(4) == 'r' && command.at(5) == ' ' && command.at(6) == 'n' && command.at(7) == 'o' && command.at(8)
+        == 't' && command.at(9) == 'e') {
         action = 4u64;
-        if (current.size() < 0) { action = 3u64; }
+        if (current.size() < 0) {
+            action = 3u64;
+        }
     }
-    if (event == console::NoteEvent::written) { action = 1u64; }
-    if (event == console::NoteEvent::read) { action = 2u64; }
-    if (event == console::NoteEvent::missing) { action = 3u64; }
+    if (event == console::NoteEvent::written) {
+        action = 1u64;
+    }
+    if (event == console::NoteEvent::read) {
+        action = 2u64;
+    }
+    if (event == console::NoteEvent::missing) {
+        action = 3u64;
+    }
     const NoteUpdate update = NoteUpdate(next, action);
     return update;
 }

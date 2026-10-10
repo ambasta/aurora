@@ -9,8 +9,8 @@ export namespace storage {
         builtin::OwnedBytes payload;
         bool locked;
     public:
-        RamSectorDevice(builtin::ByteRegion region, builtin::OwnedBytes initial) : payload(move(initial)), locked(false)
-            {
+        RamSectorDevice(builtin::ByteRegion region, builtin::OwnedBytes initial) : payload(move(initial)),
+            locked(false) {
         }
 
         auto status() const -> SectorIoStatus {

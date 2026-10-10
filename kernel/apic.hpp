@@ -14,6 +14,7 @@ public:
     [[nodiscard]] static auto stop() -> bool;
     [[nodiscard]] static auto drain() -> bool;
     [[nodiscard]] static auto pending_test() -> bool;
-    [[nodiscard]] static auto drain_interrupt(std::uint64_t instruction, std::uint64_t code, std::uint64_t frame) -> bool;
+    [[nodiscard]] static auto drain_interrupt(std::uint64_t instruction, std::uint64_t code, std::uint64_t frame)
+        -> bool;
 };
-}
+} // namespace aurora::hardware

@@ -1,20 +1,13 @@
 # Storage implementation roadmap and observable gates
 
-2026-10-03. Stages are dependencies, not delivery dates or completion percentages.
-S0 is integrated and independently reviewed: the requirement traceability and
-bounded host-only crash model are exercised by the aggregate test target.
-Milestone014 verifies readonly byte spans and read-only PCI BAR admission.
-Milestone015 integrates checked endian readers, CRC32C and the restricted XFS
-512-byte v5 header-integrity probe, with independently reviewed library tests and
-an offline real-header fixture. Combined parent milestone acceptance is tracked
-in [the verification record](../../docs/verification.md).
-
-This is only the initial byte/parsing slice of S1 and X0. General resource
-ownership, asynchronous buffer leases and complete XFS parsing remain open.
-Read-only AMD-Vi discovery is an observation gate, not DMA isolation. There is
-still no active IOMMU/NVMe queue driver, mounted target filesystem, XFS log replay
-or read-write support, or physical hardware qualification. A host model or header
-checksum result does not establish any of those capabilities.
+Stages are dependencies, not delivery dates or completion percentages.
+The host-only crash model and requirements traceability are executable inputs.
+Current [byte/sector APIs](../../docs/storage.md) and [offline XFS readers](../../docs/xfs.md)
+provide bounded foundations for S1/X0. General asynchronous buffer leases,
+complete XFS parsing, active IOMMU/NVMe transport, mounting, log replay and
+read-write support remain open. Read-only hardware discovery, CPU-only queue
+preparation and software models do not establish DMA isolation or physical
+hardware qualification.
 
 ## S0. Preserve requirements and test the durability idea
 
@@ -35,9 +28,7 @@ Acceptance:
 - Document finite state/idealizations and lack of target, device or proof coverage.
 - Independent review reproduces the tests and challenges assumptions.
 
-Next useful implementation: S1 checked binary/integrity libraries and X0 parser
-fixtures may proceed alongside the kernel's read-only hardware work. Storage DMA
-cannot proceed merely because a BAR mapping succeeds.
+Storage DMA cannot proceed merely because a BAR mapping succeeds.
 
 ## S1. Native checked bytes, parsing and resource foundations
 

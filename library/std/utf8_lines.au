@@ -2,42 +2,73 @@ export module std.utf8_lines;
 import std.utf8;
 
 export namespace std {
-    enum class Utf8LineStatus { success, end_of_input, out_of_range, invalid_sequence, truncated };
-    enum class Utf8LineEnding { none, lf, crlf };
+    enum class Utf8LineStatus {
+        success,
+        end_of_input,
+        out_of_range,
+        invalid_sequence,
+        truncated
+    };
+    enum class Utf8LineEnding {
+        none,
+        lf,
+        crlf
+    };
 
     class Utf8LineResult {
         Utf8LineStatus outcome;
         i64 content_length;
         Utf8LineEnding terminator;
     public:
-        Utf8LineResult(Utf8LineStatus status, i64 content_bytes, Utf8LineEnding ending)
-            : outcome(status), content_length(content_bytes), terminator(ending) {}
+        Utf8LineResult(Utf8LineStatus status, i64 content_bytes, Utf8LineEnding ending) : outcome(status),
+            content_length(content_bytes), terminator(ending) {
+        }
         auto status() const -> Utf8LineStatus {
-            if (outcome != Utf8LineStatus::success) { return outcome; }
-            if (content_length < 0) { return Utf8LineStatus::out_of_range; }
+            if (outcome != Utf8LineStatus::success) {
+                return outcome;
+            }
+            if (content_length < 0) {
+                return Utf8LineStatus::out_of_range;
+            }
             if (terminator == Utf8LineEnding::none) {
-                if (content_length == 0) { return Utf8LineStatus::out_of_range; }
+                if (content_length == 0) {
+                    return Utf8LineStatus::out_of_range;
+                }
             }
             if (terminator == Utf8LineEnding::lf) {
-                if (content_length > 9223372036854775806) { return Utf8LineStatus::out_of_range; }
+                if (content_length > 9223372036854775806) {
+                    return Utf8LineStatus::out_of_range;
+                }
             }
             if (terminator == Utf8LineEnding::crlf) {
-                if (content_length > 9223372036854775805) { return Utf8LineStatus::out_of_range; }
+                if (content_length > 9223372036854775805) {
+                    return Utf8LineStatus::out_of_range;
+                }
             }
             return Utf8LineStatus::success;
         }
         auto content_bytes() const -> i64 {
-            if (status() != Utf8LineStatus::success) { return 0; }
+            if (status() != Utf8LineStatus::success) {
+                return 0;
+            }
             return content_length;
         }
         auto consumed_bytes() const -> i64 {
-            if (status() != Utf8LineStatus::success) { return 0; }
-            if (terminator == Utf8LineEnding::lf) { return content_length + 1; }
-            if (terminator == Utf8LineEnding::crlf) { return content_length + 2; }
+            if (status() != Utf8LineStatus::success) {
+                return 0;
+            }
+            if (terminator == Utf8LineEnding::lf) {
+                return content_length + 1;
+            }
+            if (terminator == Utf8LineEnding::crlf) {
+                return content_length + 2;
+            }
             return content_length;
         }
         auto ending() const -> Utf8LineEnding {
-            if (status() != Utf8LineStatus::success) { return Utf8LineEnding::none; }
+            if (status() != Utf8LineStatus::success) {
+                return Utf8LineEnding::none;
+            }
             return terminator;
         }
     };
@@ -49,19 +80,27 @@ namespace std {
         return failure;
     }
 
-    auto utf8_line_checked(builtin::span<const u8> bytes, i64 offset,
-                           i64 count, Utf8LineEnding ending) -> Utf8LineResult {
+    auto utf8_line_checked(builtin::span<const u8> bytes, i64 offset, i64 count,
+        Utf8LineEnding ending) -> Utf8LineResult {
         const Utf8ValidationResult valid = validate_utf8(bytes, offset, count, true);
         if (valid.status() != Utf8Status::success) {
             Utf8LineStatus status = Utf8LineStatus::out_of_range;
-            if (valid.status() == Utf8Status::invalid_sequence) { status = Utf8LineStatus::invalid_sequence; }
-            if (valid.status() == Utf8Status::truncated) { status = Utf8LineStatus::truncated; }
+            if (valid.status() == Utf8Status::invalid_sequence) {
+                status = Utf8LineStatus::invalid_sequence;
+            }
+            if (valid.status() == Utf8Status::truncated) {
+                status = Utf8LineStatus::truncated;
+            }
             const Utf8LineResult failure = utf8_line_failure(status);
             return failure;
         }
         i64 content = count;
-        if (ending == Utf8LineEnding::lf) { content = count - 1; }
-        if (ending == Utf8LineEnding::crlf) { content = count - 2; }
+        if (ending == Utf8LineEnding::lf) {
+            content = count - 1;
+        }
+        if (ending == Utf8LineEnding::crlf) {
+            content = count - 2;
+        }
         const Utf8LineResult result = Utf8LineResult(Utf8LineStatus::success, content, ending);
         return result;
     }
@@ -69,17 +108,34 @@ namespace std {
 
 export namespace std {
     auto read_utf8_line(builtin::span<const u8> bytes, i64 offset, i64 count) -> Utf8LineResult {
-        if (offset < 0) { const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::out_of_range); return failure; }
-        if (count < 0) { const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::out_of_range); return failure; }
-        if (offset > bytes.size()) { const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::out_of_range); return failure; }
-        if (count > bytes.size() - offset) { const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::out_of_range); return failure; }
-        if (count == 0) { const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::end_of_input); return failure; }
+        if (offset < 0) {
+            const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::out_of_range);
+            return failure;
+        }
+        if (count < 0) {
+            const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::out_of_range);
+            return failure;
+        }
+        if (offset > bytes.size()) {
+            const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::out_of_range);
+            return failure;
+        }
+        if (count > bytes.size() - offset) {
+            const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::out_of_range);
+            return failure;
+        }
+        if (count == 0) {
+            const Utf8LineResult failure = utf8_line_failure(Utf8LineStatus::end_of_input);
+            return failure;
+        }
         i64 index = 0;
         while (index < count) {
             if (bytes.at(offset + index) == 10u8) {
                 Utf8LineEnding ending = Utf8LineEnding::lf;
                 if (index > 0) {
-                    if (bytes.at(offset + index - 1) == 13u8) { ending = Utf8LineEnding::crlf; }
+                    if (bytes.at(offset + index - 1) == 13u8) {
+                        ending = Utf8LineEnding::crlf;
+                    }
                 }
                 const Utf8LineResult result = utf8_line_checked(bytes, offset, index + 1, ending);
                 return result;

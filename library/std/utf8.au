@@ -3,7 +3,12 @@ import std.array;
 
 export namespace std {
     enum class Utf8Status {
-        success, end_of_input, out_of_range, invalid_sequence, truncated, need_more
+        success,
+        end_of_input,
+        out_of_range,
+        invalid_sequence,
+        truncated,
+        need_more
     };
 
     class Utf8DecodeResult {
@@ -11,19 +16,29 @@ export namespace std {
         u64 scalar;
         i64 byte_width;
     public:
-        Utf8DecodeResult(Utf8Status status, u64 value, i64 width)
-            : outcome(status), scalar(value), byte_width(width) {}
-        auto status() const -> Utf8Status { return outcome; }
+        Utf8DecodeResult(Utf8Status status, u64 value, i64 width) : outcome(status), scalar(value), byte_width(width) {
+        }
+        auto status() const -> Utf8Status {
+            return outcome;
+        }
         auto scalar_or(u64 fallback) const -> u64 {
-            if (outcome != Utf8Status::success) { return fallback; }
-            if (scalar > 1114111u64) { return fallback; }
+            if (outcome != Utf8Status::success) {
+                return fallback;
+            }
+            if (scalar > 1114111u64) {
+                return fallback;
+            }
             if (scalar >= 55296u64) {
-                if (scalar <= 57343u64) { return fallback; }
+                if (scalar <= 57343u64) {
+                    return fallback;
+                }
             }
             return scalar;
         }
         auto width() const -> i64 {
-            if (outcome == Utf8Status::success) { return byte_width; }
+            if (outcome == Utf8Status::success) {
+                return byte_width;
+            }
             return 0;
         }
     };
@@ -33,11 +48,18 @@ export namespace std {
         i64 complete_bytes;
         i64 complete_scalars;
     public:
-        Utf8ValidationResult(Utf8Status status, i64 bytes, i64 scalars)
-            : outcome(status), complete_bytes(bytes), complete_scalars(scalars) {}
-        auto status() const -> Utf8Status { return outcome; }
-        auto prefix_bytes() const -> i64 { return complete_bytes; }
-        auto scalar_count() const -> i64 { return complete_scalars; }
+        Utf8ValidationResult(Utf8Status status, i64 bytes, i64 scalars) : outcome(status), complete_bytes(bytes),
+            complete_scalars(scalars) {
+        }
+        auto status() const -> Utf8Status {
+            return outcome;
+        }
+        auto prefix_bytes() const -> i64 {
+            return complete_bytes;
+        }
+        auto scalar_count() const -> i64 {
+            return complete_scalars;
+        }
     };
 }
 
@@ -47,21 +69,37 @@ namespace std {
         return result;
     }
     auto utf8_incomplete(bool final_input) -> Utf8DecodeResult {
-        if (final_input) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::truncated); return failure; }
-        const Utf8DecodeResult failure = utf8_failure(Utf8Status::need_more); return failure;
+        if (final_input) {
+            const Utf8DecodeResult failure = utf8_failure(Utf8Status::truncated);
+            return failure;
+        }
+        const Utf8DecodeResult failure = utf8_failure(Utf8Status::need_more);
+        return failure;
     }
 }
 
 export namespace std {
-    auto decode_utf8(builtin::span<const u8> bytes, i64 offset, i64 count,
-                     bool final_input) -> Utf8DecodeResult {
-        if (offset < 0) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::out_of_range); return failure; }
-        if (count < 0) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::out_of_range); return failure; }
-        if (offset > bytes.size()) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::out_of_range); return failure; }
-        if (count > bytes.size() - offset) {
-            const Utf8DecodeResult failure = utf8_failure(Utf8Status::out_of_range); return failure;
+    auto decode_utf8(builtin::span<const u8> bytes, i64 offset, i64 count, bool final_input) -> Utf8DecodeResult {
+        if (offset < 0) {
+            const Utf8DecodeResult failure = utf8_failure(Utf8Status::out_of_range);
+            return failure;
         }
-        if (count == 0) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::end_of_input); return failure; }
+        if (count < 0) {
+            const Utf8DecodeResult failure = utf8_failure(Utf8Status::out_of_range);
+            return failure;
+        }
+        if (offset > bytes.size()) {
+            const Utf8DecodeResult failure = utf8_failure(Utf8Status::out_of_range);
+            return failure;
+        }
+        if (count > bytes.size() - offset) {
+            const Utf8DecodeResult failure = utf8_failure(Utf8Status::out_of_range);
+            return failure;
+        }
+        if (count == 0) {
+            const Utf8DecodeResult failure = utf8_failure(Utf8Status::end_of_input);
+            return failure;
+        }
         const u64 first = u64(bytes.at(offset));
         if (first <= 127u64) {
             const Utf8DecodeResult result = Utf8DecodeResult(Utf8Status::success, first, 1);
@@ -72,30 +110,68 @@ export namespace std {
         u64 second_min = 128u64;
         u64 second_max = 191u64;
         if (first >= 194u64) {
-            if (first <= 223u64) { width = 2; scalar = first - 192u64; }
+            if (first <= 223u64) {
+                width = 2;
+                scalar = first - 192u64;
+            }
             if (first >= 224u64) {
-                if (first <= 239u64) { width = 3; scalar = first - 224u64; }
+                if (first <= 239u64) {
+                    width = 3;
+                    scalar = first - 224u64;
+                }
             }
             if (first >= 240u64) {
-                if (first <= 244u64) { width = 4; scalar = first - 240u64; }
+                if (first <= 244u64) {
+                    width = 4;
+                    scalar = first - 240u64;
+                }
             }
         }
-        if (width == 0) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence); return failure; }
-        if (first == 224u64) { second_min = 160u64; }
-        if (first == 237u64) { second_max = 159u64; }
-        if (first == 240u64) { second_min = 144u64; }
-        if (first == 244u64) { second_max = 143u64; }
-        if (count < 2) { const Utf8DecodeResult failure = utf8_incomplete(final_input); return failure; }
+        if (width == 0) {
+            const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence);
+            return failure;
+        }
+        if (first == 224u64) {
+            second_min = 160u64;
+        }
+        if (first == 237u64) {
+            second_max = 159u64;
+        }
+        if (first == 240u64) {
+            second_min = 144u64;
+        }
+        if (first == 244u64) {
+            second_max = 143u64;
+        }
+        if (count < 2) {
+            const Utf8DecodeResult failure = utf8_incomplete(final_input);
+            return failure;
+        }
         const u64 second = u64(bytes.at(offset + 1));
-        if (second < second_min) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence); return failure; }
-        if (second > second_max) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence); return failure; }
+        if (second < second_min) {
+            const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence);
+            return failure;
+        }
+        if (second > second_max) {
+            const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence);
+            return failure;
+        }
         scalar = scalar * 64u64 + second - 128u64;
         i64 index = 2;
         while (index < width) {
-            if (index >= count) { const Utf8DecodeResult failure = utf8_incomplete(final_input); return failure; }
+            if (index >= count) {
+                const Utf8DecodeResult failure = utf8_incomplete(final_input);
+                return failure;
+            }
             const u64 next = u64(bytes.at(offset + index));
-            if (next < 128u64) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence); return failure; }
-            if (next > 191u64) { const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence); return failure; }
+            if (next < 128u64) {
+                const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence);
+                return failure;
+            }
+            if (next > 191u64) {
+                const Utf8DecodeResult failure = utf8_failure(Utf8Status::invalid_sequence);
+                return failure;
+            }
             scalar = scalar * 64u64 + next - 128u64;
             index = index + 1;
         }
@@ -103,8 +179,7 @@ export namespace std {
         return result;
     }
 
-    auto validate_utf8(builtin::span<const u8> bytes, i64 offset, i64 count,
-                       bool final_input) -> Utf8ValidationResult {
+    auto validate_utf8(builtin::span<const u8> bytes, i64 offset, i64 count, bool final_input) -> Utf8ValidationResult {
         if (offset < 0) {
             const Utf8ValidationResult result = Utf8ValidationResult(Utf8Status::out_of_range, 0, 0);
             return result;
@@ -124,8 +199,7 @@ export namespace std {
         i64 consumed = 0;
         i64 scalars = 0;
         while (consumed < count) {
-            const Utf8DecodeResult decoded = decode_utf8(bytes, offset + consumed,
-                                                        count - consumed, final_input);
+            const Utf8DecodeResult decoded = decode_utf8(bytes, offset + consumed, count - consumed, final_input);
             if (decoded.status() != Utf8Status::success) {
                 const Utf8ValidationResult result = Utf8ValidationResult(decoded.status(), consumed, scalars);
                 return result;
@@ -139,38 +213,56 @@ export namespace std {
 }
 
 export namespace std {
-    enum class Utf8EncodeStatus { success, invalid_scalar };
+    enum class Utf8EncodeStatus {
+        success,
+        invalid_scalar
+    };
 
     class Utf8EncodeResult {
         Utf8EncodeStatus outcome;
         std::array<u8, 4> payload;
         i64 byte_width;
     public:
-        Utf8EncodeResult(Utf8EncodeStatus status, std::array<u8, 4> bytes, i64 width)
-            : outcome(status), payload(bytes), byte_width(width) {}
+        Utf8EncodeResult(Utf8EncodeStatus status, std::array<u8, 4> bytes, i64 width) : outcome(status), payload(bytes),
+            byte_width(width) {
+        }
 
         auto status() const -> Utf8EncodeStatus {
             if (outcome != Utf8EncodeStatus::success) {
                 return Utf8EncodeStatus::invalid_scalar;
             }
-            if (byte_width < 1) { return Utf8EncodeStatus::invalid_scalar; }
-            if (byte_width > 4) { return Utf8EncodeStatus::invalid_scalar; }
+            if (byte_width < 1) {
+                return Utf8EncodeStatus::invalid_scalar;
+            }
+            if (byte_width > 4) {
+                return Utf8EncodeStatus::invalid_scalar;
+            }
             return Utf8EncodeStatus::success;
         }
         auto size() const -> i64 {
-            if (status() != Utf8EncodeStatus::success) { return 0; }
+            if (status() != Utf8EncodeStatus::success) {
+                return 0;
+            }
             return byte_width;
         }
         auto byte_or(i64 index, u8 fallback) const -> u8 {
-            if (status() != Utf8EncodeStatus::success) { return fallback; }
-            if (index < 0) { return fallback; }
-            if (index >= byte_width) { return fallback; }
+            if (status() != Utf8EncodeStatus::success) {
+                return fallback;
+            }
+            if (index < 0) {
+                return fallback;
+            }
+            if (index >= byte_width) {
+                return fallback;
+            }
             const std::array<u8, 4> bytes = payload;
             return bytes.at(index);
         }
         auto bytes_or_zero() const -> std::array<u8, 4> {
             std::array<u8, 4> result = std::array<u8, 4>();
-            if (status() != Utf8EncodeStatus::success) { return result; }
+            if (status() != Utf8EncodeStatus::success) {
+                return result;
+            }
             const std::array<u8, 4> bytes = payload;
             i64 index = 0;
             while (index < byte_width) {
@@ -184,14 +276,12 @@ export namespace std {
     auto encode_utf8(u64 scalar) -> Utf8EncodeResult {
         std::array<u8, 4> bytes = std::array<u8, 4>();
         if (scalar > 1114111u64) {
-            const Utf8EncodeResult failure =
-                Utf8EncodeResult(Utf8EncodeStatus::invalid_scalar, bytes, 0);
+            const Utf8EncodeResult failure = Utf8EncodeResult(Utf8EncodeStatus::invalid_scalar, bytes, 0);
             return failure;
         }
         if (scalar >= 55296u64) {
             if (scalar <= 57343u64) {
-                const Utf8EncodeResult failure =
-                    Utf8EncodeResult(Utf8EncodeStatus::invalid_scalar, bytes, 0);
+                const Utf8EncodeResult failure = Utf8EncodeResult(Utf8EncodeStatus::invalid_scalar, bytes, 0);
                 return failure;
             }
         }
@@ -219,8 +309,7 @@ export namespace std {
                 }
             }
         }
-        const Utf8EncodeResult result =
-            Utf8EncodeResult(Utf8EncodeStatus::success, bytes, width);
+        const Utf8EncodeResult result = Utf8EncodeResult(Utf8EncodeStatus::success, bytes, width);
         return result;
     }
 }

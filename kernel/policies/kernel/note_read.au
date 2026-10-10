@@ -6,11 +6,18 @@ export namespace kernel {
         array<u8, 64> bytes;
         i64 length;
     public:
-        NoteRead64(i64 count) : bytes{}, length(count) {}
-        auto size() const -> i64 { return length; }
-        auto at(i64 offset) const -> u8 { return bytes[offset]; }
+        NoteRead64(i64 count) : bytes{}, length(count) {
+        }
+        auto size() const -> i64 {
+            return length;
+        }
+        auto at(i64 offset) const -> u8 {
+            return bytes[offset];
+        }
         auto set(i64 offset, u8 value) -> bool {
-            if (offset < 0 || offset >= 64) { return false; }
+            if (offset < 0 || offset >= 64) {
+                return false;
+            }
             bytes[offset] = value;
             return true;
         }

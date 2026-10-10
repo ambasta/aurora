@@ -5,14 +5,17 @@ export namespace kernel {
     class Snapshot64 {
         array<u8, 64> bytes;
     public:
-        Snapshot64() : bytes{} {}
+        Snapshot64() : bytes{} {
+        }
 
         auto at(i64 offset) const -> u8 {
             return bytes[offset];
         }
 
         auto set(i64 offset, u8 value) -> bool {
-            if (offset < 0 || offset >= 64) { return false; }
+            if (offset < 0 || offset >= 64) {
+                return false;
+            }
             bytes[offset] = value;
             return true;
         }

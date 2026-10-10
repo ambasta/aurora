@@ -8,15 +8,15 @@ if [[ ${1:-} == --help ]]; then
     exit 0
 fi
 if [[ ! -f "$root/ci/image" ]]; then
-    echo 'No published image is pinned yet. Complete the toolchain workflow and add its verified digest to ci/image.' >&2
+    echo 'BLOCKED: No published image is pinned yet. Complete the toolchain workflow and add its verified digest to ci/image.' >&2
     exit 2
 fi
 image="$(cat "$root/ci/image")"
 if [[ ! "$image" =~ ^ghcr\.io/ambasta/aurora-toolchain@sha256:[0-9a-f]{64}$ ]]; then
-    echo 'ci/image must contain one ghcr.io/ambasta/aurora-toolchain@sha256: digest.' >&2
+    echo 'BLOCKED: ci/image must contain one ghcr.io/ambasta/aurora-toolchain@sha256: digest.' >&2
     exit 2
 fi
-command -v docker >/dev/null || { echo 'Docker is required.' >&2; exit 2; }
+command -v docker >/dev/null || { echo 'BLOCKED: Docker is required.' >&2; exit 2; }
 terminal=(-i)
 if [[ -t 0 && -t 1 ]]; then terminal+=(-t); fi
 if [[ $# == 0 ]]; then set -- bash; fi

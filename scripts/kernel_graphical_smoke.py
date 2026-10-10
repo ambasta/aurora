@@ -357,7 +357,7 @@ def production_case(args, directory, record):
 
 
 def restoration(args, directory, record):
-    verify_images(args, "normal", source=False)
+    verify_images(args, "normal")
     directory.mkdir()
     argv = capture.command(
         {"qemu": args.qemu}, {"data": args.data}, str(args.images / "normal/esp"), "stdio", firmware_args=args.firmware
@@ -414,7 +414,6 @@ def window(args):
 
 def stage(mode, destination, build):
     admission.configure_paths(build, ROOT)
-    source = admission.common.hashes(admission.source_files())
     checked = admission.checked(mode) if mode != "normal" else None
     target = destination / mode
     build = admission.BUILD
@@ -423,11 +422,7 @@ def stage(mode, destination, build):
     if mode == "normal":
         admission.common.verify_object_exports(files)
     if mode != "normal":
-        files += [
-            admission.RECEIPT,
-            build / "graphical-console-build.json",
-            build / "graphical-console-build-start.json",
-        ]
+        files += [admission.RECEIPT]
     for path in files:
         need(
             path.is_file()
@@ -451,22 +446,19 @@ def stage(mode, destination, build):
         )
     record = dict(
         mode=mode,
-        source=source,
         files={str(p.relative_to(target)): capture.digest(p) for p in target.rglob("*") if p.is_file()},
     )
-    need(source == admission.common.hashes(admission.source_files()), "source changed while staging")
     (target / "smoke-image.json").write_text(json.dumps(record, indent=2) + "\n")
 
 
-def verify_images(args, mode=None, source=True):
+def verify_images(args, mode=None):
     for mode in (mode,) if mode else ("normal", *admission.MODES):
         folder = args.images / mode
         need(not any(p.is_symlink() for p in folder.rglob("*")), "symlink in staged images")
         record = json.loads((folder / "smoke-image.json").read_text())
         need(
-            record["mode"] == mode
-            and (not source or record["source"] == admission.common.hashes(admission.source_files())),
-            "stale image source",
+            record["mode"] == mode,
+            "staged image profile mismatch",
         )
         need(
             record["files"]

@@ -3,25 +3,40 @@ export module kernel.round_robin;
 // Pure two-slot scheduling choice over copied facts. Slot numbers are never
 // domain handles, mailbox grants, transactions, frames or hardware authority.
 export namespace kernel {
-    enum class SelectionAction { rejected, idle, selected };
+    enum class SelectionAction {
+        rejected,
+        idle,
+        selected
+    };
 
     class SelectionDecision {
         SelectionAction outcome;
         u64 selected_slot;
         u64 next_slot;
     public:
-        SelectionDecision(SelectionAction action, u64 selected, u64 next)
-            : outcome(action), selected_slot(selected), next_slot(next) {}
+        SelectionDecision(SelectionAction action, u64 selected, u64 next) : outcome(action), selected_slot(selected),
+            next_slot(next) {
+        }
 
-        auto action() const -> SelectionAction { return outcome; }
-        auto selected() const -> u64 { return selected_slot; }
-        auto next() const -> u64 { return next_slot; }
+        auto action() const -> SelectionAction {
+            return outcome;
+        }
+        auto selected() const -> u64 {
+            return selected_slot;
+        }
+        auto next() const -> u64 {
+            return next_slot;
+        }
     };
 
     auto round_robin_next(u64 cursor, u64 eligible_mask) -> SelectionDecision {
         const SelectionDecision rejected = SelectionDecision(SelectionAction::rejected, 0u64, 0u64);
-        if (cursor > 1u64) { return rejected; }
-        if (eligible_mask > 3u64) { return rejected; }
+        if (cursor > 1u64) {
+            return rejected;
+        }
+        if (eligible_mask > 3u64) {
+            return rejected;
+        }
         if (eligible_mask == 0u64) {
             const SelectionDecision idle = SelectionDecision(SelectionAction::idle, 0u64, cursor);
             return idle;
