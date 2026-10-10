@@ -152,14 +152,14 @@ class ProfileMetadata(unittest.TestCase):
             "payload.bin",
             "esp/EFI/BOOT/BOOTX64.EFI",
         ):
-            self.assertIn(required, paths)
+            self.assertIn("objects/" + required if required.endswith((".o", ".su", ".ci")) else required, paths)
         for name in admission.CPP_OBJECTS + ("loader",):
             for suffix in (".su", ".ci"):
-                self.assertIn(name + suffix, paths)
+                self.assertIn("objects/" + name + suffix, paths)
         self.assertTrue(
             {
-                "console.o",
-                "framebuffer.o",
+                "objects/console.o",
+                "objects/framebuffer.o",
                 "program-build.json",
                 "console-service-admission.json",
                 "framebuffer-admission.json",

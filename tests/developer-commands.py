@@ -358,7 +358,7 @@ class DeveloperCommands(unittest.TestCase):
             # common translation units. This checks routing, never execution.
             rows = re.findall(r'^\s*"\$cxx" [^\n]* -c (\S+) -o (\S+)$', source, re.MULTILINE)
             expected = [
-                ("kernel/uefi/" + name + ".cpp", "build/uefi/" + name + ".o")
+                ("kernel/uefi/" + name + ".cpp", "build/uefi/objects/" + name + ".o")
                 for name in (
                     "payload",
                     "acpi",
@@ -375,20 +375,28 @@ class DeveloperCommands(unittest.TestCase):
             expected += [
                 # The exclusive owned-byte and snapshot branches each route
                 # this shared translation unit through the selected compiler.
-                ("kernel/owned-bytes.cpp", "build/uefi/owned-bytes-runtime.o"),
-                ("kernel/owned-bytes.cpp", "build/uefi/owned-bytes-runtime.o"),
-                ("kernel/uefi/owned-bytes.cpp", "build/uefi/owned-bytes-profile.o"),
+                ("kernel/owned-bytes.cpp", "build/uefi/objects/owned-bytes-runtime.o"),
+                ("kernel/owned-bytes.cpp", "build/uefi/objects/owned-bytes-runtime.o"),
+                ("kernel/uefi/owned-bytes.cpp", "build/uefi/objects/owned-bytes-profile.o"),
             ]
             self.assertCountEqual(rows, expected)
 
-    def test_uefi_profile_switch_retires_only_owned_objects(self):
+    def uefi_output_tools(self):
         # Run the ordinary shell builder; synthetic tools create its actual named
         # outputs. Image/stack admission and native compilation are separate gates.
         (self.bin / "rm").symlink_to(shutil.which("rm"))
         output_tool = (
             'if [[ "${1-}" == -V ]]; then printf " i386pep\\n"; exit; fi\n'
+            'if [[ "${0##*/}" == ld ]]; then printf "link|%s\\n" "$*" >> "$CALLS"; fi\n'
             "while (( $# )); do\n"
-            '  if [[ "$1" == -o ]]; then printf "%s\\n" "$UEFI_MODE" > "$2"; break; fi\n'
+            '  if [[ "$1" == -o ]]; then\n'
+            '    printf "%s\\n" "$UEFI_MODE" > "$2"\n'
+            '    if [[ "${0##*/}" == g++ && -n "${OUTPUT_FAULT:-}" ]]; then\n'
+            '      [[ $OUTPUT_FAULT != term ]] || kill -TERM "$PPID"\n'
+            '      exit 77\n'
+            '    fi\n'
+            '    break\n'
+            '  fi\n'
             "  shift\n"
             "done\n"
         )
@@ -396,9 +404,13 @@ class DeveloperCommands(unittest.TestCase):
             self.tool(name, output_tool)
         self.tool("objcopy", 'printf "%s\\n" "$UEFI_MODE" > "${@: -1}"\n')
         self.tool("python3", "exit 0\n")
+        return {"AURORAC": str(self.bin / "aurorac")}
+
+    def test_uefi_profile_switch_retires_only_owned_objects(self):
+        env = self.uefi_output_tools()
         build = self.repo / "build/uefi"
         build.mkdir(parents=True)
-        preserved = [build / name for name in ("normal.log", "unrelated.o", "captures/console.o")]
+        preserved = [build / name for name in ("normal.log", "unrelated.o", "console.o", "console.su", "console.ci", "captures/console.o")]
         preserved.append(self.repo / "build/compiler/cache.o")
         for path in preserved:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -406,6 +418,8 @@ class DeveloperCommands(unittest.TestCase):
         stamps = [path.stat().st_mtime_ns for path in preserved]
         common = set("payload-entry memory payload acpi pci runtime language embed transition loader".split())
         common.update(name + "-pe" for name in ("loader", "embed", "transition", "memory"))
+        outside = self.home / "outside-object"
+        outside.write_text("untouched")
         for mode, extra in (
             ("console", {"console", "console-entry"}),
             ("iommu-event-denial", {"event-intake"}),
@@ -413,15 +427,50 @@ class DeveloperCommands(unittest.TestCase):
             ("normal", set()),
         ):
             with self.subTest(mode=mode):
-                self.run_script("kernel-uefi-build.sh", env={"UEFI_MODE": mode, "AURORAC": str(self.bin / "aurorac")})
-                self.assertEqual({path.stem for path in build.glob("*.o")}, common | extra | {"unrelated"})
+                self.run_script("kernel-uefi-build.sh", env=env | {"UEFI_MODE": mode})
+                self.assertEqual({path.stem for path in (build / "objects").glob("*.o")}, common | extra)
+                self.assertEqual({path.stem for path in build.glob("*.o")}, {"unrelated", "console"})
                 self.assertEqual([path.read_text() for path in preserved], ["retain\n"] * len(preserved))
                 self.assertEqual([path.stat().st_mtime_ns for path in preserved], stamps)
-                self.assertFalse((build / "console.su").exists())
-                self.assertFalse((build / "console.ci").exists())
+                self.assertFalse((build / "objects/console.su").exists())
+                self.assertFalse((build / "objects/console.ci").exists())
+                self.assertFalse(list((build / "objects").glob("future-profile.*")))
+                self.assertEqual(outside.read_text(), "untouched")
+                links = [line.removeprefix("link|").split() for line in self.calls()]
+                self.assertTrue(links)
+                self.assertTrue(all(arg.startswith("build/uefi/objects/")
+                                    for args in links for arg in args if arg.endswith(".o")))
                 if mode == "console":
-                    for suffix in ("su", "ci"):
-                        (build / ("console." + suffix)).write_text("old compiler metadata\n")
+                    for suffix in ("o", "su", "ci"):
+                        (build / "objects" / ("future-profile." + suffix)).write_text("old compiler metadata\n")
+                    (build / "objects/future-profile.o").unlink()
+                    (build / "objects/future-profile.o").symlink_to(outside)
+
+    def test_uefi_partial_build_and_signal_retry(self):
+        env = self.uefi_output_tools()
+        image = self.repo / "build/uefi/esp/EFI/BOOT/BOOTX64.EFI"
+        image.parent.mkdir(parents=True)
+        for fault, status in (("exit", 77), ("term", -15)):
+            with self.subTest(fault=fault):
+                image.write_text("previous EFI")
+                self.run_script("kernel-uefi-build.sh", env=env | {"UEFI_MODE": "console", "OUTPUT_FAULT": fault},
+                                expected=status)
+                self.assertEqual(image.read_text(), "previous EFI")
+                self.assertTrue((self.repo / "build/uefi/objects/console.o").exists())
+                self.run_script("kernel-uefi-build.sh", env=env | {"UEFI_MODE": "normal"})
+                self.assertFalse((self.repo / "build/uefi/objects/console.o").exists())
+                self.assertEqual(image.read_text(), "normal\n")
+
+    def test_uefi_owned_objects_reject_symlink(self):
+        outside = self.home / "outside"
+        outside.mkdir()
+        sentinel = outside / "future-profile.o"
+        sentinel.write_text("evidence")
+        (self.repo / "build/uefi").mkdir(parents=True)
+        (self.repo / "build/uefi/objects").symlink_to(outside, target_is_directory=True)
+        self.assertIn("symlink", self.run_script("kernel-uefi-build.sh", expected=2))
+        self.assertEqual(sentinel.read_text(), "evidence")
+        self.assertEqual(self.calls(), [])
 
     def test_make_help_and_run_selectors(self):
         self.assertIsNotNone(MAKE)

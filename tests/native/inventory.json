@@ -184,7 +184,7 @@
     "scripts/kernel-acpi-tests.sh": "98af11c6e1d5d2b5c377dfc437b08c55f03b094f3f1cd7b2e4e7429e05dee509",
     "scripts/kernel-owned-views-tests.sh": "181925350b36a1fd1340d9f208ad09465aecf958d657db6d98b4762b173d8397",
     "scripts/kernel-tests.sh": "f51485093910a4b86fb68ddb5b75b731baa46bfb6effa8339e1876ba55ebaf63",
-    "scripts/kernel-uefi-span-tests.sh": "c4a79cc05944b43abd2a717daf0f28a1fb3687c8ec59cdbd852287c20b936ab6",
+    "scripts/kernel-uefi-span-tests.sh": "387ba2bb207bb8ffc1bb524c4776ea00c26d16e594f1f14380ab0a5fb6db879d",
     "scripts/kernel-uefi-ipc-tests.sh": "928e1bf518ed52db5494fe72a1f97a6b9728343f372268693aa664158ce097e0",
     "scripts/kernel-pci-tests.sh": "33f90a42911270bdca5380c852d6bcee9395a3d94bb06ce1dba4fb0735bbc545",
     "scripts/kernel-round-robin-tests.sh": "841ce707365b52922683ad1eb09093250935c88c8dddf92000bfe0e95b2c2374",

@@ -42,12 +42,13 @@ with tempfile.TemporaryDirectory(prefix='aurora-uefi-span-') as temporary:
             require(set(image) == keys and image['entry'] == images.BASE + index * 4096
                     and 4 <= image['size'] <= 4096 and image['probe_pc'] == image['probe_offset'] == 0,
                     'runtime span widened image layout or probe authority')
-        require((output / f'normal/user-{name}-entry.o').read_bytes()
-                == (output / f'span/user-{name}-entry.o').read_bytes(), 'normal adapter changed')
+        require((output / f'normal/objects/user-{name}-entry.o').read_bytes()
+                == (output / f'span/objects/user-{name}-entry.o').read_bytes(), 'normal adapter changed')
     require(normal['bounds'] == span['bounds'], 'bounds metadata changed')
     for suffix in ('s', 'o', 'elf', 'bin'):
-        require((output / f'normal/user-bounds.{suffix}').read_bytes()
-                == (output / f'span/user-bounds.{suffix}').read_bytes(), 'bounds fixture changed')
+        name = ('objects/' if suffix == 'o' else '') + f'user-bounds.{suffix}'
+        require((output / 'normal' / name).read_bytes()
+                == (output / 'span' / name).read_bytes(), 'bounds fixture changed')
 
     elf = (output / 'span/user-clean.elf').read_bytes()
     blob = (output / 'span/user-clean.bin').read_bytes()

@@ -66,7 +66,7 @@ def linked_edges(disassembly):
 def load(directory):
     rows={}
     for name in ('payload','acpi','pci','runtime'):
-        for line in (directory/(name+'.su')).read_text().splitlines():
+        for line in (directory / "objects"/(name+'.su')).read_text().splitlines():
             signature,size,kind=line.rsplit('\t',2)
             if kind not in ('static','dynamic,bounded'):raise ValueError('Unbounded frame')
             rows[name+':'+signature]=int(size)
@@ -109,7 +109,7 @@ if __name__=='__main__':
         rows=load(directory);result=calculate(rows)
         disassembly=subprocess.check_output(['objdump','-d','-C',str(directory/'payload.elf')],text=True)
         result['linked_edges']=linked_edges(disassembly)
-        for name in ('payload','acpi','pci','runtime'):(out/(name+'.su')).write_bytes((directory/(name+'.su')).read_bytes())
+        for name in ('payload','acpi','pci','runtime'):(out/(name+'.su')).write_bytes((directory / "objects"/(name+'.su')).read_bytes())
         (out/'payload.disassembly.txt').write_text(disassembly)
         result['elf_sha256']=hashlib.sha256((directory/'payload.elf').read_bytes()).hexdigest()
         result['compiler_frames']=rows

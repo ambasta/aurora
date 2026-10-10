@@ -46,7 +46,7 @@ def validate(rows):
 def load(directory):
     rows={}
     for name in ('payload','acpi','pci'):
-        for line in (directory/(name+'.su')).read_text().splitlines():
+        for line in (directory / "objects"/(name+'.su')).read_text().splitlines():
             signature,size,kind=line.rsplit('\t',2)
             if kind not in ('static','dynamic,bounded'):raise ValueError('Unbounded compiler frame')
             rows[signature]=int(size)

@@ -158,11 +158,33 @@ or image-validation check is disabled.
 
 ## What the run commands do
 
-The ordinary UEFI builder reuses `build/uefi`. Before each profile build it removes
-only named profile-specific objects and their compiler stack/callgraph sidecars,
-so console, graphical, runtime and Event transitions do not inherit stale object
-inventory. Compiler caches, common outputs, logs and unrelated files are retained;
-unknown objects still fail profiles that require exact inventory admission.
+The ordinary UEFI builder keeps disposable object files and compiler stack/callgraph
+sidecars in `build/uefi/objects`. Each build clears that owned namespace by output
+type, so future profile objects need no cleanup-name registration. Linkers and
+image/stack admission read objects only there; unexpected objects in the admitted
+inventory still fail closed. Published ELF/EFI paths are unchanged. Common kernel
+objects are rebuilt on each invocation; compiler caches, logs and unrelated files
+outside the namespace stay in place. Legacy top-level objects from older builders
+are left untouched and are no longer link/admission inputs.
+
+Graphical smoke also leaves the shared UEFI tree in place and stages only required
+current image/admission artifacts. By default it retains the latest two successful
+and two failed run directories; a failed build's available objects/artifacts are
+moved within the same filesystem before normal restoration; small image/receipt
+files are copied. Snapshot failures are reported, but restoration still runs and
+may replace inputs that could not be retained. `AURORA_GRAPHICAL_KEEP_RUNS=N` changes each limit
+(1..999); `all` skips pruning and pins the new run. An existing run can be pinned
+with a `.keep` file inside its directory. Use this for independent-review windows,
+including build-only images waiting for separate use. A separate runner invocation
+pins a completed image window in this checkout before reading it; remove its
+`.keep` only when review/use is finished. Managed images from another checkout
+require an existing regular `.keep` pin created there before use; the reader does
+not change that checkout's retention files. Pruning errors warn without changing the build/guest
+result. Pins, unmarked older
+runs, malformed records and unfinished runs (for example after SIGKILL) are not
+pruned automatically and need deliberate manual cleanup. Retention serializes its
+updates and never prunes an active/current window; builds still require one command
+at a time as described above. See the [graphical smoke contract](framebuffer-console.md#current-source-graphical-smoke).
 
 BIOS uses `pc`/TCG, `qemu64`, one CPU, 32 MiB RAM and the generated
 `build/aurora.img`. UEFI uses `q35`/TCG, `qemu64`, one CPU, 128 MiB RAM and a

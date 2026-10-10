@@ -48,7 +48,8 @@ WRAPPERS = {
 # its historical whole-file hash was already stale after NVMe preparation.
 # Other unchanged historical gates retain their separate identity checks.
 UNCHANGED = {
-    "scripts/kernel-uefi-ivrs-run.py": "b40859a34534387507c4663b252492c1a92cc9e5f393b9477b9b76ae620f3b1b",
+    # Reviewed object-directory-only change; guest clock/argv remain unchanged.
+    "scripts/kernel-uefi-ivrs-run.py": "5adc179e32b879591646dc87e0c974dd63b65fe243b35c7beb0eb916a3272ec5",
     "tests/kernel-boot-capacity.py": "a50b6cb2d0bb3b43f50afa3d8d8059c4504dbe633510eb43b8a1ab16c54c257b",
     "tests/kernel-uefi-budget-smoke.py": "51aaa29ba0f28f59576b7bbff451eafd913b306790f72bd1afc6b0839a853e93",
     "tests/kernel-uefi-dispatch-smoke.py": "506ff383b107ad1f4f05297c54e5179a73bcc05978a91f9429a389b5888f97f9",

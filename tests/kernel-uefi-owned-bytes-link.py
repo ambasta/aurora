@@ -44,8 +44,8 @@ def main():
         "owned-bytes-runtime",
         "owned-bytes-profile",
     )
-    objects = [build / (name + ".o") for name in object_names]
-    inputs += objects + [build / "language.s", build / "language.o", ROOT / "kernel/uefi/payload.ld"]
+    objects = [build / "objects" / (name + ".o") for name in object_names]
+    inputs += objects + [build / "language.s", build / "objects/language.o", ROOT / "kernel/uefi/payload.ld"]
     inputs += [
         ROOT / "library" / name
         for name in (
@@ -62,7 +62,7 @@ def main():
     result = dict(status="running", native_executed=False, guest_executed=False, inputs=before)
     receipt = out / "run.json"
     try:
-        positive = run(["nm", "-a", str(build / "language.o")], out / "positive-symbols.txt")
+        positive = run(["nm", "-a", str(build / "objects/language.o")], out / "positive-symbols.txt")
         ADMISSION.validate_symbols(positive)
         # The real resize helper must link. An unrelated runtime import remains
         # rejected at BOTH closed object admission and the actual freestanding link.
@@ -85,7 +85,7 @@ def main():
         result["layout_sha256"] = hashlib.sha256(layout.read_bytes()).hexdigest()
         linker = ["ld", "-nostdlib", "-T", str(layout), "-z", "max-page-size=0x1000"]
         run(
-            linker + list(map(str, objects)) + [str(build / "language.o"), "-o", str(out / "accepted-resize.elf")],
+            linker + list(map(str, objects)) + [str(build / "objects/language.o"), "-o", str(out / "accepted-resize.elf")],
             out / "resize-link.log",
         )
         if run(["nm", "-u", str(out / "accepted-resize.elf")], out / "resize-undefined.txt").strip():
@@ -122,7 +122,7 @@ def main():
         failed = run(
             linker
             + list(map(str, objects))
-            + [str(build / "language.o"), str(out / "extra.o"), "-o", str(out / "rejected-mixed.elf")],
+            + [str(build / "objects/language.o"), str(out / "extra.o"), "-o", str(out / "rejected-mixed.elf")],
             out / "mixed-link.log",
             expected=1,
         )

@@ -89,12 +89,13 @@ def verify(data, blob, base, symbols, *, image_count=2, copied_snapshot=False, c
 
 
 def build(compiler, out, mode):
-    out.mkdir(parents=True, exist_ok=True)
+    (out / "objects").mkdir(parents=True, exist_ok=True)
     run = lambda args: subprocess.run([str(x) for x in args], cwd=ROOT, check=True)
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
     for index, name in enumerate(("clean", "bounds")):
         prefix = out / f"user-{name}"
+        obj = out / "objects" / f"user-{name}.o"
         source = "span-clean" if name == "clean" and mode == "span" else name
         run(
             [
@@ -106,8 +107,8 @@ def build(compiler, out, mode):
                 prefix.with_suffix(".s"),
             ]
         )
-        run(["as", "--64", "-L", prefix.with_suffix(".s"), "-o", prefix.with_suffix(".o")])
-        adapter = out / f"user-{name}-entry.o"
+        run(["as", "--64", "-L", prefix.with_suffix(".s"), "-o", obj])
+        adapter = out / "objects" / f"user-{name}-entry.o"
         flags = (
             ["--defsym", f"UEFI_USER_{mode.upper()}=1"]
             if index == 0
@@ -130,7 +131,7 @@ def build(compiler, out, mode):
                 "-z",
                 "max-page-size=0x1000",
                 adapter,
-                prefix.with_suffix(".o"),
+                obj,
                 "-o",
                 elf,
             ]

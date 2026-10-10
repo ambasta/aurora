@@ -164,15 +164,15 @@ def stack_evidence(directory):
             )
     named = {symbol.name: symbol for symbol in linked.symbols if symbol.section}
     irq = named["uefi_console_interrupt"]
-    irq_object = decoder.Elf(directory / "console-entry.o")
+    irq_object = decoder.Elf(directory / "objects" / "console-entry.o")
     original_irq = next(row for row in irq_object.symbols if row.name == irq.name)
     extent = irq_object.sections[original_irq.section][5] - original_irq.address
     linked.functions[irq.name] = decoder.Symbol(irq.name, irq.address, extent, irq.section, 2)
     starts = {symbol.address: name for name, symbol in linked.functions.items()}
     need(len(starts) == len(linked.functions), "Ambiguous linked function starts")
     frames, associations = decoder.cpp_frames(directory, linked)
-    language = decoder.Elf(directory / "language.o")
-    memory = decoder.Elf(directory / "memory.o")
+    language = decoder.Elf(directory / "objects" / "language.o")
+    memory = decoder.Elf(directory / "objects" / "memory.o")
     for obj in (language, memory):
         for symbol in obj.functions.values():
             decoder.associate_object(linked, obj, symbol)
@@ -287,7 +287,7 @@ def build_files():
         for suffix in (".su", ".ci")
     ]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
-    return [BUILD / name for name in names]
+    return [BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci")) else name) for name in names]
 
 
 def begin_build(mode, compiler, cxx, flags):

@@ -87,7 +87,7 @@ def stack_evidence(directory):
     starts = {symbol.address: name for name, symbol in linked.functions.items()}
     need(len(starts) == len(linked.functions), "Ambiguous function starts")
     frames, associations = decoder.cpp_frames(directory, linked)
-    language, memory = decoder.Elf(directory / "language.o"), decoder.Elf(directory / "memory.o")
+    language, memory = decoder.Elf(directory / "objects" / "language.o"), decoder.Elf(directory / "objects" / "memory.o")
     for obj in (language, memory):
         for symbol in obj.functions.values():
             decoder.associate_object(linked, obj, symbol)
@@ -180,7 +180,7 @@ def build_files():
         for suffix in (".su", ".ci")
     ]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
-    return [BUILD / name for name in names]
+    return [BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci")) else name) for name in names]
 
 
 def begin(mode, compiler, cxx, flags):

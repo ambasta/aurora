@@ -49,17 +49,19 @@ restoration boot. A preview never creates those approvals.
 
 `make smoke-graphical-console` builds and checks normal UEFI, production graphical
 and capture graphical images sequentially, then runs eighteen fresh graphical
-cases and one actual normal restoration. It reuses the existing v3 admission;
+cases and one actual normal restoration. It uses version-4 admission;
 that receipt stays structure-only and never grants behavioral qualification.
 No external approval receipts or historical compiler/address allowlists are needed
 for this developer command. Independent review and final GCC 16 `full` remain
 separate merge gates. This command creates new observations, not recovered evidence.
 
-For review before execution, use `scripts/kernel-graphical-smoke.sh --build-only`.
+For review before execution, use
+`AURORA_GRAPHICAL_KEEP_RUNS=all scripts/kernel-graphical-smoke.sh --build-only`.
 It prints a fresh directory containing ordinary image copies and build logs,
 then rebuilds normal UEFI in the shared `build/uefi` directory before returning.
-Incoming and final shared outputs are retained as `previous-build` and `last-build`
-inside the run directory, so stale profile objects cannot contaminate normal admission.
+The builder clears only its disposable `objects` namespace; shared caches and logs
+stay in place. Staging copies the required current artifact inventory, never the
+whole shared tree. The `all` setting pins this review window until manually removed.
 Then run `python3 -B scripts/kernel_graphical_smoke.py --images DIR/images
 --evidence DIR/guests QEMU OVMF CODE VARS DATA`, using either a combined OVMF path
 or the CODE/VARS pair and empty strings for unused inputs. The shell uses the
@@ -97,6 +99,21 @@ normal UEFI in shared `build/uefi` on success, build-only, and failure or handle
 INT/TERM after staging starts. Foreground work finishes before shell restoration;
 the original failure status is preserved, and a restoration failure is reported
 with its retained build log and makes an otherwise successful command fail.
+Failed/partial owned objects are renamed into the run window before restoration;
+small image/receipt artifacts are copied. A failed restoration also retains its
+own inputs. Capture failure is reported and restoration still runs, so inputs
+that could not be retained may be replaced. Successful runs avoid both whole-tree
+moves/copies.
+Default retention keeps the latest two successful and two failed windows. Set
+`AURORA_GRAPHICAL_KEEP_RUNS=N` (1..999) to change both limits, or `all` to skip
+pruning and pin the new run. A `.keep` file pins an individual window. A separate
+runner pins a completed window in this checkout before its first image check;
+remove the pin manually after review/use finishes. A managed window from another
+checkout must already have a regular `.keep` file created there; foreign retention
+files are never changed by this reader. Pruning errors emit a warning without
+changing the build/guest result. Unmarked,
+malformed and unfinished windows remain untouched for manual review/cleanup; this
+exceptional evidence and explicit pins are outside the automatic count bound.
 This rebuild does not replace the staged-normal boot validation. This isolated
 window leaves no persistent guest state, so one final boot suffices.
 Ordinary/optimized compiler-free runner
@@ -307,11 +324,17 @@ require their own combined linked-stack/image begin/end/emit admission;
 every new attempt invalidates prior combined receipts before build work. Missing
 or failed checks reject. Automatic evidence still requires independent exact-image
 review and cannot authorize a guest or borrow a legacy profile's qualification.
-Version-3 image receipts separate capture source/artifact and measured state
-structure by mode. Capture state evidence says `structure-only` and
+Version-4 image receipts retain measured capture artifact/state structure by
+mode. Current build provenance binds the complete source, tools, exact flags and
+output bytes at begin/end/admission; it does not require a historical source-token
+allowlist. A fresh implementation edit proceeds to the actual image/stack checks.
+Stale or mixed source/output/tool inputs still reject. Earlier receipt schemas,
+even with an exact review pin, cannot satisfy current `checked`/`reviewed`.
+The former source-only action and token-projection subreceipt are removed;
+historical source and image receipts retain their original scope.
+Capture state evidence still says `structure-only` and
 `behavior_qualification: pending-hosted-and-guest-gates`; emitting or checking a
-receipt does not mark those gates passed. The
-`source --mode graphical-console-capture` action checks only the source contract.
+receipt does not mark those gates passed.
 The capture profile separates its bounded pre-store selector from editor input,
 emits completed-sample/store markers, and leaves terminal or failed scanout intact
 for external physical capture and ordinary normal-image restoration.
@@ -376,14 +399,15 @@ accepts exactly seven selector bytes before any grant, consumer entry or store:
 All other 249 bytes reject with `capture selector` and no release marker.
 A valid byte emits `AURORA_GRAPHICAL_CAPTURE_RELEASED: selector=N` through the
 existing decimal-number writer, with exactly the code above; invalid code 0 is
-never released. The source-contract receipt is
-`aurora-graphical-capture-source-v2`. The ten-million-iteration gate and UART-error
-rejection are unchanged. No later byte selects a scenario.
+never released. Historical source-contract receipts used
+`aurora-graphical-capture-source-v2`; current admission binds fresh build provenance
+instead. The ten-million-iteration gate and UART-error rejection are unchanged.
+No later byte selects a scenario.
 The hosted observer independently checks all 256 selector values, literal numeric
 codes, exact names and fixed failure predicates. The complete hosted runner now
-requires 68 cases: 39 transcript/geometry, seven baseline/output-failure cases
-(including ordinal 55) and 22 pre-entry denials. This inventory is prepared, not
-a claim of a new hosted pass.
+requires 108 cases: 75 transcript/geometry cases, one same-process session
+reset, ten output-failure cases (including ordinal 55) and 22 pre-entry denials.
+This inventory is prepared, not a claim of a new hosted pass.
 
 Failure lines retain their original fields and append capture-only
 `completed=N wakes=W pixel_attempts=P`; completion lines append
@@ -436,7 +460,7 @@ or authority. Existing save/return checks and whole-image budgets remain in forc
 
 Current capture admission retains PE/ELF/PIC checks, `.su`/`.ci` associations,
 object/linked-byte binding, bounded stack/control-flow and private-ABI checks,
-source capture-policy controls, and production fixture absence. Fourteen named
+current build provenance, and production fixture absence. Fourteen named
 BSS fields must have the expected type, size, alignment, containment and disjoint
 storage: nine counters/state fields, Console and Display grants and generations,
 and the graphical entry's active flag. Addresses and section indexes are measured;
@@ -453,3 +477,28 @@ complete encoded build snapshots are no longer repository test inputs.
 The separate paired-walker exact-body/storage/recursion fixtures and narrow
 memory-push assumptions above remain unchanged. This is bounded stack/layout
 evidence, not arbitrary machine safety or complete compiler independence.
+
+The removed five-file token allowlist and source-projection mutation tests proved
+only a match to historical source tokens. Their behavioral requirements remain assigned to the
+appropriate layer, rather than attributed to source hashes:
+
+- The hosted generated-consumer observer executes the real capture policy for all
+  256 selector bytes, independent numeric codes/names and fixed 0/55 failure
+  ordinals, including nearby and wide counts.
+- Real hosted Console/Display sessions and graphical entry cover exact record
+  identity, both preflights, wrong/duplicated kinds, stale generations, geometry,
+  lifetime and reentry; compiled imports/private ABI and distinct frame ownership
+  remain checked by image/stack admission.
+- Actual production/capture guests check release/sample order, diagnostics and
+  counters, all C/D/c/d no-effect denials, F/I failed-output store prefixes,
+  unexpected pixel writes and final normal restoration.
+- Artifact scans and linked-state checks retain production capture absence and
+  exact capture ownership, size, alignment, BSS containment and disjointness.
+
+These layers do not prove arbitrary adapter code correct. The unchanged private
+UART-status predicate, finite selector-loop bound, checked counter increments and
+pre-store ordering still require source review alongside the actual behavior
+gates. Hosted policy tests do not execute privileged adapter I/O; sampled guest
+pixels do not prove every intermediate write. Exact assignment counts and source
+conditional spellings are no longer admission criteria. Independent review and
+fresh final-source image/hosted/guest/full gates remain required before qualification.
