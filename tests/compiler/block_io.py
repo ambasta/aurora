@@ -23,6 +23,107 @@ ZERO = bytes(SIZE)
 INITIAL = bytes((index * 53 + index // 256 * 31 + 7) % 256 for index in range(SIZE))
 INVALID = (-(1 << 63), -1, 1, 2, 512, (1 << 63) - 1)
 
+COPIED_RESULT_DRIVER = r"""
+#include "runtime/hosted_bytes.hpp"
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+using namespace aurora::hosted::bytes;
+extern "C" void __au_runtime_bytes_test_produce(void *, void *);
+static void check(bool value, const char *message) {
+    if (!value) { std::fprintf(stderr, "copied record failure: %s\n", message); std::exit(90); }
+}
+struct Trace {
+    std::int64_t remaining;
+    std::array<void *, 2> allocations{};
+    std::array<std::size_t, 2> sizes{};
+    std::array<std::size_t, 2> released{};
+    std::size_t allocated_count = 0, released_count = 0;
+    static void *allocate(void *context, std::size_t size) noexcept {
+        auto &self = *static_cast<Trace *>(context);
+        if (self.remaining == 0) return nullptr;
+        if (self.remaining > 0) --self.remaining;
+        check(self.allocated_count < 2, "bounded producer allocations");
+        void *memory = std::malloc(size);
+        if (memory != nullptr) {
+            self.allocations[self.allocated_count] = memory;
+            self.sizes[self.allocated_count++] = size;
+        }
+        return memory;
+    }
+    static void release(void *context, void *memory) noexcept {
+        auto &self = *static_cast<Trace *>(context);
+        for (std::size_t i = 0; i < self.allocated_count; ++i) {
+            if (self.allocations[i] == memory) {
+                check(self.released_count < 2, "no duplicate releases");
+                self.released[self.released_count++] = i + 1;
+                std::memset(memory, 0xdd, self.sizes[i]);
+                self.allocations[i] = nullptr;
+                std::free(memory);
+                return;
+            }
+        }
+        check(false, "release matches a live allocation");
+    }
+};
+int main(int argc, char **argv) {
+    check(argc == 3, "failure countdown and sector count");
+    const std::int64_t fail_after = std::strtoll(argv[1], nullptr, 10);
+    const std::uint64_t count = std::strtoull(argv[2], nullptr, 10);
+    Trace trace{fail_after};
+    Region region(count * 512 + 1, Allocator{&trace, Trace::allocate, Trace::release});
+    alignas(16) std::array<std::uint64_t, 2> input{region.id(), count};
+    const auto input_before = input;
+    alignas(16) std::array<unsigned char, 96> output;
+    output.fill(0xa5);
+    auto *result = output.data() + 8;
+    __au_runtime_bytes_test_produce(input.data(), result);
+    const std::size_t allocations = fail_after < 0 ? 2 : static_cast<std::size_t>(fail_after);
+    const auto metrics = region.metrics();
+    check(metrics.used == 0 && metrics.live_allocations == 0, "producer closes all owners before return");
+    check(metrics.successful_allocations == allocations && metrics.releases == allocations &&
+          trace.allocated_count == allocations && trace.released_count == allocations,
+          "exact allocation and release counts before region close");
+    for (std::size_t i = 0; i < allocations; ++i)
+        check(trace.released[i] == allocations - i, "exact reverse release order");
+    check(region.close(), "host region closes before reading copied output");
+    // No returned field was inspected before the authority and all its owners closed.
+    check(input == input_before, "region and scalar argument record unchanged");
+    std::uint64_t status = 99;
+    std::memcpy(&status, result, sizeof(status));
+    check(status == (fail_after < 0 ? 0u : 3u), "success or invalid_source status survives region close");
+    for (std::size_t i = 0; i < 64; ++i) {
+        const auto expected = fail_after < 0 ? static_cast<unsigned char>((i * 53 + 7) % 256) : 0;
+        check(result[8 + i] == expected, "every copied record byte survives region close");
+    }
+    // The canonical report is 8 status bytes plus 64 payload bytes, with no internal padding.
+    for (std::size_t i = 0; i < output.size(); ++i)
+        if (i < 8 || i >= 80) check(output[i] == 0xa5, "both result-buffer canaries preserved");
+    auto independent = output;
+    independent[16] ^= 255;
+    check(independent[16] != output[16], "independent snapshot can change after region close");
+    std::printf("PASS copied resource record after region.close: fail_after=%lld sectors=%llu releases=%zu\n",
+                static_cast<long long>(fail_after), static_cast<unsigned long long>(count), allocations);
+}
+"""
+
+COPIED_RESULT_BRIDGE = r"""
+.text
+.globl __au_runtime_bytes_test_produce
+.type __au_runtime_bytes_test_produce, @function
+__au_runtime_bytes_test_produce:
+    pushq %rbp
+    movq %rsp, %rbp
+    movq %rdi, %r11
+    movq %rsi, %r10
+    call PRODUCER
+    leave
+    ret
+.size __au_runtime_bytes_test_produce, .-__au_runtime_bytes_test_produce
+"""
+
 
 @dataclass(frozen=True)
 class Case(ScalarCase):
@@ -32,6 +133,7 @@ class Case(ScalarCase):
     allocations: int = 1
     peak: int = 1
     fail_after: int | None = None
+    release_order: tuple[int, ...] | None = None
 
 
 class StorageRunner(Suite):
@@ -64,6 +166,7 @@ class StorageRunner(Suite):
                 case.allocations,
                 case.peak,
                 case.fail_after,
+                None if case.release_order is None else list(case.release_order),
             )
 
     def run(self, executable, quota, length, flag, expected, allocations, peak, fail_after=None, release_order=None):
@@ -132,6 +235,54 @@ class StorageRunner(Suite):
                 f"{case.name}: rejection changed output",
             )
         self.rejections += 1
+
+    def copied_result_after_region_close(self):
+        """Observe the producer's real copied record only after closing host authority."""
+        folder = self.directory / "copied-result-after-region-close"
+        folder.mkdir()
+        case = next(copied_resource_result_cases())
+        source = folder / "input.au"
+        source.write_text(
+            "module storage_test;\n" + "".join(f"import {module};\n" for module in IMPORTS) + case.prelude
+        )
+        assembly = folder / "output.s"
+        compiled = command([self.compiler, *self.module_args, source, "-o", assembly])
+        require(compiled.returncode == 0, f"direct copied producer compile failed: {compiled.stderr!r}")
+        text = assembly.read_text()
+        producers = re.findall(r"^\.type ([A-Za-z_][A-Za-z_0-9]*__d7produce), @function$", text, re.M)
+        require(len(producers) == 1, "one nominal private resource producer entry")
+        require(f".local {producers[0]}\n" in text, "copied producer remains private")
+        assembly.write_text(text + COPIED_RESULT_BRIDGE.replace("PRODUCER", producers[0]))
+        driver = folder / "driver.cpp"
+        driver.write_text(COPIED_RESULT_DRIVER)
+        executable = folder / "native"
+        linked = command(
+            [
+                *self.cxx,
+                "-std=c++23",
+                "-O2",
+                "-Wall",
+                "-Wextra",
+                "-Wpedantic",
+                "-Werror",
+                "-I",
+                ROOT,
+                driver,
+                ROOT / "runtime/hosted_bytes.cpp",
+                assembly,
+                "-o",
+                executable,
+            ],
+            timeout=60,
+        )
+        require(linked.returncode == 0, f"direct copied producer host link failed: {linked.stderr!r}")
+        for index, (fail_after, count) in enumerate(((-1, 1), (-1, 3), (0, 1), (1, 1))):
+            observed = command([executable, fail_after, count])
+            (folder / f"observation-{index}.stdout").write_bytes(observed.stdout)
+            (folder / f"observation-{index}.stderr").write_bytes(observed.stderr)
+            require(observed.returncode == 0, f"copied result after region close failed: {observed.stderr!r}")
+            require(observed.stdout.startswith(b"PASS copied resource record after region.close:"), "host observation")
+            print(observed.stdout.decode().strip(), flush=True)
 
 
 def make_device(name="device", count="1", const=False):
@@ -778,6 +929,121 @@ def runtime_cases():
         )
 
 
+def copied_resource_result_cases():
+    """The returned record outlives the producer's real sector-device backing."""
+    prelude = """
+        class ProducedRecord {
+            storage::SectorIoStatus outcome;
+            std::BinaryBuffer64 payload;
+        public:
+            ProducedRecord(storage::SectorIoStatus status, std::BinaryBuffer64 record)
+                : outcome(status), payload(record) {}
+            auto status() const -> storage::SectorIoStatus { return outcome; }
+            auto record() const -> std::BinaryBuffer64 {
+                const std::BinaryBuffer64 result = payload;
+                return result;
+            }
+        };
+        auto produce(builtin::ByteRegion region, i64 count) -> ProducedRecord {
+            builtin::OwnedBytes guard = region.try_allocate(1);
+            builtin::OwnedBytes backing = region.try_allocate(count * 512);
+            storage::RamSectorDevice device = storage::RamSectorDevice(region, move(backing));
+            const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+            if (device.status() != storage::SectorIoStatus::success) {
+                const ProducedRecord failed = ProducedRecord(storage::SectorIoStatus::invalid_source, zero);
+                return failed;
+            }
+            std::BinaryBuffer64 original = std::BinaryBuffer64();
+            i64 index = 0;
+            while (index < 64) {
+                original.write_u8(index, u8((index * 53 + 7) % 256));
+                index = index + 1;
+            }
+            storage::Sector512 sector = storage::Sector512();
+            sector.write_record(448, original);
+            device.write_sector(count - 1, sector);
+            const storage::SectorReadResult saved = device.read_sector(count - 1);
+            const storage::Sector512 zero_sector = storage::Sector512();
+            device.write_sector(count - 1, zero_sector);
+            sector.write_record(448, zero);
+            original.write_u8(0, 99u8);
+            const storage::Sector512 snapshot = saved.sector_or_zero();
+            const storage::RecordReadResult tail = snapshot.read_record(448);
+            const std::BinaryBuffer64 record = tail.record_or_zero();
+            const ProducedRecord result = ProducedRecord(saved.status(), record);
+            return result;
+        }
+    """
+    body = (
+        byte_array("expected_record", bytes((index * 53 + 7) % 256 for index in range(64)))
+        + """
+        const ProducedRecord report = produce(region, n);
+        const std::BinaryBuffer64 record = report.record();
+        if (flag == 0) {
+            if (report.status() != storage::SectorIoStatus::success) { return 0u64; }
+            // The producer must have dropped both owners before this quota-sized allocation.
+            builtin::OwnedBytes replacement = region.try_allocate(n * 512 + 1);
+            if (!replacement.ok()) { return 0u64; }
+            i64 index = 0;
+            while (index < replacement.size()) {
+                replacement.set(index, 238u8);
+                index = index + 1;
+            }
+            std::BinaryBuffer64 changed = report.record();
+            changed.write_u8(0, 99u8);
+            if (changed.at(0) != 99u8) { return 0u64; }
+            const std::BinaryBuffer64 unchanged = report.record();
+            index = 0;
+            while (index < 64) {
+                const u8 expected = expected_record[index];
+                if (record.at(index) != expected || unchanged.at(index) != expected) { return 0u64; }
+                index = index + 1;
+            }
+        } else {
+            if (report.status() != storage::SectorIoStatus::invalid_source) { return 0u64; }
+            // record() exposes the actual copied payload, so no accessor can mask bad failure bytes.
+            i64 index = 0;
+            while (index < 64) {
+                if (record.at(index) != 0u8) { return 0u64; }
+                index = index + 1;
+            }
+        }
+        return 42u64;
+    """
+    )
+    for count in (1, 3):
+        yield Case(
+            f"resource-produced record survives device cleanup and quota reuse {count}",
+            body,
+            42,
+            imports=IMPORTS,
+            prelude=prelude,
+            quota=count * 512 + 1,
+            length=count,
+            allocations=3,
+            peak=2,
+            release_order=(2, 1, 3),
+        )
+    for quota, fail_after, allocations, label in (
+        (512, None, 1, "quota exhausted after guard"),
+        (513, 0, 0, "allocator rejects first allocation"),
+        (513, 1, 1, "allocator rejects device backing"),
+    ):
+        yield Case(
+            "resource-produced zero failure record: " + label,
+            body,
+            42,
+            imports=IMPORTS,
+            prelude=prelude,
+            quota=quota,
+            flag=1,
+            allocations=allocations,
+            peak=allocations,
+            fail_after=fail_after,
+            release_order=(1,) if allocations else (),
+        )
+
+
 def rejections():
     prefix = "module test; " + " ".join(f"import {module};" for module in IMPORTS)
     prefix += " auto test(builtin::ByteRegion region, i64 n, i64 flag) -> u64 {"
@@ -822,6 +1088,7 @@ def main():
         + list(failure_cases())
         + list(flush_cases())
         + list(runtime_cases())
+        + list(copied_resource_result_cases())
     )
     rejected = list(rejections())
     if args.artifacts is not None:
@@ -844,8 +1111,13 @@ def main():
         runner.run(executable, 511, 1, 0, 14, 0, 0)
         runner.run(executable, 0, 0, 0, 13, 0, 0)
         runner.run(executable, 0, (1 << 63) - 1, 0, 13, 0, 0)
+        runner.copied_result_after_region_close()
 
-    print(f"PASS block I/O: {len(corpus)} native cases, {len(rejected)} rejections; example=passed", flush=True)
+    print(
+        f"PASS block I/O: {len(corpus)} native cases, {len(rejected)} rejections; "
+        "example=passed; copied-result-after-region-close=4 passed",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

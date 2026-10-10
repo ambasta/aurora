@@ -206,6 +206,90 @@ Module called(bool result = true) {
     module.functions = {caller, callee};
     return module;
 }
+// The caller and callee both return a padded copied value through separate
+// hidden storage, while the callee closes every incoming owner before copying.
+Module copiedResource() {
+    auto module = called(false);
+    for (auto &function : module.functions) {
+        function.result = Type("Copy");
+        function.objectSlots[368] = {"Copy", false};
+        function.slots[368] = Type::U8;
+        function.slots[360] = Type::U64;
+        function.code.back() = ReturnObject{368};
+    }
+    auto &caller = module.functions[0];
+    before<ResourceCall>(caller, {BeginObject{368}});
+    op<ResourceCall>(module).resultOffset = 368;
+    auto &callee = module.functions[1];
+    before<BytesLength>(
+        callee,
+        {BeginObject{368}, Load{344, Type::U8}, Store{368, Type::U8}, Load{352, Type::U64}, Store{360, Type::U64}});
+    return module;
+}
+
+Module copiedFactory(bool empty = false, bool nested = false) {
+    auto module = shapes();
+    const std::string name = nested ? "Nested" : empty ? "Empty" : "Copy";
+    if (nested) {
+        module.classLayouts[name] = {Type::U8, Type::U64};
+        module.classFields[name] = {{Type("Copy"), 0, 2, false}, {Type("Empty"), 2, 0, false}};
+        module.classStorage[name] = {{0, 8}, {0, 16}, 16, 8, 16};
+    }
+    IRFunction caller;
+    caller.name = "copied_caller";
+    caller.result = Type(name);
+    caller.parameters = {Type::ByteRegion};
+    caller.frameBytes = 80;
+    caller.regionSlots = {8};
+    caller.objectSlots = {{32, {name, false}}, {48, {name, false}}};
+    if (!empty || nested)
+        caller.slots = {{32, Type::U8}, {24, Type::U64}, {48, Type::U8}, {40, Type::U64}};
+    caller.code = {
+        BindRegionParameter{0, 8}, BeginObject{32}, ResourceCall{"copied_factory", 8, {0}, 32}, ReturnObject{32}};
+    auto factory = caller;
+    factory.name = "copied_factory";
+    factory.code = {BindRegionParameter{0, 8}, BeginObject{32}};
+    if (nested) {
+        factory.objectSlots[64] = {"Copy", false};
+        factory.slots[64] = Type::U8;
+        factory.slots[56] = Type::U64;
+        factory.objectSlots[72] = {"Empty", false};
+        append(factory,
+               {BeginObject{64},
+                Constant{201, Type::U8},
+                Store{64, Type::U8},
+                Constant{0x123456789LL, Type::U64},
+                Store{56, Type::U64},
+                BeginObject{72},
+                MethodCall{"nested_constructor", 32, {64, 72}},
+                EndObject{72},
+                EndObject{64}});
+    } else if (!empty) {
+        append(
+            factory,
+            {Constant{201, Type::U8}, Store{32, Type::U8}, Constant{0x123456789LL, Type::U64}, Store{24, Type::U64}});
+    }
+    append(factory, {ReturnObject{32}});
+    module.functions = {caller, factory};
+    if (nested) {
+        IRFunction constructor;
+        constructor.name = "nested_constructor";
+        constructor.result = Type::I64;
+        constructor.receiver = Receiver{"Nested", true, true};
+        constructor.parameters = {Type("Copy"), Type("Empty")};
+        constructor.frameBytes = 32;
+        constructor.objectSlots = {{16, {"Copy", false}}, {24, {"Empty", false}}};
+        constructor.slots = {{16, Type::U8}, {8, Type::U64}};
+        constructor.code = {BindObjectParameter{0, 16, "Copy"},
+                            BindObjectParameter{1, 24, "Empty"},
+                            InitializeObjectField{0, 0, 16},
+                            InitializeObjectField{0, 1, 24},
+                            Constant{0, Type::I64},
+                            Return{}};
+        module.functions.push_back(constructor);
+    }
+    return module;
+}
 Module method(bool write = false) {
     auto module = shapes();
     IRFunction function;
@@ -416,6 +500,91 @@ void reject(const std::string &name, Module module, const std::function<void(Mod
         return;
     }
     throw Error(name + ": malformed IR accepted");
+}
+
+void copiedResourceTests() {
+    accept("copied resource result after mixed owner cleanup", copiedResource());
+    accept("copied resource result carries no owning provenance", copiedFactory());
+    accept("empty resource result retains completion marker", copiedFactory(true));
+    accept("nested resource result establishes logical completion", copiedFactory(false, true));
+    reject("copied result requires exact root", copiedFactory(), [](Module &m) {
+        op<ResourceCall>(m).resultOffset = 24;
+    });
+    reject("copied result cannot alias owning argument", copiedResource(), [](Module &m) {
+        op<ResourceCall>(m).resultOffset = 96;
+    });
+    reject("copied result cannot overlap region spill", copiedFactory(), [](Module &m) {
+        m.functions[0].regionSlots.insert(24);
+    });
+    reject("copied result cannot overlap owner spill", copiedFactory(), [](Module &m) {
+        m.functions[0].byteSlots[48] = true;
+    });
+    reject("copied result layout metadata must be canonical", copiedFactory(), [](Module &m) {
+        m.classStorage["Copy"].leafOffsets[1] = 1;
+    });
+    reject("copied result requires exact nominal type", copiedFactory(), [](Module &m) {
+        m.classLayouts["Other"] = m.classLayouts.at("Copy");
+        m.classFields["Other"] = m.classFields.at("Copy");
+        m.classStorage["Other"] = m.classStorage.at("Copy");
+        m.functions[0].objectSlots[32].className = "Other";
+    });
+    reject("copied result requires active lifetime", copiedFactory(), [](Module &m) {
+        remove<BeginObject>(m.functions[0]);
+    });
+    reject("copied result cannot reuse ended lifetime", copiedFactory(), [](Module &m) {
+        before<ResourceCall>(m.functions[0], {EndObject{32}});
+    });
+    reject("copied result cannot overwrite partial initialization", copiedFactory(), [](Module &m) {
+        before<ResourceCall>(m.functions[0], {Constant{0, Type::U8}, Store{32, Type::U8}});
+    });
+    for (bool empty : {false, true}) {
+        reject("copied result cannot initialize twice", copiedFactory(empty), [](Module &m) {
+            before<ReturnObject>(m.functions[0], {ResourceCall{"copied_factory", 8, {0}, 32}});
+        });
+        auto restart = copiedFactory(empty);
+        before<ReturnObject>(restart.functions[0],
+                             {EndObject{32}, BeginObject{32}, ResourceCall{"copied_factory", 8, {0}, 32}});
+        accept("copied result may restart a closed lifetime", restart);
+    }
+    reject("conditional copied initialization cannot be overwritten", copiedFactory(), [](Module &m) {
+        before<ResourceCall>(
+            m.functions[0],
+            {Constant{1, Type::Bool}, BranchFalse{1}, ResourceCall{"copied_factory", 8, {0}, 32}, Label{1}});
+    });
+    reject("resource copied result cannot be scalar operand", copiedFactory(), [](Module &m) {
+        before<ReturnObject>(m.functions[0], {Push{}});
+    });
+    reject("ordinary aggregate call cannot bypass region grant", copiedFactory(), [](Module &m) {
+        auto &f = m.functions[0];
+        f.code[at<ResourceCall>(f)] = AggregateCall{"copied_factory", {0}, 32};
+    });
+    reject("copied result cannot be moved as owner", copiedFactory(), [](Module &m) {
+        before<ReturnObject>(m.functions[0], {BeginObject{48}, MoveObject{32, 48}});
+    });
+    reject("copied return cannot retain byte owner", copiedResource(), [](Module &m) {
+        remove<EndBytes>(m.functions[1]);
+    });
+    reject("copied return cannot retain owning root", copiedResource(), [](Module &m) {
+        remove<EndObject>(m.functions[1]);
+    });
+    reject("copied return cannot retain byte view", copiedResource(), [](Module &m) {
+        auto &f = m.functions[1];
+        f.frameBytes = 480;
+        f.spanSlots.insert(480);
+        before<EndBytes>(f, {BorrowOwnedSpan{304, -1, 480}});
+    });
+    reject("resource result cannot carry region authority", copiedFactory(), [](Module &m) {
+        m.classFields["Copy"][0].elementType = Type::ByteRegion;
+    });
+    reject("resource result cannot carry span capability", copiedFactory(), [](Module &m) {
+        m.classFields["Copy"][0].elementType = Type::ByteSpan;
+    });
+    reject("resource copied return must be complete", copiedFactory(), [](Module &m) {
+        remove<Store>(m.functions[1], 1);
+    });
+    reject("nested resource return needs empty child completion", copiedFactory(false, true), [](Module &m) {
+        remove<InitializeObjectField>(m.functions[2], 1);
+    });
 }
 
 void layoutTests() {
@@ -919,28 +1088,30 @@ int main(int argc, char **argv) {
             require(mode == "construct" || mode == "six" || mode == "method" || mode == "copied" || mode == "move" ||
                         mode == "construct-odd" || mode == "construct-even" || mode == "resize-first" ||
                         mode == "resize-odd" || mode == "resize-even" || mode == "resize-failed" ||
-                        mode == "resize-move",
+                        mode == "resize-move" || mode == "copied-resource",
                     "unknown ABI fixture mode");
-            auto module = mode.starts_with("resize-") ? resizeBoundary(mode)
-                          : mode == "construct-odd"   ? constructed(1)
-                          : mode == "construct-even"  ? constructed(2)
-                          : mode == "construct"       ? constructed()
-                          : mode == "six"             ? called()
-                          : mode == "method"          ? method(true)
-                          : mode == "copied"          ? copiedChild()
-                                                      : moving(true);
+            auto module = mode == "copied-resource"     ? copiedResource()
+                          : mode.starts_with("resize-") ? resizeBoundary(mode)
+                          : mode == "construct-odd"     ? constructed(1)
+                          : mode == "construct-even"    ? constructed(2)
+                          : mode == "construct"         ? constructed()
+                          : mode == "six"               ? called()
+                          : mode == "method"            ? method(true)
+                          : mode == "copied"            ? copiedChild()
+                                                        : moving(true);
             std::cout << X86Emitter{}.emit(validate(std::move(module)));
             return 0;
         }
         require(argc == 1,
                 "usage: owning_classes_ir [--emit-abi construct|construct-odd|construct-even|six|method|copied|move|"
-                "resize-first|resize-odd|resize-even|resize-failed|resize-move]");
+                "resize-first|resize-odd|resize-even|resize-failed|resize-move|copied-resource]");
         layoutTests();
         ownershipTests();
         resizeFieldTests();
         constructorTests();
         controlTests();
         childTests();
+        copiedResourceTests();
         std::cout << "PASS owning class IR: " << accepted << " accepted, " << rejected << " rejected\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL owning class IR: " << error.what() << '\n';

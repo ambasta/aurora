@@ -252,8 +252,7 @@ void signatureTests() {
     reject("region cannot be returned", ownerReturn(), [](Module &module) {
         module.functions[0].result = Type::ByteRegion;
     });
-    for (const auto &type :
-         {Type::ByteSpan, Type::Own, Type::Ref, Type::MutRef, Type::array(TypeKind::U8, 3), Type("Box")}) {
+    for (const auto &type : {Type::ByteSpan, Type::Own, Type::Ref, Type::MutRef, Type::array(TypeKind::U8, 3)}) {
         reject("resource parameter cannot mix " + typeName(type), owningParameter(), [=](Module &module) {
             module.classLayouts["Box"] = {Type::I64};
             module.functions[0].parameters[1] = type;
@@ -263,6 +262,14 @@ void signatureTests() {
             module.functions[0].result = type;
         });
     }
+    reject("ordinary resource parameter cannot be copied class", owningParameter(), [](Module &module) {
+        module.classLayouts["Box"] = {Type::I64};
+        module.functions[0].parameters[1] = Type("Box");
+    });
+    reject("copied resource result cannot use owning return", ownerReturn(), [](Module &module) {
+        module.classLayouts["Box"] = {Type::I64};
+        module.functions[0].result = Type("Box");
+    });
     reject("resource receiver forbidden", allocated(), [](Module &module) {
         module.classLayouts["Box"] = {Type::I64};
         module.functions[0].receiver = Receiver{"Box", true, false};

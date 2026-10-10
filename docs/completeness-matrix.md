@@ -125,6 +125,13 @@ result-only bindings; ownership, snapshots and synchronous loan cleanup remain
 unchanged. This convenience adds no copy elision or general class expressions;
 final-source qualification remains separate from prior results.
 
+[Resource functions](../compiler/OWNED-BYTES.md#source-contract) now return existing
+bounded pointer-free copied classes through named typed initializers. The real
+RAM-sector producer can return an independent 64-byte record/status after closing
+its owners; copied results carry no region authority. Resource copied parameters,
+direct resource-call returns and protected snapshot services remain separate.
+Focused source/IR/private-ABI checks do not replace final integrated qualification.
+
 Copied-value x86 lowering now coalesces verified contiguous groups of eight u8
 payload leaves into existing RAX-only qword load/store pairs, retaining exact byte
 tails and separate padding handling. The [byte representation contract](../compiler/BYTES.md#physical-representation-gate)

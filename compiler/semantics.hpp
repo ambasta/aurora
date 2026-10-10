@@ -544,8 +544,8 @@ class SemanticAnalyzer {
     }
     Type callResource(ExpressionPtr value, const Function &callee, const StatementPtr &binding) {
         const bool constructor = callee.constructor;
-        if ((ownerType(callee.result) || constructor) && !binding)
-            fail(value->token, "owning result requires a typed local initializer");
+        if ((callee.result.isClass() || callee.result.isBytes() || constructor) && !binding)
+            fail(value->token, "resource result requires a typed local initializer");
         if (binding)
             match(constructor ? Type(callee.receiverClass) : callee.result, binding->type, value->token);
         arity(value, callee.params.size());
@@ -578,7 +578,8 @@ class SemanticAnalyzer {
         int destination = 0;
         if (binding) {
             const int local = add(binding->name, binding->type, binding->mutableValue, binding->token);
-            locals[local].owner = region;
+            if (ownerType(binding->type))
+                locals[local].owner = region;
             destination = offset(local);
         }
         emit(ir::ResourceCall{
@@ -2174,10 +2175,10 @@ public:
                 if ((!candidate.receiverClass.empty() && !resourceConstructor) ||
                     !candidate.templateArguments.empty() || !candidate.templateParameters.empty() ||
                     candidate.params.empty() || !candidate.params[0].type.isRegion() ||
-                    (!scalarValue(candidate.result) && !ownerType(candidate.result)))
+                    (!scalarValue(candidate.result) && !ownerType(candidate.result) && !candidate.result.isClass()))
                     fail(candidate.token,
                          "resource functions and owning constructors require one first region "
-                         "parameter and scalar or owning result");
+                         "parameter and scalar, copied class or owning result");
                 for (std::size_t index = 1; index < candidate.params.size(); ++index)
                     if (!scalarValue(candidate.params[index].type) && !candidate.params[index].type.isBytes() &&
                         !(resourceConstructor

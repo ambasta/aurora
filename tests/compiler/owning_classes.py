@@ -55,6 +55,18 @@ RESIZABLE_BOX = BOX.replace(
     "    auto try_resize(i64 count) -> bool { return payload.try_resize(count); }\n    auto ok() const -> bool",
 )
 
+COPIED_PACKET = """
+class Packet {
+    builtin::array<u8, 64> bytes;
+    i64 code;
+public:
+    Packet(i64 status) : bytes{}, code(status) {}
+    auto status() const -> i64 { return code; }
+    auto at(i64 index) const -> u8 { return bytes[index]; }
+    auto set(i64 index, u8 value) -> bool { bytes[index] = value; return true; }
+};
+"""
+
 
 class OwningSuite(Suite):
     def __init__(self, compiler, directory, compile_only):
@@ -88,6 +100,160 @@ class OwningSuite(Suite):
             self.skipped_native += 1
         else:
             super().trap(*args, **kwargs)
+
+    def copied_resource_results(self):
+        snapshots = self.compile(
+            "copied-resource-result-left-to-right-snapshots",
+            program(
+                """
+                i64 iteration = 0;
+                while (iteration < 2) {
+                    const Packet saved = make_packet(region);
+                    if (saved.status() != 42 || saved.at(63) != 201u8) { return -1; }
+                    Packet changed = saved;
+                    changed.set(0, 123u8);
+                    i64 index = 0;
+                    while (index < 63) {
+                        if (saved.at(index) != u8((index * 53 + 7) % 256)) { return -2; }
+                        index = index + 1;
+                    }
+                    iteration = iteration + 1;
+                }
+                return 42;
+                """,
+                COPIED_PACKET
+                + f"""
+                auto select_packet(Packet before, bool changed, Packet after, u64 wide, u8 byte, i64 number)
+                    -> Packet {{
+                    if (!changed || before.at(0) != 7u8 || after.at(0) != 99u8 ||
+                        wide != 18364758544493064720u64 || byte != 201u8 || number != -4294967313) {{
+                        const Packet failed = Packet(-1);
+                        return failed;
+                    }}
+                    i64 index = 1;
+                    while (index < 64) {{
+                        const u8 expected = u8((index * 53 + 7) % 256);
+                        if (before.at(index) != expected || after.at(index) != expected) {{
+                            const Packet failed = Packet(-2);
+                            return failed;
+                        }}
+                        index = index + 1;
+                    }}
+                    Packet result = before;
+                    result.set(63, byte);
+                    return result;
+                }}
+                auto make_packet({REGION} region) -> Packet {{
+                    {OWNER} local = region.try_allocate(1);
+                    if (!local.ok()) {{ const Packet failed = Packet(-3); return failed; }}
+                    Packet source = Packet(42);
+                    i64 index = 0;
+                    while (index < 64) {{
+                        source.set(index, u8((index * 53 + 7) % 256));
+                        index = index + 1;
+                    }}
+                    const Packet result = select_packet(
+                        source, source.set(0, 99u8), source, 18364758544493064720u64, 201u8, -4294967313);
+                    return result;
+                }}
+                """,
+            ),
+        )
+        self.run(snapshots, 1, 0, 0, 42, 2, 1, release_order=[1, 2])
+
+        packed = self.compile(
+            "copied-resource-result-packed-scalar-and-owner-arguments",
+            program(
+                CREATE
+                + """
+                box.set(0, 42u8);
+                const Packet result = consume_packet(region, box.at(0), box.set(0, 99u8),
+                    move(box), 18364758544493064720u64, -4294967313);
+                if (result.status() != 42 || result.at(0) != 42u8 || result.at(63) != 99u8) { return -1; }
+                return 42;
+                """,
+                BOX
+                + COPIED_PACKET
+                + f"""
+                auto consume_packet({REGION} region, u8 before, bool written, Box owner, u64 wide, i64 number)
+                    -> Packet {{
+                    {OWNER} temporary = region.try_allocate(1);
+                    if (!temporary.ok() || before != 42u8 || !written || owner.at(0) != 99u8 ||
+                        wide != 18364758544493064720u64 || number != -4294967313) {{
+                        const Packet failed = Packet(-1);
+                        return failed;
+                    }}
+                    Packet result = Packet(42);
+                    result.set(0, before);
+                    result.set(63, owner.at(0));
+                    return result;
+                }}
+                """,
+            ),
+        )
+        self.run(packed, 2, 1, 0, 42, 2, 2, release_order=[2, 1])
+
+        empty = self.compile(
+            "empty-copied-resource-result-cleans-owner",
+            program(
+                "const Empty result = make_empty(region); return result.answer();",
+                f"""
+                class Empty {{ public: Empty() {{}} auto answer() const -> i64 {{ return 42; }} }};
+                auto make_empty({REGION} region) -> Empty {{
+                    {OWNER} bytes = region.try_allocate(1);
+                    const Empty result = Empty();
+                    return result;
+                }}
+                """,
+            ),
+        )
+        self.run(empty, 1, 0, 0, 42, 1, 1, release_order=[1])
+
+        factory = f"""
+            auto packet({REGION} region) -> Packet {{
+                const Packet result = Packet(42);
+                return result;
+            }}
+        """
+        other = COPIED_PACKET.replace("Packet", "OtherPacket")
+        rejected_bodies = {
+            "wrong-nominal-initializer": "const OtherPacket wrong = packet(region); return 0;",
+            "discarded-result": "packet(region); return 0;",
+            "temporary-receiver": "return packet(region).status();",
+            "temporary-copied-argument": "return inspect(packet(region));",
+            "scalar-initializer": "const i64 wrong = packet(region); return wrong;",
+            "reassignment": "Packet result = Packet(0); result = packet(region); return 0;",
+        }
+        for name, body in rejected_bodies.items():
+            self.reject(
+                "copied-resource-" + name,
+                program(
+                    body,
+                    COPIED_PACKET + other + factory + "auto inspect(Packet value) -> i64 { return value.status(); }",
+                ),
+            )
+        rejected_helpers = {
+            "direct-call-return": f"auto forward({REGION} region) -> Packet {{ return packet(region); }}",
+            "wrong-nominal-return": f"auto wrong({REGION} region) -> Packet {{ "
+            "const OtherPacket result = OtherPacket(42); return result; }",
+            "copied-parameter": f"auto wrong({REGION} region, Packet value) -> Packet {{ return value; }}",
+            "span-parameter": f"auto wrong({REGION} region, builtin::span<const u8> view) -> Packet {{ "
+            "const Packet result = Packet(42); return result; }",
+            "region-result": f"auto wrong({REGION} region) -> {REGION} {{ return region; }}",
+            "span-result": f"auto wrong({REGION} region) -> builtin::span<const u8> {{ "
+            f"{OWNER} bytes = region.try_allocate(1); "
+            "const builtin::span<const u8> view = borrow_bytes(bytes); return view; }",
+            "owning-result-copy": f"auto wrong({REGION} region, Box value) -> Box {{ return value; }}",
+            "oversized-result": f"auto wrong({REGION} region) -> TooLarge {{ "
+            "const TooLarge result = TooLarge(); return result; }",
+        }
+        too_large = "class TooLarge { builtin::array<i64, 64> words; i64 extra; "
+        too_large += "public: TooLarge() : words{}, extra(0) {} };"
+        for name, helper in rejected_helpers.items():
+            self.reject(
+                "copied-resource-" + name,
+                program("return 0;", BOX + COPIED_PACKET + other + too_large + factory + helper),
+            )
 
     def imported_diagnostic_locations(self):
         folder = self.directory / "reject-imported-copy-location"
@@ -648,6 +814,7 @@ class OwningSuite(Suite):
         )
         self.imported_diagnostic_locations()
         self.resize_cases()
+        self.copied_resource_results()
         return {
             "mode": "compile-only" if self.compile_only else "native",
             "compiled_programs": self.programs,

@@ -49,7 +49,9 @@ initialized inert owner, not an incomplete constructor result.
 Whole-class transfer requires move(named_local), into a fresh typed local, an
 ordinary owning parameter or an owning return. Owning ordinary functions require
 one first ByteRegion and otherwise accept scalar/enum, OwnedBytes or owning class
-parameters; their result is scalar/enum, OwnedBytes or an owning class. All moved
+parameters; their result is scalar/enum, OwnedBytes, an owning class or an
+existing bounded copied class. [Copied resource results](OWNED-BYTES.md#source-contract)
+use named typed initializers and retain independent storage after owner cleanup. All moved
 fields must belong to the supplied region. Owning parameters are mutable. Const
 owners may be read and dropped, but cannot be moved or written.
 
@@ -98,7 +100,8 @@ The verifier derives owning status from canonical logical shape. CopyObject,
 ObjectFieldCopy, InitializeObjectField, AssignObjectField, BindObjectParameter,
 ReturnObject and copied call paths reject resource-bearing copies. MoveObject,
 BindOwnedObjectParameter and ReturnOwnedObject transfer unique per-field tokens.
-ResourceCall transports moved owners; its constructor mode also accepts distinct
+ResourceCall transports moved owners and may initialize a pristine exact-nominal
+copied result without owner tokens; its constructor mode also accepts distinct
 readonly copied-class snapshots. Constructor initialization consumes each source
 once. Explicit byte access selectors name an exact root and logical direct field,
 never an interior offset or exposed hidden address.
@@ -109,7 +112,7 @@ borrowed provenance; it cannot allocate a separate owner, move a field, end the 
 ownership. Every consumed-root access rejects, including scalar fields.
 
 The private x86 convention keeps R11 as the resource argument-record address and
-R10 as ordinary owning result destination or constructor receiver. Methods retain
+R10 as ordinary owning/copied result destination or constructor receiver. Methods retain
 their existing copied-value conventions. Transfer clears source descriptors;
 scalar payload moves never fabricate resource words. Resource-bearing shapes and
 operations trigger the existing private graph linkage and runtime helper boundary.

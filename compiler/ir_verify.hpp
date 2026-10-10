@@ -274,8 +274,8 @@ inline void verifyFunction(Function &function,
         require(!function.parameters.empty() && function.parameters.front() == Type::ByteRegion,
                 "resource signature requires its region parameter first");
         require(scalarValueType(function.result, enumCases) || function.result == Type::OwnedBytes ||
-                    (!function.receiver && owningType(function.result)),
-                "resource signature requires scalar, owned byte or owning class result");
+                    (!function.receiver && function.result.isClass()),
+                "resource signature requires scalar, owned byte or class result");
         for (std::size_t index = 1; index < function.parameters.size(); ++index)
             require(scalarValueType(function.parameters[index], enumCases) ||
                         function.parameters[index] == Type::OwnedBytes ||
@@ -310,8 +310,8 @@ inline void verifyFunction(Function &function,
         require(classLayouts.contains(type.className), "unknown value boundary class");
         require(!owningType(type) || (resourceFunction && !function.receiver),
                 "owning class requires an ordinary resource boundary");
-        require(!resourceFunction || owningType(type) || (owningConstructor && parameter),
-                "only an owning constructor may copy a class across a resource boundary");
+        require(!resourceFunction || owningType(type) || !parameter || owningConstructor,
+                "only an owning constructor may take a copied class resource parameter");
         require(copiedClassLeavesSupported(classLayouts.at(type.className)),
                 "value boundary class exceeds 64 scalar fields excluding u8, 512 u8 leaves or 513 total leaves");
         require(storage.at(type.className).reservedBytes <= maximumCopiedClassBytes,
@@ -1424,6 +1424,22 @@ inline void verifyFunction(Function &function,
                                     "resource call owning result aliases argument");
                             if (target.result == Type::OwnedBytes)
                                 byteTarget(operation.resultOffset);
+                        } else if (target.result.isClass()) {
+                            const int base = operation.resultOffset;
+                            require(function.objectSlots.contains(base),
+                                    "resource copied result requires exact object slot");
+                            require(!argumentStorage.contains(base), "resource copied result aliases argument storage");
+                            const auto &object = function.objectSlots.at(base);
+                            require(object.className == target.result.className,
+                                    "resource copied result nominal class mismatch");
+                            require(state.activeObjects.contains(base),
+                                    "resource copied result outside active object lifetime");
+                            require(!state.maybeConstructedObjects.contains(base),
+                                    "resource copied result object already initialized");
+                            const auto &layout = classLayouts.at(object.className);
+                            for (std::size_t field = 0; field < layout.size(); ++field)
+                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
+                                        "resource copied result requires uninitialized object");
                         } else {
                             require(scalarValueType(target.result, enumCases), "invalid resource call result type");
                             require(operation.resultOffset == 0,
@@ -1443,6 +1459,10 @@ inline void verifyFunction(Function &function,
                             state.current.reset();
                         } else if (owningType(target.result)) {
                             mintObject(operation.resultOffset, target.result.className, origin);
+                            state.current.reset();
+                        } else if (target.result.isClass()) {
+                            // A complete pointer-free copy carries no owner token or region provenance.
+                            markObject(operation.resultOffset);
                             state.current.reset();
                         } else
                             state.current = Value{target.result, {}};

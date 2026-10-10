@@ -121,6 +121,8 @@ int main(int argc, char **argv) {
     const bool resize = mode.starts_with("resize-");
     const bool resize_move = mode == "resize-move";
     const bool resize_method = resize && !resize_move;
+    const bool copied_resource = mode == "copied-resource";
+    const bool six_input = mode == "six" || copied_resource;
     const int resize_field = mode == "resize-odd" || mode == "resize-even" ? 48 : 8;
     Trace trace; Region region(1024, Allocator{&trace, Trace::allocate, Trace::release});
     alignas(16) std::array<unsigned char, 208> input;
@@ -130,8 +132,8 @@ int main(int argc, char **argv) {
     // Ordinary resource entry records start with authority. Borrowed methods
     // receive the object directly, so no record header may overwrite padding.
     if (mode != "method" && !resize_method) put(record,region.id());
-    if (mode == "move" || mode == "six" || resize_move) init_parcel(record+8,region,0);
-    if (mode == "six") init_parcel(record+96,region,1);
+    if (mode == "move" || six_input || resize_move) init_parcel(record+8,region,0);
+    if (six_input) init_parcel(record+96,region,1);
     if (mode == "method" || resize_method) {
         init_parcel(record,region,0);
         padding(record,0xab);
@@ -142,6 +144,13 @@ int main(int argc, char **argv) {
     if (mode.starts_with("construct"))
         check(answer == (mode == "construct" ? 8 : 42),"constructor lengths and cleanup preserve result");
     else if (mode == "copied") check(answer == 42,"owning receiver with copied args and result");
+    else if (copied_resource) {
+        consumed(record+8,0); consumed(record+96,1);
+        check(result[0] == 201 && get(result+8) == 0x123456789ULL,
+              "copied resource result preserves packed scalar values after cleanup");
+        for (int i = 1; i < 8; ++i)
+            check(result[i] == 0xcd,"copied resource return preserves result padding");
+    }
     else if (resize_method) {
         if (mode == "resize-failed") {
             check(answer == static_cast<std::uint64_t>(-1000),"failed resize result");
@@ -182,23 +191,30 @@ int main(int argc, char **argv) {
         drop(result+48); drop(result+8);
     }
     for (int i = 0; i < 8; ++i) check(input[i] == 0xab && output[i] == 0xcd,"left canary");
-    const int input_extent = mode == "six" ? 184 : mode == "move" || resize_move ? 96
+    const int input_extent = six_input ? 184 : mode == "move" || resize_move ? 96
                                                 : mode == "method" || resize_method ? 88 : 8;
     for (std::size_t i = 8 + input_extent; i < input.size(); ++i) check(input[i] == 0xab,"right input canary");
-    for (std::size_t i = 96; i < output.size(); ++i) check(output[i] == 0xcd,"right result canary");
+    for (std::size_t i = copied_resource ? 24 : 96; i < output.size(); ++i)
+        check(output[i] == 0xcd,"right result canary");
     if (mode.starts_with("construct") || mode == "method" || mode == "copied" || resize_method)
         for (auto byte : output) check(byte == 0xcd,"scalar result does not write hidden destination");
     std::vector<std::size_t> expected = resize && mode != "resize-failed"
                                           ? (resize_field == 8 ? std::vector<std::size_t>{1,2,3}
                                                                : std::vector<std::size_t>{2,3,1})
                                      : mode == "copied" ? std::vector<std::size_t>{1}
-                                     : mode == "six" ? std::vector<std::size_t>{5,4,3,2,1}
+                                     : six_input ? std::vector<std::size_t>{5,4,3,2,1}
                                                        : std::vector<std::size_t>{2,1};
     check(trace.released == expected,"exact reverse release order, no duplicate release");
     const auto metrics = region.metrics();
     check(metrics.used == 0 && metrics.live_allocations == 0 && metrics.releases == expected.size(),
           "all transferred resources released exactly once");
     check(region.close(),"region closes without leaked owners");
+    if (copied_resource) {
+        check(result[0] == 201 && get(result+8) == 0x123456789ULL,
+              "copied resource payload remains readable after region close");
+        for (int i = 1; i < 8; ++i)
+            check(result[i] == 0xcd,"copied resource result padding survives region close");
+    }
     std::printf("PASS hosted owning ABI %s", mode.c_str());
     for (auto id : trace.released) std::printf(" %zu",id);
     std::puts("");
@@ -220,7 +236,13 @@ def bridge(mode):
         text += f"cmpq ${value},%{register}\njne .Lowning_abi_fail\n"
     text += "addq $8,%rsp\npopq %r15\npopq %r14\npopq %r13\npopq %r12\npopq %rbx\npopq %rbp\nret\n"
     for name in ("allocate", "drop", "at", "set", "resize"):
-        text += f"owning_abi_{name}:\n{ALIGN}jmp __au_runtime_bytes_{name}\n"
+        text += f"owning_abi_{name}:\n{ALIGN}"
+        if mode == "copied-resource":
+            # Force each runtime cleanup/allocation to destroy caller-saved hidden capabilities.
+            text += f"subq $8,%rsp\ncall __au_runtime_bytes_{name}\naddq $8,%rsp\n"
+            text += "movabsq $0x1111222233334444,%r10\nmovabsq $0x5555666677778888,%r11\nret\n"
+        else:
+            text += f"jmp __au_runtime_bytes_{name}\n"
     return text + '.Lowning_abi_fail:\nud2\n.section .note.GNU-stack,"",@progbits\n'
 
 
@@ -360,6 +382,7 @@ def main():
             "six",
             "method",
             "copied",
+            "copied-resource",
             "resize-first",
             "resize-odd",
             "resize-even",

@@ -38,12 +38,22 @@ synchronous calls. Its granting host must outlive every associated owner.
 
 A resource-aware ordinary function has exactly one ByteRegion parameter, first.
 The remaining parameters are scalar/enum values, OwnedBytes or bounded move-only
-classes; its result is scalar/enum or one of those owning types. The existing
+classes; its result is scalar/enum, an existing bounded pointer-free copied class,
+or one of those owning types. The existing
 six-parameter limit still applies. The [owning-class extension](OWNING-CLASSES.md)
 defines private direct fields, owning constructors and borrowed methods. Other
-resource signatures do not support methods, overloads, templates, copied classes
-or spans. Owning parameters are deliberately mutable bindings, unlike the existing
+resource signatures do not support methods, overloads, templates, copied-class
+parameters or spans. Owning parameters are deliberately mutable bindings, unlike the existing
 readonly scalar/copied-class parameters. Source region identity cannot change.
+
+Copied resource results require a named typed local initializer, for example
+`Record record = produce(region);`. The destination is fresh, active and exactly
+nominally typed; the ordinary copied-class size/leaf limits still apply. The
+callee completes an independent local value, ends owner and view lifetimes, then
+`ReturnObject` copies its scalar payload to caller result storage. A copied
+result carries no region provenance or ownership token and remains usable after
+the trusted caller closes the region. Direct resource-call return expressions,
+resource copied parameters and general class-valued expressions remain unsupported.
 
 `region.try_allocate(length)` requires an i64 byte count and initializes a typed
 OwnedBytes local. Negative length, unrepresentable layout, quota exhaustion,
@@ -161,7 +171,9 @@ Complete resource states must match at control-flow joins and backedges. Repeati
 a creation site in a loop is allowed only after its earlier token is gone.
 
 Calls stage moved arguments at their left-to-right evaluation points, consume
-distinct owners and tie returned ownership to the supplied region. Every normal
+distinct owners and tie returned ownership to the supplied region. Copied results
+require pristine exact-nominal object storage disjoint from arguments; successful
+return marks complete copied initialization without minting an owner token. Every normal
 return must close or transfer all owner bindings. Scalar operations cannot access
 capability words or forge IDs. The runtime helper symbol prefix is reserved even
 for directly supplied IR; ordinary Call/AggregateCall cannot bypass ResourceCall.
@@ -189,8 +201,9 @@ enforced by source/IR validation; the adapter does not defend against malicious
 trusted host code cloning a currently valid descriptor. Its raw host pointers and
 allocator callbacks are trusted bootstrap machinery, never an Aurora source API.
 
-The test-only assembly bridge grants a region to a private generated function and
-returns only scalars. Owner-returning calls are exercised inside Aurora while the
+Test-only assembly bridges grant a region to private generated functions and
+exercise scalar, owning and copied result storage under the documented private
+ABI. Owner-returning calls are exercised while the
 grant remains live. The bridge checks no allocation remains before teardown;
 region close refuses while allocations remain. No general external owner ABI,
 program startup, C compatibility or native kernel allocation is claimed.
