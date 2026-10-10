@@ -16,10 +16,13 @@ stateless predicates. GNU C++ remains a legitimate bootstrap tool: retire a
 C++ component after its Aurora replacement passes equivalent qualification,
 without removing hardware/ownership checks prematurely.
 
-A persistent Aurora-owned console Line/session behind a sealed, bounded
-ConsoleSession I/O capability is a proposed next migration. Its lifetime and
-transport contract still need implementation and acceptance; the current
-protected-command qualification does not claim that migration.
+The simple UEFI and graphical consoles now retain Aurora-owned line/session
+state behind sealed ConsoleSession/DisplaySession capabilities. The
+[native console](native-console-service.md) includes bounded editing, a RAM note
+and four named session-local RAM files; the [graphical console](framebuffer-console.md)
+adds Aurora-owned presentation. This state lasts for the session, not across
+reboots. BIOS diagnostics and protected-command adapters retain their explicitly
+scoped legacy boundaries. General terminal sessions and file services remain open.
 
 ## 1. Protected programs and file services
 
@@ -72,6 +75,15 @@ classes and synchronous borrows already exist; general lifetime/effect and
 concurrency models, TypeScript-like type transformations and richer reflection
 remain open. See the [compiler reference](../compiler/README.md) and
 [library dependency plan](library-stack.md), rather than historical exclusions.
+
+The next hosted compiler checkpoint has a complete [Aurora lexical phase](../compiler/LEXER.md#hosted-aurora-lexer-checkpoint).
+A C++ seed emits the lexer; hosted stage 1 then uses it to rebuild the same Aurora
+source with identical assembly. This is partial hosted bootstrap: parsing,
+semantic analysis and native emission remain C++, and host C++/assembly still
+imports immutable source storage. Full compiler self-hosting needs those remaining
+phases in Aurora, safe AST/collection storage, and reproducible multi-stage builds.
+A native toolchain additionally needs the assembler, linker, runtime and target
+file/process services; the lexer checkpoint does not supply those dependencies.
 
 Gate: positive, rejection, adversarial, resource and ABI tests with independent
 review; no unchecked assertion, visibility bypass or resource duplication. Then

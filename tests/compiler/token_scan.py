@@ -354,7 +354,8 @@ class Suite(harness.Suite):
         self.host = self.output/'host'/'token-scan-host'
         for name in ('tests/compiler/token_scan.py', 'tests/compiler/token_scan_host.cpp',
                      'tests/compiler/utf8_range.py', 'scripts/compiler_contract.py',
-                     'compiler/lexer.hpp', 'compiler/types.hpp', 'examples/token_scan.au'):
+                     'compiler/lexer.hpp', 'compiler/lexer_types.hpp', 'compiler/lexer_reference.hpp',
+                     'compiler/byte_literal.hpp', 'compiler/types.hpp', 'examples/token_scan.au'):
             self.inputs[name] = harness.sha(self.root/name)
 
     def batch(self, items, module_root=None, mutation=None):

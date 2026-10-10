@@ -1,4 +1,5 @@
-// Test-only adapter. The authoritative host lexer remains unchanged.
+// Test-only C++ seed/reference oracle for the bounded std.token_scan library.
+// Production hosted tools select compiler/lexer.au through AURORA_HOSTED_LEXER.
 #include "lexer.hpp"
 #include <clocale>
 #include <fstream>

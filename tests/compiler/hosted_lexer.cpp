@@ -1,0 +1,697 @@
+// Private migration fixture: the independent C++ reference is an oracle, never
+// a fallback. Raw ABI records below deliberately do not use production layouts.
+#include "lexer.hpp"
+#include "lexer_reference.hpp"
+#include <algorithm>
+#include <array>
+#include <cerrno>
+#include <clocale>
+#include <csignal>
+#include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <limits>
+#include <optional>
+#include <random>
+#include <sstream>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#ifndef AURORA_HOSTED_LEXER
+#error "hosted lexer differential fixture requires AURORA_HOSTED_LEXER"
+#endif
+
+using Entry = void (*)(const void *, void *);
+extern "C" void aurora_hosted_lexer_invoke(const void *, void *);
+extern "C" void checked_hosted_lexer_call(const void *, void *, Entry);
+extern "C" void hosted_lexer_clobber_rbp(const void *, void *);
+extern "C" void hosted_lexer_clobber_rbx(const void *, void *);
+extern "C" void hosted_lexer_clobber_r12(const void *, void *);
+extern "C" void hosted_lexer_clobber_r13(const void *, void *);
+extern "C" void hosted_lexer_clobber_r14(const void *, void *);
+extern "C" void hosted_lexer_clobber_r15(const void *, void *);
+extern "C" void hosted_lexer_clobber_canary(const void *, void *);
+extern "C" void hosted_lexer_shift_stack(const void *, void *);
+extern "C" void hosted_lexer_misaligned_call(const void *, void *, Entry);
+
+namespace {
+using aurora::Diagnostic;
+using aurora::DiagnosticCode;
+using aurora::LexedSource;
+using aurora::SourcePosition;
+using aurora::SourceSpan;
+using aurora::SourceText;
+using aurora::TriviaRetention;
+using Snapshot = std::shared_ptr<const SourceText>;
+using Input = std::array<std::uint64_t, 10>;
+using Event = std::array<std::int64_t, 4>;
+static_assert(sizeof(Input) == 80 && sizeof(Event) == 32);
+static_assert(sizeof(void *) == 8);
+
+std::string context;
+std::size_t cases = 0;
+std::size_t abiCalls = 0;
+
+void require(bool condition, const std::string &message) {
+    if (!condition)
+        throw std::runtime_error(context + ": " + message);
+}
+
+bool space(unsigned char byte) {
+    return byte == ' ' || (byte >= '\t' && byte <= '\r');
+}
+
+std::vector<SourcePosition> positions(const std::string &text) {
+    std::vector<SourcePosition> out;
+    out.reserve(text.size() + 1);
+    SourcePosition at;
+    out.push_back(at);
+    for (unsigned char byte : text) {
+        ++at.offset;
+        if (byte == '\n') {
+            ++at.line;
+            at.column = 1;
+        } else {
+            ++at.column;
+        }
+        out.push_back(at);
+    }
+    return out;
+}
+
+void samePosition(const SourcePosition &a, const SourcePosition &b) {
+    require(a.offset == b.offset && a.line == b.line && a.column == b.column, "byte position mismatch");
+}
+
+void sameSpan(const SourceSpan &a, const SourceSpan &b) {
+    require(a.source == b.source, "source snapshot identity mismatch");
+    samePosition(a.begin, b.begin);
+    samePosition(a.end, b.end);
+}
+
+void spanBounds(const SourceSpan &span, const Snapshot &source, const std::vector<SourcePosition> &expected) {
+    require(span.source == source, "span lost the caller's source snapshot");
+    require(span.begin.offset <= span.end.offset && span.end.offset <= source->text.size(), "span bounds");
+    samePosition(span.begin, expected.at(span.begin.offset));
+    samePosition(span.end, expected.at(span.end.offset));
+}
+
+void validate(const LexedSource &lexed, const Snapshot &source, TriviaRetention retention) {
+    const auto expected = positions(source->text);
+    require(lexed.source == source, "result lost the caller's source snapshot");
+    require(!lexed.tokens.empty(), "missing EOF");
+    std::vector<SourceSpan> spans;
+    for (std::size_t index = 0; index != lexed.tokens.size(); ++index) {
+        const auto &token = lexed.tokens[index];
+        spanBounds(token.span, source, expected);
+        require(token.line == token.span.begin.line, "legacy token line mismatch");
+        if (index + 1 == lexed.tokens.size()) {
+            require(token.text == "<eof>" && token.span.begin.offset == source->text.size() &&
+                        token.span.end.offset == source->text.size(),
+                    "EOF spelling or zero-width range");
+        } else {
+            require(token.span.begin.offset < token.span.end.offset, "empty non-EOF token");
+            require(token.text ==
+                        source->text.substr(token.span.begin.offset, token.span.end.offset - token.span.begin.offset),
+                    "token does not preserve exact bytes");
+            spans.push_back(token.span);
+        }
+    }
+    for (const auto &trivia : lexed.trivia) {
+        spanBounds(trivia.span, source, expected);
+        require(trivia.span.begin.offset < trivia.span.end.offset, "empty trivia");
+        const auto text =
+            source->text.substr(trivia.span.begin.offset, trivia.span.end.offset - trivia.span.begin.offset);
+        if (trivia.kind == aurora::TriviaKind::Whitespace)
+            require(std::all_of(text.begin(), text.end(), space), "non-ASCII-whitespace in whitespace event");
+        else {
+            require(trivia.kind == aurora::TriviaKind::LineComment, "unknown trivia kind");
+            require(text.starts_with("//") && text.find('\n') == std::string::npos, "comment boundary mismatch");
+        }
+        spans.push_back(trivia.span);
+    }
+    if (retention == TriviaRetention::Discard) {
+        require(lexed.trivia.empty(), "discard mode retained trivia");
+        return;
+    }
+    std::sort(spans.begin(), spans.end(), [](const auto &a, const auto &b) {
+        return a.begin.offset < b.begin.offset;
+    });
+    std::size_t next = 0;
+    std::string rebuilt;
+    for (const auto &span : spans) {
+        require(span.begin.offset == next, "token/trivia gap or overlap");
+        rebuilt.append(source->text, span.begin.offset, span.end.offset - span.begin.offset);
+        next = span.end.offset;
+    }
+    require(next == source->text.size() && rebuilt == source->text, "lossless reconstruction failed");
+}
+
+void sameTokens(const LexedSource &a, const LexedSource &b) {
+    require(a.tokens.size() == b.tokens.size(), "token count mismatch");
+    for (std::size_t index = 0; index != a.tokens.size(); ++index) {
+        require(a.tokens[index].text == b.tokens[index].text && a.tokens[index].line == b.tokens[index].line,
+                "token spelling or legacy line mismatch");
+        sameSpan(a.tokens[index].span, b.tokens[index].span);
+    }
+}
+
+class Outcome {
+public:
+    std::optional<LexedSource> lexed;
+    std::optional<Diagnostic> error;
+    std::string what;
+};
+
+Outcome scan(const Snapshot &source, TriviaRetention retention, bool reference) {
+    try {
+        return {
+            reference ? aurora::lexSourceReference(source, retention) : aurora::lexSource(source, retention), {}, {}};
+    } catch (const aurora::Error &error) {
+        return {{}, error.diagnostic, error.what()};
+    }
+}
+
+void sameOutcome(const Outcome &a, const Outcome &b, const Snapshot &source, TriviaRetention retention) {
+    require(a.lexed.has_value() == b.lexed.has_value(), "success/error disagreement");
+    if (a.lexed) {
+        validate(*a.lexed, source, retention);
+        validate(*b.lexed, source, retention);
+        sameTokens(*a.lexed, *b.lexed);
+        require(a.lexed->trivia.size() == b.lexed->trivia.size(), "trivia count mismatch");
+        for (std::size_t index = 0; index != a.lexed->trivia.size(); ++index) {
+            require(a.lexed->trivia[index].kind == b.lexed->trivia[index].kind, "trivia kind mismatch");
+            sameSpan(a.lexed->trivia[index].span, b.lexed->trivia[index].span);
+        }
+        return;
+    }
+    require(a.error && b.error, "missing diagnostic");
+    require(a.error->code == b.error->code && a.error->severity == b.error->severity &&
+                a.error->message == b.error->message && a.what == b.what,
+            "diagnostic code, severity, message or what() mismatch");
+    sameSpan(a.error->span, b.error->span);
+    spanBounds(a.error->span, source, positions(source->text));
+    require(a.error->span.begin.offset < a.error->span.end.offset, "empty lexical error range");
+    std::ostringstream aJson, bJson, aText, bText;
+    std::vector<Diagnostic> diagnostics;
+    diagnostics.push_back(*a.error);
+    aurora::writeDiagnosticsJson(aJson, diagnostics);
+    diagnostics.front() = *b.error;
+    aurora::writeDiagnosticsJson(bJson, diagnostics);
+    aurora::writeDiagnosticText(aText, *a.error, "aurorac");
+    aurora::writeDiagnosticText(bText, *b.error, "aurorac");
+    require(aJson.str() == bJson.str() && aText.str() == bText.str(), "rendered diagnostic mismatch");
+}
+
+Outcome verify(const std::string &text, const std::string &name) {
+    context = name;
+    ++cases;
+    const auto source = std::make_shared<const SourceText>(name, text);
+    const auto keep = scan(source, TriviaRetention::Keep, false);
+    const auto referenceKeep = scan(source, TriviaRetention::Keep, true);
+    sameOutcome(keep, referenceKeep, source, TriviaRetention::Keep);
+    const auto discard = scan(source, TriviaRetention::Discard, false);
+    const auto referenceDiscard = scan(source, TriviaRetention::Discard, true);
+    sameOutcome(discard, referenceDiscard, source, TriviaRetention::Discard);
+    require(keep.lexed.has_value() == discard.lexed.has_value(), "retention changed acceptance");
+    if (keep.lexed)
+        sameTokens(*keep.lexed, *discard.lexed);
+    else
+        sameOutcome(keep, discard, source, TriviaRetention::Discard);
+    require(source->text == text && source->path == name, "source snapshot mutated");
+    return keep;
+}
+
+void valid(const std::string &text, const std::string &name) {
+    require(verify(text, name).lexed.has_value(), "independently valid source was rejected");
+}
+
+void invalid(
+    const std::string &text, const std::string &name, DiagnosticCode code, std::size_t begin, std::size_t end) {
+    const auto result = verify(text, name);
+    require(result.error && result.error->code == code, "independent diagnostic family mismatch");
+    const auto &error = *result.error;
+    const std::string message = code == DiagnosticCode::InvalidByteLiteral         ? "invalid byte literal"
+                                : code == DiagnosticCode::InvalidByteStringLiteral ? "invalid byte-string literal"
+                                                                                   : "unsupported character";
+    require(error.message == message && result.what == message, "independent diagnostic message mismatch");
+    require(error.span.begin.offset == begin && error.span.end.offset == end, "independent diagnostic extent mismatch");
+}
+
+std::string bytes(std::initializer_list<unsigned> values) {
+    std::string out;
+    for (unsigned value : values)
+        out += static_cast<char>(value);
+    return out;
+}
+
+void byteCases() {
+    constexpr char hex[] = "0123456789abcdef";
+    const std::string prefix = "// header\r\n\t";
+    for (unsigned byte = 0; byte != 256; ++byte) {
+        const auto one = std::string(1, static_cast<char>(byte));
+        verify(one, "all-byte-" + std::to_string(byte));
+        verify("identifier" + one + "suffix", "identifier-byte-" + std::to_string(byte));
+        verify("123" + one + "word", "number-byte-" + std::to_string(byte));
+        verify(prefix + "'" + one + "'", "raw-byte-" + std::to_string(byte));
+        verify(prefix + "\"" + one + "\"", "raw-string-byte-" + std::to_string(byte));
+        verify(prefix + "'\\" + one + "'", "escape-byte-" + std::to_string(byte));
+        verify(prefix + "\"\\" + one + "\"", "escape-string-byte-" + std::to_string(byte));
+        const auto escaped = "\\x" + std::string(1, hex[byte >> 4]) + hex[byte & 15];
+        valid(prefix + "'" + escaped + "'", "hex-byte-" + std::to_string(byte));
+        valid(prefix + "\"" + escaped + "\"", "hex-string-" + std::to_string(byte));
+    }
+    std::string opaque = "//";
+    for (unsigned byte = 0; byte != 256; ++byte)
+        if (byte != '\n')
+            opaque += static_cast<char>(byte);
+    valid(opaque, "opaque-all-bytes-comment");
+    valid(opaque + "\nname", "opaque-all-bytes-comment-newline");
+    for (const auto &spelling : {"''",
+                                 "'ab'",
+                                 "'\\q'",
+                                 "'\\x'",
+                                 "'\\x1'",
+                                 "'\\xgg'",
+                                 "'\\x100'",
+                                 "'\\u0041'",
+                                 "'a'u8",
+                                 "'a'_name0",
+                                 "'unclosed",
+                                 "'\\"})
+        invalid(prefix + spelling,
+                "invalid-byte-spelling",
+                DiagnosticCode::InvalidByteLiteral,
+                prefix.size(),
+                prefix.size() + std::strlen(spelling));
+    for (const auto &spelling : {R"("\q")",
+                                 R"("\x")",
+                                 R"("\x0")",
+                                 R"("\xGG")",
+                                 R"("\u0041")",
+                                 R"("a"u8)",
+                                 R"(""_name0)",
+                                 "\"unclosed",
+                                 "\"\\"})
+        invalid(prefix + spelling,
+                "invalid-string-spelling",
+                DiagnosticCode::InvalidByteStringLiteral,
+                prefix.size(),
+                prefix.size() + std::strlen(spelling));
+    for (const std::string quote : {"'", "\""}) {
+        const auto code = quote == "'" ? DiagnosticCode::InvalidByteLiteral : DiagnosticCode::InvalidByteStringLiteral;
+        for (const std::string ending : {"\n", "\r", "\r\n"}) {
+            invalid(prefix + quote + "bad" + ending + quote + "tail",
+                    "quoted-line-end",
+                    code,
+                    prefix.size(),
+                    prefix.size() + 4);
+            invalid(prefix + quote + "\\" + ending + quote + "tail",
+                    "escaped-line-end",
+                    code,
+                    prefix.size(),
+                    prefix.size() + 2);
+        }
+    }
+}
+
+void utf8Cases() {
+    const std::vector<std::string> good = {bytes({0xc2, 0x80}),
+                                           bytes({0xdf, 0xbf}),
+                                           bytes({0xe0, 0xa0, 0x80}),
+                                           bytes({0xed, 0x9f, 0xbf}),
+                                           bytes({0xee, 0x80, 0x80}),
+                                           bytes({0xef, 0xbf, 0xbf}),
+                                           bytes({0xf0, 0x90, 0x80, 0x80}),
+                                           bytes({0xf4, 0x8f, 0xbf, 0xbf})};
+    for (const auto &raw : good) {
+        valid("\"" + raw + "\"", "utf8-valid-boundary");
+        valid("\"a" + raw + R"(\xff\0b")", "utf8-escape-mixture");
+        for (std::size_t length = 1; length < raw.size(); ++length) {
+            const auto spelling = "\"" + raw.substr(0, length) + "\"";
+            invalid(spelling, "utf8-truncated", DiagnosticCode::InvalidByteStringLiteral, 0, spelling.size());
+        }
+        for (std::size_t offset = 1; offset < raw.size(); ++offset) {
+            auto corrupted = raw;
+            for (unsigned byte : {0U, 0x7fU, 0xc0U, 0xffU}) {
+                corrupted[offset] = static_cast<char>(byte);
+                const auto spelling = "\"" + corrupted + "\"";
+                invalid(
+                    spelling, "utf8-bad-continuation", DiagnosticCode::InvalidByteStringLiteral, 0, spelling.size());
+            }
+        }
+    }
+    for (const auto &raw : {bytes({0x80}),
+                            bytes({0xbf}),
+                            bytes({0xc0, 0x80}),
+                            bytes({0xc1, 0xbf}),
+                            bytes({0xe0, 0x80, 0x80}),
+                            bytes({0xed, 0xa0, 0x80}),
+                            bytes({0xed, 0xbf, 0xbf}),
+                            bytes({0xf0, 0x80, 0x80, 0x80}),
+                            bytes({0xf4, 0x90, 0x80, 0x80}),
+                            bytes({0xf5, 0x80, 0x80, 0x80}),
+                            bytes({0xfe}),
+                            bytes({0xff})}) {
+        const auto spelling = "\"" + raw + "\"";
+        invalid(spelling, "utf8-invalid-scalar", DiagnosticCode::InvalidByteStringLiteral, 0, spelling.size());
+    }
+}
+
+void boundaryCases() {
+    for (std::size_t length : {4095U, 4096U, 4097U, 1U << 20}) {
+        valid(std::string(length, 'a'), "long-identifier-" + std::to_string(length));
+        valid("//" + std::string(length - 2, '\xff'), "long-comment-" + std::to_string(length));
+        valid(std::string(length - 2, ' ') + "\r\n", "long-whitespace-" + std::to_string(length));
+        valid(std::string(length, '\n'), "long-lines-" + std::to_string(length));
+        std::string mixed;
+        while (mixed.size() + 16 <= length)
+            mixed += "name0+0b1'0 //x\n";
+        mixed.resize(length, ' ');
+        valid(mixed, "long-mixed-" + std::to_string(length));
+    }
+    for (std::size_t decoded : {4095U, 4096U, 4097U}) {
+        for (unsigned mode = 0; mode != 3; ++mode) {
+            std::string spelling = "\"";
+            if (mode == 0)
+                spelling += std::string(decoded, 'a');
+            else if (mode == 1)
+                for (std::size_t index = 0; index < decoded; ++index)
+                    spelling += "\\x00";
+            else {
+                for (std::size_t index = 0; index < decoded / 4; ++index)
+                    spelling += bytes({0xf0, 0x90, 0x80, 0x80});
+                spelling += std::string(decoded % 4, 'a');
+            }
+            spelling += '"';
+            if (decoded <= 4096)
+                valid(spelling, "decoded-string-limit-valid");
+            else
+                invalid(spelling,
+                        "decoded-string-limit-invalid",
+                        DiagnosticCode::InvalidByteStringLiteral,
+                        0,
+                        spelling.size());
+        }
+    }
+}
+
+void languageCases() {
+    for (const std::string text : {"",
+                                   "//",
+                                   "// EOF",
+                                   " \t\v\f\r\n",
+                                   "a\r\nb\rc\nd\te",
+                                   "///\r//\t",
+                                   "a//x\n+b",
+                                   "x / / y",
+                                   "a>>b >= c && d::e",
+                                   "_0 A0 a_Z 0123u8",
+                                   R"('\\' '\'' '\0' '\a' '\b' '\f' '\n' '\r' '\t' '\v')",
+                                   R"("" "// {} \" \\ \0\xff")"})
+        valid(text, "language-case");
+    const std::vector<std::string> operators = {"->", "==", "!=", "<=", ">=", "::", "<<", ">>", "&&", "||", "(",
+                                                ")",  "{",  "}",  "[",  "]",  ":",  ";",  ",",  "=",  "+",  "-",
+                                                "*",  "/",  "%",  "<",  ">",  "!",  ".",  "&",  "|",  "^",  "~"};
+    for (const auto &a : operators)
+        for (const auto &b : operators)
+            valid(a + b, "adjacent-operators");
+    for (const std::string word : {"0b0",
+                                   "0B00101",
+                                   "0b1'0010'11u8",
+                                   "0b",
+                                   "0b2",
+                                   "0b'1",
+                                   "0b1''0",
+                                   "0b1'",
+                                   "0b1'u64",
+                                   "0b1u64'0",
+                                   "0b1_0",
+                                   "0b1u65",
+                                   "0xdeadbeef",
+                                   "123abc"}) {
+        const auto out = verify(word + "+'['", "binary-word-boundary");
+        require(out.lexed && out.lexed->tokens.size() == 4 && out.lexed->tokens.front().text == word,
+                "attempted numeric word split");
+    }
+    invalid("// before\r\n\t@", "unsupported-location", DiagnosticCode::UnsupportedCharacter, 12, 13);
+    std::mt19937 random(0x48584c31U);
+    const std::vector<std::string> pieces = {"name",
+                                             "123",
+                                             "::",
+                                             ">>",
+                                             ">",
+                                             "+",
+                                             "/",
+                                             " ",
+                                             "\t",
+                                             "\r\n",
+                                             "// opaque\xff\n",
+                                             "_x",
+                                             "&&",
+                                             "{",
+                                             "0b1'0",
+                                             "'\\x00'",
+                                             R"("é😀")"};
+    for (unsigned sample = 0; sample != 256; ++sample) {
+        std::string source;
+        for (unsigned part = 0; part != 32; ++part)
+            source += pieces[random() % pieces.size()];
+        verify(source, "generated-pieces-" + std::to_string(sample));
+        source.clear();
+        for (unsigned part = 0; part != 64; ++part)
+            source += static_cast<char>(random() & 255);
+        verify(source, "generated-bytes-" + std::to_string(sample));
+    }
+}
+
+void ownershipCases() {
+    context = "snapshot-lifetime-and-independence";
+    Snapshot source = std::make_shared<const SourceText>("owned.au", "one // opaque\xff\n two");
+    const std::weak_ptr<const SourceText> weak = source;
+    auto first = aurora::lexSource(source);
+    auto second = aurora::lexSource(source);
+    const auto reference = aurora::lexSourceReference(source);
+    first.tokens.front().text = "changed";
+    first.trivia.clear();
+    require(second.tokens.front().text == "one" && reference.tokens.front().text == "one" && !second.trivia.empty() &&
+                !reference.trivia.empty(),
+            "results alias mutable token or trivia storage");
+    source.reset();
+    require(!weak.expired(), "result did not retain source ownership");
+    validate(second, second.source, TriviaRetention::Keep);
+    validate(reference, reference.source, TriviaRetention::Keep);
+    auto distinct = aurora::lexSource("three", "separate.au");
+    require(distinct.source != second.source && second.tokens.front().text == "one",
+            "later scan changed earlier result");
+    for (bool referenceMode : {false, true}) {
+        const auto null = scan({}, TriviaRetention::Keep, referenceMode);
+        require(null.error && null.error->code == DiagnosticCode::Internal &&
+                    null.error->message == "source snapshot must not be null" && !null.error->span.source,
+                "null source contract mismatch");
+    }
+}
+
+Input input(
+    const void *data, std::size_t size, std::int64_t offset = 0, std::int64_t line = 1, std::int64_t lineStart = 0) {
+    return {0,
+            reinterpret_cast<std::uintptr_t>(data),
+            0,
+            0,
+            0,
+            0,
+            size,
+            static_cast<std::uint64_t>(offset),
+            static_cast<std::uint64_t>(line),
+            static_cast<std::uint64_t>(lineStart)};
+}
+
+Event raw(const Input &record) {
+    constexpr std::uint64_t guard = 0x7b0cc731de29a685ULL;
+    Event result{};
+    // Exercise legal eight-byte alignment both with and without 16-byte alignment.
+    for (std::size_t shift : {0U, 1U}) {
+        alignas(16) std::array<std::uint64_t, 19> in;
+        alignas(16) std::array<std::uint64_t, 13> out;
+        in.fill(guard);
+        out.fill(guard);
+        std::copy(record.begin(), record.end(), in.begin() + 4 + shift);
+        const auto before = in;
+        checked_hosted_lexer_call(in.data() + 4 + shift, out.data() + 4 + shift, aurora_hosted_lexer_invoke);
+        ++abiCalls;
+        require(in == before, "raw ABI input record modified");
+        for (std::size_t index = 0; index != out.size(); ++index)
+            if (index < 4 + shift || index >= 8 + shift)
+                require(out[index] == guard, "raw ABI output overrun");
+        Event observed;
+        std::memcpy(observed.data(), out.data() + 4 + shift, sizeof(observed));
+        if (shift == 0)
+            result = observed;
+        else
+            require(result == observed, "raw ABI result depends on record alignment");
+    }
+    return result;
+}
+
+void expectRaw(
+    const std::string &source, std::int64_t offset, std::int64_t line, std::int64_t lineStart, const Event &expected) {
+    const auto original = source;
+    const auto observed = raw(input(source.data(), source.size(), offset, line, lineStart));
+    require(observed == expected, "raw event or copied cursor mismatch");
+    require(source == original, "raw scanner modified source backing");
+}
+
+class GuardPage {
+public:
+    std::size_t page;
+    unsigned char *mapping;
+    GuardPage() : page(static_cast<std::size_t>(sysconf(_SC_PAGESIZE))), mapping(nullptr) {
+        require(page >= 4096 && page <= (1U << 20), "unsupported page size");
+        const auto address = mmap(nullptr, page * 3, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        require(address != MAP_FAILED, "mmap guard pages failed");
+        mapping = static_cast<unsigned char *>(address);
+        require(mprotect(mapping + page, page, PROT_READ | PROT_WRITE) == 0, "mprotect data page failed");
+    }
+    ~GuardPage() {
+        if (mapping)
+            munmap(mapping, page * 3);
+    }
+    GuardPage(const GuardPage &) = delete;
+    GuardPage &operator=(const GuardPage &) = delete;
+    unsigned char *end() const {
+        return mapping + page * 2;
+    }
+};
+
+void abiCases() {
+    context = "raw-event-ABI";
+    for (unsigned byte = 0; byte != 256; ++byte) {
+        const bool word =
+            (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9') || byte == '_';
+        const bool punctuation =
+            std::string_view("(){}[]:;,=+-*/%<>!.&|^~").find(static_cast<char>(byte)) != std::string_view::npos;
+        const std::int64_t event = byte == '\'' ? 5 : byte == '"' ? 6 : space(byte) ? 1 : word || punctuation ? 0 : 4;
+        expectRaw(
+            std::string(1, static_cast<char>(byte)), 0, 1, 0, {event, 1, byte == '\n' ? 2 : 1, byte == '\n' ? 1 : 0});
+    }
+    expectRaw("", 0, 1, 0, {3, 0, 1, 0});
+    expectRaw("name +", 0, 1, 0, {0, 4, 1, 0});
+    expectRaw(" \t\r\n\v\fX", 0, 1, 0, {1, 6, 2, 4});
+    expectRaw(std::string("//\xff\0\r\nx", 7), 0, 1, 0, {2, 5, 1, 0});
+    expectRaw("@x", 0, 1, 0, {4, 1, 1, 0});
+    expectRaw("'a'u8+", 0, 1, 0, {5, 5, 1, 0});
+    expectRaw("\"a\"suffix+", 0, 1, 0, {6, 9, 1, 0});
+    expectRaw("0b1'0u8+", 0, 1, 0, {0, 7, 1, 0});
+    expectRaw("ab\r\n\t->", 5, 2, 4, {0, 7, 2, 4});
+    expectRaw("ab\r\n\t->", 7, 2, 4, {3, 7, 2, 4});
+    for (const auto cursor : {Event{7, -1, 1, 0},
+                              Event{7, 4, 1, 0},
+                              Event{7, 0, 0, 0},
+                              Event{7, 0, -1, 0},
+                              Event{7, 1, 1, -1},
+                              Event{7, 1, 1, 2},
+                              Event{7, 1, 2, 0},
+                              Event{7, 2, 1, 1},
+                              Event{7, 3, std::numeric_limits<std::int64_t>::max(), 3},
+                              Event{7, std::numeric_limits<std::int64_t>::min(), 1, 0},
+                              Event{7, std::numeric_limits<std::int64_t>::max(), 1, 0},
+                              Event{7, 0, 1, std::numeric_limits<std::int64_t>::min()}})
+        expectRaw("abc", cursor[1], cursor[2], cursor[3], cursor);
+
+    GuardPage source, in, out;
+    for (const std::string spelling :
+         {"x", "0", "/", "-", "'", "\"", "'a'", "\"x\"", "//", "\r", "\n", "\\", "@", "\"\xf0\x90\x80\x80\""}) {
+        context = "guard-page-source-end";
+        auto *backing = source.end() - spelling.size();
+        std::memcpy(backing, spelling.data(), spelling.size());
+        require(mprotect(source.mapping + source.page, source.page, PROT_READ) == 0, "source read-only guard failed");
+        const auto record = input(backing, spelling.size());
+        std::memcpy(in.end() - 80, record.data(), 80);
+        require(mprotect(in.mapping + in.page, in.page, PROT_READ) == 0, "input read-only guard failed");
+        std::memset(out.end() - 32, 0x5a, 32);
+        checked_hosted_lexer_call(in.end() - 80, out.end() - 32, aurora_hosted_lexer_invoke);
+        ++abiCalls;
+        Event observed;
+        std::memcpy(observed.data(), out.end() - 32, 32);
+        require(observed == raw(input(spelling.data(), spelling.size())), "guarded backing changed event");
+        require(mprotect(source.mapping + source.page, source.page, PROT_READ | PROT_WRITE) == 0,
+                "restore source guard failed");
+        require(mprotect(in.mapping + in.page, in.page, PROT_READ | PROT_WRITE) == 0, "restore input guard failed");
+    }
+    context = "zero-length-inaccessible-backing";
+    require(raw(input(source.end(), 0)) == Event{3, 0, 1, 0}, "empty scanner dereferenced inaccessible backing");
+}
+
+void abiControls() {
+    context = "ABI-negative-controls";
+    const std::array<Entry, 8> controls = {hosted_lexer_clobber_rbp,
+                                           hosted_lexer_clobber_rbx,
+                                           hosted_lexer_clobber_r12,
+                                           hosted_lexer_clobber_r13,
+                                           hosted_lexer_clobber_r14,
+                                           hosted_lexer_clobber_r15,
+                                           hosted_lexer_clobber_canary,
+                                           hosted_lexer_shift_stack};
+    for (std::size_t index = 0; index <= controls.size(); ++index) {
+        const pid_t child = fork();
+        require(child >= 0, "fork ABI negative control failed");
+        if (child == 0) {
+            if (index == controls.size())
+                hosted_lexer_misaligned_call(nullptr, nullptr, aurora_hosted_lexer_invoke);
+            else
+                checked_hosted_lexer_call(nullptr, nullptr, controls[index]);
+            _exit(0);
+        }
+        int status = 0;
+        pid_t result;
+        do {
+            result = waitpid(child, &status, 0);
+        } while (result < 0 && errno == EINTR);
+        require(result == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGILL,
+                "ABI control was not rejected with SIGILL: " + std::to_string(index));
+    }
+}
+} // namespace
+
+int main(int argc, char **argv) {
+    try {
+        const rlimit noCore{0, 0};
+        require(setrlimit(RLIMIT_CORE, &noCore) == 0, "cannot disable negative-control core dumps");
+        require(std::setlocale(LC_CTYPE, "C") != nullptr, "C locale unavailable");
+        abiControls();
+        abiCases();
+        languageCases();
+        byteCases();
+        utf8Cases();
+        boundaryCases();
+        ownershipCases();
+        for (const char *locale : {"C.utf8", "en_US.utf8", "tr_TR.utf8"}) {
+            if (std::setlocale(LC_CTYPE, locale)) {
+                byteCases();
+                utf8Cases();
+                std::cout << "PASS hosted lexer locale " << locale << '\n';
+            } else {
+                std::cout << "SKIP unavailable hosted lexer locale " << locale << '\n';
+            }
+        }
+        require(std::setlocale(LC_CTYPE, "C") != nullptr, "cannot restore C locale");
+        for (int index = 1; index < argc; ++index) {
+            std::ifstream file(argv[index], std::ios::binary);
+            context = argv[index];
+            require(file.good(), "cannot open corpus source");
+            const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            require(!file.bad(), "cannot read corpus source");
+            verify(text, argv[index]);
+        }
+        std::cout << "PASS hosted lexer: " << cases << " differential cases, " << abiCalls
+                  << " raw ABI calls, 9 ABI negative controls, " << argc - 1 << " corpus files\n";
+        return 0;
+    } catch (const std::exception &error) {
+        std::cerr << "FAIL hosted lexer: " << error.what() << '\n';
+        return 1;
+    }
+}

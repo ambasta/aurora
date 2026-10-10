@@ -3,6 +3,8 @@
 
 This is a trusted local workflow, not a compiler-correctness proof or a signed
 attestation. Explicit pins and local build provenance are intentionally distinct.
+The historical gnu-cxx-main-v1 recipe builds the C++ lexer seed/reference. Hosted
+Aurora-lexer qualification uses the canonical Meson stage 1 build instead.
 """
 from __future__ import annotations
 
@@ -589,6 +591,8 @@ def run(args):
                 for name, entry in tools.items() if name not in ('shell',)}
     headers = {}
     if prebuilt is None:
+        print('NOTE: legacy supervisor builds the C++ lexer seed/reference; '
+              'use canonical Meson stage 1 for Aurora-lexer qualification.', flush=True)
         # GCC's ordinary distribution symlinks are supported; opaque wrappers are not.
         verbose = capture([cxx, '-v'], root, timeout=30)
         require(verbose.returncode == 0 and b'gcc version ' in verbose.stderr, 'controlled build requires GNU C++')

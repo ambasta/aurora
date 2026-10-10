@@ -43,6 +43,12 @@ errors; compiler-free controls cover its accounting and error boundaries. This i
 see the [test contract](developer-test-contract.md#complete-native-artifact-accounting).
 Compiler-free IOMMU routing controls check guarded Make target membership rather
 than target-list spelling, including negative controls for non-rule decoys.
+The private hosted-lexer candidate implements all lexical events in Aurora,
+including lossless trivia and literal validation, behind one trusted immutable
+source import. Its stage 1 rebuilds the lexer with identical assembly; the
+parser, semantics and backend remain C++. The [lexer checkpoint](../compiler/LEXER.md#hosted-aurora-lexer-checkpoint)
+identifies production and seed/reference build routes. Focused evidence is not
+final integrated full/image/guest qualification or whole-compiler self-hosting.
 None of the six destination goals is complete. A bounded feature or passing test
 suite does not establish production safety, whole-system readiness or physical
 hardware support.

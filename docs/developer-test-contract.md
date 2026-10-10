@@ -13,6 +13,19 @@ contract below remain for their distinct compatibility/provenance checks. They
 are not a second mandatory execution of the canonical native graph.
 
 
+## Hosted lexer build distinction
+
+Canonical Meson compiler/tool targets build stage 0, emit the Aurora lexer and
+link hosted stage 1. Source-consuming fixtures use that hosted phase, and the
+new differential/bootstrap gates compare it with the C++ reference. See the
+[exact route map](../compiler/LEXER.md#hosted-aurora-lexer-checkpoint).
+
+The historical `gnu-cxx-main-v1` supervised fresh build, including legacy focused
+Make aliases, remains a C++ seed/reference compatibility route and prints that
+scope. Its old one-command receipt semantics are not silently changed. Such a
+receipt alone does not qualify the Aurora phase; externally pinned prebuilt
+acceptance is scoped to the exact selected binary.
+
 ## IPC integration qualification — 2026-10-07
 
 The 608-file 851f288 checkpoint completed both full public native workflows with
