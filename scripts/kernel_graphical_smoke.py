@@ -19,12 +19,12 @@ import time
 import tty
 
 import kernel_graphical_console_admission as admission
+import kernel_uefi_oracle as normal
 from framebuffer_capture_oracle import BASE, SIZE, VISIBLE, WIDTH, HEIGHT, PITCH, need, parse_ppm
 from kernel_emulator_clock import ORIGINAL, expected_firmware_argv, validate_clock_options
 
 ROOT = Path(__file__).resolve().parents[1]
 capture = admission.load("graphical_smoke_capture", ROOT / "scripts/kernel-framebuffer-capture.py")
-normal = admission.load("graphical_smoke_normal", ROOT / "tests/kernel-uefi-smoke.py")
 sys.path.insert(0, str(ROOT / "tests"))
 from kernel_graphical_oracle import reference, byte_samples
 from kernel_display_oracle import ppm_rgb

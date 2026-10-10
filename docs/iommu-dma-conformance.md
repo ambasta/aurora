@@ -47,16 +47,58 @@ mastering disabled. Overflow at initial admission remains a pre-entry refusal.
 Hosted and image checks alone do not establish live transport behavior, firmware
 quiescence, physical isolation or completion.
 
-Build-only modes are `iommu-event-denial`, `iommu-event-success`,
-`iommu-event-overflow` and `iommu-event-command-error`, selected through
-`UEFI_MODE` for `scripts/kernel-uefi-build.sh`. Each mode requires independent
-linked-image qualification. Execution requires the exact reviewed model, verified
-split firmware, an admitted raw ESP and a separately reviewed supervised plan.
-The FAT helper uses pinned mtools, reconstructs a second identical image and
-checks every allocation and loader byte; each guest receives a fresh writable
-copy. Serial/QMP evidence and verified process cleanup are required. No mapping
-API, invalidation completion, page release, concurrent producer or physical-device
-support follows. Historical NVMe/IVRS policies and guest results stay separate.
+The four active modes are `iommu-event-denial`, `iommu-event-success`,
+`iommu-event-overflow` and `iommu-event-command-error`. Build-only selection through
+`UEFI_MODE` and `scripts/kernel-uefi-build.sh` remains available. Ordinary hosted
+Event tests stay in the fast native graph and never launch QEMU.
+
+### Supported local developer execution
+
+`make smoke-iommu-event` builds fresh normal and Event images, reproduces current
+`checked()` source/image/stack admission and validates two byte-identical raw ESPs
+per profile. It runs the four active profiles sequentially, then restores the
+exact staged normal artifact inventory and boots normal UEFI with the existing
+serial oracle and native exit 33. The generic UEFI launcher still rejects Event;
+this opt-in target is outside `make test` and `smoke-all`.
+
+Supply the [custom-model inputs](../tools/qemu-amdvi/README.md#developer-event-runtime)
+through `EVENT_BUILD_RECEIPT`, `EVENT_CODE`, `EVENT_VARS`, `EVENT_DATA`. Ordinary
+`QEMU`/`QEMU_DATA` and `OVMF` or `OVMF_CODE`/`OVMF_VARS` independently select normal
+restoration. `scripts/kernel-iommu-event-smoke.sh --build-only` checks the same
+fresh images/ESPs and restores normal bytes without guests or a custom runtime.
+
+Initial ESP support is installed GNU mtools 4.0.48 with standard system config
+locations, selected through PATH or `MTOOLS_DIR`. It checks initial versions and
+current executable/link identities, without historical binary-size/hash pins.
+Private HOME and a clean environment are required. Both `/etc/mtools.conf` and
+`/etc/default/mtools.conf` must be absent: `MTOOLSRC=/dev/null` is additive.
+Other versions/custom compiled config paths are unsupported. Instead of changing
+host configuration, `EVENT_ESP_DIR` may supply `<mode>.raw` for each fresh loader;
+the same complete FAT/allocation/loader validator runs before a SHA-bound private
+copy. Historical pinned mtools behavior and receipts are unchanged.
+
+Evidence is retained in a new private external directory under
+`EVENT_OUTPUT_PARENT` (default system temporary directory). Each run reserves
+1 GiB with a 1 GiB free floor; completed evidence is not automatically deleted.
+Closed q35/TCG argv uses owned regular ESP/VARS copies, private HOME/empty module
+directory, no network, host disks, mounts, VFIO or arbitrary options. Fixed limits
+are 1 MiB each serial/stderr, 64 KiB QMP, 30 seconds per case except overflow's
+90 seconds, and separate two-second TERM/two-second KILL cleanup grace.
+
+QMP stdio and an inherited anonymous serial pipe require no sockets. Paused proof
+precedes six current-layout RAM captures totaling 45,856 bytes. The oracle checks
+full ordered Event serial, the handoff/terminal, all three ring pages, guarded
+snapshots and all 32 KiB of backing including tables/zero regions. Denial preserves
+the discriminating sink check, not a universal zero-filled denied-read promise.
+Failure markers, limits, early exit, forced cleanup, capture/restoration failure
+never pass; an unsettled owned child blocks restoration rather than racing it.
+
+A pass is **local developer emulator evidence**, without per-run handwritten
+supervision or an independent receipt pin. `reviewed()` and historical qualification
+remain unchanged. Final-source merge/release gates still need independent review;
+old evidence does not transfer. Source-copied MMIO observations plus captured RAM
+do not establish physical DMA drain, reclamation, concurrent producers or hardware
+support. Historical NVMe/IVRS results remain separate.
 
 On 2026-10-09, implementation tree
 `9cc4ef76649faca206f8e70407acaa95c9f75b32` passed all 259 full-suite tests with
@@ -163,7 +205,8 @@ unchanged 15,360-byte admission cap. Other profiles, final integrated full tests
 and transition execution retain their separate gates.
 Neither this source checkpoint nor stock observation results qualify a new
 patched-QEMU tuple, transition image or guest. Fresh image/stack and independent
-bounded-method review remain required before any transition execution.
+bounded-method review remain required for independent transition qualification.
+The current local developer route above does not claim that review status.
 
 ## Mechanism and trust boundary
 

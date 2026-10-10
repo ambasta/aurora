@@ -11,6 +11,7 @@ case "$mode" in
     echo "Build with: UEFI_MODE=$mode ./scripts/kernel-uefi-build.sh" >&2
     echo 'Run hosted Event behavior (synthetic transport, no guest DMA): meson test -C <configured-build> iommu-event-source-native --print-errorlogs' >&2
     echo 'Event guest execution requires the reviewed model/firmware, admitted raw ESP and supervised plan described in docs/iommu-dma-conformance.md.' >&2
+    echo 'For the separate supported developer guest route, use make smoke-iommu-event with its explicit custom-model inputs.' >&2
     exit 2 ;;
 esac
 clock_profile="$(python3 scripts/kernel_emulator_clock.py profile "$mode")"

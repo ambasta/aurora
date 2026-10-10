@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Small in-memory FAT controls. No disk images, mtools invocation or guests."""
+"""In-memory FAT and tiny fake-process controls. No real images, mtools or guests."""
 
 from pathlib import Path
 import hashlib
 import importlib.util
+import json
 import struct
 import tempfile
 from types import SimpleNamespace
@@ -294,6 +295,238 @@ class FatAdmission(unittest.TestCase):
                 command.assert_not_called()
             self.assertFalse((directory / "new").exists())
             self.assertEqual((existing / "preserved").read_bytes(), b"unchanged")
+
+
+class DeveloperTools(unittest.TestCase):
+    """Exercise builder orchestration with tiny placeholders and no processes."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
+        self.loader = self.directory / "loader.efi"
+        self.loader.write_bytes(LOADER)
+        self.tools = self.directory / "tools"
+        self.tools.mkdir()
+        for name in ESP.MTOOLS_COMMANDS:
+            path = self.tools / name
+            path.write_bytes(b"fake executable " + name.encode("ascii"))
+            path.chmod(0o700)
+        # Installed packages need not use the pinned mtools -> command layout.
+        executable = self.tools / "different-mmd-binary"
+        (self.tools / "mmd").rename(executable)
+        (self.tools / "mmd").symlink_to(executable.name)
+        self.output = self.directory / "output"
+        self.calls = []
+        self.version = ESP.DEVELOPER_MTOOLS_VERSION
+        self.free = 2 * ESP.FREE_FLOOR_BYTES
+        self.hook = lambda command, environment: None
+        # Fake tools must not depend on the host's legitimate mtools setup.
+        self.system_configs = set()
+        lexists = ESP.os.path.lexists
+        configs = {"/etc/mtools.conf", "/etc/default/mtools.conf"}
+        config_probe = patch.object(
+            ESP.os.path,
+            "lexists",
+            side_effect=lambda path: str(path) in self.system_configs if str(path) in configs else lexists(path),
+        )
+        config_probe.start()
+        self.addCleanup(config_probe.stop)
+
+    def fake_output(self, command, stream):
+        name = Path(command[0]).name
+        if command[1:] == ["--version"]:
+            stream.write((name + " (GNU mtools) " + self.version + "\nconfigured fixture\n").encode())
+        elif name == "mformat":
+            # Replace the patched 4-KiB allocation with a marker, never a real image.
+            Path(command[2]).write_bytes(b"fake FAT fixture")
+        elif name == "mcopy" and command[-2] == "::/EFI/BOOT/BOOTX64.EFI":
+            Path(command[-1]).write_bytes(LOADER)
+
+    def command(self, command, log, environment):
+        self.calls.append((command, log, environment))
+        with log.open("xb") as stream:
+            self.fake_output(command, stream)
+        self.hook(command, environment)
+
+    def build(self, developer=True):
+        with (
+            patch.object(ESP, "IMAGE_BYTES", 4096),
+            patch.object(ESP, "validate_image", return_value={"fixture": "FAT admission"}) as validate,
+            patch.object(ESP.shutil, "disk_usage", side_effect=lambda path: SimpleNamespace(free=self.free)),
+        ):
+            result = ESP.build(
+                self.loader,
+                LOADER_SHA256,
+                self.tools,
+                self.output,
+                developer=developer,
+                run_command=self.command if developer else None,
+            )
+        self.assertEqual(
+            [call.args for call in validate.call_args_list],
+            [(self.output / ("esp-" + role + ".raw"), LOADER_SHA256, len(LOADER)) for role in ("master", "rebuild")],
+        )
+        return result
+
+    def reject(self, reason, error=ValueError):
+        with self.assertRaisesRegex(error, reason):
+            self.build()
+        self.assertFalse((self.output / "esp-admission.json").exists())
+
+    def test_callback_identity_environment_and_same_builder(self):
+        with (
+            patch.dict(ESP.os.environ, {"MTOOLSRC": "/hostile", "MTOOLS_SKIP_CHECK": "1", "LD_PRELOAD": "/hostile"}),
+            patch.object(ESP.subprocess, "run", side_effect=AssertionError("Callback bypassed")),
+        ):
+            result = self.build()
+        self.assertEqual(result["schema"], "aurora-iommu-event-developer-esp-build-v1")
+        self.assertEqual(result["status"], "developer-byte-identity-checked")
+        self.assertFalse(result["independent_review"])
+        self.assertNotIn("mtools_sha256", result)
+        self.assertEqual(set(result["mtools"]), set(ESP.MTOOLS_COMMANDS))
+        for name, identity in result["mtools"].items():
+            executable = (self.tools / name).resolve()
+            self.assertEqual(identity["resolved_path"], str(executable))
+            self.assertEqual(identity["sha256"], ESP.sha256(executable))
+            self.assertEqual(identity["bytes"], executable.stat().st_size)
+        commands = [command for command, _, _ in self.calls]
+        self.assertEqual(commands, [item["command"] for item in result["commands"]])
+        self.assertEqual([Path(command[0]).name for command in commands[:5]], list(ESP.MTOOLS_COMMANDS))
+        self.assertTrue(all(command[1:] == ["--version"] for command in commands[:5]))
+        self.assertEqual(
+            [Path(command[0]).name for command in commands[5:]],
+            ["mformat", "mmd", "mmd", "mcopy", "minfo", "mdir", "mcopy"] * 2,
+        )
+        self.assertEqual(len({log for _, log, _ in self.calls}), 19)
+        for _, log, environment in self.calls:
+            self.assertTrue(log.parent == self.output and log.is_file())
+            self.assertEqual(
+                set(environment), {"PATH", "LC_ALL", "TZ", "SOURCE_DATE_EPOCH", "HOME", "MTOOLSRC", "MTOOLS_NO_VFAT"}
+            )
+            self.assertEqual(environment["MTOOLSRC"], "/dev/null")
+            self.assertEqual(Path(environment["HOME"]).parent, self.output)
+            self.assertEqual(Path(environment["HOME"]).stat().st_mode & 0o777, 0o700)
+        self.assertEqual(json.loads((self.output / "esp-admission.json").read_text()), result)
+
+    def test_developer_requires_callback_and_pinned_rejects_it(self):
+        for developer, callback in ((True, None), (False, self.command)):
+            with self.subTest(developer=developer), self.assertRaisesRegex(ValueError, "callback|Callback"):
+                ESP.build(
+                    self.loader, LOADER_SHA256, self.tools, self.output, developer=developer, run_command=callback
+                )
+            self.assertFalse(self.output.exists())
+
+    def test_pinned_default_preserves_verification_and_receipt(self):
+        with self.assertRaises((ValueError, OSError)):
+            ESP.build(self.loader, LOADER_SHA256, self.tools, self.output)
+        self.assertFalse(self.output.exists())
+        with (
+            patch.object(ESP, "verify_tools", return_value=self.tools) as verify,
+            patch.object(
+                ESP.subprocess,
+                "run",
+                side_effect=lambda command, **options: self.fake_output(command, options["stdout"]),
+            ) as run,
+        ):
+            result = self.build(developer=False)
+        self.assertEqual(verify.call_count, 2)
+        self.assertEqual(run.call_count, 14)
+        self.assertEqual(result["schema"], "aurora-iommu-event-esp-build-v1")
+        self.assertEqual(result["status"], "requires-independent-review")
+        self.assertEqual(result["mtools_sha256"], ESP.MTOOLS_SHA256)
+        self.assertNotIn("independent_review", result)
+
+    def test_system_configuration_rejected_before_output(self):
+        for blocked in ("/etc/mtools.conf", "/etc/default/mtools.conf"):
+            with self.subTest(blocked=blocked):
+                self.system_configs = {blocked}
+                self.reject("system mtools configuration")
+                self.assertFalse(self.output.exists())
+        self.assertEqual(self.calls, [])
+
+    def test_private_configuration_appearing_during_command(self):
+        def inject(command, environment):
+            (Path(environment["HOME"]) / ".mtoolsrc").write_text("MTOOLS_SKIP_CHECK=1\n")
+
+        self.hook = inject
+        self.reject("private mtools configuration")
+
+    def test_system_configuration_appearing_during_command(self):
+        original = ESP.os.path.lexists
+        with patch.object(
+            ESP.os.path,
+            "lexists",
+            side_effect=lambda path: (bool(self.calls) and str(path) == "/etc/default/mtools.conf") or original(path),
+        ):
+            self.reject("system mtools configuration")
+        self.assertEqual(len(self.calls), 1)
+
+    def test_unsupported_version(self):
+        self.version = "4.0.49"
+        self.reject("Unsupported developer mtools version")
+        self.assertFalse((self.output / "esp-master.raw").exists())
+
+    def test_executable_and_symlink_drift(self):
+        replacement = self.tools / "replacement"
+        replacement.write_bytes((self.tools / "mmd").read_bytes())
+        replacement.chmod(0o700)
+        for kind in ("bytes", "symlink"):
+            with self.subTest(kind=kind):
+                self.output = self.directory / kind
+
+                def drift(command, environment):
+                    if kind == "bytes":
+                        (self.tools / "mdir").write_bytes(b"changed executable")
+                    else:
+                        (self.tools / "mmd").unlink()
+                        (self.tools / "mmd").symlink_to(replacement.name)
+
+                self.hook = drift
+                self.reject("mtools identity changed")
+
+    def test_nonexecutable_tool_and_output_symlink_rejected(self):
+        executable = self.tools / "mdir"
+        executable.chmod(0o600)
+        self.reject("not executable")
+        executable.chmod(0o700)
+        alias = self.directory / "alias"
+        alias.symlink_to(self.directory, target_is_directory=True)
+        self.output = alias / "new-output"
+        self.reject("Invalid output parent")
+        self.assertEqual(self.calls, [])
+
+    def test_free_space_floor_is_rechecked(self):
+        def exhaust(command, environment):
+            self.free = ESP.FREE_FLOOR_BYTES - 1
+
+        self.hook = exhaust
+        self.reject("free-space floor")
+
+    def test_process_failures_readback_and_rebuild_reject_admission(self):
+        cases = (
+            ("probe", ESP.subprocess.CalledProcessError, "non-zero exit"),
+            ("format", ESP.subprocess.CalledProcessError, "non-zero exit"),
+            ("timeout", ESP.subprocess.TimeoutExpired, "timed out"),
+            ("readback", ValueError, "readback differs"),
+            ("rebuild", ValueError, "ESP rebuild differs"),
+        )
+        for failure, error, reason in cases:
+            with self.subTest(failure=failure):
+                self.output = self.directory / failure
+
+                def fail(command, environment):
+                    if failure == "probe" or (failure == "format" and command[1] != "--version"):
+                        raise ESP.subprocess.CalledProcessError(1, command)
+                    if failure == "timeout" and command[1] != "--version":
+                        raise ESP.subprocess.TimeoutExpired(command, 60)
+                    if failure == "readback" and command[-2] == "::/EFI/BOOT/BOOTX64.EFI":
+                        Path(command[-1]).write_bytes(b"wrong loader")
+                    if failure == "rebuild" and command[1] != "--version" and "esp-rebuild.raw" in command[2]:
+                        Path(command[2]).write_bytes(b"different image")
+
+                self.hook = fail
+                self.reject(reason, error)
 
 
 if __name__ == "__main__":
