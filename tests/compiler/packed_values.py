@@ -198,6 +198,90 @@ def array_cases(suite):
                     body, expected=MAX_U64, definitions=definitions, helpers=helper)
 
 
+def byte_run_cases(suite):
+    # Each boundary compiles once and observes every byte in loops. The empty
+    # case is already exercised by empty_cases; zero-capacity arrays stay invalid.
+    for capacity in (1, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 63, 64, 65, 511, 512):
+        definitions = byte_storage("Bytes", capacity)
+        helpers = "auto identity(Bytes value)->Bytes{return value;}"
+        body = (
+            "Bytes original=Bytes();i64 i=0;"
+            f"while(i<{capacity}){{original.set(i,u8((i*37+131)%256));i=i+1;}}"
+            "const Bytes saved=original;Bytes returned=identity(saved);"
+            "const Bytes method=returned.snapshot();"
+            "original.set(0,0u8);"
+            f"returned.set({capacity - 1},1u8);i=0;while(i<{capacity}){{"
+            "const u8 expected=u8((i*37+131)%256);"
+            "if(saved.at(i)!=expected){return 1u64;}"
+            "if(method.at(i)!=expected){return 2u64;}"
+            "if(i==0){if(original.at(i)!=0u8){return 3u64;}}"
+            "else{if(original.at(i)!=expected){return 4u64;}}"
+            f"if(i=={capacity - 1}){{if(returned.at(i)!=1u8){{return 5u64;}}}}"
+            "else{if(returned.at(i)!=expected){return 6u64;}}i=i+1;}return 42u64;"
+        )
+        suite.check(
+            f"byte-run boundary {capacity}: complete copies and exact final byte",
+            body,
+            definitions=definitions,
+            helpers=helpers,
+        )
+
+    definitions = (
+        byte_storage("Bytes9", 9)
+        + "enum class State{ok,error};"
+        + (
+            "class Envelope{public:u8 lead;Bytes9 payload;u8 tail;bool flag;State state;u64 word;"
+            "Envelope(u8 a,Bytes9 b,u8 c,bool d,State e,u64 f):"
+            "word(f),state(e),flag(d),tail(c),payload(b),lead(a){}"
+            "auto replace(Bytes9 value)->u8{payload=value;return tail;}"
+            "auto project()const->Bytes9{const Bytes9 copy=payload;return copy;}"
+            "auto snapshot(Bytes9 value,u8 changed,u64 wide,bool yes,i64 negative,State code)const->Envelope{"
+            "if(changed!=211u8){return Envelope(1u8,value,tail,flag,state,word);}"
+            "if(wide!=word){return Envelope(2u8,value,tail,flag,state,word);}"
+            "if(!yes){return Envelope(3u8,value,tail,flag,state,word);}"
+            "if(negative!=-42){return Envelope(4u8,value,tail,flag,state,word);}"
+            "if(code!=State::error){return Envelope(5u8,value,tail,flag,state,word);}"
+            "return Envelope(lead,value,tail,flag,state,word);}};"
+        )
+    )
+    helpers = (
+        "auto identity(Envelope value)->Envelope{return value;}"
+        "auto scalar_first(u64 word,Bytes9 value,u8 byte,bool flag,i64 negative,State code)->u64{"
+        f"if(word!={MAX_U64}u64){{return 21u64;}}"
+        "if(byte!=241u8){return 22u64;}if(!flag){return 23u64;}"
+        "if(negative!=-42){return 24u64;}if(code!=State::error){return 25u64;}"
+        "return u64(value.at(8));}"
+    )
+    body = (
+        "static_assert(size_of(Envelope)==40);Bytes9 original=Bytes9();"
+        "i64 i=0;while(i<9){original.set(i,u8(i+128));i=i+1;}"
+        f"Envelope envelope=Envelope(17u8,original,19u8,true,State::error,{MAX_U64}u64);"
+        "Envelope local=identity(envelope);const Bytes9 projected=local.payload;"
+        "Bytes9 replacement=projected;replacement.set(8,7u8);local.payload=replacement;"
+        "if(local.replace(projected)!=19u8){return 7u64;}"
+        "const Bytes9 receiver_copy=local.project();"
+        "i64 pass=0;while(pass<4){original.set(8,136u8);"
+        "const Envelope snapshot=envelope.snapshot(original,original.set(8,211u8),"
+        f"{MAX_U64}u64,true,-42,State::error);"
+        "if(snapshot.lead!=17u8){return 8u64;}if(snapshot.tail!=19u8){return 9u64;}"
+        "if(!snapshot.flag){return 10u64;}if(snapshot.state!=State::error){return 11u64;}"
+        f"if(snapshot.word!={MAX_U64}u64){{return 12u64;}}"
+        "const Bytes9 saved=snapshot.payload;i=0;while(i<9){"
+        "if(saved.at(i)!=u8(i+128)){return 13u64;}"
+        "if(projected.at(i)!=u8(i+128)){return 14u64;}"
+        "if(receiver_copy.at(i)!=u8(i+128)){return 15u64;}i=i+1;}"
+        "if(original.at(8)!=211u8){return 16u64;}pass=pass+1;}"
+        f"return scalar_first({MAX_U64}u64,receiver_copy,241u8,true,-42,State::error);"
+    )
+    suite.check(
+        "unaligned nested byte runs preserve canaries, mixed scalar registers and method snapshots",
+        body,
+        expected=136,
+        definitions=definitions,
+        helpers=helpers,
+    )
+
+
 def scalar_and_layout_cases(suite):
     for scalar, value, literal in (("i64", -(1 << 63), "-9223372036854775808"),
                                    ("u64", MAX_U64, f"{MAX_U64}u64"),
@@ -477,6 +561,7 @@ def main():
         if args.self_test_only:
             return
         array_cases(suite)
+        byte_run_cases(suite)
         scalar_and_layout_cases(suite)
         small_call_cases(suite)
         maximum_leaf_cases(suite)

@@ -6,7 +6,7 @@ historical results recorded here. Non-byte and template-capacity bounds remain.
 
 This candidate extends ordinary functions with by-value class parameters/results.
 The original scalar-field boundary now also transports private scalar-array fields
-and bounded composed values, copying all leaves independently. The developing
+and bounded composed values, preserving every copied payload leaf. The developing
 [composition contract](COMPOSED-VALUES.md) extends constructors with readonly class
 parameters and nominal nested-field initialization. Aggregate references, resource
 ownership transfer and a stable external ABI remain unsupported. Copied method
@@ -109,7 +109,11 @@ requires a complete active local matching the result type and a balanced scalar
 operand stack. Scalar call/return operations cannot stand in for value-boundary
 operations, and receiver-method calls retain their own separate contract.
 
-The backend marshals copied fields into a bounded private call record. Hidden
+The backend marshals copied fields into a bounded private call record. Its
+[bounded byte-run lowering](BYTES.md#physical-representation-gate) combines only
+exact groups of eight contiguous u8 payload leaves, using RAX alone so live scalar
+argument registers remain intact. It changes neither snapshots nor copy ordering,
+and never copies representation padding or owning descriptors. Hidden
 record/result addresses are kept outside source-addressable slots and scalar IR
 values. Aggregate-signature entrypoints are native-mangled local symbols. There
 is no scalar-number-to-capability conversion or foreign-call surface. Callees

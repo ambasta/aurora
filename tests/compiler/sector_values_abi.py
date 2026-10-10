@@ -327,6 +327,48 @@ def native_cases(assembly, work):
     test('control-last-byte-block-result', outgoing_block, expected=43, expected_exit=91,
          input_record=BLOCK, expected_result=BLOCK,
          replacements={'sector_target_block': independent_target('block', corrupt=True)})
+    # Noncanonical padding is deliberately different on either side. Payload
+    # lowering must neither import the caller's poisoned gaps nor overwrite the
+    # result's untouched gaps, even beside nested unaligned U8 runs.
+    mixed_input = bytearray([165] * 48)
+    mixed_result = bytearray([204] * 48)
+    for offset in (*range(11), *range(40, 47)):
+        mixed_input[offset] = mixed_result[offset] = (offset * 37 + 131) % 256
+    for offset, value in ((16, 1), (24, 1), (32, (1 << 64) - 1)):
+        mixed_input[offset : offset + 8] = value.to_bytes(8, "little")
+        mixed_result[offset : offset + 8] = value.to_bytes(8, "little")
+    incoming_mixed = POISON + "leaq input_record, %r11\nleaq result, %r10\ncall sector_in_mixed\n" + result_check(48)
+    test(
+        "mixed-width-poisoned-padding-and-canaries",
+        incoming_mixed,
+        input_record=mixed_input,
+        expected_result=mixed_result,
+    )
+    corrupt_mixed = bytearray(mixed_input)
+    corrupt_mixed[46] ^= 1
+    test(
+        "control-mixed-last-byte",
+        incoming_mixed,
+        input_record=corrupt_mixed,
+        expected_result=mixed_result,
+        expected_exit=91,
+    )
+    gap_input = bytearray([165] * 24)
+    gap_result = bytearray([204] * 24)
+    gap_input[0:8] = gap_result[0:8] = ((1 << 64) - 1).to_bytes(8, "little")
+    for offset in (*range(8, 15), 16):
+        gap_input[offset] = gap_result[offset] = (offset * 37 + 131) % 256
+    incoming_gap = POISON + "leaq input_record, %r11\nleaq result, %r10\ncall sector_in_gap\n" + result_check(24)
+    test("eight-logical-bytes-split-by-poisoned-gap", incoming_gap, input_record=gap_input, expected_result=gap_result)
+    corrupt_gap = bytearray(gap_input)
+    corrupt_gap[16] ^= 1
+    test(
+        "control-last-byte-after-nested-gap",
+        incoming_gap,
+        input_record=corrupt_gap,
+        expected_result=gap_result,
+        expected_exit=91,
+    )
     return count
 
 

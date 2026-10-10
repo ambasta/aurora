@@ -46,9 +46,22 @@ extent before computing offsets. Supplied physical metadata must still exactly
 match the shape-derived canonical layout.
 
 U8 stride remains one byte. Earlier scalar/bool/enum storage remains eight bytes.
-No IR instruction, private calling convention, ABI register assignment or x86
-emitter operation changes. Copies remain explicit complete typed-leaf copies;
-there is no new copy-elision or bulk-copy optimization and no C ABI promise.
+No IR instruction, private calling convention or ABI register assignment changes.
+Copied payload lowering coalesces eight initialized contiguous u8 leaves into one
+existing x86 MOVQ load/store pair. Both canonical source and destination offsets
+must be consecutive inside the current operation's selected leaf range; there is
+no alignment rounding, padding access or overread. Remaining bytes use the existing
+byte operations, and bool/enum/i64/u64 leaves retain their existing operations.
+
+This applies only to argument packing, local copies, nested-field projection,
+assignment and initialization, copied returns and copied parameter binding. These
+operations already require disjoint source/destination storage through verified
+reservations, fresh snapshots/results and caller-versus-callee frames. RAX remains
+the sole scratch register, preserving live scalar arguments, hidden receiver/record
+addresses and flags. Ownership transfers, descriptor clearing, zeroing and checked
+indexed operations are unchanged. Copies remain explicit and in IR order, with
+unchanged reservations, probes and hidden saves. No loop, REP, runtime copy call,
+copy elision or C ABI is introduced.
 
 ## Stack and compiler-resource scope
 

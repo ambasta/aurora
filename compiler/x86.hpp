@@ -1,6 +1,7 @@
 #pragma once
 #include "ir_layout.hpp"
 #include <algorithm>
+#include <span>
 #include <sstream>
 #include <type_traits>
 #include <utility>
@@ -33,6 +34,33 @@ class X86Emitter {
     }
     void storeValue(const Type &type, const std::string &destination) {
         line(std::string(type == Type::U8 ? "movb %al, " : "movq %rax, ") + destination);
+    }
+    template <class Source, class Destination>
+    void copyLeaves(std::span<const Type> leaves,
+                    std::span<const int> sourceOffsets,
+                    std::span<const int> destinationOffsets,
+                    const Source &source,
+                    const Destination &destination) {
+        // Only verified copied payload ranges reach this helper. Their objects,
+        // receiver storage and call records are disjoint; every source leaf is
+        // initialized. Check both canonical offset ranges, never address strings.
+        // RAX alone is scratch: packed scalar arguments and R10/R11 may be live.
+        for (std::size_t leaf = 0; leaf < leaves.size();) {
+            bool qword = leaves.size() - leaf >= 8;
+            for (std::size_t byte = 0; qword && byte < 8; ++byte)
+                qword = leaves[leaf + byte] == Type::U8 &&
+                        sourceOffsets[leaf + byte] == sourceOffsets[leaf] + static_cast<int>(byte) &&
+                        destinationOffsets[leaf + byte] == destinationOffsets[leaf] + static_cast<int>(byte);
+            if (qword) {
+                line("movq " + source(sourceOffsets[leaf]) + ", %rax");
+                line("movq %rax, " + destination(destinationOffsets[leaf]));
+                leaf += 8;
+            } else {
+                loadValue(leaves[leaf], source(sourceOffsets[leaf]));
+                storeValue(leaves[leaf], destination(destinationOffsets[leaf]));
+                ++leaf;
+            }
+        }
     }
     void storeArgument(const Type &type, std::size_t index, const std::string &destination) {
         line(std::string(type == Type::U8 ? "movb " : "movq ") +
@@ -192,11 +220,17 @@ class X86Emitter {
                 storeArgument(type, index, std::to_string(offset) + "(%rsp)");
             else {
                 const auto &layout = classLayouts->at(type.className);
-                for (std::size_t field = 0; field < layout.size(); ++field) {
-                    loadValue(layout[field], address(objectLeaf(objects[index], field)));
-                    storeValue(layout[field],
-                               std::to_string(offset + classStorage->at(type.className).leafOffsets[field]) + "(%rsp)");
-                }
+                const auto &offsets = classStorage->at(type.className).leafOffsets;
+                copyLeaves(
+                    layout,
+                    offsets,
+                    offsets,
+                    [&](int byte) {
+                        return address(objects[index] - byte);
+                    },
+                    [&](int byte) {
+                        return std::to_string(offset + byte) + "(%rsp)";
+                    });
             }
         }
         line("movq %rsp, %r11");
@@ -799,10 +833,17 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::CopyObject>) {
                     const auto &name = currentFunction->objectSlots.at(operation.sourceOffset).className;
                     const auto &layout = classLayouts->at(name);
-                    for (std::size_t leaf = 0; leaf < layout.size(); ++leaf) {
-                        loadValue(layout[leaf], address(objectLeaf(operation.sourceOffset, leaf)));
-                        storeValue(layout[leaf], address(objectLeaf(operation.resultOffset, leaf)));
-                    }
+                    const auto &offsets = classStorage->at(name).leafOffsets;
+                    copyLeaves(
+                        layout,
+                        offsets,
+                        offsets,
+                        [&](int byte) {
+                            return address(operation.sourceOffset - byte);
+                        },
+                        [&](int byte) {
+                            return address(operation.resultOffset - byte);
+                        });
                 } else if constexpr (std::is_same_v<Op, ir::ObjectFieldCopy>) {
                     const ir::ClassField *field = nullptr;
                     const ir::ClassStorage *source = nullptr;
@@ -817,11 +858,16 @@ class X86Emitter {
                         line("leaq " + address(operation.sourceOffset) + ", %r10");
                     }
                     const auto &layout = classLayouts->at(field->elementType.className);
-                    for (int leaf = 0; leaf < field->length; ++leaf) {
-                        loadValue(layout[leaf],
-                                  std::to_string(source->leafOffsets[field->firstLeaf + leaf]) + "(%r10)");
-                        storeValue(layout[leaf], address(objectLeaf(operation.resultOffset, leaf)));
-                    }
+                    copyLeaves(
+                        layout,
+                        std::span(source->leafOffsets).subspan(field->firstLeaf, field->length),
+                        classStorage->at(field->elementType.className).leafOffsets,
+                        [](int byte) {
+                            return std::to_string(byte) + "(%r10)";
+                        },
+                        [&](int byte) {
+                            return address(operation.resultOffset - byte);
+                        });
                 } else if constexpr (std::is_same_v<Op, ir::AssignObjectField>) {
                     const auto &name = operation.objectOffset == 0
                                            ? currentFunction->receiver->className
@@ -833,20 +879,30 @@ class X86Emitter {
                         line("movq " + address(receiverSaveOffset) + ", %r10");
                     else
                         line("leaq " + address(operation.objectOffset) + ", %r10");
-                    for (int leaf = 0; leaf < field.length; ++leaf) {
-                        loadValue(sourceLayout[leaf], address(objectLeaf(operation.sourceOffset, leaf)));
-                        storeValue(sourceLayout[leaf],
-                                   std::to_string(destinationStorage.leafOffsets[field.firstLeaf + leaf]) + "(%r10)");
-                    }
+                    copyLeaves(
+                        sourceLayout,
+                        classStorage->at(field.elementType.className).leafOffsets,
+                        std::span(destinationStorage.leafOffsets).subspan(field.firstLeaf, field.length),
+                        [&](int byte) {
+                            return address(operation.sourceOffset - byte);
+                        },
+                        [](int byte) {
+                            return std::to_string(byte) + "(%r10)";
+                        });
                 } else if constexpr (std::is_same_v<Op, ir::InitializeObjectField>) {
                     const auto &field = receiverField(operation.fieldIndex);
                     const auto &layout = classLayouts->at(field.elementType.className);
                     line("movq " + address(receiverSaveOffset) + ", %r10");
-                    for (int leaf = 0; leaf < field.length; ++leaf) {
-                        loadValue(layout[leaf], address(objectLeaf(operation.sourceOffset, leaf)));
-                        storeValue(layout[leaf],
-                                   std::to_string(receiverStorage().leafOffsets[field.firstLeaf + leaf]) + "(%r10)");
-                    }
+                    copyLeaves(
+                        layout,
+                        classStorage->at(field.elementType.className).leafOffsets,
+                        std::span(receiverStorage().leafOffsets).subspan(field.firstLeaf, field.length),
+                        [&](int byte) {
+                            return address(operation.sourceOffset - byte);
+                        },
+                        [](int byte) {
+                            return std::to_string(byte) + "(%r10)";
+                        });
                 } else if constexpr (std::is_same_v<Op, ir::InitializeBytesField>) {
                     // Only a constructor's bound receiver is admitted here.
                     // Initializing one descriptor never copies sibling payload.
@@ -929,13 +985,17 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::ReturnObject>) {
                     line("movq " + address(resultSaveOffset) + ", %r10");
                     const auto &layout = classLayouts->at(currentFunction->result.className);
-                    for (std::size_t field = 0; field < layout.size(); ++field) {
-                        loadValue(layout[field], address(objectLeaf(operation.offset, field)));
-                        storeValue(
-                            layout[field],
-                            std::to_string(classStorage->at(currentFunction->result.className).leafOffsets[field]) +
-                                "(%r10)");
-                    }
+                    const auto &offsets = classStorage->at(currentFunction->result.className).leafOffsets;
+                    copyLeaves(
+                        layout,
+                        offsets,
+                        offsets,
+                        [&](int byte) {
+                            return address(operation.offset - byte);
+                        },
+                        [](int byte) {
+                            return std::to_string(byte) + "(%r10)";
+                        });
                     line("xorq %rax, %rax");
                     line("jmp " + returnLabel());
                 } else if constexpr (std::is_same_v<Op, ir::ReturnOwnedObject>) {
@@ -970,12 +1030,17 @@ class X86Emitter {
                     const auto &layout = classLayouts->at(operation.className);
                     const int offset = recordOffset(*currentFunction, operation.index);
                     clearObject(operation.offset, operation.className);
-                    for (std::size_t field = 0; field < layout.size(); ++field) {
-                        loadValue(layout[field],
-                                  std::to_string(offset + classStorage->at(operation.className).leafOffsets[field]) +
-                                      "(%r11)");
-                        storeValue(layout[field], address(objectLeaf(operation.offset, field)));
-                    }
+                    const auto &offsets = classStorage->at(operation.className).leafOffsets;
+                    copyLeaves(
+                        layout,
+                        offsets,
+                        offsets,
+                        [&](int byte) {
+                            return std::to_string(offset + byte) + "(%r11)";
+                        },
+                        [&](int byte) {
+                            return address(operation.offset - byte);
+                        });
                 } else if constexpr (std::is_same_v<Op, ir::BindOwnedObjectParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     const int offset = recordOffset(*currentFunction, operation.index);

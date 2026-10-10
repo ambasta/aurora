@@ -4,6 +4,7 @@
 #include "x86.hpp"
 #include <functional>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 using namespace aurora;
@@ -186,6 +187,194 @@ Module budgetModule(int bytes, int words, bool boundary, bool composed = false) 
     return module;
 }
 
+// This oracle spells out byte offsets and machine widths independently of
+// production layout/storage helpers. Labels isolate the instruction under test.
+std::string between(const std::string &text, const std::string &first, const std::string &last) {
+    const auto begin = text.find(first);
+    require(begin != std::string::npos, "missing assembly start: " + first);
+    const auto end = text.find(last, begin + first.size());
+    require(end != std::string::npos, "missing assembly end: " + last);
+    return text.substr(begin + first.size(), end - begin - first.size());
+}
+
+std::string
+copies(int bytes, const std::function<std::string(int)> &source, const std::function<std::string(int)> &destination) {
+    std::string expected;
+    for (int byte = 0; byte < bytes;) {
+        const bool word = bytes - byte >= 8;
+        expected += std::string("    ") + (word ? "movq " : "movzbq ") + source(byte) + ", %rax\n";
+        expected += std::string("    ") + (word ? "movq %rax, " : "movb %al, ") + destination(byte) + "\n";
+        byte += word ? 8 : 1;
+    }
+    return expected;
+}
+
+// Extract only adjacent payload load/store pairs. Setup, gap zeroing, probes,
+// hidden capability saves and call cleanup remain covered by the ABI runner.
+std::string transfers(const std::string &assembly) {
+    std::istringstream lines(assembly);
+    std::string line, store, result;
+    while (std::getline(lines, line)) {
+        if ((line.starts_with("    movq ") || line.starts_with("    movzbq ")) && line.ends_with(", %rax") &&
+            line.find('(') != std::string::npos) {
+            require(static_cast<bool>(std::getline(lines, store)), "payload load without store");
+            require(store.starts_with("    movq %rax, ") || store.starts_with("    movb %al, "),
+                    "payload copy must use RAX only: " + store);
+            result += line + "\n" + store + "\n";
+        }
+    }
+    return result;
+}
+
+void byteRunTests() {
+    for (int bytes : {0, 1, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 63, 64, 65, 511, 512}) {
+        auto module = budgetModule(bytes, 0, true);
+        auto target = module.functions[0];
+        target.name = "target";
+        auto &entry = module.functions[0];
+        const int base = std::max(8, (bytes + 7) / 8 * 8);
+        entry.frameBytes = (3 * base + 15) / 16 * 16;
+        for (int copy : {2, 3}) {
+            entry.objectSlots[copy * base] = {"Value", false};
+            for (int byte = 0; byte < bytes; ++byte)
+                entry.slots[copy * base - byte] = Type::U8;
+        }
+        entry.code = {BindObjectParameter{0, base, "Value"},
+                      Label{69},
+                      BeginObject{2 * base},
+                      Label{70},
+                      CopyObject{base, 2 * base},
+                      Label{71},
+                      BeginObject{3 * base},
+                      Label{72},
+                      AggregateCall{"target", {2 * base}, 3 * base},
+                      Label{73},
+                      ReturnObject{3 * base}};
+        module.functions.push_back(target);
+        const auto assembly = X86Emitter{}.emit(validate(std::move(module)));
+        const auto local = [](int base, int byte) {
+            return "-" + std::to_string(base - byte) + "(%rbp)";
+        };
+        const auto pointer = [](int byte) {
+            return std::to_string(byte) + "(%r10)";
+        };
+        require(transfers(between(assembly, "entry:\n", ".Lau0_69:\n")) == copies(
+                                                                               bytes,
+                                                                               [](int byte) {
+                                                                                   return std::to_string(byte) +
+                                                                                          "(%r11)";
+                                                                               },
+                                                                               [&](int byte) {
+                                                                                   return local(base, byte);
+                                                                               }),
+                "bounded byte parameter binding");
+        require(between(assembly, ".Lau0_70:\n", ".Lau0_71:\n") == copies(
+                                                                       bytes,
+                                                                       [&](int byte) {
+                                                                           return local(base, byte);
+                                                                       },
+                                                                       [&](int byte) {
+                                                                           return local(2 * base, byte);
+                                                                       }),
+                "bounded local byte copy");
+        require(transfers(between(assembly, ".Lau0_72:\n", ".Lau0_73:\n")) == copies(
+                                                                                  bytes,
+                                                                                  [&](int byte) {
+                                                                                      return local(2 * base, byte);
+                                                                                  },
+                                                                                  [](int byte) {
+                                                                                      return std::to_string(byte) +
+                                                                                             "(%rsp)";
+                                                                                  }),
+                "bounded packed byte argument");
+        require(transfers(between(assembly, ".Lau0_73:\n", ".Lreturn0:\n")) == copies(
+                                                                                   bytes,
+                                                                                   [&](int byte) {
+                                                                                       return local(3 * base, byte);
+                                                                                   },
+                                                                                   pointer),
+                "bounded byte result");
+        ++accepted;
+        std::cout << "PASS sector IR exact qwords and byte tail length=" << bytes << '\n';
+    }
+}
+
+Module fieldCopyModule(const std::string &kind) {
+    Module module;
+    module.classLayouts["Bytes9"] = std::vector<Type>(9, Type::U8);
+    module.classFields["Bytes9"] = {{Type::U8, 0, 9, true}};
+    module.classLayouts["Wrapped"] = std::vector<Type>(11, Type::U8);
+    module.classFields["Wrapped"] = {{Type::U8, 0, 1, false}, {Type("Bytes9"), 1, 9, false}, {Type::U8, 10, 1, false}};
+    IRFunction function;
+    function.name = "entry";
+    function.frameBytes = 64;
+    function.result = Type::I64;
+    auto slot = [&](int base, const std::string &name, int size) {
+        function.objectSlots[base] = {name, base == 48};
+        for (int byte = 0; byte < size; ++byte)
+            function.slots[base - byte] = Type::U8;
+    };
+    slot(16, "Bytes9", 9);
+    if (kind == "project_local" || kind == "assign_local") {
+        function.parameters = {Type("Wrapped"), Type("Bytes9")};
+        slot(32, "Wrapped", 11);
+        slot(48, "Wrapped", 11);
+        function.code = {BindObjectParameter{0, 32, "Wrapped"},
+                         BindObjectParameter{1, 16, "Bytes9"},
+                         BeginObject{48},
+                         CopyObject{32, 48}};
+    } else {
+        function.parameters = {Type("Bytes9")};
+        function.receiver = Receiver{"Wrapped", kind != "project_receiver", kind == "initialize"};
+        function.code = {BindObjectParameter{0, 16, "Bytes9"}};
+    }
+    if (kind == "initialize")
+        function.code.insert(
+            function.code.end(),
+            {Constant{17, Type::U8}, ReceiverStore{0, Type::U8}, Constant{19, Type::U8}, ReceiverStore{2, Type::U8}});
+    if (kind.starts_with("project")) {
+        slot(64, "Bytes9", 9);
+        function.code.insert(
+            function.code.end(),
+            {BeginObject{64}, Label{70}, ObjectFieldCopy{kind == "project_local" ? 48 : 0, 1, 64}, Label{71}});
+    } else if (kind == "initialize") {
+        function.code.insert(function.code.end(), {Label{70}, InitializeObjectField{0, 1, 16}, Label{71}});
+    } else {
+        function.code.insert(function.code.end(),
+                             {Label{70}, AssignObjectField{kind == "assign_local" ? 48 : 0, 1, 16}, Label{71}});
+    }
+    function.code.insert(function.code.end(), {Constant{42, Type::I64}, Return{}});
+    module.functions = {function};
+    return module;
+}
+
+void fieldCopyTests() {
+    for (const std::string kind :
+         {"project_local", "project_receiver", "assign_local", "assign_receiver", "initialize"}) {
+        const auto assembly = X86Emitter{}.emit(validate(fieldCopyModule(kind)));
+        const auto copied = transfers(between(assembly, ".Lau0_70:\n", ".Lau0_71:\n"));
+        const auto expected = kind.starts_with("project") ? copies(
+                                                                9,
+                                                                [](int byte) {
+                                                                    return std::to_string(1 + byte) + "(%r10)";
+                                                                },
+                                                                [](int byte) {
+                                                                    return "-" + std::to_string(64 - byte) + "(%rbp)";
+                                                                })
+                                                          : copies(
+                                                                9,
+                                                                [](int byte) {
+                                                                    return "-" + std::to_string(16 - byte) + "(%rbp)";
+                                                                },
+                                                                [](int byte) {
+                                                                    return std::to_string(1 + byte) + "(%r10)";
+                                                                });
+        require(copied == expected, "unaligned selected field range: " + kind);
+        ++accepted;
+        std::cout << "PASS sector IR unaligned selected field range " << kind << '\n';
+    }
+}
+
 Module boundsModule(bool split = false) {
     auto module = shapes();
     if (split)
@@ -239,6 +428,129 @@ void checkBlock(IRFunction &function, int base) {
         function.code.push_back(Load{base - byte, Type::U8});
         compareCurrent(function, payload(5, byte), Type::U8);
     }
+}
+
+void mixedCopyFixture(Module &module) {
+    const auto state = Type::enumeration("CopyState");
+    module.enumCases["CopyState"] = 2;
+    module.classLayouts["CopyBytes9"] = std::vector<Type>(9, Type::U8);
+    module.classFields["CopyBytes9"] = {{Type::U8, 0, 9, true}};
+    auto &leaves = module.classLayouts["CopyMixed"];
+    leaves = std::vector<Type>(11, Type::U8);
+    leaves.insert(leaves.end(), {Type::Bool, state, Type::U64});
+    leaves.insert(leaves.end(), 7, Type::U8);
+    module.classFields["CopyMixed"] = {{Type::U8, 0, 1, false},
+                                       {Type("CopyBytes9"), 1, 9, false},
+                                       {Type::U8, 10, 1, false},
+                                       {Type::Bool, 11, 1, false},
+                                       {state, 12, 1, false},
+                                       {Type::U64, 13, 1, false},
+                                       {Type::U8, 14, 7, true}};
+    // Literal canonical offsets: the final seven bytes may not widen into
+    // padding, and the bool/enum/u64 remain three separate eight-byte leaves.
+    const std::vector<int> offsets = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 24, 32, 40, 41, 42, 43, 44, 45, 46};
+    IRFunction function;
+    function.name = "sector_in_mixed";
+    function.result = Type("CopyMixed");
+    function.parameters = {Type("CopyMixed")};
+    function.frameBytes = 48;
+    function.objectSlots[48] = {"CopyMixed", false};
+    for (std::size_t leaf = 0; leaf < offsets.size(); ++leaf)
+        function.slots[48 - offsets[leaf]] = leaves[leaf];
+    function.code = {BindObjectParameter{0, 48, "CopyMixed"}, Label{70}, ReturnObject{48}};
+    module.functions.push_back(function);
+}
+
+void gapCopyFixture(Module &module) {
+    module.classLayouts["GapChild"] = {Type::U64};
+    module.classLayouts["GapChild"].insert(module.classLayouts["GapChild"].end(), 7, Type::U8);
+    module.classFields["GapChild"] = {{Type::U64, 0, 1, false}, {Type::U8, 1, 7, true}};
+    module.classLayouts["GapOuter"] = module.classLayouts["GapChild"];
+    module.classLayouts["GapOuter"].push_back(Type::U8);
+    module.classFields["GapOuter"] = {{Type("GapChild"), 0, 8, false}, {Type::U8, 8, 1, false}};
+    IRFunction function;
+    function.name = "sector_in_gap";
+    function.result = Type("GapOuter");
+    function.parameters = {Type("GapOuter")};
+    function.frameBytes = 32;
+    function.objectSlots[24] = {"GapOuter", false};
+    function.slots[24] = Type::U64;
+    for (int byte : {8, 9, 10, 11, 12, 13, 14, 16})
+        function.slots[24 - byte] = Type::U8;
+    function.code = {BindObjectParameter{0, 24, "GapOuter"}, Label{70}, ReturnObject{24}};
+    module.functions.push_back(function);
+}
+
+void gapCopyTests() {
+    Module module;
+    gapCopyFixture(module);
+    const auto assembly = X86Emitter{}.emit(validate(std::move(module)));
+    auto expected = [&](const std::function<std::string(int)> &source,
+                        const std::function<std::string(int)> &destination) {
+        auto result = "    movq " + source(0) + ", %rax\n    movq %rax, " + destination(0) + "\n";
+        // These are eight consecutive logical U8 leaves, but child tail padding
+        // at byte 15 breaks physical adjacency before the outer sibling at 16.
+        for (int byte : {8, 9, 10, 11, 12, 13, 14, 16})
+            result += "    movzbq " + source(byte) + ", %rax\n    movb %al, " + destination(byte) + "\n";
+        return result;
+    };
+    const auto local = [](int byte) {
+        return "-" + std::to_string(24 - byte) + "(%rbp)";
+    };
+    require(transfers(between(assembly, "sector_in_gap:\n", ".Lau0_70:\n")) == expected(
+                                                                                   [](int byte) {
+                                                                                       return std::to_string(byte) +
+                                                                                              "(%r11)";
+                                                                                   },
+                                                                                   local),
+            "eight logical byte leaves cannot bind across nested padding");
+    require(transfers(between(assembly, ".Lau0_70:\n", ".Lreturn0:\n")) == expected(local,
+                                                                                    [](int byte) {
+                                                                                        return std::to_string(byte) +
+                                                                                               "(%r10)";
+                                                                                    }),
+            "eight logical byte leaves cannot return across nested padding");
+    ++accepted;
+    std::cout << "PASS sector IR eight logical U8 leaves split by canonical nested padding\n";
+}
+
+void mixedCopyTests() {
+    Module module;
+    mixedCopyFixture(module);
+    const auto assembly = X86Emitter{}.emit(validate(std::move(module)));
+    auto expected = [&](const std::function<std::string(int)> &source,
+                        const std::function<std::string(int)> &destination) {
+        auto result = copies(11, source, destination);
+        for (int byte : {16, 24, 32})
+            result += "    movq " + source(byte) + ", %rax\n    movq %rax, " + destination(byte) + "\n";
+        result += copies(
+            7,
+            [&](int byte) {
+                return source(40 + byte);
+            },
+            [&](int byte) {
+                return destination(40 + byte);
+            });
+        return result;
+    };
+    const auto local = [](int byte) {
+        return "-" + std::to_string(48 - byte) + "(%rbp)";
+    };
+    require(transfers(between(assembly, "sector_in_mixed:\n", ".Lau0_70:\n")) == expected(
+                                                                                     [](int byte) {
+                                                                                         return std::to_string(byte) +
+                                                                                                "(%r11)";
+                                                                                     },
+                                                                                     local),
+            "mixed binding widths and padding boundaries");
+    require(transfers(between(assembly, ".Lau0_70:\n", ".Lreturn0:\n")) == expected(local,
+                                                                                    [](int byte) {
+                                                                                        return std::to_string(byte) +
+                                                                                               "(%r10)";
+                                                                                    }),
+            "mixed return widths and padding boundaries");
+    ++accepted;
+    std::cout << "PASS sector IR mixed U8/bool/enum/u64 widths and untouched gaps\n";
 }
 
 Module abiModule() {
@@ -331,10 +643,16 @@ Module abiModule() {
     blockOut.code.insert(blockOut.code.end(), {Constant{42, Type::I64}, Jump{2}, Label{1},
         Constant{-2, Type::I64}, Label{2}, BinaryValue{Binary::CheckedAdd}, Return{}});
     module.functions.push_back(blockOut);
+    mixedCopyFixture(module);
+    gapCopyFixture(module);
     return module;
 }
 
 void directTests() {
+    byteRunTests();
+    fieldCopyTests();
+    mixedCopyTests();
+    gapCopyTests();
     auto literal = shapeOnly();
     supplyLiteralStorage(literal);
     accept("literal 512-byte Block and 513-leaf 520-byte Report", literal);
