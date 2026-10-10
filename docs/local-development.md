@@ -182,6 +182,21 @@ UEFI success, and neither establishes physical AMD/Framework support.
 
 ## Choosing tests
 
+To exercise the actual Aurora Event consumer on hosted synthetic transport, use
+an already [configured Meson build](meson-bootstrap.md):
+
+```sh
+meson test -C build/gcc16 iommu-event-source-native --print-errorlogs
+```
+
+Replace `build/gcc16` with your configured build directory. This incrementally
+builds the selected test's dependencies and exercises sealed Event/Console
+sessions; it does not run a guest or qualify live DMA. Event UEFI profiles remain
+build-only through `UEFI_MODE=iommu-event-success ./scripts/kernel-uefi-build.sh`.
+The generic UEFI smoke launcher rejects them before building or launching QEMU
+and points to this hosted route. Actual Event guest execution still requires the
+[reviewed model, firmware, raw ESP and supervised plan](iommu-dma-conformance.md).
+
 - `./scripts/compiler-test.sh` or `make -C compiler test`: complete compiler-only
   Meson suite with dependency-tracked compiler and fixture builds.
 - `make test-compiler`: the same compiler-only Meson selection.

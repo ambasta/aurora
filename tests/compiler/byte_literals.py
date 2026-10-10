@@ -15,6 +15,49 @@ def app(body, result="u8"):
     return f"module test;auto test()->{result}{{{body}}}"
 
 
+def byte_string_length_diagnostics(compiler, root):
+    source, output = root / "string-length.au", root / "string-length.s"
+    # Independent decoded counts distinguish bytes from spelling length,
+    # Unicode characters and an imagined terminator.
+    for spelling, actual, expected in [
+        ('""', 0, 1),
+        ('"a"', 1, 2),
+        ('"hello"', 5, 4),
+        ('"é"', 2, 1),
+        ('"😀"', 4, 1),
+        (r'"\x4142\01"', 5, 4),
+        (r'"\0"', 1, 2),
+        (r'"\x00\xff"', 2, 1),
+    ]:
+        prefix = f"module test;auto test()->u8{{const array<u8,{expected}> b="
+        source.write_text(prefix + spelling + ";return b[0];}")
+        message = (
+            f"array initializer length does not match its declared type: expected {expected} bytes, "
+            f"got {actual} decoded bytes"
+        )
+        output.write_bytes(b"preserved\n")
+        result = subprocess.run([compiler, source, "-o", output], capture_output=True, text=True, timeout=10)
+        require(
+            result.returncode == 1 and message in result.stderr and output.read_bytes() == b"preserved\n",
+            f"string length diagnostic or failed output preservation: {spelling!r}: {result.stderr}",
+        )
+        result = subprocess.run(
+            [compiler, "--check", "--diagnostics=json", source], capture_output=True, text=True, timeout=10
+        )
+        require(result.returncode == 1, f"string length mismatch passed check: {spelling!r}")
+        diagnostics = json.loads(result.stdout)["diagnostics"]
+        require(len(diagnostics) == 1, f"string length diagnostic count: {diagnostics}")
+        diagnostic = diagnostics[0]
+        require(
+            diagnostic["code"] == "AU3001"
+            and diagnostic["message"] == message
+            and diagnostic["range"]["start"]["offset"] == len(prefix.encode())
+            and diagnostic["range"]["end"]["offset"] == len((prefix + spelling).encode()),
+            f"string length diagnostic or source span: {diagnostic}",
+        )
+    print("PASS byte-string length diagnostics: 8 decoded byte counts, spans and preserved outputs")
+
+
 def byte_strings(compiler, root, runner):
     # Strings reuse named array storage and the existing native value/trap oracle.
     spellings = [
@@ -59,6 +102,7 @@ def byte_strings(compiler, root, runner):
             )
         ]
     )
+    byte_string_length_diagnostics(compiler, root)
     malformed = [
         b'"unclosed',
         b'"\\',

@@ -1729,7 +1729,10 @@ class SemanticAnalyzer {
             if (!bytes)
                 fail(expression->token, "invalid byte-string literal");
             if (bytes->size() != static_cast<std::size_t>(type.length))
-                fail(expression->token, "array initializer length does not match its declared type");
+                fail(expression->token,
+                     "array initializer length does not match its declared type: expected " +
+                         std::to_string(type.length) + " bytes, got " + std::to_string(bytes->size()) +
+                         " decoded bytes");
             for (const auto value : *bytes) {
                 emit(ir::Constant{value, Type::U8});
                 push();
