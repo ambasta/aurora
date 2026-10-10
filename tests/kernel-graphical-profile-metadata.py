@@ -238,9 +238,12 @@ class ProfileMetadata(unittest.TestCase):
             "kernel/uefi/runtime-layout.hpp",
         }
         self.assertEqual(set(runner.source_inputs()), expected)
-        self.assertEqual(len(list(runner.cases())), 13)
+        self.assertEqual(len(list(runner.cases())), 25)
         consumer = (ROOT / "examples/kernel-graphical-console.au").read_text()
-        self.assertEqual(re.findall(r"(?m)^\s*import\s+([^;]+);", consumer), ["graphics.font5x7"])
+        self.assertEqual(
+            re.findall(r"(?m)^\s*import\s+([^;]+);", consumer),
+            ["graphics.font5x7", "std.binary_buffer", "std.binary", "console.session_note"],
+        )
         self.assertIn("library/graphics/font5x7.au", runner.SOURCE_INPUTS)
         self.assertNotRegex((ROOT / "library/graphics/font5x7.au").read_text(), r"(?m)^\s*import\b")
         with patch.dict(os.environ, {}, clear=True):
@@ -281,7 +284,7 @@ class ProfileMetadata(unittest.TestCase):
                     (work / "consumer.s").write_text("synthetic generated output")
                     if "failure" in scenario:
                         raise RuntimeError("synthetic native failure")
-                    count = {"short": 67, "excess": 69}.get(scenario, 68)
+                    count = {"short": 107, "excess": 109}.get(scenario, 108)
                     records.extend(dict(name=str(n), geometry=[], status="passed") for n in range(count))
 
                 args = SimpleNamespace(run=compiler, developer_selected_compiler=True, artifacts=out)
@@ -309,9 +312,12 @@ class ProfileMetadata(unittest.TestCase):
                 self.assertFalse(record["guest_executed"])
                 self.assertFalse(record["image_qualified"])
                 self.assertEqual(record["case_count"], len(record["cases"]))
-                self.assertEqual(record["expected_cases"], dict(transcript_geometry=39, output_failure=7, denial=22))
+                self.assertEqual(
+                    record["expected_cases"],
+                    dict(transcript_geometry=75, session_reset=1, output_failure=10, denial=22),
+                )
                 if scenario == "success":
-                    self.assertEqual(record["case_count"], 68)
+                    self.assertEqual(record["case_count"], 108)
                 self.assertIn("consumer.s", record["generated_sha256"])
                 if "drift" in scenario:
                     self.assertEqual(record["finalization_error"], "synthetic identity drift")
