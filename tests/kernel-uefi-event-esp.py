@@ -321,6 +321,17 @@ class DeveloperTools(unittest.TestCase):
         self.version = ESP.DEVELOPER_MTOOLS_VERSION
         self.free = 2 * ESP.FREE_FLOOR_BYTES
         self.hook = lambda command, environment: None
+        # Fake tools must not depend on the host's legitimate mtools setup.
+        self.system_configs = set()
+        lexists = ESP.os.path.lexists
+        configs = {"/etc/mtools.conf", "/etc/default/mtools.conf"}
+        config_probe = patch.object(
+            ESP.os.path,
+            "lexists",
+            side_effect=lambda path: str(path) in self.system_configs if str(path) in configs else lexists(path),
+        )
+        config_probe.start()
+        self.addCleanup(config_probe.stop)
 
     def fake_output(self, command, stream):
         name = Path(command[0]).name
@@ -427,12 +438,9 @@ class DeveloperTools(unittest.TestCase):
         self.assertNotIn("independent_review", result)
 
     def test_system_configuration_rejected_before_output(self):
-        original = ESP.os.path.lexists
         for blocked in ("/etc/mtools.conf", "/etc/default/mtools.conf"):
-            with (
-                self.subTest(blocked=blocked),
-                patch.object(ESP.os.path, "lexists", side_effect=lambda path: str(path) == blocked or original(path)),
-            ):
+            with self.subTest(blocked=blocked):
+                self.system_configs = {blocked}
                 self.reject("system mtools configuration")
                 self.assertFalse(self.output.exists())
         self.assertEqual(self.calls, [])
