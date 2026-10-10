@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 
-from unsigned_oracle import Case, NativeRunner, Trap, command, require
+from unsigned_oracle import Case, NativeRunner, Rejection, Trap, command, require
 
 
 def app(body, result="u8"):
@@ -202,6 +202,86 @@ def byte_strings(compiler, root, runner):
     )
 
 
+def literal_span_calls(compiler, root, runner):
+    helper = "auto length(builtin::span<const u8> bytes)->u64{return u64(bytes.size());}"
+    cases = [
+        Case("literal empty span", 'return length("");', 0, prelude=helper),
+        Case("literal UTF-8 extent", 'return length("é😀");', 6, prelude=helper),
+        Case("literal exact maximum", 'return length("' + "x" * 4096 + '");', 4096, prelude=helper),
+        Case(
+            "literal subspan and binary forwarding",
+            r'return forward("x\0\xffz");',
+            255,
+            prelude=(
+                "auto at(builtin::span<const u8> bytes)->u64{return u64(bytes.at(1));}"
+                "auto forward(builtin::span<const u8> bytes)->u64{return at(bytes.subspan(1,2));}"
+            ),
+        ),
+        Case(
+            "literal selects exact span overload",
+            'return pick("ab");',
+            2,
+            prelude=helper + "auto pick(i64 value)->u64{return 99u64;}"
+            "auto pick(builtin::span<const u8> bytes)->u64{return length(bytes);}",
+        ),
+        Case(
+            "multiple literal arguments and repeated loop cleanup",
+            r'if(!std::equal("\0\xff", "\0\xff") || !std::equal("", "")'
+            r' || !std::starts_with("write x y", "write ") || std::equal("a", "ab")) {return 0u64;}'
+            'i64 index=0;while(index<32){if(!std::starts_with("abc", "a")){return 0u64;}'
+            "index=index+1;}return 42u64;",
+            42,
+            imports=("std.bytes",),
+        ),
+        Case(
+            "mutable receiver accepts literal readonly parameter",
+            r"std::BinaryBuffer64 buffer=std::BinaryBuffer64();"
+            r'if(!buffer.starts_with("\0\0") || buffer.starts_with("x")){return 0u64;}'
+            "buffer.write_u8(0,'x');if(!buffer.starts_with(\"x\")){return 0u64;}return 42u64;",
+            42,
+            imports=("std.binary_buffer", "std.binary"),
+        ),
+    ]
+    for case in cases:
+        runner.cases([case])
+    rejected = [
+        app('return "x";'),
+        app('const builtin::span<const u8> bytes="x";return 0u8;'),
+        app('const builtin::span<const u8> bytes=borrow_bytes("x");return 0u8;'),
+        app('return "x"[0];'),
+        app('return u8("x");'),
+        'module test;auto take(u8 value)->u8{return value;}auto test()->u8{return take("x");}',
+        'module test;auto take(i64 v)->u8{return 0u8;}auto take(u8 v)->u8{return v;}auto test()->u8{return take("x");}',
+        'module test;auto escaped()->builtin::span<const u8>{return "x";}auto test()->u8{return 0u8;}',
+        "module test;class Box{public:Box(builtin::span<const u8> text){}};"
+        'auto test()->u8{Box box=Box("x");return 0u8;}',
+        "module test;" + helper + 'auto test()->u64{return length("' + "x" * 4097 + '");}',
+    ]
+    for index, program in enumerate(rejected[:-1]):
+        runner.rejection(Rejection(f"literal nonescaping boundary {index}", program))
+    oversized, preserved = root / "literal-oversized.au", root / "literal-oversized.s"
+    oversized.write_text(rejected[-1])
+    preserved.write_bytes(b"preserved output\n")
+    result = subprocess.run([compiler, oversized, "-o", preserved], capture_output=True, timeout=10)
+    require(
+        result.returncode == 1 and b"AU1003" in result.stderr and preserved.read_bytes() == b"preserved output\n",
+        "oversized literal argument escaped the existing lexer bound or damaged output",
+    )
+    # Inspect the real object section independently of source/IR length metadata.
+    source, assembly, obj, payload = (root / ("literal-data" + suffix) for suffix in (".au", ".s", ".o", ".bin"))
+    source.write_text("module test;" + helper + r'auto test()->u64{return length("a\0\xff");}')
+    command([compiler, source, "-o", assembly])
+    command(["as", "--64", assembly, "-o", obj])
+    command(["objcopy", "--dump-section", f".rodata={payload}", obj])
+    require(payload.read_bytes() == b"a\0\xff", "literal backing bytes or hidden terminator changed")
+    section = next(line for line in command(["readelf", "-SW", obj]).stdout.decode().splitlines() if ".rodata " in line)
+    flags = section.split("PROGBITS", 1)[1].split()[4]
+    require(flags == "A", f"literal section is not readonly allocated data: {section}")
+    print(
+        f"PASS literal span calls: {len(cases)} native cases, {len(rejected)} rejections, exact readonly object bytes"
+    )
+
+
 def main():
     compiler = Path(sys.argv[1]).resolve(strict=True)
     print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
@@ -277,6 +357,7 @@ def main():
         root = Path(temporary)
         runner = NativeRunner(root, compiler, 10)
         byte_strings(compiler, root, runner)
+        literal_span_calls(compiler, root, runner)
         for offset in range(0, len(cases) - 1, 32):
             runner.cases(cases[offset : min(offset + 32, len(cases) - 1)])
         runner.cases([cases[-1]])

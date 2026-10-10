@@ -64,6 +64,60 @@ class Admission(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Reflection operand"):
                     service.common.verify_reflection_image(root)
 
+    def test_exact_session_byte_count_divisions(self):
+        owner = "__au_m_m2_7console13session_files_n2_7console12SessionFiles_d6submit"
+        self.assertEqual(service.SESSION_FILE_DIVISIONS, {owner: 2})
+        symbol = decoder.Symbol(owner, 0, 11, 1, 2)
+        code = {
+            0: decoder.Instruction(0, 2, "cqto", ""),
+            2: decoder.Instruction(2, 3, "idiv", "%r11"),
+            5: decoder.Instruction(5, 2, "cqto", ""),
+            7: decoder.Instruction(7, 3, "idiv", "%r11"),
+            10: decoder.Instruction(10, 1, "ret", ""),
+        }
+        payload = bytes.fromhex("489949f7fb489949f7fbc3")
+
+        def verify(functions, instructions, raw):
+            return service.verify_generated_divisions(
+                decoder, functions, instructions, raw, service.SESSION_FILE_DIVISIONS
+            )
+
+        evidence = verify({owner: symbol}, code, payload)
+        self.assertEqual([row["owner"] for row in evidence], [owner, owner])
+        original = decoder.NEUTRAL, decoder.READ_ONLY, decoder.PRESERVE_FLAGS
+        try:
+            decoder.configure_console("service")
+            self.assertTrue({"cqto", "idiv"} <= decoder.NEUTRAL)
+            self.assertIn("cqto", decoder.PRESERVE_FLAGS)
+            self.assertNotIn("idiv", decoder.PRESERVE_FLAGS)
+            result = decoder.analyze_function(symbol, code, {0: owner})
+            self.assertEqual((result["local_peak"], result["returns"]), (8, 1))
+        finally:
+            decoder.NEUTRAL, decoder.READ_ONLY, decoder.PRESERVE_FLAGS = original
+        for index in range(10):
+            raw = bytearray(payload)
+            raw[index] ^= 1
+            with self.subTest(byte=index), self.assertRaises(ValueError):
+                verify({owner: symbol}, code, raw)
+        for mutation in ("missing-owner", "outside-owner", "missing-pair", "extra-pair", "operands", "no-payload"):
+            functions, instructions, raw = {owner: symbol}, dict(code), payload
+            if mutation == "missing-owner":
+                functions = {}
+            elif mutation == "outside-owner":
+                functions[owner] = decoder.Symbol(owner, 1, 10, 1, 2)
+            elif mutation == "missing-pair":
+                del instructions[0]
+                del instructions[2]
+            elif mutation == "extra-pair":
+                instructions[11] = decoder.Instruction(11, 2, "cqto", "")
+                instructions[13] = decoder.Instruction(13, 3, "idiv", "%r11")
+            elif mutation == "operands":
+                instructions[2] = decoder.Instruction(2, 3, "idiv", "(%r11)")
+            else:
+                raw = None
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                verify(functions, instructions, raw)
+
     def test_unchanged_whole_stack_and_separate_irq_reserve(self):
         service.verify_stack_budgets(6912, 720, 639, 159)
         service.verify_stack_budgets(15201, 720, 639, 159)

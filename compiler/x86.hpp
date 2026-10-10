@@ -17,6 +17,7 @@ class X86Emitter {
     int callRecordSaveOffset = 0;
     int resultSaveOffset = 0;
     bool ownedSpanRuntime = false;
+    std::vector<std::vector<unsigned char>> literalBytes;
     std::map<int, int> serviceLoanOffsets;
     const ir::Function *currentFunction = nullptr;
     const std::map<std::string, std::vector<Type>> *classLayouts = nullptr;
@@ -747,6 +748,16 @@ class X86Emitter {
                         line("movq $0, " + address(operation.resultOffset - byte));
                     line("movq $" + std::to_string(currentFunction->arraySlots.at(operation.arrayOffset)) + ", " +
                          address(operation.resultOffset - 48));
+                } else if constexpr (std::is_same_v<Op, ir::BorrowLiteralSpan>) {
+                    const std::string label = ".Laurora_literal_" + std::to_string(literalBytes.size());
+                    literalBytes.push_back(operation.bytes);
+                    line("movq $0, " + address(operation.resultOffset));
+                    line("leaq " + label + "(%rip), %rcx");
+                    line("movq %rcx, " + address(operation.resultOffset - 8));
+                    for (int byte = 16; byte <= 40; byte += 8)
+                        line("movq $0, " + address(operation.resultOffset - byte));
+                    line("movq $" + std::to_string(operation.bytes.size()) + ", " +
+                         address(operation.resultOffset - 48));
                 } else if constexpr (std::is_same_v<Op, ir::BorrowOwnedSpan>) {
                     // Runtime validation distinguishes failed and valid-empty owners.
                     // Borrow acquisition must preserve an unrelated current scalar and
@@ -889,6 +900,80 @@ class X86Emitter {
                         [](int byte) {
                             return std::to_string(byte) + "(%r10)";
                         });
+                } else if constexpr (std::is_same_v<Op, ir::InitializeClassArray>) {
+                    const auto &name = operation.objectOffset == 0
+                                           ? currentFunction->receiver->className
+                                           : currentFunction->objectSlots.at(operation.objectOffset).className;
+                    const auto &field = classFields->at(name)[operation.fieldIndex];
+                    const auto &layout = classLayouts->at(field.elementType.className);
+                    const auto &child = classStorage->at(field.elementType.className);
+                    const auto &storage = classStorage->at(name);
+                    if (operation.objectOffset == 0)
+                        line("movq " + address(receiverSaveOffset) + ", %r10");
+                    else
+                        line("leaq " + address(operation.objectOffset) + ", %r10");
+                    for (std::size_t element = 0; element < operation.sources.size(); ++element) {
+                        copyLeaves(
+                            layout,
+                            child.leafOffsets,
+                            std::span(storage.leafOffsets)
+                                .subspan(field.firstLeaf + element * layout.size(), layout.size()),
+                            [&](int byte) {
+                                return address(operation.sources[element] - byte);
+                            },
+                            [](int byte) {
+                                return std::to_string(byte) + "(%r10)";
+                            });
+                    }
+                } else if constexpr (std::is_same_v<Op, ir::ClassArrayBoundsGuard>) {
+                    const auto &name = operation.objectOffset == 0
+                                           ? currentFunction->receiver->className
+                                           : currentFunction->objectSlots.at(operation.objectOffset).className;
+                    const auto &field = classFields->at(name)[operation.fieldIndex];
+                    // Reject signed-negative and upper bounds before multiplying.
+                    line("cmpq $" + std::to_string(field.elementCount) + ", %rax");
+                    line("jae .Laurora_bounds_trap");
+                } else if constexpr (std::is_same_v<Op, ir::ClassArrayCopy> ||
+                                     std::is_same_v<Op, ir::ClassArrayAssign>) {
+                    const auto &name = operation.objectOffset == 0
+                                           ? currentFunction->receiver->className
+                                           : currentFunction->objectSlots.at(operation.objectOffset).className;
+                    const auto &field = classFields->at(name)[operation.fieldIndex];
+                    const auto &layout = classLayouts->at(field.elementType.className);
+                    const auto &child = classStorage->at(field.elementType.className);
+                    // Canonical validated shape bounds both factors and the complete
+                    // byte extent. No indexed pointer or receiver escapes this copy.
+                    const int stride = child.leafOffsets.empty() ? 0 : child.sizeBytes;
+                    line("imulq $" + std::to_string(stride) + ", %rax");
+                    if (operation.objectOffset == 0)
+                        line("movq " + address(receiverSaveOffset) + ", %r10");
+                    else
+                        line("leaq " + address(operation.objectOffset) + ", %r10");
+                    line("leaq " + std::to_string(classStorage->at(name).fieldOffsets[operation.fieldIndex]) +
+                         "(%r10,%rax), %r10");
+                    if constexpr (std::is_same_v<Op, ir::ClassArrayCopy>) {
+                        copyLeaves(
+                            layout,
+                            child.leafOffsets,
+                            child.leafOffsets,
+                            [](int byte) {
+                                return std::to_string(byte) + "(%r10)";
+                            },
+                            [&](int byte) {
+                                return address(operation.resultOffset - byte);
+                            });
+                    } else {
+                        copyLeaves(
+                            layout,
+                            child.leafOffsets,
+                            child.leafOffsets,
+                            [&](int byte) {
+                                return address(operation.sourceOffset - byte);
+                            },
+                            [](int byte) {
+                                return std::to_string(byte) + "(%r10)";
+                            });
+                    }
                 } else if constexpr (std::is_same_v<Op, ir::InitializeObjectField>) {
                     const auto &field = receiverField(operation.fieldIndex);
                     const auto &layout = classLayouts->at(field.elementType.className);
@@ -1067,6 +1152,7 @@ public:
         output.clear();
         argumentCounts.clear();
         functions.clear();
+        literalBytes.clear();
         classLayouts = &module.classLayouts;
         classFields = &module.classFields;
         classStorage = &module.classStorage;
@@ -1192,9 +1278,16 @@ public:
             }
         }
         output << ".Laurora_bounds_trap:\n    ud2\n.Laurora_overflow_trap:\n    "
-                  "ud2\n.Laurora_division_zero_trap:\n    ud2\n.Laurora_shift_count_trap:\n    "
-                  "ud2\n.section "
-                  ".note.GNU-stack,\"\",@progbits\n";
+                  "ud2\n.Laurora_division_zero_trap:\n    ud2\n.Laurora_shift_count_trap:\n    ud2\n";
+        if (!literalBytes.empty()) {
+            output << ".section .rodata\n";
+            for (std::size_t index = 0; index < literalBytes.size(); ++index) {
+                output << ".Laurora_literal_" << index << ":\n";
+                for (const auto byte : literalBytes[index])
+                    output << "    .byte " << static_cast<unsigned>(byte) << '\n';
+            }
+        }
+        output << ".section .note.GNU-stack,\"\",@progbits\n";
         return output.str();
     }
 };

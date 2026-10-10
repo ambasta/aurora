@@ -244,7 +244,7 @@ public:
         return response(borrow_bytes(text));
     }
     auto show_help() -> bool {
-        array<u8, 67> text = "write N TEXT; cat N; ls; rm N; help status exit; RAM; note separate";
+        array<u8, 67> text = "write N TEXT; cat N; ls; rm N; help status exit; files lost on exit";
         return response(borrow_bytes(text));
     }
     auto show_status() -> bool {

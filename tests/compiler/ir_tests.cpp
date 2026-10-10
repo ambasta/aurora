@@ -1808,7 +1808,7 @@ void composedTests() {
                                         Constant{3, Type::I64},
                                         IndexStore{48, 1, Type::I64}});
         },
-        "indexed store cannot write nested class field");
+        "scalar array operation cannot address nested class field");
     rejectComposed(
         "class receiver scalar store forgery",
         [](Module &m) {
@@ -1950,11 +1950,11 @@ void composedTests() {
         },
         "invalid nominal nested class field");
     rejectComposed(
-        "nested metadata array class forbidden",
+        "scalar class-field projection cannot reinterpret class array",
         [](Module &m) {
             m.classFields["Outer"][1].array = true;
         },
-        "invalid nominal nested class field");
+        "projection requires class field");
     rejectComposed(
         "nested metadata unresolved specialization",
         [](Module &m) {

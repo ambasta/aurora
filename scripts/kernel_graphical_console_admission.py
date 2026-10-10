@@ -2727,11 +2727,12 @@ def expected_language_functions():
     classes = {
         ("console.session_note", "console", "SessionNote"): ("size", "at", "submit"),
         ("console.session_files", "console", "FileReply"): ("status", "size", "at", "append", "text", "select"),
-        ("console.session_files", "console", "SessionFiles"): ("byte_at", "commit", "submit"),
+        ("console.session_files", "console", "SessionFiles"): ("commit", "submit"),
         ("std.binary", "std", "ByteReadResult"): ("status", "value_or"),
         ("std.binary_buffer", "std", "BinaryBuffer64"): (
             "size",
             "at",
+            "starts_with",
             "read_u8",
             "write_u8",
             "write_le16",
@@ -2748,6 +2749,7 @@ def expected_language_functions():
         scope = namespace + "::" + name
         names.add(mangle("k", scope, name, module))
         names.update(mangle("m", scope, item, module) for item in items)
+    names.update(mangle("v", "std", name, "std.bytes") for name in ("starts_with", "equal"))
     for bits in (16, 32, 64):
         for order in ("le", "be"):
             names.add(mangle("v", "std", "read_" + order + str(bits), "std.binary"))
@@ -2790,39 +2792,10 @@ def verify_language_object(language):
 
 
 def verify_generated_divisions(decoder, functions, code, payload):
-    """Exactly two register-only signed division pairs in draw_cell's arithmetic.
-
-    CQTO writes RDX from RAX's sign and preserves flags. IDIV R11 writes only
-    RAX/RDX and leaves flags undefined. Neither modifies stack, RCX or R14, so
-    the existing conservative scalar/flag analysis is sufficient after this
-    complete byte, operand, ownership and adjacency check. Synchronous faults
-    retain the ordinary fault-path budget.
-    """
-    need(payload is not None, "Missing generated signed-division payload bytes")
-    owner = "__au_v_m1_24kernel_graphical_console_n0__d9draw_cell"
-    need(owner in functions, "Missing generated division owner")
-    symbol = functions[owner]
-    forms = [row for _, row in sorted(code.items()) if row.op in ("cqto", "idiv")]
-    need(len(forms) == 4, "Unexpected generated division instruction inventory")
-    evidence = []
-    for index in (0, 2):
-        sign, divide = forms[index : index + 2]
-        need(
-            symbol.address <= sign.address < divide.address < divide.next and not sign.args,
-            "Unknown generated signed-division owner/operands",
-        )
-        decoder.verify_signed_division_pair(symbol, sign, divide, payload)
-        evidence.append(
-            dict(
-                owner=owner,
-                sign_address=sign.address,
-                divide_address=divide.address,
-                bytes="489949f7fb",
-                stack_effect=0,
-                clobbers=["rax", "rdx"],
-            )
-        )
-    return evidence
+    owners = console.SESSION_FILE_DIVISIONS | {
+        "__au_v_m1_24kernel_graphical_console_n0__d9draw_cell": 2,
+    }
+    return console.verify_generated_divisions(decoder, functions, code, payload, owners)
 
 
 def verify_private_abi(decoder, linked, code, starts, language_names, functions):

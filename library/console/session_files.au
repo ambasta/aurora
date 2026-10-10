@@ -35,29 +35,20 @@ export namespace console {
         }
         auto select(FileEvent value) -> bool {
             event = value;
-            if (value == FileEvent::written) {
-                array<u8, 41> message = "files: RAM-only; lost when session exits.";
-                return text(borrow_bytes(message));
-            }
             if (value == FileEvent::removed) {
-                array<u8, 26> message = "files: removed (RAM-only).";
-                return text(borrow_bytes(message));
+                return text("files: removed (RAM-only).");
             }
             if (value == FileEvent::missing) {
-                array<u8, 28> message = "files: not found (RAM-only).";
-                return text(borrow_bytes(message));
+                return text("files: not found (RAM-only).");
             }
             if (value == FileEvent::invalid) {
-                array<u8, 31> message = "files: invalid name or content.";
-                return text(borrow_bytes(message));
+                return text("files: invalid name or content.");
             }
             if (value == FileEvent::full) {
-                array<u8, 22> message = "files: full (4 files).";
-                return text(borrow_bytes(message));
+                return text("files: full (4 files).");
             }
             if (value == FileEvent::reserved) {
-                array<u8, 24> message = "files: note is reserved.";
-                return text(borrow_bytes(message));
+                return text("files: note is reserved.");
             }
             return true;
         }
@@ -66,32 +57,16 @@ export namespace console {
     // Four session-local records: name length, content length, name[8],
     // content[49], zero suffix. Occupancy and all records die with the session.
     class SessionFiles {
-        std::BinaryBuffer64 first;
-        std::BinaryBuffer64 second;
-        std::BinaryBuffer64 third;
-        std::BinaryBuffer64 fourth;
+        array<std::BinaryBuffer64, 4> records;
         u64 occupied;
 
-        auto byte_at(i64 slot, i64 index) const -> u8 {
-            if (slot == 0) { return first.at(index); }
-            if (slot == 1) { return second.at(index); }
-            if (slot == 2) { return third.at(index); }
-            return fourth.at(index);
-        }
         auto commit(i64 slot, std::BinaryBuffer64 record) -> bool {
-            if (slot == 0) { first = record; }
-            else {
-                if (slot == 1) { second = record; }
-                else {
-                    if (slot == 2) { third = record; }
-                    else { fourth = record; }
-                }
-            }
+            records[slot] = record;
             return true;
         }
     public:
         SessionFiles(std::BinaryBuffer64 empty)
-            : first(empty), second(empty), third(empty), fourth(empty), occupied(0u64) {}
+            : records{empty, empty, empty, empty}, occupied(0u64) {}
 
         auto submit(std::BinaryBuffer64 command, i64 count) -> FileReply {
             FileReply reply = FileReply();
@@ -99,52 +74,48 @@ export namespace console {
                 reply.select(FileEvent::invalid);
                 return reply;
             }
-            if (count == 2 && command.at(0) == 'l' && command.at(1) == 's') {
+            if (count == 2 && command.starts_with("ls")) {
                 reply.select(FileEvent::listed);
-                array<u8, 6> prefix = "files:";
-                reply.text(borrow_bytes(prefix));
+                reply.text("files:");
                 i64 slot = 0;
                 while (slot < 4) {
-                    const i64 length = i64(byte_at(slot, 0));
+                    const std::BinaryBuffer64 record = records[slot];
+                    const i64 length = i64(record.at(0));
                     if ((occupied & (1u64 << slot)) != 0u64) {
                         reply.append(' ');
                         i64 index = 0;
                         while (index < length) {
-                            reply.append(byte_at(slot, 2 + index));
+                            reply.append(record.at(2 + index));
                             index = index + 1;
                         }
                     }
                     slot = slot + 1;
                 }
                 if (occupied == 0u64) {
-                    array<u8, 18> empty = " empty (RAM-only).";
-                    reply.text(borrow_bytes(empty));
+                    reply.text(" empty (RAM-only).");
                 }
                 return reply;
             }
             i64 start = 0;
             FileEvent action = FileEvent::unknown;
-            if (count >= 6 && command.at(0) == 'w' && command.at(1) == 'r' && command.at(2) == 'i'
-                && command.at(3) == 't' && command.at(4) == 'e' && command.at(5) == ' ') {
+            if (count >= 6 && command.starts_with("write ")) {
                 start = 6;
                 action = FileEvent::written;
             }
-            if (count >= 4 && command.at(0) == 'c' && command.at(1) == 'a'
-                && command.at(2) == 't' && command.at(3) == ' ') {
+            if (count >= 4 && command.starts_with("cat ")) {
                 start = 4;
                 action = FileEvent::read;
             }
-            if (count >= 3 && command.at(0) == 'r' && command.at(1) == 'm' && command.at(2) == ' ') {
+            if (count >= 3 && command.starts_with("rm ")) {
                 start = 3;
                 action = FileEvent::removed;
             }
             if (action == FileEvent::unknown) {
                 // Exact verbs and malformed ls are recognized, without accepting prefixes.
-                if ((count == 5 && command.at(0) == 'w' && command.at(1) == 'r'
-                    && command.at(2) == 'i' && command.at(3) == 't' && command.at(4) == 'e')
-                    || (count == 3 && command.at(0) == 'c' && command.at(1) == 'a' && command.at(2) == 't')
-                    || (count == 2 && command.at(0) == 'r' && command.at(1) == 'm')
-                    || (count > 2 && command.at(0) == 'l' && command.at(1) == 's' && command.at(2) == ' ')) {
+                if ((count == 5 && command.starts_with("write"))
+                    || (count == 3 && command.starts_with("cat"))
+                    || (count == 2 && command.starts_with("rm"))
+                    || (count >= 3 && command.starts_with("ls "))) {
                     reply.select(FileEvent::invalid);
                 }
                 return reply;
@@ -199,14 +170,15 @@ export namespace console {
             i64 free_slot = -1;
             i64 slot = 0;
             while (slot < 4) {
-                const i64 length = i64(byte_at(slot, 0));
+                const std::BinaryBuffer64 record = records[slot];
+                const i64 length = i64(record.at(0));
                 const bool present = (occupied & (1u64 << slot)) != 0u64;
                 if (!present && free_slot == -1) { free_slot = slot; }
                 if (present && length == name_size) {
                     bool matches = true;
                     index = 0;
                     while (index < name_size) {
-                        if (byte_at(slot, 2 + index) != command.at(start + index)) { matches = false; }
+                        if (record.at(2 + index) != command.at(start + index)) { matches = false; }
                         index = index + 1;
                     }
                     if (matches) { found = slot; }
@@ -216,9 +188,10 @@ export namespace console {
             if (action == FileEvent::read) {
                 if (found == -1) { reply.select(FileEvent::missing); return reply; }
                 reply.select(FileEvent::read);
+                const std::BinaryBuffer64 record = records[found];
                 index = 0;
-                while (index < i64(byte_at(found, 1))) {
-                    reply.append(byte_at(found, 10 + index));
+                while (index < i64(record.at(1))) {
+                    reply.append(record.at(10 + index));
                     index = index + 1;
                 }
                 return reply;
@@ -254,6 +227,21 @@ export namespace console {
                 occupied = occupied | (1u64 << found);
             }
             reply.select(action);
+            if (action == FileEvent::written) {
+                // At most 24 bytes: an eight-byte name and the bounded 0..49 count.
+                reply.text("wrote ");
+                index = start;
+                while (index < end) {
+                    reply.append(command.at(index));
+                    index = index + 1;
+                }
+                reply.append(':');
+                reply.append(' ');
+                if (content_size >= 10) { reply.append(u8(i64('0') + content_size / 10)); }
+                reply.append(u8(i64('0') + content_size % 10));
+                reply.text(" byte");
+                if (content_size != 1) { reply.append('s'); }
+            }
             return reply;
         }
     };

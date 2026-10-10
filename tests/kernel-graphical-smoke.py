@@ -257,8 +257,9 @@ if action == 'guest':
                     self.assertEqual((window / "guests/screen-captures.json").exists(), not kept)
                 self.assertFalse((window / "previous-build").exists())
                 self.assertFalse((window / "last-build").exists())
-                self.assertEqual(json.loads((window / smoke.RUN_MARKER).read_text())["status"],
-                                 "passed" if status == 0 else "failed")
+                self.assertEqual(
+                    json.loads((window / smoke.RUN_MARKER).read_text())["status"], "passed" if status == 0 else "failed"
+                )
                 primary_failed = status != 0 and (status != 29 or overrides.get("GUEST_STATUS") == "31")
                 self.assertEqual((window / "failed-build").exists(), primary_failed)
                 self.assertEqual((window / "failed-restoration").exists(), not restored)
@@ -440,7 +441,8 @@ if action == 'guest':
                 (base / name / "evidence").write_text("unchanged")
             (base / "run-invalid" / smoke.RUN_MARKER).write_text('{"status": []}')
             (base / "run-duplicate" / smoke.RUN_MARKER).write_text(
-                '{"schema": "' + smoke.RUN_SCHEMA + '", "status": "running", "status": "passed", "finished_ns": 1}')
+                '{"schema": "' + smoke.RUN_SCHEMA + '", "status": "running", "status": "passed", "finished_ns": 1}'
+            )
             (base / "run-markerlink" / smoke.RUN_MARKER).symlink_to(outside / "evidence")
             with patch.object(smoke, "ROOT", root), patch("builtins.print"):
                 smoke.start_run(base / "run-active")
@@ -471,12 +473,28 @@ if action == 'guest':
                     folder = base / ("run-" + name)
                     folder.mkdir()
                     smoke.start_run(folder)
-            command = ("import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
-                       "import kernel_graphical_smoke as s; s.ROOT=Path(sys.argv[2]); "
-                       "s.finish_run(Path(sys.argv[3]), int(sys.argv[4]))")
-            children = [subprocess.Popen([sys.executable, "-B", "-c", command, str(ROOT / "scripts"),
-                                         str(root), str(base / f"run-{i}"), str(i % 2)],
-                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE) for i in range(8)]
+            command = (
+                "import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
+                "import kernel_graphical_smoke as s; s.ROOT=Path(sys.argv[2]); "
+                "s.finish_run(Path(sys.argv[3]), int(sys.argv[4]))"
+            )
+            children = [
+                subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-B",
+                        "-c",
+                        command,
+                        str(ROOT / "scripts"),
+                        str(root),
+                        str(base / f"run-{i}"),
+                        str(i % 2),
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                for i in range(8)
+            ]
             for child in children:
                 stdout, stderr = child.communicate(timeout=20)
                 self.assertEqual(child.returncode, 0, stdout + stderr)
@@ -494,8 +512,18 @@ if action == 'guest':
             with patch.object(smoke, "ROOT", root), patch("builtins.print"):
                 smoke.start_run(old)
                 smoke.finish_run(old, 0)
-                argv = ["runner", "--images", str(old / "images"), "--evidence", str(old / "guests"),
-                        "qemu", "firmware", "", "", ""]
+                argv = [
+                    "runner",
+                    "--images",
+                    str(old / "images"),
+                    "--evidence",
+                    str(old / "guests"),
+                    "qemu",
+                    "firmware",
+                    "",
+                    "",
+                    "",
+                ]
 
                 def concurrent_completion(*args):
                     new = base / "run-new"
@@ -505,11 +533,17 @@ if action == 'guest':
                     self.assertTrue((old / "images").exists())
                     self.assertTrue((old / "guests").exists())
 
-                with (patch.object(sys, "argv", argv), patch.object(smoke, "expected_firmware_argv", return_value=[]),
-                      patch.object(smoke, "verify_images", side_effect=lambda *a: self.assertTrue((old / ".keep").exists())),
-                      patch.object(smoke.signal, "signal"), patch.object(smoke, "CASES", []),
-                      patch.object(smoke, "production_case", side_effect=concurrent_completion),
-                      patch.object(smoke, "restoration")):
+                with (
+                    patch.object(sys, "argv", argv),
+                    patch.object(smoke, "expected_firmware_argv", return_value=[]),
+                    patch.object(
+                        smoke, "verify_images", side_effect=lambda *a: self.assertTrue((old / ".keep").exists())
+                    ),
+                    patch.object(smoke.signal, "signal"),
+                    patch.object(smoke, "CASES", []),
+                    patch.object(smoke, "production_case", side_effect=concurrent_completion),
+                    patch.object(smoke, "restoration"),
+                ):
                     smoke.main()
                 self.assertTrue((old / ".keep").exists())
                 self.assertTrue((old / "guests/summary.json").exists())
@@ -554,8 +588,9 @@ if action == 'guest':
                 smoke.pin_reused_images(foreign / "images")
                 self.assertEqual(marker.read_text(), contents)
                 self.assertFalse((foreign.parent / ".retention.lock").exists())
-                marker.write_text('{"schema": "' + smoke.RUN_SCHEMA + '", "status": "running", '
-                                  '"status": "passed", "finished_ns": 1}')
+                marker.write_text(
+                    '{"schema": "' + smoke.RUN_SCHEMA + '", "status": "running", "status": "passed", "finished_ns": 1}'
+                )
                 with self.assertRaisesRegex(ValueError, "Duplicate JSON key"):
                     smoke.pin_reused_images(foreign / "images")
                 unmanaged = root / "unmanaged/images"
@@ -581,7 +616,9 @@ if action == 'guest':
                 self.assertTrue(old.exists())
                 self.assertTrue(current.exists())
                 self.assertEqual(json.loads((current / smoke.RUN_MARKER).read_text())["status"], "passed")
-                self.assertTrue(any(str(call.args[0]).startswith("WARN: could not prune") for call in output.call_args_list))
+                self.assertTrue(
+                    any(str(call.args[0]).startswith("WARN: could not prune") for call in output.call_args_list)
+                )
 
     def test_retention_controls_and_failure_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp, patch("builtins.print"):
@@ -631,13 +668,23 @@ if action == 'guest':
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 build = root / "build/uefi"
-                with (patch.object(smoke, "ROOT", root), patch.object(smoke.admission, "BUILD", build),
-                      patch.object(smoke.admission, "RECEIPT", build / "graphical-console-admission.json"),
-                      patch.object(smoke.admission, "checked"), patch.object(smoke.admission, "source_files", return_value=[])):
+                with (
+                    patch.object(smoke, "ROOT", root),
+                    patch.object(smoke.admission, "BUILD", build),
+                    patch.object(smoke.admission, "RECEIPT", build / "graphical-console-admission.json"),
+                    patch.object(smoke.admission, "checked"),
+                    patch.object(smoke.admission, "source_files", return_value=[]),
+                ):
                     files = smoke.admission.build_files(mode)
                     if mode != "normal":
-                        files += [build / name for name in ("graphical-console-admission.json", "graphical-console-build.json",
-                                                           "graphical-console-build-start.json")]
+                        files += [
+                            build / name
+                            for name in (
+                                "graphical-console-admission.json",
+                                "graphical-console-build.json",
+                                "graphical-console-build-start.json",
+                            )
+                        ]
                     for path in files:
                         path.parent.mkdir(parents=True, exist_ok=True)
                         path.write_text("current")
@@ -713,10 +760,11 @@ if action == 'guest':
 
     def test_named_file_reference_state(self):
         slots = [None] * 4
-        written = "files: RAM-only; lost when session exits."
         self.assertEqual(file_response(b"ls", slots), "files: empty (RAM-only).")
         for name in (b"a", b"b", b"c", b"d"):
-            self.assertEqual(file_response(b"write " + name + b" old suffix", slots), written)
+            self.assertEqual(
+                file_response(b"write " + name + b" old suffix", slots), f"wrote {name.decode()}: 10 bytes"
+            )
         saved = slots.copy()
         for command, response in (
             (b"write e x", "files: full (4 files)."),
@@ -738,12 +786,12 @@ if action == 'guest':
             with self.subTest(command=command):
                 self.assertEqual(file_response(command, slots), response)
                 self.assertEqual(slots, saved)
-        self.assertEqual(file_response(b"write b X", slots), written)
+        self.assertEqual(file_response(b"write b X", slots), "wrote b: 1 byte")
         self.assertEqual(file_response(b"cat b", slots), "X")
-        self.assertEqual(file_response(b"write b ", slots), written)
+        self.assertEqual(file_response(b"write b ", slots), "wrote b: 0 bytes")
         self.assertEqual(file_response(b"cat b", slots), "")
         self.assertEqual(file_response(b"rm a", slots), "files: removed (RAM-only).")
-        self.assertEqual(file_response(b"write A._-0123 " + b"x" * 49, slots), written)
+        self.assertEqual(file_response(b"write A._-0123 " + b"x" * 49, slots), "wrote A._-0123: 49 bytes")
         self.assertEqual(file_response(b"cat A._-0123", slots), "x" * 49)
         self.assertEqual(file_response(b"ls", slots), "files: A._-0123 b c d")
 

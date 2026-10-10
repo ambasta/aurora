@@ -18,6 +18,16 @@ export namespace std {
             return elements[offset];
         }
 
+        auto starts_with(builtin::span<const u8> prefix) const -> bool {
+            if (prefix.size() > 64) { return false; }
+            i64 index = 0;
+            while (index < prefix.size()) {
+                if (elements[index] != prefix.at(index)) { return false; }
+                index = index + 1;
+            }
+            return true;
+        }
+
         auto read_u8(i64 offset) const -> ByteReadResult {
             if (offset < 0 || offset >= 64) {
                 const ByteReadResult failure = ByteReadResult(ByteReadStatus::out_of_range, 0u64);

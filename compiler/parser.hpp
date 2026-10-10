@@ -275,13 +275,11 @@ public:
         if (t.text == "array") {
             need("<");
             const auto element = type();
-            if (!scalarOrParameter(element))
-                fail("array elements currently require i64, u64, u8 or bool");
+            if (!scalarOrParameter(element) && !element.isClass())
+                fail("array elements require i64, u64, u8, bool or a concrete copied class");
             need(",");
             const auto count = take();
-            Type result = Type::array(element.kind, 0);
-            if (element.kind == TypeKind::Parameter)
-                result.elementParameter = element.className;
+            Type result = Type::array(element, 0);
             if (capacityParameters.contains(count.text))
                 result.lengthParameter = count.text;
             else {
@@ -297,7 +295,9 @@ public:
                     fail("array length requires a decimal integer literal between 1 and 4096");
                 }
             }
-            need(">");
+            templateClose();
+            if (element.isClass() && result.lengthParameter.empty() && result.length > maximumClassScalarArrayLength)
+                fail("class-element array capacity must be between 1 and 64");
             return result;
         }
         Type v;
@@ -701,8 +701,15 @@ public:
                                     auto fieldName = ident();
                                     ExpressionPtr value;
                                     if (eat("{")) {
-                                        need("}");
-                                        value = std::make_shared<Expression>("array_zero", fieldName);
+                                        if (eat("}"))
+                                            value = std::make_shared<Expression>("array_zero", fieldName);
+                                        else {
+                                            value = std::make_shared<Expression>("array_literal", fieldName);
+                                            do {
+                                                attach(value, expr());
+                                            } while (eat(","));
+                                            need("}");
+                                        }
                                     } else {
                                         need("(");
                                         value = expr();
@@ -734,9 +741,9 @@ public:
                             fail("array fields must be private");
                         if (fieldType.lengthParameter.empty() &&
                             (fieldType.length < 1 ||
-                             fieldType.length > maximumClassArrayLength(Type(fieldType.elementKind))))
+                             fieldType.length > maximumClassArrayLength(fieldType.arrayElement())))
                             fail("class array field capacity must be between 1 and " +
-                                 std::to_string(maximumClassArrayLength(Type(fieldType.elementKind))));
+                                 std::to_string(maximumClassArrayLength(fieldType.arrayElement())));
                     } else if (fieldType.isBytes()) {
                         if (publicAccess)
                             fail("owned byte fields must be private");

@@ -52,7 +52,8 @@ computeClassStorageLayouts(const std::map<std::string, std::vector<Type>> &leave
             layout.alignment = std::max(layout.alignment, alignment);
         };
         for (const auto &field : fields.at(name)) {
-            if (field.firstLeaf != static_cast<int>(layout.leafOffsets.size()) || field.length < 0)
+            if (field.firstLeaf != static_cast<int>(layout.leafOffsets.size()) || field.length < 0 ||
+                (!(field.array && field.elementType.isClass()) && field.elementCount != 1))
                 throw Error("IR: invalid logical field range for storage");
             if (field.elementType == Type::OwnedBytes) {
                 if (field.array || field.length != 0)
@@ -64,17 +65,20 @@ computeClassStorageLayouts(const std::map<std::string, std::vector<Type>> &leave
                 if (owningClass(fields, field.elementType.className))
                     throw Error("IR: nested owning class fields are unsupported");
                 const auto &child = build(field.elementType.className, depth + 1);
-                if (field.array || field.length != static_cast<int>(child.leafOffsets.size()))
+                const int count = field.array ? field.elementCount : 1;
+                if (count < 1 || count > maximumClassScalarArrayLength || (!field.array && field.elementCount != 1) ||
+                    field.length != static_cast<int>(child.leafOffsets.size()) * count)
                     throw Error("IR: invalid nested field storage shape");
                 // Empty nested values carry logical completion but no scalar payload.
                 // Their standalone eight-byte reservation must not widen old parents.
                 const bool empty = child.leafOffsets.empty();
                 align(empty ? 1 : child.alignment);
                 layout.fieldOffsets.push_back(cursor);
-                for (int offset : child.leafOffsets)
-                    layout.leafOffsets.push_back(cursor + offset);
+                for (int element = 0; element < count; ++element)
+                    for (int offset : child.leafOffsets)
+                        layout.leafOffsets.push_back(cursor + element * child.sizeBytes + offset);
                 if (!empty)
-                    cursor += child.sizeBytes;
+                    cursor += count * child.sizeBytes;
             } else {
                 if (!(field.array ? scalar(field.elementType) : scalarValue(field.elementType)) || field.length < 1 ||
                     (!field.array && field.length != 1) ||

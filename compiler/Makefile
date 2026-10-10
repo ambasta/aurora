@@ -160,6 +160,7 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 ../tests/compiler/enum_composition.py $(abspath $(OUT))
 	python3 -O ../tests/compiler/method_values.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/owned_mutation.py $(abspath $(OUT))
+	python3 -B -O ../tests/compiler/class_arrays.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/owned_bytes.py $(abspath $(OUT))
 	python3 -B -O ../tests/compiler/owning_classes.py $(abspath $(OUT))
 	python3 ../tests/compiler/integers.py $(abspath $(OUT))
@@ -207,6 +208,8 @@ test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	python3 -O ../tests/compiler/method_values_abi.py $(abspath $(dir $(OUT))method-values-ir-tests) --work-dir "$$work/native"
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_mutation_ir.cpp -o $(dir $(OUT))owned-mutation-ir-tests
 	$(dir $(OUT))owned-mutation-ir-tests
+	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/class_arrays_ir.cpp -o $(dir $(OUT))class-arrays-ir-tests
+	$(dir $(OUT))class-arrays-ir-tests
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_bytes_ir.cpp -o $(dir $(OUT))owned-bytes-ir-tests
 	$(dir $(OUT))owned-bytes-ir-tests
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_spans_ir.cpp -o $(dir $(OUT))owned-spans-ir-tests

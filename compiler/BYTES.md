@@ -87,8 +87,8 @@ const builtin::span<const u8> text = borrow_bytes(prefix);
 The decoded byte count must equal `N` exactly. The existing capacity range is
 1–4096; there is no inferred length, padding or hidden NUL terminator. Mutable
 arrays, same-type array copies, indexing and lexical readonly borrows retain
-their existing rules. A string spelling cannot itself be borrowed, returned,
-passed as a value, assigned to an existing array or used to initialize a scalar,
+their existing rules. Outside the readonly call-argument case below, a string
+spelling cannot itself be borrowed, returned, passed as a value, assigned to an existing array or used to initialize a scalar,
 non-`u8` array, class field or span. It creates no temporary backing object,
 heap string type, pointer conversion or new lifetime rule.
 Length mismatches report both the expected capacity and actual decoded byte
@@ -120,6 +120,26 @@ this extension, including decoded lengths, UTF-8/escapes, rejected escapes and
 local borrow escape/mutation. Exact assembly comparisons cover explicit arrays.
 Final-source full/image/guest qualification remains required by AGENTS.md; old
 source-bound receipts cannot admit the migrated sources.
+
+### Readonly literal call arguments
+
+A byte-string literal may directly supply a `builtin::span<const u8>` parameter
+of a synchronous ordinary function, exact overload, nonconstructor method or
+service helper, for example `std::starts_with(bytes, "write ")`. The existing
+literal decoder supplies 0–4096 exact bytes, including UTF-8, embedded NUL and
+high-byte escapes; neither this case nor array initialization adds a terminator.
+Empty literals are valid zero-length spans. The backing is immutable module data,
+while the temporary span capability lasts only through argument evaluation and
+the complete call. Callees can read or forward it through existing span rules.
+
+This adds no string value type, mutable view, address conversion, span field or
+escaping result. Literal span locals, `borrow_bytes("...")`, constructor span
+arguments and scalar literal arguments still reject. Typed IR records literal
+bytes and their exact creation site independently of array, parameter and owned
+origins. The verifier checks the existing literal-size bound, typed spills,
+reborrow lifetime and return restrictions before emission. The backend emits
+readonly bytes and the existing 56-byte span record; native calling conventions,
+allocation and service authority do not change.
 
 ## Physical representation gate
 

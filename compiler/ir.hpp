@@ -148,6 +148,13 @@ public:
     int arrayOffset;
     int resultOffset;
 };
+// Immutable module data, with no address supplied by the source or by IR clients.
+// The payload length is the logical span length, without a terminator.
+class BorrowLiteralSpan {
+public:
+    std::vector<unsigned char> bytes;
+    int resultOffset;
+};
 class BorrowOwnedSpan {
 public:
     int offset;
@@ -354,6 +361,31 @@ public:
     int fieldIndex;
     int sourceOffset;
 };
+// A class array remains one complete inline value. Indexed operations consume
+// a checked i64, never manufacture an element address or escaping reference.
+class InitializeClassArray {
+public:
+    int objectOffset; // zero: constructor receiver; positive: declared local carrier
+    int fieldIndex;
+    std::vector<int> sources;
+};
+class ClassArrayBoundsGuard {
+public:
+    int objectOffset;
+    int fieldIndex;
+};
+class ClassArrayCopy {
+public:
+    int objectOffset;
+    int fieldIndex;
+    int resultOffset;
+};
+class ClassArrayAssign {
+public:
+    int objectOffset;
+    int fieldIndex;
+    int sourceOffset;
+};
 class ReceiverLoad {
 public:
     int fieldIndex;
@@ -481,6 +513,10 @@ using Instruction = std::variant<BindServiceParameter,
                                  ObjectFieldCopy,
                                  AssignObjectField,
                                  InitializeObjectField,
+                                 InitializeClassArray,
+                                 ClassArrayBoundsGuard,
+                                 ClassArrayCopy,
+                                 ClassArrayAssign,
                                  ReceiverLoad,
                                  ReceiverStore,
                                  ReceiverArrayZero,
@@ -499,6 +535,7 @@ using Instruction = std::variant<BindServiceParameter,
                                  BeginArray,
                                  EndArray,
                                  BorrowSpan,
+                                 BorrowLiteralSpan,
                                  BorrowOwnedSpan,
                                  ReturnSpan,
                                  ReborrowSpan,
@@ -580,6 +617,9 @@ public:
     int firstLeaf;
     int length;
     bool array;
+    // Only class-valued arrays use this count. length always remains the complete
+    // flattened leaf range, including zero for arrays of empty copied classes.
+    int elementCount = 1;
 };
 // Move-only identity is derived from logical shape, never caller-supplied metadata.
 inline bool owningClass(const std::map<std::string, std::vector<ClassField>> &fields, const std::string &name) {
@@ -609,6 +649,9 @@ public:
     // Optional input metadata is checked against logical shape. Validation always
     // publishes the complete canonical layout for backend consumption.
     std::map<std::string, ClassStorage> classStorage;
+    // Compiler-internal local array storage, validated as exactly one class-array
+    // field. Carriers are not source classes, receiver types or boundary values.
+    std::set<std::string> classArrayCarriers;
     std::map<int, Descriptor> descriptors;
     std::map<int, std::set<int>> descriptorViews{{0, {}}};
     std::map<std::string, int> enumCases;

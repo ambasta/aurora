@@ -1,6 +1,7 @@
 #pragma once
 #include "initialization_facts.hpp"
 #include "ir_layout.hpp"
+#include "byte_literal.hpp"
 #include <algorithm>
 #include <deque>
 #include <functional>
@@ -30,7 +31,18 @@ public:
     Type elementType;
     bool operator==(const ReceiverGuard &) const = default;
 };
-using BoundsEvidence = std::variant<Guard, ReceiverGuard>;
+// Class-element evidence has a separate kind from scalar-array guards. Root zero
+// is the invocation receiver; positive roots are exact active object slots.
+class ClassArrayGuard {
+public:
+    int objectOffset;
+    std::string className;
+    int fieldIndex;
+    Type elementType;
+    int elementCount;
+    bool operator==(const ClassArrayGuard &) const = default;
+};
+using BoundsEvidence = std::variant<Guard, ReceiverGuard, ClassArrayGuard>;
 class Value {
 public:
     Type type;
@@ -71,6 +83,7 @@ public:
     // origin/site still identify the lifetime of the standalone binding or root.
     std::optional<ByteToken> ownedToken = {};
     int ownedField = -1;
+    bool literalOrigin = false;
     bool operator==(const SpanCapability &) const = default;
 };
 enum class ByteDisposition {
@@ -205,7 +218,8 @@ inline void verifyFunction(Function &function,
                            const std::map<std::string, std::vector<Type>> &classLayouts = {},
                            const std::map<std::string, std::vector<ClassField>> &classFields = {},
                            const std::map<std::string, int> &enumCases = {},
-                           const std::map<std::string, ClassStorage> &classStorage = {}) {
+                           const std::map<std::string, ClassStorage> &classStorage = {},
+                           const std::set<std::string> &classArrayCarriers = {}) {
     std::map<std::string, ClassStorage> derivedStorage;
     if (classStorage.empty() && !classLayouts.empty()) {
         auto fields = classFields;
@@ -308,6 +322,7 @@ inline void verifyFunction(Function &function,
                 "constructor result must remain scalar");
         require(type.isClass() && type == Type(type.className), "invalid value boundary type");
         require(classLayouts.contains(type.className), "unknown value boundary class");
+        require(!classArrayCarriers.contains(type.className), "class array carrier cannot cross value boundary");
         require(!owningType(type) || (resourceFunction && !function.receiver),
                 "owning class requires an ordinary resource boundary");
         require(!resourceFunction || owningType(type) || !parameter || owningConstructor,
@@ -340,6 +355,7 @@ inline void verifyFunction(Function &function,
     if (function.receiver) {
         const auto &receiver = *function.receiver;
         require(classLayouts.contains(receiver.className), "unknown receiver class");
+        require(!classArrayCarriers.contains(receiver.className), "class array carrier cannot be receiver");
         receiverLayout = &classLayouts.at(receiver.className);
         if (classFields.contains(receiver.className))
             receiverFields = &classFields.at(receiver.className);
@@ -453,6 +469,10 @@ inline void verifyFunction(Function &function,
     std::map<int, int> serviceParameterSlots; // source index -> distinct root spill
     std::map<int, int> spanParameterOrigins;  // source position -> root spill
     for (std::size_t index = 0; index < function.code.size(); ++index) {
+        if (const auto *literal = std::get_if<BorrowLiteralSpan>(&function.code[index])) {
+            require(literal->bytes.size() <= maxByteStringBytes, "literal span exceeds byte-string bound");
+            require(function.spanSlots.contains(literal->resultOffset), "literal span requires exact typed spill");
+        }
         const auto *serviceBinding = std::get_if<BindServiceParameter>(&function.code[index]);
         const auto *binding = std::get_if<BindParameter>(&function.code[index]);
         const auto *objectBinding = std::get_if<BindObjectParameter>(&function.code[index]);
@@ -714,7 +734,8 @@ inline void verifyFunction(Function &function,
                 const int base = arrayBases.at(offset);
                 for (const auto &[unused, capability] : state.activeSpans) {
                     (void)unused;
-                    require(capability.ownedToken || capability.parameterOrigin || capability.origin != base,
+                    require(capability.literalOrigin || capability.ownedToken || capability.parameterOrigin ||
+                                capability.origin != base,
                             "write to byte array with live readonly span");
                 }
             };
@@ -722,7 +743,15 @@ inline void verifyFunction(Function &function,
                 require(function.spanSlots.contains(base), "span requires exact typed spill");
                 require(state.activeSpans.contains(base), "span capability is not active");
                 const auto &capability = state.activeSpans.at(base);
-                if (capability.ownedToken) {
+                if (capability.literalOrigin) {
+                    require(!capability.parameterOrigin && !capability.ownedToken && capability.ownedField == -1,
+                            "literal span cannot carry another origin kind");
+                    require(capability.originSite < function.code.size(), "literal span origin site is invalid");
+                    const auto *literal = std::get_if<BorrowLiteralSpan>(&function.code[capability.originSite]);
+                    require(literal && literal->resultOffset == capability.origin &&
+                                literal->bytes.size() <= maxByteStringBytes,
+                            "literal span must retain its exact immutable origin");
+                } else if (capability.ownedToken) {
                     loanAccess(capability.origin, false);
                     require(!capability.parameterOrigin, "owned span cannot have parameter origin");
                     const ByteBinding *owner = nullptr;
@@ -882,6 +911,7 @@ inline void verifyFunction(Function &function,
             auto receiverArray = [&](int fieldIndex, bool initialized) -> const ClassField & {
                 const auto &field = receiverShape(fieldIndex);
                 require(field.array, "receiver array operation requires array field");
+                require(scalar(field.elementType), "receiver scalar array operation requires scalar array field");
                 if (initialized) {
                     require(!function.receiver->constructor,
                             "constructor cannot access receiver array during initialization");
@@ -908,6 +938,8 @@ inline void verifyFunction(Function &function,
                     slot(elementOffset, type);
                     activeObjectField(elementOffset);
                     activeArrayElement(elementOffset);
+                    require(!nestedObjectLeaves.contains(elementOffset),
+                            "scalar array operation cannot address nested class field");
                     require(state.initialized.contains(elementOffset), "array element not initialized");
                 }
             };
@@ -984,6 +1016,45 @@ inline void verifyFunction(Function &function,
                 }
                 require(!field->array && field->elementType.isClass(), "owned field operation requires class field");
                 return *field;
+            };
+            auto completeClassArray = [&](int base, int fieldIndex, bool mutableAccess) -> const ClassField & {
+                require(base >= 0, "invalid class array root offset");
+                loanAccess(base, mutableAccess);
+                const ClassField *field = nullptr;
+                if (base == 0) {
+                    field = &receiverShape(fieldIndex);
+                    require(!function.receiver->constructor,
+                            "constructor cannot access class array during initialization");
+                    require(!mutableAccess || function.receiver->mutableValue,
+                            "const receiver cannot supply mutable class array");
+                    require(state.receiverClassesInitialized.contains(fieldIndex),
+                            "receiver class array not completely initialized");
+                } else {
+                    const auto &root = completeObject(base);
+                    require(!mutableAccess || root.mutableValue, "const object cannot supply mutable class array");
+                    require(classFields.contains(root.className) && fieldIndex >= 0 &&
+                                static_cast<std::size_t>(fieldIndex) < classFields.at(root.className).size(),
+                            "class array logical field index out of range");
+                    field = &classFields.at(root.className)[fieldIndex];
+                }
+                require(field->array && field->elementType.isClass(),
+                        "class array operation requires class array field");
+                require(!owningClass(classFields, field->elementType.className),
+                        "class array elements must be copied values");
+                return *field;
+            };
+            auto classArrayEvidence = [&](int base, int fieldIndex, const ClassField &field) {
+                return ClassArrayGuard{base,
+                                       base == 0 ? function.receiver->className
+                                                 : function.objectSlots.at(base).className,
+                                       fieldIndex,
+                                       field.elementType,
+                                       field.elementCount};
+            };
+            auto checkedClassArray = [&](int base, int fieldIndex, const ClassField &field) {
+                require(current(Type::I64).guard ==
+                            std::optional<BoundsEvidence>(classArrayEvidence(base, fieldIndex, field)),
+                        "class array access lacks matching dominating bounds token");
             };
             auto copyTarget = [&](int base, const std::string &name) {
                 require(function.objectSlots.contains(base), "copy requires exact object slot");
@@ -1515,8 +1586,8 @@ inline void verifyFunction(Function &function,
                             require(state.activeArrays.contains(operation.offset), "array lifetime is not active");
                             for (const auto &[unused, capability] : state.activeSpans) {
                                 (void)unused;
-                                require(capability.ownedToken || capability.parameterOrigin ||
-                                            capability.origin != operation.offset,
+                                require(capability.literalOrigin || capability.ownedToken ||
+                                            capability.parameterOrigin || capability.origin != operation.offset,
                                         "array lifetime ends with live readonly span");
                             }
                             state.activeArrays.erase(operation.offset);
@@ -1539,6 +1610,12 @@ inline void verifyFunction(Function &function,
                                                                  0,
                                                                  0,
                                                                  index});
+                    } else if constexpr (std::is_same_v<Op, BorrowLiteralSpan>) {
+                        require(operation.bytes.size() <= maxByteStringBytes, "literal span exceeds byte-string bound");
+                        spanTarget(operation.resultOffset);
+                        state.activeSpans.emplace(
+                            operation.resultOffset,
+                            SpanCapability{false, operation.resultOffset, index, 0, 0, index, {}, -1, true});
                     } else if constexpr (std::is_same_v<Op, BorrowOwnedSpan>) {
                         borrowOwned(operation.offset, operation.fieldIndex, operation.resultOffset);
                     } else if constexpr (std::is_same_v<Op, ReborrowSpan> || std::is_same_v<Op, Subspan>) {
@@ -1586,6 +1663,18 @@ inline void verifyFunction(Function &function,
                             state.activeObjects.erase(operation.offset);
                             state.ownedObjects.erase(operation.offset);
                         }
+                        // A checked scalar index carries no escaping address, but its
+                        // nominal evidence still belongs to this root lifetime.
+                        auto invalidate = [&](Value &value) {
+                            if (value.guard)
+                                if (const auto *evidence = std::get_if<ClassArrayGuard>(&*value.guard);
+                                    evidence && evidence->objectOffset == operation.offset)
+                                    value.guard.reset();
+                        };
+                        if (state.current)
+                            invalidate(*state.current);
+                        for (auto &value : state.stack)
+                            invalidate(value);
                         const auto &object = function.objectSlots.at(operation.offset);
                         const auto &layout = classLayouts.at(object.className);
                         for (std::size_t field = 0; field < layout.size(); ++field) {
@@ -1698,6 +1787,72 @@ inline void verifyFunction(Function &function,
                         }
                         state.receiverClassesInitialized.insert(operation.fieldIndex);
                         state.receiverClassesMaybeInitialized.insert(operation.fieldIndex);
+                        state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, InitializeClassArray>) {
+                        require(operation.objectOffset >= 0, "invalid class array initialization root");
+                        const ClassField *field = nullptr;
+                        if (operation.objectOffset == 0) {
+                            field = &receiverShape(operation.fieldIndex);
+                            require(function.receiver->constructor && function.receiver->mutableValue,
+                                    "class array initialization requires constructor receiver");
+                        } else {
+                            require(function.objectSlots.contains(operation.objectOffset),
+                                    "class array initialization requires exact object slot");
+                            const auto &name = function.objectSlots.at(operation.objectOffset).className;
+                            require(classArrayCarriers.contains(name) && operation.fieldIndex == 0,
+                                    "local class array initialization requires declared carrier field");
+                            field = &classFields.at(name).front();
+                        }
+                        require(field->array && field->elementType.isClass(),
+                                "class array initialization requires class array field");
+                        require(operation.sources.size() == static_cast<std::size_t>(field->elementCount),
+                                "class array initializer element count mismatch");
+                        for (int sourceOffset : operation.sources) {
+                            require(sourceOffset != operation.objectOffset,
+                                    "class array initialization source aliases root");
+                            const auto &source = completeObject(sourceOffset);
+                            require(source.className == field->elementType.className,
+                                    "class array initializer nominal class mismatch");
+                        }
+                        if (operation.objectOffset == 0) {
+                            require(!state.receiverClassesMaybeInitialized.contains(operation.fieldIndex),
+                                    "constructor class array initialized more than once");
+                            for (int leaf = 0; leaf < field->length; ++leaf) {
+                                const int ordinal = field->firstLeaf + leaf;
+                                require(!state.receiverMaybeInitialized.contains(ordinal),
+                                        "constructor class array leaves already initialized");
+                                state.receiverInitialized.insert(ordinal);
+                                state.receiverMaybeInitialized.insert(ordinal);
+                            }
+                            state.receiverClassesInitialized.insert(operation.fieldIndex);
+                            state.receiverClassesMaybeInitialized.insert(operation.fieldIndex);
+                        } else {
+                            copyTarget(operation.objectOffset,
+                                       function.objectSlots.at(operation.objectOffset).className);
+                        }
+                        state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, ClassArrayBoundsGuard>) {
+                        const auto &field = completeClassArray(operation.objectOffset, operation.fieldIndex, false);
+                        current(Type::I64);
+                        state.current =
+                            Value{Type::I64, classArrayEvidence(operation.objectOffset, operation.fieldIndex, field)};
+                    } else if constexpr (std::is_same_v<Op, ClassArrayCopy>) {
+                        const auto &field = completeClassArray(operation.objectOffset, operation.fieldIndex, false);
+                        checkedClassArray(operation.objectOffset, operation.fieldIndex, field);
+                        require(operation.objectOffset != operation.resultOffset,
+                                "class array projection source aliases result");
+                        copyTarget(operation.resultOffset, field.elementType.className);
+                        state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, ClassArrayAssign>) {
+                        const auto &field = completeClassArray(operation.objectOffset, operation.fieldIndex, true);
+                        checkedClassArray(operation.objectOffset, operation.fieldIndex, field);
+                        require(operation.objectOffset != operation.sourceOffset,
+                                "class array assignment source aliases root");
+                        const auto &source = completeObject(operation.sourceOffset);
+                        require(source.className == field.elementType.className,
+                                "class array assignment nominal class mismatch");
+                        // Replacement cannot establish completion or create a live
+                        // subobject. Only already complete independent values enter.
                         state.current.reset();
                     } else if constexpr (std::is_same_v<Op, ReceiverLoad>) {
                         const auto &field = receiverField(operation.fieldIndex, operation.type);
@@ -2364,6 +2519,10 @@ inline ValidatedModule validate(Module module) {
         bool composed = false;
         for (const auto &field : fields) {
             const bool child = field.elementType.isClass();
+            verification::require((field.array && child) || field.elementCount == 1,
+                                  "noncanonical class array element count");
+            verification::require(!child || !module.classArrayCarriers.contains(field.elementType.className),
+                                  "class array carrier cannot be nested element type");
             verification::require(field.firstLeaf >= 0 && static_cast<std::size_t>(field.firstLeaf) == nextLeaf,
                                   "invalid logical class field shape");
             if (field.elementType == Type::OwnedBytes) {
@@ -2373,18 +2532,23 @@ inline ValidatedModule validate(Module module) {
                 composed = true;
                 verification::require(!owningClass(module.classFields, field.elementType.className),
                                       "nested owning class field is unsupported");
-                verification::require(!field.array && field.elementType == Type(field.elementType.className) &&
+                verification::require(field.elementType == Type(field.elementType.className) &&
                                           module.classLayouts.contains(field.elementType.className),
                                       "invalid nominal nested class field");
                 const auto &childLayout = module.classLayouts.at(field.elementType.className);
+                const int count = field.array ? field.elementCount : 1;
+                verification::require(count >= 1 && count <= maximumClassScalarArrayLength,
+                                      "class array element count exceeds 1..64");
                 verification::require(field.length >= 0 && field.length <= maximumCopiedClassLeaves &&
-                                          static_cast<std::size_t>(field.length) == childLayout.size(),
+                                          static_cast<std::size_t>(field.length) == childLayout.size() * count,
                                       "nested class field length mismatch");
-                verification::require(nextLeaf + childLayout.size() <= layout.size(),
+                verification::require(nextLeaf + static_cast<std::size_t>(field.length) <= layout.size(),
                                       "logical class field range exceeds layout");
-                for (std::size_t leaf = 0; leaf < childLayout.size(); ++leaf)
-                    verification::require(layout[nextLeaf + leaf] == childLayout[leaf],
-                                          "nested class field leaf type mismatch");
+                for (int element = 0; element < count; ++element)
+                    for (std::size_t leaf = 0; leaf < childLayout.size(); ++leaf)
+                        verification::require(layout[nextLeaf + element * childLayout.size() + leaf] ==
+                                                  childLayout[leaf],
+                                              "nested class field leaf type mismatch");
             } else {
                 verification::require(
                     (field.array ? scalar(field.elementType)
@@ -2405,6 +2569,12 @@ inline ValidatedModule validate(Module module) {
                                   copiedClassLeavesSupported(layout),
                               "composed or owning class exceeds 64 scalar leaves excluding u8, "
                               "512 u8 leaves or 513 total leaves");
+    }
+    for (const auto &name : module.classArrayCarriers) {
+        verification::require(module.classFields.contains(name), "unknown class array carrier");
+        const auto &fields = module.classFields.at(name);
+        verification::require(fields.size() == 1 && fields.front().array && fields.front().elementType.isClass(),
+                              "class array carrier requires exactly one class array field");
     }
     // The graph walk is bounded before recursion, including zero-leaf cycles.
     // Leaf vectors alone cannot establish the logical shape or nesting depth.
@@ -2485,7 +2655,8 @@ inline ValidatedModule validate(Module module) {
                                      module.classLayouts,
                                      module.classFields,
                                      module.enumCases,
-                                     module.classStorage);
+                                     module.classStorage,
+                                     module.classArrayCarriers);
     // Analyze the full call graph so scalar helpers cannot hide receiver
     // recursion. Iterative Kosaraju traversal is O(functions + calls) and does
     // not consume host call-stack depth on an adversarial source-sized graph.

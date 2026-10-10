@@ -27,6 +27,9 @@ MODES = (
 )
 ENTRY = "__au_v_m1_22kernel_console_service_n0__d15console_service"
 BRIDGE = "__au_runtime_console_entry"
+SESSION_FILE_DIVISIONS = {
+    "__au_m_m2_7console13session_files_n2_7console12SessionFiles_d6submit": 2,
+}
 
 
 def need(value, message):
@@ -128,6 +131,50 @@ def verify_stack_budgets(normal_peak, wait_peak, irq_peak, boot_fault):
     need(irq_peak + boot_fault <= 4096, "Existing separate console IRQ/fault reserve exhausted")
 
 
+def verify_generated_divisions(decoder, functions, code, payload, owners):
+    """Exact register-only division pairs in each profile's finite owner inventory.
+
+    CQTO writes RDX from RAX's sign and preserves flags. IDIV R11 writes only
+    RAX/RDX and leaves flags undefined. Neither modifies stack, RCX or R14, so
+    the existing conservative scalar/flag analysis is sufficient after this
+    complete byte, operand, ownership and adjacency check. Synchronous faults
+    retain the ordinary fault-path budget.
+    """
+    need(payload is not None, "Missing generated signed-division payload bytes")
+    need(all(owner in functions for owner in owners), "Missing generated division owner")
+    forms = [row for _, row in sorted(code.items()) if row.op in ("cqto", "idiv")]
+    need(len(forms) == 2 * sum(owners.values()), "Unexpected generated division instruction inventory")
+    seen = dict.fromkeys(owners, 0)
+    evidence = []
+    for index in range(0, len(forms), 2):
+        sign, divide = forms[index : index + 2]
+        matches = [
+            owner
+            for owner in owners
+            if functions[owner].address
+            <= sign.address
+            < divide.address
+            < divide.next
+            <= functions[owner].address + functions[owner].size
+        ]
+        need(len(matches) == 1 and not sign.args, "Unknown generated signed-division owner/operands")
+        owner = matches[0]
+        decoder.verify_signed_division_pair(functions[owner], sign, divide, payload)
+        seen[owner] += 1
+        evidence.append(
+            dict(
+                owner=owner,
+                sign_address=sign.address,
+                divide_address=divide.address,
+                bytes="489949f7fb",
+                stack_effect=0,
+                clobbers=["rax", "rdx"],
+            )
+        )
+    need(seen == owners, "Unexpected per-owner generated division count")
+    return evidence
+
+
 def stack_evidence(directory):
     decoder = load("console_service_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
     decoder.CPP_OBJECTS = ("payload", "acpi", "pci", "runtime", "console")
@@ -140,6 +187,8 @@ def stack_evidence(directory):
     need(linked.type == 2, "Expected linked executable payload")
     need(not subprocess.check_output(["nm", "-u", directory / "payload.elf"], text=True).strip(), "Unresolved payload")
     code, disassembly = decoder.disassemble(directory / "payload.elf")
+    payload = (directory / "payload.bin").read_bytes()
+    divisions = verify_generated_divisions(decoder, linked.functions, code, payload, SESSION_FILE_DIVISIONS)
     normalized = []
     for address, row in list(code.items()):
         if row.op == "push" and re.fullmatch(r"(?:0x[0-9a-f]+)?\(%r(?:sp|ip)\)", row.args):
@@ -222,7 +271,6 @@ def stack_evidence(directory):
     )
     irq_peak = 176 + 15 + dispatch["peak"]
     begin, end = named["uefi_console_poll_begin"].address, named["uefi_console_poll_end"].address
-    payload = (directory / "payload.bin").read_bytes()
     need(payload[begin:end] == bytes.fromhex("fbf4fa"), "Changed exact timer wait interval")
     owners = [
         name
@@ -257,6 +305,7 @@ def stack_evidence(directory):
         linked_functions=functions,
         assembly_objects=assembly,
         normalized_stack_immediates=normalized,
+        generated_divisions=divisions,
         page_verifier=dict(roots=roots, levels=levels, maximum_live_frames=4),
         disassembly_sha256=hashlib.sha256(disassembly.encode()).hexdigest(),
     )

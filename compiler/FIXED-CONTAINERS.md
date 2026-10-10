@@ -35,6 +35,78 @@ builtin storage field and the normal constructor/method/class-value pipeline.
 There are no foreign library calls, heap allocations, implicit conversions,
 unchecked accessors, element references or C-compatible layout promises.
 
+## Copied class storage arrays
+
+Concrete `array<C,N>` storage also accepts a complete copied class `C`, with
+capacity 1 through 64. This extends builtin storage; the `std::array<Scalar,N>`
+wrapper and scalar template substitution keep their existing constraints.
+Classes containing owners, references, spans, regions or service capabilities
+cannot be elements. Enum arrays, nested arrays and whole-array call parameters
+or results remain unsupported.
+
+```cpp
+class Records {
+    array<Record, 4> entries;
+public:
+    Records(Record empty) : entries{empty, empty, empty, empty} {}
+    auto replace(i64 slot, Record value) -> bool {
+        entries[slot] = value;
+        return true;
+    }
+    auto at(i64 slot) const -> Record {
+        const Record copy = entries[slot];
+        return copy;
+    }
+};
+```
+
+A local uses the existing braced array literal, for example
+`array<Record,2> entries = {first, second};`, or a same-type complete named array
+copy. Each initializer element must be a complete exact-type named value; a
+private field's constructor lists exactly one named parameter per element.
+Repeated names make independent copies. Empty braces, missing elements,
+constructor temporaries and default/zero construction of class elements reject.
+Private field constructors initialize the whole array exactly once in field
+order. Even empty elements require named source values at the source level;
+empty array fields and carriers require explicit logical initialization, while
+standalone empty sources retain the [vacuous complete-field convention](VALUE-CALLS.md).
+
+`Record copy = entries[index];` checks the signed index once and creates an
+independent typed value. `entries[index] = replacement;` checks the index once
+and replaces one complete element from an exact-type named local. It does not
+rerun a constructor or affect neighboring elements. Const locals and const
+receivers permit copies but reject replacement. Fields remain private and are
+indexed by their implicit name only inside the declaring class. There are no
+indexed method receivers, field chains, escaped element references, projection
+arguments or direct indexed returns; stage a typed local first.
+
+Elements use canonical inline child layout, including packed bytes and internal
+padding, with stride equal to the child's size. Empty children keep the existing
+nested-value zero-payload convention, while standalone arrays reserve at least
+eight bytes. A class-array edge counts toward the existing four-level containment
+limit. Local arrays and composed fields retain the copied bounds of 512 byte
+leaves, 64 non-byte leaves, 513 total leaves and 520 reserved bytes, plus the
+ordinary 65536-byte frame limit. Counts, products, offsets and full extents are
+validated before indexed storage access; the bounds trap precedes the runtime
+stride multiplication. Reflection describes the array's storage size and zero
+public fields without exposing private members or widening type visibility.
+
+IR keeps an explicit element count separate from the flattened leaf count.
+Dedicated initialization, bounds-guard, element-copy and element-replacement
+operations check exact nominal element type, logical field identity, active root,
+complete initialization, const permission and disjoint copied storage. Scalar
+array zero/load/store operations cannot address class elements. Local arrays use
+verified private carrier layouts with the ordinary object lifetime/copy machinery;
+carriers cannot appear in function signatures, receiver signatures or nested
+class fields. No source reference or capability denotes an element.
+
+`console.session_files` is the first consumer: four BinaryBuffer64 records become
+one private array. Listing and search copy each selected record once per iteration;
+readback copies the found record once, and commits replace a complete record.
+The content/name algorithms and RAM-only lifetime remain unchanged. Source and
+hostile-IR tests cover this bounded mechanism; final integrated native, linked
+stack/image and actual console guest gates remain required.
+
 ## Unambiguous storage names
 
 `builtin::array<T,N>` is the canonical compiler storage type. The namespace
@@ -84,7 +156,8 @@ Array fields can be indexed or queried with len by their implicit name inside a
 method. A same-named ordinary local follows normal lexical lookup, without
 changing the field's identity or privacy. No whole-array field value, address,
 reference, borrow, direct external field traversal or field-array reassignment
-is exposed. Nested class fields and arrays of classes/resources remain unsupported.
+is exposed. Later nested class composition follows COMPOSED-VALUES.md; copied
+class arrays follow the bounded section above. Resource arrays remain unsupported.
 
 A field access evaluates its index once, checks signed-negative and upper bounds,
 then performs the load. Field element assignment checks the index before evaluating

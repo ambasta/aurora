@@ -5,6 +5,7 @@
 #include <vector>
 
 namespace aurora {
+inline constexpr std::size_t maxByteStringBytes = 4096;
 // A byte spelling always denotes u8. Keep decoding shared by the scanner and
 // semantic constants; source tokens retain their exact spelling and byte span.
 inline std::optional<unsigned char> decodeByteLiteral(std::string_view text) {
@@ -61,8 +62,8 @@ inline std::optional<unsigned char> decodeByteLiteral(std::string_view text) {
         return std::nullopt;
     return static_cast<unsigned char>(high * 16 + low);
 }
-// Strings are initializer syntax for existing bounded byte arrays, not values of
-// a new string type. Raw text is valid UTF-8; escapes can denote arbitrary bytes.
+// Strings initialize bounded byte arrays or immutable readonly call arguments,
+// not a new string value type. Raw text is UTF-8; escapes can denote arbitrary bytes.
 inline std::optional<std::vector<unsigned char>> decodeByteStringLiteral(std::string_view text) {
     if (text.size() < 2 || text.front() != '"' || text.back() != '"')
         return std::nullopt;
@@ -107,7 +108,7 @@ inline std::optional<std::vector<unsigned char>> decodeByteStringLiteral(std::st
             bytes.insert(bytes.end(), body.begin() + at, body.begin() + at + width);
             at += width;
         }
-        if (bytes.size() > 4096)
+        if (bytes.size() > maxByteStringBytes)
             return std::nullopt;
     }
     return bytes;

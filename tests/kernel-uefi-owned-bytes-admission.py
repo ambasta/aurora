@@ -62,6 +62,7 @@ CLASSES = {
     ("std.binary_buffer", "std", "BinaryBuffer64"): (
         "size",
         "at",
+        "starts_with",
         "read_u8",
         "write_u8",
         "write_le16",
@@ -101,6 +102,8 @@ for bits in (16, 32, 64):
         for prefix, module in (("read_", "std.binary"), ("encode_", "std.bytes"), ("decode_", "std.bytes")):
             name = prefix + order + str(bits)
             GENERATED[name] = mangle("v", module, "std", name)
+for name in ("starts_with", "equal"):
+    GENERATED[name] = mangle("v", "std.bytes", "std", name)
 REFLECTION = {"aurora_reflect_size", "aurora_reflect_field_count"} | {
     f"__au_reflect_s{index}_{name}" for index in range(1, 8) for name in ("size", "field_count")
 }
@@ -152,6 +155,9 @@ CALLS = {
         "write_ram_pattern ram_snapshot_survives"
     ),
     "BinaryBuffer64.read_u8": "ByteReadResult.new",
+    "BinaryBuffer64.starts_with": "runtime.at",
+    "starts_with": "runtime.at",
+    "equal": "starts_with",
     "RecordReadResult.record_or_zero": "BinaryBuffer64.new",
     "Sector512.read_byte": "ByteReadResult.new",
     "Sector512.read_record": "BinaryBuffer64.new RecordReadResult.new BinaryBuffer64.write_u8",
@@ -183,6 +189,7 @@ ARGUMENT_BYTES = {
     "Sector512.write_record": 80,
     "RamSectorDevice.write_sector": 528,
     "sector_pattern_matches": 528,
+    "starts_with": 112,
 }
 for bits in (16, 32, 64):
     byte_class = "Bytes" + str(bits // 8)

@@ -66,7 +66,103 @@ void reject(const std::string &n, const std::function<void(F &)> &change, const 
     }
     throw Error(n + ": malformed IR accepted");
 }
+void literalTests() {
+    for (const auto length : {0u, 3u, 4096u}) {
+        auto m = base();
+        m.functions[0].code[10] = BorrowLiteralSpan{std::vector<unsigned char>(length, 255), 128};
+        accept("immutable literal origin length " + std::to_string(length), std::move(m));
+    }
+    auto source = base();
+    source.functions[0].code[10] = BorrowLiteralSpan{{11, 128, 255}, 128};
+    const auto literal = validate(std::move(source));
+    const auto ordinary = validate(base());
+    const auto expectedLiteral = X86Emitter{}.emit(literal);
+    const auto expectedOrdinary = X86Emitter{}.emit(ordinary);
+    X86Emitter reused;
+    require(reused.emit(literal) == expectedLiteral && reused.emit(literal) == expectedLiteral &&
+                reused.emit(ordinary) == expectedOrdinary,
+            "emitter retained literal bytes across modules");
+    ++accepted;
+    const auto invalid =
+        [](const std::string &name, const std::function<void(F &)> &change, const std::string &diagnostic) {
+            reject(
+                name,
+                [&](F &f) {
+                    f.code[10] = BorrowLiteralSpan{{11, 128, 255}, 128};
+                    change(f);
+                },
+                diagnostic);
+        };
+    invalid(
+        "oversized literal backing",
+        [](F &f) {
+            std::get<BorrowLiteralSpan>(f.code[10]).bytes.resize(4097);
+        },
+        "literal span exceeds byte-string bound");
+    invalid(
+        "unreachable oversized literal backing",
+        [](F &f) {
+            f.code.push_back(BorrowLiteralSpan{std::vector<unsigned char>(4097), 128});
+        },
+        "literal span exceeds byte-string bound");
+    invalid(
+        "literal scalar spill",
+        [](F &f) {
+            std::get<BorrowLiteralSpan>(f.code[10]).resultOffset = 56;
+        },
+        "literal span requires exact typed spill");
+    invalid(
+        "literal interior spill",
+        [](F &f) {
+            std::get<BorrowLiteralSpan>(f.code[10]).resultOffset = 127;
+        },
+        "literal span requires exact typed spill");
+    invalid(
+        "literal overwrites active capability",
+        [](F &f) {
+            f.code.insert(f.code.begin() + 11, BorrowLiteralSpan{{42}, 128});
+        },
+        "span spill is already active");
+    invalid(
+        "literal root ends before child",
+        [](F &f) {
+            f.code.insert(f.code.begin() + 15, EndSpan{128});
+        },
+        "live child reborrow");
+    invalid(
+        "ended literal reused",
+        [](F &f) {
+            f.code.insert(f.code.end() - 1, SpanLength{128});
+        },
+        "span capability is not active");
+    invalid(
+        "literal cannot become array origin",
+        [](F &f) {
+            f.code[14] = BorrowSpan{128, 184};
+        },
+        "exact local byte array origin");
+    invalid(
+        "literal cannot escape ordinary result",
+        [](F &f) {
+            f.code[15] = ReturnSpan{184};
+        },
+        "span return requires const owning receiver field summary");
+    invalid(
+        "different literal sites cannot merge capabilities",
+        [](F &f) {
+            f.code.insert(f.code.begin() + 11,
+                          {Constant{0, Type::Bool},
+                           BranchFalse{1},
+                           EndSpan{128},
+                           BorrowLiteralSpan{{11, 128, 255}, 128},
+                           Jump{2},
+                           Label{1},
+                           Label{2}});
+        },
+        "incompatible active span capabilities");
+}
 void tests() {
+    literalTests();
     accept("checked dynamic window", base());
     accept("window exact length", base(true));
     reject(

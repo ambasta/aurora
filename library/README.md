@@ -157,6 +157,15 @@ The milestone013 numeric and packed-representation gates are verified in the
 recorded checkpoint. This is not a general text/runtime API, and no equivalent-C
 performance claim is made.
 
+`std::starts_with(bytes, prefix)` and `std::equal(left, right)` compare readonly
+byte spans without allocation or escaped views. Empty prefixes match every span;
+equality also requires equal lengths. Bytes, including NUL and non-ASCII values,
+compare exactly. `BinaryBuffer64::starts_with(prefix)` compares its fixed backing
+without a copy; callers with a shorter logical payload must check its length first.
+The session-file parser uses this method as `command.starts_with("write ")`.
+Byte-string literals may directly supply synchronous readonly-span arguments with
+exact decoded lengths and immutable backing; see the [byte contract](../compiler/BYTES.md#readonly-literal-call-arguments).
+
 ## Owned 16- and 64-bit storage-field codecs
 
 `std.bytes` extends its 32-bit codec with checked owned `Bytes2` / `Bytes8` values

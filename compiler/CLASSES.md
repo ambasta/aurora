@@ -7,7 +7,8 @@ parameters/results follow [METHOD-VALUES.md](METHOD-VALUES.md).
 Ordinary functions separately support bounded by-value classes under [VALUE-CALLS.md](VALUE-CALLS.md). Classes
 remain inline values with scalar `i64`/`u64`/`bool` fields and independent copies.
 The later [fixed-container extension](FIXED-CONTAINERS.md) also permits private
-scalar-array fields with complete zero initialization and checked receiver indexing;
+scalar-array fields with complete zero initialization, copied-class arrays with
+explicit complete-value initialization, and checked receiver indexing;
 logical field identity stays separate from flattened storage. Explicit class
 templates are specified in [TEMPLATES.md](TEMPLATES.md).
 

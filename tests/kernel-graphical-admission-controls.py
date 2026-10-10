@@ -2873,30 +2873,32 @@ class Admission(unittest.TestCase):
         self.assertEqual(result["stack_memory_pushes"][0]["depth_before"], 16)
 
     def test_exact_generated_signed_division_pairs(self):
-        owner = "__au_v_m1_24kernel_graphical_console_n0__d9draw_cell"
-        symbols = {owner: decoder.Symbol(owner, 0, 10, 1, 2)}
-        payload = bytes.fromhex("489949f7fb489949f7fb")
-        rows = {
-            0: decoder.Instruction(0, 2, "cqto", ""),
-            2: decoder.Instruction(2, 3, "idiv", "%r11"),
-            5: decoder.Instruction(5, 2, "cqto", ""),
-            7: decoder.Instruction(7, 3, "idiv", "%r11"),
-        }
+        owners = (
+            "__au_v_m1_24kernel_graphical_console_n0__d9draw_cell",
+            "__au_m_m2_7console13session_files_n2_7console12SessionFiles_d6submit",
+        )
+        symbols = {name: decoder.Symbol(name, base, 10, 1, 2) for name, base in zip(owners, (0, 16))}
+        pair = bytes.fromhex("489949f7fb")
+        payload = pair * 2 + b"\x90" * 6 + pair * 2
+        rows = {}
+        for base in (0, 5, 16, 21):
+            rows[base] = decoder.Instruction(base, 2, "cqto", "")
+            rows[base + 2] = decoder.Instruction(base + 2, 3, "idiv", "%r11")
         verify = lambda symbols, rows, payload: graphical.verify_generated_divisions(decoder, symbols, rows, payload)
-        self.assertEqual(len(verify(symbols, rows, payload)), 2)
+        evidence = verify(symbols, rows, payload)
+        self.assertEqual([item["owner"] for item in evidence], [owners[0]] * 2 + [owners[1]] * 2)
         with self.assertRaises(ValueError):
             verify(symbols, rows, None)
-        for position in range(len(payload)):
+        for position in (*range(10), *range(16, 26)):
             changed = bytearray(payload)
             changed[position] ^= 1
             with self.subTest(position=position), self.assertRaises(ValueError):
                 verify(symbols, rows, changed)
-        for address in rows:
+        for address, row in rows.items():
             changed = dict(rows)
             del changed[address]
             with self.assertRaises(ValueError):
                 verify(symbols, changed, payload)
-            row = rows[address]
             for args in ["%rsp", "%r14", "(%r11)", "%rax,%rdx", "$0"]:
                 changed = dict(rows)
                 changed[address] = decoder.Instruction(row.address, row.size, row.op, args)
@@ -2907,17 +2909,25 @@ class Admission(unittest.TestCase):
                 changed[address] = decoder.Instruction(row.address + delta, row.size, row.op, row.args)
                 with self.assertRaises(ValueError):
                     verify(symbols, changed, payload)
-        for owners in [
-            {},
-            {owner: decoder.Symbol(owner, 1, 9, 1, 2)},
-            {owner: decoder.Symbol(owner, 0, 7, 1, 2)},
-            {owner: decoder.Symbol(owner, 0, 9, 1, 2)},
-            {"foreign": decoder.Symbol("foreign", 0, 10, 1, 2)},
-        ]:
+        for owner, base in zip(owners, (0, 16)):
+            for replacement in (None, (base + 1, 9), (base, 7), (base, 9)):
+                changed = dict(symbols)
+                if replacement is None:
+                    del changed[owner]
+                else:
+                    changed[owner] = decoder.Symbol(owner, *replacement, 1, 2)
+                with self.subTest(owner=owner, replacement=replacement), self.assertRaises(ValueError):
+                    verify(changed, rows, payload)
+            changed = dict(symbols)
+            changed["foreign"] = changed.pop(owner)
             with self.assertRaises(ValueError):
-                verify(owners, rows, payload)
+                verify(changed, rows, payload)
+        # Keeping the total pair count cannot move a third pair to one owner.
+        changed = {owners[0]: decoder.Symbol(owners[0], 0, 21, 1, 2), owners[1]: decoder.Symbol(owners[1], 21, 5, 1, 2)}
+        with self.assertRaises(ValueError):
+            verify(changed, rows, payload)
         changed = dict(rows)
-        changed[10] = decoder.Instruction(10, 2, "cqto", "")
+        changed[26] = decoder.Instruction(26, 2, "cqto", "")
         with self.assertRaises(ValueError):
             verify(symbols, changed, payload + b"\x48\x99")
 
