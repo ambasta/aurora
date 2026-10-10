@@ -27,7 +27,6 @@ jobs:
         shell: bash
     env:
       IMAGE: ghcr.io/ambasta/aurora-toolchain
-      DOCKER_CONFIG: ${{ runner.temp }}/aurora-docker
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -52,6 +51,7 @@ jobs:
       - name: Publish private package and verify digest
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/aurora-docker
         run: |
           set -euo pipefail
           package_url=https://api.github.com/users/ambasta/packages/container/aurora-toolchain
