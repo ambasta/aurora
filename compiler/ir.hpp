@@ -289,7 +289,7 @@ public:
     std::string callee;
     int regionOffset;
     std::vector<int> ownerArguments; // owners or readonly constructor class snapshots; zero otherwise
-    int resultOffset;                // pristine bytes/object root for owning result, otherwise zero
+    int resultOffset;                // pristine bytes/object root for owning or copied result; scalar result is zero
     int receiverOffset = 0;          // positive only for an owning constructor
 };
 class InitializeBytesField {

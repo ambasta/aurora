@@ -52,9 +52,9 @@ returning exactly `Box`. It constructs a fresh internal object using the same
 constructor visibility, argument checks and left-to-right snapshots as a typed
 local initializer, then copies its complete value through `ReturnObject`.
 Constructor and argument traps remain fail-stop; existing cleanup runs after
-successful construction and before return. Resource-function signatures still
-require scalar or owning results, so this does not enable allocated-owner locals
-in a copied-result function. Empty and composed copied
+successful construction and before return. [Resource functions](OWNED-BYTES.md)
+may also return these complete copied values after normal owner cleanup; calls to
+those functions still require named typed initializers. Empty and composed copied
 classes follow the same completeness rules. No heap allocation, reference escape,
 new IR operation or copy-elision guarantee is introduced.
 
@@ -67,8 +67,8 @@ loans finish before the usual return cleanup; the result is then copied through
 the existing private ABI. This is source convenience, not copy elision.
 
 `consume(make());`, temporary class arguments/receivers, direct returned field
-projections and `return Box{.value=42};` remain unsupported. Service operations,
-service helpers and borrowed-object helpers still need their typed result locals.
+projections and `return Box{.value=42};` remain unsupported. Resource calls, service operations, service helpers and borrowed-object helpers
+still need their typed result locals.
 Owning results still require an explicit `move(named_local)` return. This narrow
 convenience does not enable general class-valued expressions. `std.json` uses
 direct copied call returns; `std.json_write` uses direct constructor returns for
