@@ -76,9 +76,9 @@ foreach profile_id : profile_data['profiles'].split('|')
   foreach root : profile_data[key + '.roots'].split('|')
     root_args += ['--module-root', kernel_source / root]
   endforeach
-  # Only this closed supervisor graph omits unreferenced external helpers.
+  # The closed supervisor exposes only its bridge-declared scalar/native ABI.
   if admission == 'program'
-    root_args += ['--referenced-reflection-only']
+    root_args += ['--referenced-reflection-only', '--local-symbols']
   endif
   language_name = platform == 'bios' ? 'kernel-language' : 'language'
   language = custom_target(prefix + '-language-assembly',

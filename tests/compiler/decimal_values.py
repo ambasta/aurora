@@ -820,6 +820,26 @@ def decimal_cases(suite, seed, steps):
         suite.check(name, program(body, ENUM, imports="import std.decimal;"), reject=True)
 
 
+def decimal_projection_cases(suite):
+    # Python decimal strings are independent of the library's divide/remainder loops.
+    values = set(range(256)) | {MAX_U64, HIGH_U64, HIGH_U64 - 1}
+    for exponent in range(1, 20):
+        values.update((10**exponent - 1, 10**exponent, 10**exponent + 1))
+    values = sorted(values)
+    for start in range(0, len(values), 16):
+        checks = []
+        for value in values[start : start + 16]:
+            digits = str(value)
+            checks.append(f"if(std::format_decimal_width_u64({value}u64)!={len(digits)}){{return 1;}}")
+            for place in (-9223372036854775808, -1, *range(len(digits) + 1), 9223372036854775807):
+                expected = ord(digits[-1 - place]) if 0 <= place < len(digits) else 0
+                checks.append(f"if(std::format_decimal_digit_at_u64({value}u64,{place})!={expected}u8){{return 2;}}")
+        suite.check(
+            "scalar decimal width and digit projections",
+            program("".join(checks) + "return 42;", imports="import std.decimal;"),
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
@@ -832,6 +852,7 @@ def main():
     enum_cases(suite)
     method_result_cases(suite)
     decimal_cases(suite, arguments.seed, arguments.steps)
+    decimal_projection_cases(suite)
     print(
         f"{suite.count} decimal value checks passed: {suite.executions} native executions, "
         f"{suite.rejections} ordinary type/syntax rejections, "

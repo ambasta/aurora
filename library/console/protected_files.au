@@ -7,20 +7,16 @@ import std.binary;
 // retains it privately and binds it to authenticated, per-command IPC grants.
 export namespace console {
     class FileSelection {
-        std::BinaryBuffer64 command;
-        i64 count;
+        FileName name;
         u64 revision;
         u64 replacement;
     public:
-        FileSelection(std::BinaryBuffer64 read, i64 size, u64 version, u64 writable)
-            : command(read), count(size), revision(version), replacement(writable) {
+        FileSelection(FileName selected, u64 version, u64 writable)
+            : name(selected), revision(version), replacement(writable) {
         }
-        auto read_command() const -> std::BinaryBuffer64 {
-            const std::BinaryBuffer64 result = command;
+        auto selected_name() const -> FileName {
+            const FileName result = name;
             return result;
-        }
-        auto size() const -> i64 {
-            return count;
         }
         auto version() const -> u64 {
             return revision;
@@ -53,42 +49,21 @@ export namespace console {
             return reply;
         }
         auto select(std::BinaryBuffer64 command, i64 count) const -> FileSelection {
-            std::BinaryBuffer64 read = std::BinaryBuffer64();
+            i64 start = -1;
+            if (command.starts_with(count, "cat ")) { start = 4; }
+            const bool upper = command.starts_with(count, "upper ");
+            if (upper) { start = 6; }
+            i64 length = -1;
+            if (count >= 0 && count <= 64 && start >= 0) { length = count - start; }
+            const FileName name = file_name(command, start, length);
+            const FileReply reply = files.read_file(name);
+            u64 version = 0u64;
             u64 writable = 0u64;
-            i64 size = count;
-            if (command.starts_with(count, "upper ")) {
-                read.write_u8(0, 'c');
-                read.write_u8(1, 'a');
-                read.write_u8(2, 't');
-                read.write_u8(3, ' ');
-                i64 index = 6;
-                while (index < count) {
-                    read.write_u8(index - 2, command.at(index));
-                    index = index + 1;
-                }
-                size = count - 2;
-                writable = 1u64;
-            } else {
-                if (!command.starts_with(count, "cat ")) {
-                    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
-                    return FileSelection(empty, 0, 0u64, 0u64);
-                }
-                i64 index = 0;
-                while (index < count) {
-                    read.write_u8(index, command.at(index));
-                    index = index + 1;
-                }
+            if (reply.status() == FileEvent::read || reply.status() == FileEvent::missing) {
+                version = revision;
             }
-            SessionFiles copied = files;
-            const FileReply reply = copied.submit(read, size);
-            if (reply.status() != FileEvent::read && reply.status() != FileEvent::missing) {
-                const std::BinaryBuffer64 empty = std::BinaryBuffer64();
-                return FileSelection(empty, 0, 0u64, 0u64);
-            }
-            if (reply.status() == FileEvent::missing) {
-                writable = 0u64;
-            }
-            return FileSelection(read, size, revision, writable);
+            if (upper && reply.status() == FileEvent::read) { writable = 1u64; }
+            return FileSelection(name, version, writable);
         }
         auto project(FileSelection selection) const -> FileReply {
             if (selection.version() == 0u64 || selection.version() != revision) {
@@ -96,39 +71,23 @@ export namespace console {
                 rejected.select(FileEvent::invalid);
                 return rejected;
             }
-            SessionFiles copied = files;
-            const std::BinaryBuffer64 command = selection.read_command();
-            return copied.submit(command, selection.size());
+            const FileName name = selection.selected_name();
+            const FileReply reply = files.read_file(name);
+            return reply;
         }
         auto replace(FileSelection selection, std::BinaryBuffer64 output, i64 count) -> FileReply {
             const FileReply current = project(selection);
-            if (!selection.writable() || current.status() != FileEvent::read || count < 0 || count > 49) {
+            if (!selection.writable() || current.status() != FileEvent::read
+                || revision == 18446744073709551615u64) {
                 FileReply rejected = FileReply();
                 rejected.select(FileEvent::invalid);
                 return rejected;
             }
-            // Reuse the exact ordinary write validation and staged record commit.
-            const std::BinaryBuffer64 read = selection.read_command();
-            const i64 name_size = selection.size() - 4;
-            std::BinaryBuffer64 command = std::BinaryBuffer64();
-            command.write_u8(0, 'w');
-            command.write_u8(1, 'r');
-            command.write_u8(2, 'i');
-            command.write_u8(3, 't');
-            command.write_u8(4, 'e');
-            command.write_u8(5, ' ');
-            i64 index = 0;
-            while (index < name_size) {
-                command.write_u8(6 + index, read.at(4 + index));
-                index = index + 1;
-            }
-            command.write_u8(6 + name_size, ' ');
-            index = 0;
-            while (index < count) {
-                command.write_u8(7 + name_size + index, output.at(index));
-                index = index + 1;
-            }
-            return submit(command, 7 + name_size + count);
+            const FileName name = selection.selected_name();
+            const FileValue value = FileValue(output, count);
+            const FileEvent event = files.write_file(name, value);
+            if (event == FileEvent::written) { revision = revision + 1u64; }
+            return file_write_reply(name, value.size(), event);
         }
     };
 }

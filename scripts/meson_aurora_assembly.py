@@ -35,12 +35,15 @@ def main():
     parser.add_argument("--depfile", required=True, type=Path)
     parser.add_argument("--stack-facts", type=Path)
     parser.add_argument("--referenced-reflection-only", action="store_true")
+    parser.add_argument("--local-symbols", action="store_true")
     args = parser.parse_args()
     inputs = dependencies(args.source, args.module_root)
     temporary = args.output.with_suffix(".pending.s")
     command = [str(args.compiler.resolve(strict=True))]
     if args.referenced_reflection_only:
         command.append("--referenced-reflection-only")
+    if args.local_symbols:
+        command.append("--local-symbols")
     for root in args.module_root:
         command += ["--module-root", str(root.absolute())]
     command += [str(args.source.absolute()), "-o", str(temporary)]

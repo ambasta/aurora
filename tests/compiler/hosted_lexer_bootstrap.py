@@ -4,6 +4,7 @@
 from pathlib import Path
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -45,6 +46,8 @@ def event_generation(root, work):
     run(command)
     expected = output.read_bytes()
     require(b"Token = 0," in expected and b"InvalidCursor = 7," in expected, "event wire endpoints changed")
+    old_mtime = 1_000_000_000_000_000_000
+    os.utime(output, ns=(old_mtime, old_mtime))
     source.write_text(
         original.replace("module aurora.compiler.lexer;", "export module aurora.compiler.lexer;", 1).replace(
             "namespace compiler_lexer {", "export namespace compiler_lexer {", 1
@@ -52,6 +55,12 @@ def event_generation(root, work):
     )
     run(command)
     require(output.read_bytes() == expected, "module visibility changed generated event entries")
+    require(output.stat().st_mtime_ns == old_mtime, "unchanged event entries rewrote the output")
+    output.write_bytes(b"\xff stale event entries\n")
+    os.utime(output, ns=(old_mtime, old_mtime))
+    run(command)
+    require(output.read_bytes() == expected, "stale event entries were not replaced")
+    require(output.stat().st_mtime_ns != old_mtime, "replaced event entries kept the stale mtime")
     source.write_text("enum class Event { second_case, first_case, };")
     run(command)
     require(output.read_text().endswith("    SecondCase = 0,\n    FirstCase = 1,\n"), "event order was not preserved")
@@ -70,7 +79,9 @@ def event_generation(root, work):
         result = subprocess.run(command, capture_output=True, timeout=30, check=False)
         require(result.returncode == 1 and b"bootstrap lexer:" in result.stderr, "unsupported Event syntax accepted")
         require(output.read_bytes() == b"preserve on rejection\n", "rejected Event syntax changed output")
-    print("PASS generated event ordering, exported module parity and unsupported-syntax rejection")
+    print(
+        "PASS generated event ordering, content-stable writes, exported module parity and unsupported-syntax rejection"
+    )
 
 
 def symbols(path, globals_only=False):

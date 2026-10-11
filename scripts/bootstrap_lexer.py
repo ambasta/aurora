@@ -31,7 +31,10 @@ def event_entries(source):
 
 def main():
     if len(sys.argv) == 4 and sys.argv[1] == "--events":
-        Path(sys.argv[3]).write_text(event_entries(Path(sys.argv[2])))
+        entries = event_entries(Path(sys.argv[2]))
+        output = Path(sys.argv[3])
+        if not output.exists() or output.read_bytes() != entries.encode():
+            output.write_text(entries)
         return
     compiler, source, bridge, output = map(Path, sys.argv[1:])
     raw = output.with_suffix(".generated.s")

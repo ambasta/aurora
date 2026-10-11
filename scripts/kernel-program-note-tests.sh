@@ -9,7 +9,8 @@ out="${1:-${KERNEL_PROGRAM_NOTE_BUILD_DIR:-build/note-native-focused}}"
 mkdir -p "$out"
 "$AURORAC" tests/kernel-programs/program-upper-client.au -o "$out/client.s"
 "$AURORAC" --module-root kernel/policies tests/kernel-programs/program-stream-service.au -o "$out/service.s"
-"$AURORAC" --module-root kernel/policies --module-root library examples/kernel-program-console.au -o "$out/supervisor.s"
+"$AURORAC" --local-symbols --module-root kernel/policies --module-root library \
+    examples/kernel-program-console.au -o "$out/supervisor.s"
 # Test the native initial representation against the real library constructor.
 # This is a separate test-only root; all production inputs above are unchanged.
 cat > "$out/initial.au" <<'SOURCE'

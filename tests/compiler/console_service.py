@@ -383,6 +383,89 @@ auto span_compare_contract() -> i64 {
     if (buffer.starts_with(64, all.subspan(0, 64))) { return 7; }
     return 0;
 }
+auto typed_files_contract() -> i64 {
+    const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+    const std::BinaryBuffer64 a = pack("a");
+    const std::BinaryBuffer64 saved_bytes = pack("saved");
+    const std::BinaryBuffer64 dot = pack(".");
+    const std::BinaryBuffer64 dots = pack("..");
+    const std::BinaryBuffer64 note = pack("note");
+    console::SessionFiles files = console::SessionFiles(zero);
+    const console::FileName name = console::FileName(a, 1);
+    const console::FileValue empty = console::file_value(zero, 64, 0);
+    const console::FileValue saved = console::FileValue(saved_bytes, 5);
+    if (files.write_file(name, saved) != console::FileEvent::written) { return 1; }
+    const console::SessionFiles copy = files;
+    array<i64, 7> bad_counts = {-9223372036854775808, -1, 50, 64, 65, 255, 9223372036854775807};
+    i64 index = 0;
+    while (index < 7) {
+        const console::FileValue bad = console::FileValue(zero, bad_counts[index]);
+        const console::FileName invalid = console::FileName(a, bad_counts[index]);
+        const console::FileReply read = files.read_file(invalid);
+        const console::FileReply formatted_name =
+            console::file_write_reply(invalid, empty.size(), console::FileEvent::written);
+        const console::FileReply formatted_value =
+            console::file_write_reply(name, bad.size(), console::FileEvent::written);
+        if (files.write_file(name, bad) != console::FileEvent::invalid
+            || files.write_file(invalid, empty) != console::FileEvent::invalid
+            || files.remove(invalid) != console::FileEvent::invalid
+            || read.status() != console::FileEvent::invalid
+            || formatted_name.status() != console::FileEvent::invalid
+            || formatted_value.status() != console::FileEvent::invalid) { return 2; }
+        index = index + 1;
+    }
+    array<i64, 4> bad_offsets = {-9223372036854775808, -1, 65, 9223372036854775807};
+    index = 0;
+    while (index < 4) {
+        const console::FileName bad_name = console::file_name(a, bad_offsets[index], 1);
+        const console::FileValue bad_value = console::file_value(zero, bad_offsets[index], 0);
+        if (bad_name.valid() || bad_value.valid()) { return 3; }
+        index = index + 1;
+    }
+    const console::FileName off_end = console::file_name(a, 64, 1);
+    const console::FileValue crosses_end = console::file_value(zero, 63, 2);
+    const console::FileName one_dot = console::FileName(dot, 1);
+    const console::FileName two_dots = console::FileName(dots, 2);
+    const console::FileName long_name = console::FileName(a, 9);
+    const console::FileName no_name = console::FileName(a, 0);
+    if (off_end.valid() || crosses_end.valid() || one_dot.valid()
+        || two_dots.valid() || long_name.valid() || no_name.valid()) { return 4; }
+    std::BinaryBuffer64 input = pack("ax");
+    i64 byte = 0;
+    while (byte < 256) {
+        input.write_u8(1, u8(byte));
+        const console::FileName candidate = console::FileName(input, 2);
+        const bool allowed = (byte >= 97 && byte <= 122) || (byte >= 65 && byte <= 90)
+            || (byte >= 48 && byte <= 57) || byte == 46 || byte == 95 || byte == 45;
+        if (candidate.valid() != allowed) { return 5; }
+        const console::FileValue value = console::file_value(input, 1, 1);
+        if (value.valid() != (byte >= 32 && byte <= 126)) { return 6; }
+        if (!allowed && files.write_file(candidate, empty) != console::FileEvent::invalid) { return 7; }
+        if (!value.valid() && files.write_file(name, value) != console::FileEvent::invalid) { return 8; }
+        byte = byte + 1;
+    }
+    const console::FileName reserved = console::FileName(note, 4);
+    const console::FileValue invalid = console::FileValue(zero, 1);
+    const console::FileReply reserved_read = files.read_file(reserved);
+    if (files.write_file(reserved, invalid) != console::FileEvent::invalid
+        || files.write_file(reserved, empty) != console::FileEvent::reserved
+        || reserved_read.status() != console::FileEvent::reserved
+        || files.remove(reserved) != console::FileEvent::reserved) { return 9; }
+    const console::FileReply unchanged = files.read_file(name);
+    const console::FileReply copied = copy.read_file(name);
+    if (unchanged.size() != 5 || unchanged.at(4) != 'd'
+        || copied.size() != 5 || !empty.valid() || empty.size() != 0) { return 10; }
+    if (files.write_file(name, empty) != console::FileEvent::written) { return 11; }
+    const console::FileReply blank = files.read_file(name);
+    if (blank.size() != 0 || files.remove(name) != console::FileEvent::removed) { return 12; }
+    const console::FileReply missing = files.read_file(name);
+    const console::FileReply retained = copy.read_file(name);
+    if (missing.status() != console::FileEvent::missing || retained.size() != 5) { return 13; }
+    std::BinaryBuffer64 malformed = zero;
+    malformed.write_u8(0, 255u8);
+    if (name.matches(malformed)) { return 14; }
+    return 0;
+}
 auto files_contract() -> i64 {
     if (size_of(console::SessionFiles) != 264 || size_of(console::FileReply) != 80) { return 1; }
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
@@ -489,11 +572,13 @@ checked_files_snapshot:
     files_host.write_text("""#include <array>
 #include <cstdint>
 extern "C" long files_contract();
+extern "C" long typed_files_contract();
 extern "C" long span_compare_contract();
 extern "C" void checked_files_snapshot(long, void*);
 int main() {
     if (const auto result = span_compare_contract()) return 20 + int(result);
     if (const auto result = files_contract()) return int(result);
+    if (const auto result = typed_files_contract()) return 40 + int(result);
     for (long stage = 0; stage != 5; ++stage) {
         std::array<unsigned char, 280> storage{};
         storage.fill(0xa5);
